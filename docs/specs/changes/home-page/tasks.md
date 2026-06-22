@@ -27,7 +27,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: static export build passes with no SSR/route handlers present.
       Skills: vercel-react-best-practices
 
-- [ ] T-2 Wire design tokens into Tailwind + globals  (deps: T-1)
+- [x] T-2 Wire design tokens into Tailwind + globals  (deps: T-1)
       Size: S
       Requirements: NFR-4
       Design: design.md §10 (DD-5); System Design §7

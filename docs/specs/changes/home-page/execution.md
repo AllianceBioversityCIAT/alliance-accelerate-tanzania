@@ -36,5 +36,23 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 
 **Issues encountered:** none.
 
+### T-2 — Wire design tokens into Tailwind + globals — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** NFR-4 (design tokens — no hardcoded values)
+- **Design refs:** design.md §10 (DD-5); system-design §7; §11 (dark-overridable)
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files changed:** `frontend/app/globals.css` (all §7 tokens as `:root` CSS vars + dark-override comment + token-driven `body`), `frontend/tailwind.config.ts` (colors/crop/borderRadius/boxShadow/fontFamily/fontSize mapped to `var(--token)`; removed stale `./pages/**` glob).
+- **Verification command:** `cd frontend && npm run build`
+- **Verification result:** "Compiled successfully", "Exporting (2/2)", zero errors/warnings.
+- **Reviewer verdict:** `STATUS: PASS` — all 29 §7 tokens present on `:root` with exact canonical values; every Tailwind utility maps via `var(--...)`; `:root` cleanly `.dark`-overridable with no dark theme authored; spacing untouched; no scope creep; no SSR introduced.
+
+**Tracked note (non-blocking, carried from T-1):** `app/layout.tsx` applies `inter.className` to `<body>`, whose `next/font` class out-prioritizes the `font-family: var(--font-sans)` rule. No v1 regression (both are Inter), but `--font-sans` is not the live authority for body font. **Action:** address in the typography/component pass (T-3 or a later UI task) — e.g. bind the font via the `--font-sans` token or apply `inter.variable` and reference it from the token.
+
+**Decisions made:** kept the dark theme un-authored (only `:root` + documented override path), per §11.
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2..T-7 pending. Next eligible: **T-2** (deps: T-1 ✅).
+- T-1 ✅ · T-2 ✅ · T-3..T-7 pending. Next eligible: **T-3** (deps: T-2 ✅).

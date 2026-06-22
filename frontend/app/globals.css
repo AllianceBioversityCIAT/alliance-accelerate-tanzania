@@ -1,3 +1,63 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand / semantic colors */
+    --color-primary:       #2F7D32;
+    --color-primary-fg:    #FFFFFF;
+    --color-accent:        #C9821B;
+    --color-bean:          #7A3B2E;
+    --color-bg:            #FAFAF7;
+    --color-surface:       #FFFFFF;
+    --color-fg:            #1C1F1A;
+    --color-muted:         #5F665B;
+    --color-border:        #E3E5DE;
+    --color-success:       #2F7D32;
+    --color-warning:       #C9821B;
+    --color-danger:        #B3261E;
+    --color-restricted-bg: #F1F0EA;
+
+    /* Crop legend (map + chips) */
+    --crop-sorghum:   #C9821B;
+    --crop-bean:      #7A3B2E;
+    --crop-groundnut: #8A8D2B;
+
+    /* Typography */
+    --font-sans: "Inter", system-ui, sans-serif;
+    --text-xs:   12px;
+    --text-sm:   14px;
+    --text-base: 16px;
+    --text-lg:   18px;
+    --text-xl:   20px;
+    --text-2xl:  24px;
+    --text-3xl:  30px;
+    --text-4xl:  36px;
+
+    /* Geometry */
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   16px;
+    --radius-full: 9999px;
+    --shadow-sm:   0 1px 2px rgba(28, 31, 26, 0.06);
+    --shadow-md:   0 4px 12px rgba(28, 31, 26, 0.08);
+  }
+
+  /*
+   * Dark theme: override the variables above under `.dark { }` in the future.
+   * Example:
+   * .dark {
+   *   --color-bg:      #1C1F1A;
+   *   --color-surface: #252825;
+   *   --color-fg:      #F0F2EC;
+   *   ...
+   * }
+   */
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+}
