@@ -72,7 +72,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: both sections render live counts with graceful fallback and crop-token styling; responsive 1→3 columns.
       Skills: ui-ux-pro-max, tailwind-design-system
 
-- [ ] T-7 Accessibility, responsive, and static-export verification pass  (deps: T-6)
+- [x] T-7 Accessibility, responsive, and static-export verification pass  (deps: T-6)
       Size: S
       Requirements: NFR-1, NFR-2, NFR-3
       Design: design.md §8 (a11y), §12

@@ -132,5 +132,31 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** StatCard authored background-agnostic so MetricsBand supplies the dark (`bg-fg text-bg`) context and StatCard remains reusable on light surfaces; CropCard derives accent utilities from a `tokenClass`→utility lookup map (no inline hex), keeping crop colors token-driven per the T-4 `currentColor`/token discipline. Test files named `*.metrics-band.test.tsx` / `*.crop.test.tsx` so the `npm run test -- metrics-band crop` filters reliably match both suites.
 **Issues encountered:** none.
 
-## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6 ✅ · T-7 pending. Next eligible: **T-7** (deps: T-6 ✅) — accessibility, responsive, and static-export verification pass.
+### T-7 — Accessibility, responsive, and static-export verification pass — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** NFR-1 (static export), NFR-2 (responsive), NFR-3 (accessibility)
+- **Design refs:** design.md §8 (a11y), §12 (test plan); system-design §9 (responsive), §10 (accessibility expectations)
+- **Implementer agent:** `frontend-developer` seeded with `.agents/implementer.md`
+- **Reviewer agent:** `code-reviewer` seeded with `.agents/reviewer.md`
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Nature of task:** primarily a verification + automated-coverage pass. The a11y structure was found already conformant from T-3..T-6, so **no component source files were modified** — the only code change is a new jest-axe test plus the dev dependency.
+- **A11y audit (already-present, confirmed in source — no change needed):** `<header>`/`<main>`/`<footer>` landmarks; `<nav aria-label="Primary">` (+ mobile) with `aria-current="page"` on active links; hamburger `aria-label`+`aria-controls`+`aria-expanded`; Hero single `<h1 id="hero-heading">` via `aria-labelledby`; MetricsBand/CropCoverage `<section>` with accessible names; CropCard `<h3>` (logical h1→h2→h3); decorative SVGs/visual panel `aria-hidden`; Skeleton `aria-hidden`+`role="presentation"`; StatCard `aria-live="polite"` value slot; token-driven `focus-visible:ring-*` on Button/NavLink/brand/mobile links; `motion-reduce:animate-none` (Skeleton) and `motion-reduce:transition-none` (Button, hamburger).
+- **Files created:** `frontend/components/home/home-a11y.test.tsx` — jest-axe test rendering the full home composition (Header + Hero + MetricsBand + CropCoverage + Footer); mocks `@/lib/api/useMetrics`, `next/navigation`, `@/lib/auth/useSession`; two cases (success state + null/fallback state) each asserting `expect(results).toHaveNoViolations()`.
+- **Files changed:** `frontend/package.json` + `frontend/package-lock.json` (devDeps: `jest-axe`, `@types/jest-axe`).
+- **Responsive confirmation (NFR-2):** Hero `grid-cols-1 lg:grid-cols-2`; MetricsBand `grid-cols-2 md:grid-cols-4`; CropCoverage `grid-cols-1 md:grid-cols-3`; Header hamburger `md:hidden`. All match spec.
+- **Verification command:** `cd frontend && npm install -D jest-axe @types/jest-axe && npm run test && npm run build && npm run lint` + static-export grep (Leader independently re-ran).
+- **Verification result:** Test Suites 5 passed / Tests 21 passed (incl. both axe no-violation cases); build "✓ Compiled successfully", static pages 4/4, "✓ Exporting (2/2)", `/` = `○ (Static)`, `out/index.html` emitted; lint "✔ No ESLint warnings or errors"; static-export grep (`generateStaticParams`/`dynamic`/`revalidate`/`getServerSideProps`/`use server`/`route.ts(x)`) → empty; `next.config.mjs` retains `output: 'export'`.
+- **Reviewer verdict:** `STATUS: PASS` — axe test is substantive (full composition rendered, both states assert `toHaveNoViolations`); every a11y claim independently confirmed in source (landmarks, aria, heading hierarchy, focus-visible, motion-reduce); static-export purity intact (zero SSR/route-handler patterns); responsive breakpoints match spec; no regressions or scope creep.
+
+**Decisions made:** since the a11y structure was already correct, T-7 added durable automated coverage (jest-axe over the full composition, success + fallback states) rather than redundant manual edits — locking NFR-3 against future regressions.
+**Issues encountered:** none.
+
+## 3. Summary (all tasks complete) — ✅ SPEC COMPLETE
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6 ✅ · T-7 ✅. **All 7 tasks PASS.**
+- **Requirement coverage:** FR-1→T-3/T-4 ✅ · FR-2→T-4 ✅ · FR-3→T-5/T-6 ✅ · FR-4→T-6 ✅ · FR-5→T-3 ✅ · FR-6→T-3 ✅ · FR-7→T-3 ✅ · NFR-1→T-1/T-7 ✅ · NFR-2→T-4/T-6/T-7 ✅ · NFR-3→T-7 ✅ · NFR-4→T-2 ✅ · NFR-5→T-5 ✅.
+- **Final state:** static-export Next.js home page at `/` (public shell + Hero + live MetricsBand + CropCoverage), token-driven, graceful metrics fallback, WCAG-AA basics proven via jest-axe. Full suite 21 tests pass; `npm run build` emits static `out/`.
+- **Loop economics:** 7 tasks, 8 Implementer attempts total (one T-4 rework on an NFR-4 token bypass); all other tasks PASS on attempt 1.
+- **Next:** ready for `/sdd-validate` and/or `/sdd-archive` on `changes/home-page`.
