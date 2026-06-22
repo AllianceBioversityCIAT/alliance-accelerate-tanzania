@@ -42,7 +42,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: full suite + build + lint pass; primary hover uses `primary-hover`; no hardcoded color in executable component code; behavior/layout unchanged.
       Skills: ui-ux-pro-max, react-doctor
 
-- [ ] T-4 Accessibility (AA contrast) + visual verification pass  (deps: T-3)
+- [x] T-4 Accessibility (AA contrast) + visual verification pass  (deps: T-3)
       Size: S
       Requirements: FR-4, NFR-1, NFR-2, NFR-5
       Design: design.md §8 (contrast table), §11, §12

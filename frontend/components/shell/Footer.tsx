@@ -1,5 +1,5 @@
 // Footer is a server component — no 'use client' needed.
-// Dark surface: bg-fg (near-black #1C1F1A) + text-bg (warm off-white #FAFAF7)
+// Dark surface: bg-fg (#333333) + text-bg (#FFFFFF)
 // — an intentional light-on-dark inversion using the two existing semantic tokens.
 // No raw hex values are used; all colors reference token utilities (NFR-4).
 
@@ -19,7 +19,7 @@ export default function Footer() {
               A
             </span>
             <span className="flex flex-col leading-none">
-              <span className="text-sm font-bold tracking-widest uppercase text-primary">
+              <span className="text-sm font-bold tracking-widest uppercase text-bg">
                 ACCELERATE
               </span>
               <span className="text-xs font-medium tracking-wider uppercase opacity-70">

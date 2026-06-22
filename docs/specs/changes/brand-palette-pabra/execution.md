@@ -65,5 +65,30 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** kept deliberate opacity/alpha token effects (not hover states) as-is. Noted that `Footer.tsx`/`Hero.tsx` comments still cite old-palette hex (`#1C1F1A`/`#FAFAF7`/`#F1F0EA`) — comments only (NFR-4 exempt), to be refreshed in T-4.
 **Issues encountered:** none.
 
-## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 pending. Next eligible: **T-4** (deps: T-3 ✅).
+### T-4 — Accessibility (AA contrast) + visual verification pass — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-4 (accent/contrast rules enforced), NFR-1 (static export), NFR-2 (AA contrast + responsive), NFR-5 (no regression)
+- **Design refs:** design.md §8 (contrast table), §11, §12
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files changed:** `frontend/components/shell/Footer.tsx` (AA fix + comment refresh), `frontend/components/shell/Header.tsx` (AA fix), `frontend/components/home/Hero.tsx` (comment refresh). 4 lines total, token-only.
+- **Contrast audit:** full pass/fail table computed for every text usage on the new palette. **2 real AA failures found and fixed:**
+  1. Footer brand "ACCELERATE" — `text-primary` (maroon `#800000`) on the dark `bg-fg` band ≈ **1.15:1 (invisible)** → `text-bg` (white on `#333`) ≈ 12.63:1.
+  2. Header Admin `RoleBadge` — `bg-accent` (blue `#008BDB`, white text) ≈ 3.67:1 (fails normal-text AA) → `bg-primary` (maroon) ≈ 10.95:1.
+  All other text usages pass (maroon-on-white ~10.9:1, fg `#333` ~12.6:1, muted `#666` ~5.7:1; dark-band labels via opacity composite to ~7.1:1; crop names are large text ≥3:1). Decorative `aria-hidden` placeholder text exempt.
+- **Comment refresh:** Footer/Hero comments updated from old-palette hex (`#1C1F1A`/`#FAFAF7`/`#F1F0EA`) to the new values; grep confirms no old-palette hex remains in `components/`.
+- **Verification (Leader-rerun):** `npm run test` 5 suites / 21 tests passed (jest-axe green); `npm run build` ✓ Compiled + ✓ Exporting (2/2), `/` = ○ Static; `npm run lint` clean; responsive classes confirmed (Hero `1→2`, MetricsBand `2→4`, CropCoverage `1→3`, Header `md:hidden`).
+- **Reviewer verdict:** `STATUS: PASS` — both AA fixes correct and real; comments cite new palette only; no hardcoded color in code; no SSR; static export preserved. Staff/Admin badge now share `bg-primary` — accepted for v1 (auth slot is a stub defaulting to Public; Admin branch never renders in production).
+
+**Decisions made:** kept Admin badge = `bg-primary` for v1 simplicity.
+**Follow-up (non-blocking):** if role distinction is wanted before Cognito auth is wired in, set Admin `RoleBadge` to `bg-primary-hover` (#680000, ~13.2:1) to restore Staff/Admin visual distinction AA-safely.
+**Issues encountered:** none (the 2 AA failures were expected discoveries of this verification pass, fixed in the same attempt).
+
+## 3. Summary (all tasks complete) — ✅ SPEC COMPLETE
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅. **All 4 tasks PASS on attempt 1.**
+- **Requirement coverage:** FR-1→T-1 ✅ · FR-2→T-2 ✅ · FR-3→T-3 ✅ · FR-4→T-1/T-4 ✅ · NFR-1→T-3/T-4 ✅ · NFR-2→T-1/T-4 ✅ · NFR-3→T-2 ✅ · NFR-4→T-2/T-3 ✅ · NFR-5→T-3/T-4 ✅.
+- **Final state:** the PABRA brand palette is the canonical §7 baseline and live across the app — maroon `#800000` primary (+`#680000` hover), blue/teal accents (contrast-bounded), clean white/gray neutrals; crop legend unchanged; dark-mode override path preserved. Build static-exports; full suite 21 tests pass; WCAG AA verified for all text (2 rebrand-introduced failures caught and fixed).
+- **Loop economics:** 4 tasks, 4 Implementer attempts (zero rework). T-4 caught 2 genuine AA regressions — the value of the dedicated contrast pass.
+- **Next:** ready for `/sdd-validate` and/or `/sdd-archive` on `changes/brand-palette-pabra`.

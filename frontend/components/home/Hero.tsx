@@ -64,7 +64,7 @@ function LiveRegistryCard() {
 function VisualPanel() {
   return (
     // relative so the LiveRegistryCard can use absolute positioning inside it.
-    // bg-restricted is the subtle warm off-white token (#F1F0EA) — no raw hex.
+    // bg-restricted is the subtle off-white token (#F3F3F3) — no raw hex.
     // The diagonal stripe pattern is achieved purely with CSS using token colors.
     <div className="relative w-full h-72 lg:h-full min-h-[320px]">
       <div
