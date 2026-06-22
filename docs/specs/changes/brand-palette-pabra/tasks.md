@@ -33,7 +33,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: utilities `bg-primary` (maroon), `hover:bg-primary-hover`, `text-accent`, `bg-highlight`, `bg-surface-alt` resolve to PABRA values; build passes.
       Skills: tailwind-design-system
 
-- [ ] T-3 Re-point component token wiring + verify no hardcoded color  (deps: T-2)
+- [x] T-3 Re-point component token wiring + verify no hardcoded color  (deps: T-2)
       Size: S
       Requirements: FR-3, NFR-1, NFR-4, NFR-5
       Design: design.md §8 (component table), §4

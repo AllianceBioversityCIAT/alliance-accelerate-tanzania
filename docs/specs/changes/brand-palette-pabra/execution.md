@@ -49,5 +49,21 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** color values live only in globals.css CSS vars; Tailwind references via `var(--…)` (matches the existing token pattern).
 **Issues encountered:** none.
 
+### T-3 — Re-point component token wiring + verify no hardcoded color — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** FR-3 (UI re-skins, no hardcoded color), NFR-1 (static export), NFR-4 (tokens only), NFR-5 (no behavioral/layout regression)
+- **Design refs:** design.md §8 (component table), §4
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files changed:** `frontend/components/ui/Button.tsx` (one line + its comment).
+- **Change:** primary variant hover `hover:bg-primary/90` → `hover:bg-primary-hover` (DD-2 — maroon needs the darker `#680000` token, not a lighter opacity wash); comment updated to reference the token. Scan confirmed no other component needed changing: `bg-primary/10` (Hero/CropCoverage eyebrow tint), `divide-bg/20` (MetricsBand), `text-muted/60` (Hero placeholder) are deliberate token-derived alpha effects, left untouched.
+- **Verification (Leader-rerun):** `npm run test` 5 suites / 21 tests passed (no regression); `npm run build` ✓ Compiled + ✓ Exporting (2/2), `/` = ○ Static (no SSR); `npm run lint` clean; components hex-grep → matches only in comments.
+- **Reviewer verdict:** `STATUS: PASS` — Button hover correctly re-wired to `hover:bg-primary-hover` resolving to the `#680000` CSS var via Tailwind; no hardcoded color in executable code; no layout/API/SSR change.
+
+**Decisions made:** kept deliberate opacity/alpha token effects (not hover states) as-is. Noted that `Footer.tsx`/`Hero.tsx` comments still cite old-palette hex (`#1C1F1A`/`#FAFAF7`/`#F1F0EA`) — comments only (NFR-4 exempt), to be refreshed in T-4.
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3, T-4 pending. Next eligible: **T-3** (deps: T-2 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 pending. Next eligible: **T-4** (deps: T-3 ✅).
