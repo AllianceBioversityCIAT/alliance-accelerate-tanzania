@@ -15,7 +15,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
 
 ---
 
-- [ ] T-1 Update System Design §7 token baseline to the PABRA palette  (deps: none)
+- [x] T-1 Update System Design §7 token baseline to the PABRA palette  (deps: none)
       Size: S
       Requirements: FR-1, FR-4, NFR-2
       Design: design.md §5, §8, §10 (DD-1..DD-5); System Design §7

@@ -71,19 +71,23 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 ```css
 /* Brand / semantic colors (define in tailwind.config + CSS vars) */
---color-primary:        #2F7D32; /* sorghum/green — primary actions, brand */
+--color-primary:        #800000;  /* maroon — primary actions, brand, headings */
+--color-primary-hover:  #680000;  /* dark-maroon hover/active state */
 --color-primary-fg:     #FFFFFF;
---color-accent:         #C9821B; /* groundnut/earth — highlights, secondary CTA */
+--color-accent:         #008BDB;  /* blue — secondary CTA / links (large text & UI only) */
+--color-highlight:      #29C4A9;  /* teal-green highlight / tint backgrounds */
+--color-highlight-soft: #82C0C7;  /* muted teal, soft accent */
 --color-bean:           #7A3B2E; /* common bean — crop accent 3 */
---color-bg:             #FAFAF7; /* warm off-white page bg */
+--color-bg:             #FFFFFF;  /* clean white page base */
 --color-surface:        #FFFFFF;
---color-fg:             #1C1F1A; /* near-black text */
---color-muted:          #5F665B; /* secondary text */
---color-border:         #E3E5DE;
---color-success:        #2F7D32;
+--color-surface-alt:    #F7F7F7;  /* alternating section background */
+--color-fg:             #333333;  /* primary body text */
+--color-muted:          #666666;  /* secondary text */
+--color-border:         #E2E2E2;
+--color-success:        #2F7D32;  /* keep green — success semantics, not brand */
 --color-warning:        #C9821B;
 --color-danger:         #B3261E;
---color-restricted-bg:  #F1F0EA; /* PII "restricted" chip background */
+--color-restricted-bg:  #F3F3F3;  /* PII restricted chip background (neutral) */
 
 /* Crop legend (used by map + chips) */
 --crop-sorghum:  #C9821B;
@@ -102,6 +106,8 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 /* Spacing scale: Tailwind default (4px base). */
 ```
+
+> **Accent usage (contrast):** `--color-primary` (maroon) passes WCAG AA on white for all text/UI (~10.4:1). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
 
 ## 8. Component Inventory
 
