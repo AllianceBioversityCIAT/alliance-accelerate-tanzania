@@ -25,7 +25,9 @@
     --crop-groundnut: #8A8D2B;
 
     /* Typography */
-    --font-sans: "Inter", system-ui, sans-serif;
+    /* var(--font-inter) is injected by next/font (Inter with variable: '--font-inter').
+       Fallback to literal "Inter" and system-ui if the CSS var is not yet resolved. */
+    --font-sans: var(--font-inter), "Inter", system-ui, sans-serif;
     --text-xs:   12px;
     --text-sm:   14px;
     --text-base: 16px;

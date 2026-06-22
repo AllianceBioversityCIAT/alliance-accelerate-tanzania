@@ -36,7 +36,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: tokens resolve in Tailwind classes and CSS vars; build passes.
       Skills: tailwind-design-system
 
-- [ ] T-3 Build the public shell (Header + Footer) and route layout  (deps: T-2)
+- [x] T-3 Build the public shell (Header + Footer) and route layout  (deps: T-2)
       Size: M
       Requirements: FR-1, FR-5, FR-6, FR-7
       Design: design.md §4, §8

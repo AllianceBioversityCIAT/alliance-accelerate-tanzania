@@ -54,5 +54,25 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** kept the dark theme un-authored (only `:root` + documented override path), per §11.
 **Issues encountered:** none.
 
+### T-3 — Build the public shell (Header + Footer) + route layout — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-1 (shell/structure), FR-5 (role-aware auth slot), FR-6 (primary nav), FR-7 (footer)
+- **Design refs:** design.md §4, §8; system-design §4, §5, §7
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `frontend/lib/auth/useSession.ts` (Role/Session types + Public stub, DD-4), `frontend/components/shell/Header.tsx` (`'use client'`: brand lockup, desktop nav with `usePathname` active state + `aria-current`, role-aware `AuthSlot` → Sign in `/login` for Public / avatar+name+RoleBadge when authed, sticky, mobile hamburger with full aria), `frontend/components/shell/Footer.tsx` (`bg-fg text-bg` inversion, governance note), `frontend/app/(public)/layout.tsx` (Header + `<main>` + Footer), `frontend/.eslintrc.json` (next/core-web-vitals).
+- **Files changed:** `frontend/app/layout.tsx` + `frontend/app/globals.css` (font-token fix — see resolution below).
+- **Files moved/deleted:** `frontend/app/page.tsx` → `frontend/app/(public)/page.tsx` (placeholder; URL stays `/`); old root page deleted.
+- **Verification command:** `cd frontend && npm run build && npm run lint`
+- **Verification result:** build "Compiled successfully", "Exporting (2/2)"; lint "No ESLint warnings or errors". `out/index.html` emitted; no leftover root page.
+- **Reviewer verdict:** `STATUS: PASS` — FR-1/5/6/7 fully met; design-token compliance clean (only hex are in comments, exempt); static-export safe (no SSR/route handlers; `'use client'` only where needed); no T-4/T-5/T-6 scope creep; a11y landmarks/`aria-current`/hamburger aria/`motion-reduce` all present.
+
+**Resolved note (from T-2):** font-token authority fixed — `app/layout.tsx` now uses `Inter({ variable: '--font-inter' })` on `<html>` and `--font-sans` = `var(--font-inter), "Inter", system-ui, sans-serif`, so the token is the single body-font authority while keeping next/font optimization. ✅ closed.
+
+**Decisions made:** auth slot remains a deliberate stub (DD-4); footer uses existing `bg-fg/text-bg` inversion rather than introducing a new dark token.
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3..T-7 pending. Next eligible: **T-3** (deps: T-2 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4..T-7 pending. Next eligible: **T-4** (deps: T-3 ✅).
