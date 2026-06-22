@@ -63,7 +63,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: hook returns typed data on success and `null` without throwing on failure.
       Skills: error-handling-patterns, api-design-principles
 
-- [ ] T-6 Build Metrics band and Crop coverage sections (live counts)  (deps: T-4, T-5)
+- [x] T-6 Build Metrics band and Crop coverage sections (live counts)  (deps: T-4, T-5)
       Size: M
       Requirements: FR-3, FR-4, NFR-2
       Design: design.md §8; System Design §7 (crop tokens), §8

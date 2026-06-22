@@ -113,5 +113,24 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** `apiGet` returns a runtime-cast `T` (no Zod) — accepted as standard for typed fetch wrappers; spec does not require runtime schema validation. `client.ts` is the shared API client other specs will reuse (design.md §9).
 **Issues encountered:** none.
 
+### T-6 — Metrics band + Crop coverage sections (live counts) — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** FR-3 (live metrics band), FR-4 (crop coverage cards + per-crop counts), NFR-2 (responsive), NFR-5 (graceful fallback)
+- **Design refs:** design.md §5 (Metrics/CropMetric types), §8 (component architecture), §10 DD-3; system-design §7 (crop tokens), §8 (Stat/metric card), §9 (responsive)
+- **Implementer agent:** `frontend-developer` seeded with `.agents/implementer.md`
+- **Reviewer agent:** `code-reviewer` seeded with `.agents/reviewer.md`
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `frontend/lib/content/crops.ts` (typed 3-entry crop content array; `tokenClass`-driven accent, slug↔token mapping in comments), `frontend/components/ui/Skeleton.tsx` (token-driven loading placeholder, `aria-hidden`, `motion-reduce:animate-none`), `frontend/components/ui/StatCard.tsx` (background-agnostic stat/metric card; `loading`→Skeleton, finite number→`toLocaleString()`, null/undefined→`—` em-dash fallback), `frontend/components/home/MetricsBand.tsx` (`'use client'`: dark `bg-fg text-bg` band, consumes `useMetrics`, four StatCards bound to actorsMapped/cropsTracked/regionsCovered/actorTypes, `grid-cols-2 md:grid-cols-4` reflow, section landmark), `frontend/components/home/CropCard.tsx` (presentational per-crop card; name + description + count with placeholder fallback; crop-token accent via lookup map — no hex), `frontend/components/home/CropCoverage.tsx` (`'use client'`: consumes `useMetrics`, joins per-crop counts by `slug` via `data?.crops.find()`, three CropCards, `grid-cols-1 md:grid-cols-3`, "View all actors" → `/directory`), `frontend/components/home/MetricsBand.metrics-band.test.tsx` (3 cases), `frontend/components/home/CropCoverage.crop.test.tsx` (4 cases).
+- **Files changed:** `frontend/app/(public)/page.tsx` (composes `<MetricsBand/>` + `<CropCoverage/>` after `<Hero/>`; placeholder comment removed).
+- **Verification command:** `cd frontend && npm run test -- metrics-band crop && npm run build && npm run lint` (Leader independently re-ran all).
+- **Verification result:** Test Suites 2 passed / Tests 7 passed; build "✓ Compiled successfully", "✓ Exporting (2/2)", `/` emitted as `○ (Static)` (no SSR/route handlers); lint "✔ No ESLint warnings or errors"; NFR-4 hex grep over new files → only comment-resident hex (token-mapping annotations), zero hex in executable code.
+- **Reviewer verdict:** `STATUS: PASS` — MetricsBand/CropCoverage compose correctly; all four FR-3 aggregates bound to correct `Metrics` fields; FR-4 crop cards use exact token mapping (sorghum→crop-sorghum, common_bean→crop-bean, groundnut→crop-groundnut) with per-slug count join; "View all actors" → `/directory`; presentational components (StatCard, Skeleton, CropCard, crops.ts) carry no `'use client'` while hook-consuming components correctly do; no raw hex in executable code; NFR-2 responsive grids correct; static export confirmed; 7 tests pass; lint clean.
+
+**Decisions made:** StatCard authored background-agnostic so MetricsBand supplies the dark (`bg-fg text-bg`) context and StatCard remains reusable on light surfaces; CropCard derives accent utilities from a `tokenClass`→utility lookup map (no inline hex), keeping crop colors token-driven per the T-4 `currentColor`/token discipline. Test files named `*.metrics-band.test.tsx` / `*.crop.test.tsx` so the `npm run test -- metrics-band crop` filters reliably match both suites.
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6, T-7 pending. Next eligible: **T-6** (deps: T-4 ✅, T-5 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6 ✅ · T-7 pending. Next eligible: **T-7** (deps: T-6 ✅) — accessibility, responsive, and static-export verification pass.
