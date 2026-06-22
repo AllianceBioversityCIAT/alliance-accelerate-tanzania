@@ -74,5 +74,27 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** auth slot remains a deliberate stub (DD-4); footer uses existing `bg-fg/text-bg` inversion rather than introducing a new dark token.
 **Issues encountered:** none.
 
+### T-4 — Build the Hero section with CTAs — ✅ PASS (after 1 rework)
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer FAIL on attempt 1 → PASS on attempt 2)
+- **Requirements covered:** FR-2 (hero + CTAs), NFR-2 (responsive)
+- **Design refs:** design.md §8; system-design §4, §6, §7, §9
+- **Implementer attempts:** 2
+
+**Leader sequencing decision:** the spec references `npm run test` from T-5 onward but defines no dedicated test-harness task. To keep T-4 scoped to UI, T-4 is verified via `npm run build && npm run lint` + a CTA-href check; the Jest/RTL harness and the first automated component tests are established in **T-5** (first task that requires `npm run test`). Recorded here as a sequencing clarification (not a spec pivot).
+
+**Attempt 1 — Reviewer FAIL**
+- **Files created:** `frontend/components/ui/Button.tsx` (token-driven primary/secondary, Link-or-button), `frontend/components/home/Hero.tsx` (two-column hero, h1, eyebrow, copy, CTAs, VisualPanel + static "1,000+" LiveRegistryCard). **Changed:** `frontend/app/(public)/page.tsx` mounts `<Hero/>`.
+- **Verification:** `npm run build && npm run lint` clean; CTAs `/map` + `/directory` present in `out/index.html`.
+- **Reviewer verdict:** `STATUS: FAIL` — NFR-4 violation: the decorative diagonal-stripe overlay embedded a hardcoded `#E3E5DE` (URL-encoded `%23E3E5DE`) as an SVG `fill` inside an inline data-URI, bypassing the `--color-border` token and breaking future dark-mode theming (system-design §7, §11). Remediation: use `fill='currentColor'` + a `text-border` utility.
+
+**Attempt 2 — Reviewer PASS**
+- **Files changed:** `frontend/components/home/Hero.tsx` only — stripe `<div>` now `className="... text-border"` and the data-URI SVG uses `fill='currentColor'`; misleading comment corrected. Surgical fix, no other changes.
+- **Verification:** `npm run build && npm run lint` clean; `grep %23` → none in components; `text-border` + `currentColor` confirmed present.
+- **Reviewer verdict:** `STATUS: PASS` — NFR-4 issue resolved (stripe color fully token-driven); FR-2 + NFR-2 intact; static-export safe; no T-5/T-6 scope creep.
+
+**Decisions made:** "1,000+" stays a static placeholder (live `actorsMapped` binding deferred to T-5/T-6). Decorative SVG patterns must still derive color from tokens via `currentColor` — reinforced as a project pattern.
+**Issues encountered:** one NFR-4 token-bypass, fixed in one rework cycle.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4..T-7 pending. Next eligible: **T-4** (deps: T-3 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5..T-7 pending. Next eligible: **T-5** (deps: T-3 ✅).

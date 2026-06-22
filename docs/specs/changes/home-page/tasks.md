@@ -45,7 +45,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: shell renders, nav links point to `/`, `/map`, `/directory`, auth slot defaults to sign-in.
       Skills: ui-ux-pro-max, shadcn-ui
 
-- [ ] T-4 Build the Hero section with CTAs  (deps: T-3)
+- [x] T-4 Build the Hero section with CTAs  (deps: T-3)
       Size: M
       Requirements: FR-2, NFR-2
       Design: design.md §8; System Design §4, §9
