@@ -33,5 +33,21 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** kept `--color-bean` legacy alias (out-of-scope crop accent); success retained as green per DD-3.
 **Issues encountered:** none.
 
+### T-2 — Apply tokens in globals.css + wire new tokens in Tailwind — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** FR-2 (tokens applied), NFR-3 (dark-mode path preserved), NFR-4 (tokens only)
+- **Design refs:** design.md §5, §8, §10 (DD-2..DD-4), §11
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files changed:** `frontend/app/globals.css`, `frontend/tailwind.config.ts`.
+- **Change:** all 16 `:root` `--color-*` vars set to their §7 PABRA values; added `--color-primary-hover #680000`, `--color-highlight #29C4A9`, `--color-highlight-soft #82C0C7`, `--color-surface-alt #F7F7F7`. Tailwind: added `primary.hover`, `highlight`, `highlight-soft`, `surface-alt` mapped via `var(--…)` (no raw hex). Crop legend, `--color-bean`, typography, geometry, `body{}`, and the `.dark { }` override comment left untouched.
+- **Verification (Leader-rerun):** `npm run build` ✓ Compiled + ✓ Exporting (2/2), `/` = ○ Static; `npm run test` 5 suites / 21 tests passed (no regression); tailwind.config.ts raw-hex grep → none; globals.css values match §7.
+- **Reviewer verdict:** `STATUS: PASS` — all 16 tokens match §7 exactly; 4 new vars present; preserved blocks (crop, `--color-bean`, typography, geometry, `body`, `.dark` comment) intact; Tailwind adds the 4 `var()` mappings with zero raw hex; only the two specified files changed.
+
+**Decisions made:** color values live only in globals.css CSS vars; Tailwind references via `var(--…)` (matches the existing token pattern).
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2, T-3, T-4 pending. Next eligible: **T-2** (deps: T-1 ✅).
+- T-1 ✅ · T-2 ✅ · T-3, T-4 pending. Next eligible: **T-3** (deps: T-2 ✅).

@@ -24,7 +24,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: §7 is the canonical PABRA table with documented accent rules.
       Skills: tailwind-design-system, ui-ux-pro-max
 
-- [ ] T-2 Apply tokens in globals.css + wire new tokens in Tailwind  (deps: T-1)
+- [x] T-2 Apply tokens in globals.css + wire new tokens in Tailwind  (deps: T-1)
       Size: S
       Requirements: FR-2, NFR-3, NFR-4
       Design: design.md §5, §8, §10 (DD-2..DD-4); §11
