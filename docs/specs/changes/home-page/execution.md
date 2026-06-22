@@ -96,5 +96,22 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** "1,000+" stays a static placeholder (live `actorsMapped` binding deferred to T-5/T-6). Decorative SVG patterns must still derive color from tokens via `currentColor` — reinforced as a project pattern.
 **Issues encountered:** one NFR-4 token-bypass, fixed in one rework cycle.
 
+### T-5 — Metrics API client + `useMetrics` hook + test harness — ✅ PASS
+- **Date:** 2026-06-22
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** FR-3 (live metrics), NFR-5 (graceful, non-blocking, no crash)
+- **Design refs:** design.md §5 (types), §6 (API), §8 (hook), §10 DD-3; detailed-design §9 (error envelope)
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `frontend/lib/api/client.ts` (typed `apiGet<T>` + `ApiErrorEnvelope`), `frontend/lib/api/metrics.ts` (`Metrics`/`CropMetric` exact §5 types + `getMetrics(): Promise<Metrics|null>`, DD-3 never-throws), `frontend/lib/api/useMetrics.ts` (`'use client'` hook `{ data, loading }`, unmount guard), `frontend/lib/api/metrics.test.ts` (8 tests), `frontend/lib/api/useMetrics.test.ts` (4 tests), `frontend/jest.config.ts` (next/jest, jsdom), `frontend/jest.setup.ts`.
+- **Files changed:** `frontend/package.json` (+`test` script; devDeps: jest ^30, jest-environment-jsdom ^30, @testing-library/{react,jest-dom,dom}, @types/jest, ts-node). **Test harness established here** per the T-4 sequencing decision.
+- **Verification command:** `cd frontend && npm run test && npm run build` (Leader independently re-ran tests)
+- **Verification result:** Test Suites 2 passed / Tests 12 passed; static export build OK, `out/index.html` emitted.
+- **Reviewer verdict:** `STATUS: PASS` — types match §5 exactly; `getMetrics` provably non-throwing across all 6 failure modes (network reject, 500 envelope, 503 non-JSON, missing/empty base URL, synchronous throw), each meaningfully tested; client base-URL/Accept/non-JSON-tolerance correct; hook unmount-guard verified by a non-trivial test; next/jest harness correct; no T-6 scope creep; static-export safe.
+
+**Decisions made:** `apiGet` returns a runtime-cast `T` (no Zod) — accepted as standard for typed fetch wrappers; spec does not require runtime schema validation. `client.ts` is the shared API client other specs will reuse (design.md §9).
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5..T-7 pending. Next eligible: **T-5** (deps: T-3 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6, T-7 pending. Next eligible: **T-6** (deps: T-4 ✅, T-5 ✅).

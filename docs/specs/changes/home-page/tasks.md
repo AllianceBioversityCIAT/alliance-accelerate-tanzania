@@ -54,7 +54,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Order 
       Done when: hero matches mockup structure, CTAs navigate correctly, responsive.
       Skills: ui-ux-pro-max, frontend-design
 
-- [ ] T-5 Add metrics API client + `useMetrics` hook with graceful fallback  (deps: T-3)
+- [x] T-5 Add metrics API client + `useMetrics` hook with graceful fallback  (deps: T-3)
       Size: S
       Requirements: FR-3, NFR-5
       Design: design.md §5, §6, §10 (DD-3)
