@@ -30,7 +30,7 @@ lib/api/metrics.ts  → getMetrics()  ─HTTP─▶  GET {API_BASE}/api/v1/metri
         │ on error → null (components render fallback)
 ```
 
-- Static export: `next.config.js` sets `output: 'export'`. No SSR/route handlers (NFR-1).
+- Static export: `next.config.mjs` sets `output: 'export'`. No SSR/route handlers (NFR-1).
 - Metrics fetched in a client component via React Query (or a small `useMetrics` hook with `useState/useEffect` if React Query is deferred); page shell renders immediately, figures swap from skeleton → value/fallback (FR-3, NFR-5).
 - API base URL from `NEXT_PUBLIC_API_BASE_URL` (build-time public env).
 
@@ -38,7 +38,7 @@ lib/api/metrics.ts  → getMetrics()  ─HTTP─▶  GET {API_BASE}/api/v1/metri
 
 ```
 frontend/
-├── next.config.js                 # output: 'export'; images.unoptimized: true
+├── next.config.mjs                # output: 'export'; images.unoptimized: true
 ├── tailwind.config.ts             # design tokens (System Design §7)
 ├── postcss.config.js
 ├── tsconfig.json

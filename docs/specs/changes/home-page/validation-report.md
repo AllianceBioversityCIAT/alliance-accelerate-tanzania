@@ -16,7 +16,7 @@
 
 **Overall result: PASS — archive-ready.**
 
-All seven tasks (T-1..T-7) are complete with reviewer PASS verdicts and recorded verification evidence. The static-export Next.js home page at `/` renders the full public composition (shell → Hero → live MetricsBand → CropCoverage → footer), is fully design-token-driven, degrades gracefully when metrics are unavailable, and proves WCAG-AA basics via an automated jest-axe suite. Build, typecheck, lint, and the full 21-test suite all pass. No FAIL findings. One cosmetic documentation nuance noted as WARN (design file tree names `next.config.js`; the implementation uses the functionally-equivalent `next.config.mjs`).
+All seven tasks (T-1..T-7) are complete with reviewer PASS verdicts and recorded verification evidence. The static-export Next.js home page at `/` renders the full public composition (shell → Hero → live MetricsBand → CropCoverage → footer), is fully design-token-driven, degrades gracefully when metrics are unavailable, and proves WCAG-AA basics via an automated jest-axe suite. Build, typecheck, lint, and the full 21-test suite all pass. No FAIL findings. The one cosmetic documentation nuance originally noted (design tree named `next.config.js`) has been **RESOLVED** — design.md now references `next.config.mjs`.
 
 | Phase | Result |
 |---|---|
@@ -25,7 +25,7 @@ All seven tasks (T-1..T-7) are complete with reviewer PASS verdicts and recorded
 | Build integrity (tsc / test / build / lint) | PASS |
 | Requirement coverage (FR-1..7, NFR-1..5) | PASS |
 | Code quality / design-system | PASS |
-| Design conformance | PASS (1 cosmetic WARN) |
+| Design conformance | PASS (cosmetic WARN resolved) |
 
 ## 3. Task Completion
 
@@ -45,7 +45,7 @@ All completed tasks carry execution notes and verification evidence in `executio
 
 All 24 files from design.md §4 directory tree are present (verified): config (`next.config.mjs`, `tailwind.config.ts`, `postcss.config.js`, `tsconfig.json`, `package.json`, `.env.example`), `app/` (root + `(public)` layout/page, `globals.css`), `components/shell/{Header,Footer}`, `components/home/{Hero,MetricsBand,CropCoverage,CropCard}`, `components/ui/{Button,StatCard,Skeleton}`, `lib/api/{client,metrics,useMetrics}`, `lib/auth/useSession`, `lib/content/crops`, and `public/`. **Result: PASS.**
 
-> Note: design tree labels the Next config `next.config.js`; implementation uses `next.config.mjs` (ESM, functionally equivalent, retains `output: 'export'`). See §8.
+> Note: design tree now correctly labels the Next config `next.config.mjs` (cosmetic drift resolved during validation). See §8.
 
 ## 5. Build Integrity
 
@@ -93,9 +93,9 @@ All 24 files from design.md §4 directory tree are present (verified): config (`
 - **System Design conformance:** §7 tokens are the single source of truth (no hardcoded values); §8 component inventory (Stat/metric card, Skeleton, Role badge, Button variants) used; §9 responsive breakpoints respected; §10 accessibility expectations met; §11 dark-mode-ready tokens preserved (no `.dark` authored, per v1 light-only).
 - **Proposal alignment:** matches approved Option A (static copy + live metrics); no out-of-scope work (no Map/Directory/Cognito/admin) leaked in.
 
-**WARN (cosmetic):** design.md §4 tree names the Next config `next.config.js`; implementation uses `next.config.mjs`. Functionally equivalent (ESM, `output: 'export'` + `images.unoptimized` present). *Remediation: optionally update the design tree label to `next.config.mjs`; no code change required.*
+**WARN (cosmetic) — RESOLVED:** design.md originally named the Next config `next.config.js` (§4 tree + §3 prose); implementation uses `next.config.mjs`. Both design.md references were updated to `next.config.mjs` during this validation. No code change required (config functionally equivalent: ESM, `output: 'export'` + `images.unoptimized` present).
 
-**Result: PASS (1 cosmetic WARN).**
+**Result: PASS.**
 
 ## 9. Test Evidence Summary
 
@@ -112,11 +112,11 @@ Manual/tooling: static-export grep (zero SSR), hex grep (tokens only), responsiv
 
 ## 10. Remediation
 
-| # | Severity | Finding | Action | Required for archive? |
+| # | Severity | Finding | Action | Status |
 |---|---|---|---|---|
-| 1 | WARN (cosmetic) | design.md §4 tree says `next.config.js`; actual `next.config.mjs` | Update design tree label (doc-only) | No — accept or fix opportunistically |
+| 1 | WARN (cosmetic) | design.md named `next.config.js`; actual `next.config.mjs` | Updated design.md §4 tree + §3 prose to `next.config.mjs` | ✅ RESOLVED |
 
-No FAIL findings. No blocking remediation.
+No FAIL findings. No outstanding remediation — all findings resolved.
 
 ## 11. Archive Readiness Recommendation
 
