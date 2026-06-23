@@ -26,7 +26,7 @@ A task is eligible when status is `[ ]`/`[~]` and all deps are `[x]`. Ties broke
       Done when: typed client returns data/`null` without throwing; hook exposes states; roles map is token-driven; build passes.
       Skills: error-handling-patterns, api-design-principles
 
-- [ ] T-2 `/map` route + client-only ActorMap shell + data states  (deps: T-1)
+- [x] T-2 `/map` route + client-only ActorMap shell + data states  (deps: T-1)
       Size: M
       Requirements: FR-1, FR-7, NFR-1, NFR-4, NFR-5
       Design: design.md §3, §4, §8 (page/ActorMap), §10 (DD-1/DD-6)
