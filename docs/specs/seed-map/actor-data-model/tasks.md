@@ -66,7 +66,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: endpoints return PII-safe, consent-filtered, paginated results matching the contract.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-6 Metrics API (home-page contract)  (deps: T-4, T-5)
+- [x] T-6 Metrics API (home-page contract)  (deps: T-4, T-5)
       Size: S
       Requirements: FR-7, NFR-6
       Design: design.md §4, §6, §7

@@ -120,7 +120,22 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** consent enforced at the QUERY (not serializer-only) — defense in depth; global ValidationPipe added to both entrypoints for NFR-4.
 **Issues encountered:** none. **Deferred:** live HTTP e2e (`test/actors.e2e-spec.ts`) against a real MySQL (NFR-7 step).
 
+### T-6 — Metrics API (home-page contract) — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-7, NFR-6
+- **Design refs:** design.md §4, §6, §7
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `backend/src/metrics/metrics.service.ts` (`getMetrics(): Promise<Metrics>`), `metrics.controller.ts` (`GET /api/v1/metrics`), `metrics.module.ts`, `metrics.service.spec.ts`, `metrics.controller.spec.ts`. **Changed:** `app.module.ts` (registers MetricsModule).
+- **Verification (Leader-rerun):** `npm run build` clean; `npm run test -- metrics` 2 suites / 7 tests; full suite 11 suites / **85 tests deterministic** (twice). Confirmed: every count/groupBy pins `consentStatus = GRANTED` (12 GRANTED + 5 non-granted → actorsMapped 12); all 3 crop slugs always present; backend `Metrics`/`CropMetric` fields match `frontend/lib/api/metrics.ts` field-for-field.
+- **Reviewer verdict:** `STATUS: PASS` — contract matches frontend field-for-field; consent pinned in WHERE (not post-filter); aggregates correct (cropsTracked ≤3, distinct region/type over GRANTED); tests cover consent exclusion, zero-count slugs, key-set equality, empty-set boundary; MetricsModule registered; no out-of-scope deps.
+
+**Decisions made:** `cropsTracked` = tracked slugs with ≥1 GRANTED actor (≤3 by construction).
+**Issues encountered:** none. **Deferred:** live HTTP run (needs MySQL). The already-shipped home page now has a real `/metrics` backend to consume.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6, T-8, T-9 pending. Next: **T-6** (deps T-4 ✅, T-5 ✅). Queue: **T-6 → T-8 → T-9**.
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6 ✅ · T-8, T-9 pending. Next: **T-8** (deps T-3 ✅), then **T-9** (deps T-5/T-6/T-7 ✅). Queue: **T-8 → T-9**.
 - **Tracked deferral:** reachable MySQL needed for live `migrate dev` (T-2), `db seed` (T-7), and integration e2e (T-5/T-6/T-9).
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.
