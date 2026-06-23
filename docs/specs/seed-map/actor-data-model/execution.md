@@ -150,7 +150,29 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** real import is design + unit-tested on synthetic rows only; DB persist execution-gated behind legal ratification (DD-4); real file never read/committed.
 **Issues encountered:** none. **Deferred:** real-data import execution (legal gate + MySQL).
 
-## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6 ✅ · T-8 ✅ · T-9 pending. Next: **T-9** (deps T-5/T-6/T-7 ✅) — final task.
+### T-9 — PII-boundary + consent integration tests; reconcile detailed-design §3/§8 — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** NFR-1 (PII server-enforced), NFR-7 (tested boundary); DD-6 (constitution reconcile)
+- **Design refs:** design.md §10 (DD-6), §12
+- **Implementer attempts:** 1 (Part B completed after a Leader nudge — initial read raced the doc edit)
+
+**Attempt 1**
+- **Files created:** `backend/src/test/pii-boundary.spec.ts` (in-memory e2e); `backend/package.json` (+supertest/@types/supertest). **Changed:** `docs/detailed-design/detailed-design.md` (§3 + §8 reconcile).
+- **Part A (integration):** real Nest AppModule via TestingModule with PrismaService overridden by a mock that faithfully evaluates the consent WHERE; supertest over HTTP (prefix `api/v1` + ValidationPipe). For all 3 public endpoints (`/actors`, `/actors/:id`, `/metrics`): three-layer PII scan (recursive key recursion + value collection + raw-JSON string) proves no `{phone,email,sex,position,marketLocation,technicalSupport}`/`traderId`/`gpsAltitude`/`gpsAccuracy`; UNKNOWN/DENIED excluded from list, 404 on detail, absent from metrics counts; GPS only `{lat,long}` for GRANTED; metrics shape matches frontend.
+- **Part B (reconcile DD-6):** detailed-design §3 adds `consentStatus` to the field table + `model Actor` block + `enum ConsentStatus` + `@@index`, matching `schema.prisma`; §8 updates the PII set to `{phone,email,sex,position,marketLocation,technicalSupport}`, names `pii-consent.policy.ts` `PII_ALLOWLIST` as runtime source of truth, documents consent-gated GPS.
+- **Verification (Leader-rerun):** `npm run build` clean; boundary suite 10 tests; full suite 13 suites / **102 tests deterministic** (twice); §3/§8 greps confirm the reconcile. Integration tests run **in-memory (no DB)**.
+- **Reviewer verdict:** `STATUS: PASS` — Prisma mock semantically faithful (exercises consent WHERE, not bypassed); key-scan genuinely recursive with 3 independent layers; UNKNOWN/DENIED invisible at list/detail/metrics; GPS proven `{lat,long}`-only; §3/§8 surgical + accurate, consistent chain of truth with schema.prisma + pii-consent.policy.ts.
+
+**Decisions made:** integration proof runs in-memory (mocked Prisma + supertest) so the PII boundary is verified now without a DB; the live HTTP e2e against real MySQL remains a tracked deferral.
+**Issues encountered:** none (a Leader nudge re-confirmed Part B after an early stale read).
+
+## 3. Summary (all tasks complete) — ✅ SPEC COMPLETE
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5 ✅ · T-6 ✅ · T-7 ✅ · T-8 ✅ · T-9 ✅. **All 9 tasks PASS.**
+- **Requirement coverage:** FR-1→T-1 · FR-2→T-2 · FR-3→T-3 · FR-4→T-4 · FR-5→T-4/T-5 · FR-6→T-5 · FR-7→T-6 · FR-8→T-7 · FR-9→T-8 · NFR-1→T-4/T-5/T-9 · NFR-2→T-1/T-8 · NFR-3→T-1 · NFR-4→T-3 · NFR-5→T-4 · NFR-6→T-5/T-6 · NFR-7→T-9. All ✅.
+- **Final state:** the project's first backend (NestJS+Prisma+Serverless, `IBD-DEV`) with the canonical Actor model, a single legal-ratifiable PII/consent policy → role-aware serializer, public Actors + Metrics APIs (consent-enforced at the query), a consented seed dataset, a design-only execution-gated import, and an in-memory PII-boundary integration suite. **102 tests green**, build + static checks clean. detailed-design §3/§8 reconciled.
+- **Loop economics:** 9 tasks, 10 Implementer attempts (1 rework on T-4's serializer spec). Tests grew 4 → 102.
+- **Tracked deferrals (need a reachable MySQL / legal sign-off):** live `prisma migrate dev` (T-2), `prisma db seed` (T-7), real-data import execution behind the legal gate (T-8), and the live HTTP e2e (T-5/T-6/T-9 run in-memory now). Provisional PII/consent/public-GPS defaults (OQ-1..OQ-6) await legal ratification — all isolated to `pii-consent.policy.ts` + `normalize.ts`.
+- **Next:** `/sdd-validate` then `/sdd-archive` on `seed-map/actor-data-model`; then `/sdd-specify seed-map/discovery-map` (the Leaflet UI).
 - **Tracked deferral:** reachable MySQL needed for live `migrate dev` (T-2), `db seed` (T-7), and integration e2e (T-5/T-6/T-9).
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.

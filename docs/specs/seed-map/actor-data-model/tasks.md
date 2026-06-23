@@ -93,7 +93,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: import logic is implemented + unit-tested on synthetic data, execution-gated, real file untouched.
       Skills: nestjs-expert, error-handling-patterns
 
-- [ ] T-9 PII-boundary + consent integration tests; reconcile detailed-design §3/§8  (deps: T-5, T-6, T-7)
+- [x] T-9 PII-boundary + consent integration tests; reconcile detailed-design §3/§8  (deps: T-5, T-6, T-7)
       Size: M
       Requirements: NFR-1, NFR-7
       Design: design.md §10 (DD-6), §12
