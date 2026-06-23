@@ -12,7 +12,7 @@
 //   empty   → "No actors match" message when the filter yields zero results
 //   data    → renders LeafletMap with the actors array
 //
-// T-3 will add: selectedActorId + onSelectActor forwarded to LeafletMap.
+// T-3: selectedActorId + onSelectActor now forwarded to LeafletMap.
 
 import dynamic from 'next/dynamic';
 import Skeleton from '@/components/ui/Skeleton';
@@ -67,8 +67,8 @@ export default function ActorMap({
   data,
   loading,
   error,
-  selectedActorId:  _selectedActorId,  // unused until T-3 adds fly-to
-  onSelectActor:    _onSelectActor,     // unused until T-3 wires pin click
+  selectedActorId,
+  onSelectActor,
 }: ActorMapProps) {
   // Derive the actors array — empty when data is null/undefined.
   const actors: PublicActor[] = data?.data ?? [];
@@ -134,7 +134,11 @@ export default function ActorMap({
   return (
     // Wrapper fills the map region; LeafletMap itself is h-full min-h-[480px].
     <div className="h-full min-h-[480px] w-full">
-      <LeafletMap actors={actors} />
+      <LeafletMap
+        actors={actors}
+        selectedActorId={selectedActorId}
+        onSelectActor={onSelectActor}
+      />
     </div>
   );
 }

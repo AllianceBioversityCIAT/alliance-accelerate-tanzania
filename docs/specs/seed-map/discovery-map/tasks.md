@@ -35,7 +35,7 @@ A task is eligible when status is `[ ]`/`[~]` and all deps are `[x]`. Ties broke
       Done when: `/map` renders a Tanzania OSM map client-side, static export passes, data states handled.
       Skills: ui-ux-pro-max, vercel-react-best-practices
 
-- [ ] T-3 Role-colored pins + ActorPopup + MapLegend  (deps: T-2)
+- [x] T-3 Role-colored pins + ActorPopup + MapLegend  (deps: T-2)
       Size: M
       Requirements: FR-2, FR-3, FR-6, NFR-4
       Design: design.md §5 (roles), §8, §10 (DD-4/DD-5)
