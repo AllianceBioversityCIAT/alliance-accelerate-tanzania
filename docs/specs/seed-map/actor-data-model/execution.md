@@ -68,6 +68,27 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Process note:** an early Leader read raced the implementer mid-write (transient "1 failed"); suite stabilized green before review.
 **Issues encountered:** none.
 
+### T-4 — PII/consent policy module + role-aware serializer — ✅ PASS (after 1 rework)
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 2; Leader-gate FAIL on attempt 1)
+- **Requirements covered:** FR-4 (consent), FR-5 (PII boundary), NFR-1 (server-enforced), NFR-5 (single legal-ratifiable policy)
+- **Design refs:** design.md §5 (public projection), §7, §10 (DD-1/DD-2/DD-3)
+- **Implementer attempts:** 2
+
+**Attempt 1 — Leader-gate FAIL**
+- **Files:** `src/common/pii-consent.policy.ts` (+spec), `src/common/role-aware.serializer.ts` (+spec).
+- **Verification (Leader-rerun):** full suite RED — `role-aware.serializer.spec.ts` failed to COMPILE (0 tests run): `SerializableActor` omitted `traderId` (TS2353) and the spec used an invalid `as Record<string,unknown>` cast (TS2352). Reported through a non-green suite → implicit FAIL.
+- **Leader findings (fed to rework):** (1) widen the serializer input type to accept a full actor — `traderId` + all 6 PII fields + gpsAltitude/Accuracy + consentStatus + crops — so the filter genuinely receives PII and provably strips it; (2) fix the cast to `as unknown as Record<...>`.
+
+**Attempt 2 — Reviewer PASS**
+- **Files changed:** `src/common/role-aware.serializer.ts` (widened `SerializableActor`; output unchanged — explicit pick) + `.spec.ts` (clean fixture, `asRecord()` helper). Policy module unchanged from attempt 1.
+- **Verification (Leader-rerun):** `npm run build` clean; serializer spec 11/11; **full suite 6 suites / 54 tests pass, deterministic** (twice); input type confirmed to include traderId + all PII fields.
+- **Reviewer verdict:** `STATUS: PASS` — `toPublic` builds output by EXPLICIT pick (no spread/delete leak path); `PII_ALLOWLIST` exact 6-field single source w/ provisional comment; `isPublic` GRANTED-only; `publicGps` consent-gated + Decimal/NaN-safe (altitude/accuracy excluded); tests prove absence via key-set equality + allowlist iteration; scope clean.
+- **Reviewer non-blocking note:** `toFiniteNumber`/`toNullableNumber` duplicated across the two files (cosmetic; does not affect the security boundary) — candidate for a later cleanup.
+
+**Decisions made:** input type accepts PII but the explicit-pick output never emits it (honest filter, DD-2). Single policy module is the only PII/consent authority (NFR-5).
+**Issues encountered:** one implicit FAIL (red/uncompiled spec) caught by the Leader verification gate; fixed in one rework.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4..T-9 pending. Next eligible: **T-4, T-7** (deps = T-2 ✅). Queue (user-directed): **T-4 → T-7 → T-5**.
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5, T-6, T-9 pending; T-7, T-8 pending. Next eligible: **T-5, T-6** blocked on deps; eligible now: **T-7, T-8**. Queue (user-directed): **T-7 → T-5 → T-6 → T-9**.
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.

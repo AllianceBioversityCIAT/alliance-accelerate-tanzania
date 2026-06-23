@@ -48,7 +48,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: normalization + DTO validation enforced and unit-tested.
       Skills: nestjs-expert, error-handling-patterns
 
-- [ ] T-4 PII/consent policy module + role-aware serializer  (deps: T-2)
+- [x] T-4 PII/consent policy module + role-aware serializer  (deps: T-2)
       Size: M
       Requirements: FR-4, FR-5, NFR-1, NFR-5
       Design: design.md §5 (public projection), §7, §10 (DD-1..DD-3)
