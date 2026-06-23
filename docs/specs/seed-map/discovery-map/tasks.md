@@ -17,7 +17,7 @@ A task is eligible when status is `[ ]`/`[~]` and all deps are `[x]`. Ties broke
 
 ---
 
-- [ ] T-1 Actors API client + `useActors` hook + Leaflet deps  (deps: none)
+- [x] T-1 Actors API client + `useActors` hook + Leaflet deps  (deps: none)
       Size: S
       Requirements: NFR-1, NFR-5
       Design: design.md §5, §6, §9, §10 (DD-2/DD-6)

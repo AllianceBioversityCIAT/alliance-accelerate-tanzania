@@ -1,0 +1,77 @@
+/**
+ * Actors API contract + getter — design.md §5, §6, DD-2, DD-6.
+ *
+ * Types mirror the exact PublicActor contract (no PII fields).
+ * getActors() NEVER throws — returns null on any failure (DD-6 / NFR-5: resilient null-on-failure).
+ * Components that consume getActors() render an empty/error state when data is null.
+ */
+
+import { apiGet } from './client';
+
+// ── Types (design.md §5, DD-2 — PII-safe public shape) ────────────────────
+
+export interface PublicActor {
+  id: string;
+  traderName: string;
+  region: string;
+  district?: string | null;
+  traderType:
+    | 'seed_company'
+    | 'cooperative'
+    | 'ngo'
+    | 'offtaker'
+    | 'research_institute'
+    | 'informal_trader';
+  capacityTons?: number | null;
+  crops: ('sorghum' | 'common_bean' | 'groundnut')[];
+  gps?: { lat: number; long: number } | null;
+}
+
+export interface ActorsQuery {
+  crop?: string;
+  role?: string;
+  region?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PublicActorList {
+  data: PublicActor[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+// ── Getter ──────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a paginated, filtered list of public-safe actors from the API.
+ *
+ * Builds a querystring from any defined fields in `query`; undefined/null
+ * fields are omitted so the endpoint receives only the filters provided.
+ *
+ * Returns a typed PublicActorList on success, or null on ANY failure
+ * (missing env var, network error, non-OK response, parse error).
+ * This is the DD-6 / NFR-5 contract: callers never need their own try/catch.
+ */
+export async function getActors(query?: ActorsQuery): Promise<PublicActorList | null> {
+  try {
+    // Build querystring from defined fields only (omit undefined/null)
+    const params = new URLSearchParams();
+    if (query) {
+      if (query.crop      != null) params.set('crop',     query.crop);
+      if (query.role      != null) params.set('role',     query.role);
+      if (query.region    != null) params.set('region',   query.region);
+      if (query.page      != null) params.set('page',     String(query.page));
+      if (query.pageSize  != null) params.set('pageSize', String(query.pageSize));
+    }
+    const qs = params.toString();
+    const path = qs ? `/api/v1/actors?${qs}` : '/api/v1/actors';
+
+    return await apiGet<PublicActorList>(path);
+  } catch {
+    // Intentionally swallow all errors (DD-6 / NFR-5).
+    // The component layer renders a graceful empty/error state when data is null.
+    return null;
+  }
+}
