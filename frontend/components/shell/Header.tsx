@@ -22,7 +22,7 @@ function RoleBadge({ role }: { role: Role }) {
   const colorMap: Record<Role, string> = {
     Public:  'bg-border text-fg',
     Staff:   'bg-primary text-primary-fg',
-    Admin:   'bg-accent text-primary-fg',
+    Admin:   'bg-primary text-primary-fg',
   };
   return (
     <span
