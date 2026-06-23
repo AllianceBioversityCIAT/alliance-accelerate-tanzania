@@ -1,0 +1,62 @@
+// Prisma schema — ACCELERATE Tanzania Seed Registry
+// T-1 scaffold: datasource + generator only.
+// T-2: Actor / Crop / CropsOnActors models + ConsentStatus enum (design.md §5).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConsentStatus {
+  GRANTED
+  DENIED
+  UNKNOWN
+}
+
+model Actor {
+  id               String          @id @default(cuid())
+  traderId         String          @unique
+  traderName       String
+  region           String
+  district         String?
+  traderType       String
+  sex              String?
+  position         String?
+  marketLocation   String?
+  capacityTons     Decimal?        @db.Decimal(10, 2)
+  technicalSupport String?         @db.Text
+  phone            String? // PII
+  email            String? // PII
+  gpsLatitude      Decimal?        @db.Decimal(10, 7)
+  gpsLongitude     Decimal?        @db.Decimal(10, 7)
+  gpsAltitude      Decimal?        @db.Decimal(10, 2)
+  gpsAccuracy      Decimal?        @db.Decimal(10, 2)
+  consentStatus    ConsentStatus   @default(UNKNOWN)
+  crops            CropsOnActors[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([region])
+  @@index([traderType])
+  @@index([consentStatus])
+  @@index([traderName])
+}
+
+model Crop {
+  id     String          @id @default(cuid())
+  name   String          @unique // "sorghum" | "common_bean" | "groundnut"
+  actors CropsOnActors[]
+}
+
+model CropsOnActors {
+  actor   Actor  @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actorId String
+  crop    Crop   @relation(fields: [cropId], references: [id], onDelete: Cascade)
+  cropId  String
+
+  @@id([actorId, cropId])
+}
