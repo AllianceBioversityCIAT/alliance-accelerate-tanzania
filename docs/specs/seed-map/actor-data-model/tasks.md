@@ -75,7 +75,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: metrics reflect only consented actors and match the existing frontend contract.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-7 Seed consented sample dataset  (deps: T-2)
+- [x] T-7 Seed consented sample dataset  (deps: T-2)
       Size: S
       Requirements: FR-8
       Design: design.md §4 (seed.ts), §10 (DD-4)

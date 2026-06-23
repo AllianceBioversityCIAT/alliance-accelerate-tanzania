@@ -89,6 +89,23 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** input type accepts PII but the explicit-pick output never emits it (honest filter, DD-2). Single policy module is the only PII/consent authority (NFR-5).
 **Issues encountered:** one implicit FAIL (red/uncompiled spec) caught by the Leader verification gate; fixed in one rework.
 
+### T-7 — Seed consented sample dataset — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-8
+- **Design refs:** design.md §4 (seed.ts), §10 (DD-4)
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `backend/prisma/seed-data.ts` (pure exported `SEED_ACTORS`/`PUBLIC_SEED_ACTORS`/`SEED_CROP_SLUGS`/`TANZANIA_BOUNDS`; reuses T-3 canonical types), `backend/prisma/seed.ts` (runner — upserts 3 crops + each actor on `traderId`, resets CropsOnActors links), `backend/src/prisma/seed-data.spec.ts` (DB-independent shape test, under `src/` so Jest rootDir collects it). **Changed:** `backend/package.json` (`prisma.seed` script).
+- **Dataset:** 14 actors = **12 GRANTED + 1 UNKNOWN + 1 DENIED**; all `phone`/`email` null, fictional org names (no real PII); covers all 3 crops, all 6 canonical traderTypes, 10 canonical regions; valid GPS within `TANZANIA_BOUNDS`; every value round-trips through the T-3 normalizers. Dataset is the single source of truth for runner + test.
+- **Verification (Leader-rerun):** `npm run build` clean; `npm run test -- seed` 9 pass; full suite 7 suites / **63 tests deterministic** (twice); grep confirmed null phone/email, 0 real emails, consent 12/1/1, types ×6, regions ×10.
+- **Reviewer verdict:** `STATUS: PASS` — no real PII; full crop/type/region coverage across 12 GRANTED actors in valid TZ bounds; pure exported const consumed by runner + test (DD-4); `prisma.seed` wired; no out-of-scope additions.
+
+**Decisions made:** included 2 non-granted rows so consent-filtering is demonstrable in T-5/T-6.
+**Issues encountered:** none. **Deferred:** live `prisma db seed` execution (needs MySQL).
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-5, T-6, T-9 pending; T-7, T-8 pending. Next eligible: **T-5, T-6** blocked on deps; eligible now: **T-7, T-8**. Queue (user-directed): **T-7 → T-5 → T-6 → T-9**.
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5, T-6, T-8, T-9 pending. Queue (user-directed): **T-5 → T-6 → T-9** (T-8 import design also pending; will slot in). Next: **T-5** (deps T-3 ✅, T-4 ✅).
+- **Tracked deferral:** reachable MySQL needed for live `migrate dev` (T-2), `db seed` (T-7), and integration e2e (T-5/T-6/T-9).
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.
