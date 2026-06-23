@@ -105,7 +105,22 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** included 2 non-granted rows so consent-filtering is demonstrable in T-5/T-6.
 **Issues encountered:** none. **Deferred:** live `prisma db seed` execution (needs MySQL).
 
+### T-5 — Public Actors API (list + detail, filters, pagination) — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-6, NFR-1 (PII server-enforced), NFR-6 (contract)
+- **Design refs:** design.md §4, §6, §7
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `backend/src/actors/actors.service.ts` (`findPublic`/`findOnePublic`, `PublicActorList` envelope), `actors.controller.ts` (`GET /api/v1/actors`, `/:id`→404), `actors.module.ts`, `actors.service.spec.ts`, `actors.controller.spec.ts`. **Changed:** `app.module.ts` (registers ActorsModule); `main.ts` + `lambda.ts` (global `ValidationPipe({transform,whitelist})` → enables T-3 DTO coercion/validation, malformed query = 400; the T-3 DTOs explicitly deferred this wiring to T-5).
+- **Verification (Leader-rerun):** `npm run build` clean; `npm run test -- actors` 3 suites / 29 tests; full suite 9 suites / **78 tests deterministic** (twice). Confirmed: consent pinned in the Prisma WHERE (`consentStatus: GRANTED`) for list + count, `isPublic` guard on detail; every row via `toPublic`; PII-stripped at the API layer (fixture with PII populated → none leak; gps only if GRANTED); `:id` non-public/absent → 404; response `{data,page,pageSize,total}`; filters region/role→traderType/crop→CropsOnActors; pageSize capped 100.
+- **Reviewer verdict:** `STATUS: PASS` — all six points confirmed (consent at query + detail guard; explicit-pick serializer on every path, no raw entity leak; filters/pagination/envelope match contract; 404 correct; mocked-Prisma suite covers PII/consent/filter/pagination/404). ValidationPipe wiring in main+lambda audited as in-scope NFR-4 enablement.
+
+**Decisions made:** consent enforced at the QUERY (not serializer-only) — defense in depth; global ValidationPipe added to both entrypoints for NFR-4.
+**Issues encountered:** none. **Deferred:** live HTTP e2e (`test/actors.e2e-spec.ts`) against a real MySQL (NFR-7 step).
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5, T-6, T-8, T-9 pending. Queue (user-directed): **T-5 → T-6 → T-9** (T-8 import design also pending; will slot in). Next: **T-5** (deps T-3 ✅, T-4 ✅).
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6, T-8, T-9 pending. Next: **T-6** (deps T-4 ✅, T-5 ✅). Queue: **T-6 → T-8 → T-9**.
 - **Tracked deferral:** reachable MySQL needed for live `migrate dev` (T-2), `db seed` (T-7), and integration e2e (T-5/T-6/T-9).
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.

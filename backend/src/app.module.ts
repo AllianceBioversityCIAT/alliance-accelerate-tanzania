@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthController } from './health/health.controller';
+import { ActorsModule } from './actors/actors.module';
 
 /**
- * Root module. T-1 scaffold: Prisma wiring + health only.
- * Actors/Metrics/Common(serializer)/Import modules arrive in T-2..T-8.
+ * Root module. T-1 scaffold + T-5 public Actors API.
+ * Metrics/Import modules arrive in T-6/T-8.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ActorsModule],
   controllers: [HealthController],
 })
 export class AppModule {}

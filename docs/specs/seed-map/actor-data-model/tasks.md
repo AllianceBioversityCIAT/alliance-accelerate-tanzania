@@ -57,7 +57,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: serializer provably strips PII + gates GPS by consent, driven solely by the policy module.
       Skills: nestjs-expert, error-handling-patterns
 
-- [ ] T-5 Public Actors API (list + detail, filters, pagination)  (deps: T-3, T-4)
+- [x] T-5 Public Actors API (list + detail, filters, pagination)  (deps: T-3, T-4)
       Size: M
       Requirements: FR-6, NFR-1, NFR-6
       Design: design.md §4, §6, §7
