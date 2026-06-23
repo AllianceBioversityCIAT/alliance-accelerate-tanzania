@@ -1,0 +1,23 @@
+# dependencies
+/node_modules
+
+# build output
+/dist
+
+# serverless
+/.serverless
+
+# generated prisma client
+/node_modules/.prisma
+/prisma/generated
+
+# env (never commit real secrets)
+.env
+.env.*
+!.env.example
+
+# test / coverage
+/coverage
+
+# logs
+*.log

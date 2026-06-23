@@ -1,0 +1,11 @@
+// Prisma schema — ACCELERATE Tanzania Seed Registry
+// T-1 scaffold: datasource + generator only. Models are added in T-2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}

@@ -20,7 +20,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
 
 ---
 
-- [ ] T-1 Bootstrap NestJS + Prisma + Serverless backend  (deps: none)
+- [x] T-1 Bootstrap NestJS + Prisma + Serverless backend  (deps: none)
       Size: M
       Requirements: FR-1, NFR-2, NFR-3
       Design: design.md §3, §4, §7
