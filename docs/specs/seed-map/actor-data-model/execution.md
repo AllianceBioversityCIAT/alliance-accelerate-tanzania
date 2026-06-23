@@ -35,4 +35,22 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 
 ## 3. Summary (updated as tasks complete)
 
-- T-1 ✅ · T-2..T-9 pending. Next eligible: **T-2** (deps: T-1 ✅).
+### T-2 — Actor/Crop schema + migration + ConsentStatus — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1, zero issues)
+- **Requirements covered:** FR-2
+- **Design refs:** design.md §5
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files changed:** `backend/prisma/schema.prisma` (+Actor/Crop/CropsOnActors/ConsentStatus). **Created:** `backend/prisma/migrations/0001_init_actor_model/migration.sql`, `backend/prisma/migrations/migration_lock.toml`, `backend/src/prisma/actor-model.spec.ts` (DB-independent shape test).
+- **Verification (Leader-rerun):** `prisma validate` valid; `prisma generate` OK (Actor/Crop types); `npm run build` clean; `npm run test` 2 suites / 4 tests pass; `migration.sql` has 3 `CREATE TABLE` (Actor/Crop/CropsOnActors) with correct decimal precisions, `consentStatus ENUM(...) DEFAULT 'UNKNOWN'`, unique on `traderId`/`Crop.name`, 4 Actor indexes, FK cascade on CropsOnActors.
+- **Reviewer verdict:** `STATUS: PASS` — models + enum match design §5 exactly (names/types/nullability/precision/indexes/uniques/cascades) in both schema and generated SQL; scope cleanly bounded (no T-3/T-4/T-5+ artifacts).
+- **DB-independent verification (env has no MySQL):** migration generated via `prisma migrate diff --from-empty --script`; live `prisma migrate dev` + DB round-trip is a **tracked DEFERRED step** (user-run against a reachable MySQL).
+
+**Decisions made:** generated the migration without a live DB; round-trip proven at type/shape level until a MySQL is available.
+**Issues encountered:** none. **Deferred:** live `migrate dev` apply (needs MySQL — also unblocks T-5/T-6/T-9 integration tests).
+
+## 3. Summary (updated as tasks complete)
+- T-1 ✅ · T-2 ✅ · T-3..T-9 pending. Next eligible: **T-3, T-4, T-7** (all deps = T-2 ✅). Running in document order: **T-3** next.
+- **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.

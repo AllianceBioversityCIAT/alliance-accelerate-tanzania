@@ -16,6 +16,7 @@ T-1 ─▶ T-2 ─┬─▶ T-3 ─┐
                      ├─▶ T-6 ─┘
             T-3 ─▶ T-8
 ```
+
 A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties broken by document order.
 
 ---
@@ -29,7 +30,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: backend builds, health route responds, serverless packages with the IBD-DEV profile.
       Skills: nestjs-expert, aws-serverless
 
-- [ ] T-2 Actor/Crop schema + migration + ConsentStatus  (deps: T-1)
+- [x] T-2 Actor/Crop schema + migration + ConsentStatus  (deps: T-1)
       Size: M
       Requirements: FR-2
       Design: design.md §5
@@ -102,11 +103,13 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Skills: nestjs-expert, error-handling-patterns
 
 ## Testing & Verification Expectations
+
 - Each task runs its build/test before completion. Backend tests: `cd backend && npm run test`.
 - The PII/consent boundary (FR-4/FR-5/NFR-1) is the security-critical path — proven by unit (T-4) and integration (T-9) tests.
 - Any AWS/Serverless action uses `--profile IBD-DEV` (NFR-2). No real Partner Profile PII is committed or executed (DD-4, T-8).
 
 ## Coverage Check
+
 FR-1→T-1 · FR-2→T-2 · FR-3→T-3 · FR-4→T-4 · FR-5→T-4/T-5 · FR-6→T-5 · FR-7→T-6 · FR-8→T-7 · FR-9→T-8 · NFR-1→T-4/T-5/T-9 · NFR-2→T-1/T-8 · NFR-3→T-1 · NFR-4→T-3 · NFR-5→T-4 · NFR-6→T-5/T-6 · NFR-7→T-9.
 
 Recommended first task: **T-1**.
