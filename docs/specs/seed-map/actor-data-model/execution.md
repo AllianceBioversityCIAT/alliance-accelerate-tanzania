@@ -51,6 +51,23 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** generated the migration without a live DB; round-trip proven at type/shape level until a MySQL is available.
 **Issues encountered:** none. **Deferred:** live `migrate dev` apply (needs MySQL — also unblocks T-5/T-6/T-9 integration tests).
 
+### T-3 — Normalization + validated write DTOs — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-3 (normalize + validate on write), NFR-4 (class-validator DTOs)
+- **Design refs:** design.md §4, §7, §12
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `backend/src/common/normalize.ts` (+`normalize.spec.ts`), `backend/src/actors/dto/actor-create.dto.ts`, `backend/src/actors/dto/list-query.dto.ts` (+`actor-dto.spec.ts`).
+- **Logic:** pure normalizers — `normalizeRegion` (CANONICAL_REGIONS; **quarantines** ambiguous/unknown like `Arusha/Dodoma` rather than guessing), `normalizeTraderType` (OQ-2 taxonomy; `Informal trader/retailer`→`informal_trader`, `Large offtaker`→`offtaker`), `normalizeSex`, `parseCapacityTons` (negatives→null), GPS range guards. DTOs enforce required/membership/range/email/enum via class-validator.
+- **Verification (Leader-rerun):** `npm run build` clean; `npm run test` 4 suites / **37 tests pass, deterministic** (twice); targeted `normalize dto` → 33 tests. No T-4/T-5/T-7 artifacts.
+- **Reviewer verdict:** `STATUS: PASS` — normalizers pure + correct against the canonical lists; DTOs enforce every FR-3/NFR-4 constraint; 33 targeted tests deterministic; scope clean.
+
+**Decisions made:** ambiguous regions quarantined (never guessed); negative capacity → null (documented).
+**Process note:** an early Leader read raced the implementer mid-write (transient "1 failed"); suite stabilized green before review.
+**Issues encountered:** none.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3..T-9 pending. Next eligible: **T-3, T-4, T-7** (all deps = T-2 ✅). Running in document order: **T-3** next.
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4..T-9 pending. Next eligible: **T-4, T-7** (deps = T-2 ✅). Queue (user-directed): **T-4 → T-7 → T-5**.
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.

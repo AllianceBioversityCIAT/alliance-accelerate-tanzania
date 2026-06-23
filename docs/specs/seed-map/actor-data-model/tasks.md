@@ -39,7 +39,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: migration applies; schema round-trips a record.
       Skills: nestjs-expert
 
-- [ ] T-3 Normalization + validated write DTOs  (deps: T-2)
+- [x] T-3 Normalization + validated write DTOs  (deps: T-2)
       Size: M
       Requirements: FR-3, NFR-4
       Design: design.md §4, §7 (`normalize.ts`), §12
