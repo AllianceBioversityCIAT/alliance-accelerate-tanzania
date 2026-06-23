@@ -84,7 +84,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: a fresh DB seeds a usable, consented map/metrics dataset with no real PII.
       Skills: nestjs-expert
 
-- [ ] T-8 Import service (design-only, execution deferred)  (deps: T-3)
+- [x] T-8 Import service (design-only, execution deferred)  (deps: T-3)
       Size: S
       Requirements: FR-9, NFR-2
       Design: design.md §7 (ImportModule), §11

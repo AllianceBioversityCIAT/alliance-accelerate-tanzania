@@ -135,7 +135,22 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 **Decisions made:** `cropsTracked` = tracked slugs with ≥1 GRANTED actor (≤3 by construction).
 **Issues encountered:** none. **Deferred:** live HTTP run (needs MySQL). The already-shipped home page now has a real `/metrics` backend to consume.
 
+### T-8 — Import service (design-only, execution deferred) — ✅ PASS
+- **Date:** 2026-06-23
+- **Final status:** PASS (Reviewer PASS on attempt 1)
+- **Requirements covered:** FR-9 (real import — design only), NFR-2 (n/a in this layer)
+- **Design refs:** design.md §7 (ImportModule), §11; DD-4
+- **Implementer attempts:** 1
+
+**Attempt 1**
+- **Files created:** `backend/src/import/import.service.ts` (`mapRow`/`importRows` pure transforms + execution-gated `runImport`), `import.module.ts`, `import.service.spec.ts`.
+- **Verification (Leader-rerun):** `npm run build` clean; `npm run test -- import` 1 suite / 7 tests; full suite 12 suites / **92 tests deterministic** (twice); real-file grep (`Partner Profile`/`Downloads`/`14.4.2026`) → empty; `consentStatus:'UNKNOWN'` default; `IMPORT_LEGAL_GATE_RATIFIED` runtime guard throws; ImportModule NOT in app.module; no import controller/route.
+- **Reviewer verdict:** `STATUS: PASS` — no real-file/PII references; UNKNOWN default on every mapped row; mapRow/importRows DB-free (proven via throwing Prisma proxy); runImport guarded by the legal-gate env check, on no route, ImportModule absent from app.module, zero call sites.
+
+**Decisions made:** real import is design + unit-tested on synthetic rows only; DB persist execution-gated behind legal ratification (DD-4); real file never read/committed.
+**Issues encountered:** none. **Deferred:** real-data import execution (legal gate + MySQL).
+
 ## 3. Summary (updated as tasks complete)
-- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6 ✅ · T-8, T-9 pending. Next: **T-8** (deps T-3 ✅), then **T-9** (deps T-5/T-6/T-7 ✅). Queue: **T-8 → T-9**.
+- T-1 ✅ · T-2 ✅ · T-3 ✅ · T-4 ✅ (1 rework) · T-7 ✅ · T-5 ✅ · T-6 ✅ · T-8 ✅ · T-9 pending. Next: **T-9** (deps T-5/T-6/T-7 ✅) — final task.
 - **Tracked deferral:** reachable MySQL needed for live `migrate dev` (T-2), `db seed` (T-7), and integration e2e (T-5/T-6/T-9).
 - **Tracked deferral:** a reachable MySQL (`DATABASE_URL`) is needed to run `prisma migrate dev` (T-2) and the live integration tests in T-5/T-6/T-9. Schema/migration/units are DB-independent and done.
