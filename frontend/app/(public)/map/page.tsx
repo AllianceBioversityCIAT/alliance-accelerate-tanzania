@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { useActors } from '@/lib/api/useActors';
 import type { ActorsQuery } from '@/lib/api/actors';
 import ActorMap from '@/components/map/ActorMap';
+import DiscoverRail from '@/components/map/DiscoverRail';
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -32,10 +33,6 @@ export default function MapPage() {
 
   // selectedActorId: synced between the rail list (T-4) and the map (T-3).
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
-
-  // Suppress "unused" warnings until T-3/T-4 consume them; the declarations
-  // are intentional — the state contract is established here.
-  void setFilters; // T-4: <FilterControls onChange={setFilters} />
 
   // ── Data ───────────────────────────────────────────────────────────────────
   const { data, loading, error } = useActors(filters);
@@ -48,33 +45,23 @@ export default function MapPage() {
     <div className="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
 
       {/*
-        ── Rail placeholder ──────────────────────────────────────────────────
-        T-4 replaces this <aside> with <DiscoverRail filters={filters}
-          actors={data?.data ?? []} total={data?.total} loading={loading}
-          selectedActorId={selectedActorId} onSelectActor={setSelectedActorId}
-          onFilterChange={setFilters} />.
-
-        Width: fixed rail on ≥md (w-72 = 288px, enough for filter controls +
-        actor list). Collapses to a top strip on mobile until T-4 adds the
-        bottom-sheet toggle (NFR-2).
-        Tokens only: bg-surface-alt, border-border, text-muted (NFR-4).
+        ── Discover actors rail (T-4) ────────────────────────────────────────
+        DiscoverRail owns: count header, FilterControls, ActorList (or
+        loading/error/empty states). Filter changes update `filters` here →
+        useActors refetches (DD-3 server-side). List item selection sets
+        selectedActorId → ActorMap flies to + opens popup (FR-5).
+        Collapses to a toggle/panel on < md (NFR-2).
       */}
-      <aside
-        className="
-          flex w-full flex-col border-b border-border bg-surface-alt p-4
-          md:w-72 md:min-h-full md:flex-shrink-0 md:border-b-0 md:border-r
-        "
-        aria-label="Discover actors"
-      >
-        {/* Placeholder heading — T-4 replaces with the live count + filters */}
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
-          Discover actors
-        </h2>
-        <p className="text-sm text-muted">
-          {/* Actor count placeholder — T-4 renders the live count here */}
-          Filter controls and actor list coming in T-4.
-        </p>
-      </aside>
+      <DiscoverRail
+        actors={data?.data ?? []}
+        total={data?.total}
+        loading={loading}
+        error={error}
+        filters={filters}
+        selectedActorId={selectedActorId}
+        onFilterChange={setFilters}
+        onSelectActor={setSelectedActorId}
+      />
 
       {/*
         ── Map region ─────────────────────────────────────────────────────────

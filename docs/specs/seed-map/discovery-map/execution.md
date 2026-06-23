@@ -42,6 +42,15 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `npx jest ActorPopup MapLegend ActorMap` → 19/19 pass; `npm run build` → `Exporting (2/2)`, `/map` (2.67 kB, `○ Static`); Leaflet isolated to `LeafletMap.tsx`; color grep CLEAN; no PII in render code.
 - **Reviewer verdict (`rev-dm-t3`):** **STATUS: PASS** — all 9 gates clean (PII, FR-2/3/6, NFR-1/3/4, stability, scope). Confirmed every `ROLE_CSS_VAR` entry resolves to a defined §7 CSS var (crop tokens correctly use `--crop-*`, others `--color-*`).
 
+### T-4 — DiscoverRail: filters + synced list + count — **PASS** (2026-06-23)
+- **Implementer attempts:** 1 (`impl-dm-t4`, frontend-developer) — one Leader-gate fix within attempt 1 (no Reviewer FAIL; no rework attempt consumed).
+- **Files:** NEW `frontend/lib/content/regions.ts`, `components/map/FilterControls.tsx`, `ActorListItem.tsx`, `ActorList.tsx`, `DiscoverRail.tsx` + 3 test suites (`FilterControls.test.tsx` 8, `ActorList.test.tsx` 9, `DiscoverRail.test.tsx` 13); MODIFIED `app/(public)/map/page.tsx` (placeholder → `<DiscoverRail>`, wired `setFilters`/`setSelectedActorId`, removed `void setFilters`).
+- **Requirements covered:** FR-1, FR-4, FR-5, FR-7, NFR-2, NFR-3, NFR-4, NFR-5.
+- **Decisions:** (a) **DD-3 filter-value contract** pinned to the backend: crop option value = crop **slug** (DB stores `crop.name` = slug), role = `traderType` slug, region = exact string from a static provisional `REGIONS` (10 seed regions; OQ-6 canonicalization deferred to real import). (b) "All …" clears the field to `undefined` (never empty string) + resets `page:1`. (c) Count = `total ?? actors.length`. (d) Mobile: `useState` disclosure toggle (`md:hidden` button + `hidden md:block` body, `aria-expanded`/`aria-controls`). (e) gps-null actors stay in the list (FR-2) with a "List only — no map location" hint; the map silently ignores selection of a coordinate-less actor.
+- **Leader-gate fix (within attempt 1):** Tailwind purge bug — `LoadingRows` used `w-${w}` (runtime-built `w-72`/`w-56`/`w-64`, none static → purged → zero-width skeletons). Fixed to static `['w-3/4','w-1/2','w-2/3']` literals.
+- **Leader verification:** `npx jest` (6 map suites) → 50/50 pass; `npm run build` → `Exporting (2/2)`, `/map` (4.81 kB, `○ Static`); Leaflet still isolated to `LeafletMap.tsx`; color grep CLEAN; no PII in render code.
+- **Reviewer verdict (`rev-dm-t4`):** **STATUS: PASS** — DD-3 contract correct, server-side refetch driven by `useActors(filters)`, FR-5 sync + `aria-current`, gps-null actors preserved, all FR-7 states graceful, NFR-2/3/4/5 clean, no T-5 scope leaked.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**. T-4..T-5 pending. Next eligible: **T-4** (DiscoverRail: filters + synced list + count; deps: T-3 ✓).
-- **Open follow-ups:** T-2 a11y WARN (`role="alert"`/`aria-live` conflict in `ActorMap.tsx`) → resolve in **T-5**.
+- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**, T-4 **[x] PASS**. T-5 pending. Next eligible: **T-5** (accessibility + responsive + static-export verification pass; deps: T-4 ✓).
+- **Open follow-ups (resolve in T-5):** T-2 a11y WARN — error state in `ActorMap.tsx` uses `role="alert"` + redundant `aria-live="polite"`; **also `DiscoverRail.tsx` error state has the same `role="alert"`+`aria-live="polite"` pattern** — fix both in T-5 (drop `aria-live="polite"` so `alert`'s implicit assertive governs).

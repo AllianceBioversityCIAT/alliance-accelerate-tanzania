@@ -44,7 +44,7 @@ A task is eligible when status is `[ ]`/`[~]` and all deps are `[x]`. Ties broke
       Done when: pins are role-colored (tokens), popups show PII-free actor detail, legend + privacy note present.
       Skills: ui-ux-pro-max, tailwind-design-system
 
-- [ ] T-4 DiscoverRail: filters + synced list + count  (deps: T-3)
+- [x] T-4 DiscoverRail: filters + synced list + count  (deps: T-3)
       Size: M
       Requirements: FR-4, FR-5, FR-1, FR-7, NFR-2, NFR-3
       Design: design.md §8 (rail/filters/list), §10 (DD-3)
