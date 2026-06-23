@@ -99,7 +99,6 @@ export default function ActorMap({
       <div
         className="flex h-full min-h-[480px] w-full flex-col items-center justify-center gap-3 bg-surface-alt px-6 text-center"
         role="alert"
-        aria-live="polite"
       >
         {/* Token-driven icon placeholder — no raw hex (NFR-4) */}
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-border" aria-hidden="true">

@@ -51,6 +51,17 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `npx jest` (6 map suites) → 50/50 pass; `npm run build` → `Exporting (2/2)`, `/map` (4.81 kB, `○ Static`); Leaflet still isolated to `LeafletMap.tsx`; color grep CLEAN; no PII in render code.
 - **Reviewer verdict (`rev-dm-t4`):** **STATUS: PASS** — DD-3 contract correct, server-side refetch driven by `useActors(filters)`, FR-5 sync + `aria-current`, gps-null actors preserved, all FR-7 states graceful, NFR-2/3/4/5 clean, no T-5 scope leaked.
 
-## 3. Summary (updated as tasks complete)
-- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**, T-4 **[x] PASS**. T-5 pending. Next eligible: **T-5** (accessibility + responsive + static-export verification pass; deps: T-4 ✓).
-- **Open follow-ups (resolve in T-5):** T-2 a11y WARN — error state in `ActorMap.tsx` uses `role="alert"` + redundant `aria-live="polite"`; **also `DiscoverRail.tsx` error state has the same `role="alert"`+`aria-live="polite"` pattern** — fix both in T-5 (drop `aria-live="polite"` so `alert`'s implicit assertive governs).
+### T-5 — Accessibility, responsive, and static-export verification pass — **PASS** (2026-06-23)
+- **Implementer attempts:** 1 (`impl-dm-t5`, frontend-developer).
+- **Files:** NEW `app/(public)/map/map-a11y.test.tsx` (jest-axe, 2 scenarios); MODIFIED `components/map/ActorMap.tsx` (−`aria-live` on alert), `components/map/DiscoverRail.tsx` (−`aria-live` on alert).
+- **Requirements covered:** NFR-1 (static export gate), NFR-2 (responsive confirm), NFR-3 (a11y + jest-axe).
+- **Resolved follow-ups:** both deferred a11y WARNs fixed — removed redundant `aria-live="polite"` from the two `role="alert"` error divs (alert is implicitly assertive). `role="status"` empty/loading/count regions left correctly paired with `aria-live="polite"`.
+- **Decisions:** jest-axe runs over the real `MapPage` composition with the Leaflet boundary mocked (jsdom can't run Leaflet); asserts `toHaveNoViolations()` for data-present AND error/fallback states — mirrors `home-a11y.test.tsx`.
+- **Leader verification:** `npx jest` → 84/84 pass, 13 suites (incl. `map-a11y`); `npm run build` → `Exporting (2/2)`, `/map` (`○ Static`); SSR grep none; Leaflet only in `LeafletMap.tsx`; color grep CLEAN; confirmed alert divs carry no `aria-live`.
+- **Reviewer verdict (`rev-dm-t5`):** **STATUS: PASS** — surgical WARN fixes with no over-correction; genuine jest-axe suite (2 real scenarios); NFR-1/2/3/4/5 all verified; diff scoped to the 2 fixes + the test.
+
+## 3. Summary — ALL TASKS COMPLETE
+- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**, T-4 **[x] PASS**, T-5 **[x] PASS**.
+- **Open follow-ups:** none. Both a11y WARNs resolved in T-5.
+- **Deferred (documented, out of scope per requirements §9 / proposal):** real-data import (seeded data only), actor profile page (`View Profile` → `/directory` placeholder, DD-5/OQ-1), marker clustering (OQ-2), region canonicalization (OQ-6 — provisional `REGIONS` list), live backend deployment (graceful API-down fallback in place, DD-6).
+- **Final test posture:** 84 tests / 13 suites green; `/map` static-exports; Leaflet client-only; no PII; token-driven. Ready for `/sdd-validate`.

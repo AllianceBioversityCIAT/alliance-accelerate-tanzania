@@ -112,7 +112,6 @@ export default function DiscoverRail({
           // Error state (FR-7, DD-6) — page must not throw.
           <div
             role="alert"
-            aria-live="polite"
             className="rounded-md border border-border bg-surface p-4 text-sm text-muted"
           >
             Couldn&apos;t load actors. Please try again shortly.

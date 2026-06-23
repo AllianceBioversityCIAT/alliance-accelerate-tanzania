@@ -53,7 +53,7 @@ A task is eligible when status is `[ ]`/`[~]` and all deps are `[x]`. Ties broke
       Done when: filters drive list+map+count; list↔map selection syncs; responsive rail; graceful empty.
       Skills: ui-ux-pro-max, frontend-design
 
-- [ ] T-5 Accessibility, responsive, and static-export verification pass  (deps: T-4)
+- [x] T-5 Accessibility, responsive, and static-export verification pass  (deps: T-4)
       Size: S
       Requirements: NFR-1, NFR-2, NFR-3
       Design: design.md §8 (a11y), §12
