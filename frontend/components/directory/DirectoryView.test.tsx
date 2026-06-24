@@ -1,17 +1,25 @@
 /**
- * Unit tests for DirectoryView — T-3, FR-1, FR-8, NFR-1, NFR-3, NFR-7.
+ * Unit tests for DirectoryView — T-3 (existing) + T-4 (URL-sync extension).
+ * FR-1, FR-2, FR-3, FR-8, NFR-1, NFR-3, NFR-7.
  *
  * Filter: `DirectoryView` (matched via filename).
  *
  * Covers:
- *   (a) loaded state — renders ActorCard grid with actor names from mocked useActors
- *   (b) result count — "N organizations found" displays the total from the hook
- *   (c) loading state — Skeleton cards render; count is suppressed; no actor names
- *   (d) error state — "Could not load organizations" renders; no crash (NFR-7)
- *   (e) empty state — "No organizations found" renders distinctly from error
- *   (f) PII guard — no phone/email text in the rendered output (NFR-1)
+ *   T-3 (preserved):
+ *     (a) loaded state — renders ActorCard grid with actor names
+ *     (b) result count — "N organizations found"
+ *     (c) loading state — Skeleton cards; count suppressed; no actor names
+ *     (d) error state — "Could not load organizations"; no crash (NFR-7)
+ *     (e) empty state — "No organizations found" distinct from error
+ *     (f) PII guard — no phone/email text (NFR-1)
  *
- * useActors is mocked so no network calls are made.
+ *   T-4 (new):
+ *     (g) DirectorySearch renders inside DirectoryView
+ *     (h) DirectoryFilters renders inside DirectoryView
+ *     (i) DirectoryPagination renders when total > pageSize
+ *     (j) DirectoryPagination hidden when total ≤ pageSize
+ *
+ * useActors + next/navigation mocked (no network calls).
  * Mocking style mirrors @/app/(public)/map/map-a11y.test.tsx.
  */
 
@@ -22,10 +30,16 @@ import type { PublicActor, PublicActorList } from '@/lib/api/actors';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
-// useActors — mock to control hook state for each test scenario.
-// Declared before imports via jest.mock hoisting.
+// useActors — mock to control hook state for each scenario.
 jest.mock('@/lib/api/useActors', () => ({
   useActors: jest.fn(),
+}));
+
+// next/navigation — required because DirectoryView uses useSearchParams and
+// useRouter. Both must be mocked for static-export test environments.
+jest.mock('next/navigation', () => ({
+  useSearchParams: jest.fn(() => new URLSearchParams()),
+  useRouter: jest.fn(() => ({ replace: jest.fn() })),
 }));
 
 /* eslint-disable */
@@ -72,6 +86,14 @@ const EMPTY_LIST: PublicActorList = {
   total: 0,
 };
 
+/** Multi-page list (total > pageSize) to test pagination visibility. */
+const MULTI_PAGE_LIST: PublicActorList = {
+  data: [ACTOR_A],
+  page: 1,
+  pageSize: 20,
+  total: 25,
+};
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('DirectoryView', () => {
@@ -102,11 +124,9 @@ describe('DirectoryView', () => {
     useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
     render(<DirectoryView />);
 
-    // ACTOR_A's link should point to /profile?id=actor-1
     const linkA = screen.getByRole('link', { name: /view profile for Dodoma Seeds Ltd/i });
     expect(linkA).toHaveAttribute('href', '/profile?id=actor-1');
 
-    // ACTOR_B's link should point to /profile?id=actor-2
     const linkB = screen.getByRole('link', { name: /view profile for Mbeya Cooperative/i });
     expect(linkB).toHaveAttribute('href', '/profile?id=actor-2');
   });
@@ -131,7 +151,6 @@ describe('DirectoryView', () => {
     render(<DirectoryView />);
 
     expect(screen.getByText('1 organization found')).toBeInTheDocument();
-    // Must NOT use plural form.
     expect(screen.queryByText('1 organizations found')).not.toBeInTheDocument();
   });
 
@@ -141,14 +160,15 @@ describe('DirectoryView', () => {
     useActors.mockReturnValue({ data: null, loading: true, error: false });
     render(<DirectoryView />);
 
-    expect(screen.getByRole('status', { name: /loading organizations/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: /loading organizations/i }),
+    ).toBeInTheDocument();
   });
 
   it('suppresses the result count while loading', () => {
     useActors.mockReturnValue({ data: null, loading: true, error: false });
     render(<DirectoryView />);
 
-    // ResultCount renders nothing when loading=true (polite region stays quiet).
     expect(screen.queryByText(/organizations found/i)).not.toBeInTheDocument();
   });
 
@@ -193,7 +213,6 @@ describe('DirectoryView', () => {
     useActors.mockReturnValue({ data: EMPTY_LIST, loading: false, error: false });
     render(<DirectoryView />);
 
-    // Empty state must be distinct from error (FR-8).
     expect(screen.queryByText(/could not load/i)).not.toBeInTheDocument();
   });
 
@@ -201,7 +220,6 @@ describe('DirectoryView', () => {
     useActors.mockReturnValue({ data: EMPTY_LIST, loading: false, error: false });
     render(<DirectoryView />);
 
-    // ResultCount with count=0 should still display (loading=false).
     expect(screen.getByText('0 organizations found')).toBeInTheDocument();
   });
 
@@ -221,5 +239,61 @@ describe('DirectoryView', () => {
 
     expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+  });
+
+  // ── (g) DirectorySearch renders inside DirectoryView ──────────────────────
+
+  it('renders the search input', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(
+      screen.getByRole('searchbox', { name: /search organizations/i }),
+    ).toBeInTheDocument();
+  });
+
+  // ── (h) DirectoryFilters renders inside DirectoryView ─────────────────────
+
+  it('renders the crop filter select', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
+  });
+
+  it('renders the role filter select', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
+  });
+
+  it('renders the region filter select', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(screen.getByLabelText(/filter by region/i)).toBeInTheDocument();
+  });
+
+  // ── (i) DirectoryPagination renders when total > pageSize ─────────────────
+
+  it('renders pagination when total exceeds pageSize', () => {
+    useActors.mockReturnValue({ data: MULTI_PAGE_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(
+      screen.getByRole('navigation', { name: /directory pagination/i }),
+    ).toBeInTheDocument();
+  });
+
+  // ── (j) DirectoryPagination hidden when total ≤ pageSize ──────────────────
+
+  it('does not render pagination when all results fit on one page', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(
+      screen.queryByRole('navigation', { name: /directory pagination/i }),
+    ).not.toBeInTheDocument();
   });
 });
