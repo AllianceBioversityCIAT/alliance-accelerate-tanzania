@@ -127,19 +127,27 @@ unset DB_PASS DB_PASS_ENC SECRET_JSON
 # ── Migrate + seed from backend/ over TLS ────────────────────────────────────
 # Path is relative to this script so it works from any CWD.
 BACKEND_DIR="$(cd "$(dirname "$0")/../../backend" && pwd)"
-echo "==> Applying Prisma migrations against $RDS_ENDPOINT (TLS) ..."
+# Trust the Amazon RDS CA so `sslaccept=strict` validates the RDS server cert
+# (NFR-4: TLS encrypted AND verified). The public bundle is committed in backend/certs.
+CA_BUNDLE="$BACKEND_DIR/certs/rds-global-bundle.pem"
+if [[ ! -f "$CA_BUNDLE" ]]; then
+  echo "ERROR: RDS CA bundle not found at $CA_BUNDLE." >&2
+  exit 1
+fi
+echo "==> Applying Prisma migrations against $RDS_ENDPOINT (TLS, RDS CA verified) ..."
 (
   cd "$BACKEND_DIR"
   # Inline env assignment: DATABASE_URL is scoped to this command only and is
-  # never exported into the persistent environment or a file.
-  DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
+  # never exported into the persistent environment or a file. NODE_EXTRA_CA_CERTS
+  # adds the RDS CA to Node's trust store so sslaccept=strict verifies the cert.
+  DATABASE_URL="$DATABASE_URL" NODE_EXTRA_CA_CERTS="$CA_BUNDLE" npx prisma migrate deploy
 )
 
 echo "==> Seeding the consented sample dataset (no real PII — NFR-5) ..."
 (
   cd "$BACKEND_DIR"
   # `prisma db seed` honors the package.json `prisma.seed` config (seed.ts).
-  DATABASE_URL="$DATABASE_URL" npx prisma db seed
+  DATABASE_URL="$DATABASE_URL" NODE_EXTRA_CA_CERTS="$CA_BUNDLE" npx prisma db seed
 )
 
 echo "==> Done. RDS migrated and seeded successfully on $RDS_ENDPOINT:$RDS_PORT/$DB_NAME."

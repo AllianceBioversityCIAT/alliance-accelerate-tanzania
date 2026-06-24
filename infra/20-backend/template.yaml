@@ -54,13 +54,15 @@ Resources:
       # NO VpcConfig - Lambda runs outside the VPC (DD-2).
       Environment:
         Variables:
+          # Trust the Amazon RDS CA so `sslaccept=strict` validates the RDS server
+          # cert (NFR-4: TLS encrypted AND verified). The public RDS CA bundle ships
+          # in the artifact (backend/certs, copied by the makefile) and unzips to
+          # /var/task/certs; NODE_EXTRA_CA_CERTS adds it to Node's trust store.
+          NODE_EXTRA_CA_CERTS: /var/task/certs/rds-global-bundle.pem
           # Composed Prisma connection string. Password ONLY via the
           # {{resolve:secretsmanager:...:SecretString:password}} dynamic reference
-          # (NFR-2). `sslaccept=strict` keeps TLS on (NFR-4).
-          # Runbook note (T-10): if the RDS server cert chain is not trusted by the
-          # Lambda's default CA store, the operator may need to bundle the RDS CA
-          # (sslcert=...) or relax to `sslaccept=accept_invalid_certs` at apply
-          # time - a documented runbook concern, not a template change.
+          # (NFR-2). `sslaccept=strict` = TLS encrypted + cert verified (NFR-4),
+          # trusted via NODE_EXTRA_CA_CERTS above.
           DATABASE_URL: !Sub
             - "mysql://${User}:{{resolve:secretsmanager:${SecretArn}:SecretString:password}}@${Host}:${Port}/${Db}?sslaccept=strict"
             - User: !ImportValue
