@@ -35,7 +35,7 @@ import RestrictedContactPanel from './RestrictedContactPanel';
 
 function ProfileSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading profile">
+    <div role="status" aria-busy="true" aria-label="Loading profile">
       {/* Header skeleton */}
       <div className="mb-6">
         <Skeleton className="mb-2 h-8 w-2/3 rounded-md" />

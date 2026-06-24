@@ -74,9 +74,11 @@ export default function ActorCard({ actor }: ActorCardProps) {
       aria-label={traderName}
     >
       {/* ── Actor name ─────────────────────────────────────────────────────── */}
-      <h3 className="mb-1.5 text-sm font-semibold text-fg leading-snug">
+      {/* h2: each <article> is a sectioning element; h2 avoids a heading-order
+          violation (axe heading-order, WCAG 1.3.1) when DirectoryView uses h1. */}
+      <h2 className="mb-1.5 text-sm font-semibold text-fg leading-snug">
         {traderName}
-      </h3>
+      </h2>
 
       {/* ── Role badge ────────────────────────────────────────────────────── */}
       <div className="mb-2">
