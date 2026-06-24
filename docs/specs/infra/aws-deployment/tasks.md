@@ -95,7 +95,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: frontend build/deploy + CORS-lock scripts are correct, parameterized, IBD-DEV-scoped, and the export build passes with an injected API URL.
       Skills: aws-serverless, vercel-react-best-practices
 
-- [ ] T-9 End-to-end smoke + PII boundary runbook  (deps: T-6, T-7, T-8)
+- [x] T-9 End-to-end smoke + PII boundary runbook  (deps: T-6, T-7, T-8)
       Size: S
       Requirements: FR-6, FR-8, NFR-5
       Design: design.md §10, §6 (PII/consent)

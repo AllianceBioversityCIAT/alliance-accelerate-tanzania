@@ -123,3 +123,39 @@ Run these after `deploy.sh` (all three stacks up) and `migrate-seed.sh`, in orde
 
 Both default to `--profile IBD-DEV` / `eu-west-1` and create/alter real resources —
 operator only, not run by the SDD agent loop.
+
+## End-to-end smoke (T-9)
+
+`infra/scripts/smoke.sh` is the final gate (FR-6, FR-8, NFR-5). It probes the
+**live** stacks and re-asserts the PII/consent boundary **over the wire** — the
+spec's headline guarantee (NFR-5) — plus frontend reachability and S3 privacy.
+
+**Prereqs (the full deploy order must be done first):** all three stacks deployed
+(`deploy.sh`), `migrate-seed.sh` run (RDS seeded with the consented sample — no
+real PII), frontend built/synced (`deploy-frontend.sh`), and CORS locked to the
+CloudFront origin (`set-cors.sh`). Needs AWS CLI v2, `jq`, `curl`, and valid
+`IBD-DEV` credentials (only for the two `describe-stacks` lookups — curl hits the
+public HTTPS endpoints directly, no profile).
+
+```bash
+./infra/scripts/smoke.sh
+```
+
+Defaults to `--profile IBD-DEV` / `eu-west-1`; resolves `ApiBaseUrl`,
+`CloudFrontUrl`, and `FrontendBucketName` from the stack outputs (override via
+`API_BASE_URL` / `CLOUDFRONT_URL` / `BUCKET`). It prints a PASS/FAIL line per
+check and exits non-zero if **any** check fails. The checks:
+
+| # | Check | Asserts |
+|---|---|---|
+| 2 | **API health (FR-6)** | `GET /api/v1/metrics` and `/api/v1/actors` → HTTP 200 with valid JSON. |
+| 3 | **PII boundary (NFR-5)** | Neither body contains any PII key (`phone`, `email`, `sex`, `position`, `marketLocation`; case-insensitive, any depth) — **fail-closed**; and `/actors` is the PII-safe list contract (`{ data:[], page, pageSize, total }`). Mirrors `backend/src/test/pii-boundary.spec.ts` over the wire. |
+| 4 | **Frontend reachability (FR-5/6)** | CloudFront serves `/` and `/map` → 200 (the export's trailingSlash + the T-5 viewer-request rewrite resolve `/map`). |
+| 5 | **S3 privacy (FR-5/DD-5)** | A direct S3 object URL (`https://<bucket>.s3.<region>.amazonaws.com/index.html`) → **403** — the bucket is private; only CloudFront via OAC may read it. A 200 here is a leak and FAILs. |
+
+> ⚠️ **"Renders live data" is a final manual browser check.** The pages serve over
+> HTTPS, but the actor/metrics DATA is fetched client-side by JS — curl sees the
+> shell HTML, not the hydrated content. The script proves the API returns real,
+> PII-safe data **and** the pages serve 200; the last step is to open the
+> CloudFront URL in a browser and confirm the metrics band + map render **live
+> seeded data** (not the offline "couldn't load" fallback) — FR-6.

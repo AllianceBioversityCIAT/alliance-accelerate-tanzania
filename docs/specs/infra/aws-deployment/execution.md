@@ -86,6 +86,14 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `bash -n` + `shellcheck` clean; local export build → `out/{index,map/index}.html` present, `map.html` gone; all aws/sam calls `--profile`-scoped; key steps present; both executable.
 - **Reviewer verdict (`rev-infra-t8`):** **STATUS: PASS** — FR-5 fix correct (`/map` resolves, home unaffected, no SSR), FR-6 CORS lock correct (build-before-deploy, idempotent), NFR-1 all 8 calls profile-scoped, NFR-2 no secrets/hardcoded URLs, robust, scope clean.
 
+### T-9 — End-to-end smoke + PII boundary runbook — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t9`, general-purpose). Authoring + isolated logic tests (no live AWS).
+- **Files:** NEW `infra/scripts/smoke.sh` (executable); MODIFIED `infra/README.md` ("End-to-end smoke" section).
+- **Requirements covered:** FR-5, FR-6, FR-8, NFR-5, NFR-1, NFR-2.
+- **Decisions:** fail-closed `assert_no_pii` (recursive `jq '[.. | objects | keys[]]'` + `ascii_downcase` + whole-key `grep -qix` over `phone/email/sex/position/marketLocation`); empty/non-JSON body → FAIL; per-check `pass`/`fail` + `FAILS` counter with `|| true`/if-condition curls so `set -e` can't mask checks; checks = API health (metrics/actors 200+JSON), list-contract (`.data`/`.page`/`.pageSize`/`.total`), `/`+`/map` 200, direct-S3-object → 403; "renders live data" documented as a final manual browser check.
+- **Leader verification:** `bash -n` + `shellcheck` clean; PII keys only in the negative-assertion array; all checks present; both `aws describe-stacks` `--profile`-scoped; S3 expects 403; summary `exit 1` iff FAILS>0.
+- **Reviewer verdict (`rev-infra-t9`):** **STATUS: PASS** — isolated unit tests: all 5 PII keys caught at depth case-insensitively, empty body fails closed, `emailAddress` substring correctly NOT triggered; FR-5/FR-6/DD-5 checks correct; NFR-1 scoped; NFR-2 no secrets; scope = script + README.
+
 ## 3. Summary (updated as tasks complete)
-- T-1..T-8 **[x] all PASS** — 4 templates + 4 scripts (migrate/seed, deploy, validate, deploy-frontend, set-cors) + the FR-5 trailingSlash fix. T-9..T-10 pending. Next eligible: **T-9** (e2e smoke + PII boundary runbook; deps: T-6,T-7,T-8 ✓).
-- **Open follow-ups:** root `README.md` IaC sync → **T-10**.
+- T-1..T-9 **[x] all PASS** — 4 templates + 5 scripts + the FR-5 fix. **T-10 pending (final).** Next eligible: **T-10** (teardown + full runbook + root-README IaC sync; deps: T-7,T-8 ✓).
+- **Open follow-ups:** root `README.md` IaC sync → fold into **T-10**.
