@@ -17,7 +17,7 @@ The platform transforms fragmented, static CSV/Excel datasets into a **living, c
 | Layer | Technology | Deployment |
 |---|---|---|
 | **Frontend** | Next.js 15 (App Router, TypeScript, Tailwind CSS) | Static export → S3 + CloudFront |
-| **Backend** | NestJS 11 (TypeScript, REST API) | AWS Lambda + API Gateway (Serverless Framework) |
+| **Backend** | NestJS 11 (TypeScript, REST API) | AWS Lambda + API Gateway (AWS SAM / CloudFormation) |
 | **Database** | MySQL on AWS RDS | via Prisma ORM |
 | **Maps** | Leaflet | client-side |
 | **Auth** | AWS Cognito (user pools + JWT) | groups: `admin`, `staff`; anonymous = `Public` |
@@ -35,8 +35,13 @@ The platform transforms fragmented, static CSV/Excel datasets into a **living, c
 ├── backend/           # NestJS serverless API
 │   ├── src/           # application modules
 │   ├── prisma/        # Prisma schema & migrations
-│   ├── serverless.yml # Serverless Framework config
 │   └── package.json
+├── infra/             # AWS SAM / CloudFormation stacks + deploy scripts
+│   ├── 10-data-auth/  # RDS MySQL + Secrets Manager + Cognito
+│   ├── 20-backend/    # NestJS Lambda + HTTP API
+│   ├── 30-frontend/   # private S3 + CloudFront (OAC)
+│   ├── scripts/       # deploy / migrate-seed / deploy-frontend / set-cors / smoke / teardown
+│   └── README.md      # operator runbook
 ├── docs/              # product & technical documentation
 │   ├── prd.md                      # Product Requirements Document
 │   ├── system-design/design.md     # UI/UX system & design tokens
@@ -85,10 +90,13 @@ npm run test:e2e   # end-to-end tests
 
 All AWS CLI, deploy, and IaC commands **must** use `--profile IBD-DEV`.
 
+Infrastructure is defined as **AWS SAM / CloudFormation** stacks under [`infra/`](infra/) (RDS + Cognito, the NestJS Lambda + HTTP API, and the S3 + CloudFront frontend). Deploy with the orchestration script, then follow the operator runbook for migrate/seed, frontend deploy, CORS lock, smoke, and teardown:
+
 ```bash
-cd backend
-npx serverless deploy --stage dev --aws-profile IBD-DEV
+./infra/scripts/deploy.sh   # ordered, idempotent SAM deploy of all three stacks
 ```
+
+See [`infra/README.md`](infra/README.md) for the full deploy → operate → teardown runbook.
 
 ## Key Constraints
 

@@ -104,7 +104,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: a runnable smoke script + runbook verify FR-6 and the NFR-5 boundary end-to-end.
       Skills: aws-serverless, error-handling-patterns
 
-- [ ] T-10 Teardown + operator README/runbook  (deps: T-7, T-8)
+- [x] T-10 Teardown + operator README/runbook  (deps: T-7, T-8)
       Size: S
       Requirements: FR-8, NFR-6
       Design: design.md §7, §9 (cost), §1

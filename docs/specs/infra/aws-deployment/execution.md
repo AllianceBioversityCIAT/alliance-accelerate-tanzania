@@ -94,6 +94,16 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `bash -n` + `shellcheck` clean; PII keys only in the negative-assertion array; all checks present; both `aws describe-stacks` `--profile`-scoped; S3 expects 403; summary `exit 1` iff FAILS>0.
 - **Reviewer verdict (`rev-infra-t9`):** **STATUS: PASS** — isolated unit tests: all 5 PII keys caught at depth case-insensitively, empty body fails closed, `emailAddress` substring correctly NOT triggered; FR-5/FR-6/DD-5 checks correct; NFR-1 scoped; NFR-2 no secrets; scope = script + README.
 
-## 3. Summary (updated as tasks complete)
-- T-1..T-9 **[x] all PASS** — 4 templates + 5 scripts + the FR-5 fix. **T-10 pending (final).** Next eligible: **T-10** (teardown + full runbook + root-README IaC sync; deps: T-7,T-8 ✓).
-- **Open follow-ups:** root `README.md` IaC sync → fold into **T-10**.
+### T-10 — Teardown + operator README/runbook — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t10`, general-purpose). Authoring + static validation.
+- **Files:** NEW `infra/scripts/teardown.sh` (executable); MODIFIED `infra/README.md` (consolidated 9-section runbook), root `README.md` (IaC sync).
+- **Requirements covered:** FR-8, NFR-6, NFR-1.
+- **Decisions:** two-layer guard (IBD-DEV + destruction: `CONFIRM=yes`/interactive `yes`/`destroy`, refuses unattended); **reverse delete order** frontend → backend → data-auth (backend `Fn::ImportValue`s data-auth exports); empties the frontend bucket before the frontend-stack delete; idempotent via `stack_exists`/`head-bucket` guards (`sam delete --no-prompts`); runbook merges the incremental sections into §1–§9 (Layout, Prereqs, Conventions, Validate, Deploy→operate, Outputs, Cost, Teardown, Hardening) + authoring-vs-live banner; root README Serverless-Framework refs → SAM/CloudFormation + `infra/` + `deploy.sh`.
+- **Resolved follow-up:** root `README.md` IaC sync (the accepted T-1 drift) — done here.
+- **Leader verification:** `bash -n` + `shellcheck` clean; 5–6 profile-scoped calls; reverse order + bucket-empty-first confirmed; root README has no stale serverless refs; all 7 scripts IBD-DEV-scoped; runbook covers the full lifecycle.
+- **Reviewer verdict (`rev-infra-t10`):** **STATUS: PASS** — teardown order/idempotence/guards correct, NFR-1 all calls scoped, no secrets, 9-section runbook coherent with exact commands, root README sync minimal+accurate.
+
+## 3. Summary — ALL TASKS COMPLETE
+- T-1..T-10 **[x] all PASS**. 4 SAM/CloudFormation stack templates (10-data-auth RDS+Cognito, 20-backend Lambda+API, 30-frontend S3+CloudFront) + 7 operator scripts (validate, deploy, migrate-seed, deploy-frontend, set-cors, smoke, teardown) + the FR-5 `trailingSlash` fix + Prisma rhel engine target + CLAUDE.md/root-README IaC ratification.
+- **Open follow-ups:** none for this spec. **Deferred (documented, by design):** the live `sam deploy`/migrate/smoke/teardown are **operator actions** (IBD-DEV creds) — not run by the loop; network hardening (Lambda-in-VPC/private RDS/RDS Proxy/IAM auth) → future `infra/network-hardening`; Cognito Hosted-UI + frontend auth wiring → future auth spec.
+- **Execution model:** every task authored + locally validated (`sam validate --lint`/`cfn-lint`/`bash -n`/`shellcheck`); no agent touched the live AWS account. Ready for `/sdd-validate`.
