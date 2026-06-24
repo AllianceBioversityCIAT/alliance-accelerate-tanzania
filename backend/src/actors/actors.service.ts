@@ -56,6 +56,11 @@ export class ActorsService {
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
+    // FR-4 — free-text search: a non-empty trimmed term partial-matches
+    // non-PII columns. MySQL's default `_ci` collation makes `contains`
+    // case-insensitive (no `mode: 'insensitive'` — unsupported on MySQL).
+    const term = query.search?.trim();
+
     const where: Prisma.ActorWhereInput = {
       // Consent enforced at the QUERY — never serializer-only (NFR-1, DD-3).
       consentStatus: ConsentStatus.GRANTED,
@@ -63,6 +68,16 @@ export class ActorsService {
       ...(query.role ? { traderType: query.role } : {}),
       ...(query.crop
         ? { crops: { some: { crop: { name: query.crop } } } }
+        : {}),
+      // OR is a sibling key so Prisma ANDs it with consent + the filters above.
+      ...(term
+        ? {
+            OR: [
+              { traderName: { contains: term } },
+              { region: { contains: term } },
+              { district: { contains: term } },
+            ],
+          }
         : {}),
     };
 

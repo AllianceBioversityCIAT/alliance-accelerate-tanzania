@@ -1,7 +1,7 @@
 /**
- * Unit tests for ActorPopup — T-3, FR-3, NFR-5.
+ * Unit tests for ActorCard — T-3, FR-1, NFR-1, NFR-3.
  *
- * Filter: `ActorPopup` (matched via filename).
+ * Filter: `ActorCard` (matched via filename).
  *
  * Covers:
  *   (a) actor name (traderName) renders
@@ -9,15 +9,13 @@
  *   (c) region renders; district renders when present, absent when null
  *   (d) one crop chip per crops[] slug (≥2 crops — asserts each name)
  *   (e) capacity renders as "<n> t"; null capacity renders "—"
- *   (f) View Profile link exists with href = /profile?id=<id>
- *   (g) PII guard — no phone/email text in the rendered output (NFR-5)
- *
- * No Leaflet is rendered — ActorPopup is a pure React component.
+ *   (f) View Profile link href = /profile?id=<actor.id>
+ *   (g) PII guard — no phone/email text in the rendered output (NFR-1)
  */
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import ActorPopup from './ActorPopup';
+import ActorCard from './ActorCard';
 import type { PublicActor } from '@/lib/api/actors';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -48,7 +46,7 @@ const ACTOR_SPARSE: PublicActor = {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('ActorPopup', () => {
+describe('ActorCard', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -56,22 +54,28 @@ describe('ActorPopup', () => {
   // ── (a) Actor name ─────────────────────────────────────────────────────────
 
   it('renders the actor traderName', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+    render(<ActorCard actor={ACTOR_FULL} />);
 
     expect(screen.getByText('Dodoma Seeds Ltd')).toBeInTheDocument();
+  });
+
+  it('renders the sparse actor name', () => {
+    render(<ActorCard actor={ACTOR_SPARSE} />);
+
+    expect(screen.getByText('Mbeya Cooperative')).toBeInTheDocument();
   });
 
   // ── (b) Role label (RoleBadge) ─────────────────────────────────────────────
 
   it('renders the role label via RoleBadge', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+    render(<ActorCard actor={ACTOR_FULL} />);
 
     // ROLES.seed_company.label = 'Seed Company'
     expect(screen.getByText('Seed Company')).toBeInTheDocument();
   });
 
   it('renders the cooperative role label', () => {
-    render(<ActorPopup actor={ACTOR_SPARSE} />);
+    render(<ActorCard actor={ACTOR_SPARSE} />);
 
     // ROLES.cooperative.label = 'Cooperative'
     expect(screen.getByText('Cooperative')).toBeInTheDocument();
@@ -79,42 +83,36 @@ describe('ActorPopup', () => {
 
   // ── (c) Region and district ────────────────────────────────────────────────
 
-  it('renders region and district when district is present', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+  it('renders region · district when district is present', () => {
+    render(<ActorCard actor={ACTOR_FULL} />);
 
-    // Region + district are rendered together in the location paragraph.
-    // Use getAllByText to handle the case where the region word also appears
-    // in the actor name, and assert at least one match is the location row.
-    const regionMatches = screen.getAllByText(/Dodoma/);
-    expect(regionMatches.length).toBeGreaterThanOrEqual(1);
-    // District text appears in exactly one element.
-    expect(screen.getByText(/Dodoma Urban/)).toBeInTheDocument();
+    // Location paragraph contains "Dodoma · Dodoma Urban"
+    expect(screen.getByText('Dodoma · Dodoma Urban')).toBeInTheDocument();
   });
 
-  it('renders only region when district is null', () => {
-    render(<ActorPopup actor={ACTOR_SPARSE} />);
+  it('renders only region when district is null (no null/undefined shown)', () => {
+    render(<ActorCard actor={ACTOR_SPARSE} />);
 
-    // The region word appears at least once (could be in name and/or location row).
-    const regionMatches = screen.getAllByText(/Mbeya/);
-    expect(regionMatches.length).toBeGreaterThanOrEqual(1);
-    // District is null — 'Dodoma Urban' should not appear in this render.
-    expect(screen.queryByText(/Dodoma Urban/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Mbeya')).toBeInTheDocument();
+    // Must not display the word "null" or "undefined"
+    expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
   });
 
   // ── (d) Crop chips ─────────────────────────────────────────────────────────
 
   it('renders one crop chip per crops[] slug (multi-crop actor)', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+    render(<ActorCard actor={ACTOR_FULL} />);
 
     // ACTOR_FULL has ['sorghum', 'common_bean']
     expect(screen.getByText('Sorghum')).toBeInTheDocument();
     expect(screen.getByText('Common Bean')).toBeInTheDocument();
-    // Groundnut is NOT in ACTOR_FULL — must be absent.
+    // Groundnut is NOT in ACTOR_FULL
     expect(screen.queryByText('Groundnut')).not.toBeInTheDocument();
   });
 
   it('renders the single crop chip for a sparse actor', () => {
-    render(<ActorPopup actor={ACTOR_SPARSE} />);
+    render(<ActorCard actor={ACTOR_SPARSE} />);
 
     // ACTOR_SPARSE has ['groundnut']
     expect(screen.getByText('Groundnut')).toBeInTheDocument();
@@ -124,39 +122,46 @@ describe('ActorPopup', () => {
   // ── (e) Capacity ───────────────────────────────────────────────────────────
 
   it('renders capacity as "<n> t" when capacityTons is set', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+    render(<ActorCard actor={ACTOR_FULL} />);
 
     expect(screen.getByText(/500 t/)).toBeInTheDocument();
   });
 
   it('renders "—" when capacityTons is null', () => {
-    render(<ActorPopup actor={ACTOR_SPARSE} />);
+    render(<ActorCard actor={ACTOR_SPARSE} />);
 
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  // ── (f) View Profile link → /profile?id=<id> ──────────────────────────────
+  // ── (f) View Profile link → /profile?id=<actor.id> ────────────────────────
 
-  it('renders a View Profile link deep-linking to /profile?id=<id>', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+  it('renders a View Profile link with href /profile?id=<actor.id>', () => {
+    render(<ActorCard actor={ACTOR_FULL} />);
 
-    const link = screen.getByRole('link', { name: /view profile/i });
+    const link = screen.getByRole('link', { name: /view profile for Dodoma Seeds Ltd/i });
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute('href', `/profile?id=${ACTOR_FULL.id}`);
+    expect(link).toHaveAttribute('href', '/profile?id=actor-full');
   });
 
-  // ── (g) PII guard — no phone/email ever rendered (NFR-5) ──────────────────
+  it('encodes the actor id correctly in the href', () => {
+    render(<ActorCard actor={ACTOR_SPARSE} />);
+
+    const link = screen.getByRole('link', { name: /view profile for Mbeya Cooperative/i });
+    expect(link).toHaveAttribute('href', '/profile?id=actor-sparse');
+  });
+
+  // ── (g) PII guard — no phone/email ever rendered (NFR-1) ──────────────────
 
   it('does not render any phone or email text (PII guard)', () => {
-    render(<ActorPopup actor={ACTOR_FULL} />);
+    render(<ActorCard actor={ACTOR_FULL} />);
 
-    // PublicActor carries no PII fields — guard at the test level anyway.
+    // PublicActor carries no PII fields — guard at the test level.
     expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
   });
 
   it('does not render phone or email for the sparse actor (PII guard)', () => {
-    render(<ActorPopup actor={ACTOR_SPARSE} />);
+    render(<ActorCard actor={ACTOR_SPARSE} />);
 
     expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/email/i)).not.toBeInTheDocument();

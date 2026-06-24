@@ -137,4 +137,15 @@ describe('ListQueryDto', () => {
     const dto = plainToInstance(ListQueryDto, { role: 'wholesaler' });
     expect(await invalidProps(dto)).toContain('role');
   });
+
+  it('accepts a valid search term (FR-4)', async () => {
+    const dto = plainToInstance(ListQueryDto, { search: 'Mbeya Seed' });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.search).toBe('Mbeya Seed');
+  });
+
+  it('rejects an over-long search term (> 100 chars)', async () => {
+    const dto = plainToInstance(ListQueryDto, { search: 'a'.repeat(101) });
+    expect(await invalidProps(dto)).toContain('search');
+  });
 });

@@ -31,6 +31,7 @@ export interface ActorsQuery {
   crop?: string;
   role?: string;
   region?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -62,6 +63,7 @@ export async function getActors(query?: ActorsQuery): Promise<PublicActorList | 
       if (query.crop      != null) params.set('crop',     query.crop);
       if (query.role      != null) params.set('role',     query.role);
       if (query.region    != null) params.set('region',   query.region);
+      if (query.search    != null) params.set('search',   query.search);
       if (query.page      != null) params.set('page',     String(query.page));
       if (query.pageSize  != null) params.set('pageSize', String(query.pageSize));
     }
@@ -72,6 +74,24 @@ export async function getActors(query?: ActorsQuery): Promise<PublicActorList | 
   } catch {
     // Intentionally swallow all errors (DD-6 / NFR-5).
     // The component layer renders a graceful empty/error state when data is null.
+    return null;
+  }
+}
+
+/**
+ * Fetch a single public-safe actor by id from the API.
+ *
+ * Returns a typed PublicActor on success, or null on ANY failure — including
+ * a 404 when the id is absent or not consented (null-on-failure, NFR-7).
+ * `apiGet` throws on any non-OK response, so a 404 surfaces here as a caught
+ * error and is collapsed to null, just like network/parse failures.
+ * The component layer renders a graceful not-found/error state when data is null.
+ */
+export async function getActor(id: string): Promise<PublicActor | null> {
+  try {
+    return await apiGet<PublicActor>(`/api/v1/actors/${id}`);
+  } catch {
+    // Intentionally swallow all errors, including 404 (NFR-7).
     return null;
   }
 }

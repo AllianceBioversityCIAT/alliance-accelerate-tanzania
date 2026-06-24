@@ -1,28 +1,51 @@
 /**
- * regions.ts — provisional Tanzania region list for the Discovery Map rail filters.
+ * regions.ts — canonical Tanzania region list for filter controls.
  *
- * This list is provisional: it covers the 10 regions represented in the seeded
- * consented dataset. It will be replaced by a canonical, API-driven region
- * enumeration once OQ-6 (region canonicalization) is resolved and the real
- * import lands.
+ * OQ-1 (resolved): region options are sourced exclusively from
+ * `CANONICAL_REGIONS` in `backend/src/common/normalize.ts` (31 regions as of
+ * the most recent administrative split). The backend validates the `?region=`
+ * filter parameter against this same constant via exact-string equality;
+ * sending any other value yields a 400. Driving the frontend from the same
+ * source guarantees the filter can never produce a backend rejection.
  *
- * Values MUST match the exact strings stored in the `region` column of the
- * seeded actors dataset — the backend uses exact string equality for the
- * `?region=` filter parameter (DD-3).
- *
- * Provisional pending: OQ-6 (region canonicalization) + real data import.
+ * Values must match the canonical backend strings exactly (casing + spaces).
+ * Edit `backend/src/common/normalize.ts` `CANONICAL_REGIONS` first if the
+ * administrative map changes, then mirror the change here.
  */
 
-/** Ten Tanzania regions covered by the seeded consented actor dataset. */
+/** All 31 canonical Tanzania regions (mainland + Zanzibar). Exact strings only. */
 export const REGIONS: string[] = [
+  // Mainland Tanzania (26)
   'Arusha',
   'Dar es Salaam',
   'Dodoma',
+  'Geita',
   'Iringa',
+  'Kagera',
+  'Katavi',
   'Kigoma',
+  'Kilimanjaro',
+  'Lindi',
+  'Manyara',
+  'Mara',
   'Mbeya',
   'Morogoro',
   'Mtwara',
   'Mwanza',
+  'Njombe',
+  'Pwani',
+  'Rukwa',
+  'Ruvuma',
+  'Shinyanga',
+  'Simiyu',
+  'Singida',
+  'Songwe',
+  'Tabora',
   'Tanga',
+  // Zanzibar (5)
+  'Kaskazini Unguja',  // Zanzibar North
+  'Kusini Unguja',     // Zanzibar Central/South
+  'Mjini Magharibi',   // Zanzibar Urban/West
+  'Kaskazini Pemba',   // Pemba North
+  'Kusini Pemba',      // Pemba South
 ];
