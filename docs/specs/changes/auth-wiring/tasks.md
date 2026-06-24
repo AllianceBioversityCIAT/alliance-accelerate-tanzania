@@ -7,21 +7,21 @@
 
 ## Tasks
 
-- [ ] T-1 Backend auth module: JWT verification guard + RBAC + proof endpoints  (deps: none)
+- [x] T-1 Backend auth module: JWT verification guard + RBAC + proof endpoints  (deps: none)
       Scope: New `backend/src/auth/`: `auth.config.ts` (env), singleton `jwt-verifier.ts` (`CognitoJwtVerifier`, tokenUse=access), `JwtAuthGuard` (verify iss/aud/use/exp; attach `req.user={sub,username,email,groups,role}`, role from `cognito:groups`, 401 on failure), `@Roles()` + `RolesGuard` (Admin≥Staff, 403), `@CurrentUser()`, `AuthController` (`GET /auth/me`, `GET /auth/protected` @Roles('Staff')), `AuthModule` imported into AppModule. Guards opt-in only — NO global guard. Add `aws-jwt-verify` dep.
       Traces: FR-5, FR-6, FR-7, FR-8, NFR-1 (requirements.md), design.md §3, §4, §6, §8
       Files: backend/src/auth/*, backend/src/app.module.ts, backend/package.json, backend/src/auth/*.spec.ts
       Verify: `cd backend && npm run test -- auth && npm run build`
       Done when: unit tests prove valid token→role mapping (admin/staff/none), invalid/expired/wrong-aud→401, @Roles('Staff') allows Staff+Admin & 403 for Public, `/auth/me` shape, **tokenless `/actors` still 200 + PII-safe**, forged-role-ignored; build passes.
 
-- [ ] T-2 Infra: Cognito env + Authorization CORS on the backend stack  (deps: none)
+- [x] T-2 Infra: Cognito env + Authorization CORS on the backend stack  (deps: none)
       Scope: `infra/20-backend/template.yaml`: add Lambda env `COGNITO_USER_POOL_ID`/`COGNITO_CLIENT_ID` via `Fn::ImportValue` of `accelerate-tz-dev-data-auth-UserPoolId`/`-UserPoolClientId`; add `Authorization` to `CorsConfiguration.AllowHeaders` (keep `Content-Type`; methods stay GET/OPTIONS). No data-auth change.
       Traces: FR-9, NFR-1, NFR-6 (requirements.md), design.md §3 (CORS), §7
       Files: infra/20-backend/template.yaml
       Verify: `cd infra && AWS_PROFILE=IBD-DEV sam validate --template 20-backend/template.yaml --lint --profile IBD-DEV --region eu-west-1`
       Done when: template validates; env vars resolve from data-auth exports; `Authorization` present in AllowHeaders. (Applied live in T-8.)
 
-- [ ] T-3 Frontend Amplify auth client + SessionProvider + real useSession  (deps: none)
+- [x] T-3 Frontend Amplify auth client + SessionProvider + real useSession  (deps: none)
       Scope: Add `aws-amplify`. `lib/auth/amplify-config.ts` (configure from `NEXT_PUBLIC_COGNITO_USER_POOL_ID`/`_CLIENT_ID`), `auth-client.ts` (`signIn`, `confirmNewPassword`, `signOut`, `getSession`, `roleFromGroups`), `SessionProvider.tsx` (`'use client'` context: resolve on mount, expose `{session,loading,signIn,signOut}`), replace `useSession.ts` body (read context; **exported `Role`/`Session` types unchanged**), add `useAuth()`. Mount `<SessionProvider>` in `app/layout.tsx`.
       Traces: FR-2, FR-3, NFR-2, NFR-5, NFR-7 (requirements.md), design.md §5
       Files: frontend/package.json, frontend/lib/auth/{amplify-config,auth-client,SessionProvider,useSession,useAuth}.ts(x), frontend/app/layout.tsx, frontend/lib/auth/*.test.ts(x)
