@@ -5,11 +5,11 @@ Description: >-
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
 # Authored by:
-#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (this section)
-#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (TODO)
-# Shared params (see infra/README.md): DevCidr (T-2). Cognito adds its own params/outputs in T-4.
-# Outputs (T-2 here / T-4 later): RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId,
-#   DbName, DbMasterUsername  (T-2)  ·  UserPoolId, UserPoolClientId  (T-4).
+#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
+#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
+# Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
+# Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
+#   ·  UserPoolId, UserPoolClientId  (T-4).
 
 Parameters:
   # ── T-2 parameters ────────────────────────────────────────────────────────
@@ -132,8 +132,79 @@ Resources:
       TargetType: AWS::RDS::DBInstance
 
   # ════════════════════════════════════════════════════════════════════════════
-  # T-4 — Cognito user pool + client + groups  (added later; do not author here)
+  # T-4 — Cognito user pool + client + groups  (FR-4, FR-7)
   # ════════════════════════════════════════════════════════════════════════════
+  # Identity backbone for the staff/admin RBAC model. This task provisions the
+  # pool, a public SPA app client (no secret), and the admin/staff groups ONLY —
+  # NO users are created (FR-4), and NO Hosted UI / domain / OAuth flows are set
+  # up here (deferred to the auth-wiring spec, OQ-4): those need the CloudFront
+  # URL for callback URLs, which doesn't exist yet. Anonymous callers map to the
+  # Public role and are not modeled in Cognito.
+
+  # Email-based sign-in, self-managed by admins (no public self-signup — these
+  # are internal staff/admin identities). Strong password policy per §6.
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-users"
+      # Sign in with email (email is the username); auto-verify it so admin-created
+      # users get the standard verification path.
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      # Admin-managed only: staff/admin accounts are created by an admin, never via
+      # public self-signup (RBAC model — no anonymous registration).
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+
+  # Public SPA client: NO generated secret (a static SPA can't keep one — NFR-2).
+  # SRP + refresh-token flows are the SPA-appropriate set without a Hosted UI; we
+  # also enable USER_PASSWORD_AUTH for convenience in dev/admin tooling. NO OAuth
+  # flows / CallbackURLs / Hosted-UI domain here (deferred — OQ-4).
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-spa-client"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      # Reasonable token validities for a dev environment.
+      AccessTokenValidity: 1     # hours
+      IdTokenValidity: 1         # hours
+      RefreshTokenValidity: 30   # days
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # RBAC groups. admin has the lower Precedence number = higher priority when a
+  # user belongs to both. Public (anonymous) is intentionally NOT a group.
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref UserPool
+      Description: Administrators — full management access (highest RBAC priority).
+      Precedence: 1
+
+  StaffGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: staff
+      UserPoolId: !Ref UserPool
+      Description: Staff — operational access below admin.
+      Precedence: 10
 
 Outputs:
   # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack
@@ -171,3 +242,16 @@ Outputs:
     Value: accelerate_admin
     Export:
       Name: !Sub "${AWS::StackName}-DbMasterUsername"
+
+  # ── T-4 Cognito outputs (FR-7). Exported for the future auth-wiring spec to
+  #    Fn::ImportValue the pool/client IDs (the SPA needs both to authenticate). ──
+  UserPoolId:
+    Description: Cognito User Pool id (staff/admin identities).
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+  UserPoolClientId:
+    Description: Cognito public SPA app client id (no secret).
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"

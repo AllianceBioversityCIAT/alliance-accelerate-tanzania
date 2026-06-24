@@ -50,7 +50,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: backend SAM template validates, builds, and references the secret without exposing it.
       Skills: aws-serverless, nestjs-expert
 
-- [ ] T-4 Cognito user pool + client + groups  (deps: T-1)
+- [x] T-4 Cognito user pool + client + groups  (deps: T-1)
       Size: S
       Requirements: FR-4, FR-7
       Design: design.md §6, §7

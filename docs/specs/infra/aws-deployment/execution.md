@@ -44,6 +44,14 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `sam validate --lint` valid; `VpcConfig` count 0; no literal password (only dynamic ref); `npx prisma generate` emits both native + `rhel-openssl-3.0.x` engines; `npm run build` → `dist/lambda.js`; `30-frontend` stub has no Transform (typo not propagated).
 - **Reviewer verdict (`rev-infra-t3`):** **STATUS: PASS** — NFR-2 satisfied, DD-2 no-VpcConfig, 5 cross-stack imports match the data-auth exports, binaryTargets correct, Makefile correct + secret-free, least-privilege role, ApiBaseUrl exported, canonical Transform, no scope creep.
 
+### T-4 — Cognito user pool + client + groups — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t4`, general-purpose). Authoring-only.
+- **Files:** MODIFIED `infra/10-data-auth/template.yaml` (Cognito section added; T-2 RDS untouched).
+- **Requirements covered:** FR-4, FR-7.
+- **Decisions:** UserPool email sign-in, `AllowAdminCreateUserOnly: true` (staff/admin RBAC, no public self-signup), password policy min-12 + all char classes; public client `GenerateSecret: false`, flows SRP/PASSWORD/REFRESH (access/id 1h, refresh 30d), no Hosted-UI/OAuth (deferred OQ-4); groups `admin` (precedence 1) + `staff` (10); `Public` not a Cognito group; outputs `UserPoolId`/`UserPoolClientId` exported.
+- **Leader verification:** `sam validate --lint` valid; Cognito pool/client/2 groups present; `GenerateSecret: false`; all 6 T-2 outputs intact; no Hosted-UI/OAuth properties (comment only).
+- **Reviewer verdict (`rev-infra-t4`):** **STATUS: PASS** — FR-4/FR-7 met, NFR-2 no-secret client, OQ-4 deferral correct, no T-2 regression, scope clean.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**. T-4..T-10 pending. Next eligible: **T-4** (Cognito → `10-data-auth`; deps: T-1 ✓). Then T-5 per user queue.
+- T-1 **[x]**, T-2 **[x]**, T-3 **[x]**, T-4 **[x]** — all PASS. T-5..T-10 pending. Next eligible: **T-5** (S3 + CloudFront; deps: T-1 ✓).
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.
