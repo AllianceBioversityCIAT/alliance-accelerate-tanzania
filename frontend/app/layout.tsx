@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { SessionProvider } from '@/lib/auth/SessionProvider';
 
 // Configure Inter with a CSS variable so that --font-sans (globals.css) can
 // reference it as `var(--font-inter)`. This keeps next/font's optimised
@@ -24,7 +25,11 @@ export default function RootLayout({
   // --font-sans is defined as `var(--font-inter), "Inter", system-ui, sans-serif`.
   return (
     <html lang="en" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        {/* SessionProvider is a 'use client' boundary; resolves Cognito session
+            on the client and exposes it via useSession() to all children. */}
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }
