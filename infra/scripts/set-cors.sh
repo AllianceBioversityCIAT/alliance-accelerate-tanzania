@@ -78,15 +78,20 @@ echo "==> Locking backend CORS AllowedOrigin to: $CLOUDFRONT_URL"
 echo
 
 # ── Step 1: sam build (required by Metadata: BuildMethod: makefile) ───────────
-echo "==> Building $BACKEND_STACK (sam build — required before deploy) ..."
+# Deploy the BUILT template (not the source) — a source-template `sam deploy`
+# zips the raw CodeUri (~500MB backend/ dev node_modules) and blows the 250MB
+# Lambda unzip limit. See deploy.sh step 3.
+BACKEND_BUILD_DIR="$INFRA_DIR/20-backend/.aws-sam/build"
+echo "==> Building $BACKEND_STACK (sam build → $BACKEND_BUILD_DIR) ..."
 sam build \
   --template "$BACKEND_TEMPLATE" \
+  --build-dir "$BACKEND_BUILD_DIR" \
   --profile "$PROFILE" --region "$REGION"
 
 # ── Step 2: redeploy the backend with the locked CORS origin ─────────────────
 echo "==> Redeploying $BACKEND_STACK with AllowedOrigin=$CLOUDFRONT_URL ..."
 sam deploy \
-  --template "$BACKEND_TEMPLATE" \
+  --template "$BACKEND_BUILD_DIR/template.yaml" \
   --stack-name "$BACKEND_STACK" \
   --parameter-overrides \
     AllowedOrigin="$CLOUDFRONT_URL" \

@@ -148,15 +148,21 @@ echo
 
 # ── Step 3: 20-backend (NestJS Lambda + HTTP API) ────────────────────────────
 # The backend template uses Metadata: BuildMethod: makefile, so `sam build`
-# MUST run before `sam deploy` to package dist/ + the Prisma engine.
-echo "==> [3/4] Building $BACKEND_STACK (sam build — required before deploy) ..."
+# MUST run before `sam deploy`. CRITICAL: deploy the BUILT template
+# ($BACKEND_BUILD_DIR/template.yaml), NOT the source template — passing the
+# source template to `sam deploy` zips the raw CodeUri (the full backend/ dev
+# node_modules, ~500MB) and ignores the slimmed makefile build, blowing the
+# 250MB Lambda unzip limit.
+BACKEND_BUILD_DIR="$INFRA_DIR/20-backend/.aws-sam/build"
+echo "==> [3/4] Building $BACKEND_STACK (sam build → $BACKEND_BUILD_DIR) ..."
 sam build \
   --template "$INFRA_DIR/20-backend/template.yaml" \
+  --build-dir "$BACKEND_BUILD_DIR" \
   --profile "$PROFILE" --region "$REGION"
 
 echo "==> [3/4] Deploying $BACKEND_STACK (Lambda + HTTP API) ..."
 sam deploy \
-  --template "$INFRA_DIR/20-backend/template.yaml" \
+  --template "$BACKEND_BUILD_DIR/template.yaml" \
   --stack-name "$BACKEND_STACK" \
   --parameter-overrides \
     AllowedOrigin="$ALLOWED_ORIGIN" \
