@@ -32,3 +32,7 @@ build-ApiFunction:
 	find $(ARTIFACTS_DIR)/node_modules/.prisma/client -name 'libquery_engine-darwin*' -delete
 	# Safety net: ensure no non-runtime Prisma tooling slipped into the prod install.
 	rm -rf $(ARTIFACTS_DIR)/node_modules/prisma $(ARTIFACTS_DIR)/node_modules/@prisma/engines
+	# Pruning packages leaves dangling .bin symlinks (e.g. .bin/prisma → ../prisma/...);
+	# sam's zip upload follows them and fails. Remove any broken symlinks (portable: -e
+	# follows the link, so it's false for a dangling one).
+	for l in $(ARTIFACTS_DIR)/node_modules/.bin/*; do [ -e "$$l" ] || rm -f "$$l"; done
