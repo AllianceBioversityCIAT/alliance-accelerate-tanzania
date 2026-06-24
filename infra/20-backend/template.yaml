@@ -54,25 +54,28 @@ Resources:
       # NO VpcConfig - Lambda runs outside the VPC (DD-2).
       Environment:
         Variables:
-          # Composed Prisma connection string. Password ONLY via the
-          # {{resolve:secretsmanager:...:SecretString:password}} dynamic reference
-          # (NFR-2). TLS posture (dev): `sslaccept=accept_invalid_certs` = the
-          # connection is ENCRYPTED but the RDS cert chain is NOT verified —
-          # Prisma's MySQL (Rust) engine can't reliably trust a custom CA on this
-          # stack. Acceptable for dev (SG-restricted endpoint, seeded non-PII data);
-          # verified TLS (RDS Proxy / IAM auth) is deferred to infra/network-hardening.
-          DATABASE_URL: !Sub
-            - "mysql://${User}:{{resolve:secretsmanager:${SecretArn}:SecretString:password}}@${Host}:${Port}/${Db}?sslaccept=accept_invalid_certs"
-            - User: !ImportValue
-                Fn::Sub: "${DataAuthStackName}-DbMasterUsername"
-              SecretArn: !ImportValue
+          # Discrete DB connection parts — PrismaService composes the URL and
+          # URL-ENCODES the password (CloudFormation !Sub cannot encode it, and a
+          # raw password with URL-special chars corrupts the connection string).
+          # Password ONLY via the {{resolve:secretsmanager:...}} dynamic reference
+          # (NFR-2), resolved at deploy — never committed.
+          DB_HOST: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-RdsEndpoint"
+          DB_PORT: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-RdsPort"
+          DB_NAME: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-DbName"
+          DB_USER: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-DbMasterUsername"
+          DB_PASSWORD: !Sub
+            - "{{resolve:secretsmanager:${SecretArn}:SecretString:password}}"
+            - SecretArn: !ImportValue
                 Fn::Sub: "${DataAuthStackName}-DbSecretArn"
-              Host: !ImportValue
-                Fn::Sub: "${DataAuthStackName}-RdsEndpoint"
-              Port: !ImportValue
-                Fn::Sub: "${DataAuthStackName}-RdsPort"
-              Db: !ImportValue
-                Fn::Sub: "${DataAuthStackName}-DbName"
+          # TLS posture (dev): encrypted, cert chain NOT verified — Prisma's MySQL
+          # (Rust) engine can't reliably trust a custom CA on this stack. Acceptable
+          # for dev (SG-restricted, seeded non-PII data); verified TLS deferred to
+          # infra/network-hardening.
+          DB_SSL: accept_invalid_certs
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
