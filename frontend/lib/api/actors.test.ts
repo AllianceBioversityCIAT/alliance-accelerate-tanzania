@@ -12,7 +12,7 @@
  *   - Calls bare /api/v1/actors when no query is provided
  */
 
-import { getActors, type PublicActor, type PublicActorList } from './actors';
+import { getActor, getActors, type PublicActor, type PublicActorList } from './actors';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -137,6 +137,31 @@ describe('getActors()', () => {
     expect(url.searchParams.get('pageSize')).toBe('10');
   });
 
+  it('appends search to the querystring when provided', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_LIST);
+
+    await getActors({ search: 'mbeya seeds' });
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    const url = new URL(calledUrl);
+
+    expect(url.pathname).toBe('/api/v1/actors');
+    expect(url.searchParams.get('search')).toBe('mbeya seeds');
+  });
+
+  it('omits search from the querystring when not provided', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_LIST);
+
+    await getActors({ crop: 'sorghum' });
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    const url = new URL(calledUrl);
+
+    expect(url.searchParams.has('search')).toBe(false);
+  });
+
   it('omits undefined query fields from the querystring', async () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
     global.fetch = makeFetchOk(VALID_LIST);
@@ -220,5 +245,57 @@ describe('getActors()', () => {
     });
 
     await expect(getActors()).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getActor() — detail fetch (FR-5, NFR-7: null-on-failure including 404)
+// ---------------------------------------------------------------------------
+
+describe('getActor()', () => {
+  const ORIGINAL_ENV = process.env;
+
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    jest.resetAllMocks();
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('returns the PublicActor when fetch resolves HTTP 200 with valid JSON', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_ACTOR);
+
+    const result = await getActor('actor-1');
+
+    expect(result).toEqual(VALID_ACTOR);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/v1/actors/actor-1',
+      { headers: { Accept: 'application/json' } }
+    );
+  });
+
+  it('returns null when the actor is not found (HTTP 404)', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchNotOk(404, {
+      statusCode: 404,
+      message: 'Actor not found',
+      error: 'Not Found',
+    });
+
+    const result = await getActor('missing-id');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when fetch rejects with a network error', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchReject(new TypeError('Failed to fetch'));
+
+    const result = await getActor('actor-1');
+
+    expect(result).toBeNull();
   });
 });
