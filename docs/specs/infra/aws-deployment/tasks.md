@@ -68,7 +68,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: frontend hosting stack validates with a private bucket served only via CloudFront OAC + route rewrite.
       Skills: aws-serverless
 
-- [ ] T-6 DB migrate + seed runner  (deps: T-2)
+- [x] T-6 DB migrate + seed runner  (deps: T-2)
       Size: S
       Requirements: FR-2, FR-3, NFR-5
       Design: design.md §2, §6, §10

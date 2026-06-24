@@ -68,3 +68,25 @@ Single source of truth for stack names, region, and shared parameters
 reference). `ApiBaseUrl` (20-backend output) → frontend build env. `CloudFrontUrl`
 (30-frontend output) → `AllowedOrigin` on the backend CORS-lock redeploy.
 Full output table: design.md §3 / FR-7.
+
+## DB migrate + seed
+
+Operator step **2** of the deploy order (run once, after `10-data-auth` is
+deployed). `infra/scripts/migrate-seed.sh` resolves the RDS wiring from the
+data-auth stack outputs, reads the DB credentials from Secrets Manager, composes
+the Prisma `DATABASE_URL` **in-process** (TLS on, URL-encoded password — never
+written to a file/`.env` or printed; NFR-2/NFR-5), then runs `prisma migrate
+deploy` and seeds the consented sample (no real PII) from `backend/`.
+
+**Prereqs:** `10-data-auth` deployed (`CREATE_COMPLETE`); your public IP/32 in the
+RDS security group (the `DevCidr` ingress rule); `jq`, AWS CLI v2, Node 20, and
+backend deps installed (`cd backend && npm ci`); valid `IBD-DEV` credentials.
+
+```bash
+./infra/scripts/migrate-seed.sh
+```
+
+Defaults to `--profile IBD-DEV` / `eu-west-1` / stack `accelerate-tz-dev-data-auth`;
+override via `AWS_PROFILE` / `AWS_REGION` / `DATA_AUTH_STACK`. A non-`IBD-DEV`
+profile triggers a confirmation guard (interactive `yes` or `CONFIRM=yes`). The
+full runbook (deploy → migrate → frontend → CORS → smoke → teardown) is in T-10.

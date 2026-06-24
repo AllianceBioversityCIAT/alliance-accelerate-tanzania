@@ -60,6 +60,15 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `sam validate --lint` valid; 4 block-public-access true; OAC + FunctionAssociations + outputs present; no public `Principal: "*"`.
 - **Reviewer verdict (`rev-infra-t5`):** **STATUS: PASS** — all 7 gates (private/OAC-only, rewrite logic traced for 4 cases, HTTPS, OAC wiring + no circular dep, minimal footprint, exported outputs).
 
+### T-6 — DB migrate + seed runner — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t6`, general-purpose). Authoring + local validation (installed shellcheck via brew).
+- **Files:** NEW `infra/scripts/migrate-seed.sh` (executable); MODIFIED `infra/README.md` ("DB migrate + seed" section).
+- **Requirements covered:** FR-2, FR-3, NFR-1, NFR-2, NFR-4, NFR-5.
+- **Decisions:** IBD-DEV guard (CONFIRM=yes/interactive override else abort); resolves wiring from `accelerate-tz-dev-data-auth` Outputs via `get_output` jq helper (fail-fast); password URL-encoded via `jq @uri` (never echoed); `DATABASE_URL` composed in-process (TLS `sslaccept=strict`), raw secret vars `unset` after; passed inline `DATABASE_URL=... npx prisma <cmd>` (never exported/written/printed).
+- **Justified deviation:** task said `npm run seed` but `backend/package.json` has no `seed` script — used `npx prisma db seed` (honors the `prisma.seed` config; `npm run seed` would error). Confirmed correct by the Reviewer.
+- **Leader verification:** `bash -n` OK; both `aws` calls `--profile "$PROFILE"` (IBD-DEV); TLS+migrate+seed present; no secret leak to file/stdout; executable; README section added.
+- **Reviewer verdict (`rev-infra-t6`):** **STATUS: PASS** — `shellcheck` clean; NFR-2/NFR-5 secret hygiene fully clean (no password echoed, URL in-process, raw material unset, never persisted); NFR-1 guard on both aws calls; wiring + error handling + TLS correct; `prisma db seed` correct; scope = the 2 files.
+
 ## 3. Summary (updated as tasks complete)
-- T-1..T-5 **[x] all PASS** — all four stack templates authored (10-data-auth RDS+Cognito, 20-backend, 30-frontend). T-6..T-10 pending (scripts + runbook). Next eligible: **T-6** (migrate/seed runner; deps: T-2 ✓).
+- T-1..T-6 **[x] all PASS** — 4 stack templates + the migrate/seed runner. T-7..T-10 pending (deploy/frontend/smoke/teardown scripts + runbook). Next eligible: **T-7** (deploy orchestration + validate.sh; deps: T-3,T-4,T-5 ✓).
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.
