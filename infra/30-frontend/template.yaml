@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ACCELERATE Tanzania (dev) — frontend hosting stack: private S3 bucket served
+  exclusively via CloudFront (OAC) (T-5). Stack: accelerate-tz-dev-frontend.
+  Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
+
+# Scaffold stub (T-1). Resources are authored by:
+#   T-5 — private AWS::S3::Bucket (Block Public Access on)
+#         + AWS::CloudFront::OriginAccessControl
+#         + AWS::CloudFront::Distribution (OAC origin, DefaultRootObject index.html,
+#           redirect-to-HTTPS, minimal price class)
+#         + AWS::S3::BucketPolicy (OAC s3:GetObject only)
+#         + AWS::CloudFront::Function (viewer-request rewrite /map -> /map/index.html).
+# Outputs (T-5): CloudFrontUrl, FrontendBucketName.
+Resources:
+  # Placeholder so the template is valid until T-5 adds the real bucket/distribution.
+  ScaffoldPlaceholder:
+    Type: AWS::CloudFormation::WaitConditionHandle

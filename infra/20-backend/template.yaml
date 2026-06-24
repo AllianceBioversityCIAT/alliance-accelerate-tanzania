@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-09
+Description: >-
+  ACCELERATE Tanzania (dev) — backend stack: NestJS on Lambda + HTTP API (T-3).
+  Stack: accelerate-tz-dev-backend. Reads DATABASE_URL from the data-auth secret
+  via a Secrets Manager dynamic reference. Deploy with:
+  sam deploy --profile IBD-DEV --region eu-west-1.
+
+# Scaffold stub (T-1). Resources are authored by:
+#   T-3 — AWS::Serverless::Function (dist/lambda.handler, nodejs20.x, no VpcConfig)
+#         + AWS::Serverless::HttpApi (ANY /{proxy+}, ANY /, CORS from AllowedOrigin)
+#         + least-privilege exec role (Logs + GetSecretValue on the one secret).
+# Shared params (see infra/README.md): AllowedOrigin; imports DbSecretArn from data-auth.
+# Output (T-3): ApiBaseUrl.
+Resources:
+  # Placeholder so the template is valid until T-3 adds the real function/API.
+  ScaffoldPlaceholder:
+    Type: AWS::CloudFormation::WaitConditionHandle

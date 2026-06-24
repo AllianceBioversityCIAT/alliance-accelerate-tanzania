@@ -1,0 +1,21 @@
+# SAM CLI config — ACCELERATE Tanzania Seed Registry (dev).
+# NFR-1: every deploy uses the IBD-DEV profile, region eu-west-1.
+# This file is shared by all three stacks (10-data-auth, 20-backend, 30-frontend);
+# each stack is deployed from its own directory with --stack-name (see infra/README.md).
+version = 0.1
+
+[default.global.parameters]
+profile = "IBD-DEV"
+region = "eu-west-1"
+
+[default.deploy.parameters]
+profile = "IBD-DEV"
+region = "eu-west-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_NAMED_IAM"
+resolve_s3 = true
+
+[default.validate.parameters]
+profile = "IBD-DEV"
+region = "eu-west-1"
+lint = true

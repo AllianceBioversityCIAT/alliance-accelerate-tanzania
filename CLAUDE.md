@@ -19,7 +19,7 @@ These form the **constitutional baseline** for all SDD work. Module/feature spec
 
 ## Mandated stack (do not substitute)
 - **Frontend:** Next.js (App Router, TypeScript, Tailwind), **static export** → S3 → CloudFront.
-- **Backend:** NestJS (TypeScript), serverless REST API → AWS Lambda + API Gateway (Serverless Framework).
+- **Backend:** NestJS (TypeScript), serverless REST API → AWS Lambda + API Gateway (AWS SAM / CloudFormation; IaC defined under `infra/` as SAM templates).
 - **Database:** AWS RDS **MySQL** via **Prisma**.
 - **Maps:** **Leaflet**. **Auth/RBAC:** **AWS Cognito** (groups `admin`, `staff`; anonymous = `Public`).
 

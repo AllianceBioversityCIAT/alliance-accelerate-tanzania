@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ACCELERATE Tanzania (dev) — data + auth stack: RDS MySQL + Secrets Manager
+  (T-2) and Cognito user pool/client/groups (T-4). Stack: accelerate-tz-dev-data-auth.
+  Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
+
+# Scaffold stub (T-1). Resources are authored by:
+#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret
+#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup
+# Shared params (see infra/README.md): DevCidr, AllowedOrigin.
+# Outputs (T-2/T-4): RdsEndpoint, DbSecretArn, DbSecurityGroupId, UserPoolId, UserPoolClientId.
+Resources:
+  # Placeholder so the template is valid until T-2/T-4 add real resources.
+  ScaffoldPlaceholder:
+    Type: AWS::CloudFormation::WaitConditionHandle

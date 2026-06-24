@@ -23,7 +23,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
 
 ---
 
-- [ ] T-1 Infra scaffold + IaC ratification  (deps: none)
+- [x] T-1 Infra scaffold + IaC ratification  (deps: none)
       Size: S
       Requirements: FR-1, FR-7, NFR-1, NFR-3, NFR-7
       Design: design.md §1, §7, DD-1
