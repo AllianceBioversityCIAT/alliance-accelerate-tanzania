@@ -112,6 +112,77 @@ describe('ActorsService (mocked Prisma)', () => {
       });
     });
 
+    it('adds an OR partial match over name/region/district for a search term (FR-4)', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ search: 'meru' } as ListQueryDto);
+
+      const where = prisma.actor.findMany.mock.calls[0][0].where;
+      // case-insensitivity is the MySQL `_ci` collation's job — the query just
+      // passes the raw trimmed term (no `mode: 'insensitive'`).
+      expect(where.OR).toEqual([
+        { traderName: { contains: 'meru' } },
+        { region: { contains: 'meru' } },
+        { district: { contains: 'meru' } },
+      ]);
+    });
+
+    it('trims the search term and ignores a whitespace-only one', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ search: '  arusha  ' } as ListQueryDto);
+      expect(prisma.actor.findMany.mock.calls[0][0].where.OR).toEqual([
+        { traderName: { contains: 'arusha' } },
+        { region: { contains: 'arusha' } },
+        { district: { contains: 'arusha' } },
+      ]);
+
+      await service.findPublic({ search: '   ' } as ListQueryDto);
+      expect(prisma.actor.findMany.mock.calls[1][0].where.OR).toBeUndefined();
+    });
+
+    it('ANDs search with consent and crop/role/region filters (siblings)', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({
+        search: 'seed',
+        region: 'Arusha',
+        role: 'seed_company',
+        crop: 'sorghum',
+      } as ListQueryDto);
+
+      const where = prisma.actor.findMany.mock.calls[0][0].where;
+      // consent + filters survive alongside OR; all sibling keys → Prisma ANDs.
+      expect(where).toMatchObject({
+        consentStatus: ConsentStatus.GRANTED,
+        region: 'Arusha',
+        traderType: 'seed_company',
+        crops: { some: { crop: { name: 'sorghum' } } },
+        OR: [
+          { traderName: { contains: 'seed' } },
+          { region: { contains: 'seed' } },
+          { district: { contains: 'seed' } },
+        ],
+      });
+    });
+
+    it('counts the SAME searched + GRANTED set so total stays accurate', async () => {
+      prisma.actor.findMany.mockResolvedValue([fixtureActor()]);
+      prisma.actor.count.mockResolvedValue(1);
+
+      const res = await service.findPublic({ search: 'meru' } as ListQueryDto);
+
+      const findWhere = prisma.actor.findMany.mock.calls[0][0].where;
+      const countWhere = prisma.actor.count.mock.calls[0][0].where;
+      // non-GRANTED rows are excluded by the shared consent pin in both calls.
+      expect(countWhere.consentStatus).toBe(ConsentStatus.GRANTED);
+      expect(countWhere).toEqual(findWhere);
+      expect(res.total).toBe(1);
+    });
+
     it('omits absent filters from the WHERE (only consent pinned)', async () => {
       prisma.actor.findMany.mockResolvedValue([]);
       prisma.actor.count.mockResolvedValue(0);

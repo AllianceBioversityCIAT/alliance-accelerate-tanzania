@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 
 /**
@@ -24,6 +24,12 @@ export class ListQueryDto {
   @IsOptional()
   @IsString()
   crop?: string;
+
+  /** Free-text search over traderName/region/district (FR-4); bounded length. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
 
   /** Public name for `traderType` — must be in the OQ-2 taxonomy. */
   @IsOptional()
