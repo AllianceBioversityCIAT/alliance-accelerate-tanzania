@@ -69,6 +69,14 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `bash -n` OK; both `aws` calls `--profile "$PROFILE"` (IBD-DEV); TLS+migrate+seed present; no secret leak to file/stdout; executable; README section added.
 - **Reviewer verdict (`rev-infra-t6`):** **STATUS: PASS** — `shellcheck` clean; NFR-2/NFR-5 secret hygiene fully clean (no password echoed, URL in-process, raw material unset, never persisted); NFR-1 guard on both aws calls; wiring + error handling + TLS correct; `prisma db seed` correct; scope = the 2 files.
 
+### T-7 — Stack deploy orchestration + validation — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t7`, general-purpose). Authoring + local validation (ran `validate.sh`, no apply).
+- **Files:** NEW `infra/scripts/deploy.sh`, `infra/scripts/validate.sh` (both executable); MODIFIED `infra/README.md` (T-7 note).
+- **Requirements covered:** FR-1, FR-8, NFR-1, NFR-7, NFR-2.
+- **Decisions:** `deploy.sh` ordered 10-data-auth → operator migrate pause (TTY/`SKIP_MIGRATE_PAUSE`) → `sam build`+deploy 20-backend → 30-frontend; VpcId/DevCidr auto-detected (default VPC / `checkip.amazonaws.com`) with env override + non-empty validation; `SAM_DEPLOY_FLAGS` array carries `--config-file samconfig.toml --profile --region --capabilities CAPABILITY_NAMED_IAM --no-confirm-changeset --no-fail-on-empty-changeset` (NFR-7 idempotent); prints non-secret stack outputs. `validate.sh` runs `sam validate --lint` over all 3 with PASS/FAIL summary.
+- **Leader verification:** `bash -n` OK; `shellcheck` clean; `AWS_PROFILE=IBD-DEV bash validate.sh` → all 3 PASS; `sam build` (L153) precedes backend deploy (L158); both executable; IBD-DEV default in code.
+- **Reviewer verdict (`rev-infra-t7`):** **STATUS: PASS** — NFR-1 profile-scoped throughout, DD-6 order + build-before-deploy correct, NFR-7 idempotent, params correct, no secrets exposed, all static checks clean.
+
 ## 3. Summary (updated as tasks complete)
-- T-1..T-6 **[x] all PASS** — 4 stack templates + the migrate/seed runner. T-7..T-10 pending (deploy/frontend/smoke/teardown scripts + runbook). Next eligible: **T-7** (deploy orchestration + validate.sh; deps: T-3,T-4,T-5 ✓).
+- T-1..T-7 **[x] all PASS** — 4 templates + migrate/seed + deploy/validate scripts. T-8..T-10 pending. Next eligible: **T-8** (frontend build/deploy + CORS lock; deps: T-5,T-3 ✓).
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.

@@ -90,3 +90,17 @@ Defaults to `--profile IBD-DEV` / `eu-west-1` / stack `accelerate-tz-dev-data-au
 override via `AWS_PROFILE` / `AWS_REGION` / `DATA_AUTH_STACK`. A non-`IBD-DEV`
 profile triggers a confirmation guard (interactive `yes` or `CONFIRM=yes`). The
 full runbook (deploy → migrate → frontend → CORS → smoke → teardown) is in T-10.
+
+## Deploy + validate scripts (T-7)
+
+- **`infra/scripts/validate.sh`** — local, no-cost gate: runs `sam validate --lint`
+  on all three templates and prints a per-stack PASS/FAIL summary. Safe to run
+  anytime (no apply). `./infra/scripts/validate.sh`.
+- **`infra/scripts/deploy.sh`** — operator orchestration of the deploy order
+  (design.md §1 / DD-6): step 1 `10-data-auth` (auto-detects `VpcId`/`DevCidr`,
+  override via `VPC_ID`/`DEV_CIDR`), then **pauses** for the operator to run
+  `migrate-seed.sh` (step 2), then `sam build` + deploy `20-backend` (step 3),
+  then `30-frontend` (step 4). Prints each stack's outputs to stdout (non-secret;
+  the DB password is never read or printed — NFR-2). Idempotent re-deploys via
+  change sets (NFR-7). Frontend build/sync + CORS lock (steps 4b–5) are T-8.
+  `./infra/scripts/deploy.sh` (creates real, billable resources — operator only).

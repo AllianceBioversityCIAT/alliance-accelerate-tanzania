@@ -77,7 +77,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: migrate/seed script is safe (no committed/echoed secret), TLS-enforcing, IBD-DEV-gated, and documented.
       Skills: aws-serverless
 
-- [ ] T-7 Stack deploy orchestration + validation  (deps: T-3, T-4, T-5)
+- [x] T-7 Stack deploy orchestration + validation  (deps: T-3, T-4, T-5)
       Size: M
       Requirements: FR-1, FR-8, NFR-1, NFR-7
       Design: design.md §1 (deploy order), §10, DD-6
