@@ -21,7 +21,7 @@
       Verify: `cd frontend && npm test -- actors useActor`
       Done when: tests show `getActor` returns data on 200 and null on 404/failure, `getActors` includes `search` in the querystring, and `useActor` transitions loading→data / loading→error.
 
-- [ ] T-3 Directory list page + ActorCard grid + result count + states  (deps: T-2)
+- [x] T-3 Directory list page + ActorCard grid + result count + states  (deps: T-2)
       Scope: `/directory` route under `(public)`; `DirectoryView` renders a responsive `ActorCard` grid from `useActors`, a `ResultCount` ("N organizations found") in an `aria-live` region, and loading/empty/error states (FR-8). `ActorCard` shows name, RoleBadge, region·district, crop chips, capacity, and links to `/profile?id=<id>`. Tokens only; no PII.
       Traces: FR-1, FR-8, NFR-3, NFR-4, NFR-6, NFR-7 (requirements.md), design.md §5
       Files: frontend/app/(public)/directory/page.tsx, frontend/components/directory/{DirectoryView,ActorCard,ResultCount}.tsx, frontend/components/directory/*.test.tsx
@@ -35,7 +35,7 @@
       Verify: `cd frontend && npm test -- directory`
       Done when: selecting filters / typing search updates the URL and the query, resets to page 1, combines (AND), and "clear" resets; region options match accepted values; tests pass.
 
-- [ ] T-5 Actor Profile page + locked Contact panel + states  (deps: T-2)
+- [x] T-5 Actor Profile page + locked Contact panel + states  (deps: T-2)
       Scope: `/profile` route reading `?id=` via `useSearchParams()` wrapped in `<Suspense>` (static-export safe); `ProfileView` uses `useActor(id)` and renders `ProfileHeader`, `ProfileLocation` (textual coords — OQ-3), `ProfileMarketActivity`, `ProfileCapacity`, and an always-locked `RestrictedContactPanel` (FR-6). Loading/error/not-found (404) states. Tokens only.
       Traces: FR-5, FR-6, FR-8, NFR-1, NFR-3, NFR-4, NFR-5, NFR-6 (requirements.md), design.md §5, §8
       Files: frontend/app/(public)/profile/page.tsx, frontend/components/profile/{ProfileView,ProfileHeader,ProfileLocation,ProfileMarketActivity,ProfileCapacity,RestrictedContactPanel}.tsx, frontend/components/profile/*.test.tsx

@@ -28,5 +28,26 @@
 - Decisions: `useActor` keys its effect on the scalar `id` directly (no `JSON.stringify` needed, unlike `useActors` which keys on a query object).
 - Final verification: PASS.
 
+### T-3 — Directory list page + ActorCard grid + result count + states — PASS (attempt 1)
+- Date: 2026-06-24
+- Implementer attempts: 1 (impl-t3, frontend-developer)
+- **Attempt 1:**
+  - Files: `frontend/app/(public)/directory/page.tsx` (server page → `<DirectoryView/>`), `frontend/components/directory/DirectoryView.tsx` (`'use client'`; `useActors()`; ResultCount + responsive 1→2→3-col ActorCard grid; distinct loading[Skeleton,role=status]/error[role=alert]/empty/loaded states), `ActorCard.tsx` (RoleBadge + crop chips + capacity `—`; Next `<Link>` → `/profile?id=<id>` with aria-label), `ResultCount.tsx` (server; `aria-live="polite"` "N organizations found"), `DirectoryView.test.tsx` (20), `ActorCard.test.tsx` (10).
+  - Verification: `cd frontend && npm test -- directory` → **30/30**; `npm run build` → `/directory` static (○). Leader re-ran combined suite → 54/54 + build clean.
+  - Reviewer (rev-t3) verdict: **PASS** — FR-1 fields + `/profile?id=` forward-link (FR-7), tokens-only crop-chip pattern mirrors ActorPopup, `aria-live` count, four distinct states, `useActors` server-paginated (no client full-set filter), PII boundary holds, scope correctly defers search/filter/pagination to T-4 (documented forward-compat `query` prop).
+- Requirements covered: FR-1, FR-8, NFR-3, NFR-4, NFR-6, NFR-7 (forward FR-7 link).
+- Final verification: PASS.
+
+### T-5 — Actor Profile page + locked Contact panel + states — PASS (attempt 1)
+- Date: 2026-06-24
+- Implementer attempts: 1 (impl-t5, frontend-developer)
+- **Attempt 1:**
+  - Files: `frontend/app/(public)/profile/page.tsx` (`/profile` route; `<Suspense>`→`ProfileView` + fallback skeleton), `ProfileView.tsx` (`'use client'`; `useSearchParams().get('id')`; `useActor(id)`; loading/not-found[id missing OR data null OR error]/success), `ProfileHeader/ProfileLocation[textual coords, no Leaflet]/ProfileMarketActivity[crop chips]/ProfileCapacity[`—` fallback]/RestrictedContactPanel[always-locked, no PII fields]`, `ProfileView.test.tsx` (24, incl. PII-omission + locked-panel + not-found).
+  - Verification: `cd frontend && npm test -- profile` → **24/24** (PII-omission + locked-panel pass); `npm run build` → `/profile` static (○).
+  - Reviewer (rev-t5) verdict: **PASS** — PII gate clean (panel unconditionally locked, no contact fields, no phone/email in DOM; sections consume only PublicActor); `useSearchParams` inside `<Suspense>` keeps `/profile` static (NFR-5); tokens-only (`--color-restricted-bg`/`surface-alt` real §7 tokens, no raw hex); textual coords honor OQ-3 (no Leaflet); RoleBadge + crop-chip reuse; FR-8 states covered.
+- Requirements covered: FR-5, FR-6, FR-8, NFR-1, NFR-3, NFR-4, NFR-5, NFR-6.
+- Decisions: `--color-restricted-bg` was a pre-existing §7 token (no globals/tailwind change).
+- Final verification: PASS.
+
 ## Notes
 - Environment artifact during this run: ~44 `" 2"`-suffixed byte-identical duplicate files appeared across the repo (sync-conflict copies; repo lives under `Desktop/`). Confirmed identical to originals, untracked, never staged; swept before committing. Not part of any task diff.
