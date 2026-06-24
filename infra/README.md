@@ -104,3 +104,22 @@ full runbook (deploy → migrate → frontend → CORS → smoke → teardown) i
   the DB password is never read or printed — NFR-2). Idempotent re-deploys via
   change sets (NFR-7). Frontend build/sync + CORS lock (steps 4b–5) are T-8.
   `./infra/scripts/deploy.sh` (creates real, billable resources — operator only).
+
+## Frontend deploy + CORS lock (T-8)
+
+Run these after `deploy.sh` (all three stacks up) and `migrate-seed.sh`, in order
+(design.md §1 steps 4b–5 / DD-6):
+
+- **`infra/scripts/deploy-frontend.sh`** — resolves `ApiBaseUrl` (20-backend) and
+  `FrontendBucketName` + `CloudFrontUrl` (30-frontend) from stack outputs, derives
+  the CloudFront distribution Id from the domain, then builds the static export with
+  `NEXT_PUBLIC_API_BASE_URL=<ApiBaseUrl>` (build-time injection), `aws s3 sync out/
+  → s3://<bucket> --delete`, and a `/*` CloudFront invalidation. Override resolution
+  via `API_BASE_URL` / `DISTRIBUTION_ID`. `./infra/scripts/deploy-frontend.sh`.
+- **`infra/scripts/set-cors.sh`** — locks backend CORS (FR-6): resolves
+  `CloudFrontUrl` (30-frontend output; override via `CLOUDFRONT_URL`), then
+  `sam build` + `sam deploy` 20-backend with `AllowedOrigin=<CloudFrontUrl>`.
+  `./infra/scripts/set-cors.sh`.
+
+Both default to `--profile IBD-DEV` / `eu-west-1` and create/alter real resources —
+operator only, not run by the SDD agent loop.

@@ -86,7 +86,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: deploy + validate scripts author the correct ordered, IBD-DEV-scoped, idempotent flow and all templates validate.
       Skills: aws-serverless
 
-- [ ] T-8 Frontend build/deploy + CORS lock  (deps: T-5, T-3)
+- [x] T-8 Frontend build/deploy + CORS lock  (deps: T-5, T-3)
       Size: S
       Requirements: FR-5, FR-6
       Design: design.md §5, §1 (steps 4–5), DD-6

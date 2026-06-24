@@ -77,6 +77,15 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `bash -n` OK; `shellcheck` clean; `AWS_PROFILE=IBD-DEV bash validate.sh` → all 3 PASS; `sam build` (L153) precedes backend deploy (L158); both executable; IBD-DEV default in code.
 - **Reviewer verdict (`rev-infra-t7`):** **STATUS: PASS** — NFR-1 profile-scoped throughout, DD-6 order + build-before-deploy correct, NFR-7 idempotent, params correct, no secrets exposed, all static checks clean.
 
+### T-8 — Frontend build/deploy + CORS lock — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t8`, general-purpose) — completed in 2 passes within attempt 1 (Leader-directed FR-5 fix; no Reviewer FAIL).
+- **Files:** NEW `infra/scripts/deploy-frontend.sh`, `infra/scripts/set-cors.sh` (executable); MODIFIED `frontend/next.config.mjs` (`trailingSlash: true`), `infra/README.md` (T-8 note).
+- **Requirements covered:** FR-5, FR-6, NFR-1, NFR-2.
+- **Decisions:** `deploy-frontend.sh` resolves ApiBaseUrl/FrontendBucketName/CloudFrontUrl from outputs, derives the CloudFront distribution Id at runtime via `list-distributions` (override `DISTRIBUTION_ID`), builds with `NEXT_PUBLIC_API_BASE_URL`, `s3 sync --delete`, invalidates `/*`. `set-cors.sh` resolves CloudFrontUrl → `sam build`+`sam deploy` backend with `AllowedOrigin=<CloudFrontUrl>` (FR-6 lock). All wiring from stack outputs; IBD-DEV-scoped.
+- **Leader-discovered cross-task bug (FR-5):** the static export emitted flat `out/map.html`, but the T-5 CloudFront Function rewrites `/map`→`/map/index.html` → `/map` would 404 live. **Fix:** added `trailingSlash: true` to `next.config.mjs` → export now directory-structured (`out/map/index.html`), matching the T-5 rewrite (realizes design.md §5's stated assumption; the config was simply missing). Verified `out/map.html` no longer produced. (The T-5 template/rewrite needed no change.)
+- **Leader verification:** `bash -n` + `shellcheck` clean; local export build → `out/{index,map/index}.html` present, `map.html` gone; all aws/sam calls `--profile`-scoped; key steps present; both executable.
+- **Reviewer verdict (`rev-infra-t8`):** **STATUS: PASS** — FR-5 fix correct (`/map` resolves, home unaffected, no SSR), FR-6 CORS lock correct (build-before-deploy, idempotent), NFR-1 all 8 calls profile-scoped, NFR-2 no secrets/hardcoded URLs, robust, scope clean.
+
 ## 3. Summary (updated as tasks complete)
-- T-1..T-7 **[x] all PASS** — 4 templates + migrate/seed + deploy/validate scripts. T-8..T-10 pending. Next eligible: **T-8** (frontend build/deploy + CORS lock; deps: T-5,T-3 ✓).
+- T-1..T-8 **[x] all PASS** — 4 templates + 4 scripts (migrate/seed, deploy, validate, deploy-frontend, set-cors) + the FR-5 trailingSlash fix. T-9..T-10 pending. Next eligible: **T-9** (e2e smoke + PII boundary runbook; deps: T-6,T-7,T-8 ✓).
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.
