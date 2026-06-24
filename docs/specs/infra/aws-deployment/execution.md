@@ -52,6 +52,14 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `sam validate --lint` valid; Cognito pool/client/2 groups present; `GenerateSecret: false`; all 6 T-2 outputs intact; no Hosted-UI/OAuth properties (comment only).
 - **Reviewer verdict (`rev-infra-t4`):** **STATUS: PASS** — FR-4/FR-7 met, NFR-2 no-secret client, OQ-4 deferral correct, no T-2 regression, scope clean.
 
+### T-5 — Frontend S3 (private) + CloudFront (OAC) — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t5`, general-purpose). Authoring-only.
+- **Files:** MODIFIED `infra/30-frontend/template.yaml` (replaced placeholder with private S3 + OAC + rewrite Function + Distribution + scoped bucket policy + outputs).
+- **Requirements covered:** FR-5, FR-7, NFR-3, NFR-4.
+- **Decisions:** private bucket (4× block-public-access, `BucketOwnerEnforced`, SSE-S3, no website hosting); OAC sigv4/always; viewer-request CloudFront Function (`cloudfront-js-2.0`) rewriting `/`→`/index.html`, `/map`→`/map/index.html`, `/_next/*.js` passthrough (DD-5); distribution OAC origin (empty `OriginAccessIdentity`), `redirect-to-https`, managed CachingOptimized policy, `PriceClass_100`, no domain/ACM; bucket policy grants only `cloudfront.amazonaws.com` GetObject scoped by `AWS:SourceArn`; outputs `CloudFrontUrl`/`FrontendBucketName` exported.
+- **Leader verification:** `sam validate --lint` valid; 4 block-public-access true; OAC + FunctionAssociations + outputs present; no public `Principal: "*"`.
+- **Reviewer verdict (`rev-infra-t5`):** **STATUS: PASS** — all 7 gates (private/OAC-only, rewrite logic traced for 4 cases, HTTPS, OAC wiring + no circular dep, minimal footprint, exported outputs).
+
 ## 3. Summary (updated as tasks complete)
-- T-1 **[x]**, T-2 **[x]**, T-3 **[x]**, T-4 **[x]** — all PASS. T-5..T-10 pending. Next eligible: **T-5** (S3 + CloudFront; deps: T-1 ✓).
+- T-1..T-5 **[x] all PASS** — all four stack templates authored (10-data-auth RDS+Cognito, 20-backend, 30-frontend). T-6..T-10 pending (scripts + runbook). Next eligible: **T-6** (migrate/seed runner; deps: T-2 ✓).
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.

@@ -59,7 +59,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: Cognito resources + groups + outputs validate within the data-auth stack.
       Skills: aws-serverless
 
-- [ ] T-5 Frontend S3 (private) + CloudFront (OAC)  (deps: T-1)
+- [x] T-5 Frontend S3 (private) + CloudFront (OAC)  (deps: T-1)
       Size: M
       Requirements: FR-5, FR-7, NFR-3, NFR-4
       Design: design.md §5, §7, DD-5

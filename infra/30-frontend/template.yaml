@@ -1,18 +1,174 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  ACCELERATE Tanzania (dev) — frontend hosting stack: private S3 bucket served
-  exclusively via CloudFront (OAC) (T-5). Stack: accelerate-tz-dev-frontend.
-  Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
+  ACCELERATE Tanzania (dev) — frontend hosting stack: the Next.js static export
+  served from a PRIVATE S3 bucket exclusively via CloudFront, fronted by Origin
+  Access Control (OAC) (T-5). A viewer-request CloudFront Function rewrites the
+  per-route export's directory paths to their index.html so `/map` resolves
+  (DD-5). No SAM Transform — these are plain CloudFormation resources. No custom
+  domain: the default *.cloudfront.net domain is the app URL (FR-5, NFR-3).
+  Stack: accelerate-tz-dev-frontend. Deploy with:
+  sam deploy --profile IBD-DEV --region eu-west-1.
 
-# Scaffold stub (T-1). Resources are authored by:
-#   T-5 — private AWS::S3::Bucket (Block Public Access on)
-#         + AWS::CloudFront::OriginAccessControl
-#         + AWS::CloudFront::Distribution (OAC origin, DefaultRootObject index.html,
-#           redirect-to-HTTPS, minimal price class)
-#         + AWS::S3::BucketPolicy (OAC s3:GetObject only)
-#         + AWS::CloudFront::Function (viewer-request rewrite /map -> /map/index.html).
-# Outputs (T-5): CloudFrontUrl, FrontendBucketName.
 Resources:
-  # Placeholder so the template is valid until T-5 adds the real bucket/distribution.
-  ScaffoldPlaceholder:
-    Type: AWS::CloudFormation::WaitConditionHandle
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-5 — Private S3 origin bucket (FR-5, NFR-3; DD-5)
+  # ════════════════════════════════════════════════════════════════════════════
+  # Holds the Next static export (`out/`): out/index.html, out/map/index.html,
+  # and _next/ hashed assets (synced by T-8). The bucket is fully PRIVATE — all
+  # four Block Public Access switches on, ACLs disabled (BucketOwnerEnforced),
+  # and no S3 website hosting. The only read path is CloudFront via OAC + the
+  # scoped bucket policy below; a direct S3 object URL returns 403 (DD-5).
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-site-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        # ACLs disabled — the bucket owner owns every object; no ACL grants.
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: project
+          Value: accelerate-tz
+        - Key: environment
+          Value: dev
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Origin Access Control (OAC) — current AWS best practice over legacy OAI.
+  # CloudFront signs origin requests with SigV4 so the private bucket trusts only
+  # this distribution (DD-5). The bucket policy below pins it via AWS:SourceArn.
+  # ════════════════════════════════════════════════════════════════════════════
+  Oac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        Description: OAC for the private frontend S3 origin.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # CloudFront Function (viewer-request) — clean/directory URL → index.html (DD-5)
+  # ════════════════════════════════════════════════════════════════════════════
+  # Next static export emits a directory per route (out/map/index.html), so the
+  # default S3 origin would 404 on `/map` (no `index.html` appended for sub-paths;
+  # DefaultRootObject only covers `/`). This rewrites the viewer URI before the
+  # origin request:
+  #   "/"               → "/index.html"        (ends with "/")
+  #   "/map"            → "/map/index.html"    (no "." in last segment → extensionless)
+  #   "/map/"           → "/map/index.html"    (ends with "/")
+  #   "/_next/x.abcd.js"→ "/_next/x.abcd.js"   (last segment has "." → untouched asset)
+  RewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-rewrite"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Map directory/clean URLs to the static export's index.html.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          if (uri.endsWith('/')) {
+            // Directory request — serve its index document.
+            request.uri = uri + 'index.html';
+          } else {
+            // Clean route (no file extension in the last path segment) — treat
+            // as a directory and serve its index.html. Hashed assets like
+            // /_next/x.abcd.js keep a "." in the last segment and pass through.
+            var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+            if (lastSegment.indexOf('.') === -1) {
+              request.uri = uri + '/index.html';
+            }
+          }
+          return request;
+        }
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # CloudFront Distribution — the public HTTPS entry point (FR-5, NFR-4; DD-5)
+  # ════════════════════════════════════════════════════════════════════════════
+  # Single private-S3 origin via OAC; redirect-to-HTTPS; the rewrite function on
+  # viewer-request; AWS managed CachingOptimized policy; PriceClass_100 to keep
+  # dev cost minimal (NFR-6/§9). No aliases/ACM — uses the default CloudFront cert
+  # and *.cloudfront.net domain (NFR-3).
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: ACCELERATE Tanzania (dev) frontend.
+        Enabled: true
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: FrontendS3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt Oac.Id
+            S3OriginConfig:
+              # Empty OriginAccessIdentity is required when using OAC (not OAI).
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          # AWS managed "CachingOptimized" cache policy.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt RewriteFunction.FunctionMetadata.FunctionARN
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # Bucket policy — grant ONLY CloudFront (this distribution) s3:GetObject (DD-5)
+  # ════════════════════════════════════════════════════════════════════════════
+  # The cloudfront.amazonaws.com service principal, scoped by AWS:SourceArn to
+  # this exact distribution. No `Principal: "*"`, no public statement — the bucket
+  # stays private and is readable only through the OAC-signed CloudFront origin.
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontOacRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution.Id}"
+
+Outputs:
+  CloudFrontUrl:
+    Description: >-
+      Public HTTPS app URL (default CloudFront domain). The frontend is reachable
+      here; also used as the backend CORS AllowedOrigin on the set-cors redeploy
+      (step 5, FR-6, DD-6).
+    Value: !Sub "https://${Distribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontUrl"
+  FrontendBucketName:
+    Description: >-
+      Private origin bucket name. Consumed by the frontend build/deploy
+      (`aws s3 sync out/ s3://<bucket>`, T-8).
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-FrontendBucketName"
