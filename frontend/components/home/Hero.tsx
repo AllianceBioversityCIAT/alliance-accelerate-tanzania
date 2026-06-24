@@ -9,6 +9,7 @@
 // TODO (T-5/T-6): optionally bind this to `actorsMapped` from the live metrics
 // hook (useMetrics) once the MetricsBand and metrics API client are wired up.
 
+import Image from 'next/image';
 import Button from '@/components/ui/Button';
 
 // ---------------------------------------------------------------------------
@@ -59,38 +60,28 @@ function LiveRegistryCard() {
 }
 
 // ---------------------------------------------------------------------------
-// VisualPanel — right-column image placeholder
+// VisualPanel — right-column field/harvest photography with stat overlay
 // ---------------------------------------------------------------------------
 function VisualPanel() {
   return (
     // relative so the LiveRegistryCard can use absolute positioning inside it.
-    // bg-restricted is the subtle off-white token (#F3F3F3) — no raw hex.
-    // The diagonal stripe pattern is achieved purely with CSS using token colors.
     <div className="relative w-full h-72 lg:h-full min-h-[320px]">
-      <div
-        className="absolute inset-0 rounded-lg bg-restricted border border-border overflow-hidden"
-        // Decorative placeholder: aria-hidden because it carries no meaningful content.
-        aria-hidden="true"
-      >
-        {/* Diagonal stripe overlay — CSS background only, token-based opacity */}
-        <div
-          className="absolute inset-0 opacity-40 text-border"
-          style={{
-            // SVG data-URI stripe: fill='currentColor' inherits CSS `color`,
-            // which is set to var(--color-border) by the `text-border` utility.
-            // This makes the stripe color fully token-driven — no hardcoded hex —
-            // and will correctly track --color-border in future dark-mode themes.
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='currentColor' fill-opacity='1'%3E%3Cpath d='M0 0l20 20M-5 15l10 10M15-5l10 10'/%3E%3C/svg%3E\")",
-            backgroundSize: '20px 20px',
-          }}
+      <div className="absolute inset-0 rounded-lg bg-restricted border border-border overflow-hidden">
+        {/* Real field/harvest photography — meaningful image (informative alt). */}
+        <Image
+          src="/hero-harvest.jpg"
+          alt="A young bean farmer sorting freshly harvested red beans at a community drying site in the Tanzanian highlands."
+          fill
+          priority
+          sizes="(min-width: 1024px) 50vw, 100vw"
+          className="object-cover object-[50%_30%]"
         />
-        {/* Placeholder label — centered in the panel, visible but muted */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <p className="text-xs font-medium tracking-wider uppercase text-muted/60 select-none text-center px-4">
-            Field / harvest photography
-          </p>
-        </div>
+        {/* Bottom scrim for depth + overlay legibility — token-based (fg), no raw
+            hex; tracks --color-fg so the LiveRegistryCard always reads clearly. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-fg/70 to-transparent"
+        />
       </div>
 
       {/* Live Registry stat card — pinned to bottom-left of the panel */}
