@@ -1,12 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  ACCELERATE Tanzania (dev) — data + auth stack: RDS MySQL + Secrets Manager
+  ACCELERATE Tanzania (dev) - data + auth stack: RDS MySQL + Secrets Manager
   (T-2) and Cognito user pool/client/groups (T-4). Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
 # Authored by:
-#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
-#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
+#   T-2 - AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
+#   T-4 - AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
 # Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
 # Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
 #   ·  UserPoolId, UserPoolClientId  (T-4).
@@ -22,7 +22,7 @@ Parameters:
   DevCidr:
     Type: String
     Description: >-
-      Operator public IP as a /32 CIDR (e.g. 203.0.113.7/32) — the admin/migration
+      Operator public IP as a /32 CIDR (e.g. 203.0.113.7/32) - the admin/migration
       ingress rule on 3306 (OQ-6). Supplied at deploy time.
     AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$
     ConstraintDescription: Must be a CIDR block, e.g. 203.0.113.7/32.
@@ -45,12 +45,12 @@ Parameters:
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
-  # T-2 — RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
+  # T-2 - RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
   # ════════════════════════════════════════════════════════════════════════════
 
   # Generated master credentials live ONLY in Secrets Manager (NFR-2). The password
   # is never a literal/default/output; RDS consumes it via {{resolve:...}} dynamic
-  # references below. Per DD-4 we store only {username, password} — NOT a composed
+  # references below. Per DD-4 we store only {username, password} - NOT a composed
   # `url`, because the RDS host is unknown at secret-create time (chicken-and-egg);
   # T-3 composes DATABASE_URL where the host is known.
   DbSecret:
@@ -84,12 +84,12 @@ Resources:
           ToPort: 3306
           CidrIp: !Ref DevCidr
           Description: admin/migration from operator IP (/32)
-        # outside-VPC Lambda — see DD-2; dev-only, harden later
+        # outside-VPC Lambda - see DD-2; dev-only, harden later
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
           CidrIp: 0.0.0.0/0
-          Description: outside-VPC Lambda — DD-2; dev-only, harden later
+          Description: outside-VPC Lambda - DD-2; dev-only, harden later
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-db-sg"
@@ -106,7 +106,7 @@ Resources:
       DBInstanceClass: !Ref DbInstanceClass
       AllocatedStorage: !Ref DbAllocatedStorage
       DBName: !Ref DbName
-      # Master user/password reach RDS via Secrets Manager dynamic references only —
+      # Master user/password reach RDS via Secrets Manager dynamic references only -
       # no literal anywhere (NFR-2).
       MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:password}}"
@@ -132,16 +132,16 @@ Resources:
       TargetType: AWS::RDS::DBInstance
 
   # ════════════════════════════════════════════════════════════════════════════
-  # T-4 — Cognito user pool + client + groups  (FR-4, FR-7)
+  # T-4 - Cognito user pool + client + groups  (FR-4, FR-7)
   # ════════════════════════════════════════════════════════════════════════════
   # Identity backbone for the staff/admin RBAC model. This task provisions the
-  # pool, a public SPA app client (no secret), and the admin/staff groups ONLY —
+  # pool, a public SPA app client (no secret), and the admin/staff groups ONLY -
   # NO users are created (FR-4), and NO Hosted UI / domain / OAuth flows are set
   # up here (deferred to the auth-wiring spec, OQ-4): those need the CloudFront
   # URL for callback URLs, which doesn't exist yet. Anonymous callers map to the
   # Public role and are not modeled in Cognito.
 
-  # Email-based sign-in, self-managed by admins (no public self-signup — these
+  # Email-based sign-in, self-managed by admins (no public self-signup - these
   # are internal staff/admin identities). Strong password policy per §6.
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -154,7 +154,7 @@ Resources:
       AutoVerifiedAttributes:
         - email
       # Admin-managed only: staff/admin accounts are created by an admin, never via
-      # public self-signup (RBAC model — no anonymous registration).
+      # public self-signup (RBAC model - no anonymous registration).
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
       Policies:
@@ -165,10 +165,10 @@ Resources:
           RequireNumbers: true
           RequireSymbols: true
 
-  # Public SPA client: NO generated secret (a static SPA can't keep one — NFR-2).
+  # Public SPA client: NO generated secret (a static SPA can't keep one - NFR-2).
   # SRP + refresh-token flows are the SPA-appropriate set without a Hosted UI; we
   # also enable USER_PASSWORD_AUTH for convenience in dev/admin tooling. NO OAuth
-  # flows / CallbackURLs / Hosted-UI domain here (deferred — OQ-4).
+  # flows / CallbackURLs / Hosted-UI domain here (deferred - OQ-4).
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
@@ -195,7 +195,7 @@ Resources:
     Properties:
       GroupName: admin
       UserPoolId: !Ref UserPool
-      Description: Administrators — full management access (highest RBAC priority).
+      Description: Administrators - full management access (highest RBAC priority).
       Precedence: 1
 
   StaffGroup:
@@ -203,7 +203,7 @@ Resources:
     Properties:
       GroupName: staff
       UserPoolId: !Ref UserPool
-      Description: Staff — operational access below admin.
+      Description: Staff - operational access below admin.
       Precedence: 10
 
 Outputs:
@@ -236,7 +236,7 @@ Outputs:
       Name: !Sub "${AWS::StackName}-DbName"
   DbMasterUsername:
     Description: >-
-      Master username (NOT the password — the password lives only in Secrets Manager).
+      Master username (NOT the password - the password lives only in Secrets Manager).
     # Literal to match SecretStringTemplate's username; CloudFormation does not
     # support {{resolve:secretsmanager:...}} dynamic references inside Outputs.
     Value: accelerate_admin

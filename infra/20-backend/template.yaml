@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >-
-  ACCELERATE Tanzania (dev) — backend stack: NestJS on Lambda + HTTP API (T-3).
+  ACCELERATE Tanzania (dev) - backend stack: NestJS on Lambda + HTTP API (T-3).
   Stack: accelerate-tz-dev-backend. Composes DATABASE_URL from the data-auth
   cross-stack exports + a Secrets Manager dynamic reference (the password is
-  injected at deploy time, never a literal — NFR-2). Deploy with:
+  injected at deploy time, never a literal - NFR-2). Deploy with:
   sam deploy --profile IBD-DEV --region eu-west-1.
 
 Parameters:
@@ -25,13 +25,13 @@ Parameters:
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
-  # T-3 — NestJS Lambda (FR-3, FR-7, NFR-2; DD-2, DD-4)
+  # T-3 - NestJS Lambda (FR-3, FR-7, NFR-2; DD-2, DD-4)
   # ════════════════════════════════════════════════════════════════════════════
   # One Lambda wrapping the whole NestJS app (dist/lambda.handler, serverless-http).
-  # Outside the VPC (DD-2: free internet egress, no NAT/VPC endpoints) — it reaches
+  # Outside the VPC (DD-2: free internet egress, no NAT/VPC endpoints) - it reaches
   # the public RDS endpoint over TLS. DATABASE_URL is COMPOSED here with !Sub (DD-4):
   # host/user/db/port come from the data-auth exports via Fn::ImportValue, and the
-  # password is a Secrets Manager dynamic reference resolved at deploy time — so no
+  # password is a Secrets Manager dynamic reference resolved at deploy time - so no
   # secret value ever lands in this template or the repo (NFR-2).
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -51,7 +51,7 @@ Resources:
       Timeout: 15
       # Cap concurrency to keep dev RDS connections + cost bounded (NFR-6).
       ReservedConcurrentExecutions: 5
-      # NO VpcConfig — Lambda runs outside the VPC (DD-2).
+      # NO VpcConfig - Lambda runs outside the VPC (DD-2).
       Environment:
         Variables:
           # Composed Prisma connection string. Password ONLY via the
@@ -60,7 +60,7 @@ Resources:
           # Runbook note (T-10): if the RDS server cert chain is not trusted by the
           # Lambda's default CA store, the operator may need to bundle the RDS CA
           # (sslcert=...) or relax to `sslaccept=accept_invalid_certs` at apply
-          # time — a documented runbook concern, not a template change.
+          # time - a documented runbook concern, not a template change.
           DATABASE_URL: !Sub
             - "mysql://${User}:{{resolve:secretsmanager:${SecretArn}:SecretString:password}}@${Host}:${Port}/${Db}?sslaccept=strict"
             - User: !ImportValue
@@ -77,7 +77,7 @@ Resources:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
         # (DATABASE_URL is injected at deploy via the dynamic reference, so a
-        # runtime GetSecretValue is currently unused — included, scoped, for
+        # runtime GetSecretValue is currently unused - included, scoped, for
         # optional rotation/runtime-read. Never a `*` resource.)
         - Statement:
             - Effect: Allow
@@ -85,7 +85,7 @@ Resources:
               Resource: !ImportValue
                 Fn::Sub: "${DataAuthStackName}-DbSecretArn"
       Events:
-        # HTTP API catch-all — the NestJS app owns the api/v1 prefix internally,
+        # HTTP API catch-all - the NestJS app owns the api/v1 prefix internally,
         # so every path (and the root) proxies to the single handler.
         Proxy:
           Type: HttpApi
@@ -101,7 +101,7 @@ Resources:
             Method: ANY
 
   # ════════════════════════════════════════════════════════════════════════════
-  # HTTP API (API Gateway v2) — auto $default stage serves at the root domain,
+  # HTTP API (API Gateway v2) - auto $default stage serves at the root domain,
   # so ApiBaseUrl has no path prefix; clients append /api/v1/... (FR-3, FR-7).
   # ════════════════════════════════════════════════════════════════════════════
   HttpApi:
