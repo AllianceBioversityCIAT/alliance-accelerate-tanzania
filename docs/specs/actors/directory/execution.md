@@ -70,5 +70,15 @@
 - Requirements covered: FR-7.
 - Final verification: PASS.
 
+### T-7 — A11y / responsive / static-export / PII verification pass — PASS (attempt 1)
+- Date: 2026-06-24
+- Implementer attempts: 1 (impl-t7, frontend-developer)
+- **Attempt 1:**
+  - Files: `frontend/components/directory/directory-a11y.test.tsx` (new), `frontend/components/profile/profile-a11y.test.tsx` (new) — jest-axe `toHaveNoViolations` across Directory (results/loading/error/empty/multi-page) + Profile (full/sparse/not-found/loading) states; labeled-control, aria-live, pagination-label, responsive-grid (1→2→3), and PII-omission assertions. Two minimal axe fixes: `ActorCard.tsx` `<h3>`→`<h2>` (heading-order under DirectoryView's single `<h1>`, WCAG 1.3.1), `ProfileView.tsx` `role="status"` on the aria-busy skeleton (aria-prohibited-attr).
+  - Verification: `cd frontend && npm run build && npm test` → **211/211 across 22 suites**; all 5 routes static (○ incl. /directory, /profile).
+  - Reviewer (rev-t7) verdict: **PASS** — jest-axe is a real dep invoked via `axe()` + `toHaveNoViolations` (not stubbed); assertions cross-check real DOM (searchbox + 3 filter aria-labels, ResultCount aria-live/atomic, pagination labels, responsive grid classes, PII-omission); both fixes minimal/token-clean/behavior-preserving; no SSR/PII/hardcoded-token introduced; no scope creep.
+- Requirements covered: NFR-1, NFR-3, NFR-5, NFR-6 (verification of FR-1..FR-8 surfaces).
+- Final verification: PASS.
+
 ## Notes
 - Environment artifact during this run: ~44 `" 2"`-suffixed byte-identical duplicate files appeared across the repo (sync-conflict copies; repo lives under `Desktop/`). Confirmed identical to originals, untracked, never staged; swept before committing. Not part of any task diff.

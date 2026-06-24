@@ -49,7 +49,7 @@
       Verify: `cd frontend && npm test -- ActorPopup map`
       Done when: tests assert the "View Profile" href is `/profile?id=<id>`; map tests pass.
 
-- [ ] T-7 A11y / responsive / static-export / PII verification pass  (deps: T-4, T-5, T-6)
+- [x] T-7 A11y / responsive / static-export / PII verification pass  (deps: T-4, T-5, T-6)
       Scope: `jest-axe` on Directory and Profile (no violations); keyboard + visible-focus + `aria-live` count checks; explicit PII-omission test over the rendered Profile DOM; confirm `next build` (output: export) succeeds with all new routes; spot-check responsive at 360px.
       Traces: NFR-1, NFR-3, NFR-5, NFR-6 (requirements.md), design.md §10
       Files: frontend/components/directory/*a11y*.test.tsx, frontend/components/profile/*a11y*.test.tsx (or extend existing a11y test pattern)
