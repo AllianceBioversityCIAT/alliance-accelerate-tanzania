@@ -28,7 +28,7 @@
       Verify: `cd frontend && npm test -- directory && npm run build`
       Done when: grid + accurate count render from mocked data; loading/empty/error states render distinctly; cards link to `/profile?id=`; static export build passes.
 
-- [ ] T-4 Directory search + filters + pagination, URL-synced  (deps: T-3)
+- [x] T-4 Directory search + filters + pagination, URL-synced  (deps: T-3)
       Scope: `DirectorySearch` (debounced ≤400ms), `DirectoryFilters` (crop/role/region selects + clear; region options from the backend-accepted canonical set — OQ-1), `DirectoryPagination` (prev/next + indicator). Wire into `DirectoryView`: read state from `useSearchParams()`, write via `router.replace()`, reset `page=1` on search/filter change; combine all into the `useActors` query.
       Traces: FR-2, FR-3, NFR-2, NFR-3 (requirements.md), design.md §4 (region source), §5
       Files: frontend/components/directory/{DirectorySearch,DirectoryFilters,DirectoryPagination}.tsx (+ tests), frontend/components/directory/DirectoryView.tsx, frontend/lib/content/regions.ts (reconcile if needed)
@@ -42,7 +42,7 @@
       Verify: `cd frontend && npm test -- profile && npm run build`
       Done when: sections render from a mocked PublicActor; the locked panel is always present; **no `phone`/`email` substring appears in the rendered DOM** (asserted); null → not-found state; static export build passes.
 
-- [ ] T-6 Resolve map "View Profile" deep-links to the Profile route  (deps: T-5)
+- [x] T-6 Resolve map "View Profile" deep-links to the Profile route  (deps: T-5)
       Scope: Change the map "View Profile" href from `/directory?actor=${id}` to `/profile?id=${id}` in `ActorPopup` (and any equivalent affordance in the actor list); update the affected component tests.
       Traces: FR-7 (requirements.md), design.md §5
       Files: frontend/components/map/ActorPopup.tsx, frontend/components/map/ActorPopup.test.tsx (+ ActorList* if applicable)
