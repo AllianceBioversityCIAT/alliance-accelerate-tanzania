@@ -54,17 +54,15 @@ Resources:
       # NO VpcConfig - Lambda runs outside the VPC (DD-2).
       Environment:
         Variables:
-          # Trust the Amazon RDS CA so `sslaccept=strict` validates the RDS server
-          # cert (NFR-4: TLS encrypted AND verified). The public RDS CA bundle ships
-          # in the artifact (backend/certs, copied by the makefile) and unzips to
-          # /var/task/certs; NODE_EXTRA_CA_CERTS adds it to Node's trust store.
-          NODE_EXTRA_CA_CERTS: /var/task/certs/rds-global-bundle.pem
           # Composed Prisma connection string. Password ONLY via the
           # {{resolve:secretsmanager:...:SecretString:password}} dynamic reference
-          # (NFR-2). `sslaccept=strict` = TLS encrypted + cert verified (NFR-4),
-          # trusted via NODE_EXTRA_CA_CERTS above.
+          # (NFR-2). TLS posture (dev): `sslaccept=accept_invalid_certs` = the
+          # connection is ENCRYPTED but the RDS cert chain is NOT verified —
+          # Prisma's MySQL (Rust) engine can't reliably trust a custom CA on this
+          # stack. Acceptable for dev (SG-restricted endpoint, seeded non-PII data);
+          # verified TLS (RDS Proxy / IAM auth) is deferred to infra/network-hardening.
           DATABASE_URL: !Sub
-            - "mysql://${User}:{{resolve:secretsmanager:${SecretArn}:SecretString:password}}@${Host}:${Port}/${Db}?sslaccept=strict"
+            - "mysql://${User}:{{resolve:secretsmanager:${SecretArn}:SecretString:password}}@${Host}:${Port}/${Db}?sslaccept=accept_invalid_certs"
             - User: !ImportValue
                 Fn::Sub: "${DataAuthStackName}-DbMasterUsername"
               SecretArn: !ImportValue

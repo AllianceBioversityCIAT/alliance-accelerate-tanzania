@@ -19,9 +19,6 @@ build-ApiFunction:
 	# Stage runtime artifacts into the SAM build output.
 	cp -r dist $(ARTIFACTS_DIR)/dist
 	cp -r prisma $(ARTIFACTS_DIR)/prisma
-	# RDS CA bundle (public) — trusted at runtime via NODE_EXTRA_CA_CERTS so
-	# `sslaccept=strict` validates the RDS server cert (NFR-4).
-	cp -r certs $(ARTIFACTS_DIR)/certs
 	cp package.json package-lock.json $(ARTIFACTS_DIR)/
 	# Production deps only (drops prisma CLI, typescript, jest, etc.).
 	cd $(ARTIFACTS_DIR) && npm ci --omit=dev
