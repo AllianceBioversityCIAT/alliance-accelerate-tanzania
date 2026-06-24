@@ -76,6 +76,13 @@ Resources:
           # for dev (SG-restricted, seeded non-PII data); verified TLS deferred to
           # infra/network-hardening.
           DB_SSL: accept_invalid_certs
+          # Cognito pool/client ids feed the JWT verifier (auth-wiring FR-5/FR-9):
+          # the JwtAuthGuard verifies access tokens against this pool's JWKS and
+          # checks the client id as audience. Imported from the data-auth exports.
+          COGNITO_USER_POOL_ID: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-UserPoolId"
+          COGNITO_CLIENT_ID: !ImportValue
+            Fn::Sub: "${DataAuthStackName}-UserPoolClientId"
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
@@ -119,6 +126,7 @@ Resources:
           - OPTIONS
         AllowHeaders:
           - Content-Type
+          - Authorization
 
 Outputs:
   ApiBaseUrl:
