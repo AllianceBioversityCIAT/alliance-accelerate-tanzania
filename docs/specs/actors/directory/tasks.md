@@ -56,7 +56,7 @@
       Verify: `cd frontend && npm run build && npm test`
       Done when: axe passes on both surfaces; PII-omission test passes; static export build succeeds; full frontend test suite green.
 
-- [ ] T-8 Deploy backend (`search`) + frontend (new routes) and smoke  (deps: T-1, T-7)
+- [x] T-8 Deploy backend (`search`) + frontend (new routes) and smoke  (deps: T-1, T-7)
       Scope: Redeploy `accelerate-tz-dev-backend` (SAM built-template deploy) to ship `search`; rebuild + deploy the static frontend to S3 + CloudFront invalidation; run the smoke check that `?search=` returns filtered, PII-free results and the new routes load. All `--profile IBD-DEV`, eu-west-1.
       Traces: FR-4, FR-7, NFR-2 (requirements.md), design.md §7
       Files: (no source change) infra/scripts/deploy.sh, infra/scripts/deploy-frontend.sh, infra/scripts/smoke.sh

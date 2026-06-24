@@ -80,5 +80,15 @@
 - Requirements covered: NFR-1, NFR-3, NFR-5, NFR-6 (verification of FR-1..FR-8 surfaces).
 - Final verification: PASS.
 
+### T-8 — Deploy backend (`search`) + frontend (new routes) and smoke — PASS (Leader-run deploy)
+- Date: 2026-06-24
+- Run by: Leader (operator deploy; no source diff → live smoke IS the verification, no Reviewer gate).
+- **Backend** (`accelerate-tz-dev-backend`, eu-west-1, IBD-DEV): `sam build` (makefile, package 205 MB < 250 MB, `search` code present in dist) → `sam deploy` built template, preserving `AllowedOrigin=https://d3idqvvg0xa1r7.cloudfront.net` (CORS lock) + `DataAuthStackName`. Stack → **UPDATE_COMPLETE**.
+  - Live API checks: `?search=mbeya` → 73 matches (all Mbeya); `?search=mbeya&crop=sorghum` → 48 (search ANDs with filters); over-long `search` (101 chars) → **400**; payload keys === PublicActor shape, **0 phone / 0 email**, no sex/marketLocation/position (PII boundary holds over the wire).
+- **Frontend** (`accelerate-tz-dev-frontend`): `deploy-frontend.sh` → `next build` (static export, `/directory` + `/profile` static ○) with `NEXT_PUBLIC_API_BASE_URL` baked in → `s3 sync --delete` → CloudFront invalidation `I2YCRQ680AJVIPQIAH7NEK919S` (dist `E3RG685T7DRHJS`).
+- **Smoke** (`smoke.sh`): **PASS** — API health (metrics/actors 200+JSON), PII boundary over the wire (metrics + actors), PII-safe list contract, CloudFront `/` + `/map` 200, S3 direct object 403 (private/OAC-only). New routes confirmed live via CloudFront: `/directory` 200, `/profile` 200, `/profile?id=<id>` 200.
+- Requirements covered: FR-4 (search live), FR-7 (routes live), NFR-2.
+- Final verification: PASS.
+
 ## Notes
 - Environment artifact during this run: ~44 `" 2"`-suffixed byte-identical duplicate files appeared across the repo (sync-conflict copies; repo lives under `Desktop/`). Confirmed identical to originals, untracked, never staged; swept before committing. Not part of any task diff.
