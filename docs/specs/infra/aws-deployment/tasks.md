@@ -41,7 +41,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: RDS+SG+secret template validates with no committed secret and the required outputs.
       Skills: aws-serverless
 
-- [ ] T-3 Backend Lambda + HTTP API (SAM)  (deps: T-2)
+- [x] T-3 Backend Lambda + HTTP API (SAM)  (deps: T-2)
       Size: M
       Requirements: FR-3, FR-7, NFR-2
       Design: design.md §4, §6, DD-2, DD-4

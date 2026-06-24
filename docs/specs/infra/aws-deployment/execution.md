@@ -35,6 +35,15 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Leader verification:** `sam validate --lint` valid; no literal password; 6 outputs; no Cognito leak; post-fix grep confirms no dynamic ref in Outputs.
 - **Reviewer verdict (`rev-infra-t2b`, attempt 2):** **STATUS: PASS** — fix confirmed, no regression across NFR-2/DD-4/DD-2/FR-2/NFR-4/NFR-6/FR-7.
 
+### T-3 — Backend Lambda + HTTP API (SAM) — **PASS** (2026-06-24)
+- **Implementer attempts:** 1 (`impl-infra-t3`, general-purpose). Authoring-only — no live AWS.
+- **Files:** MODIFIED `infra/20-backend/template.yaml` (Serverless Function + HttpApi replace placeholder), `backend/prisma/schema.prisma` (`binaryTargets = ["native","rhel-openssl-3.0.x"]`); NEW `backend/Makefile` (SAM `build-ApiFunction`).
+- **Requirements covered:** FR-3, FR-7, NFR-2.
+- **Decisions:** (a) `DATABASE_URL` composed via `!Sub` (DD-4) — password via `{{resolve:secretsmanager:...}}` dynamic ref, host/user/port/db via `Fn::ImportValue` from `accelerate-tz-dev-data-auth`; `sslaccept=strict` (NFR-4) with a runbook TLS-CA caveat comment. (b) Lambda **no VpcConfig** (DD-2), 512MB/15s, ReservedConcurrency 5 (NFR-6). (c) Scoped `GetSecretValue` on the one imported secret ARN. (d) HttpApi catch-all `ANY /{proxy+}`+`/`, CORS GET/OPTIONS from `AllowedOrigin` (default `*`). (e) `ApiBaseUrl` output exported for T-8.
+- **Notable fixes the Implementer found:** (i) the T-1 scaffold's `Transform` was the invalid `AWS::Serverless-2016-10-09` (passed T-1 lint only because no SAM resources existed yet) → corrected to canonical `AWS::Serverless-2016-10-31`. (ii) `backend/Makefile` added because `dist/` is gitignored → the default npm-pack builder would drop `dist/lambda.handler`; the makefile target stages `dist/`+prisma+rhel engine deterministically (verified via `sam build`).
+- **Leader verification:** `sam validate --lint` valid; `VpcConfig` count 0; no literal password (only dynamic ref); `npx prisma generate` emits both native + `rhel-openssl-3.0.x` engines; `npm run build` → `dist/lambda.js`; `30-frontend` stub has no Transform (typo not propagated).
+- **Reviewer verdict (`rev-infra-t3`):** **STATUS: PASS** — NFR-2 satisfied, DD-2 no-VpcConfig, 5 cross-stack imports match the data-auth exports, binaryTargets correct, Makefile correct + secret-free, least-privilege role, ApiBaseUrl exported, canonical Transform, no scope creep.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 **[x] PASS**, T-2 **[x] PASS**. T-3..T-10 pending. Next eligible: **T-3** (backend Lambda + HTTP API; deps: T-2 ✓). Also eligible: T-4, T-5 — sequenced T-3→T-4→T-5 per user queue.
+- T-1 **[x] PASS**, T-2 **[x] PASS**, T-3 **[x] PASS**. T-4..T-10 pending. Next eligible: **T-4** (Cognito → `10-data-auth`; deps: T-1 ✓). Then T-5 per user queue.
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.
