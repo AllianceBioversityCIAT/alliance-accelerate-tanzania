@@ -7,14 +7,14 @@
 
 ## Tasks
 
-- [ ] T-1 Add `search` query parameter to the public Actors list  (deps: none)
+- [x] T-1 Add `search` query parameter to the public Actors list  (deps: none)
       Scope: Add optional `search?: string` (`@IsString`, `@MaxLength(100)`) to `ListQueryDto`; in `ActorsService.findPublic`, when `search` is a non-empty trimmed term, AND an `OR` partial match over `traderName`/`region`/`district` into the existing `consentStatus = GRANTED` + filter `where` (reused by `count`). No projection/PII change; backend only.
       Traces: FR-4 (requirements.md), design.md §3, §4
       Files: backend/src/actors/dto/list-query.dto.ts, backend/src/actors/actors.service.ts, backend/src/actors/actors.service.spec.ts (+ dto spec)
       Verify: `cd backend && npm run test -- actors && npm run build`
       Done when: unit tests prove `search` matches name/region/district (case-insensitive), combines (AND) with crop/role/region, excludes non-GRANTED, yields correct `total`, and an over-long `search` is rejected (400); build passes.
 
-- [ ] T-2 Frontend data clients: `search` on list + `getActor`/`useActor` detail  (deps: none)
+- [x] T-2 Frontend data clients: `search` on list + `getActor`/`useActor` detail  (deps: none)
       Scope: Add `search?: string` to `ActorsQuery` and append it in `getActors`. Add `getActor(id): Promise<PublicActor | null>` (null on any failure incl. 404). Add `useActor(id)` hook ({data, loading, error}) mirroring `useActors`.
       Traces: FR-3, FR-5 (requirements.md), design.md §5
       Files: frontend/lib/api/actors.ts, frontend/lib/api/actors.test.ts, frontend/lib/api/useActor.ts, frontend/lib/api/useActor.test.ts
