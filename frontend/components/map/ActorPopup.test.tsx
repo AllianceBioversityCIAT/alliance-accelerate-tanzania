@@ -9,7 +9,7 @@
  *   (c) region renders; district renders when present, absent when null
  *   (d) one crop chip per crops[] slug (≥2 crops — asserts each name)
  *   (e) capacity renders as "<n> t"; null capacity renders "—"
- *   (f) View Profile link exists with href containing /directory
+ *   (f) View Profile link exists with href = /profile?id=<id>
  *   (g) PII guard — no phone/email text in the rendered output (NFR-5)
  *
  * No Leaflet is rendered — ActorPopup is a pure React component.
@@ -135,14 +135,14 @@ describe('ActorPopup', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  // ── (f) View Profile link → /directory ────────────────────────────────────
+  // ── (f) View Profile link → /profile?id=<id> ──────────────────────────────
 
-  it('renders a View Profile link with href containing /directory', () => {
+  it('renders a View Profile link deep-linking to /profile?id=<id>', () => {
     render(<ActorPopup actor={ACTOR_FULL} />);
 
     const link = screen.getByRole('link', { name: /view profile/i });
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute('href', expect.stringContaining('/directory'));
+    expect(link).toHaveAttribute('href', `/profile?id=${ACTOR_FULL.id}`);
   });
 
   // ── (g) PII guard — no phone/email ever rendered (NFR-5) ──────────────────

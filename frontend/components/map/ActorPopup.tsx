@@ -11,7 +11,7 @@
 //   • Region · District (district optional)
 //   • Crop chips — one per crops[] slug, token-colored via CROPS
 //   • Capacity (capacityTons + " t"; shown as "—" when null/undefined)
-//   • "View Profile" link → /directory (OQ-1 / DD-5)
+//   • "View Profile" link → /profile?id=<id> (FR-7, design.md §5)
 //
 // PII contract (NFR-5): PublicActor carries no phone/email fields.
 // This component MUST NOT reference or render phone or email — enforced by type.
@@ -105,9 +105,9 @@ export default function ActorPopup({ actor }: ActorPopupProps) {
         {actor.capacityTons != null ? `${actor.capacityTons} t` : '—'}
       </p>
 
-      {/* View Profile — DD-5/OQ-1: links to /directory until profile spec lands */}
+      {/* View Profile — FR-7 / design.md §5: deep-links to the Profile route */}
       <a
-        href={`/directory?actor=${actor.id}`}
+        href={`/profile?id=${actor.id}`}
         className="inline-block rounded-sm bg-primary px-3 py-1 text-xs font-medium text-primary-fg hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         View Profile
