@@ -25,6 +25,16 @@ Canonical audit trail for the JCSPECS Leader → Implementer → Reviewer loop o
 - **Reviewer verdict (`rev-infra-t1`):** **STATUS: PASS** — ratification accurate/minimal, no secret/scope leak, no orphaned deploy-tool refs in backend scripts.
 - **Accepted drift → T-10 follow-up:** root `README.md` (lines ~38, ~90) still references `backend/serverless.yml` / `npx serverless deploy`. Out of T-1 scope (CLAUDE.md only). **Sync the root README to the SAM deploy flow in T-10** (runbook task).
 
+### T-2 — RDS MySQL + security group + Secrets Manager — **PASS** (2026-06-24, attempt 2)
+- **Implementer attempts:** 2 (`impl-infra-t2`, general-purpose). Authoring-only — no live AWS.
+- **Files:** MODIFIED `infra/10-data-auth/template.yaml` (RDS+SG+Secret replace the T-1 placeholder; params `VpcId`/`DevCidr`/`DbName`/`DbInstanceClass`/`DbAllocatedStorage`; `AWS::SecretsManager::Secret` GenerateSecretString; `AWS::EC2::SecurityGroup` 3306×2; `AWS::RDS::DBInstance`; `AWS::SecretsManager::SecretTargetAttachment`; 6 exported outputs); Leader also refined `design.md` DD-4/§4 (compose DATABASE_URL in T-3, secret holds username/password only).
+- **Requirements covered:** FR-2, FR-7, NFR-2, NFR-4, NFR-6.
+- **Attempt 1 → Reviewer FAIL (`rev-infra-t2`):** `DbMasterUsername` output used a `{{resolve:secretsmanager:...}}` dynamic reference in `Outputs` — CloudFormation forbids dynamic refs in Outputs; would throw at `sam deploy`. (Leader had pre-flagged this exact risk.)
+- **Attempt 2 fix:** output `Value` → literal `accelerate_admin` (matches `SecretStringTemplate`, non-sensitive). Only remaining dynamic refs are the two in RDS `Properties` (MasterUsername/MasterUserPassword).
+- **Decisions:** `VpcId` param (`AWS::EC2::VPC::Id`) places the SG in the default VPC; RDS no DBSubnetGroup → default VPC; `ExcludeCharacters '"@/\ '` keeps the password URL/MySQL-safe; `SecretTargetAttachment` links secret↔DB; outputs `Export`ed for T-3 `Fn::ImportValue`.
+- **Leader verification:** `sam validate --lint` valid; no literal password; 6 outputs; no Cognito leak; post-fix grep confirms no dynamic ref in Outputs.
+- **Reviewer verdict (`rev-infra-t2b`, attempt 2):** **STATUS: PASS** — fix confirmed, no regression across NFR-2/DD-4/DD-2/FR-2/NFR-4/NFR-6/FR-7.
+
 ## 3. Summary (updated as tasks complete)
-- T-1 **[x] PASS**. T-2..T-10 pending. Next eligible: **T-2** (RDS + SG + Secrets Manager; deps: T-1 ✓). Also unblocked: T-4, T-5 (deps: T-1 ✓) — sequenced T-2→T-3→T-4→T-5 per user queue.
+- T-1 **[x] PASS**, T-2 **[x] PASS**. T-3..T-10 pending. Next eligible: **T-3** (backend Lambda + HTTP API; deps: T-2 ✓). Also eligible: T-4, T-5 — sequenced T-3→T-4→T-5 per user queue.
 - **Open follow-ups:** root `README.md` IaC sync → **T-10**.

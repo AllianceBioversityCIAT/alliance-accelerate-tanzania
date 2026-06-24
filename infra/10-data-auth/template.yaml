@@ -4,12 +4,170 @@ Description: >-
   (T-2) and Cognito user pool/client/groups (T-4). Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
-# Scaffold stub (T-1). Resources are authored by:
-#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret
-#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup
-# Shared params (see infra/README.md): DevCidr, AllowedOrigin.
-# Outputs (T-2/T-4): RdsEndpoint, DbSecretArn, DbSecurityGroupId, UserPoolId, UserPoolClientId.
+# Authored by:
+#   T-2 — AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (this section)
+#   T-4 — AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (TODO)
+# Shared params (see infra/README.md): DevCidr (T-2). Cognito adds its own params/outputs in T-4.
+# Outputs (T-2 here / T-4 later): RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId,
+#   DbName, DbMasterUsername  (T-2)  ·  UserPoolId, UserPoolClientId  (T-4).
+
+Parameters:
+  # ── T-2 parameters ────────────────────────────────────────────────────────
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: >-
+      The account default VPC id in eu-west-1. The DB security group is placed
+      here so RDS lands in the default VPC (no DBSubnetGroup, no custom VPC; NFR-3).
+      Operator passes the default VPC id at deploy time.
+  DevCidr:
+    Type: String
+    Description: >-
+      Operator public IP as a /32 CIDR (e.g. 203.0.113.7/32) — the admin/migration
+      ingress rule on 3306 (OQ-6). Supplied at deploy time.
+    AllowedPattern: ^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$
+    ConstraintDescription: Must be a CIDR block, e.g. 203.0.113.7/32.
+  DbName:
+    Type: String
+    Description: Initial MySQL database / schema name created on the instance.
+    Default: accelerate
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9_]{0,63}$
+    ConstraintDescription: Must start with a letter; letters/digits/underscore only.
+  DbInstanceClass:
+    Type: String
+    Description: RDS instance class (cost-aware default per NFR-6).
+    Default: db.t3.micro
+  DbAllocatedStorage:
+    Type: Number
+    Description: Allocated storage in GiB (cost-aware default per NFR-6).
+    Default: 20
+    MinValue: 20
+    MaxValue: 100
+
 Resources:
-  # Placeholder so the template is valid until T-2/T-4 add real resources.
-  ScaffoldPlaceholder:
-    Type: AWS::CloudFormation::WaitConditionHandle
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-2 — RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # Generated master credentials live ONLY in Secrets Manager (NFR-2). The password
+  # is never a literal/default/output; RDS consumes it via {{resolve:...}} dynamic
+  # references below. Per DD-4 we store only {username, password} — NOT a composed
+  # `url`, because the RDS host is unknown at secret-create time (chicken-and-egg);
+  # T-3 composes DATABASE_URL where the host is known.
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}-db-credentials"
+      Description: >-
+        Master credentials for the ACCELERATE dev RDS MySQL instance.
+        JSON: {"username","password"}. Password generated; never committed (NFR-2).
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"accelerate_admin"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        # Exclude characters that break MySQL auth or URL-encoding of DATABASE_URL
+        # (T-3 composes mysql://user:pass@host:3306/db). Quotes, @, /, backslash, space.
+        ExcludeCharacters: '"@/\ '
+
+  # Outside-VPC Lambda reaches RDS over the public endpoint (DD-2). Two explicit,
+  # commented ingress rules on 3306. Placed in the default VPC via VpcId.
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: >-
+        ACCELERATE dev RDS MySQL access (dev-only; DD-2). Admin/migrate from the
+        operator IP + 0.0.0.0/0 for the outside-VPC Lambda. Harden later.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # admin/migration from operator IP (prisma migrate deploy + seed, FR-2)
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref DevCidr
+          Description: admin/migration from operator IP (/32)
+        # outside-VPC Lambda — see DD-2; dev-only, harden later
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+          Description: outside-VPC Lambda — DD-2; dev-only, harden later
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-sg"
+
+  # Single MySQL instance in the default VPC, publicly reachable, TLS-capable
+  # (RDS MySQL serves TLS by default; the connection string enforces it in T-3).
+  # Cost-aware: micro / single-AZ / small storage / 1-day backups (NFR-6).
+  Db:
+    Type: AWS::RDS::DBInstance
+    # Ordering: the MasterUsername/MasterUserPassword dynamic references below
+    # carry an implicit ${DbSecret} dependency, so no explicit DependsOn is needed.
+    Properties:
+      Engine: mysql
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      DBName: !Ref DbName
+      # Master user/password reach RDS via Secrets Manager dynamic references only —
+      # no literal anywhere (NFR-2).
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:password}}"
+      VPCSecurityGroups:
+        - !GetAtt DbSecurityGroup.GroupId
+      PubliclyAccessible: true   # public endpoint in default VPC (DD-2, dev-only)
+      MultiAZ: false             # single-AZ (NFR-6)
+      StorageEncrypted: true     # at-rest encryption
+      BackupRetentionPeriod: 1   # minimal backups for dev (NFR-6)
+      DeletionProtection: false  # easy teardown (NFR-6)
+      # No DBSubnetGroup → default VPC (NFR-3).
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-mysql"
+
+  # Bind the secret to the DB instance so Secrets Manager knows the target
+  # (enables future rotation; keeps the secret/DB linkage explicit).
+  DbSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbSecret
+      TargetId: !Ref Db
+      TargetType: AWS::RDS::DBInstance
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-4 — Cognito user pool + client + groups  (added later; do not author here)
+  # ════════════════════════════════════════════════════════════════════════════
+
+Outputs:
+  # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack
+  #    wiring values (DbSecretArn, RdsEndpoint, DbName, DbMasterUsername). ──
+  RdsEndpoint:
+    Description: RDS instance endpoint hostname.
+    Value: !GetAtt Db.Endpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-RdsEndpoint"
+  RdsPort:
+    Description: RDS instance port.
+    Value: !GetAtt Db.Endpoint.Port
+    Export:
+      Name: !Sub "${AWS::StackName}-RdsPort"
+  DbSecretArn:
+    Description: ARN of the Secrets Manager secret holding {username, password}.
+    Value: !Ref DbSecret
+    Export:
+      Name: !Sub "${AWS::StackName}-DbSecretArn"
+  DbSecurityGroupId:
+    Description: Security group id guarding RDS on 3306.
+    Value: !GetAtt DbSecurityGroup.GroupId
+    Export:
+      Name: !Sub "${AWS::StackName}-DbSecurityGroupId"
+  DbName:
+    Description: Initial database/schema name.
+    Value: !Ref DbName
+    Export:
+      Name: !Sub "${AWS::StackName}-DbName"
+  DbMasterUsername:
+    Description: >-
+      Master username (NOT the password — the password lives only in Secrets Manager).
+    # Literal to match SecretStringTemplate's username; CloudFormation does not
+    # support {{resolve:secretsmanager:...}} dynamic references inside Outputs.
+    Value: accelerate_admin
+    Export:
+      Name: !Sub "${AWS::StackName}-DbMasterUsername"

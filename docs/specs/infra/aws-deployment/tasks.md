@@ -32,7 +32,7 @@ A task is eligible when its status is `[ ]`/`[~]` and all deps are `[x]`. Ties b
       Done when: scaffold + naming/params + CLAUDE.md ratification + serverless.yml retirement committed; no orphan IaC.
       Skills: aws-serverless
 
-- [ ] T-2 RDS MySQL + security group + Secrets Manager  (deps: T-1)
+- [x] T-2 RDS MySQL + security group + Secrets Manager  (deps: T-1)
       Size: M
       Requirements: FR-2, FR-7, NFR-2, NFR-4, NFR-6
       Design: design.md §7, §6, DD-2, DD-4
