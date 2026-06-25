@@ -35,7 +35,7 @@ export interface Partner {
   /**
    * Path under `frontend/public/` (leading slash).
    * Omit when no clean logo asset is available → components render a
-   * styled text-label fallback instead (FR-6, §5.3).
+   * styled text-label fallback instead (FR-6, OQ-2).
    */
   logo?: string;
   /**
@@ -45,6 +45,14 @@ export interface Partner {
    * light-surface chip (bg-surface) before placing it on the dark footer.
    */
   lightSafe?: boolean;
+  /**
+   * Organisational tier within the ACCELERATE coalition.
+   * Used by PartnersStrip to group and label partners by role.
+   *   'funder'  — primary financial backer (Gates)
+   *   'lead'    — lead / co-lead implementers (Alliance, PABRA)
+   *   'partner' — national/technical partners (TARI, TOSCI, CIMMYT)
+   */
+  tier: 'funder' | 'lead' | 'partner';
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +73,7 @@ export const PARTNERS: Partner[] = [
     logo: '/partners/alliance.png',
     // Coloured mark on transparency — requires a light chip on dark footer
     lightSafe: false,
+    tier: 'lead',
   },
   {
     key: 'pabra',
@@ -74,20 +83,25 @@ export const PARTNERS: Partner[] = [
     logo: '/pabra-30-logo.png',
     // Coloured mark on transparency — requires a light chip on dark footer
     lightSafe: false,
+    tier: 'lead',
   },
   {
     key: 'tari',
     name: 'Tanzania Agricultural Research Institute (TARI)',
     role: 'Variety release & early-generation seed',
     url: 'https://www.tari.go.tz',
-    // No clean logo asset available — text-label fallback (FR-6, OQ-2)
+    logo: '/partners/tari.png',
+    lightSafe: false,
+    tier: 'partner',
   },
   {
     key: 'tosci',
     name: 'Tanzania Official Seed Certification Institute (TOSCI)',
     role: 'Seed certification & QDS',
     url: 'https://www.tosci.go.tz',
-    // No clean logo asset available — text-label fallback (FR-6, OQ-2)
+    logo: '/partners/tosci.png',
+    lightSafe: false,
+    tier: 'partner',
   },
   {
     key: 'cimmyt',
@@ -95,14 +109,16 @@ export const PARTNERS: Partner[] = [
     role: 'Market intelligence, sorghum/groundnut',
     url: 'https://www.cimmyt.org',
     // No clean logo asset available — text-label fallback (FR-6, OQ-2)
+    tier: 'partner',
   },
   {
     key: 'bmgf',
     name: 'Bill & Melinda Gates Foundation',
     role: 'Funder',
     url: 'https://www.gatesfoundation.org',
-    logo: '/partners/bmgf.webp',
+    logo: '/partners/bmgf.png',
     // Coloured mark on transparency — requires a light chip on dark footer
     lightSafe: false,
+    tier: 'funder',
   },
 ];
