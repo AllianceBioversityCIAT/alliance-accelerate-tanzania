@@ -2,21 +2,29 @@
  * Automated accessibility tests for the home page composition — T-7, NFR-3.
  *
  * Uses jest-axe to assert WCAG 2.1 AA compliance against the full rendered
- * composition: Header + Hero + MetricsBand + CropCoverage + Footer.
+ * composition (all 7 sections):
+ *   Header + Hero + MetricsBand + AboutStrip + HowItWorks +
+ *   CropCoverage + PartnersStrip + ClosingCTA + Footer.
  *
  * Mocks:
  *   - @/lib/api/useMetrics  — same pattern as MetricsBand/CropCoverage tests
  *   - next/navigation        — usePathname used by Header NavLink components
  *   - @/lib/auth/useSession  — session stub used by Header AuthSlot
  *
+ * next/image: no mock needed — next/jest transform renders a real <img> in jsdom
+ * (confirmed by PartnersStrip.test.tsx which renders next/image without a mock).
+ *
  * Two cases exercised:
  *   (1) Successful data — { data: FULL_METRICS, loading: false }
  *   (2) Fallback state  — { data: null,         loading: false }
  * Both must pass axe with toHaveNoViolations().
+ *
+ * Additional invariant (T-6):
+ *   Exactly ONE <h1> on the page (from Hero); new sections use <h2>.
  */
 
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 // Extend jest-dom expect with jest-axe matcher
@@ -30,7 +38,11 @@ import Header from '@/components/shell/Header';
 import Footer from '@/components/shell/Footer';
 import Hero from '@/components/home/Hero';
 import MetricsBand from '@/components/home/MetricsBand';
+import AboutStrip from '@/components/home/AboutStrip';
+import HowItWorks from '@/components/home/HowItWorks';
 import CropCoverage from '@/components/home/CropCoverage';
+import PartnersStrip from '@/components/home/PartnersStrip';
+import ClosingCTA from '@/components/home/ClosingCTA';
 
 import type { Metrics } from '@/lib/api/metrics';
 
@@ -77,9 +89,13 @@ const FULL_METRICS: Metrics = {
 
 // ---------------------------------------------------------------------------
 // Helper — render the full shell composition into a <div> wrapper.
-// Header + Hero + MetricsBand + CropCoverage + Footer mirrors PublicLayout,
-// which wraps children in <main> — we replicate that here so the landmark
-// structure (header / main / footer) is present for axe to evaluate.
+// Header + all 7 home sections + Footer mirrors PublicLayout, which wraps
+// children in <main> — we replicate that here so the landmark structure
+// (header / main / footer) is present for axe to evaluate.
+//
+// Section order (T-6, FR-8, copy brief §2.0):
+//   Hero → MetricsBand → AboutStrip → HowItWorks →
+//   CropCoverage → PartnersStrip → ClosingCTA
 // ---------------------------------------------------------------------------
 
 function renderHomePage() {
@@ -89,7 +105,11 @@ function renderHomePage() {
       <main>
         <Hero />
         <MetricsBand />
+        <AboutStrip />
+        <HowItWorks />
         <CropCoverage />
+        <PartnersStrip />
+        <ClosingCTA />
       </main>
       <Footer />
     </>
@@ -121,6 +141,14 @@ describe('Home page — axe accessibility', () => {
     const results = await axe(container);
 
     expect(results).toHaveNoViolations();
+  });
+
+  // T-6: exactly ONE <h1> across all 7 sections — Hero provides it; new sections use <h2>.
+  it('T-6: has exactly one h1 on the composed page (Hero provides it; new sections use h2)', () => {
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    renderHomePage();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 });
 
@@ -155,10 +183,15 @@ describe('Home page — reduced-motion / GSAP-mocked final-state (NFR-1, FR-7, F
   it('FR-7/FR-8: Hero CTA links are immediately visible in the reduced-motion path', () => {
     useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
 
-    const { getByRole } = renderHomePage();
+    const { getAllByRole, getByRole } = renderHomePage();
 
-    // CTAs must be present and reachable without motion.
-    expect(getByRole('link', { name: /explore the map/i })).toBeVisible();
+    // "Explore the Map" appears in both Hero and ClosingCTA — all instances must be visible.
+    // getAllByRole avoids the multiple-match error; we assert each one is visible.
+    const exploreLinks = getAllByRole('link', { name: /explore the map/i });
+    expect(exploreLinks.length).toBeGreaterThanOrEqual(1);
+    exploreLinks.forEach((link) => expect(link).toBeVisible());
+
+    // "Browse Directory" is unique to the Hero CTA.
     expect(getByRole('link', { name: /browse directory/i })).toBeVisible();
   });
 
@@ -180,13 +213,21 @@ describe('Home page — reduced-motion / GSAP-mocked final-state (NFR-1, FR-7, F
     // With GSAP mocked, all figures must show their final values immediately.
     useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
 
-    const { getByText } = renderHomePage();
+    const { getAllByText, getByText } = renderHomePage();
 
     // Four metric figures — all present and visible without animation.
     expect(getByText((_, el) =>
       el?.tagName === 'SPAN' && /1[,.]?234/.test(el.textContent ?? '')
     )).toBeVisible();
-    expect(getByText('3')).toBeVisible();
+
+    // '3' appears in both MetricsBand (cropsTracked stat) and PillarCards badge #3
+    // (aria-hidden="true"). Isolate the MetricsBand StatCard span via its text-3xl
+    // class; getAllByText avoids a multiple-match error.
+    const threes = getAllByText('3');
+    const metricThree = threes.find((el) => el.className.includes('text-3xl'));
+    expect(metricThree).toBeDefined();
+    expect(metricThree).toBeVisible();
+
     expect(getByText('7')).toBeVisible();
     expect(getByText('4')).toBeVisible();
   });

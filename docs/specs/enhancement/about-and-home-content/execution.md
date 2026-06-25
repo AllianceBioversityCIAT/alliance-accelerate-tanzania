@@ -50,3 +50,17 @@
 - **Implementer (frontend-developer):** `Header.tsx` — added `{ label:'About', href:'/about' }` to `NAV_LINKS` (drives desktop + mobile + active state). `Footer.tsx` — added an "About this project" link (token-styled, legible on dark) + expanded the lone PABRA chip into the lead coalition ("An initiative of" → Alliance + PABRA chips; "Funded by" → BMGF chip), mapping `PARTNERS` (logo'd, `lightSafe:false`) onto light `bg-surface` chips, each an external link with `rel="noopener noreferrer"` + `aria-label` + focus ring; PABRA's descriptive alt preserved. `Header.test.tsx` asserts the About link in Public + Staff. 12 tests + tsc clean.
 - **Reviewer (code-reviewer):** STATUS **PASS**. FR-9/FR-10 met; data-driven; no NEW hex (the `(#333333)` line is a pre-existing doc comment); Footer stays server / Header stays client. Accepted non-blocking warning: `LOGO_DIMS` fallback is a latent trap for future partners (no functional issue today).
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-8: About nav link + footer coalition`.
+
+### T-6 Recompose home page + home a11y — ✅ PASS (1 attempt + 1 cleanup)
+- **Date:** 2026-06-25 · **Requirements:** FR-8, NFR-3, NFR-4 · **Design:** §1, §5.1.
+- **Implementer (frontend-developer):** recomposed `app/(public)/page.tsx` to the 7-section FR-8 order; extended `home-a11y.test.tsx` to axe-audit all 7 sections + assert exactly one `<h1>`; disambiguated two assertions that collided under the fuller composition. 8 RTL/axe tests + tsc clean.
+- **Reviewer (code-reviewer):** STATUS **PASS**. Order correct, existing imports preserved; the two modified assertions are legitimate non-weakening disambiguations (stricter `getAllBy*` + scoping). Flagged a dead-code OR branch in the `'3'` disambiguation.
+- **Leader-directed cleanup (SendMessage):** removed the dead `aria-labelledby="metrics-band-heading"` branch (MetricsBand uses `aria-label`); kept the `text-3xl` isolation. Re-verified 8/8 + tsc clean.
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-6: recompose home page + home a11y`.
+
+### T-7 About page route + content + metadata — ✅ PASS (1 attempt + 3 refinements)
+- **Date:** 2026-06-25 · **Requirements:** FR-1, FR-2, FR-3, FR-11 · **Design:** §5.1, §5.5.
+- **Implementer (frontend-developer):** `app/(public)/about/page.tsx` (static server component) — all eight §3 sections in order (hero w/ field photo + single `<h1>`, challenge, approach + `<PillarCards/>`, crops + varieties, partners prose, 4 case studies, registry CTAs → /map & /directory, credits + Alliance link); exports `metadata` (brief §5). Build emits `out/about/index.html`; tsc + lint clean.
+- **Reviewer (code-reviewer):** STATUS **PASS** with 3 warnings — `bg-restricted` misuse, arbitrary `lg:h-[420px]`, and an unsanctioned `<strong>` on the Ntemisambo figure (copy fidelity).
+- **Leader-directed refinement (SendMessage):** `bg-restricted`→`bg-surface-alt`; `lg:h-[420px]`→`lg:h-96`; removed the `<strong>` around "113.5 tonnes" (matches brief §3.6 verbatim). Re-verified: build green (/about static), tsc + lint clean.
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-7: About page route + content + metadata`.

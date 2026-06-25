@@ -48,14 +48,14 @@
       Verify: `cd frontend && npm run test -- PartnersStrip`
       Done when: six partners render with accessible names + external-link rels; logo/text fallback works; test passes.
 
-- [ ] T-6 Recompose home page + home a11y  (deps: T-3, T-4, T-5)
+- [x] T-6 Recompose home page + home a11y  (deps: T-3, T-4, T-5)
       Scope: Update `app/(public)/page.tsx` to `Hero · MetricsBand · AboutStrip · HowItWorks · CropCoverage · PartnersStrip · ClosingCTA` (FR-8 order). Extend `components/home/home-a11y.test.tsx` to cover the new sections (jest-axe zero violations; still exactly one `<h1>` from Hero). Confirm existing Hero/MetricsBand/CropCoverage behavior unchanged.
       Traces: FR-8, NFR-3, NFR-4 (requirements.md); design.md §1, §5.1
       Files: frontend/app/(public)/page.tsx, frontend/components/home/home-a11y.test.tsx
       Verify: `cd frontend && npm run test -- home-a11y`
       Done when: home renders sections in order; a11y suite passes with zero violations; one `<h1>`.
 
-- [ ] T-7 About page route + content + metadata  (deps: T-1, T-2, T-5)
+- [x] T-7 About page route + content + metadata  (deps: T-1, T-2, T-5)
       Scope: Create `app/(public)/about/page.tsx` (server component) with brief §3 sections in order: AboutHero (eyebrow + single `<h1>` + lede + `accelerate-field.jpg` via `next/image`, descriptive alt, token scrim if text overlays), Challenge, Approach (`<PillarCards/>`), Crops (CROPS + variety sub-labels), Partners (logo treatment/text list), CaseStudies (§3.6 four enterprises, attributed 🟡), Registry (CTAs → /map, /directory), Credits (§3.8, Alliance link). Export `metadata` (title + description per brief §5). One `<h1>`; sections `aria-labelledby` `<h2>`.
       Traces: FR-1, FR-2, FR-3, FR-11 (requirements.md); design.md §5.1, §5.5
       Files: frontend/app/(public)/about/page.tsx
