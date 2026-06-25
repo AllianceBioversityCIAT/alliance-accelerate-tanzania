@@ -27,14 +27,14 @@
       Verify: `cd frontend && npm run test -- PillarCards`
       Done when: renders three cards with brief titles/bodies; 3-col grid classes present; RTL test passes.
 
-- [ ] T-3 Home `AboutStrip` + `ClosingCTA` sections  (deps: T-1)
+- [x] T-3 Home `AboutStrip` + `ClosingCTA` sections  (deps: T-1)
       Scope: `components/home/AboutStrip.tsx` (server) on `bg-surface-alt` with brief §2.3 eyebrow/H2/body/supporting line + secondary `Button` "Read the full story" → `/about`. `components/home/ClosingCTA.tsx` (server) on `bg-fg text-bg` with brief §2.7 H2/body + CTAs "Explore the Map" → `/map` (primary) and "About the project" → `/about` (secondary-on-dark). Both: `aria-labelledby`, one `<h2>`, standard `max-w-7xl` container.
       Traces: FR-4, FR-7 (requirements.md); design.md §5.2
       Files: frontend/components/home/AboutStrip.tsx, frontend/components/home/ClosingCTA.tsx, frontend/components/home/AboutStrip.test.tsx, frontend/components/home/ClosingCTA.test.tsx
       Verify: `cd frontend && npm run test -- AboutStrip ClosingCTA`
       Done when: both render brief copy with correct CTA hrefs; aria-labelledby wired; tests pass.
 
-- [ ] T-4 Home `HowItWorks` section  (deps: T-2)
+- [x] T-4 Home `HowItWorks` section  (deps: T-2)
       Scope: `components/home/HowItWorks.tsx` (`'use client'`) mirroring `CropCoverage`: eyebrow "The model" + H2 "A demand-led seed system" + intro, then `<PillarCards/>`. Header `useReveal({stagger:0})`; grid reveal via `useReveal` on the PillarCards wrapper (stagger across the three children). Progressive enhancement — cards visible without GSAP / under reduced motion.
       Traces: FR-5, NFR-5 (requirements.md); design.md §5.2, §5.5
       Files: frontend/components/home/HowItWorks.tsx, frontend/components/home/HowItWorks.test.tsx
