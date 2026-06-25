@@ -55,5 +55,18 @@
 - Reviewer (rev-m7) **PASS**: additive motion-only — handlers/pushParams/URL-sync/ResultCount/pagination/aria-live identical; from-based (FR-8); matchMedia-gated (FR-7); transform/opacity only. Non-blocking note: the re-reveal also fires once on the first loading→settled transition (overlaps the initial stagger) — harmless (`overwrite:true`, reduced-motion-gated, FR-6 still met); a comment-tightening polish opportunity only.
 - Requirements: FR-6, FR-7, FR-8. Final: PASS.
 
+### T-8 — A11y / performance / static-export verification pass — PASS (attempt 1)
+- Date: 2026-06-25 · Implementer: impl-m8
+- Files: `home-a11y.test.tsx` (+5 reduced-motion final-state tests), `directory-a11y.test.tsx` (+2). Test-only — no component/motion change.
+- Verification: full suite **361/361** (33 suites; +7); `npm run build` green — all routes `○ Static`; jest-axe **0 violations** on Home + Directory with the motion layer.
+- Reviewer (rev-m8) **PASS**: new tests genuinely assert present+visible via the GSAP-mocked (== reduced-motion) path — Hero h1/CTAs/"1,000+", MetricsBand figures, CropCoverage cards, Directory ActorCards/heading/search; axe still clean; diff test-only; reduced-motion claim sound (`matchMedia().add` no-op + `from`-based / JSX-final-value).
+- Manual CWV checklist (NFR-2/NFR-7):
+  - **LCP** — hero `<Image priority>` is never opacity/autoAlpha-animated; only the wrapper `scale 1.04→1` → image paints immediately.
+  - **CLS = 0** — all reveals animate `autoAlpha` + `y` (transform) only; no width/height/margin/padding animated.
+  - **Once-only** — all `scrollTrigger { once:true }`; Hero timeline fires once on mount; directory re-reveal keyed on query + skipped while loading (NFR-6).
+  - **Bundle (NFR-7)** — `/` 161 kB, `/directory` 157 kB First Load JS (103 kB shared framework); GSAP client-only (both surfaces `'use client'`), no SSR bloat.
+  - **Reduced-motion** — `gsap.matchMedia('(prefers-reduced-motion: no-preference)')` gate in every hook; auto-reverts on OS toggle; resting DOM = natural visible state.
+- Requirements: NFR-1, NFR-2, NFR-3, NFR-5, NFR-6. Final: PASS.
+
 ## Notes
 - The recurring file-sync artifacts (`" 2"`/`" 3"` numbered duplicate copies) reappear during runs; swept (broadened to any `" N"`) before commits, never staged.

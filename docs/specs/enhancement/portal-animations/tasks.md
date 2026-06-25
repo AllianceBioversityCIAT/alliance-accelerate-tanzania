@@ -56,7 +56,7 @@
       Verify: `cd frontend && npm test -- directory && npm run build`
       Done when: directory tests (incl. a11y) pass with GSAP mocked (cards visible); reduced-motion = static; `/directory` static.
 
-- [ ] T-8 A11y / performance / static-export verification pass  (deps: T-4, T-5, T-6, T-7)
+- [x] T-8 A11y / performance / static-export verification pass  (deps: T-4, T-5, T-6, T-7)
       Scope: confirm `jest-axe` 0 violations on Home + Directory with the motion layer; reduced-motion final-state asserted; full `npm test` green; `next build` static; document a manual CWV check (no CLS; hero LCP unaffected; entrances smooth, once). Smallest fix only if axe/regression surfaces.
       Traces: NFR-1, NFR-2, NFR-3, NFR-5, NFR-6 (requirements.md), design.md §10
       Files: frontend/components/**/*a11y*.test.tsx (extend if gaps), frontend/lib/motion/*.test.*
