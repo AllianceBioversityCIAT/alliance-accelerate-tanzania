@@ -27,5 +27,33 @@
 - Reviewer (rev-m3) **PASS**: count-up only in the no-preference branch (FR-7); `onUpdate` writes textContent, no per-frame React render (NFR-2); disabled/reduced-motion/null/non-finite paths leave the JSX-rendered final value intact (FR-8 — tests prove final value survives with GSAP mocked, `enabled:false`, null/NaN/Infinity); `toLocaleString` handles "1,000+" + integers; COUNT_UP token; cleanup-safe; `'use client'`. Advisory (non-blocking): relies on consumer-JSX final value (stronger FR-8 reading) + an extra `durationSec` option — both sound.
 - Requirements: FR-3, FR-4, FR-7, FR-8, NFR-2. Final: PASS.
 
+### T-4 — Hero entrance + LiveRegistry count-up — PASS (attempt 1)
+- Date: 2026-06-25 · Implementer: impl-m4
+- Files: `Hero.tsx` (`'use client'`; `useGSAP` entrance timeline stagger eyebrow→h1→copy→CTAs via `gsap.from autoAlpha+y`; LiveRegistryCard "1,000+" via `useCountUp`; **photo wrapper `scale 1.04→1` only — image opacity never touched, LCP-safe**), `Hero.hero.test.tsx` (11).
+- Verification: Hero+home 22/22; full 354/354; `/` static ○.
+- Reviewer (rev-m4) **PASS**: panelRef on the wrapper (not `<Image>`), only scale; entrance + count-up gated by matchMedia no-preference; "1,000+" hardcoded in JSX (FR-8); tokens-only; markup/copy unchanged.
+- Requirements: FR-3, FR-7, FR-8, NFR-1, NFR-2, NFR-3. Final: PASS.
+
+### T-5 — MetricsBand count-up — PASS (Leader review; reviewer agent non-responsive)
+- Date: 2026-06-25 · Implementer: impl-m5
+- Files: `StatCard.tsx` (`'use client'`; `countUp?:boolean` default false; `numericTarget` only when finite; `useCountUp` ref on the number span; **JSX always renders `{displayValue}`** — FR-8; loading-skeleton + em-dash unchanged), `MetricsBand.tsx` (`countUp = !loading && data!=null` → 4 cards), `StatCard.test.tsx` (16), `MetricsBand.metrics-band.test.tsx` (+2).
+- Verification: MetricsBand+StatCard 19/19; full 354/354; build green.
+- Leader review **PASS** (rev-m5 idled without posting): diff is additive/motion-only; final values always in JSX (FR-8); count-up gated by `!loading && data` + matchMedia (FR-4/FR-7); skeleton/em-dash paths intact.
+- Requirements: FR-4, FR-7, FR-8. Final: PASS.
+
+### T-6 — CropCoverage card stagger — PASS (attempt 1)
+- Date: 2026-06-25 · Implementer: impl-m6
+- Files: `CropCoverage.tsx` (`useReveal` on the crop-card grid + a header reveal; from-based; motion-only).
+- Verification: CropCoverage 4/4; full 354/354; build green.
+- Reviewer (rev-m6) **PASS**: grid `gridRef` (`:scope > *` stagger) + header `{stagger:0}`; from-based → cards visible with GSAP mocked (FR-8); reduced-motion no-op (FR-7); transform/opacity only; content/grid/tokens unchanged.
+- Requirements: FR-5, FR-7, FR-8. Final: PASS.
+
+### T-7 — Directory grid stagger — PASS (attempt 1)
+- Date: 2026-06-25 · Implementer: impl-m7
+- Files: `DirectoryView.tsx` (`useReveal` on the ActorCard `<ul>`; brief re-reveal keyed `[queryKey, loading]` via `useGSAP {revertOnUpdate, scope}`, `DURATION.fast`, `overwrite:true`, skipped while loading; **zero behavioral change**).
+- Verification: directory 83/83 (6 suites incl. a11y); full 354/354; `/directory` static ○.
+- Reviewer (rev-m7) **PASS**: additive motion-only — handlers/pushParams/URL-sync/ResultCount/pagination/aria-live identical; from-based (FR-8); matchMedia-gated (FR-7); transform/opacity only. Non-blocking note: the re-reveal also fires once on the first loading→settled transition (overlaps the initial stagger) — harmless (`overwrite:true`, reduced-motion-gated, FR-6 still met); a comment-tightening polish opportunity only.
+- Requirements: FR-6, FR-7, FR-8. Final: PASS.
+
 ## Notes
 - The recurring file-sync artifacts (`" 2"`/`" 3"` numbered duplicate copies) reappear during runs; swept (broadened to any `" N"`) before commits, never staged.

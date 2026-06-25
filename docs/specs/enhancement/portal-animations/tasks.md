@@ -28,28 +28,28 @@
       Verify: `cd frontend && npm test -- useCountUp`
       Done when: with GSAP mocked, the final value is rendered; reduced-motion path shows final value with no animation; tests pass.
 
-- [ ] T-4 Hero entrance + LiveRegistry count-up  (deps: T-2, T-3)
+- [x] T-4 Hero entrance + LiveRegistry count-up  (deps: T-2, T-3)
       Scope: `Hero.tsx` → `'use client'`; `useGSAP` timeline staggering eyebrow→h1→copy→CTAs (from y+autoAlpha); LiveRegistryCard "1,000+" via `useCountUp`; photo panel **subtle `scale 1.04→1` only — never opacity:0** (LCP-safe). No markup/content/layout/token change beyond refs + motion. Reduced-motion → static hero, final number.
       Traces: FR-3, FR-7, FR-8, NFR-1, NFR-2, NFR-3 (requirements.md), design.md §5.5, §8
       Files: frontend/components/home/Hero.tsx (+ update/add test)
       Verify: `cd frontend && npm test -- Hero home && npm run build`
       Done when: hero tests + home a11y pass with GSAP mocked (final content/number visible); `/` static; hero image not opacity-animated (code-reviewed).
 
-- [ ] T-5 MetricsBand count-up  (deps: T-3)
+- [x] T-5 MetricsBand count-up  (deps: T-3)
       Scope: wire `useCountUp` into the four MetricsBand figures (via StatCard or a small wrapper), `enabled = !loading && !!data`, in-view trigger; loading/fallback states unchanged.
       Traces: FR-4, FR-7 (requirements.md), design.md §5.5
       Files: frontend/components/home/MetricsBand.tsx, frontend/components/ui/StatCard.tsx (if needed) (+ tests)
       Verify: `cd frontend && npm test -- MetricsBand StatCard`
       Done when: figures show final values with GSAP mocked; reduced-motion = no count; existing MetricsBand tests pass.
 
-- [ ] T-6 CropCoverage card stagger  (deps: T-2)
+- [x] T-6 CropCoverage card stagger  (deps: T-2)
       Scope: apply `useReveal` (stagger / `ScrollTrigger.batch`) to the CropCoverage crop-card grid; section header may reveal too. No content change.
       Traces: FR-5, FR-7, FR-8 (requirements.md), design.md §5.5
       Files: frontend/components/home/CropCoverage.tsx (+ test if needed)
       Verify: `cd frontend && npm test -- CropCoverage && npm run build`
       Done when: cards render visible with GSAP mocked; reduced-motion = static; tests + build pass.
 
-- [ ] T-7 Directory grid stagger  (deps: T-2)
+- [x] T-7 Directory grid stagger  (deps: T-2)
       Scope: apply `useReveal` stagger to the `ActorCard` grid in `DirectoryView` on load; optional brief, overwrite-safe re-reveal keyed on the query (`useGSAP dependencies:[queryKey], revertOnUpdate`). Filtering/search/pagination behavior unchanged.
       Traces: FR-6, FR-7, FR-8 (requirements.md), design.md §5.5
       Files: frontend/components/directory/DirectoryView.tsx (+ test update)
