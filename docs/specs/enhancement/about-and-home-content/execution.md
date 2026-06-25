@@ -37,3 +37,10 @@
 - **Implementer (frontend-developer):** `HowItWorks.tsx` (`'use client'`) mirroring CropCoverage: eyebrow "The model" + H2 "A demand-led seed system" + §2.4 intro + `<PillarCards/>`. Header `useReveal({stagger:0})`; card stagger via wrapper `useReveal({ targets: ':scope > div > *' })` traversing wrapper → PillarCards grid div → 3 cards. Progressive enhancement (gsap.from, no inline opacity:0). 6 RTL tests + tsc clean.
 - **Reviewer (code-reviewer):** STATUS **PASS**. Copy verbatim; PillarCards composed (no duplication); `:scope > div > *` selector verified correct; reduced-motion gated; tokens-only zero hex; reuses existing GSAP layer only; GSAP mocks keep content visible in tests (6/6).
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-4: HowItWorks home section`.
+
+### T-5 Home `PartnersStrip` logo wall — ✅ PASS (1 attempt + 1 reviewer-driven refinement)
+- **Date:** 2026-06-25 · **Requirements:** FR-6, NFR-1, NFR-4 · **Design:** §5.3, Decision "CSS-only grayscale logo wall".
+- **Implementer (frontend-developer):** `PartnersStrip.tsx` (server, `bg-surface`, brief §2.6 copy) mapping `PARTNERS` → centered wrapping logo wall; `PartnerLogo` renders `next/image` (grayscale→color) for alliance/pabra/bmgf and a `text-muted` text label for tari/tosci/cimmyt; every partner an external link with `target=_blank rel="noopener noreferrer"` + `aria-label` + focus ring. 12 RTL tests + tsc clean.
+- **Reviewer (code-reviewer):** STATUS **PASS** with 2 warnings. **W-2 (FR-6 functional gap):** `focus-visible:grayscale-0` on the non-focusable `<img>` never fired on keyboard focus — FR-6 requires color on hover OR focus. **W-1:** test only asserted `noopener`.
+- **Leader-directed refinement (SendMessage → same implementer):** applied the Tailwind `group` pattern — `group` on the `<a>`, `group-focus-visible:grayscale-0` on the `<Image>` — so keyboard focus now resolves color (FR-6 AC fully met); tightened the test to assert exact `rel="noopener noreferrer"`. Re-verified: 12/12 tests + tsc clean. No hex.
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-5: PartnersStrip grayscale logo wall`.

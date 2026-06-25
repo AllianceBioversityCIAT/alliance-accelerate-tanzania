@@ -41,7 +41,7 @@
       Verify: `cd frontend && npm run test -- HowItWorks`
       Done when: renders eyebrow/H2/intro + 3 pillars via PillarCards; uses existing GSAP mocks (content present in test); reduced-motion-safe; test passes.
 
-- [ ] T-5 Home `PartnersStrip` logo wall  (deps: T-1)
+- [x] T-5 Home `PartnersStrip` logo wall  (deps: T-1)
       Scope: `components/home/PartnersStrip.tsx` (server) on `bg-surface`, brief §2.6 eyebrow/H2/body, then a `PartnerLogo` sub-component mapping `PARTNERS`: `next/image` grayscale→color on hover/focus (Tailwind `grayscale`/`grayscale-0`, `motion-reduce:transition-none`) OR text-label fallback when `logo` absent; each wrapped in an external link (`target="_blank" rel="noopener noreferrer"`, `aria-label` "<name> — opens in a new tab"). Token-only; AA-legible in grayscale.
       Traces: FR-6, NFR-1, NFR-4 (requirements.md); design.md §5.3, Decision "CSS-only grayscale logo wall"
       Files: frontend/components/home/PartnersStrip.tsx, frontend/components/home/PartnersStrip.test.tsx
