@@ -45,6 +45,7 @@ PROFILE="${AWS_PROFILE:-IBD-DEV}"
 REGION="${AWS_REGION:-eu-west-1}"
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
+DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 
 # Resolve infra/ + frontend/ paths relative to this script so it runs from any CWD.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -80,6 +81,26 @@ else
     exit 1
   }
   API_BASE_URL="$(get_output ApiBaseUrl "$BACKEND_OUTPUTS")"
+fi
+
+# ── Resolve Cognito pool/client ids from the data-auth stack (auth-wiring,
+#    FR-2/FR-9). Baked into the static build (NEXT_PUBLIC_COGNITO_*) so the SPA
+#    can authenticate; non-secret wiring values. Override via env. ──
+if [[ -n "${COGNITO_USER_POOL_ID:-}" && -n "${COGNITO_CLIENT_ID:-}" ]]; then
+  echo "==> Using COGNITO_USER_POOL_ID / COGNITO_CLIENT_ID from env."
+else
+  echo "==> Resolving Cognito ids from stack '$DATA_AUTH_STACK' ..."
+  DATA_AUTH_OUTPUTS="$(
+    aws cloudformation describe-stacks \
+      --profile "$PROFILE" --region "$REGION" \
+      --stack-name "$DATA_AUTH_STACK" \
+      --query "Stacks[0].Outputs" --output json
+  )" || {
+    echo "ERROR: could not describe stack '$DATA_AUTH_STACK'." >&2
+    exit 1
+  }
+  COGNITO_USER_POOL_ID="$(get_output UserPoolId "$DATA_AUTH_OUTPUTS")"
+  COGNITO_CLIENT_ID="$(get_output UserPoolClientId "$DATA_AUTH_OUTPUTS")"
 fi
 
 # ── Resolve FrontendBucketName + CloudFrontUrl from the frontend stack ────────
@@ -122,6 +143,8 @@ fi
 # Progress (all non-secret wiring values).
 echo
 echo "    ApiBaseUrl     = $API_BASE_URL"
+echo "    CognitoPool    = $COGNITO_USER_POOL_ID"
+echo "    CognitoClient  = $COGNITO_CLIENT_ID"
 echo "    Bucket         = $BUCKET"
 echo "    DistributionId = $DIST_ID"
 echo "    CloudFrontUrl  = $CLOUDFRONT_URL"
@@ -131,7 +154,10 @@ echo
 echo "==> Building the static export (NEXT_PUBLIC_API_BASE_URL injected at build time) ..."
 (
   cd "$FRONTEND_DIR"
-  NEXT_PUBLIC_API_BASE_URL="$API_BASE_URL" npm run build
+  NEXT_PUBLIC_API_BASE_URL="$API_BASE_URL" \
+  NEXT_PUBLIC_COGNITO_USER_POOL_ID="$COGNITO_USER_POOL_ID" \
+  NEXT_PUBLIC_COGNITO_CLIENT_ID="$COGNITO_CLIENT_ID" \
+    npm run build
 )
 
 OUT_DIR="$FRONTEND_DIR/out"

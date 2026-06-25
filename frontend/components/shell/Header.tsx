@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSession } from '@/lib/auth/useSession';
+import { useAuth } from '@/lib/auth/useAuth';
 import type { Role } from '@/lib/auth/useSession';
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ function AvatarCircle({ name }: { name: string }) {
 // ---------------------------------------------------------------------------
 function AuthSlot() {
   const { role, user } = useSession();
+  const { signOut }    = useAuth();
 
   if (!user || role === 'Public') {
     return (
@@ -65,7 +67,7 @@ function AuthSlot() {
         href="/login"
         className="inline-flex items-center rounded-md border border-primary px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
       >
-        Sign in
+        Staff sign-in
       </Link>
     );
   }
@@ -75,6 +77,15 @@ function AuthSlot() {
       <AvatarCircle name={user.name} />
       <span className="hidden sm:block text-sm font-medium text-fg">{user.name}</span>
       <RoleBadge role={user.role} />
+      {/* Sign-out control — FR-3; accessible button with visible focus (NFR-4) */}
+      <button
+        type="button"
+        onClick={() => void signOut()}
+        className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        aria-label="Sign out"
+      >
+        Sign out
+      </button>
     </div>
   );
 }
