@@ -8,6 +8,13 @@
 // search or filters resets page to 1 (FR-2/3). The combined query drives
 // useActors(). The result count reflects the filtered total across all pages.
 //
+// T-7 extension: stagger-reveals the ActorCard grid on initial load via
+// useReveal (FR-6, FR-7, FR-8). A brief re-reveal runs when the query changes
+// (i.e. the result set is replaced), keyed on queryKey with revertOnUpdate so
+// GSAP always starts from a clean slate. Re-reveal is skipped while loading to
+// avoid triggering on every keystroke (FR-6: "not disruptively"). Reduced-motion
+// users and the mocked test env get all cards immediately visible (FR-7, FR-8).
+//
 // Static-export compliance (NFR-5): this component calls useSearchParams() so
 // it MUST sit inside a <Suspense> boundary in the page. The boundary lives in
 // frontend/app/(public)/directory/page.tsx — mirrors the profile page pattern.
@@ -15,8 +22,11 @@
 // PII contract (NFR-1): PublicActor carries no phone/email — never rendered here.
 // Token-driven: no raw hex (NFR-4).
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { registerGsap, gsap, useGSAP } from '@/lib/motion/gsap-setup';
+import { DURATION, EASE, REVEAL } from '@/lib/motion/motion-tokens';
+import { useReveal } from '@/lib/motion/useReveal';
 import { useActors } from '@/lib/api/useActors';
 import Skeleton from '@/components/ui/Skeleton';
 import ResultCount from './ResultCount';
@@ -106,11 +116,54 @@ export default function DirectoryView() {
     pageSize: PAGE_SIZE,
   };
 
+  // Stable serialized key mirrors the one useActors derives internally; used
+  // both as a useEffect dep in useActors and as the re-reveal trigger here.
+  const queryKey = JSON.stringify(query);
+
   const { data, loading, error } = useActors(query);
 
   const actors   = data?.data     ?? [];
   const total    = data?.total    ?? 0;
   const pageSize = data?.pageSize ?? PAGE_SIZE;
+
+  // ── Grid reveal (T-7, FR-6, FR-7, FR-8) ────────────────────────────────────
+
+  // Initial stagger on mount: useReveal wraps the <ul> actor grid and fades +
+  // rises the <li> children into view once, gated on prefers-reduced-motion.
+  // `from`-based (FR-8): the resting DOM state is always the natural visible one.
+  const gridRef = useReveal<HTMLUListElement>({ targets: ':scope > li' });
+
+  // Re-reveal when the result set changes (query changes and loading completes).
+  // `revertOnUpdate:true` clears the previous tween state before re-running so
+  // cards never get stuck at opacity:0. `overwrite:true` prevents pile-up.
+  // We skip when loading=true so each keypress does not stutter the grid
+  // (FR-6: "not disruptively"). Duration is DURATION.fast (0.3s) to keep it brief.
+  const prevQueryKey = useRef<string>('');
+  useGSAP(
+    () => {
+      // Skip initial mount (handled by useReveal above) and mid-flight loads.
+      if (loading || !gridRef.current) return;
+      // Only re-reveal when the settled query has actually changed.
+      if (queryKey === prevQueryKey.current) return;
+      prevQueryKey.current = queryKey;
+
+      registerGsap();
+
+      const mm = gsap.matchMedia();
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        gsap.from(':scope > li', {
+          autoAlpha:  0,
+          y:          REVEAL.y,
+          duration:   DURATION.fast,
+          ease:       EASE.out,
+          stagger:    REVEAL.stagger,
+          overwrite:  true,    // safe against leftover tweens from useReveal initial pass
+        });
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    { dependencies: [queryKey, loading], revertOnUpdate: true, scope: gridRef },
+  );
 
   // ── URL write helper ────────────────────────────────────────────────────────
 
@@ -265,6 +318,7 @@ export default function DirectoryView() {
         </div>
       ) : (
         <ul
+          ref={gridRef}
           className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3"
           aria-label="Actor directory"
         >
