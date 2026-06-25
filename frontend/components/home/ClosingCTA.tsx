@@ -57,7 +57,10 @@ export default function ClosingCTA() {
 
   return (
     <section
-      className="relative isolate overflow-hidden bg-fg text-bg py-16"
+      // Cinematic closing band: a generous min-height gives the 16:9 loop real
+      // vertical room so object-cover shows the field/tractor scene instead of a
+      // cropped horizontal slice. Content is vertically centred over the media.
+      className="relative isolate flex items-center overflow-hidden bg-fg text-bg min-h-[30rem] py-20 lg:min-h-[36rem]"
       aria-labelledby="closing-cta-heading"
     >
 
@@ -67,7 +70,9 @@ export default function ClosingCTA() {
           src="/closing-cta-poster.jpg"
           alt=""
           fill
-          className="object-cover"
+          // object-position biased toward the tractor/horizon so the taller band
+          // frames the scene (matches the video below).
+          className="object-cover object-[center_38%]"
           priority={false}
           aria-hidden={true}
         />
@@ -76,7 +81,7 @@ export default function ClosingCTA() {
       {/* ── Video overlay (conditional: only when prefers-reduced-motion: no-preference) ── */}
       {playable && (
         <video
-          className="absolute inset-0 h-full w-full object-cover -z-10"
+          className="absolute inset-0 h-full w-full object-cover object-[center_38%] -z-10"
           autoPlay
           muted
           loop
@@ -93,8 +98,8 @@ export default function ClosingCTA() {
       {/* ── Token scrim (above poster/video, below content) ── */}
       <div className="absolute inset-0 bg-fg/70" aria-hidden="true" />
 
-      {/* ── Content (relative z-10 — unchanged from T-3) ── */}
-      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+      {/* ── Content (relative z-10) — w-full so it fills the flex row and centres ── */}
+      <div className="relative z-10 w-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
 
         {/* Section heading — exactly one h2, no h1 */}
         <h2
