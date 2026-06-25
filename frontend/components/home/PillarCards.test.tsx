@@ -63,4 +63,13 @@ describe('PillarCards', () => {
     expect(grid).not.toBeNull();
     expect(grid.className).toContain('md:grid-cols-3');
   });
+
+  // ── (e) Three SVG icons render (one per card) ──────────────────────────────
+
+  it('renders at least three SVG icons (one per pillar card)', () => {
+    const { container } = render(<PillarCards />);
+
+    const svgs = container.querySelectorAll('svg');
+    expect(svgs.length).toBeGreaterThanOrEqual(3);
+  });
 });
