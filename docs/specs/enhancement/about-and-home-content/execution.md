@@ -72,3 +72,15 @@
 - **Reviewer (code-reviewer):** STATUS **PASS**. FR-13 met; reduced-motion gate + cleanup correct; z-order (poster→video→scrim→content) correct; decorative `aria-hidden`; tokens-only zero hex; static export builds. **W-1:** shipped assets exceeded the §5.8 size targets.
 - **Leader-directed asset refinement:** re-encoded MP4 @960/crf31 → **0.66 MB** (< 1 MB target); VP9/WebM re-encoded *larger* than h264 for this clip, so **dropped WebM → MP4-only** (universal + smaller); removed the WebM `<source>` + asset; synced design §5.8 + tasks T-10. Re-verified 5/5 + tsc + build (9 static pages, /about emitted).
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-10: ClosingCTA ambient background video`.
+
+### T-9 About a11y + full build/lint/no-hex verification — ✅ PASS (1 attempt)
+- **Date:** 2026-06-25 · **Requirements:** NFR-1, NFR-2, NFR-4, NFR-6 · **Design:** §10.
+- **Implementer (frontend-developer):** added `app/(public)/about/about-a11y.test.tsx` (jest-axe zero violations; exactly one `<h1>`; Alliance credits link rel/href; registry CTAs → /map & /directory), modelled on the existing a11y suites. Ran the full gate.
+- **Reviewer (code-reviewer):** STATUS **PASS**. Test genuinely exercises the real About page (not a stub), no other test weakened. Full gate confirmed: **39 suites / 396 tests pass**, lint clean, static export **9 pages incl. `out/about/index.html`**, only-hex is the pre-existing Footer doc comment. NFR-1/2/4/6 satisfied.
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-9: About a11y test + full verification gate`.
+
+## Summary — all tasks complete ✅
+- **T-1…T-10 all `[x]`**, every task a Reviewer **PASS** (T-5/T-6/T-7/T-10 each had one reviewer-driven refinement applied before commit; no task ever HALTed or exhausted rework attempts).
+- **Scope delta during execution:** FR-13 + T-10 (ClosingCTA ambient background video) were added mid-spec at explicit user request (2026-06-25); requirements/design/tasks updated accordingly.
+- **Final verification:** 39 Jest suites / 396 tests green · ESLint clean · static export 9 pages (incl. `/about`) · no raw hex in changed code · tokens-only · reduced-motion-gated motion + video · no backend/PII/data changes.
+- **Ready for `/sdd-validate enhancement/about-and-home-content`.**

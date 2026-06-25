@@ -76,7 +76,7 @@
       Verify: `cd frontend && npm run test -- ClosingCTA && npx tsc --noEmit && npm run build`
       Done when: ClosingCTA renders the static/poster branch in tests (headings + both CTAs intact); video plays only under no-preference; assets present + optimized; static export builds.
 
-- [ ] T-9 About a11y + full build/lint/no-hex verification  (deps: T-6, T-7, T-8, T-10)
+- [x] T-9 About a11y + full build/lint/no-hex verification  (deps: T-6, T-7, T-8, T-10)
       Scope: Add `app/(public)/about/about-a11y.test.tsx` (jest-axe zero violations; one `<h1>`; logo/link discernible names). Run the full frontend suite, lint, static export, and a no-new-hex check across changed files.
       Traces: NFR-1, NFR-2, NFR-4, NFR-6 (requirements.md); design.md §10
       Files: frontend/app/(public)/about/about-a11y.test.tsx
