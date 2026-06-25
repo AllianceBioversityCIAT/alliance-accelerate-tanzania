@@ -63,7 +63,7 @@
       Verify: `cd frontend && npm run build && npm test`
       Done when: axe clean on animated surfaces; full suite green; static export green; manual CWV note recorded in execution.md.
 
-- [ ] T-9 Deploy frontend + visual verification  (deps: T-8)
+- [x] T-9 Deploy frontend + visual verification  (deps: T-8)
       Scope: rebuild + deploy the static frontend (S3 + CloudFront invalidation) via `infra/scripts/deploy-frontend.sh` (`--profile IBD-DEV`); confirm `/` and `/directory` 200 over CloudFront and the animations play (and respect reduced-motion).
       Traces: FR-3..FR-7, NFR-2 (requirements.md), design.md §7, §10
       Files: (no source change) infra/scripts/deploy-frontend.sh

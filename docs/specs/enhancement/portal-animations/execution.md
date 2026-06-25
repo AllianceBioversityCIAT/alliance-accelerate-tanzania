@@ -68,5 +68,11 @@
   - **Reduced-motion** — `gsap.matchMedia('(prefers-reduced-motion: no-preference)')` gate in every hook; auto-reverts on OS toggle; resting DOM = natural visible state.
 - Requirements: NFR-1, NFR-2, NFR-3, NFR-5, NFR-6. Final: PASS.
 
+### T-9 — Deploy frontend + visual verification — PASS (Leader-run deploy)
+- Date: 2026-06-25 · Run by: Leader (operator deploy; live checks = the gate).
+- Rebuilt + deployed the static frontend (motion layer baked in) via `infra/scripts/deploy-frontend.sh` (`--profile IBD-DEV`, eu-west-1): build → `s3 sync --delete` → CloudFront invalidation. No source change.
+- Live verification: `/` `/directory` `/map` `/profile` all **200** over CloudFront; **GSAP/ScrollTrigger confirmed present in the shipped bundle** (`/_next/static/chunks/664-…js`). Reduced-motion + visual smoothness are a manual in-browser check (OS Reduce Motion → no animation; content visible at rest by design).
+- Requirements: FR-3..FR-7, NFR-2. Final: PASS.
+
 ## Notes
 - The recurring file-sync artifacts (`" 2"`/`" 3"` numbered duplicate copies) reappear during runs; swept (broadened to any `" N"`) before commits, never staged.
