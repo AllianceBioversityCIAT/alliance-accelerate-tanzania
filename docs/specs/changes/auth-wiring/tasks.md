@@ -56,7 +56,7 @@
       Verify: `cd frontend && npm run build && npm test` and `cd backend && npm run test`
       Done when: axe clean on auth surfaces; static export green; backend security suite green incl. the public-stays-open + forged-role tests.
 
-- [ ] T-8 Deploy (backend env+CORS, frontend) + admin-create test user + live verification  (deps: T-2, T-7)
+- [x] T-8 Deploy (backend env+CORS, frontend) + admin-create test user + live verification  (deps: T-2, T-7)
       Scope: Redeploy backend (built template — Cognito env + `Authorization` CORS); rebuild+deploy frontend with `NEXT_PUBLIC_COGNITO_*` baked in; `admin-create-user` + `admin-add-user-to-group` a test Staff (and Admin) user; live-verify sign-in, `GET /auth/me`→role, no-token→401, Public-token→403 on probe, `/actors` still open + PII-free, CORS preflight passes with `Authorization`. All `--profile IBD-DEV`, eu-west-1.
       Traces: FR-1, FR-5, FR-6, FR-7, FR-8, FR-9, NFR-6 (requirements.md), design.md §7, §10
       Files: (no source change) infra/scripts/*, AWS CLI (cognito-idp admin-create-user)
