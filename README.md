@@ -2,6 +2,41 @@
 
 A public, serverless web platform mapping and visualizing Tanzania's seed system ecosystem. Focused on **sorghum**, **common bean**, and **groundnut** value chains, the registry serves 1,000+ actors — seed companies, NGOs, traders, processors, farmer groups, and cooperatives.
 
+## Background
+
+**ACCELERATE** — *Accelerated Variety Turnover for Open-Pollinated Crops in Tanzania* — is a four-year initiative (2023–2026) led by the **Alliance of Bioversity International & CIAT** and the **Pan-Africa Bean Research Alliance (PABRA)**, funded by the **Bill & Melinda Gates Foundation**.
+
+**The problem:** Across Tanzania, most smallholder farmers still grow old, low-yielding varieties that are increasingly vulnerable to drought and climate stress. The formal seed sector meets only about **3% of farmers' planting requirements**; the rest comes from informal channels, which keeps improved genetics from reaching the field. Adoption is held back by a lack of product information, limited promotion, poor access to early-generation seed, thin data to guide decisions, and a weak seed supply system.
+
+**The approach — a demand-led seed system:** Rather than pushing seed toward farmers, ACCELERATE starts with the sources of demand — the grain traders, aggregators, processors, and institutional buyers who already move crops through the market — and links them to formal, semi-formal, and informal seed producers. When demand pulls quality seed through the value chain, varietal turnover accelerates on its own. Three pillars drive the model:
+
+1. **Information flow** — better information to and from large traders, grain producers, and seed producers builds real demand for quality seed.
+2. **Marketplace traders** — engaging the traders who buy and sell grain every day turns the marketplace into an engine for adoption.
+3. **Institutional buyers** — when institutional buyers know about and can access improved varieties, turnover speeds up and farmer incomes and nutrition rise.
+
+This repository is the **public registry behind ACCELERATE** — a single, trusted map of the seed companies, cooperatives, offtakers, research institutes, and traders that make up Tanzania's seed system.
+
+### Crops & value chains
+
+ACCELERATE focuses on three priority value chains, each with newly released, higher-yielding open-pollinated varieties (OPVs):
+
+| Crop | Representative varieties |
+|---|---|
+| **Sorghum** | TARI SOR 1 (red), TARI SOR 2 (white) — 3–4 t/ha, Striga & bird resistant |
+| **Common bean** | TARI Bean 2–6, Uyole 16/18, Selian 13, Calima Uyole, JESCA |
+| **Groundnut** | Naliendele 2016, Narinut 2015, Tanzanut 2016, TARIKA 1 & 2 |
+
+### Partners
+
+| Organization | Role |
+|---|---|
+| Alliance of Bioversity International & CIAT (ABC) | Lead implementer |
+| Pan-Africa Bean Research Alliance (PABRA) | Co-lead, bean value chain |
+| Tanzania Agricultural Research Institute (TARI) | Variety release & early-generation seed |
+| Tanzania Official Seed Certification Institute (TOSCI) | Seed certification & QDS regulation |
+| International Maize & Wheat Improvement Center (CIMMYT) | Market intelligence, sorghum/groundnut |
+| Bill & Melinda Gates Foundation (BMGF) | Funder |
+
 ## What this project does
 
 The platform transforms fragmented, static CSV/Excel datasets into a **living, centralized, scalable web system** that any stakeholder can browse, search, and analyze:
@@ -111,6 +146,9 @@ See [`infra/README.md`](infra/README.md) for the full deploy → operate → tea
 - **[`docs/system-design/design.md`](docs/system-design/design.md)** — UI/UX system, information architecture, design tokens.
 - **[`docs/detailed-design/detailed-design.md`](docs/detailed-design/)** — technical blueprint: architecture, data model, API surface, RBAC/PII, infrastructure.
 - **[`docs/specs/`](docs/specs/)** — feature specifications following the `general-setup/` templates.
+- **[`docs/reference/`](docs/reference/)** — source material & content briefs:
+  - [`accelerate-project-source-data.md`](docs/reference/accelerate-project-source-data.md) — extracted project facts (partners, actors, varieties, regions, statistics) with full source list.
+  - [`accelerate-web-copy-brief.md`](docs/reference/accelerate-web-copy-brief.md) — ready-to-use on-brand copy for the home & About pages, mapped to routes and design tokens.
 
 ## License
 
