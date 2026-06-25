@@ -49,5 +49,12 @@
 - Requirements: FR-2, NFR-2. Final: PASS.
 - Note: impl-a6 also fixed two pre-existing build blockers in T-4's files during its run (Suspense wrap + a type narrowing); a4's later final write superseded them — net tree coherent (rev-a4 confirmed).
 
+### T-7 — A11y / static-export / security verification pass — PASS (attempt 1)
+- Date: 2026-06-25 · Implementer: impl-a7
+- Files: `frontend/components/auth/auth-a11y.test.tsx` (new, 12 — jest-axe over LoginForm credentials + new-password steps and Header Public + authenticated states; labeled-control / aria-live / accessible-sign-out assertions), `backend/src/auth/auth.controller.spec.ts` (+1 — `/auth/me` → 401 tokenless). No component/source fixes needed (axe 0 violations as-is).
+- Verification: frontend `npm test` → **279/279** (28 suites) + `npm run build` `/login` static (○); backend `npm run test` → **129/129** (18 suites). Leader re-verified identical.
+- Reviewer (rev-a7) **PASS**: a11y tests genuine (real `toHaveNoViolations` on rendered DOM, assertions match source); the `/auth/me` 401 test is meaningful; no behavior change; the three security assertions collectively covered — (a) tokenless `/actors` open + PII-safe (`no-global-guard.spec.ts` + `pii-boundary.spec.ts`), (b) forged-role-ignored (`jwt-auth.guard.spec.ts`), (c) `/auth/me` 401 (new). `act` warnings benign.
+- Requirements: NFR-1, NFR-2, NFR-3, NFR-4 (verifying FR-1..FR-9 surfaces). Final: PASS.
+
 ## Notes
 - The recurring `" 2"` sync-duplicate artifacts (incl. duplicate dirs under `backend/src/`) reappeared during this run; swept before commits, never staged.

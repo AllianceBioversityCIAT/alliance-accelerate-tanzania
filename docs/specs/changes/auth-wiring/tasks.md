@@ -49,7 +49,7 @@
       Verify: `cd frontend && npm test -- RequireRole`
       Done when: renders children for an allowed role, redirects Public to `/login`; test passes.
 
-- [ ] T-7 A11y / static-export / security verification pass  (deps: T-1, T-4, T-5, T-6)
+- [x] T-7 A11y / static-export / security verification pass  (deps: T-1, T-4, T-5, T-6)
       Scope: jest-axe on `/login` + Header auth states (0 violations); confirm `next build` static export green with `/login`; backend security assertions consolidated (tokenless `/actors` 200 + PII-free; forged role ignored; `/auth/me` 401 without token) — extend suites if gaps. No behavior change beyond minimal axe fixes.
       Traces: NFR-1, NFR-2, NFR-3, NFR-4 (requirements.md), design.md §10
       Files: frontend/components/auth/*a11y*.test.tsx (or extend), backend/src/auth/*.spec.ts (if gaps)
