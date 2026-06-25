@@ -59,12 +59,14 @@ jest.mock('@/lib/auth/useSession', () => ({
 const mockSignOut = jest.fn();
 
 jest.mock('@/lib/auth/useAuth', () => ({
-  useAuth: () => ({
-    signOut: mockSignOut,
-    signIn:  jest.fn(),
-    refresh: jest.fn(),
-    loading: false,
-  }),
+  useAuth: () => {
+    // LoginForm signs in via useAuth().signIn — delegate to the SAME auth-client
+    // signIn mock the tests configure (so signIn.mockResolvedValueOnce applies).
+    /* eslint-disable */
+    const { signIn } = require('@/lib/auth/auth-client') as { signIn: jest.Mock };
+    /* eslint-enable */
+    return { signOut: mockSignOut, signIn, refresh: jest.fn(), loading: false };
+  },
 }));
 
 // ---------------------------------------------------------------------------
