@@ -14,14 +14,14 @@
       Verify: `cd frontend && npm test && npm run build`
       Done when: deps installed; tokens present; GSAP mock + matchMedia polyfill in place; the existing 281 tests still pass; static export build green.
 
-- [ ] T-2 `useReveal` scroll-reveal primitive  (deps: T-1)
+- [x] T-2 `useReveal` scroll-reveal primitive  (deps: T-1)
       Scope: `lib/motion/useReveal.ts` (+ optional `<Reveal>`): `useGSAP({scope})` + `gsap.matchMedia('(prefers-reduced-motion: no-preference)')` → `gsap.from(targets, { autoAlpha:0, y:REVEAL.y, duration, ease, stagger, scrollTrigger:{start:'top 85%', once:true} })`. Single + children/stagger variants (grid variant may use `ScrollTrigger.batch`). Resting DOM stays visible (from-based); reduced-motion = no-op.
       Traces: FR-2, FR-7, FR-8, NFR-1, NFR-2, NFR-6 (requirements.md), design.md §5.2
       Files: frontend/lib/motion/useReveal.tsx (+ test)
       Verify: `cd frontend && npm test -- useReveal`
       Done when: with GSAP mocked, content renders visible (final state); tests cover the reduced-motion/no-op path; transform+opacity only.
 
-- [ ] T-3 `useCountUp` number count-up primitive  (deps: T-1)
+- [x] T-3 `useCountUp` number count-up primitive  (deps: T-1)
       Scope: `lib/motion/useCountUp.ts`: returns a ref + accepts `(target, { enabled })`; animates a proxy and writes `node.textContent` via `onUpdate` (no per-frame React render); gated by `matchMedia` → reduced-motion / `enabled===false` shows final formatted value immediately; in-view trigger (ScrollTrigger once). Formatting matches existing display (e.g. `1,000+`, integers).
       Traces: FR-3, FR-4, FR-7, NFR-2 (requirements.md), design.md §5.3
       Files: frontend/lib/motion/useCountUp.ts (+ test)
