@@ -304,3 +304,41 @@ describe('DirectoryView — responsive grid classes (NFR-6)', () => {
     expect(grid).toHaveClass('lg:grid-cols-3');
   });
 });
+
+// ---------------------------------------------------------------------------
+// NFR-1 / FR-7: Reduced-motion / GSAP-mocked final-state assertions
+//
+// DirectoryView uses useReveal (stagger grid entrance) and a useGSAP re-reveal
+// on query change — both gated on prefers-reduced-motion via gsap.matchMedia.
+// The GSAP mock makes matchMedia.add() a no-op, so no animation callback fires.
+// This is exactly the FR-7 reduced-motion path: all actor cards must be visible
+// immediately in their final state without any GSAP run (FR-8 progressive
+// enhancement). The assertions below make that contract explicit.
+// ---------------------------------------------------------------------------
+
+describe('DirectoryView — reduced-motion / GSAP-mocked final-state (NFR-1, FR-6, FR-7, FR-8)', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('FR-7/FR-6/FR-8: actor cards are immediately visible in the reduced-motion (GSAP-mocked) path', () => {
+    // GSAP mock: useReveal and re-reveal useGSAP both call matchMedia.add which
+    // is a no-op — the stagger animation never fires. Cards must render in their
+    // final visible state (FR-8 progressive enhancement, FR-7 reduced-motion).
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    renderDirectory();
+
+    // Both actor cards must be visible without the stagger entrance running.
+    expect(screen.getByText('Dodoma Seeds Ltd')).toBeVisible();
+    expect(screen.getByText('Mbeya Cooperative')).toBeVisible();
+  });
+
+  it('FR-7/FR-8: directory heading and search are immediately visible in the reduced-motion path', () => {
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    renderDirectory();
+
+    // Page heading and search bar must be visible without motion.
+    expect(screen.getByRole('heading', { name: /actor directory/i })).toBeVisible();
+    expect(screen.getByRole('searchbox', { name: /search organizations/i })).toBeVisible();
+  });
+});

@@ -48,6 +48,14 @@
     --radius-full: 9999px;
     --shadow-sm:   0 1px 2px rgba(28, 31, 26, 0.06);
     --shadow-md:   0 4px 12px rgba(28, 31, 26, 0.08);
+
+    /* Motion tokens — mirrors GSAP-side values in lib/motion/motion-tokens.ts.
+       Reduced-motion preference disables all animation (FR-7); @media below. */
+    --dur-fast:  .3s;
+    --dur-base:  .6s;
+    --dur-slow:  .9s;
+    --ease-out:  cubic-bezier(.2,.7,.2,1);
+    --ease-soft: cubic-bezier(.25,.46,.45,.94);
   }
 
   /*

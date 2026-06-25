@@ -123,3 +123,84 @@ describe('Home page — axe accessibility', () => {
     expect(results).toHaveNoViolations();
   });
 });
+
+// ---------------------------------------------------------------------------
+// NFR-1 / FR-7: Reduced-motion / GSAP-mocked final-state assertions
+//
+// The GSAP mock makes matchMedia.add() a no-op — no animation callback ever
+// fires. This is exactly the reduced-motion path (FR-7): animated surfaces
+// must show all content immediately in their final visible state without any
+// GSAP run. These tests make that contract explicit for the full home
+// composition (Hero + MetricsBand + CropCoverage).
+// ---------------------------------------------------------------------------
+
+describe('Home page — reduced-motion / GSAP-mocked final-state (NFR-1, FR-7, FR-8)', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('FR-7/FR-8: Hero headline is immediately visible in the reduced-motion (GSAP-mocked) path', () => {
+    // GSAP mock: matchMedia.add is a no-op — entrance animation never fires.
+    // The Hero must render its headline in its final visible state without GSAP.
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { getByRole } = renderHomePage();
+
+    // The h1 must be present and visible — not hidden by a from-state that GSAP
+    // never cleaned up (FR-8 progressive enhancement).
+    const heading = getByRole('heading', { level: 1 });
+    expect(heading).toBeVisible();
+  });
+
+  it('FR-7/FR-8: Hero CTA links are immediately visible in the reduced-motion path', () => {
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { getByRole } = renderHomePage();
+
+    // CTAs must be present and reachable without motion.
+    expect(getByRole('link', { name: /explore the map/i })).toBeVisible();
+    expect(getByRole('link', { name: /browse directory/i })).toBeVisible();
+  });
+
+  it('FR-7/FR-3/FR-8: LiveRegistryCard "1,000+" is immediately shown in the reduced-motion path', () => {
+    // With matchMedia.add a no-op, useCountUp never fires its animation callback
+    // and the JSX-rendered "1,000+" stays as the textContent (FR-8).
+    // This is the reduced-motion behavior for the Hero count-up (FR-3/FR-7).
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { getByText } = renderHomePage();
+
+    const countNode = getByText('1,000+');
+    expect(countNode).toBeInTheDocument();
+    expect(countNode).toBeVisible();
+  });
+
+  it('FR-7/FR-4/FR-8: MetricsBand figures are immediately visible in the reduced-motion path', () => {
+    // MetricsBand StatCards with countUp=true rely on useCountUp inside StatCard.
+    // With GSAP mocked, all figures must show their final values immediately.
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { getByText } = renderHomePage();
+
+    // Four metric figures — all present and visible without animation.
+    expect(getByText((_, el) =>
+      el?.tagName === 'SPAN' && /1[,.]?234/.test(el.textContent ?? '')
+    )).toBeVisible();
+    expect(getByText('3')).toBeVisible();
+    expect(getByText('7')).toBeVisible();
+    expect(getByText('4')).toBeVisible();
+  });
+
+  it('FR-7/FR-5/FR-8: CropCoverage cards are immediately visible in the reduced-motion path', () => {
+    // useReveal stagger-reveal is a no-op when GSAP is mocked — all CropCards
+    // must render at their natural visible state (FR-5 reduced-motion compliance).
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { getByText } = renderHomePage();
+
+    // All three crop names must be visible without motion.
+    expect(getByText('Sorghum')).toBeVisible();
+    expect(getByText('Common Bean')).toBeVisible();
+    expect(getByText('Groundnut')).toBeVisible();
+  });
+});

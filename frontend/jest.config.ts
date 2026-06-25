@@ -13,6 +13,11 @@ const config: Config = {
   moduleNameMapper: {
     // Support Next.js path alias @/* → root
     '^@/(.*)$': '<rootDir>/$1',
+    // GSAP manual mocks — node_modules mocks require explicit moduleNameMapper
+    // so jsdom renders components with GSAP no-ops and all 281 tests stay green (NFR-5).
+    '^gsap$':                '<rootDir>/__mocks__/gsap.ts',
+    '^gsap/ScrollTrigger$':  '<rootDir>/__mocks__/gsap/ScrollTrigger.ts',
+    '^@gsap/react$':         '<rootDir>/__mocks__/@gsap/react.ts',
   },
   testMatch: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
   // Collect coverage from lib/ only (not generated/config files)

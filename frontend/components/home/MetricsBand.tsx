@@ -11,6 +11,11 @@
 //   ≥md           : 4 columns in a single row
 //
 // Max-width container matches Hero: mx-auto max-w-7xl px-4 sm:px-6 lg:px-8.
+//
+// Count-up animation (FR-4, FR-7, FR-8):
+//   Each figure animates 0→value when the band scrolls into view, but ONLY
+//   once metrics have loaded (enabled = !loading && data != null).
+//   Reduced-motion or GSAP mocked in tests → final value shown statically (FR-7/FR-8).
 
 import { useMetrics } from '@/lib/api/useMetrics';
 import StatCard from '@/components/ui/StatCard';
@@ -21,6 +26,10 @@ import StatCard from '@/components/ui/StatCard';
 
 export default function MetricsBand() {
   const { data, loading } = useMetrics();
+
+  // Gate: count-up only fires once data is loaded and available (FR-4).
+  // While loading or when data is null, StatCard shows its static value/skeleton.
+  const countUp = !loading && data != null;
 
   return (
     // Dark surface: bg-fg (near-black) + text-bg (warm off-white) — token-only (NFR-4).
@@ -40,21 +49,25 @@ export default function MetricsBand() {
             label="Actors mapped"
             value={data?.actorsMapped}
             loading={loading}
+            countUp={countUp}
           />
           <StatCard
             label="Major crops"
             value={data?.cropsTracked}
             loading={loading}
+            countUp={countUp}
           />
           <StatCard
             label="Regions covered"
             value={data?.regionsCovered}
             loading={loading}
+            countUp={countUp}
           />
           <StatCard
             label="Actor types"
             value={data?.actorTypes}
             loading={loading}
+            countUp={countUp}
           />
         </div>
       </div>

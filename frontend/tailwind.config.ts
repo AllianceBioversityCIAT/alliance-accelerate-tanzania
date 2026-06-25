@@ -46,6 +46,15 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-sans)'],
       },
+      transitionDuration: {
+        fast: '300ms',
+        base: '600ms',
+        slow: '900ms',
+      },
+      transitionTimingFunction: {
+        out:  'cubic-bezier(.2,.7,.2,1)',
+        soft: 'cubic-bezier(.25,.46,.45,.94)',
+      },
       fontSize: {
         xs:   'var(--text-xs)',
         sm:   'var(--text-sm)',
