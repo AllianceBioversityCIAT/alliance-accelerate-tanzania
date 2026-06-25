@@ -62,7 +62,7 @@
       Verify: `cd frontend && npm run build` (static export emits `out/about/index.html`)
       Done when: `/about` builds statically; renders all §3 sections with brief copy; metadata set; one `<h1>`; case-study figures attributed.
 
-- [ ] T-8 Navigation: header + footer About link + footer coalition  (deps: T-1)
+- [x] T-8 Navigation: header + footer About link + footer coalition  (deps: T-1)
       Scope: `Header.tsx` — add `{ label: 'About', href: '/about' }` to `NAV_LINKS` (drives desktop + mobile + active state). `Footer.tsx` — add an `About` text link and expand the partner block from the lone PABRA chip to the coalition (Alliance + PABRA + Gates from `PARTNERS`), reusing the light-chip pattern; external links `rel="noopener noreferrer"`. Update `Header.test.tsx` for the new nav item.
       Traces: FR-9, FR-10 (requirements.md); design.md §5.6
       Files: frontend/components/shell/Header.tsx, frontend/components/shell/Footer.tsx, frontend/components/shell/Header.test.tsx

@@ -44,3 +44,9 @@
 - **Reviewer (code-reviewer):** STATUS **PASS** with 2 warnings. **W-2 (FR-6 functional gap):** `focus-visible:grayscale-0` on the non-focusable `<img>` never fired on keyboard focus — FR-6 requires color on hover OR focus. **W-1:** test only asserted `noopener`.
 - **Leader-directed refinement (SendMessage → same implementer):** applied the Tailwind `group` pattern — `group` on the `<a>`, `group-focus-visible:grayscale-0` on the `<Image>` — so keyboard focus now resolves color (FR-6 AC fully met); tightened the test to assert exact `rel="noopener noreferrer"`. Re-verified: 12/12 tests + tsc clean. No hex.
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-5: PartnersStrip grayscale logo wall`.
+
+### T-8 Navigation: header + footer About link + footer coalition — ✅ PASS (1 attempt)
+- **Date:** 2026-06-25 · **Requirements:** FR-9, FR-10 · **Design:** §5.6.
+- **Implementer (frontend-developer):** `Header.tsx` — added `{ label:'About', href:'/about' }` to `NAV_LINKS` (drives desktop + mobile + active state). `Footer.tsx` — added an "About this project" link (token-styled, legible on dark) + expanded the lone PABRA chip into the lead coalition ("An initiative of" → Alliance + PABRA chips; "Funded by" → BMGF chip), mapping `PARTNERS` (logo'd, `lightSafe:false`) onto light `bg-surface` chips, each an external link with `rel="noopener noreferrer"` + `aria-label` + focus ring; PABRA's descriptive alt preserved. `Header.test.tsx` asserts the About link in Public + Staff. 12 tests + tsc clean.
+- **Reviewer (code-reviewer):** STATUS **PASS**. FR-9/FR-10 met; data-driven; no NEW hex (the `(#333333)` line is a pre-existing doc comment); Footer stays server / Header stays client. Accepted non-blocking warning: `LOGO_DIMS` fallback is a latent trap for future partners (no functional issue today).
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-8: About nav link + footer coalition`.

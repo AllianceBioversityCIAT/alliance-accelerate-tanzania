@@ -95,6 +95,10 @@ describe('Header — Public (unauthenticated)', () => {
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /discovery map/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /directory/i }).length).toBeGreaterThanOrEqual(1);
+    // FR-9: About link present in nav (desktop + mobile = 2 occurrences)
+    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
+    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
+    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
   });
 });
 
@@ -145,6 +149,10 @@ describe('Header — authenticated (Staff)', () => {
 
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /directory/i }).length).toBeGreaterThanOrEqual(1);
+    // FR-9: About link present for authenticated users too
+    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
+    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
+    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
   });
 });
 

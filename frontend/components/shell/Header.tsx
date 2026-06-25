@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { label: 'Home', href: '/' },
   { label: 'Discovery Map', href: '/map' },
   { label: 'Directory', href: '/directory' },
+  { label: 'About', href: '/about' },
 ] as const;
 
 // ---------------------------------------------------------------------------
