@@ -105,7 +105,32 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 --shadow-md:0 4px 12px rgba(28,31,26,.08);
 
 /* Spacing scale: Tailwind default (4px base). */
+
+/* Motion tokens — add to :root alongside the color/geometry tokens above.
+   GSAP-side mirrors live in frontend/lib/motion/motion-tokens.ts.
+   Reduced-motion preference MUST disable all animation (WCAG 2.3.3 / FR-7). */
+--dur-fast:  .3s;   /* short micro-transitions, button/chip hover */
+--dur-base:  .6s;   /* standard scroll-reveal and entrance duration */
+--dur-slow:  .9s;   /* deliberate, slow entrance (hero headline) */
+--ease-out:  cubic-bezier(.2,.7,.2,1);    /* fast-out deceleration — primary reveal ease */
+--ease-soft: cubic-bezier(.25,.46,.45,.94); /* gentle deceleration — count-ups, image scale */
 ```
+
+### Motion tokens
+
+Durations and easings are **token-driven** — no scattered magic numbers in component code (NFR-4).
+
+| Token | Value | Use |
+|---|---|---|
+| `--dur-fast` | `0.3s` | Micro-transitions: button/chip hover, focus ring |
+| `--dur-base` | `0.6s` | Scroll-reveal entrance, section fade-in |
+| `--dur-slow` | `0.9s` | Hero headline stagger, deliberate entrances |
+| `--ease-out` | `cubic-bezier(.2,.7,.2,1)` | Primary reveal — fast deceleration |
+| `--ease-soft` | `cubic-bezier(.25,.46,.45,.94)` | Count-ups, image scale — gentle deceleration |
+
+The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/motion/motion-tokens.ts`) uses `power2.out` / `power1.out` as the nearest built-in equivalents; CSS-based micro-transitions use the `--ease-*` custom properties directly (also exposed as Tailwind `transition-timing-out` / `transition-timing-soft`).
+
+**Reduced-motion rule:** All motion gated on `prefers-reduced-motion: no-preference` via `gsap.matchMedia()`. Users with the OS reduced-motion preference receive the final, static state immediately — no animation, no fades, no count-ups (WCAG 2.1 AA §2.3.3, §2.2.2).
 
 > **Accent usage (contrast):** `--color-primary` (maroon) passes WCAG AA on white for all text/UI (~10.4:1). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
 

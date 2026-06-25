@@ -7,7 +7,7 @@
 
 ## Tasks
 
-- [ ] T-1 Motion foundation: deps + tokens + GSAP setup + test harness  (deps: none)
+- [x] T-1 Motion foundation: deps + tokens + GSAP setup + test harness  (deps: none)
       Scope: `npm i gsap @gsap/react` (frontend). Add `lib/motion/motion-tokens.ts` (DURATION/EASE/REVEAL/COUNT_UP) and `lib/motion/gsap-setup.ts` (idempotent `registerGsap()` → registerPlugin(useGSAP, ScrollTrigger)). Add motion CSS tokens (`--dur-*`, `--ease-*`) to `app/globals.css` `:root` + extend `tailwind.config.ts` transitionDuration/timingFunction + document in System Design §7. Add Jest manual mock for `gsap`/`gsap/ScrollTrigger`/`@gsap/react` (no-op, useGSAP runs callback once) and a `window.matchMedia` polyfill in `jest.setup.ts`.
       Traces: FR-1, FR-8, NFR-3, NFR-4, NFR-5 (requirements.md), design.md §5.1, §5.4, §5.6
       Files: frontend/package.json, frontend/lib/motion/{motion-tokens,gsap-setup}.ts, frontend/app/globals.css, frontend/tailwind.config.ts, frontend/jest.setup.ts, frontend/__mocks__/* (or jest.mock), docs/system-design/design.md (§7 motion tokens)
