@@ -17,10 +17,12 @@
  *   <LoginForm />
  */
 
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
-import { signIn, confirmNewPassword } from '@/lib/auth/auth-client';
+import { confirmNewPassword } from '@/lib/auth/auth-client';
+import { useAuth } from '@/lib/auth/useAuth';
+import { useSession } from '@/lib/auth/useSession';
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -91,6 +93,13 @@ export default function LoginForm() {
   const router       = useRouter();
   const searchParams = useSearchParams();
 
+  // Sign in THROUGH the provider (not the raw auth-client) so a successful
+  // sign-in refreshes the shared session — the header then reflects the logged-in
+  // state without a hard reload. `refresh` re-resolves the session after the
+  // new-password challenge (which the provider doesn't wrap).
+  const { signIn, refresh, loading: authLoading } = useAuth();
+  const { user } = useSession();
+
   // ── Form state ─────────────────────────────────────────────────────────────
   const [step, setStep]         = useState<Step>('credentials');
   const [email, setEmail]       = useState('');
@@ -104,8 +113,21 @@ export default function LoginForm() {
   /** After a successful sign-in, route to the redirect param or root. */
   function onSuccess() {
     const redirect = searchParams?.get('redirect') ?? '/';
-    router.push(redirect);
+    // replace (not push) so /login isn't left in the back-history after auth.
+    router.replace(redirect);
   }
+
+  // Already-authenticated guard: if the visitor reaches /login while signed in,
+  // redirect to the app rather than showing a form that would throw
+  // "There is already a signed in user" on submit. Waits for the session to
+  // resolve (authLoading) so we don't redirect during the initial Public state.
+  useEffect(() => {
+    if (!authLoading && user) {
+      onSuccess();
+    }
+    // onSuccess depends only on router/searchParams (stable for this purpose).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -119,6 +141,7 @@ export default function LoginForm() {
     setBusy(false);
 
     if (result.status === 'authenticated') {
+      // Provider already refreshed the session; navigate in.
       onSuccess();
       return;
     }
@@ -140,13 +163,16 @@ export default function LoginForm() {
 
     const result = await confirmNewPassword(newPass);
 
-    setBusy(false);
-
     if (result.status === 'authenticated') {
+      // confirmNewPassword runs outside the provider — refresh the shared
+      // session so the header reflects the logged-in state before navigating.
+      await refresh();
+      setBusy(false);
       onSuccess();
       return;
     }
 
+    setBusy(false);
     // Narrow to the error variant before accessing .message (new_password_required has none)
     setError(result.status === 'error' ? result.message : 'Unexpected challenge after password change.');
   }
