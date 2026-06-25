@@ -28,21 +28,21 @@
       Verify: `cd frontend && npm test -- auth && npm run build`
       Done when: mocked-Amplify tests show role mapping from groups, session resolve/clear, sign-out → Public; `useSession` returns the mapped `Session` with unchanged types; static export build green.
 
-- [ ] T-4 Frontend /login page + LoginForm (incl. new-password challenge)  (deps: T-3)
+- [x] T-4 Frontend /login page + LoginForm (incl. new-password challenge)  (deps: T-3)
       Scope: `app/(public)/login/page.tsx` (client) + `components/auth/LoginForm.tsx`: labeled email/password, submit via `auth-client.signIn`, accessible error region (`aria-live`), and the conditional `NEW_PASSWORD_REQUIRED` "set new password" step; tokens-only; reuse `Button`. On success route back to the app.
       Traces: FR-1, NFR-2, NFR-4, NFR-7 (requirements.md), design.md §5
       Files: frontend/app/(public)/login/page.tsx, frontend/components/auth/LoginForm.tsx (+ tests)
       Verify: `cd frontend && npm test -- login LoginForm && npm run build`
       Done when: tests cover success, invalid-credentials error, and the new-password challenge path; `/login` builds static; a11y assertions pass.
 
-- [ ] T-5 Header auth UX + authenticated API transport  (deps: T-3)
+- [x] T-5 Header auth UX + authenticated API transport  (deps: T-3)
       Scope: `components/shell/Header.tsx`: Public → "Staff sign-in" → `/login`; authenticated → name + role chip + "Sign out" (calls `useAuth().signOut`). `lib/api/client.ts`: add `apiGetAuthed<T>` attaching `Authorization: Bearer <accessToken>` and signalling `401`→ caller can route to `/login`; public `apiGet` unchanged.
       Traces: FR-3, FR-4, FR-9, NFR-4, NFR-7 (requirements.md), design.md §5
       Files: frontend/components/shell/Header.tsx, frontend/lib/api/client.ts (+ tests)
       Verify: `cd frontend && npm test -- Header client && npm run build`
       Done when: Header renders sign-in vs user-menu by role and signs out; `apiGetAuthed` attaches bearer and handles 401; public `apiGet` still tokenless; tests pass.
 
-- [ ] T-6 Client route-guard helper (RequireRole)  (deps: T-3)
+- [x] T-6 Client route-guard helper (RequireRole)  (deps: T-3)
       Scope: `lib/auth/RequireRole.tsx` — a minimal client guard redirecting `Public` to `/login` (seed for future protected pages; NO protected page ships here). Unit test for redirect vs render.
       Traces: FR-2 (consumes session), NFR-2 (requirements.md), design.md §5
       Files: frontend/lib/auth/RequireRole.tsx (+ test)

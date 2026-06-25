@@ -27,5 +27,27 @@
 - Reviewer (rev-a3) **PASS**: `useSession` type contract byte-identical to the stub (Public default outside provider, no prerender crash); roleFromGroups + getSession correct (role from ID-token `cognito:groups`, null unauth); SessionProvider `'use client'`, sign-out→Public; configureAmplify guards missing env without throwing; no SSR/route handlers; no secrets/PII.
 - Requirements: FR-2, FR-3, NFR-2, NFR-5, NFR-7. Final: PASS.
 
+### T-4 — Frontend /login page + LoginForm (incl. new-password challenge) — PASS (attempt 1)
+- Date: 2026-06-24 · Implementer: impl-a4
+- Files: `frontend/app/(public)/login/page.tsx` (`'use client'`, `<Suspense>` over the `useSearchParams` form), `frontend/components/auth/LoginForm.tsx` (labeled email/password → T-3 `signIn`; conditional `new_password_required` step → `confirmNewPassword`; `role="alert"`/`aria-live` error region; success honors `?redirect`), `LoginForm.test.tsx` (7).
+- Verification: `npm test -- LoginForm` → **7/7**; `npm run build` → `/login` static (○). Leader full suite 267/267.
+- Reviewer (rev-a4) **PASS**: static-export safe, tokens-only + a11y, NEW_PASSWORD_REQUIRED path covered; **coherence confirmed** — `tsc --noEmit` clean, no half-merged code from the concurrent T-6 edit (`result.message` only on the error branch).
+- Requirements: FR-1, NFR-2, NFR-4, NFR-7. Final: PASS.
+
+### T-5 — Header auth UX + authenticated API transport — PASS (attempt 1)
+- Date: 2026-06-24 · Implementer: impl-a5
+- Files: `frontend/components/shell/Header.tsx` (Public→"Staff sign-in"; authed→name+role chip+sign-out via `useAuth().signOut()`; existing nav/mobile preserved), `Header.test.tsx` (new), `frontend/lib/api/client.ts` (+`apiGetAuthed` + typed `AuthFailureError`; `apiGet` unchanged), `client.test.ts` (new).
+- Verification: Header+client targeted **27/27**; full suite 267/267; build green.
+- Reviewer (rev-a5) **PASS**: **public `apiGet` byte-unchanged + a tokenless-header test (FR-8)**; `apiGetAuthed` attaches Bearer, 401→`AuthFailureError`, other→Error; header UX + accessible sign-out; static export preserved; tokens-only.
+- Requirements: FR-3, FR-4, FR-8, FR-9, NFR-4, NFR-7. Final: PASS.
+
+### T-6 — Client route-guard helper (RequireRole) — PASS (attempt 1)
+- Date: 2026-06-24 · Implementer: impl-a6
+- Files: `frontend/lib/auth/RequireRole.tsx` (`'use client'`; `{allow,children,redirectTo='/login'}`; loading→render null + no redirect; resolved→children if role∈allow with Admin≥Staff, else `router.replace`), `RequireRole.test.tsx` (7).
+- Verification: `npm test -- RequireRole` → **7/7**; full suite 267/267; build green.
+- Reviewer (rev-a6) **PASS**: self-contained, Admin satisfies `allow:['Staff']`, no premature redirect (NFR-7), no SSR/protected page; scope clean (imports only session/Role/router).
+- Requirements: FR-2, NFR-2. Final: PASS.
+- Note: impl-a6 also fixed two pre-existing build blockers in T-4's files during its run (Suspense wrap + a type narrowing); a4's later final write superseded them — net tree coherent (rev-a4 confirmed).
+
 ## Notes
 - The recurring `" 2"` sync-duplicate artifacts (incl. duplicate dirs under `backend/src/`) reappeared during this run; swept before commits, never staged.
