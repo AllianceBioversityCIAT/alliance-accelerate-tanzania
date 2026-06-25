@@ -13,7 +13,7 @@
 
 ## Tasks
 
-- [ ] T-1 Add brand/photo assets + typed content modules  (deps: none)
+- [x] T-1 Add brand/photo assets + typed content modules  (deps: none)
       Scope: Add web-optimized assets under `frontend/public/` — `accelerate-field.jpg` (About hero) and partner logos `partners/alliance.*`, `partners/bmgf.*`, and (if cleanly extractable) `partners/tari.*`, `partners/tosci.*`, `partners/cimmyt.*` (PABRA reuses existing `/pabra-30-logo.png`). Create `lib/content/partners.ts` (`Partner` interface + `PARTNERS` six entries per brief §4.1, `logo?` omitted where no clean asset → text fallback, `lightSafe?` flags) and `lib/content/pillars.ts` (`Pillar` + `PILLARS` three entries per §4.3). Optionally add `varieties?: string[]` to `CropContent` in `crops.ts` populated from brief §4.2 (additive, backward-compatible).
       Traces: FR-11, FR-12 (requirements.md); design.md §5.4, §5.7
       Files: frontend/public/accelerate-field.jpg, frontend/public/partners/*, frontend/lib/content/partners.ts, frontend/lib/content/pillars.ts, frontend/lib/content/crops.ts
