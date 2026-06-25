@@ -69,7 +69,14 @@
       Verify: `cd frontend && npm run test -- Header`
       Done when: About link present in desktop nav, mobile menu, and footer with active state; footer shows coalition with accessible names; Header test passes.
 
-- [ ] T-9 About a11y + full build/lint/no-hex verification  (deps: T-6, T-7, T-8)
+- [x] T-10 Closing CTA ambient background video  (deps: T-3)
+      Scope: Web-optimize the supplied tractor clip into `frontend/public/` (`closing-cta-loop.mp4` h264 +faststart audio-stripped @960px, `closing-cta-poster.jpg` mid-clip frame; MP4-only — a VP9/WebM re-encoded larger for this clip) and upgrade `ClosingCTA.tsx` to a `'use client'` component that layers a muted/loop/playsInline `<video>` (poster + MP4 source, `aria-hidden`, `preload="none"`) behind a `bg-fg/70` token scrim, with the existing content on `relative z-10`. Gate playback behind a `(prefers-reduced-motion: no-preference)` matchMedia check (default false for SSR/tests) so reduced-motion/no-autoplay shows the poster + static `bg-fg` band only. Keep the existing copy/CTAs unchanged.
+      Traces: FR-13 (requirements.md), NFR-4/NFR-5/NFR-7; design.md §5.8 + Decision
+      Files: frontend/public/closing-cta-loop.mp4, frontend/public/closing-cta-poster.jpg, frontend/components/home/ClosingCTA.tsx, frontend/components/home/ClosingCTA.test.tsx
+      Verify: `cd frontend && npm run test -- ClosingCTA && npx tsc --noEmit && npm run build`
+      Done when: ClosingCTA renders the static/poster branch in tests (headings + both CTAs intact); video plays only under no-preference; assets present + optimized; static export builds.
+
+- [ ] T-9 About a11y + full build/lint/no-hex verification  (deps: T-6, T-7, T-8, T-10)
       Scope: Add `app/(public)/about/about-a11y.test.tsx` (jest-axe zero violations; one `<h1>`; logo/link discernible names). Run the full frontend suite, lint, static export, and a no-new-hex check across changed files.
       Traces: NFR-1, NFR-2, NFR-4, NFR-6 (requirements.md); design.md §10
       Files: frontend/app/(public)/about/about-a11y.test.tsx

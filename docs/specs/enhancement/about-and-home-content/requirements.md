@@ -104,6 +104,16 @@ The site presents the registry tool but not the ACCELERATE project behind it, an
   - GIVEN `partners.ts` WHEN imported THEN it exports the six partners with name, role, url, and optional logo asset path + grayscale flag.
   - GIVEN `pillars.ts` WHEN imported THEN it exports the three pillars with title and body matching the brief.
 
+### FR-13: Closing CTA ambient background video
+- **Description:** The home `ClosingCTA` band SHOULD present a muted, looping ambient background video (the slow-tractor clip) behind its heading/CTAs, layered under a token-based scrim so the foreground text and CTAs remain legible. The video is decorative.
+- **Rationale / Source:** User request (2026-06-25) — "use this … thinking in UX/UI"; thematic fit with "accelerating variety turnover".
+- **Acceptance criteria (Given/When/Then):**
+  - GIVEN a visitor with no motion preference WHEN the Closing CTA enters view THEN the background video plays muted, looping, inline, without audio and without controls.
+  - GIVEN `prefers-reduced-motion: reduce` (or a browser that can't autoplay) WHEN the band renders THEN the static poster image is shown and the video does NOT play.
+  - GIVEN any state WHEN the band renders THEN the H2/body/CTAs meet AA contrast over the video via a scrim, and the video element is `aria-hidden` (decorative, no accessible name needed).
+  - GIVEN the static export build WHEN the page loads THEN the video is NOT the LCP element (a poster image covers first paint) and assets are web-optimized (MP4 + WebM + poster).
+- **PII/RBAC impact:** None. Decorative public asset.
+
 ## 4. Non-Functional Requirements
 
 - **NFR-1 (Design tokens):** All color/spacing/geometry MUST use design tokens from `system-design/design.md §7` (e.g. `primary`, `surface`, `surface-alt`, `fg`, `bg`, `muted`, `border`, `crop-*`). No raw hex. *(Verify: no new hex literals in changed files.)*
@@ -158,3 +168,4 @@ None. No Prisma models, API fields, or PII fields are added or changed. No addit
 | FR-10 | Footer partner attribution expansion | NFR-1, NFR-4 |
 | FR-11 | Brand & photo assets | NFR-7, NFR-4 |
 | FR-12 | Structured content data | NFR-6 |
+| FR-13 | Closing CTA ambient background video | NFR-5, NFR-7, NFR-4 |

@@ -1,22 +1,39 @@
+'use client';
+
 // ClosingCTA — copy brief §2.7: dark closing call-to-action strip.
-// Server component (no hooks, no 'use client').
+// Upgraded (T-10, FR-13): ambient background video layered behind the existing content.
 //
 // Surface: bg-fg text-bg (inverted / dark), py-16, standard container, centered.
-// Structure: h2 → body paragraph → two CTAs side-by-side (flex-wrap).
+// Structure: poster base layer → video overlay (when playable) → token scrim → content.
+//
+// Z-order (back → front):
+//   1. Poster image  — next/image fill, absolute inset-0, -z-10 (always rendered)
+//   2. <video>       — absolute inset-0, -z-10 (conditional: no-preference + SSR=off)
+//   3. Scrim         — absolute inset-0, bg-fg/70 (decorative, keeps text AA)
+//   4. Content       — relative z-10 (heading + body + CTAs unchanged from T-3)
+//
+// Reduced-motion / autoplay gate (NFR-5):
+//   `playable` is false by default (SSR-safe / no-JS / tests).
+//   A useEffect sets it true only when matchMedia('(prefers-reduced-motion: no-preference)')
+//   matches — same philosophy as useReveal / useCountUp.
+//   The jest matchMedia polyfill (jest.setup.ts) returns matches:false for every query,
+//   so `playable` stays false and no <video> is rendered in the test environment.
+//
+// A11y (NFR-4):
+//   - Video + poster + scrim are all aria-hidden (decorative).
+//   - Section keeps aria-labelledby="closing-cta-heading"; single <h2>.
+//   - CTAs unchanged from T-3; AA contrast maintained through scrim + bg-fg base.
 //
 // CTA notes:
 //   Primary button  → Button variant="primary"  (maroon reads fine on dark bg).
-//   Secondary-on-dark → raw next/link styled to match Button geometry using only
-//     tokens (bg/border tokens on a dark canvas; Button's secondary uses bg-surface
-//     which is a light token, inappropriate here).
-//
-// A11y: <section aria-labelledby="closing-cta-heading"> with a single <h2>.
-// Tokens only — no hardcoded colors (NFR-4).
+//   Secondary-on-dark → raw next/link styled with tokens only (border-bg/40, text-bg).
 //
 // Usage:
 //   import ClosingCTA from '@/components/home/ClosingCTA';
 //   <ClosingCTA />
 
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 
@@ -25,12 +42,59 @@ import Button from '@/components/ui/Button';
 // ---------------------------------------------------------------------------
 
 export default function ClosingCTA() {
+  // Default false: SSR / no-JS / reduced-motion / tests all show poster-only branch.
+  const [playable, setPlayable] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: no-preference)');
+    setPlayable(mq.matches);
+
+    // Subscribe to preference changes (e.g. user toggles OS setting mid-session).
+    const handleChange = (e: MediaQueryListEvent) => setPlayable(e.matches);
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
+  }, []);
+
   return (
     <section
-      className="bg-fg text-bg py-16"
+      className="relative isolate overflow-hidden bg-fg text-bg py-16"
       aria-labelledby="closing-cta-heading"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+
+      {/* ── Poster base layer (always rendered — no-JS / reduced-motion fallback) ── */}
+      <div className="absolute inset-0 -z-10" aria-hidden="true">
+        <Image
+          src="/closing-cta-poster.jpg"
+          alt=""
+          fill
+          className="object-cover"
+          priority={false}
+          aria-hidden={true}
+        />
+      </div>
+
+      {/* ── Video overlay (conditional: only when prefers-reduced-motion: no-preference) ── */}
+      {playable && (
+        <video
+          className="absolute inset-0 h-full w-full object-cover -z-10"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="none"
+          poster="/closing-cta-poster.jpg"
+          aria-hidden="true"
+        >
+          {/* MP4/h264 only — universal support; smaller than the VP9 re-encode for this clip. */}
+          <source src="/closing-cta-loop.mp4" type="video/mp4" />
+        </video>
+      )}
+
+      {/* ── Token scrim (above poster/video, below content) ── */}
+      <div className="absolute inset-0 bg-fg/70" aria-hidden="true" />
+
+      {/* ── Content (relative z-10 — unchanged from T-3) ── */}
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
 
         {/* Section heading — exactly one h2, no h1 */}
         <h2

@@ -112,6 +112,23 @@ To avoid duplicating the pillar card markup between `HowItWorks` (home) and the 
 - Surfaces used: `bg-bg`, `bg-surface`, `bg-surface-alt`, `bg-fg`/`text-bg` — all existing §7 tokens (NFR-1). Eyebrows reuse `bg-primary/10 text-primary`.
 - Assets under `frontend/public/`: `accelerate-field.jpg` (About hero), `partners/alliance.*`, `partners/bmgf.*`, and (if cleanable) `partners/tari.*`, `partners/tosci.*`, `partners/cimmyt.*`; PABRA reuses existing `/pabra-30-logo.png`. All via `next/image` (NFR-7). Home `Hero` `/hero-harvest.jpg` unchanged (LCP preserved).
 
+### 5.8 Closing CTA ambient background video (FR-13)
+
+`ClosingCTA` becomes a `'use client'` component (it needs `useReducedMotion`-style gating + a ref to control playback) wrapping its existing static content in a positioned container:
+
+- **Layering:** `relative` section; an absolutely-positioned `<video>` (`absolute inset-0 h-full w-full object-cover`, `aria-hidden`, `muted loop playsInline`, `preload="none"`, `poster="/closing-cta-poster.jpg"`) at the back; a token scrim `<div className="absolute inset-0 bg-fg/70">` over it; the existing content in a `relative z-10` wrapper. The band keeps `bg-fg text-bg` as the base (and as the no-JS / poster-load fallback), so the scrim + base guarantee AA contrast even before/without the video.
+- **Source:** `<source src="/closing-cta-loop.mp4" type="video/mp4">` (h264, web-optimized, audio stripped, `+faststart`, scaled to 960px). A VP9/WebM was evaluated but re-encoded *larger* than the h264 for this clip, so MP4-only is shipped (universal support, smaller payload).
+- **Reduced-motion / autoplay gate (NFR-5):** render the `<video>` only under `(prefers-reduced-motion: no-preference)` — mirror the existing motion gate (a small client `useEffect` setting a `playable` state from `window.matchMedia`, defaulting to `false` for SSR/first paint). When not playable, the poster image (`next/image` or the band's static surface) shows and no video loads/plays. This reuses the same reduced-motion philosophy as `useReveal`/`useCountUp`.
+- **LCP/perf (NFR-7):** ClosingCTA is the last/below-the-fold section, so the video is never the LCP candidate; `preload="none"` + `poster` defer the network cost. Shipped assets (960px, behind a 70% scrim): MP4 ≈0.66 MB, poster ≈0.05 MB.
+- **A11y (NFR-4):** video is `aria-hidden` (decorative); the scrim keeps the H2/body/CTAs at AA over any frame; CTAs unchanged from T-3.
+- **Test determinism:** the existing jest env (`window.matchMedia` polyfilled in `jest.setup.ts`) returns no-match → `playable=false`, so the poster/static branch renders and tests assert the headings/CTAs exactly as in the T-3 ClosingCTA test (no video element required in jsdom). The video branch is exercised by the reduced-motion-off path.
+
+### Decision: ClosingCTA carries the ambient video (not Hero)
+- **Context:** user-supplied slow-tractor clip; Hero has a tuned harvest LCP image.
+- **Options:** Hero background / ClosingCTA background / About hero.
+- **Decision:** ClosingCTA background — below the fold (no LCP impact), poster + reduced-motion fallbacks, scrim for contrast.
+- **Consequences:** Hero untouched; lowest-risk high-impact placement; ClosingCTA upgrades from server → client component.
+
 ## 6. Security & RBAC
 
 No RBAC surface. All content is Public; no PII referenced or rendered (FR §5). External links use `target="_blank" rel="noopener noreferrer"` (prevents reverse-tabnabbing). No secrets, no CORS, no env changes.

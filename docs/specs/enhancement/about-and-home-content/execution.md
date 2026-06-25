@@ -64,3 +64,11 @@
 - **Reviewer (code-reviewer):** STATUS **PASS** with 3 warnings — `bg-restricted` misuse, arbitrary `lg:h-[420px]`, and an unsanctioned `<strong>` on the Ntemisambo figure (copy fidelity).
 - **Leader-directed refinement (SendMessage):** `bg-restricted`→`bg-surface-alt`; `lg:h-[420px]`→`lg:h-96`; removed the `<strong>` around "113.5 tonnes" (matches brief §3.6 verbatim). Re-verified: build green (/about static), tsc + lint clean.
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-7: About page route + content + metadata`.
+
+### T-10 Closing CTA ambient background video — ✅ PASS (1 attempt + 1 asset refinement)
+- **Date:** 2026-06-25 · **Requirements:** FR-13 (added mid-spec on user request) · **NFR:** 4/5/7 · **Design:** §5.8 + Decision.
+- **Leader asset-prep (ffmpeg):** transcoded the supplied tractor clip → `closing-cta-loop.mp4` + `closing-cta-poster.jpg` (audio stripped, +faststart, 960px).
+- **Implementer (frontend-developer):** upgraded `ClosingCTA.tsx` → `'use client'`; layered an `aria-hidden` poster (`next/image` fill, always rendered) + conditional `<video>` (muted/loop/playsInline/`preload=none`) behind a `bg-fg/70` token scrim, content on `relative z-10`; gated `<video>` behind a `matchMedia('(prefers-reduced-motion: no-preference)')` check defaulting false (SSR/tests show poster only) with subscription cleanup. Existing copy/CTAs unchanged. Test keeps the 3 T-3 assertions + adds: no `<video>` under the default (reduced-motion) env + poster `<img>` present. 5 tests + tsc + build clean.
+- **Reviewer (code-reviewer):** STATUS **PASS**. FR-13 met; reduced-motion gate + cleanup correct; z-order (poster→video→scrim→content) correct; decorative `aria-hidden`; tokens-only zero hex; static export builds. **W-1:** shipped assets exceeded the §5.8 size targets.
+- **Leader-directed asset refinement:** re-encoded MP4 @960/crf31 → **0.66 MB** (< 1 MB target); VP9/WebM re-encoded *larger* than h264 for this clip, so **dropped WebM → MP4-only** (universal + smaller); removed the WebM `<source>` + asset; synced design §5.8 + tasks T-10. Re-verified 5/5 + tsc + build (9 static pages, /about emitted).
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-10: ClosingCTA ambient background video`.
