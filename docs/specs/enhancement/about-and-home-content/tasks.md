@@ -20,7 +20,7 @@
       Verify: `cd frontend && npx tsc --noEmit && npm run lint`
       Done when: content modules type-check, export the six partners + three pillars with brief-exact strings, assets exist in public/, no raw hex introduced.
 
-- [ ] T-2 Shared `PillarCards` presentational component  (deps: T-1)
+- [x] T-2 Shared `PillarCards` presentational component  (deps: T-1)
       Scope: Create `components/home/PillarCards.tsx` (server component) mapping `PILLARS` to a responsive 3-card grid (`grid-cols-1 md:grid-cols-3 gap-6`), cards on `bg-surface border-border`, primary-accented icon/marker, token-only styling. No motion inside (wrappers add it). Used by both `HowItWorks` (home) and the About approach section.
       Traces: FR-5, FR-12 (requirements.md); design.md §5.5, Decision "Shared PillarCards"
       Files: frontend/components/home/PillarCards.tsx, frontend/components/home/PillarCards.test.tsx

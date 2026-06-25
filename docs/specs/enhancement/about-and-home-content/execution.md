@@ -18,3 +18,10 @@
 - **Attempt 1 — Reviewer (code-reviewer):** STATUS **PASS**. Content strings match brief §4.1/§4.2/§4.3 verbatim (em dashes intact); `Partner`/`Pillar` schemas conform to design §5.4; `crops.ts` change purely additive; zero raw hex in new modules; assets present; tsc + lint clean.
 - **Final verification:** tsc clean, lint clean, assets present.
 - **Commit:** `[SPEC:enhancement/about-and-home-content] T-1: brand/photo assets + typed content modules`.
+
+### T-2 Shared `PillarCards` presentational component — ✅ PASS (1 attempt)
+- **Date:** 2026-06-25
+- **Requirements covered:** FR-5, FR-12. **Design refs:** §5.5, §5.2, Decision "Shared PillarCards".
+- **Attempt 1 — Implementer (frontend-developer):** created `frontend/components/home/PillarCards.tsx` (server component, no hooks/motion) mapping `PILLARS` → `grid-cols-1 md:grid-cols-3` cards (`bg-surface border-border shadow-md rounded-md`, `bg-primary/10 text-primary` numbered badge, `<h3>` titles, `text-muted` body); cards are direct grid children for parent stagger. Added `PillarCards.test.tsx` (4 RTL tests). Verify: `npm run test -- PillarCards` (4/4) + `tsc --noEmit` clean.
+- **Attempt 1 — Reviewer (code-reviewer):** STATUS **PASS**. Pure server component, direct-child grid, tokens-only (zero hex), correct `<h3>` levels + `aria-hidden` badge, all four test assertions meaningful, Jest 4/4 + tsc clean.
+- **Commit:** `[SPEC:enhancement/about-and-home-content] T-2: shared PillarCards component`.
