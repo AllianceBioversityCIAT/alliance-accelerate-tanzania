@@ -35,8 +35,7 @@ import type { PublicActorList } from '@/lib/api/actors';
 let capturedProps: Record<string, unknown> = {};
 
 jest.mock('@/components/map/ActorMap', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const Stub = (props: any) => {
+  const Stub = (props: Record<string, unknown>) => {
     // Capture every render's props (last-render wins for assertions after render).
     capturedProps = { ...props };
     return <div data-testid="actor-map-stub" />;

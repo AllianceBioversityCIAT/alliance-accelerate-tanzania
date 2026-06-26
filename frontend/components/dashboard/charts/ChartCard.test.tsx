@@ -199,8 +199,7 @@ describe('ChartCard — matchMedia undefined guard (NFR-4)', () => {
   beforeEach(() => {
     originalMatchMedia = window.matchMedia;
     // Simulate an environment where matchMedia is not available.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).matchMedia = undefined;
+    window.matchMedia = undefined as unknown as typeof window.matchMedia;
   });
 
   afterEach(() => {
