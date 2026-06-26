@@ -37,3 +37,12 @@ Loop: Leader → Implementer → Reviewer (max 3 rework attempts/task).
 - **Reviewer FAIL → resolved (parallelization artifact, not a code defect):** all three Reviewers initially returned FAIL for the *same* reason — each saw the *other* two tasks' still-untracked files in the shared working tree and flagged them as out-of-scope. No reviewer found any defect in its own task's code. Leader resolution (the exact remediation all three prescribed): committed each task's two files in **isolation** so each commit contains exactly its pair — `git show <sha> --name-only` confirms 2 files per commit. T-2 `f843576`, T-3 `490af39`, T-5 `0f79960`.
 - **Lesson applied going forward:** when batching parallel tasks, scope reviewers to the named files and treat sibling-task untracked files under the same spec as not-in-scope (or commit-then-review).
 - **Final result:** All three committed in isolation; code verified PASS.
+
+### T-6 — Add Recharts dependency — ✅ PASS (attempt 1)
+
+- **Date:** 2026-06-26
+- **Requirements covered:** design.md §8 ADR-1 (Recharts).
+- **Files changed:** `frontend/package.json` (+`"recharts": "^3.9.0"`), `frontend/package-lock.json`.
+- **Verification:** `cd frontend && npm install && npm run build` → compiled successfully, 13/13 static pages, exporting 2/2 (static export intact).
+- **Reviewer verdict:** PASS — only the 2 allowed files changed; no SSR; React-19 compatible (build is proof); transitive graph expected (d3-*, victory-vendor, etc.).
+- **Final result:** Committed.

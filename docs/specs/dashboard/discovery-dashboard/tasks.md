@@ -42,7 +42,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- chart-tokens`
       Done when: every exported colour matches `/^var\(--/`; crop slugs map to their crop token.
 
-- [ ] T-6 Add Recharts dependency  (deps: none)
+- [x] T-6 Add Recharts dependency  (deps: none)
       Scope: Add `recharts` to `frontend/package.json` dependencies; install. No usage yet.
       Traces: design.md §7/§8 (ADR-1)
       Files: frontend/package.json, frontend/package-lock.json
