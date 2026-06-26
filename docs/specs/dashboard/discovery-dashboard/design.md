@@ -56,7 +56,7 @@ export interface ActorsQuery {
 | `GET /api/v1/actors/geo` | Map markers (via reused `ActorMap`) | — |
 | `GET /api/v1/metrics` | Optional global denominators for KPI context | — |
 
-**Fetch-all-matching strategy (FR-10, OQ-2):** `useDashboardActors(filters)` requests `pageSize = DASH_PAGE_SIZE` (e.g. 500) and accumulates up to `DASH_MAX_PAGES` (e.g. 2 → 1,000 rows, covering the current dataset). If `total > fetched`, it returns `{ actors, total, truncated: true }` and the UI shows a truncation notice linking to `/directory`. This keeps the page honest without a backend aggregate.
+**Fetch-all-matching strategy (FR-10, OQ-2):** `useDashboardActors(filters)` requests `pageSize = DASH_PAGE_SIZE` and accumulates sequential pages up to `DASH_MAX_PAGES`, stopping early once `accumulated.length >= total`. **`DASH_PAGE_SIZE` MUST NOT exceed the backend's `MAX_PAGE_SIZE = 100`** — the list endpoint validates `pageSize` with `@Max(100)` and returns **HTTP 400** above it (backend `actors/dto/list-query.dto.ts`). Values: `DASH_PAGE_SIZE = 100`, `DASH_MAX_PAGES = 10` → a 1,000-row cap covering the current public dataset (~436 consented actors → ~5 calls). If `total > fetched`, it returns `{ actors, total, truncated: true }` and the UI shows a truncation notice linking to `/directory`. This keeps the page honest without a backend aggregate.
 
 **Capacity-filter fallback (FR-3, dependency in requirements §7):** if execution finds the API does **not** honor `capacityMin/Max`, the hook applies the capacity bound client-side over fetched rows and the design note is updated; behavior (exclude null capacity) is identical either way.
 
