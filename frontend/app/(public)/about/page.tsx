@@ -18,6 +18,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import PillarCards from '@/components/home/PillarCards';
+import PartnerWall from '@/components/home/PartnerWall';
 import { CROPS } from '@/lib/content/crops';
 
 // ---------------------------------------------------------------------------
@@ -245,9 +246,9 @@ export default function AboutPage() {
 
       {/* ====================================================================
           §3.5  PARTNERS
-          Prose only — bold partner names per brief. No logo wall (PartnersStrip
-          is on the home page; duplicating it here would create a duplicate
-          section heading violation).
+          Tiered logo wall shared with the home PartnersStrip via PartnerWall.
+          Home and /about never co-render, so both may use id="partners-heading"
+          for their respective single <h2>.
       ==================================================================== */}
       <section
         aria-labelledby="partners-heading"
@@ -256,44 +257,25 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
 
           {/* Eyebrow */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
-            Partners
-          </span>
+          <div className="flex flex-col items-center text-center mb-10">
+            <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
+              Partners
+            </span>
 
-          <h2
-            id="partners-heading"
-            className="text-2xl font-bold text-fg leading-tight mb-6"
-          >
-            Partners
-          </h2>
+            <h2
+              id="partners-heading"
+              className="text-2xl font-bold text-fg leading-tight mb-6"
+            >
+              Partners
+            </h2>
 
-          <p className="text-base text-muted leading-relaxed max-w-prose">
-            ACCELERATE is led by the{' '}
-            <strong className="text-fg font-semibold">
-              Alliance of Bioversity International &amp; CIAT
-            </strong>{' '}
-            and the{' '}
-            <strong className="text-fg font-semibold">
-              Pan-Africa Bean Research Alliance (PABRA)
-            </strong>
-            , with the{' '}
-            <strong className="text-fg font-semibold">
-              Tanzania Agricultural Research Institute (TARI)
-            </strong>
-            , the{' '}
-            <strong className="text-fg font-semibold">
-              Tanzania Official Seed Certification Institute (TOSCI)
-            </strong>
-            , and the{' '}
-            <strong className="text-fg font-semibold">
-              International Maize and Wheat Improvement Center (CIMMYT)
-            </strong>
-            . The project is funded by the{' '}
-            <strong className="text-fg font-semibold">
-              Bill &amp; Melinda Gates Foundation
-            </strong>
-            .
-          </p>
+            <p className="text-base text-muted leading-relaxed max-w-prose mb-10">
+              ACCELERATE is delivered by a coalition of research and seed-system
+              institutions, funded by the Bill &amp; Melinda Gates Foundation.
+            </p>
+          </div>
+
+          <PartnerWall />
 
         </div>
       </section>

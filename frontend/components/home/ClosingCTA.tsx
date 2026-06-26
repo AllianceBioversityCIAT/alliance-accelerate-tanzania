@@ -58,8 +58,8 @@ export default function ClosingCTA() {
   return (
     <section
       // Cinematic closing band: a generous min-height gives the 16:9 loop real
-      // vertical room so object-cover shows the field/tractor scene instead of a
-      // cropped horizontal slice. Content is vertically centred over the media.
+      // vertical room so object-cover shows the full field-staff scene (ACCELERATE
+      // team at a grain shop) instead of a cropped slice. Content is centred over it.
       className="relative isolate flex items-center overflow-hidden bg-fg text-bg min-h-[30rem] py-20 lg:min-h-[36rem]"
       aria-labelledby="closing-cta-heading"
     >
@@ -70,9 +70,9 @@ export default function ClosingCTA() {
           src="/closing-cta-poster.jpg"
           alt=""
           fill
-          // object-position biased toward the tractor/horizon so the taller band
-          // frames the scene (matches the video below).
-          className="object-cover object-[center_38%]"
+          // object-position biased up toward the people's faces so the taller band
+          // frames them well (matches the video below).
+          className="object-cover object-[center_30%]"
           priority={false}
           aria-hidden={true}
         />
@@ -81,7 +81,7 @@ export default function ClosingCTA() {
       {/* ── Video overlay (conditional: only when prefers-reduced-motion: no-preference) ── */}
       {playable && (
         <video
-          className="absolute inset-0 h-full w-full object-cover object-[center_38%] -z-10"
+          className="absolute inset-0 h-full w-full object-cover object-[center_30%] -z-10"
           autoPlay
           muted
           loop

@@ -8,8 +8,10 @@
  *  - Renders the eyebrow "Partners" pill.
  *  - Renders all six partners as accessible external links (target="_blank",
  *    rel="noopener noreferrer" — exact value asserted).
- *  - Logo'd partners (alliance, pabra, bmgf) render an <img> with an accessible name.
- *  - Text-fallback partners (TARI, TOSCI, CIMMYT) render their name as visible text.
+ *  - Logo'd partners (alliance, pabra, tari, tosci, bmgf) render an <img> with
+ *    an accessible name — 5 logos total.
+ *  - Text-fallback partner (CIMMYT) renders its name as visible text — 1 fallback.
+ *  - Three tier labels render: "Funded by", "Led by", "In partnership with".
  */
 
 import React from 'react';
@@ -38,6 +40,25 @@ describe('PartnersStrip', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Tier labels
+  // ---------------------------------------------------------------------------
+
+  it('renders the "Funded by" tier label', () => {
+    render(<PartnersStrip />);
+    expect(screen.getByText('Funded by')).toBeInTheDocument();
+  });
+
+  it('renders the "Led by" tier label', () => {
+    render(<PartnersStrip />);
+    expect(screen.getByText('Led by')).toBeInTheDocument();
+  });
+
+  it('renders the "In partnership with" tier label', () => {
+    render(<PartnersStrip />);
+    expect(screen.getByText('In partnership with')).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // Partner links — all six
   // ---------------------------------------------------------------------------
 
@@ -52,7 +73,7 @@ describe('PartnersStrip', () => {
 
   it('renders all six partners as links', () => {
     render(<PartnersStrip />);
-    // Each partner link has aria-label="${name} — opens in a new tab"
+    // Each partner link has aria-label "${name} — opens in a new tab"
     for (const partner of PARTNERS) {
       const link = screen.getByRole('link', {
         name: new RegExp(`${escapeRegex(partner.name)}`, 'i'),
@@ -92,7 +113,7 @@ describe('PartnersStrip', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Logo'd partners — alliance, pabra, bmgf
+  // Logo'd partners — alliance, pabra, tari, tosci, bmgf (5 logos)
   // ---------------------------------------------------------------------------
 
   it('renders an <img> with accessible name for the Alliance partner', () => {
@@ -113,6 +134,24 @@ describe('PartnersStrip', () => {
     expect(img).toBeInTheDocument();
   });
 
+  it('renders an <img> with accessible name for the TARI partner', () => {
+    render(<PartnersStrip />);
+    const tariPartner = PARTNERS.find((p) => p.key === 'tari')!;
+    const img = screen.getByRole('img', {
+      name: new RegExp(escapeRegex(tariPartner.name), 'i'),
+    });
+    expect(img).toBeInTheDocument();
+  });
+
+  it('renders an <img> with accessible name for the TOSCI partner', () => {
+    render(<PartnersStrip />);
+    const tosciPartner = PARTNERS.find((p) => p.key === 'tosci')!;
+    const img = screen.getByRole('img', {
+      name: new RegExp(escapeRegex(tosciPartner.name), 'i'),
+    });
+    expect(img).toBeInTheDocument();
+  });
+
   it('renders an <img> with accessible name for the BMGF partner', () => {
     render(<PartnersStrip />);
     const bmgfPartner = PARTNERS.find((p) => p.key === 'bmgf')!;
@@ -122,25 +161,39 @@ describe('PartnersStrip', () => {
     expect(img).toBeInTheDocument();
   });
 
-  // ---------------------------------------------------------------------------
-  // Text-fallback partners — TARI, TOSCI, CIMMYT
-  // ---------------------------------------------------------------------------
-
-  it('renders TARI name as visible text (no logo asset)', () => {
+  it('renders exactly 5 logo <img> elements', () => {
     render(<PartnersStrip />);
-    const tariPartner = PARTNERS.find((p) => p.key === 'tari')!;
-    expect(screen.getByText(tariPartner.name)).toBeInTheDocument();
+    // alliance, pabra, tari, tosci, bmgf — CIMMYT is text-fallback only
+    const images = screen.getAllByRole('img');
+    expect(images).toHaveLength(5);
   });
 
-  it('renders TOSCI name as visible text (no logo asset)', () => {
-    render(<PartnersStrip />);
-    const tosciPartner = PARTNERS.find((p) => p.key === 'tosci')!;
-    expect(screen.getByText(tosciPartner.name)).toBeInTheDocument();
-  });
+  // ---------------------------------------------------------------------------
+  // Text-fallback partner — CIMMYT only (1 fallback)
+  // ---------------------------------------------------------------------------
 
   it('renders CIMMYT name as visible text (no logo asset)', () => {
     render(<PartnersStrip />);
     const cimmytPartner = PARTNERS.find((p) => p.key === 'cimmyt')!;
     expect(screen.getByText(cimmytPartner.name)).toBeInTheDocument();
+  });
+
+  it('does NOT render a text fallback for TARI (now has a logo)', () => {
+    render(<PartnersStrip />);
+    // TARI renders as an <img>, not a visible text span
+    const tariPartner = PARTNERS.find((p) => p.key === 'tari')!;
+    const img = screen.getByRole('img', {
+      name: new RegExp(escapeRegex(tariPartner.name), 'i'),
+    });
+    expect(img).toBeInTheDocument();
+  });
+
+  it('does NOT render a text fallback for TOSCI (now has a logo)', () => {
+    render(<PartnersStrip />);
+    const tosciPartner = PARTNERS.find((p) => p.key === 'tosci')!;
+    const img = screen.getByRole('img', {
+      name: new RegExp(escapeRegex(tosciPartner.name), 'i'),
+    });
+    expect(img).toBeInTheDocument();
   });
 });

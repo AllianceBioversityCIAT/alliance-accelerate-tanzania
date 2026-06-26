@@ -1,63 +1,17 @@
 // PartnersStrip — FR-6, §5.3 section: logo wall for the six-partner coalition.
 // Server component — no hooks, no 'use client'.
 //
-// Maps over PARTNERS (lib/content/partners.ts) to render a responsive, centered
-// wrapping row of partner logos and text-label fallbacks.
+// Provides the section wrapper, eyebrow pill, <h2>, and intro <p> for the home
+// page partners section. The actual tier-grouped logo wall is delegated to the
+// shared <PartnerWall /> component (components/home/PartnerWall.tsx) so the
+// same visual treatment can be reused on /about without duplicating markup.
 //
 // Section uses bg-surface py-16, aria-labelledby="partners-heading" (a11y).
 // Eyebrow pill pattern matches CropCoverage and Hero sections.
 // Max-width container: mx-auto max-w-7xl px-4 sm:px-6 lg:px-8.
-//
-// Logo treatment (NFR-4, FR-5):
-//   - Logo'd partners: next/image, grayscale + opacity-80 at rest,
-//     transitions to full color on hover/focus-visible. CSS-only, no JS.
-//     motion-reduce:transition-none respects prefers-reduced-motion.
-//   - Text-fallback partners (no logo asset): styled <span> inside the same
-//     accessible link wrapper.
-//
-// Focus ring: focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2
-// External links: target="_blank" rel="noopener noreferrer" aria-label with " — opens in a new tab".
 // Exactly one <h2> in this component.
 
-import Image from 'next/image';
-import { PARTNERS, type Partner } from '@/lib/content/partners';
-
-// ---------------------------------------------------------------------------
-// PartnerLogo — internal sub-component
-// ---------------------------------------------------------------------------
-
-/**
- * Renders a single partner as an accessible external link.
- * Logo'd partners use next/image with grayscale-to-color hover treatment.
- * Partners without a logo asset fall back to a styled text label.
- */
-function PartnerLogo({ p }: { p: Partner }) {
-  return (
-    <a
-      href={p.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`${p.name} — opens in a new tab`}
-      className="group inline-flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-    >
-      {p.logo ? (
-        <Image
-          src={p.logo}
-          alt={p.name}
-          width={160}
-          height={48}
-          className="h-10 w-auto grayscale opacity-80 transition hover:grayscale-0 hover:opacity-100 group-focus-visible:grayscale-0 motion-reduce:transition-none"
-        />
-      ) : (
-        <span className="text-sm font-semibold text-muted">{p.name}</span>
-      )}
-    </a>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// PartnersStrip
-// ---------------------------------------------------------------------------
+import PartnerWall from '@/components/home/PartnerWall';
 
 export default function PartnersStrip() {
   return (
@@ -89,12 +43,8 @@ export default function PartnersStrip() {
           </p>
         </div>
 
-        {/* Logo wall — responsive centered wrapping row (FR-6, §5.3) */}
-        <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
-          {PARTNERS.map((partner) => (
-            <PartnerLogo key={partner.key} p={partner} />
-          ))}
-        </div>
+        {/* Tier groups (FR-6, §5.3) — delegated to shared PartnerWall */}
+        <PartnerWall />
 
       </div>
     </section>

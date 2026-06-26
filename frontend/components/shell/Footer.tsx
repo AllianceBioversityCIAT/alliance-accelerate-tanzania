@@ -23,7 +23,7 @@ const funderPartners = PARTNERS.filter(
 const LOGO_DIMS: Record<string, { width: number; height: number }> = {
   alliance: { width: 400, height: 80  },
   pabra:    { width: 477, height: 181 },
-  bmgf:     { width: 400, height: 80  },
+  bmgf:     { width: 1000, height: 202 },
 };
 
 export default function Footer() {
