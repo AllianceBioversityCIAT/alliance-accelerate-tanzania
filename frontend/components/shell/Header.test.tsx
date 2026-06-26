@@ -112,13 +112,14 @@ describe('Header — authenticated (Staff)', () => {
     renderHeader();
 
     // The name is visible (hidden on small screens via CSS but in the DOM)
-    expect(screen.getByText('Alice Mwangi')).toBeInTheDocument();
+    // Appears in both the desktop auth slot and the mobile menu auth block.
+    expect(screen.getAllByText('Alice Mwangi')[0]).toBeInTheDocument();
   });
 
   it('renders a role chip showing "Staff"', () => {
     renderHeader();
 
-    expect(screen.getByText('Staff')).toBeInTheDocument();
+    expect(screen.getAllByText('Staff')[0]).toBeInTheDocument();
   });
 
   it('renders a sign-out button', () => {
@@ -165,13 +166,13 @@ describe('Header — authenticated (Admin)', () => {
   it('renders the Admin user\'s name', () => {
     renderHeader();
 
-    expect(screen.getByText('Bob Kariuki')).toBeInTheDocument();
+    expect(screen.getAllByText('Bob Kariuki')[0]).toBeInTheDocument();
   });
 
   it('renders a role chip showing "Admin"', () => {
     renderHeader();
 
-    expect(screen.getByText('Admin')).toBeInTheDocument();
+    expect(screen.getAllByText('Admin')[0]).toBeInTheDocument();
   });
 
   it('renders a sign-out button for Admin', () => {
