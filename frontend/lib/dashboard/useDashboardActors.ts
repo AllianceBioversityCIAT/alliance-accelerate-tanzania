@@ -19,11 +19,17 @@ import { getActors, type ActorsQuery, type PublicActor } from '@/lib/api/actors'
 
 // ── Pagination constants (design.md §3 — covers current dataset of ≈1 k actors) ─
 
-/** Number of actors requested per API call. */
-export const DASH_PAGE_SIZE = 500;
+/**
+ * Number of actors requested per API call.
+ * MUST NOT exceed the backend's MAX_PAGE_SIZE (100) — the list endpoint's
+ * `pageSize` is validated with `@Max(100)` and returns HTTP 400 above it
+ * (see backend `actors/dto/list-query.dto.ts`). The hook accumulates across
+ * pages, so the per-call cap doesn't limit total coverage.
+ */
+export const DASH_PAGE_SIZE = 100;
 
 /** Maximum number of pages fetched; total cap = DASH_PAGE_SIZE × DASH_MAX_PAGES = 1 000. */
-export const DASH_MAX_PAGES = 2;
+export const DASH_MAX_PAGES = 10;
 
 // ── Return shape ──────────────────────────────────────────────────────────────
 

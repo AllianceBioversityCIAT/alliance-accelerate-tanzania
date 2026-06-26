@@ -112,12 +112,12 @@ describe('useDashboardActors — (b) total > bound → truncated', () => {
     // Simulate a server with more actors than the cap.
     const serverTotal = DASH_PAGE_SIZE * DASH_MAX_PAGES + 50; // e.g. 1 050
 
-    const page1Actors = actorArray(DASH_PAGE_SIZE, 1);
-    const page2Actors = actorArray(DASH_PAGE_SIZE, DASH_PAGE_SIZE + 1);
-
-    getActors
-      .mockResolvedValueOnce(makeList(page1Actors, serverTotal, 1))
-      .mockResolvedValueOnce(makeList(page2Actors, serverTotal, 2));
+    // Page-aware mock: returns a full DASH_PAGE_SIZE page for any requested
+    // page (robust to DASH_MAX_PAGES so the bound — not the mock — is tested).
+    getActors.mockImplementation(async (q?: { page?: number }) => {
+      const page = q?.page ?? 1;
+      return makeList(actorArray(DASH_PAGE_SIZE, (page - 1) * DASH_PAGE_SIZE + 1), serverTotal, page);
+    });
 
     const { result } = renderHook(() => useDashboardActors());
 
@@ -128,19 +128,17 @@ describe('useDashboardActors — (b) total > bound → truncated', () => {
     expect(result.current.truncated).toBe(true);
     expect(result.current.error).toBe(false);
 
-    // Should have fetched exactly DASH_MAX_PAGES pages.
+    // Should have fetched exactly DASH_MAX_PAGES pages (the bound).
     expect(getActors).toHaveBeenCalledTimes(DASH_MAX_PAGES);
   });
 
-  it('does not fetch a third page even if more actors remain', async () => {
-    const serverTotal = DASH_PAGE_SIZE * 3; // well beyond the cap
+  it('does not fetch beyond DASH_MAX_PAGES even if more actors remain', async () => {
+    const serverTotal = DASH_PAGE_SIZE * (DASH_MAX_PAGES + 5); // well beyond the cap
 
-    const page1Actors = actorArray(DASH_PAGE_SIZE, 1);
-    const page2Actors = actorArray(DASH_PAGE_SIZE, DASH_PAGE_SIZE + 1);
-
-    getActors
-      .mockResolvedValueOnce(makeList(page1Actors, serverTotal, 1))
-      .mockResolvedValueOnce(makeList(page2Actors, serverTotal, 2));
+    getActors.mockImplementation(async (q?: { page?: number }) => {
+      const page = q?.page ?? 1;
+      return makeList(actorArray(DASH_PAGE_SIZE, (page - 1) * DASH_PAGE_SIZE + 1), serverTotal, page);
+    });
 
     const { result } = renderHook(() => useDashboardActors());
 
