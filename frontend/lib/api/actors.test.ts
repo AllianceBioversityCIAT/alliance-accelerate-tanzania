@@ -178,6 +178,45 @@ describe('getActors()', () => {
     expect(url.searchParams.has('pageSize')).toBe(false);
   });
 
+  it('serializes capacityMin and capacityMax into the querystring when set', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_LIST);
+
+    await getActors({ capacityMin: 10, capacityMax: 500 });
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    const url = new URL(calledUrl);
+
+    expect(url.searchParams.get('capacityMin')).toBe('10');
+    expect(url.searchParams.get('capacityMax')).toBe('500');
+  });
+
+  it('serializes district into the querystring when set', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_LIST);
+
+    await getActors({ district: 'Mbeya Urban' });
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    const url = new URL(calledUrl);
+
+    expect(url.searchParams.get('district')).toBe('Mbeya Urban');
+  });
+
+  it('omits capacityMin, capacityMax, and district from the querystring when undefined', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+    global.fetch = makeFetchOk(VALID_LIST);
+
+    await getActors({ crop: 'sorghum' });
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    const url = new URL(calledUrl);
+
+    expect(url.searchParams.has('capacityMin')).toBe(false);
+    expect(url.searchParams.has('capacityMax')).toBe(false);
+    expect(url.searchParams.has('district')).toBe(false);
+  });
+
   // ── Failure paths (DD-6 / NFR-5: MUST return null, never throw) ──────────
 
   it('returns null when fetch rejects with a network error', async () => {

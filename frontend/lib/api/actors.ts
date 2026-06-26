@@ -34,6 +34,9 @@ export interface ActorsQuery {
   search?: string;
   page?: number;
   pageSize?: number;
+  capacityMin?: number;
+  capacityMax?: number;
+  district?: string;
 }
 
 export interface PublicActorList {
@@ -64,8 +67,11 @@ export async function getActors(query?: ActorsQuery): Promise<PublicActorList | 
       if (query.role      != null) params.set('role',     query.role);
       if (query.region    != null) params.set('region',   query.region);
       if (query.search    != null) params.set('search',   query.search);
-      if (query.page      != null) params.set('page',     String(query.page));
-      if (query.pageSize  != null) params.set('pageSize', String(query.pageSize));
+      if (query.page        != null) params.set('page',        String(query.page));
+      if (query.pageSize    != null) params.set('pageSize',    String(query.pageSize));
+      if (query.capacityMin != null) params.set('capacityMin', String(query.capacityMin));
+      if (query.capacityMax != null) params.set('capacityMax', String(query.capacityMax));
+      if (query.district    != null) params.set('district',    query.district);
     }
     const qs = params.toString();
     const path = qs ? `/api/v1/actors?${qs}` : '/api/v1/actors';

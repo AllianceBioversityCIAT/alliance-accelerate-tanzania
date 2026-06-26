@@ -5,7 +5,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
 
 ## Phase A — Data & pure logic (no UI)
 
-- [ ] T-1 Extend `ActorsQuery` with capacity + district  (deps: none)
+- [x] T-1 Extend `ActorsQuery` with capacity + district  (deps: none)
       Scope: Add optional `capacityMin?: number`, `capacityMax?: number`, `district?: string` to `ActorsQuery` in `lib/api/actors.ts`; extend the `getActors()` querystring builder to emit `capacityMin`/`capacityMax`/`district` when defined (omit-if-undefined, matching existing pattern). No other behavior change.
       Traces: FR-3, requirements §5, design.md §2/§3
       Files: frontend/lib/api/actors.ts, frontend/lib/api/actors.test.ts
