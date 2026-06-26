@@ -66,7 +66,7 @@ function AuthSlot() {
     return (
       <Link
         href="/login"
-        className="inline-flex items-center rounded-md border border-primary px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        className="inline-flex items-center whitespace-nowrap rounded-md border border-primary px-3 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
       >
         Staff sign-in
       </Link>
@@ -83,6 +83,46 @@ function AuthSlot() {
         type="button"
         onClick={() => void signOut()}
         className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        aria-label="Sign out"
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MobileAuth — auth control rendered INSIDE the hamburger menu (mobile).
+// Keeps the mobile top bar uncluttered (brand + hamburger only) so the
+// "Staff sign-in" button no longer squeezes/wraps next to the brand.
+// ---------------------------------------------------------------------------
+function MobileAuth({ onNavigate }: { onNavigate: () => void }) {
+  const { role, user } = useSession();
+  const { signOut }    = useAuth();
+
+  if (!user || role === 'Public') {
+    return (
+      <Link
+        href="/login"
+        onClick={onNavigate}
+        className="inline-flex w-full items-center justify-center rounded-md border border-primary px-3 py-3 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+      >
+        Staff sign-in
+      </Link>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <AvatarCircle name={user.name} />
+        <span className="truncate text-sm font-medium text-fg">{user.name}</span>
+        <RoleBadge role={user.role} />
+      </div>
+      <button
+        type="button"
+        onClick={() => { onNavigate(); void signOut(); }}
+        className="inline-flex shrink-0 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
         aria-label="Sign out"
       >
         Sign out
@@ -161,9 +201,13 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Right-hand side: auth slot + hamburger */}
+          {/* Right-hand side: auth slot (desktop) + hamburger (mobile) */}
           <div className="flex items-center gap-3">
-            <AuthSlot />
+            {/* Desktop auth — hidden on mobile; the mobile auth lives in the
+                hamburger menu below so the top bar stays uncluttered. */}
+            <div className="hidden md:flex items-center">
+              <AuthSlot />
+            </div>
 
             {/* Hamburger — mobile only */}
             <button
@@ -228,6 +272,11 @@ export default function Header() {
             />
           ))}
         </nav>
+
+        {/* Auth control — moved into the menu on mobile (FR-4). */}
+        <div className="border-t border-border px-4 py-3">
+          <MobileAuth onNavigate={() => setMenuOpen(false)} />
+        </div>
       </div>
     </header>
   );
