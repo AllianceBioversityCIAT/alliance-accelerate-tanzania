@@ -80,3 +80,24 @@ Loop: Leader → Implementer → Reviewer (max 3 rework attempts/task).
 - **Review:** delegated Reviewer agent unavailable (classifier outage) → **Leader conformance audit** (read-through): URL sync, single h1, all panels wired to correct building-block APIs, truncation/error/empty states, tokens-only, Suspense/no-SSR. PASS.
 - **Note for T-16:** `/dashboard` first-load JS is heavy (Recharts) — candidate for lazy-loading the charts in the a11y/perf sweep.
 - **Final result:** eslint fix `92cc389`, T-14 `8065b86`. Committed.
+
+### T-15 — Entry points (nav + Hero CTA) — ✅ PASS (Leader audit)
+
+- **Date:** 2026-06-26
+- **Requirements:** FR-1; design §5.8.
+- **Files:** `Header.tsx` (+`{label:'Dashboard',href:'/dashboard'}` in `NAV_LINKS` → desktop + mobile), `Header.test.tsx`, `Hero.tsx` (Dashboard is now the **primary** CTA "Explore the Dashboard"; Map demoted to secondary; Directory kept), `Hero.hero.test.tsx`.
+- **Verification:** `npm run test -- Header Hero` 24/24; `npm run build` green (14 static pages); tsc clean.
+- **Review:** Leader audit (reviewer agent gated by classifier outage) — minimal token-driven diff, nav present in both layouts, CTA accessible. PASS. Commit `2e4ca79`.
+
+### T-16 — A11y, tokens & build sweep + chart lazy-load — ✅ PASS (Leader audit)
+
+- **Date:** 2026-06-26
+- **Requirements:** NFR-2, NFR-3, NFR-4, NFR-5.
+- **Action:** code-split the three Recharts charts in `DashboardView` via `next/dynamic` (ssr:false + Skeleton fallback) per design §9 / NFR-3 → **`/dashboard` first-load JS 227 kB → 115 kB** (Recharts out of the initial bundle; map was already dynamic).
+- **Sweep results:** no raw hex in dashboard sources (only token-documentation comments); `npm run lint` clean; `npx tsc --noEmit` clean; **full suite 687 tests / 54 suites pass**; `npm run build` green. A11y confirmed across building blocks — chart data-table fallbacks (ChartCard `<details>`), labelled filter controls, reduced-motion-gated chart animation, figure roles, focus-visible rings.
+- **Known benign artifact:** a React `act()` warning from `next/dynamic` async resolution in `DashboardView.test.tsx` (charts are mocked; 20/20 still pass) — non-failing, standard for dynamic-import-in-jest.
+- **Review:** Leader audit. PASS. Commit `e62030d`.
+
+## Summary — ALL TASKS COMPLETE
+
+All 16 tasks `[x]`. Branch `feature/discovery-dashboard`. Frontend-only; **no backend/schema/PII change**. Static build green with `/dashboard` as a static route (115 kB first load). 687 tests pass. Reviewer note: T-8/T-12/T-14/T-15/T-16 were audited by the **Leader directly** (read-only conformance audit) because the delegated Reviewer agent hit a model-classifier outage mid-run; T-1/T-2/T-3/T-4/T-5/T-6/T-7/T-9/T-10/T-11/T-13 had independent Reviewer PASS. Ready for `/sdd-validate dashboard/discovery-dashboard`.

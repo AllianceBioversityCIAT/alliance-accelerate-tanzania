@@ -107,14 +107,14 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- DashboardView && npm run build`
       Done when: `/dashboard` renders all panels from one filter set; URL reflects filters and restores on reload; truncation notice shows when `truncated`; static build succeeds.
 
-- [ ] T-15 Entry points — nav + Hero CTA  (deps: T-14)
+- [x] T-15 Entry points — nav + Hero CTA  (deps: T-14)
       Scope: Add `{ label: 'Dashboard', href: '/dashboard' }` to `NAV_LINKS` in `components/shell/Header.tsx` (desktop + mobile) and a CTA on the home Hero linking to `/dashboard`.
       Traces: FR-1, design.md §5.8
       Files: frontend/components/shell/Header.tsx, frontend/components/home/Hero.tsx (+ update Header.test.tsx expectations)
       Verify: `cd frontend && npm run test -- Header && npm run build`
       Done when: Dashboard link present in desktop + mobile nav and Hero CTA; Header tests updated and green.
 
-- [ ] T-16 A11y, tokens & build verification pass  (deps: T-14, T-15)
+- [x] T-16 A11y, tokens & build verification pass  (deps: T-14, T-15)
       Scope: Final sweep — keyboard reach of filters/charts (data tables reachable), ≥4.5:1 contrast, `prefers-reduced-motion` honoured, no raw hex/geometry anywhere in `components/dashboard` / `lib/dashboard`, lazy-loading of chart/map verified. Fix any gaps.
       Traces: NFR-2, NFR-3, NFR-4, NFR-5
       Files: frontend/components/dashboard/**, frontend/lib/dashboard/**
