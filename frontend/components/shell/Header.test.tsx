@@ -95,6 +95,10 @@ describe('Header — Public (unauthenticated)', () => {
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /discovery map/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /directory/i }).length).toBeGreaterThanOrEqual(1);
+    // T-15: Dashboard link present in nav (desktop + mobile)
+    const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
+    expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
+    expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
     // FR-9: About link present in nav (desktop + mobile = 2 occurrences)
     const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
     expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
@@ -150,6 +154,10 @@ describe('Header — authenticated (Staff)', () => {
 
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('link', { name: /directory/i }).length).toBeGreaterThanOrEqual(1);
+    // T-15: Dashboard link present for authenticated users too
+    const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
+    expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
+    expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
     // FR-9: About link present for authenticated users too
     const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
     expect(aboutLinks.length).toBeGreaterThanOrEqual(1);

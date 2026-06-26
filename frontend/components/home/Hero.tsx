@@ -211,9 +211,12 @@ export default function Hero() {
 
             {/* CTAs — flex row, wrap gracefully on narrow screens */}
             <div data-hero-text className="flex flex-wrap gap-3 mt-2">
-              <Button variant="primary" href="/map">
-                Explore the Map
+              <Button variant="primary" href="/dashboard">
+                Explore the Dashboard
                 <ArrowRight />
+              </Button>
+              <Button variant="secondary" href="/map">
+                Explore the Map
               </Button>
               <Button variant="secondary" href="/directory">
                 Browse Directory

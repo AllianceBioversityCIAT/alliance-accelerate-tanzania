@@ -13,6 +13,7 @@ import type { Role } from '@/lib/auth/useSession';
 const NAV_LINKS = [
   { label: 'Home', href: '/' },
   { label: 'Discovery Map', href: '/map' },
+  { label: 'Dashboard', href: '/dashboard' },
   { label: 'Directory', href: '/directory' },
   { label: 'About', href: '/about' },
 ] as const;

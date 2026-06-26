@@ -50,19 +50,26 @@ describe('Hero — with GSAP mocked', () => {
     expect(screen.getByText(/single trusted registry/i)).toBeInTheDocument();
   });
 
-  // FR-8: CTA buttons are present
-  it('renders the primary CTA "Explore the Map"', () => {
+  // FR-8 / T-15: CTA buttons are present
+  it('renders the primary CTA "Explore the Dashboard" pointing to /dashboard', () => {
     render(<Hero />);
-    expect(
-      screen.getByRole('link', { name: /explore the map/i }),
-    ).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /explore the dashboard/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/dashboard');
   });
 
-  it('renders the secondary CTA "Browse Directory"', () => {
+  it('renders the secondary CTA "Explore the Map" pointing to /map', () => {
     render(<Hero />);
-    expect(
-      screen.getByRole('link', { name: /browse directory/i }),
-    ).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /explore the map/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/map');
+  });
+
+  it('renders the tertiary CTA "Browse Directory" pointing to /directory', () => {
+    render(<Hero />);
+    const link = screen.getByRole('link', { name: /browse directory/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/directory');
   });
 
   // FR-3 / FR-8: "1,000+" must be the final rendered value in the DOM —
