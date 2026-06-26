@@ -33,6 +33,7 @@ import {
 } from 'recharts';
 
 import ChartCard, { useChartReducedMotion } from './ChartCard';
+import { IconTag } from '@/components/dashboard/icons';
 import { categoricalColor } from '@/lib/dashboard/chart-tokens';
 import { roleLabel } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
@@ -121,6 +122,7 @@ export default function ActorTypeChart({ data }: ActorTypeChartProps) {
   return (
     <ChartCard
       title="Actors by type"
+      icon={<IconTag className="h-5 w-5" />}
       series={series}
       valueHeader="Actor count"
     >

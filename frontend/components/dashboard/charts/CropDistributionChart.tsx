@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 
 import ChartCard, { useChartReducedMotion } from './ChartCard';
+import { IconChartBar } from '@/components/dashboard/icons';
 import { CROP_COLORS, categoricalColor } from '@/lib/dashboard/chart-tokens';
 import { CROPS } from '@/lib/content/crops';
 import type { DashboardSeriesPoint } from '@/lib/dashboard/aggregate';
@@ -149,6 +150,7 @@ export default function CropDistributionChart({ data }: CropDistributionChartPro
   return (
     <ChartCard
       title="Actors by crop"
+      icon={<IconChartBar className="h-5 w-5" />}
       series={chartCardSeries}
       valueHeader="Actor count"
     >

@@ -45,6 +45,8 @@ export interface ChartCardProps {
   children: React.ReactNode;
   /** Data-table value column header. Default: "Value". */
   valueHeader?: string;
+  /** Optional leading icon (decorative) shown in a chip beside the title. */
+  icon?: React.ReactNode;
   /** Optional extra classes appended to the card root. */
   className?: string;
 }
@@ -108,6 +110,7 @@ export default function ChartCard({
   series,
   children,
   valueHeader = 'Value',
+  icon,
   className = '',
 }: ChartCardProps): React.ReactElement {
   const reducedMotion = useReducedMotion();
@@ -119,20 +122,29 @@ export default function ChartCard({
         * <figure> with role="figure" and aria-label gives assistive technology
         * a labelled landmark for the chart region (FR-6, NFR-4).
         * Token classes: bg-surface, border-border, rounded-lg, shadow-sm.
+        * h-full so cards in a grid row share a common height; hover lift for polish.
         */}
       <figure
         role="figure"
         aria-label={title}
         className={[
           'bg-surface border border-border rounded-lg shadow-sm',
-          'flex flex-col gap-4 p-6',
+          'flex h-full flex-col gap-4 p-6 transition-shadow hover:shadow-md',
           className,
         ]
           .filter(Boolean)
           .join(' ')}
       >
-        {/* Card heading — token text styles, no hardcoded geometry */}
-        <figcaption>
+        {/* Card heading — optional icon chip + title (token text styles) */}
+        <figcaption className="flex items-center gap-3">
+          {icon ? (
+            <span
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary"
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+          ) : null}
           <h3 className="text-base font-bold text-fg leading-snug">{title}</h3>
         </figcaption>
 
