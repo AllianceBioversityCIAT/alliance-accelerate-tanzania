@@ -54,7 +54,9 @@ export default function KpiCard({
   return (
     <div
       className={[
-        'rounded-lg border shadow-sm p-5 flex items-start gap-4 transition-shadow hover:shadow-md',
+        // Stack (icon on top) on narrow screens so the value gets the full card
+        // width; switch to icon-left on ≥ sm where cards are wider.
+        'rounded-lg border shadow-sm p-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4 transition-shadow hover:shadow-md',
         emphasis
           ? 'bg-primary border-primary text-primary-fg'
           : 'bg-surface border-border',
