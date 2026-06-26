@@ -26,7 +26,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- aggregate`
       Done when: tests cover null-capacity exclusion, empty input (zeros, no throw), distinct region/type counts, and per-crop/per-type grouping.
 
-- [ ] T-4 Bounded fetch-all hook  (deps: T-1)
+- [x] T-4 Bounded fetch-all hook  (deps: T-1)
       Scope: `lib/dashboard/useDashboardActors.ts` — given `ActorsQuery`, fetch with `pageSize = DASH_PAGE_SIZE` accumulating up to `DASH_MAX_PAGES` (constants documented; default covers ~1k). Returns `{ actors, total, truncated, loading, error }`. Reuses `getActors` (null-on-failure, NFR-6). If API capacity filter is unavailable, apply `capacityMin/Max` client-side over fetched rows (same null-exclude rule) — documented fallback (design.md §3).
       Traces: FR-10, FR-11, NFR-6, design.md §3/§5.2
       Files: frontend/lib/dashboard/useDashboardActors.ts, frontend/lib/dashboard/useDashboardActors.test.ts
@@ -49,7 +49,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm install && npm run build`
       Done when: dependency installed and static `npm run build` stays green.
 
-- [ ] T-7 ChartCard shell + data-table fallback  (deps: T-5, T-6)
+- [x] T-7 ChartCard shell + data-table fallback  (deps: T-5, T-6)
       Scope: `components/dashboard/charts/ChartCard.tsx` — token-styled card with title, `role="figure"` + `aria-label`, a responsive chart slot (children), and a `<details><summary>Data table</summary>…</details>` rendering the same `{label,value}` series; explicit empty state when series is empty; `prefers-reduced-motion` flag exposed to children.
       Traces: FR-5, FR-6, NFR-4, design.md §5.4
       Files: frontend/components/dashboard/charts/ChartCard.tsx, frontend/components/dashboard/charts/ChartCard.test.tsx
@@ -63,21 +63,21 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- charts`
       Done when: each renders its series + data-table fallback; colours are token vars; renders without error for empty + populated series.
 
-- [ ] T-9 KPI band  (deps: T-3)
+- [x] T-9 KPI band  (deps: T-3)
       Scope: `components/dashboard/KpiBand.tsx` + `KpiCard.tsx` — render the FR-4 KPIs with token styling; skeleton/"—" fallback when data null; capacity basis label ("over N reporting capacity").
       Traces: FR-4, NFR-6, design.md §5.5
       Files: frontend/components/dashboard/KpiBand.tsx, KpiCard.tsx (+ test)
       Verify: `cd frontend && npm run test -- KpiBand`
       Done when: KPIs reflect aggregate output; null data shows fallback, never crashes.
 
-- [ ] T-10 Dashboard filters + capacity range  (deps: T-1, T-2)
+- [x] T-10 Dashboard filters + capacity range  (deps: T-1, T-2)
       Scope: `components/dashboard/DashboardFilters.tsx` + `CapacityRangeControl.tsx` — crop/region/district/actor-type selects (reuse `lib/content/{crops,regions,roles}`), search input, and min/max tons inputs with validation + clear. Emits merged `ActorsQuery` (page reset to 1) via `onChange`. Labels + focus states (a11y).
       Traces: FR-2, FR-3, NFR-4, design.md §5.3
       Files: frontend/components/dashboard/DashboardFilters.tsx, CapacityRangeControl.tsx (+ tests)
       Verify: `cd frontend && npm run test -- DashboardFilters`
       Done when: changing any control (incl. capacity) calls `onChange` with the merged query; inputs have associated labels.
 
-- [ ] T-11 Shortlist table  (deps: T-1)
+- [x] T-11 Shortlist table  (deps: T-1)
       Scope: `components/dashboard/ShortlistTable.tsx` — compact rows (name, region/district, type, crops, capacity) each linking to the actor profile route; bounded row count with "See all in Directory →" link carrying current filters; explicit empty state. No PII fields rendered.
       Traces: FR-8, NFR-1, design.md §5.7
       Files: frontend/components/dashboard/ShortlistTable.tsx (+ test)
@@ -91,7 +91,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- csv`
       Done when: CSV contains public columns + aggregates and asserts absence of PII; download is client-only.
 
-- [ ] T-13 Dashboard map panel  (deps: T-1)
+- [x] T-13 Dashboard map panel  (deps: T-1)
       Scope: `components/dashboard/DashboardMapPanel.tsx` — wrap existing `components/map/ActorMap` (dynamic, ssr:false), feeding the shared filter-derived actor data/selection. Reuse only; no Leaflet logic duplicated.
       Traces: FR-7, NFR-2, design.md §5.6
       Files: frontend/components/dashboard/DashboardMapPanel.tsx (+ test)

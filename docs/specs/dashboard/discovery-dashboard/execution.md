@@ -45,4 +45,18 @@ Loop: Leader → Implementer → Reviewer (max 3 rework attempts/task).
 - **Files changed:** `frontend/package.json` (+`"recharts": "^3.9.0"`), `frontend/package-lock.json`.
 - **Verification:** `cd frontend && npm install && npm run build` → compiled successfully, 13/13 static pages, exporting 2/2 (static export intact).
 - **Reviewer verdict:** PASS — only the 2 allowed files changed; no SSR; React-19 compatible (build is proof); transitive graph expected (d3-*, victory-vendor, etc.).
-- **Final result:** Committed.
+- **Final result:** Committed `4ffb251`.
+
+### T-4 / T-7 / T-9 / T-10 / T-11 / T-13 — building-block batch (parallel) — ✅ PASS
+
+- **Date:** 2026-06-26
+- **Orchestration:** six dependency-satisfied, disjoint-file tasks implemented concurrently (one Implementer each), then each audited by an independent Reviewer scoped to ONLY its task's files (sibling untracked files explicitly excluded — no repeat of the earlier false positive).
+- **Integration gate:** full dashboard suite **159 tests / 9 suites pass**; `tsc --noEmit` clean across all new code.
+- **T-4 — Bounded fetch-all hook** (FR-10/FR-11/NFR-6; design §3/§5.2): `useDashboardActors.ts` + test (13 tests). Reviewer PASS — accumulation, truncation flag, first/later-page null handling, client-side capacity fallback, unmount guard all correct. Commit `51aa967`.
+- **T-7 — ChartCard shell + data-table fallback** (FR-5/FR-6/NFR-4; design §5.4): `charts/ChartCard.tsx` + test (16 tests). One fixup before commit: `JSX.Element` return type → `React.ReactElement` (React-19 strict tsc). Reviewer PASS — figure/aria, exclusive empty state, real `<details>` data table, SSR-safe matchMedia, tokens-only. Commit `24e5d5a`.
+- **T-9 — KPI band** (FR-4/NFR-6; design §5.5): `KpiCard.tsx` + `KpiBand.tsx` + test (17 tests). Reviewer PASS — five tiles, "N reporting capacity" basis on both capacity tiles, Skeleton fallback, `<dl>/<dt>/<dd>` a11y, tokens-only. Commit `5911c65`.
+- **T-10 — Dashboard filters + capacity range** (FR-2/FR-3/NFR-4; design §5.3): `DashboardFilters.tsx` + `CapacityRangeControl.tsx` + test (25 tests). Reviewer PASS — all 7 controls labelled, page-reset merge, empty/negative/NaN → undefined, tokens-only. Commit `fa3e258`.
+- **T-11 — Shortlist table** (FR-8/NFR-1; design §5.7): `ShortlistTable.tsx` + test (25 tests). Reviewer PASS — **PII gate clear** (no phone/email at type or render level; sentinel+regex tests), profile link `/profile?id=` matches existing `ActorCard`, see-all link via `encodeFilters`, empty state, tokens-only. Commit `0e876e0`.
+- **T-13 — Dashboard map panel** (FR-7/NFR-2; design §5.6): `DashboardMapPanel.tsx` + test (11 tests). One fixup before commit: test fixture corrected to real `PublicActor` shape (`traderName`/`traderType`/`gps`). Reviewer PASS — reuses `ActorMap` (no fork, no direct Leaflet, no SSR), forwards all 5 real props, tokens-only. Commit `5d3fee5`.
+- **Outstanding (non-blocking):** Reviewer warnings/suggestions logged (e.g. data-table row keys, redundant `aria-live` on static empty state, median decimal formatting, extra test cases) — quality polish, deferred; none affect WCAG/PII/correctness gates.
+- **Final result:** All six committed in isolation; tree clean.
