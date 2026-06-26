@@ -99,11 +99,10 @@ export default function DashboardFilters({ filters, onChange }: DashboardFilters
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-      role="group"
-      aria-label="Filter dashboard actors"
-    >
+    <div className="flex flex-col gap-3" role="group" aria-label="Filter dashboard actors">
+
+      {/* ── Dropdown + range filters (grid row) ───────────────────────────── */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 
       {/* ── Crop ─────────────────────────────────────────────────────────── */}
       <div>
@@ -186,22 +185,6 @@ export default function DashboardFilters({ filters, onChange }: DashboardFilters
         </select>
       </div>
 
-      {/* ── Search ───────────────────────────────────────────────────────── */}
-      <div>
-        <label htmlFor="dash-filter-search" className={LABEL_CLASS}>
-          Search
-        </label>
-        <input
-          id="dash-filter-search"
-          type="search"
-          placeholder="Search actors…"
-          value={filters.search ?? ''}
-          onChange={handleSearch}
-          className={CONTROL_CLASS}
-          aria-label="Search actors by name"
-        />
-      </div>
-
       {/* ── Capacity range ───────────────────────────────────────────────── */}
       <CapacityRangeControl
         value={{
@@ -210,6 +193,24 @@ export default function DashboardFilters({ filters, onChange }: DashboardFilters
         }}
         onChange={handleCapacity}
       />
+
+      </div>{/* end grid row */}
+
+      {/* ── Search — full-width row below the filters ─────────────────────── */}
+      <div>
+        <label htmlFor="dash-filter-search" className={LABEL_CLASS}>
+          Search
+        </label>
+        <input
+          id="dash-filter-search"
+          type="search"
+          placeholder="Search actors by name…"
+          value={filters.search ?? ''}
+          onChange={handleSearch}
+          className={CONTROL_CLASS}
+          aria-label="Search actors by name"
+        />
+      </div>
 
     </div>
   );
