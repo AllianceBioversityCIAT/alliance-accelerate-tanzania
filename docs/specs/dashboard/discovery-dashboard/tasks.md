@@ -12,14 +12,14 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- actors`
       Done when: new params serialize into the querystring when set and are omitted when undefined; existing actors tests still pass; `tsc` clean.
 
-- [ ] T-2 Filter ⇄ URL codec  (deps: none)
+- [x] T-2 Filter ⇄ URL codec  (deps: none)
       Scope: `lib/dashboard/filters-url.ts` — pure `encodeFilters(q: ActorsQuery): URLSearchParams` and `decodeFilters(params): ActorsQuery` round-trip (crop, role, region, district, capacityMin, capacityMax, search). Numeric fields parsed/guarded; empty omitted.
       Traces: FR-2, NFR-7, design.md §5.3
       Files: frontend/lib/dashboard/filters-url.ts, frontend/lib/dashboard/filters-url.test.ts
       Verify: `cd frontend && npm run test -- filters-url`
       Done when: encode→decode is identity for representative filter sets; invalid/empty params decode to `undefined` fields.
 
-- [ ] T-3 Pure aggregation functions  (deps: none)
+- [x] T-3 Pure aggregation functions  (deps: none)
       Scope: `lib/dashboard/aggregate.ts` — `aggregate(actors: PublicActor[])` returning `{ kpis, capacityByRegion, byCrop, byType }`. KPIs: `matchingCount`, `totalCapacityTons`, `medianCapacityTons`, `capacityReportingCount`, `regionsCovered`, `actorTypes`. Null `capacityTons` excluded from sums/median and counted in `capacityReportingCount` basis (FR-4/OQ-3). Series are label/value arrays ready for charts.
       Traces: FR-4, FR-5, requirements OQ-3, design.md §5.5
       Files: frontend/lib/dashboard/aggregate.ts, frontend/lib/dashboard/aggregate.test.ts
@@ -35,7 +35,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
 
 ## Phase B — Presentational building blocks
 
-- [ ] T-5 Chart token palette  (deps: none)
+- [x] T-5 Chart token palette  (deps: none)
       Scope: `lib/dashboard/chart-tokens.ts` — map crops → `var(--crop-*)` strings and a categorical sequence (region/type) from existing tokens (primary/accent/highlight/bean…). Export only CSS-var strings; no hex.
       Traces: NFR-5, design.md §5.4/§8
       Files: frontend/lib/dashboard/chart-tokens.ts, frontend/lib/dashboard/chart-tokens.test.ts
