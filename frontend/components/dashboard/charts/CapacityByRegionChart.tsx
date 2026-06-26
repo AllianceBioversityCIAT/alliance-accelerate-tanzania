@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 
 import ChartCard, { useChartReducedMotion } from './ChartCard';
+import { IconMapPin } from '@/components/dashboard/icons';
 import { categoricalColor } from '@/lib/dashboard/chart-tokens';
 import type { DashboardSeriesPoint } from '@/lib/dashboard/aggregate';
 
@@ -115,6 +116,7 @@ export default function CapacityByRegionChart({ data }: CapacityByRegionChartPro
   return (
     <ChartCard
       title="Capacity by region (t)"
+      icon={<IconMapPin className="h-5 w-5" />}
       series={series}
       valueHeader="Capacity (t)"
     >

@@ -4,13 +4,15 @@
  * DashboardView — Discovery Dashboard main view.
  *
  * Traces: FR-1, FR-2, FR-10, FR-11, NFR-2, NFR-6, design.md §5.1/§5.3.
- * Spec: dashboard/discovery-dashboard, T-14.
+ * Spec: dashboard/discovery-dashboard, T-14 (+ pro redesign: enhancement/dashboard-pro-redesign).
  *
  * Responsibilities:
  *   • Owns filter state (ActorsQuery), initialised from URL via decodeFilters.
  *   • Pushes URL on every filter change (FR-2 shareable/restorable view).
  *   • Fetches actors via useDashboardActors; aggregates via aggregate().
- *   • Composes all dashboard sub-panels: filters, KPI band, charts, map, shortlist, download.
+ *   • Composes the dashboard shell: sticky toolbar (title + export), a filter
+ *     bar with active-filter chips, and sectioned panels (Overview · Breakdowns
+ *     · Map & shortlist).
  *   • Handles loading, error, and empty states without crashing (NFR-6).
  *
  * Static-export safe: all data is client-fetched; no SSR or route handlers.
@@ -28,16 +30,17 @@ import { decodeFilters, encodeFilters } from '@/lib/dashboard/filters-url';
 import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
+import ActiveFilterChips from '@/components/dashboard/ActiveFilterChips';
 import KpiBand from '@/components/dashboard/KpiBand';
 import DashboardMapPanel from '@/components/dashboard/DashboardMapPanel';
 import ShortlistTable from '@/components/dashboard/ShortlistTable';
 import DownloadViewButton from '@/components/dashboard/DownloadViewButton';
 import Skeleton from '@/components/ui/Skeleton';
+import { IconAdjustments, IconMap, IconList } from '@/components/dashboard/icons';
 
 // ── Charts: code-split (NFR-3, design §9) ─────────────────────────────────────
 // Recharts is a heavy dependency; lazy-loading the three charts keeps it out of
 // the initial /dashboard bundle so first paint (filters + KPIs) isn't blocked.
-// Client-only (ssr:false) — consistent with the static-export, client-fetched view.
 const ChartFallback = () => <Skeleton className="h-64 w-full rounded-lg" />;
 const CapacityByRegionChart = dynamic(
   () => import('@/components/dashboard/charts/CapacityByRegionChart'),
@@ -52,27 +55,24 @@ const ActorTypeChart = dynamic(
   { ssr: false, loading: ChartFallback },
 );
 
+// ── Small section heading ─────────────────────────────────────────────────────
+function SectionHeading({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted">
+      {icon}
+      {children}
+    </h2>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-/**
- * DashboardView — the full Discovery Dashboard, assembled from building blocks.
- *
- * MUST be rendered inside a <Suspense> boundary at the page level because it
- * calls useSearchParams() (static-export / CSR bailout requirement).
- *
- * Usage (in page.tsx):
- *   <Suspense fallback={<DashboardFallback />}>
- *     <DashboardView />
- *   </Suspense>
- */
 export default function DashboardView() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // ── Filter state — initialised from URL (FR-2) ────────────────────────────
-  const [filters, setFilters] = useState<ActorsQuery>(() =>
-    decodeFilters(searchParams),
-  );
+  const [filters, setFilters] = useState<ActorsQuery>(() => decodeFilters(searchParams));
 
   // ── Selected actor for the map ────────────────────────────────────────────
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
@@ -93,18 +93,12 @@ export default function DashboardView() {
   );
 
   // ── Build PublicActorList for the map panel ───────────────────────────────
-  // ActorMap expects { data, page, pageSize, total } — shape from PublicActorList.
   const mapData: PublicActorList = useMemo(
-    () => ({
-      data: actors,
-      page: 1,
-      pageSize: actors.length,
-      total,
-    }),
+    () => ({ data: actors, page: 1, pageSize: actors.length, total }),
     [actors, total],
   );
 
-  // ── Error state (NFR-6) ───────────────────────────────────────────────────
+  // ── Error state (NFR-6) — standalone panel, intentionally minimal ─────────
   if (error) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -112,9 +106,7 @@ export default function DashboardView() {
           role="alert"
           className="rounded-lg border border-border bg-surface px-6 py-8 text-center shadow-sm"
         >
-          <p className="text-base font-medium text-fg">
-            Couldn&apos;t load registry data.
-          </p>
+          <p className="text-base font-medium text-fg">Couldn&apos;t load registry data.</p>
           <p className="mt-1 text-sm text-muted">
             Try again or{' '}
             <Link
@@ -130,70 +122,77 @@ export default function DashboardView() {
     );
   }
 
+  const hasResults = !loading && actors.length > 0;
+
   // ── Main layout ───────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-
-      {/* ── Page header ───────────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-fg sm:text-3xl">
-          Seed Discovery Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          Explore and filter Tanzania&apos;s seed-system actors across sorghum,
-          common bean, and groundnut value chains.
-        </p>
+    <div className="min-h-[calc(100vh-3.5rem)] bg-surface-alt">
+      {/* ── Sticky toolbar: title + export ─────────────────────────────────── */}
+      <div className="sticky top-14 z-30 border-b border-border bg-surface">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+          <div>
+            <h1 className="text-xl font-bold text-fg sm:text-2xl">Seed Discovery Dashboard</h1>
+            <p className="text-xs text-muted sm:text-sm">
+              Filter Tanzania&apos;s seed-system actors, read the breakdowns, and export the view.
+            </p>
+          </div>
+          {hasResults ? <DownloadViewButton actors={actors} kpis={agg.kpis} /> : null}
+        </div>
       </div>
 
-      {/*
-        Two-column layout on large screens:
-          Left col (lg:w-64): filter panel (sticky)
-          Right col (flex-1): all dashboard panels
-        Single-column stacked on mobile (NFR-2 reflow).
-      */}
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      {/* ── Content ─────────────────────────────────────────────────────────── */}
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
 
-        {/* ── Filter panel ──────────────────────────────────────────────── */}
-        <aside
-          className="w-full rounded-lg border border-border bg-surface p-4 shadow-sm lg:w-64 lg:shrink-0 lg:sticky lg:top-6"
-          aria-label="Filter controls"
-        >
+        {/* ── Filter bar + active chips ─────────────────────────────────────── */}
+        <div className="rounded-lg border border-border bg-surface p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted">
+            <IconAdjustments className="h-4 w-4" />
+            Filters
+          </div>
           <DashboardFilters filters={filters} onChange={handleFilterChange} />
-        </aside>
+          <div className="mt-3 border-t border-border pt-3">
+            <ActiveFilterChips filters={filters} onChange={handleFilterChange} />
+          </div>
+        </div>
 
-        {/* ── Dashboard panels ──────────────────────────────────────────── */}
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
-
-          {/* ── Truncation notice (FR-10) — only when data is capped ────── */}
-          {truncated && !loading && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="rounded-md border border-border bg-surface px-4 py-3 text-sm text-muted"
+        {/* ── Truncation notice (FR-10) ─────────────────────────────────────── */}
+        {truncated && !loading && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-md border border-border bg-surface px-4 py-3 text-sm text-muted"
+          >
+            Showing the first {actors.length.toLocaleString()} of {total.toLocaleString()} matching
+            actors — refine filters or{' '}
+            <Link
+              href="/directory"
+              className="font-medium text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
             >
-              Showing the first {actors.length.toLocaleString()} of{' '}
-              {total.toLocaleString()} matching actors — refine filters or{' '}
-              <Link
-                href="/directory"
-                className="font-medium text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
-              >
-                open the full Directory
-              </Link>
-              .
-            </div>
-          )}
+              open the full Directory
+            </Link>
+            .
+          </div>
+        )}
 
-          {/* ── KPI band ───────────────────────────────────────────────── */}
+        {/* ── Overview (KPIs) ───────────────────────────────────────────────── */}
+        <section className="flex flex-col gap-3">
+          <SectionHeading>Overview</SectionHeading>
           <KpiBand kpis={loading ? null : agg.kpis} loading={loading} />
+        </section>
 
-          {/* ── Charts grid (responsive) ────────────────────────────────── */}
+        {/* ── Breakdowns (charts) ───────────────────────────────────────────── */}
+        <section className="flex flex-col gap-3">
+          <SectionHeading>Breakdowns</SectionHeading>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <CapacityByRegionChart data={agg.capacityByRegion} />
             <CropDistributionChart data={agg.byCrop} />
             <ActorTypeChart data={agg.byType} />
           </div>
+        </section>
 
-          {/* ── Map panel ──────────────────────────────────────────────── */}
+        {/* ── Map ───────────────────────────────────────────────────────────── */}
+        <section className="flex flex-col gap-3">
+          <SectionHeading icon={<IconMap className="h-4 w-4" />}>Map</SectionHeading>
           <DashboardMapPanel
             data={loading ? null : mapData}
             loading={loading}
@@ -201,50 +200,33 @@ export default function DashboardView() {
             selectedActorId={selectedActorId}
             onSelectActor={setSelectedActorId}
           />
+        </section>
 
-          {/* ── Shortlist + download row ─────────────────────────────────
-              Hidden until data is ready — avoids a flash of an empty table
-              while actors are still being fetched.
-          */}
-          {!loading && (
-            <>
-              {/* ── Empty state (NFR-6) ─────────────────────────────────── */}
-              {actors.length === 0 ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="rounded-lg border border-border bg-surface px-6 py-8 text-center shadow-sm"
-                >
-                  <p className="text-base font-medium text-fg">
-                    No actors match these filters.
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    Try adjusting the filters on the left to see results.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* ── Shortlist table ──────────────────────────────────── */}
-                  <section
-                    className="rounded-lg border border-border bg-surface p-4 shadow-sm overflow-x-auto"
-                    aria-label="Actor shortlist"
-                  >
-                    <h2 className="mb-3 text-sm font-medium text-fg">
-                      Actor Shortlist
-                    </h2>
-                    <ShortlistTable actors={actors} filters={filters} />
-                  </section>
-
-                  {/* ── Download button ──────────────────────────────────── */}
-                  <div className="flex justify-end">
-                    <DownloadViewButton actors={actors} kpis={agg.kpis} />
-                  </div>
-                </>
-              )}
-            </>
-          )}
-
-        </div>
+        {/* ── Shortlist ─────────────────────────────────────────────────────── */}
+        {!loading && (
+          <section className="flex flex-col gap-3">
+            <SectionHeading icon={<IconList className="h-4 w-4" />}>Shortlist</SectionHeading>
+            {actors.length === 0 ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-lg border border-border bg-surface px-6 py-8 text-center shadow-sm"
+              >
+                <p className="text-base font-medium text-fg">No actors match these filters.</p>
+                <p className="mt-1 text-sm text-muted">
+                  Try adjusting the filters above to see results.
+                </p>
+              </div>
+            ) : (
+              <div
+                className="rounded-lg border border-border bg-surface p-4 shadow-sm overflow-x-auto"
+                aria-label="Actor shortlist"
+              >
+                <ShortlistTable actors={actors} filters={filters} />
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );

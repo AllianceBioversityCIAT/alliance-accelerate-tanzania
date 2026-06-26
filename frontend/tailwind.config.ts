@@ -12,6 +12,7 @@ const config: Config = {
           DEFAULT: 'var(--color-primary)',
           hover:   'var(--color-primary-hover)',
           fg:      'var(--color-primary-fg)',
+          soft:    'var(--color-primary-soft)',
         },
         accent:           'var(--color-accent)',
         highlight:        'var(--color-highlight)',

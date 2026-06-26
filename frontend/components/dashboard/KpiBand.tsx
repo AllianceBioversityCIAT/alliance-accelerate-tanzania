@@ -18,8 +18,16 @@
 // Usage:
 //   <KpiBand kpis={aggregate?.kpis ?? null} loading={loading} />
 
+import type { ReactNode } from 'react';
 import type { DashboardKpis } from '@/lib/dashboard/aggregate';
 import KpiCard from '@/components/dashboard/KpiCard';
+import {
+  IconUsers,
+  IconScale,
+  IconChartBar,
+  IconMapPin,
+  IconTag,
+} from '@/components/dashboard/icons';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,46 +58,22 @@ function basisLabel(count: number): string {
 // KPI tile definitions (order mirrors design.md §5.5)
 // ---------------------------------------------------------------------------
 
-interface TileDef {
+interface TileMeta {
   label: string;
-  value: string;
-  sublabel?: string;
+  icon: ReactNode;
+  emphasis?: boolean;
+  /** When set, derive the value + capacity-basis sublabel from these kpis keys. */
+  valueOf: (k: DashboardKpis) => string;
+  basis?: boolean;
 }
 
-function buildTiles(kpis: DashboardKpis): TileDef[] {
-  return [
-    {
-      label: 'Matching actors',
-      value: fmt(kpis.matchingCount),
-    },
-    {
-      label: 'Total capacity (t)',
-      value: fmt(kpis.totalCapacityTons),
-      sublabel: basisLabel(kpis.capacityReportingCount),
-    },
-    {
-      label: 'Median capacity (t)',
-      value: fmt(kpis.medianCapacityTons),
-      sublabel: basisLabel(kpis.capacityReportingCount),
-    },
-    {
-      label: 'Regions covered',
-      value: fmt(kpis.regionsCovered),
-    },
-    {
-      label: 'Actor types',
-      value: fmt(kpis.actorTypes),
-    },
-  ];
-}
-
-// Static tile labels used to render skeleton cards when kpis is null.
-const TILE_LABELS = [
-  'Matching actors',
-  'Total capacity (t)',
-  'Median capacity (t)',
-  'Regions covered',
-  'Actor types',
+// Tile definitions (order + icon + hierarchy). The headline metric is emphasised.
+const TILES: TileMeta[] = [
+  { label: 'Matching actors',    icon: <IconUsers className="h-5 w-5" />,    emphasis: true, valueOf: (k) => fmt(k.matchingCount) },
+  { label: 'Total capacity (t)', icon: <IconScale className="h-5 w-5" />,    basis: true,    valueOf: (k) => fmt(k.totalCapacityTons) },
+  { label: 'Median capacity (t)',icon: <IconChartBar className="h-5 w-5" />, basis: true,    valueOf: (k) => fmt(k.medianCapacityTons) },
+  { label: 'Regions covered',    icon: <IconMapPin className="h-5 w-5" />,   valueOf: (k) => fmt(k.regionsCovered) },
+  { label: 'Actor types',        icon: <IconTag className="h-5 w-5" />,      valueOf: (k) => fmt(k.actorTypes) },
 ];
 
 // ---------------------------------------------------------------------------
@@ -101,25 +85,24 @@ export default function KpiBand({ kpis, loading = false }: KpiBandProps) {
   // Each KpiCard handles its own skeleton so we surface a per-card loading prop.
   const isLoading = loading || kpis === null;
 
-  const tiles: TileDef[] = kpis ? buildTiles(kpis) : TILE_LABELS.map((label) => ({ label, value: '' }));
-
   return (
     // Section wrapper — no explicit bg so it inherits the dashboard surface.
     // aria-label identifies the region for screen readers (design.md §5.5 a11y).
     <section aria-label="Key performance indicators">
       {/*
         Responsive KPI grid:
-          grid-cols-2   → 2-column stacked layout on mobile (NFR-2 reflow)
-          md:grid-cols-3 → 3-column row on medium screens and up (design.md §5.5)
+          grid-cols-2 (mobile) → sm:grid-cols-3 → lg:grid-cols-5 (one row, dense).
         gap-4: token-aligned spacing (system-design §7).
       */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {tiles.map((tile) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {TILES.map((tile) => (
           <KpiCard
             key={tile.label}
             label={tile.label}
-            value={tile.value}
-            sublabel={tile.sublabel}
+            value={kpis ? tile.valueOf(kpis) : ''}
+            sublabel={kpis && tile.basis ? basisLabel(kpis.capacityReportingCount) : undefined}
+            icon={tile.icon}
+            emphasis={tile.emphasis}
             loading={isLoading}
           />
         ))}

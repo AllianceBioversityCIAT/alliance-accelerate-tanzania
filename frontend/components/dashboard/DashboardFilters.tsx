@@ -99,7 +99,11 @@ export default function DashboardFilters({ filters, onChange }: DashboardFilters
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-3" role="group" aria-label="Filter dashboard actors">
+    <div
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      role="group"
+      aria-label="Filter dashboard actors"
+    >
 
       {/* ── Crop ─────────────────────────────────────────────────────────── */}
       <div>
