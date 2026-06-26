@@ -122,7 +122,10 @@ export default function CapacityRangeControl({
       <div className="flex gap-2">
         {/* Min */}
         <div className="flex-1">
-          <label htmlFor="capacity-min" className={LABEL_CLASS}>
+          {/* Visible "Capacity (t)" header labels the pair; per-input labels
+              are sr-only (placeholders Min/Max carry the visual cue) so the
+              control aligns with the single-label filters beside it. */}
+          <label htmlFor="capacity-min" className="sr-only">
             Min capacity (t)
           </label>
           <input
@@ -139,7 +142,7 @@ export default function CapacityRangeControl({
 
         {/* Max */}
         <div className="flex-1">
-          <label htmlFor="capacity-max" className={LABEL_CLASS}>
+          <label htmlFor="capacity-max" className="sr-only">
             Max capacity (t)
           </label>
           <input
