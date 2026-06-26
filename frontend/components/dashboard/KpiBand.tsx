@@ -44,9 +44,19 @@ export interface KpiBandProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Format a number with locale thousands separators (matches StatCard pattern). */
+/** Integer metric (counts) with locale thousands separators. */
 function fmt(n: number): string {
   return n.toLocaleString();
+}
+
+/** Total tonnage — whole tons with separators (capacityTons carries noisy .NN). */
+function fmtTons(n: number): string {
+  return Math.round(n).toLocaleString();
+}
+
+/** Median tonnage — at most one decimal (e.g. 16.475 → "16.5", 250 → "250"). */
+function fmtMedian(n: number): string {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
 /** Build the "over N reporting capacity" basis sublabel (FR-4 / OQ-3). */
@@ -70,8 +80,8 @@ interface TileMeta {
 // Tile definitions (order + icon + hierarchy). The headline metric is emphasised.
 const TILES: TileMeta[] = [
   { label: 'Matching actors',    icon: <IconUsers className="h-5 w-5" />,    emphasis: true, valueOf: (k) => fmt(k.matchingCount) },
-  { label: 'Total capacity (t)', icon: <IconScale className="h-5 w-5" />,    basis: true,    valueOf: (k) => fmt(k.totalCapacityTons) },
-  { label: 'Median capacity (t)',icon: <IconChartBar className="h-5 w-5" />, basis: true,    valueOf: (k) => fmt(k.medianCapacityTons) },
+  { label: 'Total capacity (t)', icon: <IconScale className="h-5 w-5" />,    basis: true,    valueOf: (k) => fmtTons(k.totalCapacityTons) },
+  { label: 'Median capacity (t)',icon: <IconChartBar className="h-5 w-5" />, basis: true,    valueOf: (k) => fmtMedian(k.medianCapacityTons) },
   { label: 'Regions covered',    icon: <IconMapPin className="h-5 w-5" />,   valueOf: (k) => fmt(k.regionsCovered) },
   { label: 'Actor types',        icon: <IconTag className="h-5 w-5" />,      valueOf: (k) => fmt(k.actorTypes) },
 ];
