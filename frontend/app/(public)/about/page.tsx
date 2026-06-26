@@ -19,7 +19,16 @@ import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import PillarCards from '@/components/home/PillarCards';
 import PartnerWall from '@/components/home/PartnerWall';
-import { CROPS } from '@/lib/content/crops';
+import CropImage from '@/components/home/CropImage';
+import { CROPS, type CropTokenClass } from '@/lib/content/crops';
+
+// Static crop-accent text classes — full strings so Tailwind's content scan keeps
+// them (avoids relying on CropCard to keep the dynamic text-crop-* classes alive).
+const CROP_TEXT: Record<CropTokenClass, string> = {
+  'crop-sorghum':   'text-crop-sorghum',
+  'crop-bean':      'text-crop-bean',
+  'crop-groundnut': 'text-crop-groundnut',
+};
 
 // ---------------------------------------------------------------------------
 // Metadata (FR-3, brief §5)
@@ -210,33 +219,40 @@ export default function AboutPage() {
           </p>
 
           {/*
-            Per-crop cards — one per CROPS entry.
-            Accent border derives from the crop token class (crop-sorghum etc.).
+            Per-crop cards — one per CROPS entry. Image-led design: CropImage
+            panel on top, then crop name (h3), description, and varieties.
+            Matches CropCard chrome on the home page (no border-t-4 accent).
             Varieties list sourced from crops.ts CROPS[].varieties (§4.2).
           */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {CROPS.map((crop) => (
               <div
                 key={crop.slug}
-                className={`bg-surface border-t-4 border-${crop.tokenClass} shadow-md rounded-md px-5 py-6 flex flex-col gap-3`}
+                className="bg-surface border border-border rounded-lg overflow-hidden shadow-sm flex flex-col"
               >
-                {/* Crop name — h3 because it sits under the section <h2> */}
-                <h3 className={`text-base font-bold text-${crop.tokenClass} leading-snug`}>
-                  {crop.name}
-                </h3>
+                {/* Tinted image panel — shared CropImage server component */}
+                <CropImage crop={crop} />
 
-                {/* §3.4 description (from crops.ts — matches brief copy) */}
-                <p className="text-sm text-muted leading-relaxed flex-1">
-                  {crop.description}
-                </p>
+                {/* Card content */}
+                <div className="px-5 py-5 flex flex-col gap-3 flex-1">
+                  {/* Crop name — h3 because it sits under the section <h2> */}
+                  <h3 className={['text-base font-bold leading-snug', CROP_TEXT[crop.tokenClass]].join(' ')}>
+                    {crop.name}
+                  </h3>
 
-                {/* Representative varieties sub-label (§4.2 — muted, attributed in §3.8) */}
-                {crop.varieties && crop.varieties.length > 0 && (
-                  <p className="text-xs text-muted leading-relaxed">
-                    <span className="font-semibold text-fg">Key varieties:</span>{' '}
-                    {crop.varieties.join(', ')}
+                  {/* §3.4 description (from crops.ts — matches brief copy) */}
+                  <p className="text-sm text-muted leading-relaxed flex-1">
+                    {crop.description}
                   </p>
-                )}
+
+                  {/* Representative varieties sub-label (§4.2 — muted, attributed in §3.8) */}
+                  {crop.varieties && crop.varieties.length > 0 && (
+                    <p className="text-xs text-muted leading-relaxed">
+                      <span className="font-semibold text-fg">Key varieties:</span>{' '}
+                      {crop.varieties.join(', ')}
+                    </p>
+                  )}
+                </div>
               </div>
             ))}
           </div>

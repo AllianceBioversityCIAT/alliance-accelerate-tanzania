@@ -8,6 +8,8 @@
  *   (b) per-crop actor counts render on success (matched by slug)
  *   (c) em-dash placeholder for each card when metrics are null
  *   (d) "View all actors" link points to /directory
+ *   (e) each card renders a crop image (next/image → <img>) — image-led redesign
+ *   (f) no border-t-4 top accent present — removed in image-led redesign
  */
 
 import React from 'react';
@@ -114,5 +116,37 @@ describe('CropCoverage', () => {
     const link = screen.getByRole('link', { name: /view all actors/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/directory');
+  });
+
+  // ── (e) Each card renders a crop image (image-led redesign) ───────────────
+
+  it('renders a crop image for each card (image-led redesign)', () => {
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { container } = render(<CropCoverage />);
+
+    // next/image renders as <img> in jsdom (next/jest transform).
+    // Images with alt="" carry ARIA role "presentation" — use querySelectorAll.
+    const images = container.querySelectorAll('img');
+    // At minimum 3 images — one per crop card.
+    expect(images.length).toBeGreaterThanOrEqual(3);
+
+    // Each crop image src contains the filename stem from crops.ts.
+    const srcs = Array.from(images).map((img) => img.getAttribute('src') ?? '');
+    expect(srcs.some((s) => s.includes('sorghum'))).toBe(true);
+    expect(srcs.some((s) => s.includes('common-bean'))).toBe(true);
+    expect(srcs.some((s) => s.includes('groundnut'))).toBe(true);
+  });
+
+  // ── (f) No border-t-4 top accent on card wrappers ────────────────────────
+
+  it('does not render border-t-4 class on crop card wrappers (removed in image-led redesign)', () => {
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+
+    const { container } = render(<CropCoverage />);
+
+    // border-t-4 must not appear on any element in the CropCoverage subtree
+    const allElements = container.querySelectorAll('[class*="border-t-4"]');
+    expect(allElements).toHaveLength(0);
   });
 });

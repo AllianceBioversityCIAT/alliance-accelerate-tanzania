@@ -31,6 +31,10 @@ const config: Config = {
           sorghum:   'var(--crop-sorghum)',
           bean:      'var(--crop-bean)',
           groundnut: 'var(--crop-groundnut)',
+          // Soft tints for CropImage panel backgrounds (see globals.css).
+          'sorghum-soft':   'var(--crop-sorghum-soft)',
+          'bean-soft':      'var(--crop-bean-soft)',
+          'groundnut-soft': 'var(--crop-groundnut-soft)',
         },
       },
       borderRadius: {

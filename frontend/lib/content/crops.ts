@@ -41,6 +41,11 @@ export interface CropContent {
    */
   tokenClass: CropTokenClass;
   /**
+   * Path to the transparent crop cutout image (relative to /public).
+   * Used by CropImage to render the image-led card panel.
+   */
+  image: string;
+  /**
    * Representative improved varieties released under ACCELERATE (copy brief §4.2).
    * Optional — absent in test fixtures or future crops that predate the brief.
    * Rendered as a muted sub-label in CropCard and on the About Crops section.
@@ -64,6 +69,7 @@ export const CROPS: CropContent[] = [
       'A drought-tolerant staple crop central to Tanzania’s food security agenda, with a growing network of certified seed producers and agro-dealer distributors along formal value chains.',
     // System Design §7: sorghum → crop-sorghum token (#C9821B)
     tokenClass: 'crop-sorghum',
+    image: '/crops/sorghum.webp',
     varieties: ['TARI SOR 1', 'TARI SOR 2'],
   },
   {
@@ -73,6 +79,7 @@ export const CROPS: CropContent[] = [
       'Tanzania’s most widely traded legume, linking smallholder producers to regional cooperatives, offtakers, and institutional buyers across multiple market segments.',
     // System Design §7: common_bean → crop-bean token (#7A3B2E)
     tokenClass: 'crop-bean',
+    image: '/crops/common-bean.webp',
     varieties: ['TARI Bean 2–6', 'Uyole 16/18', 'Selian 13', 'Calima Uyole'],
   },
   {
@@ -82,6 +89,7 @@ export const CROPS: CropContent[] = [
       'A high-value oil crop connecting seed companies, processors, and export-oriented agribusinesses within an expanding Tanzanian seed-system value chain.',
     // System Design §7: groundnut → crop-groundnut token (#8A8D2B)
     tokenClass: 'crop-groundnut',
+    image: '/crops/groundnut.webp',
     varieties: ['Naliendele 2016', 'Narinut 2015', 'Tanzanut 2016', 'TARIKA 1 & 2'],
   },
 ];
