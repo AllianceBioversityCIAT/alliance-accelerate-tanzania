@@ -19,6 +19,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import { useDashboardActors } from '@/lib/dashboard/useDashboardActors';
@@ -28,12 +29,28 @@ import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
 import KpiBand from '@/components/dashboard/KpiBand';
-import CapacityByRegionChart from '@/components/dashboard/charts/CapacityByRegionChart';
-import CropDistributionChart from '@/components/dashboard/charts/CropDistributionChart';
-import ActorTypeChart from '@/components/dashboard/charts/ActorTypeChart';
 import DashboardMapPanel from '@/components/dashboard/DashboardMapPanel';
 import ShortlistTable from '@/components/dashboard/ShortlistTable';
 import DownloadViewButton from '@/components/dashboard/DownloadViewButton';
+import Skeleton from '@/components/ui/Skeleton';
+
+// ── Charts: code-split (NFR-3, design §9) ─────────────────────────────────────
+// Recharts is a heavy dependency; lazy-loading the three charts keeps it out of
+// the initial /dashboard bundle so first paint (filters + KPIs) isn't blocked.
+// Client-only (ssr:false) — consistent with the static-export, client-fetched view.
+const ChartFallback = () => <Skeleton className="h-64 w-full rounded-lg" />;
+const CapacityByRegionChart = dynamic(
+  () => import('@/components/dashboard/charts/CapacityByRegionChart'),
+  { ssr: false, loading: ChartFallback },
+);
+const CropDistributionChart = dynamic(
+  () => import('@/components/dashboard/charts/CropDistributionChart'),
+  { ssr: false, loading: ChartFallback },
+);
+const ActorTypeChart = dynamic(
+  () => import('@/components/dashboard/charts/ActorTypeChart'),
+  { ssr: false, loading: ChartFallback },
+);
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
