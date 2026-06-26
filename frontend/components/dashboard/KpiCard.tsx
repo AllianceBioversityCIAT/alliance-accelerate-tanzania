@@ -89,7 +89,7 @@ export default function KpiCard({
           ) : (
             <span
               className={[
-                'text-3xl font-bold leading-none tabular-nums',
+                'text-2xl font-bold leading-tight tabular-nums break-words',
                 emphasis ? 'text-primary-fg' : 'text-fg',
               ].join(' ')}
             >
