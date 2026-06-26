@@ -1,12 +1,9 @@
 // CropCard — single crop card with live actor count (T-6, FR-4, System Design §7/§8).
 // Server component: no 'use client' needed — purely presentational, no hooks.
 //
-// Accent strategy: the card carries a top border in the crop's token color.
-// The color is derived from `crop.tokenClass` (e.g. "crop-sorghum") using
-// Tailwind's `border-${tokenClass}` pattern — no raw hex anywhere (NFR-4).
-// Note: Tailwind must see the full class string to include it in the purge
-// output; we build the class in a lookup map (ACCENT_CLASSES) so that the
-// complete utility strings are statically visible to Tailwind's content scan.
+// Accent strategy: CropImage renders a tinted panel at the top of the card
+// (image-led design). The crop name heading carries the accent colour via
+// ACCENT_TEXT lookup. The old border-t-4 top accent is removed.
 //
 // Fallback: when mappedActors is null/undefined, renders an em-dash "—" per FR-4.
 //
@@ -14,6 +11,7 @@
 //   <CropCard crop={entry} mappedActors={count} loading={loading} />
 
 import Skeleton from '@/components/ui/Skeleton';
+import CropImage from '@/components/home/CropImage';
 import type { CropContent, CropTokenClass } from '@/lib/content/crops';
 
 // ---------------------------------------------------------------------------
@@ -34,14 +32,8 @@ interface CropCardProps {
 
 // ---------------------------------------------------------------------------
 // Accent class lookup — full class strings visible for Tailwind content scan.
-// Derived from CropTokenClass; each entry maps to the border + heading colour.
+// Maps CropTokenClass to the heading text colour token.
 // ---------------------------------------------------------------------------
-
-const ACCENT_BORDER: Record<CropTokenClass, string> = {
-  'crop-sorghum':   'border-t-4 border-crop-sorghum',
-  'crop-bean':      'border-t-4 border-crop-bean',
-  'crop-groundnut': 'border-t-4 border-crop-groundnut',
-};
 
 const ACCENT_TEXT: Record<CropTokenClass, string> = {
   'crop-sorghum':   'text-crop-sorghum',
@@ -62,15 +54,15 @@ export default function CropCard({ crop, mappedActors, loading }: CropCardProps)
       : '—';
 
   return (
-    // bg-surface card with shadow-md and rounded-md — token-only (NFR-4).
-    // Colored top border derives accent from the crop's tokenClass.
-    <div
-      className={[
-        'bg-surface shadow-md rounded-md overflow-hidden flex flex-col',
-        ACCENT_BORDER[crop.tokenClass],
-      ].join(' ')}
-    >
-      <div className="px-5 py-6 flex flex-col gap-3 flex-1">
+    // Image-led card: tinted panel on top via CropImage, then content below.
+    // No border-t-4 accent — the image panel carries the crop identity now.
+    <div className="bg-surface border border-border rounded-lg overflow-hidden shadow-sm flex flex-col">
+
+      {/* Tinted image panel — shared with /about crop cards */}
+      <CropImage crop={crop} />
+
+      {/* Card content */}
+      <div className="px-5 py-5 flex flex-col gap-3 flex-1">
         {/* Crop name — colored with the crop accent token */}
         <h3 className={['text-lg font-bold leading-snug', ACCENT_TEXT[crop.tokenClass]].join(' ')}>
           {crop.name}

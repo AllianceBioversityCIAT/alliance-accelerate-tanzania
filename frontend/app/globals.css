@@ -27,6 +27,12 @@
     --crop-sorghum:   #C9821B;
     --crop-bean:      #7A3B2E;
     --crop-groundnut: #8A8D2B;
+    /* Soft crop tints (~12% over white) — for image-panel backgrounds (CropImage).
+       Explicit tokens because the hex crop vars above don't support the /opacity
+       Tailwind modifier; these give a guaranteed, branded panel wash. */
+    --crop-sorghum-soft:   #F9F0E4;
+    --crop-bean-soft:      #EFE7E6;
+    --crop-groundnut-soft: #F1F1E6;
 
     /* Typography */
     /* var(--font-inter) is injected by next/font (Inter with variable: '--font-inter').
