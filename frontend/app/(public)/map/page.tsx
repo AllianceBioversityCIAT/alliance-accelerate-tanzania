@@ -3,14 +3,14 @@
 // /map page — Discovery Map (FR-1, NFR-1, NFR-4, NFR-5).
 //
 // 'use client' required: owns page-local state (filters, selectedActorId)
-// and consumes useActors (browser-side fetch).
+// and consumes useDashboardActors (browser-side fetch, all pages).
 //
 // Layout: two-region side-by-side on ≥md.
 //   Left  → rail placeholder (T-4 fills in <DiscoverRail>)
 //   Right → <ActorMap> (fills remaining space, Leaflet loaded client-only)
 //
 // State:
-//   filters         — ActorsQuery fed into useActors; starts empty ({}), T-4 populates.
+//   filters         — ActorsQuery fed into useDashboardActors; starts empty ({}).
 //   selectedActorId — tracks the selected actor; synced between rail list and map
 //                     (T-3 adds fly-to, T-4 adds list highlight — contract is stable now).
 //
@@ -19,8 +19,8 @@
 // Token discipline (NFR-4): no raw hex anywhere in this file.
 
 import { useState } from 'react';
-import { useActors } from '@/lib/api/useActors';
-import type { ActorsQuery } from '@/lib/api/actors';
+import { useDashboardActors } from '@/lib/dashboard/useDashboardActors';
+import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 import ActorMap from '@/components/map/ActorMap';
 import DiscoverRail from '@/components/map/DiscoverRail';
 
@@ -28,14 +28,25 @@ import DiscoverRail from '@/components/map/DiscoverRail';
 
 export default function MapPage() {
   // ── Page-local state ───────────────────────────────────────────────────────
-  // filters: passed to useActors; T-4 provides <FilterControls> that set these.
+  // filters: passed to useDashboardActors; T-4 provides <FilterControls> that set these.
   const [filters, setFilters] = useState<ActorsQuery>({});
 
   // selectedActorId: synced between the rail list (T-4) and the map (T-3).
   const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
 
   // ── Data ───────────────────────────────────────────────────────────────────
-  const { data, loading, error } = useActors(filters);
+  // useDashboardActors accumulates ALL matching actors across pages (pageSize=100,
+  // up to 10 pages = 1 000 actors) so the map always plots the full result set
+  // rather than a single 20-actor page (bug: map/page T-1).
+  const { actors, total, loading, error } = useDashboardActors(filters);
+
+  // Build the PublicActorList shape expected by <ActorMap data=…>.
+  const data: PublicActorList = {
+    data: actors,
+    page: 1,
+    pageSize: actors.length,
+    total,
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -48,13 +59,13 @@ export default function MapPage() {
         ── Discover actors rail (T-4) ────────────────────────────────────────
         DiscoverRail owns: count header, FilterControls, ActorList (or
         loading/error/empty states). Filter changes update `filters` here →
-        useActors refetches (DD-3 server-side). List item selection sets
-        selectedActorId → ActorMap flies to + opens popup (FR-5).
+        useDashboardActors refetches all pages (DD-3 server-side). List item
+        selection sets selectedActorId → ActorMap flies to + opens popup (FR-5).
         Collapses to a toggle/panel on < md (NFR-2).
       */}
       <DiscoverRail
-        actors={data?.data ?? []}
-        total={data?.total}
+        actors={actors}
+        total={total}
         loading={loading}
         error={error}
         filters={filters}
