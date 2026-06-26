@@ -56,7 +56,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- ChartCard`
       Done when: data-table fallback renders the series values; empty series shows the empty state; no raw hex/geometry.
 
-- [ ] T-8 Three discovery charts  (deps: T-7, T-3)
+- [x] T-8 Three discovery charts  (deps: T-7, T-3)
       Scope: `CapacityByRegionChart.tsx` (bar), `CropDistributionChart.tsx` (bar/pie, crop-token colours), `ActorTypeChart.tsx` (bar) under `components/dashboard/charts/`. Each consumes an aggregate series, wraps in `ResponsiveContainer` inside `ChartCard`, colours via `chart-tokens`, animation gated by reduced-motion.
       Traces: FR-5, FR-6, NFR-4, NFR-5, design.md §5.4
       Files: frontend/components/dashboard/charts/CapacityByRegionChart.tsx, CropDistributionChart.tsx, ActorTypeChart.tsx (+ tests)
@@ -84,7 +84,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
       Verify: `cd frontend && npm run test -- ShortlistTable`
       Done when: rows link to profiles; no `phone`/`email` present; empty state renders; "see all" link includes filters.
 
-- [ ] T-12 PII-free CSV export  (deps: T-3, T-11)
+- [x] T-12 PII-free CSV export  (deps: T-3, T-11)
       Scope: `lib/dashboard/csv.ts` (public-column allowlist serializer + KPI summary header) and `components/dashboard/DownloadViewButton.tsx` (client-side Blob download, no SSR). Test asserts output never contains `phone`/`email`.
       Traces: FR-9, NFR-1, NFR-2, design.md §5.7/§6
       Files: frontend/lib/dashboard/csv.ts, csv.test.ts, frontend/components/dashboard/DownloadViewButton.tsx (+ test)
