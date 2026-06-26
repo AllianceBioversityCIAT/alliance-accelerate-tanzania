@@ -100,7 +100,7 @@ All work is in `frontend/`. Commits: `[SPEC:dashboard/discovery-dashboard] <mess
 
 ## Phase C — Assembly & integration
 
-- [ ] T-14 DashboardView + route  (deps: T-4, T-8, T-9, T-10, T-11, T-12, T-13)
+- [x] T-14 DashboardView + route  (deps: T-4, T-8, T-9, T-10, T-11, T-12, T-13)
       Scope: `components/dashboard/DashboardView.tsx` ('use client') — owns filter state, initializes from `useSearchParams()` (via T-2 codec), pushes URL updates (`router.replace`), runs `useDashboardActors` + `aggregate`, and lays out KpiBand · charts · DashboardMapPanel · ShortlistTable · DownloadViewButton with loading/empty/error + truncation notice (FR-10). `app/(public)/dashboard/page.tsx` wraps it in `<Suspense>` with a skeleton (mirrors directory/page.tsx).
       Traces: FR-1, FR-2, FR-10, FR-11, NFR-2, NFR-6, design.md §5.1/§5.3
       Files: frontend/app/(public)/dashboard/page.tsx, frontend/components/dashboard/DashboardView.tsx (+ test)
