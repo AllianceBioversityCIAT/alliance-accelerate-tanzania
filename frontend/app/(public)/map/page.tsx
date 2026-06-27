@@ -18,7 +18,7 @@
 // route handlers — Leaflet is loaded only inside <ActorMap> via dynamic import.
 // Token discipline (NFR-4): no raw hex anywhere in this file.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDashboardActors } from '@/lib/dashboard/useDashboardActors';
 import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 import ActorMap from '@/components/map/ActorMap';
@@ -48,6 +48,20 @@ export default function MapPage() {
     total,
   };
 
+  // Region dropdown options: only the regions that actually have actors.
+  // Captured from the loaded set whenever NO region filter is applied, so that
+  // selecting a region doesn't collapse the option list. Falls back to the full
+  // canonical list (via FilterControls) until the first load completes.
+  const [regionOptions, setRegionOptions] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    if (!filters.region && actors.length > 0) {
+      const distinct = Array.from(
+        new Set(actors.map((a) => a.region).filter((r): r is string => Boolean(r))),
+      ).sort();
+      setRegionOptions(distinct);
+    }
+  }, [actors, filters.region]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     // Full-bleed within <main> (PublicLayout has no container — pages own it).
@@ -69,6 +83,7 @@ export default function MapPage() {
         loading={loading}
         error={error}
         filters={filters}
+        regions={regionOptions}
         selectedActorId={selectedActorId}
         onFilterChange={setFilters}
         onSelectActor={setSelectedActorId}

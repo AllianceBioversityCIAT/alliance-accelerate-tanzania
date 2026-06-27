@@ -36,6 +36,12 @@ export interface DiscoverRailProps {
   error: boolean;
   /** Current active filters — passed through to FilterControls. */
   filters: ActorsQuery;
+  /**
+   * Region options for the filter dropdown — only regions that have actors.
+   * Passed through to FilterControls; falls back to the full canonical list
+   * there when undefined.
+   */
+  regions?: string[];
   /** Currently selected actor id — drives list item highlight. */
   selectedActorId: string | null;
   /** Called when the user changes a filter select. Resets page to 1 (DD-3). */
@@ -84,6 +90,7 @@ export default function DiscoverRail({
   loading,
   error,
   filters,
+  regions,
   selectedActorId,
   onFilterChange,
   onSelectActor,
@@ -102,7 +109,7 @@ export default function DiscoverRail({
   const railBody = (
     <div className="flex flex-col gap-4">
       {/* ── Filter controls (FR-4) ─────────────────────────────────────────── */}
-      <FilterControls filters={filters} onChange={onFilterChange} />
+      <FilterControls filters={filters} onChange={onFilterChange} regions={regions} />
 
       {/* ── Actor list / states (FR-5, FR-7) ─────────────────────────────── */}
       <div>
