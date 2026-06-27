@@ -27,6 +27,12 @@ export interface FilterControlsProps {
    * is selected) and page reset to 1.
    */
   onChange: (next: ActorsQuery) => void;
+  /**
+   * Region options for the dropdown. When provided (e.g. only the regions that
+   * actually have actors), these are used instead of the full canonical list.
+   * Falls back to all canonical REGIONS when undefined (e.g. before data loads).
+   */
+  regions?: string[];
 }
 
 // ── Shared select + label style ───────────────────────────────────────────────
@@ -49,7 +55,10 @@ const SELECT_CLASS = [
  * Each select has an "All …" option that clears that field from the query.
  * Changes call `onChange` with a new merged ActorsQuery (page reset to 1).
  */
-export default function FilterControls({ filters, onChange }: FilterControlsProps) {
+export default function FilterControls({ filters, onChange, regions }: FilterControlsProps) {
+  // Only show regions that have actors when provided; otherwise the full list.
+  const regionOptions = regions && regions.length > 0 ? regions : REGIONS;
+
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   function handleCrop(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -141,7 +150,7 @@ export default function FilterControls({ filters, onChange }: FilterControlsProp
           aria-label="Filter by region"
         >
           <option value="">All regions</option>
-          {REGIONS.map((region) => (
+          {regionOptions.map((region) => (
             <option key={region} value={region}>
               {region}
             </option>
