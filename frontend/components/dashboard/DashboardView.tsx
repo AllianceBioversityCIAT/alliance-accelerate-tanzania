@@ -127,16 +127,23 @@ export default function DashboardView() {
   // ── Main layout ───────────────────────────────────────────────────────────
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-surface-alt">
-      {/* ── Sticky toolbar: title + export ─────────────────────────────────── */}
-      <div className="sticky top-14 z-30 border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+      {/* ── Toolbar: title + export ────────────────────────────────────────
+          Sticky only on ≥ sm so it doesn't eat scarce mobile screen height;
+          on mobile it scrolls away and the export goes full-width below the title. */}
+      <div className="border-b border-border bg-surface sm:sticky sm:top-14 sm:z-30">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 lg:px-8">
           <div>
             <h1 className="text-xl font-bold text-fg sm:text-2xl">Seed Discovery Dashboard</h1>
-            <p className="text-xs text-muted sm:text-sm">
+            {/* Intro hidden on mobile to keep the toolbar compact */}
+            <p className="hidden text-sm text-muted sm:block">
               Filter Tanzania&apos;s seed-system actors, read the breakdowns, and export the view.
             </p>
           </div>
-          {hasResults ? <DownloadViewButton actors={actors} kpis={agg.kpis} /> : null}
+          {hasResults ? (
+            <div className="w-full sm:w-auto [&>button]:w-full [&>button]:justify-center sm:[&>button]:w-auto">
+              <DownloadViewButton actors={actors} kpis={agg.kpis} />
+            </div>
+          ) : null}
         </div>
       </div>
 
