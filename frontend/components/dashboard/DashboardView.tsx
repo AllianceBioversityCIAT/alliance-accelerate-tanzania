@@ -19,7 +19,7 @@
  * Uses useSearchParams() — must be wrapped in <Suspense> at the page level.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -98,6 +98,20 @@ export default function DashboardView() {
     [actors, total],
   );
 
+  // ── Region dropdown options: only regions that have actors ────────────────
+  // Captured from the loaded set whenever no region filter is applied, so that
+  // selecting a region doesn't collapse the list. Falls back to the full
+  // canonical list (via DashboardFilters) until the first load completes.
+  const [regionOptions, setRegionOptions] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    if (!filters.region && actors.length > 0) {
+      const distinct = Array.from(
+        new Set(actors.map((a) => a.region).filter((r): r is string => Boolean(r))),
+      ).sort();
+      setRegionOptions(distinct);
+    }
+  }, [actors, filters.region]);
+
   // ── Error state (NFR-6) — standalone panel, intentionally minimal ─────────
   if (error) {
     return (
@@ -156,7 +170,7 @@ export default function DashboardView() {
             <IconAdjustments className="h-4 w-4" />
             Filters
           </div>
-          <DashboardFilters filters={filters} onChange={handleFilterChange} />
+          <DashboardFilters filters={filters} onChange={handleFilterChange} regions={regionOptions} />
           <div className="mt-3 border-t border-border pt-3">
             <ActiveFilterChips filters={filters} onChange={handleFilterChange} />
           </div>

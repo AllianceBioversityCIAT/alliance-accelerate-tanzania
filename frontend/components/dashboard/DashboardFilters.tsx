@@ -28,6 +28,12 @@ export interface DashboardFiltersProps {
    * with the changed field applied (or cleared to undefined) and page reset to 1.
    */
   onChange: (next: ActorsQuery) => void;
+  /**
+   * Region options for the dropdown — when provided (only the regions that
+   * have actors), used instead of the full canonical list. Falls back to all
+   * canonical REGIONS when undefined (e.g. before data loads).
+   */
+  regions?: string[];
 }
 
 // ── Shared style constants ────────────────────────────────────────────────────
@@ -54,7 +60,10 @@ const CONTROL_CLASS = [
  *     onChange={(next) => setQuery(next)}
  *   />
  */
-export default function DashboardFilters({ filters, onChange }: DashboardFiltersProps) {
+export default function DashboardFilters({ filters, onChange, regions }: DashboardFiltersProps) {
+  // Only show regions that have actors when provided; otherwise the full list.
+  const regionOptions = regions && regions.length > 0 ? regions : REGIONS;
+
   // ── Merge helper ─────────────────────────────────────────────────────────────
 
   /**
@@ -138,7 +147,7 @@ export default function DashboardFilters({ filters, onChange }: DashboardFilters
           aria-label="Filter by region"
         >
           <option value="">All regions</option>
-          {REGIONS.map((region) => (
+          {regionOptions.map((region) => (
             <option key={region} value={region}>
               {region}
             </option>
