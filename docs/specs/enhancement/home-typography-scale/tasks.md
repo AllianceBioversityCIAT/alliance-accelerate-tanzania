@@ -35,7 +35,7 @@
       Verify: `cd frontend && npm run build && grep -rn "font-display\|--font-display\|Montserrat\|font-montserrat" .next/static/css/*.css app/layout.tsx | head`
       Done when: build exits 0; Montserrat is loaded via next/font; `--font-display` token + `font-display` utility exist; `h1/h2/h3` resolve to the display family in built CSS; body stays Inter.
 
-- [ ] T-6 Apply Montserrat ExtraBold to display titles + SemiBold to hero tagline  (deps: T-5)
+- [x] T-6 Apply Montserrat ExtraBold to display titles + SemiBold to hero tagline  (deps: T-5)
       Scope: Swap `font-bold` → `font-extrabold` on the home hero `h1`, the five home section `h2`s (AboutStrip, HowItWorks, PartnersStrip, ClosingCTA, CropCoverage), and the top-level page `<h1>` title on each major route (dashboard, directory, map, admin shell). Add `font-display font-semibold` to the hero supporting `<p>` tagline. Do NOT change body paragraphs, table/form/data text, eyebrow pills, or copy.
       Traces: FR-5, NFR-1, NFR-3 (requirements.md); design.md §5.5
       Files: frontend/components/home/{Hero,AboutStrip,HowItWorks,PartnersStrip,ClosingCTA,CropCoverage}.tsx + the page-title `<h1>` of `app/(public)/dashboard`, `directory`, `map`, and the admin shell heading (locate via grep)

@@ -56,7 +56,7 @@ export default function HowItWorks() {
 
           <h2
             id="how-it-works-heading"
-            className="text-2xl lg:text-3xl font-bold text-fg leading-tight"
+            className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
           >
             A demand-led seed system
           </h2>

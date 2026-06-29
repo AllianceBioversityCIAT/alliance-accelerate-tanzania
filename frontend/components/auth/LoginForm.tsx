@@ -184,7 +184,7 @@ export default function LoginForm() {
     <div className="w-full max-w-md bg-surface shadow-md rounded-lg px-8 py-10 border border-border">
 
       {/* ── Heading ─────────────────────────────────────────────────────────── */}
-      <h1 className="text-2xl font-bold text-fg mb-2 text-center">
+      <h1 className="text-2xl font-extrabold text-fg mb-2 text-center">
         {step === 'credentials' ? 'Staff sign-in' : 'Set your new password'}
       </h1>
       <p className="text-sm text-muted text-center mb-8">

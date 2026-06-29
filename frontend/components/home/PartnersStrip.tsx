@@ -30,7 +30,7 @@ export default function PartnersStrip() {
 
           <h2
             id="partners-heading"
-            className="text-2xl lg:text-3xl font-bold text-fg leading-tight"
+            className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
           >
             Built by a coalition of research and seed-system institutions
           </h2>

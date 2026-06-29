@@ -27,7 +27,7 @@ export default function ProfileHeader({ actor }: ProfileHeaderProps) {
   return (
     <header className="mb-6">
       {/* Actor name — h1 for page semantics; responsive size */}
-      <h1 className="mb-2 text-2xl font-bold text-fg leading-tight sm:text-3xl">
+      <h1 className="mb-2 text-2xl font-extrabold text-fg leading-tight sm:text-3xl">
         {actor.traderName}
       </h1>
 

@@ -60,3 +60,14 @@
 - **Decisions:** Inter retained as body font; base rule sets family only (no weight) to avoid utility-specificity conflicts — weights applied in T-6.
 - **Issues:** Reviewer cumulative-diff false positive (documented above). Non-blocking reviewer note on the design.md comment wording left as-is (acceptable brand-intent documentation).
 - **Final verification:** Build green; font wiring confirmed in built CSS + config.
+
+### T-6 — ExtraBold display titles + SemiBold hero tagline — **PASS** (1 attempt) — 2026-06-29
+
+- **Requirements covered:** FR-5, NFR-1, NFR-3.
+- **Attempt 1:**
+  - **Files changed (11):** `font-bold` → `font-extrabold` on the page/section titles of `home/{Hero h1, AboutStrip, HowItWorks, PartnersStrip, ClosingCTA, CropCoverage h2s}`, `about/page.tsx` (h1 + ramp + 2 h2s), `auth/LoginForm.tsx` h1, `directory/DirectoryView.tsx` h1, `dashboard/DashboardView.tsx` h1, `profile/ProfileHeader.tsx` h1. Hero tagline `<p>` gained `font-display font-semibold`. About h1 also got the home hero responsive ramp for parity.
+  - **Implementer verification:** `npm test` → 54 suites / **687 passed** / 0 fail; `npm run build` → exit 0, static export OK.
+  - **Reviewer verdict:** PASS — all 14 changed lines conform; only title headings bumped (no stats/cards/eyebrows/PillarCards); tagline additive only; tokens-only; no SSR/PII/stack issues. (Reviewer given explicit working-set scoping → no cumulative-diff artifact.)
+- **Decisions:** About page h1 given the same `text-3xl sm:text-4xl lg:text-5xl` ramp as home hero for cross-page consistency.
+- **Issues:** None.
+- **Final verification:** Tests + build green.

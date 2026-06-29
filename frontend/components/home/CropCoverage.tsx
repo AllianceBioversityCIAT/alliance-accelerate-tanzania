@@ -59,7 +59,7 @@ export default function CropCoverage() {
             </span>
             <h2
               id="crop-coverage-heading"
-              className="text-2xl lg:text-3xl font-bold text-fg leading-tight"
+              className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
             >
               Crop coverage
             </h2>
