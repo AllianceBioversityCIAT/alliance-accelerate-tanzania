@@ -21,3 +21,14 @@
 - **Decisions:** None beyond spec. `--text-6xl` documented for scale completeness (unused this round, per design.md §5.1).
 - **Issues:** None.
 - **Final verification:** Build green.
+
+### T-2 — Responsive ramps on hero h1 + section h2s — **PASS** (1 attempt) — 2026-06-29
+
+- **Requirements covered:** FR-2, FR-3, NFR-2, NFR-4.
+- **Attempt 1:**
+  - **Files changed (6, 1 line each):** `Hero.tsx` h1 → `text-3xl sm:text-4xl lg:text-5xl …`; `AboutStrip.tsx`, `HowItWorks.tsx`, `PartnersStrip.tsx`, `ClosingCTA.tsx`, `CropCoverage.tsx` h2 → `text-2xl lg:text-3xl …`.
+  - **Implementer verification:** `npm test -- home` → 87 passed / 11 suites / 0 fail; `npm run build` → exit 0, all routes static.
+  - **Reviewer verdict:** PASS — all 6 gates clear; only the size utility changed per heading; one h1 + one h2 per section with id/aria-labelledby parity confirmed; eyebrow pills / metric numbers / PillarCards untouched.
+- **Decisions:** ClosingCTA h2 correctly lacks `text-fg` (inverted surface inherits `text-bg`) — preserved as-is.
+- **Issues:** None.
+- **Final verification:** Tests + build green.

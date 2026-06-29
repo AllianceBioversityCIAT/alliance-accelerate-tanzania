@@ -65,7 +65,7 @@ export default function AboutStrip() {
             {/* Section heading — exactly one h2, no h1 */}
             <h2
               id="about-strip-heading"
-              className="text-2xl font-bold text-fg leading-tight mb-6"
+              className="text-2xl lg:text-3xl font-bold text-fg leading-tight mb-6"
             >
               Accelerating variety turnover for Tanzania&rsquo;s farmers
             </h2>

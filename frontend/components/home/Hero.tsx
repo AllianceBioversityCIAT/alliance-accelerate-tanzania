@@ -197,7 +197,7 @@ export default function Hero() {
             <h1
               id="hero-heading"
               data-hero-text
-              className="text-4xl font-bold text-fg leading-tight tracking-tight"
+              className="text-3xl sm:text-4xl lg:text-5xl font-bold text-fg leading-tight tracking-tight"
             >
               The connective tissue of Tanzania&rsquo;s seed system.
             </h1>

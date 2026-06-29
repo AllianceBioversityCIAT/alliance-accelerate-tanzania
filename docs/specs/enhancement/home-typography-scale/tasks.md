@@ -14,7 +14,7 @@
       Verify: `cd frontend && npx tailwindcss -i app/globals.css -o /tmp/tw-check.css --content "./app/**/*.tsx" 2>/dev/null; grep -q "48px" /tmp/tw-check.css && echo TOKEN_OK` (or `npm run build` and confirm `text-5xl` resolves to `var(--text-5xl)`)
       Done when: `text-5xl`/`text-6xl` are valid token-backed utilities and design.md §7 lists both steps; no raw px in components.
 
-- [ ] T-2 Apply responsive ramps to hero `h1` and section `h2`s  (deps: T-1)
+- [x] T-2 Apply responsive ramps to hero `h1` and section `h2`s  (deps: T-1)
       Scope: Hero `h1` → `text-3xl sm:text-4xl lg:text-5xl` (preserve `font-bold text-fg leading-tight tracking-tight`). Each section `h2` → `text-2xl lg:text-3xl` (preserve all other classes) in AboutStrip, HowItWorks, PartnersStrip, ClosingCTA, CropCoverage. Do NOT change copy, `id`, `aria-labelledby`, `data-hero-text`, or markup.
       Traces: FR-2, FR-3, NFR-2, NFR-4 (requirements.md); design.md §5.2
       Files: frontend/components/home/{Hero,AboutStrip,HowItWorks,PartnersStrip,ClosingCTA,CropCoverage}.tsx
