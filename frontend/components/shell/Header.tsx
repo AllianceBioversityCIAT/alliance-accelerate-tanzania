@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -173,22 +174,19 @@ export default function Header() {
             className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
             aria-label="ACCELERATE Tanzania Seed Registry — home"
           >
-            {/* Circular brand mark — pure CSS, no image asset */}
-            <span
-              aria-hidden="true"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg font-bold text-xs select-none"
-            >
-              A
-            </span>
+            {/* Official colour logo — alt="" because the Link aria-label already names it */}
+            <Image
+              src="/brand/accelerate-logo-color.png"
+              width={867}
+              height={194}
+              alt=""
+              priority
+              className="h-8 w-auto sm:h-10"
+            />
 
-            {/* Two-line wordmark */}
-            <span className="flex flex-col leading-none">
-              <span className="text-sm font-bold tracking-widest uppercase text-primary">
-                ACCELERATE
-              </span>
-              <span className="text-xs font-medium tracking-wider uppercase text-muted">
-                Tanzania Seed Registry
-              </span>
+            {/* Platform descriptor — visually separates logo from nav on larger screens */}
+            <span className="hidden sm:block border-l border-border pl-2.5 text-xs font-medium uppercase tracking-wider text-muted">
+              Tanzania Seed Registry
             </span>
           </Link>
 
