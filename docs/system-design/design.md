@@ -97,8 +97,10 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 /* Typography */
 --font-sans: "Inter", system-ui, sans-serif;
+--font-display: "Montserrat", system-ui, sans-serif; /* brand display font — Montserrat ExtraBold titles / SemiBold tagline; Inter stays body/UI */
 --text-xs:12px; --text-sm:14px; --text-base:16px; --text-lg:18px;
 --text-xl:20px; --text-2xl:24px; --text-3xl:30px; --text-4xl:36px;
+--text-5xl:48px; --text-6xl:60px;
 
 /* Geometry */
 --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:9999px;

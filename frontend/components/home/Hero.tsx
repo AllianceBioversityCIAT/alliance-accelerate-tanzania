@@ -188,7 +188,7 @@ export default function Hero() {
 
             {/* Eyebrow badge — pill with subtle primary tint */}
             <div data-hero-text>
-              <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide">
+              <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide">
                 Institutional seed-system intelligence
               </span>
             </div>
@@ -197,13 +197,13 @@ export default function Hero() {
             <h1
               id="hero-heading"
               data-hero-text
-              className="text-4xl font-bold text-fg leading-tight tracking-tight"
+              className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-fg leading-tight tracking-tight"
             >
               The connective tissue of Tanzania&rsquo;s seed system.
             </h1>
 
             {/* Supporting copy */}
-            <p data-hero-text className="text-lg text-muted leading-relaxed max-w-prose">
+            <p data-hero-text className="font-display font-semibold text-lg text-muted leading-relaxed max-w-prose">
               A single trusted registry mapping seed companies, cooperatives,
               offtakers, and partners across sorghum, common bean, and groundnut
               value chains &mdash; so institutions can find the right actors, fast.

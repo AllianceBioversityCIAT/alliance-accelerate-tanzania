@@ -72,7 +72,7 @@ export default function AboutPage() {
               {/* H1 — sole page heading (a11y: one h1 per page) */}
               <h1
                 id="about-hero-heading"
-                className="text-4xl font-bold text-fg leading-tight tracking-tight"
+                className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-fg leading-tight tracking-tight"
               >
                 ACCELERATE: accelerating variety turnover in Tanzania
               </h1>
@@ -123,7 +123,7 @@ export default function AboutPage() {
 
           <h2
             id="challenge-heading"
-            className="text-2xl font-bold text-fg leading-tight mb-6"
+            className="text-2xl font-extrabold text-fg leading-tight mb-6"
           >
             The challenge
           </h2>
@@ -166,7 +166,7 @@ export default function AboutPage() {
 
           <h2
             id="approach-heading"
-            className="text-2xl font-bold text-fg leading-tight mb-6"
+            className="text-2xl font-extrabold text-fg leading-tight mb-6"
           >
             A demand-led approach
           </h2>

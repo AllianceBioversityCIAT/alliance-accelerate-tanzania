@@ -147,7 +147,7 @@ export default function DashboardView() {
       <div className="border-b border-border bg-surface sm:sticky sm:top-14 sm:z-30">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 lg:px-8">
           <div>
-            <h1 className="text-xl font-bold text-fg sm:text-2xl">Seed Discovery Dashboard</h1>
+            <h1 className="text-xl font-extrabold text-fg sm:text-2xl">Seed Discovery Dashboard</h1>
             {/* Intro hidden on mobile to keep the toolbar compact */}
             <p className="hidden text-sm text-muted sm:block">
               Filter Tanzania&apos;s seed-system actors, read the breakdowns, and export the view.

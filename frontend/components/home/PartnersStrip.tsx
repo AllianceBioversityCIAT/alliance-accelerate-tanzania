@@ -24,13 +24,13 @@ export default function PartnersStrip() {
         {/* Section header */}
         <div className="flex flex-col items-center text-center mb-10">
           {/* Eyebrow pill */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
+          <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
             Partners
           </span>
 
           <h2
             id="partners-heading"
-            className="text-2xl font-bold text-fg leading-tight"
+            className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
           >
             Built by a coalition of research and seed-system institutions
           </h2>

@@ -50,13 +50,13 @@ export default function HowItWorks() {
         {/* Section header — reveals once as the section enters the viewport (FR-5). */}
         <div ref={headerRef} className="mb-10">
           {/* Eyebrow pill — primary accent, matches CropCoverage pattern (NFR-1). */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
+          <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
             The model
           </span>
 
           <h2
             id="how-it-works-heading"
-            className="text-2xl font-bold text-fg leading-tight"
+            className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
           >
             A demand-led seed system
           </h2>

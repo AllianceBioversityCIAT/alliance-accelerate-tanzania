@@ -104,7 +104,7 @@ export default function ClosingCTA() {
         {/* Section heading — exactly one h2, no h1 */}
         <h2
           id="closing-cta-heading"
-          className="text-2xl font-bold leading-tight mb-4"
+          className="text-2xl lg:text-3xl font-extrabold leading-tight mb-4"
         >
           Find the right seed-system actors, faster.
         </h2>

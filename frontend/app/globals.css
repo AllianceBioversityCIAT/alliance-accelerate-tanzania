@@ -41,6 +41,7 @@
     /* var(--font-inter) is injected by next/font (Inter with variable: '--font-inter').
        Fallback to literal "Inter" and system-ui if the CSS var is not yet resolved. */
     --font-sans: var(--font-inter), "Inter", system-ui, sans-serif;
+    --font-display: var(--font-montserrat), "Montserrat", system-ui, sans-serif;
     --text-xs:   12px;
     --text-sm:   14px;
     --text-base: 16px;
@@ -49,6 +50,8 @@
     --text-2xl:  24px;
     --text-3xl:  30px;
     --text-4xl:  36px;
+    --text-5xl:  48px;
+    --text-6xl:  60px;
 
     /* Geometry */
     --radius-sm:   6px;
@@ -82,5 +85,9 @@
     background-color: var(--color-bg);
     color: var(--color-fg);
     font-family: var(--font-sans);
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
   }
 }
