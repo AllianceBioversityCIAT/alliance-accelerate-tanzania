@@ -68,6 +68,40 @@ Five pills change one token only:
 ```
 Files: `Hero.tsx`, `AboutStrip.tsx`, `CropCoverage.tsx`, `HowItWorks.tsx`, `PartnersStrip.tsx`. `text-primary`, `text-xs font-semibold`, padding, radius, copy unchanged. `bg-primary-soft` already exists as a Tailwind color token backed by `--color-primary-soft` (#E8EEF6).
 
+### 5.5 Brand display font — Montserrat (FR-5)
+
+Mirror the existing Inter wiring (next/font var on `<html>` → token in `globals.css` → Tailwind family). Inter stays the body/UI font; Montserrat becomes the heading/display font.
+
+1. **`frontend/app/layout.tsx`** — load Montserrat alongside Inter:
+```ts
+import { Inter, Montserrat } from 'next/font/google';
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+const montserrat = Montserrat({ subsets: ['latin'], weight: ['600','700','800'], variable: '--font-montserrat', display: 'swap' });
+// <html className={`${inter.variable} ${montserrat.variable}`}>
+```
+
+2. **`frontend/app/globals.css`** — add the display token (next to `--font-sans`) and a base-layer rule so *every* heading inherits the display family site-wide automatically (no per-heading family edits needed):
+```css
+--font-display: var(--font-montserrat), "Montserrat", system-ui, sans-serif;
+```
+```css
+@layer base {
+  h1, h2, h3 { font-family: var(--font-display); }
+}
+```
+
+3. **`frontend/tailwind.config.ts`** — add the family so `font-display` utility exists:
+```ts
+fontFamily: { sans: ['var(--font-sans)'], display: ['var(--font-display)'] }
+```
+
+4. **`docs/system-design/design.md §7`** — document `--font-display` and the brand-font rule (Montserrat ExtraBold titles, SemiBold tagline, Inter body).
+
+**Weight application:**
+- The base rule sets only the *family* (no `font-weight`), so it never fights existing weight utilities.
+- **Display titles → ExtraBold:** swap `font-bold` → `font-extrabold` on the home hero `h1`, the five home section `h2`s, and the top-level page `<h1>` title on each major route (dashboard, directory, map, admin). Headings not explicitly bumped keep their current weight but still render in Montserrat (family from the base rule) — acceptable brand consistency.
+- **Hero tagline → SemiBold:** the hero supporting `<p>` ("A single trusted registry mapping…") gains `font-display font-semibold` (it is a `<p>`, so not covered by the heading base rule — needs the explicit family utility).
+
 ### 5.4 Explicitly untouched
 
 - `Hero.tsx:74` `text-3xl` (metric number), `CropCard.tsx` `text-2xl` (stat), `PillarCards.tsx` `text-4xl` watermark + `<h3>` pillar titles — not section titles/eyebrows, left as-is.
@@ -93,6 +127,12 @@ No IaC change. If a deploy is requested after merge, use the standard `AWS_PROFI
 - **Context:** OQ-1 — 48px vs 56px.
 - **Decision:** 48px for institutional restraint and safe line-wrapping with the two-column hero.
 - **Rejected:** 56px (`--text-6xl` would need applying; risks wrap with the long headline at mid-`lg` widths).
+
+### Decision: Montserrat via next/font + base-layer family rule; Inter stays body
+- **Context:** Official brand typography is Montserrat ExtraBold titles / SemiBold tagline (Gotham unavailable). Need it site-wide without editing every heading.
+- **Decision:** Load Montserrat through `next/font/google` (same optimised, static-export-safe path as Inter), expose `--font-display`, and apply it to all headings via one `@layer base` rule on `h1,h2,h3`. Bump only the marquee titles to `font-extrabold`. Keep Inter for body/UI/data text.
+- **Rationale:** The base rule gives universal heading coverage with zero per-file family churn and no specificity fight (family-only). next/font keeps self-hosted optimised loading — no external CDN request, no FOUT, static-export compatible. Inter on dense registry/table data preserves legibility (Montserrat is wider/heavier).
+- **Rejected:** Gotham (commercial license); Montserrat for body too (legibility/size cost on data-dense pages); editing every heading's className (churn, miss-risk).
 
 ## 9. Risks & Mitigations
 

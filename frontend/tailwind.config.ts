@@ -49,7 +49,8 @@ const config: Config = {
         md: 'var(--shadow-md)',
       },
       fontFamily: {
-        sans: ['var(--font-sans)'],
+        sans:    ['var(--font-sans)'],
+        display: ['var(--font-display)'],
       },
       transitionDuration: {
         fast: '300ms',

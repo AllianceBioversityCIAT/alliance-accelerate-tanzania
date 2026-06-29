@@ -44,3 +44,19 @@
 - **Decisions:** None beyond spec.
 - **Issues:** None (reviewer's git-history aside was a harmless artifact; gates audited against working-tree content).
 - **Final verification:** Tests green; utility confirmed in built CSS.
+
+---
+
+> **Spec amendment (2026-06-29):** User supplied official brand typography — "Montserrat ExtraBold for the title OR Gotham Bold, and Montserrat SemiBold for the tagline." Scope confirmed via AskUserQuestion: **site-wide headings** in Montserrat; **hero supporting line** = the tagline (Montserrat SemiBold); body/UI stays Inter; Gotham skipped (no license). Added FR-5, design §5.5 + ADR-2, tasks T-5/T-6, and rewired T-4. Resumed execution from T-5.
+
+### T-5 — Load Montserrat + `--font-display` token + heading base rule — **PASS** (1 attempt, Leader-adjudicated) — 2026-06-29
+
+- **Requirements covered:** FR-5, NFR-1, NFR-3.
+- **Attempt 1:**
+  - **Files changed (4):** `app/layout.tsx` (import + configure Montserrat 600/700/800 → `--font-montserrat`, add to `<html>` className), `app/globals.css` (`--font-display` token + `@layer base { h1,h2,h3 { font-family: var(--font-display) } }`, family-only), `tailwind.config.ts` (`display` fontFamily), `design.md §7` (documented `--font-display`).
+  - **Implementer verification:** `npm run build` → exit 0 (Montserrat fetched & bundled at build time; static export OK). Grep confirms all four wirings.
+  - **Reviewer verdict:** FAIL (Gate 5) — **false positive**. Reviewer claimed 5 home component files were edited "in the T-5 commit." Gates 1–4 (static-export-safe next/font, body stays Inter, base rule family-only, token completeness) all PASS.
+  - **Leader adjudication → PASS:** Verified `git status` + `git diff --name-only -- frontend/components/` → **empty** (zero component files in the T-5 working set). The 5 component files the reviewer flagged are the already-committed **T-3** eyebrow fix (`559c200`); the reviewer read a cumulative branch diff (vs `main`), not T-5's working-tree diff. The actual T-5 diff touches only the 4 infra files as specified. No implementation defect → no rework attempt consumed.
+- **Decisions:** Inter retained as body font; base rule sets family only (no weight) to avoid utility-specificity conflicts — weights applied in T-6.
+- **Issues:** Reviewer cumulative-diff false positive (documented above). Non-blocking reviewer note on the design.md comment wording left as-is (acceptable brand-intent documentation).
+- **Final verification:** Build green; font wiring confirmed in built CSS + config.

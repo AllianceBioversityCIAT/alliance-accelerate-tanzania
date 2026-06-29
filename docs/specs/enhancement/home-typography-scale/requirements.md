@@ -41,6 +41,16 @@ The home-page heading hierarchy uses fixed font sizes with no responsive ramp, s
   - GIVEN any viewport, WHEN a home section renders, THEN exactly one `<h2>` with its original `id` exists per section.
 - **PII/RBAC impact:** None.
 
+### FR-5: Official brand display font (Montserrat)
+- **Description:** The system MUST adopt **Montserrat** as the brand display typeface, loaded via `next/font/google` (static-export safe, self-hosted/optimised) and exposed through a `--font-display` token. Headings site-wide (`h1`, `h2`, `h3` across home, dashboard, directory, map, admin) MUST render in the display font. The primary display **titles** MUST use **ExtraBold (800)** ("Montserrat ExtraBold for the title"). The hero supporting line (tagline) MUST use **Montserrat SemiBold (600)**. Body and UI/data text MUST remain **Inter** (`--font-sans`) for legibility. Gotham is NOT used (commercial license unavailable; Montserrat is the stated primary).
+- **Rationale / Source:** Official ACCELERATE brand typography guidance — "Montserrat ExtraBold for the title OR Gotham Bold, and Montserrat SemiBold for the tagline." Supersedes the prior "brand font deferred" note in the official-branding archive.
+- **Acceptance criteria (Given/When/Then):**
+  - GIVEN any page, WHEN a heading (`h1`/`h2`/`h3`) renders, THEN its computed `font-family` resolves to `var(--font-display)` (Montserrat).
+  - GIVEN a primary display title (e.g. hero `h1`, section `h2`), WHEN it renders, THEN its `font-weight` is 800 (ExtraBold).
+  - GIVEN the hero supporting line, WHEN it renders, THEN it uses the display font at weight 600 (SemiBold).
+  - GIVEN body paragraphs / table / form / data text, WHEN they render, THEN they remain Inter (`var(--font-sans)`).
+- **PII/RBAC impact:** None.
+
 ### FR-4: Visible eyebrow chip
 - **Description:** Every eyebrow pill on the home page (in `Hero`, `AboutStrip`, `CropCoverage`, `HowItWorks`, `PartnersStrip`) MUST render a visible soft-primary chip background by using the `bg-primary-soft` token utility instead of the no-op `bg-primary/10`. Text color, size, padding, and copy remain unchanged.
 - **Rationale / Source:** Proposal §3; `/opacity` modifiers compile to nothing on hex CSS-var tokens (verified earlier this session).
@@ -62,6 +72,7 @@ None. No entities, fields, or API contracts change. No PII impact.
 
 ## 6. Out of Scope
 
+- **Brand-font scope clarification (FR-5):** the display font applies to headings site-wide and the hero tagline; body/UI/data text stays Inter. Re-typesetting body copy in Montserrat is explicitly out of scope.
 - Copy/wording changes.
 - Section/layout restructuring or animation changes.
 - Typography on dashboard, map, directory, admin, or other non-home routes.

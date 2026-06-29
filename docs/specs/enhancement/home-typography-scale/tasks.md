@@ -28,21 +28,36 @@
       Verify: `cd frontend && grep -rn "bg-primary/10" components/home/*.tsx | grep -v PillarCards | grep -v test` (expect: no eyebrow matches) `&& npm test -- home 2>&1 | tail -10`
       Done when: all five eyebrow pills use `bg-primary-soft`; no eyebrow `bg-primary/10` remains; PillarCards untouched; tests green.
 
-- [ ] T-4 Visual verification across breakpoints  (deps: T-2, T-3)
-      Scope: Build and manually verify the home page at 375px, 768px, 1024px, 1440px. Confirm: hero `h1` grows to 48px at `lg`; section `h2`s to 36px at `lg`; eyebrow chips show the soft-blue background; no horizontal scroll at 375px; heading order/semantics intact.
-      Traces: FR-2, FR-3, FR-4, NFR-2, NFR-3 (requirements.md); design.md §10
+- [x] T-5 Load Montserrat brand font + `--font-display` token + heading base rule  (deps: none)
+      Scope: Load Montserrat via `next/font/google` (weights 600/700/800, `variable: '--font-montserrat'`, `display: 'swap'`) in `app/layout.tsx` and add `montserrat.variable` to the `<html>` className. Add `--font-display: var(--font-montserrat), "Montserrat", system-ui, sans-serif;` to `globals.css` and a `@layer base { h1,h2,h3 { font-family: var(--font-display); } }` rule (family only — no font-weight). Add `display: ['var(--font-display)']` to the Tailwind `fontFamily` map. Document `--font-display` + the brand-font rule in `design.md §7`. Keep Inter/`--font-sans` as the body font.
+      Traces: FR-5, NFR-1, NFR-3 (requirements.md); design.md §5.5, §8 (ADR-2)
+      Files: frontend/app/layout.tsx, frontend/app/globals.css, frontend/tailwind.config.ts, docs/system-design/design.md
+      Verify: `cd frontend && npm run build && grep -rn "font-display\|--font-display\|Montserrat\|font-montserrat" .next/static/css/*.css app/layout.tsx | head`
+      Done when: build exits 0; Montserrat is loaded via next/font; `--font-display` token + `font-display` utility exist; `h1/h2/h3` resolve to the display family in built CSS; body stays Inter.
+
+- [ ] T-6 Apply Montserrat ExtraBold to display titles + SemiBold to hero tagline  (deps: T-5)
+      Scope: Swap `font-bold` → `font-extrabold` on the home hero `h1`, the five home section `h2`s (AboutStrip, HowItWorks, PartnersStrip, ClosingCTA, CropCoverage), and the top-level page `<h1>` title on each major route (dashboard, directory, map, admin shell). Add `font-display font-semibold` to the hero supporting `<p>` tagline. Do NOT change body paragraphs, table/form/data text, eyebrow pills, or copy.
+      Traces: FR-5, NFR-1, NFR-3 (requirements.md); design.md §5.5
+      Files: frontend/components/home/{Hero,AboutStrip,HowItWorks,PartnersStrip,ClosingCTA,CropCoverage}.tsx + the page-title `<h1>` of `app/(public)/dashboard`, `directory`, `map`, and the admin shell heading (locate via grep)
+      Verify: `cd frontend && npm test 2>&1 | tail -15 && npm run build`
+      Done when: marquee titles render ExtraBold (800) in Montserrat; hero tagline renders Montserrat SemiBold; body/data text unchanged; tests green; build succeeds.
+
+- [ ] T-4 Visual verification across breakpoints + brand font  (deps: T-2, T-3, T-6)
+      Scope: Build and manually verify home + one data-dense route (dashboard) at 375px, 768px, 1024px, 1440px. Confirm: hero `h1` grows to 48px at `lg`; section `h2`s to 36px at `lg`; eyebrow chips show the soft-blue background; headings render in Montserrat ExtraBold; hero tagline in Montserrat SemiBold; body/table text still Inter; no horizontal scroll at 375px; heading order/semantics intact.
+      Traces: FR-2, FR-3, FR-4, FR-5, NFR-2, NFR-3 (requirements.md); design.md §10
       Files: (none — verification only)
       Verify: `cd frontend && npm run build` then inspect the built page / dev server at the four widths (manual check, record evidence in execution.md)
-      Done when: all four breakpoints confirmed visually with no overflow and correct sizes; evidence noted in execution.md.
+      Done when: all four breakpoints + brand font confirmed visually with no overflow and correct sizes/weights; evidence noted in execution.md.
 
 ## Dependency Graph
 ```
-T-1 → T-2 → T-4
-T-3 ─────→ T-4
+T-1 → T-2 ─┐
+T-3 ───────┤
+T-5 → T-6 ─┴→ T-4
 ```
-- T-1 and T-3 are independent (T-3's `bg-primary-soft` token already exists); they may run in parallel.
-- T-2 depends on T-1 (needs `text-5xl`).
-- T-4 is the final cross-breakpoint visual gate (deps: T-2, T-3).
+- T-1, T-3, T-5 are independent roots; they may run in parallel.
+- T-2 depends on T-1 (needs `text-5xl`); T-6 depends on T-5 (needs `--font-display`/`font-display`).
+- T-4 is the final visual gate over the responsive scale + brand font (deps: T-2, T-3, T-6).
 
 ## Testing & Verification Expectations
 - Frontend only: `npm test` (home suites), `npm run build`. No backend/infra/AWS commands in this spec.
