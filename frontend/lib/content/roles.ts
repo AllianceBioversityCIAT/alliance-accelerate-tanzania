@@ -22,7 +22,7 @@ export interface RoleMeta {
    * Defined in tailwind.config.ts + design.md §7 — never a raw hex string.
    *
    * Token mapping rationale (design.md §7):
-   *   seed_company       → primary        (maroon — primary brand, lead actor)
+   *   seed_company       → primary        (Royal Blue — primary brand, lead actor)
    *   cooperative        → success        (green — community/growth)
    *   ngo                → accent         (blue — external/support)
    *   offtaker           → crop-sorghum   (amber — commercial grain purchaser)

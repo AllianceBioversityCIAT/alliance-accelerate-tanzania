@@ -41,7 +41,7 @@ type ButtonProps = ButtonAsLink | ButtonAsButton;
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary: [
     'bg-primary text-primary-fg',
-    // Hover: use the primary-hover token (#680000) — maroon needs a darker hex, not an opacity wash.
+    // Hover: use the primary-hover token (darker Royal Blue) — hex tokens need a darker hex, not an opacity wash.
     'hover:bg-primary-hover',
     'border border-transparent',
   ].join(' '),

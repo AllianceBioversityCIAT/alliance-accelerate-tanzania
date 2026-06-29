@@ -32,24 +32,20 @@ export default function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 
-          {/* Brand mark + name */}
-          <div className="flex items-center gap-2.5">
-            {/* Circular brand mark — pure CSS, matches header */}
-            <span
-              aria-hidden="true"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg font-bold text-xs select-none"
-            >
-              A
-            </span>
-            <span className="flex flex-col leading-none">
-              <span className="text-sm font-bold tracking-widest uppercase text-bg">
-                ACCELERATE
-              </span>
-              <span className="text-xs font-medium tracking-wider uppercase opacity-70">
-                Tanzania
-              </span>
-            </span>
-          </div>
+          {/* White-reverse logo — white-on-transparent sits cleanly on bg-fg */}
+          <Link
+            href="/"
+            aria-label="ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops — home"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg rounded-sm"
+          >
+            <Image
+              src="/brand/accelerate-logo-white.png"
+              width={816}
+              height={144}
+              alt="ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops"
+              className="h-9 w-auto sm:h-10"
+            />
+          </Link>
 
           {/* Governance note + About link */}
           <div className="flex flex-col items-end gap-1.5">
