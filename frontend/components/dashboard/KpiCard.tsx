@@ -1,13 +1,13 @@
 // KpiCard — single stat tile for the Discovery Dashboard KPI band.
 // Server component: no 'use client' — no hooks, no motion, purely presentational.
 //
-// Token-only styling; no hardcoded hex or geometry (NFR-4). Uses the soft maroon
+// Token-only styling; no hardcoded hex or geometry (NFR-4). Uses the soft Royal Blue
 // token `bg-primary-soft` for the icon chip (hex CSS-vars can't use Tailwind
 // /opacity, so an explicit token is required — see globals.css).
 //
 // Two variants:
-//   • default  — white surface, maroon-tinted icon chip (neutral metric tile).
-//   • emphasis — inverted maroon surface for the headline metric (hero tile).
+//   • default  — white surface, Royal Blue-tinted icon chip (neutral metric tile).
+//   • emphasis — inverted Royal Blue surface for the headline metric (hero tile).
 //
 // Loading state: renders a <Skeleton> in the value slot when loading=true,
 // so the band never crashes on null kpis (NFR-6).
@@ -33,7 +33,7 @@ export interface KpiCardProps {
   sublabel?: string;
   /** Optional leading icon (decorative) rendered in a chip. */
   icon?: ReactNode;
-  /** Headline tile — inverted maroon surface for visual hierarchy. */
+  /** Headline tile — inverted Royal Blue surface for visual hierarchy. */
   emphasis?: boolean;
   /** When true, render a Skeleton in the value slot instead of the value (NFR-6). */
   loading?: boolean;
@@ -62,7 +62,7 @@ export default function KpiCard({
           : 'bg-surface border-border',
       ].join(' ')}
     >
-      {/* Icon chip — maroon-tinted on default tiles, darker maroon on the hero tile */}
+      {/* Icon chip — Royal Blue-tinted on default tiles, darker Royal Blue on the hero tile */}
       {icon ? (
         <span
           className={[

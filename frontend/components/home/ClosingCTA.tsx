@@ -25,7 +25,7 @@
 //   - CTAs unchanged from T-3; AA contrast maintained through scrim + bg-fg base.
 //
 // CTA notes:
-//   Primary button  → Button variant="primary"  (maroon reads fine on dark bg).
+//   Primary button  → Button variant="primary"  (Royal Blue reads fine on dark bg).
 //   Secondary-on-dark → raw next/link styled with tokens only (border-bg/40, text-bg).
 //
 // Usage:
@@ -119,7 +119,7 @@ export default function ClosingCTA() {
         {/* CTA pair — flex, gap, wrap, centered */}
         <div className="flex flex-wrap items-center justify-center gap-4">
 
-          {/* Primary CTA — maroon bg reads fine on the dark canvas */}
+          {/* Primary CTA — Royal Blue bg reads fine on the dark canvas */}
           <Button variant="primary" href="/map">
             Explore the Map
           </Button>

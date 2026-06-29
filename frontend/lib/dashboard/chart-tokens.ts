@@ -30,7 +30,7 @@ export const CROP_COLORS: Record<'sorghum' | 'common_bean' | 'groundnut', string
  *   --crop-bean           #7A3B2E  (brown)
  *   --crop-groundnut      #8A8D2B  (olive)
  *   --color-highlight-soft #82C0C7 (soft blue-green)
- *   --color-primary       #800000  (maroon)
+ *   --color-primary       #1F4E8C  (royal blue)
  *   --color-warning       #C9821B  (amber — same hue as sorghum; kept as semantic alias)
  */
 export const CATEGORICAL_COLORS: string[] = [
