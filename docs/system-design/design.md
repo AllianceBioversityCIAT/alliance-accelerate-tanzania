@@ -71,9 +71,10 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 ```css
 /* Brand / semantic colors (define in tailwind.config + CSS vars) */
---color-primary:        #800000;  /* maroon — primary actions, brand, headings */
---color-primary-hover:  #680000;  /* dark-maroon hover/active state */
+--color-primary:        #1F4E8C;  /* Royal Blue (official ACCELERATE brand) — primary actions, brand, headings */
+--color-primary-hover:  #163A66;  /* darker blue hover/active state */
 --color-primary-fg:     #FFFFFF;
+--color-primary-soft:    #E8EEF6;  /* ~10% blue over white — icon chips / soft accents */
 --color-accent:         #008BDB;  /* blue — secondary CTA / links (large text & UI only) */
 --color-highlight:      #29C4A9;  /* teal-green highlight / tint backgrounds */
 --color-highlight-soft: #82C0C7;  /* muted teal, soft accent */
@@ -132,7 +133,7 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 **Reduced-motion rule:** All motion gated on `prefers-reduced-motion: no-preference` via `gsap.matchMedia()`. Users with the OS reduced-motion preference receive the final, static state immediately — no animation, no fades, no count-ups (WCAG 2.1 AA §2.3.3, §2.2.2).
 
-> **Accent usage (contrast):** `--color-primary` (maroon) passes WCAG AA on white for all text/UI (~10.4:1). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
+> **Accent usage (contrast):** `--color-primary` (Royal Blue `#1F4E8C`) passes WCAG AA on white for normal text/UI (~7:1; AAA for large text). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
 
 ## 8. Component Inventory
 
