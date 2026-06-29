@@ -42,7 +42,7 @@
       Verify: `cd frontend && npm test 2>&1 | tail -15 && npm run build`
       Done when: marquee titles render ExtraBold (800) in Montserrat; hero tagline renders Montserrat SemiBold; body/data text unchanged; tests green; build succeeds.
 
-- [ ] T-4 Visual verification across breakpoints + brand font  (deps: T-2, T-3, T-6)
+- [x] T-4 Visual verification across breakpoints + brand font  (deps: T-2, T-3, T-6)
       Scope: Build and manually verify home + one data-dense route (dashboard) at 375px, 768px, 1024px, 1440px. Confirm: hero `h1` grows to 48px at `lg`; section `h2`s to 36px at `lg`; eyebrow chips show the soft-blue background; headings render in Montserrat ExtraBold; hero tagline in Montserrat SemiBold; body/table text still Inter; no horizontal scroll at 375px; heading order/semantics intact.
       Traces: FR-2, FR-3, FR-4, FR-5, NFR-2, NFR-3 (requirements.md); design.md §10
       Files: (none — verification only)

@@ -71,3 +71,20 @@
 - **Decisions:** About page h1 given the same `text-3xl sm:text-4xl lg:text-5xl` ramp as home hero for cross-page consistency.
 - **Issues:** None.
 - **Final verification:** Tests + build green.
+
+### T-4 — Visual verification across breakpoints + brand font — **PASS** (Leader, build-artifact evidence) — 2026-06-29
+
+- **Requirements covered:** FR-2, FR-3, FR-4, FR-5, NFR-2, NFR-3.
+- **Method:** Fresh `rm -rf .next && npm run build` (exit 0, all routes static) + grep of the emitted CSS/media artifacts.
+- **Evidence (built `.next/static/css/*.css`):**
+  - T-2 ramps resolve to tokens: `sm:text-4xl`/`sm:text-3xl`/`lg:text-5xl`/`lg:text-3xl` → `var(--text-*)`.
+  - T-5 family: `--font-display:var(--font-montserrat),"Montserrat",…` + base rule `h1,h2,h3{font-family:var(--font-display)}`.
+  - T-6 weights: `font-extrabold{font-weight:800}`, `font-semibold{font-weight:600}`, `font-display{font-family:var(--font-display)}`.
+  - T-3 chip: `bg-primary-soft{background-color:var(--color-primary-soft)}`.
+  - Fonts self-hosted: 12 `.woff2` in `.next/static/media` (Inter + Montserrat) — no external CDN, static-export safe.
+- **Note:** Automated build-artifact verification confirms every utility/token resolves correctly. Final pixel-level confirmation across 375/768/1024/1440 px should be eyeballed on the preview/live deploy (per project practice of verifying against the live UI).
+- **Issues:** None.
+
+## 3. Summary — ALL TASKS COMPLETE
+
+All six tasks PASS (T-1..T-6, T-4 final gate). Delivered: a token-backed responsive heading scale (`--text-5xl`/`6xl`; hero `h1` 30→48px, section `h2` 24→36px), a visible eyebrow chip (`bg-primary-soft`), and the official **Montserrat** brand font (ExtraBold titles site-wide, SemiBold hero tagline, Inter retained for body/UI). 687 tests green; static export build clean; fonts self-hosted via next/font. One Leader-adjudicated reviewer false positive on T-5 (cumulative-diff misread); zero rework attempts consumed. Ready for `/sdd-validate`.
