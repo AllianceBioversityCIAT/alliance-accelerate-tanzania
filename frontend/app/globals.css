@@ -4,13 +4,13 @@
 
 @layer base {
   :root {
-    /* Brand / semantic colors */
-    --color-primary:       #800000;
-    --color-primary-hover: #680000;
+    /* Brand / semantic colors — official ACCELERATE palette (Royal Blue). */
+    --color-primary:       #1F4E8C;  /* Royal Blue — primary actions, brand, headings */
+    --color-primary-hover: #163A66;  /* darker blue — hover/active state */
     --color-primary-fg:    #FFFFFF;
-    /* Soft maroon tint (~10% primary over white) for icon chips / accents.
+    /* Soft blue tint (~10% primary over white) for icon chips / accents.
        Hex CSS-vars don't support Tailwind /opacity, so this is an explicit token. */
-    --color-primary-soft:  #F3E6E6;
+    --color-primary-soft:  #E8EEF6;
     --color-accent:        #008BDB;
     --color-highlight:     #29C4A9;
     --color-highlight-soft:#82C0C7;
