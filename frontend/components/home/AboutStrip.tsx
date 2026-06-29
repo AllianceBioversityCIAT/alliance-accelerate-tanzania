@@ -58,7 +58,7 @@ export default function AboutStrip() {
           <div>
 
             {/* Eyebrow pill */}
-            <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
+            <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
               About the project
             </span>
 

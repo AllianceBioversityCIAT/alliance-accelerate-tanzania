@@ -32,3 +32,15 @@
 - **Decisions:** ClosingCTA h2 correctly lacks `text-fg` (inverted surface inherits `text-bg`) — preserved as-is.
 - **Issues:** None.
 - **Final verification:** Tests + build green.
+
+### T-3 — Fix eyebrow chip background — **PASS** (1 attempt) — 2026-06-29
+
+- **Requirements covered:** FR-4, NFR-1, NFR-3.
+- **Attempt 1:**
+  - **Files changed (5, 1 line each):** `Hero.tsx`, `AboutStrip.tsx`, `CropCoverage.tsx`, `HowItWorks.tsx`, `PartnersStrip.tsx` eyebrow `<span>`: `bg-primary/10` → `bg-primary-soft`. PillarCards.tsx deliberately untouched (out of scope §6).
+  - **Implementer verification:** eyebrow `bg-primary/10` grep (excl. PillarCards/test) → empty; PillarCards grep → 3 matches retained; `npm test -- home` → 11 suites / 87 passed / 0 fail.
+  - **Leader pre-check:** built CSS confirms `.bg-primary-soft{background-color:var(--color-primary-soft)}` (#E8EEF6) is a real token-backed utility — the fix genuinely renders (unlike the no-op `bg-primary/10`).
+  - **Reviewer verdict:** PASS — all 5 eyebrows use `bg-primary-soft`, only background changed, copy/size/geometry preserved, PillarCards byte-identical, tokens-only, no regressions.
+- **Decisions:** None beyond spec.
+- **Issues:** None (reviewer's git-history aside was a harmless artifact; gates audited against working-tree content).
+- **Final verification:** Tests green; utility confirmed in built CSS.

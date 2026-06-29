@@ -188,7 +188,7 @@ export default function Hero() {
 
             {/* Eyebrow badge — pill with subtle primary tint */}
             <div data-hero-text>
-              <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide">
+              <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide">
                 Institutional seed-system intelligence
               </span>
             </div>

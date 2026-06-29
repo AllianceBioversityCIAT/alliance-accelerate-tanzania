@@ -21,7 +21,7 @@
       Verify: `cd frontend && npm test -- home 2>&1 | tail -20 && npm run build`
       Done when: hero `h1` carries the 3xl→5xl ramp, all five `h2`s carry the 2xl→3xl ramp, tests stay green, build succeeds; exactly one `h1` and one `h2` per respective section.
 
-- [ ] T-3 Fix eyebrow chip background (`bg-primary/10` → `bg-primary-soft`)  (deps: none)
+- [x] T-3 Fix eyebrow chip background (`bg-primary/10` → `bg-primary-soft`)  (deps: none)
       Scope: Replace `bg-primary/10` with `bg-primary-soft` on the eyebrow pill `<span>` in Hero, AboutStrip, CropCoverage, HowItWorks, PartnersStrip. Keep `text-primary text-xs font-semibold tracking-wide` and all geometry/copy unchanged. Do NOT touch PillarCards (icon tile / watermark — out of scope per requirements §6).
       Traces: FR-4, NFR-1, NFR-3 (requirements.md); design.md §5.3
       Files: frontend/components/home/{Hero,AboutStrip,CropCoverage,HowItWorks,PartnersStrip}.tsx

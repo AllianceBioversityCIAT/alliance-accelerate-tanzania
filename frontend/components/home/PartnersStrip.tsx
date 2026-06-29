@@ -24,7 +24,7 @@ export default function PartnersStrip() {
         {/* Section header */}
         <div className="flex flex-col items-center text-center mb-10">
           {/* Eyebrow pill */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
+          <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
             Partners
           </span>
 
