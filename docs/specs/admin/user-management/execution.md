@@ -72,3 +72,16 @@
 - **Final verification:** 142 tests pass; build green.
 
 > **Phase A (backend) COMPLETE** — T-1..T-5 all PASS. Cognito-backed Admin user API with RBAC + self-lockout + no-leak, 142 tests green.
+
+### T-6 — Scoped Cognito IAM + CORS write methods — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-12, NFR-1.
+- **Attempt 1:**
+  - **Files:** EDITED `infra/20-backend/template.yaml` (new IAM statement + CORS).
+  - **Implementer verification:** `sam validate --profile IBD-DEV` → "valid SAM Template".
+  - **Reviewer verdict:** PASS — all 7 gates: exactly 11 `cognito-idp` admin actions; `Resource` = single pool ARN built from imported `UserPoolId` (NO wildcard); CORS `AllowMethods` = GET/OPTIONS/POST/PATCH/DELETE; `Authorization` header retained; `10-data-auth` untouched; valid SAM structure.
+- **Decisions:** None beyond spec.
+- **Issues:** None.
+- **Final verification:** `sam validate` passes.
+
+> **Phase B (infra) COMPLETE** — T-6 PASS. Lambda authorized for least-privilege Cognito admin ops; CORS allows write methods. Applied to AWS only at T-11 deploy.

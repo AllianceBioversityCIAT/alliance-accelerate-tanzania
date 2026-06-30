@@ -51,7 +51,7 @@
 
 ### Phase B — Infra (parallel with Phase A)
 
-- [ ] T-6 Scoped Cognito IAM + CORS write methods  (deps: none)
+- [x] T-6 Scoped Cognito IAM + CORS write methods  (deps: none)
       Scope: In `infra/20-backend/template.yaml` add a least-privilege `cognito-idp` IAM statement (actions per design §6) with `Resource` = pool ARN built inline from the imported `UserPoolId` (design §7). Add `POST, PATCH, DELETE` to `HttpApi.CorsConfiguration.AllowMethods`. No change to `10-data-auth`.
       Traces: FR-12, NFR-1 (requirements.md); design.md §6, §7
       Files: infra/20-backend/template.yaml
