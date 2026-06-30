@@ -13,6 +13,8 @@
  * leakage). Requirement: requirements.md FR-10.
  */
 
+import { ASSIGNABLE_ROLES, AssignableRole } from './users.constants';
+
 /**
  * The design §2 public projection of a Cognito user — the contract returned by
  * every `UsersController` route. No password / temporary-password / secret field
@@ -48,9 +50,6 @@ export interface SerializableCognitoUser {
   UserCreateDate?: Date;
   UserLastModifiedDate?: Date;
 }
-
-const ASSIGNABLE_ROLES = ['admin', 'staff'] as const;
-type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 /**
  * Project a raw Cognito user onto the §2 `AdminUser` shape (FR-10).

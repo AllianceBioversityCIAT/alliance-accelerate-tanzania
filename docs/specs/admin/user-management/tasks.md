@@ -25,7 +25,7 @@
       Done when: DTOs validate, serializer emits only allowlisted fields, mapper covers the documented exceptions; build + lint clean.
       Skills: api-design-principles, error-handling-patterns
 
-- [ ] T-3 UsersService (Cognito orchestration + self-lockout)  (deps: T-1, T-2)
+- [x] T-3 UsersService (Cognito orchestration + self-lockout)  (deps: T-1, T-2)
       Scope: `users.service.ts` methods `list/get/create/update/setRole/remove/resetPassword`. Issue the correct Cognito Admin commands (design §3 table), resolve roles via `AdminListGroupsForUser`, map output through `toAdminUser`, map errors via the mapper. Enforce FR-8 self-lockout (compare target id to caller `sub`) in `remove` and `setRole` (admin removal).
       Traces: FR-1..FR-8, FR-10 (requirements.md); design.md §3, §4, §6
       Files: backend/src/users/users.service.ts

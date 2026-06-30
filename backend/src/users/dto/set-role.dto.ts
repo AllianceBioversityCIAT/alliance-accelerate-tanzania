@@ -1,5 +1,6 @@
 // @sdd-spec admin/user-management (T-2)
 import { IsIn } from 'class-validator';
+import { SETTABLE_ROLES, SettableRole } from '../users.constants';
 
 /**
  * T-2 — Validated write DTO for `PATCH /api/v1/users/:id/role` (design §3,
@@ -12,10 +13,8 @@ import { IsIn } from 'class-validator';
  * Scope note: authored in isolation (T-2). Controller/service wiring is T-3/T-4.
  */
 
-const SETTABLE_ROLES = ['admin', 'staff', 'none'] as const;
-
 export class SetRoleDto {
   /** Target role; `none` demotes the user to Public (FR-5/FR-8). */
   @IsIn(SETTABLE_ROLES as readonly string[])
-  role!: string;
+  role!: SettableRole;
 }

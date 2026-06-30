@@ -37,3 +37,14 @@
 - **Decisions:** W-1/W-2/S-1 (DTO role typing + shared constants) folded into **T-3** scope (service-layer task consumes these DTOs — natural place to firm up the role union). W-3 accepted as-is (empty-string fallback only on genuinely-unexpected missing Cognito fields).
 - **Issues:** None blocking.
 - **Final verification:** Build green.
+
+### T-3 — UsersService (Cognito orchestration + self-lockout) — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-1..FR-8, FR-10 (+ W-1/W-2/S-1 DTO carryovers).
+- **Attempt 1:**
+  - **Files:** NEW `users.service.ts` (7 methods), `users.constants.ts` (ASSIGNABLE/SETTABLE roles + unions); EDITED `dto/create-user.dto.ts` (+`@IsString`, `AssignableRole`), `dto/set-role.dto.ts` (`SettableRole`), `users.serializer.ts` (imports shared constants).
+  - **Implementer verification:** `npm run build` → exit 0.
+  - **Reviewer verdict:** PASS — all 5 gates: self-lockout thrown BEFORE Cognito calls in both `setRole` (self-demote) and `remove` (self-delete), not re-mapped; no secret leakage (email invite + email reset, all output via `toAdminUser`); correct §3 Cognito commands per method; scope clean (no controller/module/Prisma); DTO carryovers correct. Non-blocking warnings: W-1 `update` non-atomic email+enable (documented limitation); W-2/W-3 `listGroupNames`/`isNotInGroupError` edge cases; S-1 constructor-inject client (eases T-5 mocking); S-2 defensive throw on missing created Username.
+- **Decisions:** Accepted Cognito non-atomicity (no transactions available); idempotent group-clear in `setRole`. Edge-case warnings noted for T-5 test coverage; not blocking.
+- **Issues:** None blocking.
+- **Final verification:** Build green.
