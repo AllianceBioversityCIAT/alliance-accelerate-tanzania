@@ -43,6 +43,7 @@ const LOGO_DIMS: Record<string, { width: number; height: number }> = {
   pabra:    { width: 477,  height: 181 },
   tari:     { width: 176,  height: 64  },
   tosci:    { width: 200,  height: 52  },
+  cimmyt:   { width: 615,  height: 88  },
   bmgf:     { width: 1000, height: 202 },
 };
 

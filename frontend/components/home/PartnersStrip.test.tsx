@@ -10,7 +10,7 @@
  *    rel="noopener noreferrer" — exact value asserted).
  *  - Logo'd partners (alliance, pabra, tari, tosci, bmgf) render an <img> with
  *    an accessible name — 5 logos total.
- *  - Text-fallback partner (CIMMYT) renders its name as visible text — 1 fallback.
+ *  - CIMMYT now renders an official logo <img> (its name as alt text) — 0 text fallbacks.
  *  - Three tier labels render: "Funded by", "Led by", "In partnership with".
  */
 
@@ -161,21 +161,21 @@ describe('PartnersStrip', () => {
     expect(img).toBeInTheDocument();
   });
 
-  it('renders exactly 5 logo <img> elements', () => {
+  it('renders exactly 6 logo <img> elements', () => {
     render(<PartnersStrip />);
-    // alliance, pabra, tari, tosci, bmgf — CIMMYT is text-fallback only
+    // alliance, pabra, tari, tosci, bmgf, cimmyt — all partners now have a logo
     const images = screen.getAllByRole('img');
-    expect(images).toHaveLength(5);
+    expect(images).toHaveLength(6);
   });
 
   // ---------------------------------------------------------------------------
-  // Text-fallback partner — CIMMYT only (1 fallback)
+  // CIMMYT now has an official logo asset (no longer a text fallback)
   // ---------------------------------------------------------------------------
 
-  it('renders CIMMYT name as visible text (no logo asset)', () => {
+  it('renders the CIMMYT logo with its name as alt text', () => {
     render(<PartnersStrip />);
     const cimmytPartner = PARTNERS.find((p) => p.key === 'cimmyt')!;
-    expect(screen.getByText(cimmytPartner.name)).toBeInTheDocument();
+    expect(screen.getByAltText(cimmytPartner.name)).toBeInTheDocument();
   });
 
   it('does NOT render a text fallback for TARI (now has a logo)', () => {
