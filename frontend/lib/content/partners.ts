@@ -108,7 +108,10 @@ export const PARTNERS: Partner[] = [
     name: 'CIMMYT',
     role: 'Market intelligence, sorghum/groundnut',
     url: 'https://www.cimmyt.org',
-    // No clean logo asset available — text-label fallback (FR-6, OQ-2)
+    logo: '/partners/cimmyt.png',
+    // Official CIMMYT mark (corn + wordmark + colour squares), transparent PNG;
+    // coloured on transparency — needs a light chip on dark surfaces.
+    lightSafe: false,
     tier: 'partner',
   },
   {

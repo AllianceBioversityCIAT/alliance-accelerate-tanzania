@@ -4,7 +4,7 @@
  * Verifies the core structural invariants of the extracted PartnerWall:
  *   - Renders all six partner links.
  *   - Renders the three tier labels.
- *   - Logo'd partners render <img>; CIMMYT renders text fallback.
+ *   - All six partners render a logo <img> (CIMMYT now has an official asset).
  */
 
 import React from 'react';
@@ -27,16 +27,16 @@ describe('PartnerWall', () => {
     }
   });
 
-  it('renders exactly 5 logo <img> elements (CIMMYT is text fallback)', () => {
+  it('renders exactly 6 logo <img> elements (all partners have a logo)', () => {
     render(<PartnerWall />);
     const images = screen.getAllByRole('img');
-    expect(images).toHaveLength(5);
+    expect(images).toHaveLength(6);
   });
 
-  it('renders CIMMYT as visible text (no logo asset)', () => {
+  it('renders the CIMMYT logo with its name as alt text', () => {
     render(<PartnerWall />);
     const cimmyt = PARTNERS.find((p) => p.key === 'cimmyt')!;
-    expect(screen.getByText(cimmyt.name)).toBeInTheDocument();
+    expect(screen.getByAltText(cimmyt.name)).toBeInTheDocument();
   });
 
   it('renders the "Funded by" tier label', () => {
