@@ -41,7 +41,7 @@
       Done when: all routes mounted under `/api/v1/users`, Admin-guarded, app boots; build + lint clean.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-5 Backend tests (unit + e2e RBAC)  (deps: T-4)
+- [x] T-5 Backend tests (unit + e2e RBAC)  (deps: T-4)
       Scope: `users.service.spec.ts` — mock Cognito client (`aws-sdk-client-mock`); assert each method's command/input, serializer no-leak, self-lockout throws, error mapping. `users.e2e-spec.ts` — every route returns 401 (no token) / 403 (Staff & Public) / 2xx (Admin); duplicate create→409; unknown id→404.
       Traces: FR-1..FR-10, NFR-1, NFR-5 (requirements.md); design.md §10
       Files: backend/src/users/users.service.spec.ts, backend/test/users.e2e-spec.ts (or src/users/users.e2e-spec.ts per repo convention)

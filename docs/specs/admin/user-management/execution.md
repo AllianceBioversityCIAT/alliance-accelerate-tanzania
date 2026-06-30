@@ -59,3 +59,16 @@
 - **Decisions:** Class-level guards (covers all routes; safer than per-route). Non-blocking notes recorded.
 - **Issues:** None blocking. **Follow-up (out of scope):** reviewer flagged a systemic risk — `RolesGuard` permits any authenticated caller on a route lacking `@Roles()` (allow-by-default). Not applicable here (class carries `@Roles('Admin')`), but a future hardening task should make it deny-by-default.
 - **Final verification:** Build green.
+
+### T-5 — Backend tests (unit + e2e RBAC) — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-8, FR-9, FR-10, NFR-5.
+- **Attempt 1:**
+  - **Files:** NEW `users.service.spec.ts` (unit, Cognito mocked via `aws-sdk-client-mock`), `users.e2e-spec.ts` (RBAC matrix); EDITED `package.json`/lock (+devDep `aws-sdk-client-mock`).
+  - **Implementer verification + Leader re-run:** `npm test` → **19 suites / 142 tests pass**; `npm run build` exit 0.
+  - **Reviewer verdict:** PASS — all 6 gates. Critical confirmation: the e2e mocks ONLY the JWT verifier (token→role) and runs the **real** `JwtAuthGuard` + `RolesGuard` + live `Reflector`, so 403s for Staff/Public are genuinely produced by `@Roles('Admin')` (not stubbed). Self-lockout asserts thrown 409 AND zero Cognito calls (both paths); no-leak asserts exact key set; error mapping 409/404. Non-blocking warnings: W-1 missing invalid-token case on POST/DELETE; W-2 no explicit `phone` scan (covered by exact key-set); W-3 `'none'` self-lockout path not separately asserted (already covered by production `role !== 'admin'`).
+- **Decisions:** Accepted warnings as non-blocking test hardening; production self-lockout logic `role !== 'admin'` correctly covers `staff` and `none`.
+- **Issues:** None blocking.
+- **Final verification:** 142 tests pass; build green.
+
+> **Phase A (backend) COMPLETE** — T-1..T-5 all PASS. Cognito-backed Admin user API with RBAC + self-lockout + no-leak, 142 tests green.
