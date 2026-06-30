@@ -16,7 +16,7 @@
  *   - Live region for in-flight errors.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useId } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,9 +55,10 @@ export function ConfirmDialog({
   loading = false,
   error,
 }: ConfirmDialogProps) {
-  const titleId       = 'confirm-dialog-title';
-  const descId        = 'confirm-dialog-desc';
-  const errorId       = 'confirm-dialog-error';
+  const uid           = useId();
+  const titleId       = `${uid}-title`;
+  const descId        = `${uid}-desc`;
+  const errorId       = `${uid}-error`;
   const cancelRef     = useRef<HTMLButtonElement>(null);
   const dialogRef     = useRef<HTMLDivElement>(null);
 

@@ -121,3 +121,18 @@
 - **Decisions:** S-3 (AuthFailureError in Create/Edit dialogs) + W-2 (`useId` in ConfirmDialog) folded into **T-10** (test task exercises these paths — small hardening alongside tests).
 - **Issues:** None blocking.
 - **Final verification:** Build green (static export); /admin/users route emits.
+
+### T-10 — Frontend tests (+ W-2/S-3 hardening) — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-11, NFR-3, NFR-5.
+- **Attempt 1:**
+  - **Files:** NEW `lib/api/users.test.ts`, `app/(admin)/layout.test.tsx`, `app/(admin)/admin/users/page.test.tsx`, `components/admin/RoleSelect.test.tsx`; EDITED `ConfirmDialog.tsx` (W-2 `useId`), `CreateUserDialog.tsx`/`EditUserDialog.tsx` (S-3 `AuthFailureError`→/login).
+  - **Implementer verification + Leader re-run:** admin+users tests → **4 suites / 62 tests pass**; full frontend suite 749 green; `npm run build` exit 0.
+  - **Reviewer verdict:** PASS — all gates: layout test asserts non-Admin `router.replace('/login')` + admin content absent, Admin sees shell; page test asserts `createUser`/`deleteUser` called with `(args, token)`; RoleSelect exactly admin/staff/none; users client test asserts URL+method+Bearer+body, 204→void, 401→`AuthFailureError`; mocks at module boundaries (no network). W-2/S-3 fixes correct & minimal. Non-blocking: W-1 static titleId still in Create/Edit dialogs; W-3 no dialog-close assertion.
+- **Decisions:** Accepted non-blocking warnings (test-hardening + pre-existing dialog id pattern).
+- **Issues:** None blocking.
+- **Final verification:** 62 admin/users tests pass; full suite 749 green; build green.
+
+> **Phase C (frontend) COMPLETE** — T-7..T-10 all PASS. Bearer API client, Admin-gated shell, full CRUD console, tests green.
+
+> **Phases A–C COMPLETE** (T-1..T-10). Only **T-11 (live deploy + verification)** remains — requires explicit user authorization (`--profile IBD-DEV`).

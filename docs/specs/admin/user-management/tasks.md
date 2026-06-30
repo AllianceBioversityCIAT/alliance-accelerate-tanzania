@@ -85,7 +85,7 @@
       Done when: full CRUD + role + password actions render and call the API client; states handled; build green.
       Skills: ui-ux-pro-max, shadcn-ui, tailwind-design-system, react-doctor
 
-- [ ] T-10 Frontend tests  (deps: T-9)
+- [x] T-10 Frontend tests  (deps: T-9)
       Scope: RTL tests — `(admin)` layout redirects non-Admin (mock `useSession`); `/admin/users` renders the list, opens create/edit dialogs, requires delete confirmation, surfaces error/loading; `RoleSelect` constrained to admin/staff/none. API client mocked.
       Traces: FR-11, NFR-3, NFR-5 (requirements.md); design.md §10
       Files: frontend/app/(admin)/users/*.test.tsx, frontend/components/admin/*.test.tsx

@@ -19,7 +19,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createUser } from '@/lib/api/users';
+import { AuthFailureError } from '@/lib/api/client';
 import { RoleSelect, type RoleValue } from './RoleSelect';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,7 @@ export function CreateUserDialog({
   onSuccess,
   onCancel,
 }: CreateUserDialogProps) {
+  const router    = useRouter();
   const titleId   = 'create-user-dialog-title';
   const dialogRef = useRef<HTMLDivElement>(null);
   const emailRef  = useRef<HTMLInputElement>(null);
@@ -142,6 +145,10 @@ export function CreateUserDialog({
         );
         onSuccess();
       } catch (caught: unknown) {
+        if (caught instanceof AuthFailureError) {
+          router.push('/login');
+          return;
+        }
         const message =
           caught instanceof Error ? caught.message : 'Failed to create user.';
         setSubmitError(message);
@@ -149,7 +156,7 @@ export function CreateUserDialog({
         setLoading(false);
       }
     },
-    [email, role, token, onSuccess]
+    [email, role, token, onSuccess, router]
   );
 
   if (!open) return null;

@@ -19,7 +19,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { updateUser, type AdminUser } from '@/lib/api/users';
+import { AuthFailureError } from '@/lib/api/client';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +58,7 @@ export function EditUserDialog({
   onSuccess,
   onCancel,
 }: EditUserDialogProps) {
+  const router    = useRouter();
   const titleId   = 'edit-user-dialog-title';
   const dialogRef = useRef<HTMLDivElement>(null);
   const emailRef  = useRef<HTMLInputElement>(null);
@@ -144,6 +147,10 @@ export function EditUserDialog({
         );
         onSuccess();
       } catch (caught: unknown) {
+        if (caught instanceof AuthFailureError) {
+          router.push('/login');
+          return;
+        }
         const message =
           caught instanceof Error ? caught.message : 'Failed to update user.';
         setSubmitError(message);
@@ -151,7 +158,7 @@ export function EditUserDialog({
         setLoading(false);
       }
     },
-    [email, enabled, user, token, onSuccess]
+    [email, enabled, user, token, onSuccess, router]
   );
 
   if (!open || !user) return null;
