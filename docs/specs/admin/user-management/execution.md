@@ -48,3 +48,14 @@
 - **Decisions:** Accepted Cognito non-atomicity (no transactions available); idempotent group-clear in `setRole`. Edge-case warnings noted for T-5 test coverage; not blocking.
 - **Issues:** None blocking.
 - **Final verification:** Build green.
+
+### T-4 — UsersController + module wiring — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-1..FR-9 (esp. FR-9 server-side RBAC).
+- **Attempt 1:**
+  - **Files:** NEW `users.controller.ts` (7 routes), `users.module.ts`; EDITED `app.module.ts` (register `UsersModule`).
+  - **Implementer verification:** `npm run build` → exit 0 (DI graph compiles).
+  - **Reviewer verdict:** PASS — all 7 routes carry class-level `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('Admin')` (FR-9); route table + HTTP codes (201/204) match design §3; self-lockout `@CurrentUser().sub` passed to `setRole`/`remove` (FR-8); DTOs bound for the global ValidationPipe; module wiring correct (guards zero-dep / Reflector-only, no AuthModule import needed).
+- **Decisions:** Class-level guards (covers all routes; safer than per-route). Non-blocking notes recorded.
+- **Issues:** None blocking. **Follow-up (out of scope):** reviewer flagged a systemic risk — `RolesGuard` permits any authenticated caller on a route lacking `@Roles()` (allow-by-default). Not applicable here (class carries `@Roles('Admin')`), but a future hardening task should make it deny-by-default.
+- **Final verification:** Build green.

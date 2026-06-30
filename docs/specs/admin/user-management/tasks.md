@@ -33,7 +33,7 @@
       Done when: all seven methods implemented, self-lockout guarded, no secret in any return path; build green.
       Skills: nestjs-expert, aws-serverless, error-handling-patterns
 
-- [ ] T-4 UsersController + module wiring  (deps: T-3)
+- [x] T-4 UsersController + module wiring  (deps: T-3)
       Scope: `users.controller.ts` (`@Controller('users')`, the 7 routes from design §3), every route `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('Admin')`, `@CurrentUser()` passed to self-lockout paths. `users.module.ts`; register `UsersModule` in `backend/src/app.module.ts`.
       Traces: FR-1..FR-9, FR-11(API side) (requirements.md); design.md §3, §4, §6
       Files: backend/src/users/users.controller.ts, backend/src/users/users.module.ts, backend/src/app.module.ts
