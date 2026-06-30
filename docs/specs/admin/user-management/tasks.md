@@ -69,7 +69,7 @@
       Done when: client compiles, sends Bearer token, typed to the AdminUser contract; build green.
       Skills: vercel-react-best-practices, api-design-principles
 
-- [ ] T-8 (admin) route group + admin shell  (deps: none)
+- [x] T-8 (admin) route group + admin shell  (deps: none)
       Scope: `frontend/app/(admin)/layout.tsx` — `'use client'` AdminShell wrapping children in `<RequireRole allow={['Admin']}>` with a left sidebar + topbar (distinct from public nav, DD-5). `frontend/components/admin/AdminSidebar.tsx` (Users active; Actors/Import/Export as disabled placeholders). Tokens only; WCAG AA; static-export safe (no SSR).
       Traces: FR-11, NFR-2, NFR-3 (requirements.md); design.md §5; system-design §5
       Files: frontend/app/(admin)/layout.tsx, frontend/components/admin/AdminSidebar.tsx

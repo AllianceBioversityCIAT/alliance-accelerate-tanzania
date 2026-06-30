@@ -98,3 +98,14 @@
 - **Decisions:** users.ts client tests folded into **T-10** (frontend test task). Token supplied by caller via `getSession().accessToken` (T-9).
 - **Issues:** None blocking.
 - **Final verification:** Build green; actors tests pass.
+
+### T-8 — (admin) route group + admin shell — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-11, NFR-2, NFR-3.
+- **Attempt 1:**
+  - **Files:** NEW `frontend/app/(admin)/layout.tsx` ('use client' AdminShell, `RequireRole allow={['Admin']}`, sidebar+topbar+main landmarks), `frontend/components/admin/AdminSidebar.tsx` (Users active; Actors/Import/Export disabled placeholders).
+  - **Implementer verification:** `npm run build` exit 0, 14 static pages (no page stub needed).
+  - **Reviewer verdict:** PASS — all 5 gates: RequireRole Admin gate wraps the whole shell; static-export safe ('use client', no SSR); tokens-only (zero hardcoded hex/px); semantic landmarks (`aside`/`main`/`nav`) + `aria-current="page"` active item; disabled items non-focusable spans. Non-blocking note: `role="link"` on disabled span could be plain span.
+- **Decisions:** None beyond spec.
+- **Issues:** None blocking.
+- **Final verification:** Build green (static export).
