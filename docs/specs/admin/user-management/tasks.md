@@ -77,7 +77,7 @@
       Done when: admin shell renders for Admin, redirects non-Admin; build (static export) green.
       Skills: ui-ux-pro-max, tailwind-design-system, frontend-design
 
-- [ ] T-9 /admin/users console  (deps: T-7, T-8)
+- [x] T-9 /admin/users console  (deps: T-7, T-8)
       Scope: `frontend/app/(admin)/users/page.tsx` + `frontend/components/admin/{UsersTable,CreateUserDialog,EditUserDialog,RoleSelect,ConfirmDialog}.tsx`. List users (table md+/cards mobile), create (email+role), edit (attributes/enable), delete (confirm), change role (admin/staff/none), reset password. Loading/disabled/error/empty states; tokens; WCAG AA. Wired to `lib/api/users.ts`.
       Traces: FR-1..FR-7, FR-11, NFR-2, NFR-3 (requirements.md); design.md §5; system-design §6, §10
       Files: frontend/app/(admin)/users/page.tsx, frontend/components/admin/*.tsx

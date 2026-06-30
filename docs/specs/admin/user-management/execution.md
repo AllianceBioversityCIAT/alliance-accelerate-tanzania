@@ -109,3 +109,15 @@
 - **Decisions:** None beyond spec.
 - **Issues:** None blocking.
 - **Final verification:** Build green (static export).
+
+### T-9 — /admin/users console — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-1..FR-7, FR-11, NFR-2, NFR-3.
+- **Attempt 1:**
+  - **Files:** NEW `app/(admin)/admin/users/page.tsx` (orchestration: states, dialogs, refetch, pagination) + `components/admin/{UsersTable,CreateUserDialog,EditUserDialog,RoleSelect,ConfirmDialog}.tsx`.
+  - **Path note:** page placed at `(admin)/admin/users/` so the URL is `/admin/users` (IA system-design §2) — design doc's literal `(admin)/users/` would yield `/users`; corrected.
+  - **Implementer verification:** `npm run build` exit 0; `out/admin/users` emitted.
+  - **Reviewer verdict:** PASS — all gates: wired to T-7 client (token via `getSession()`, no hook in lib/api, no raw fetch); static-export safe; tokens-only (no hardcoded colors; lone `min-w-[200px]` is a layout width, accepted per Hero precedent); dialogs `role="dialog"`+`aria-modal`+focus-trap+Escape; destructive ops confirm; loading/error/empty/success states with live regions; `AuthFailureError`→/login in page+table; RoleSelect constrained admin/staff/none; NO password field anywhere. Non-blocking: W-1 dup email regex; W-2 ConfirmDialog static ids (use `useId`); W-3 shared confirm state (mitigated); S-1 focus restore on close; S-3 dialogs don't route 401→/login.
+- **Decisions:** S-3 (AuthFailureError in Create/Edit dialogs) + W-2 (`useId` in ConfirmDialog) folded into **T-10** (test task exercises these paths — small hardening alongside tests).
+- **Issues:** None blocking.
+- **Final verification:** Build green (static export); /admin/users route emits.
