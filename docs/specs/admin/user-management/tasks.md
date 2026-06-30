@@ -9,7 +9,7 @@
 
 ### Phase A — Backend (Cognito-backed API)
 
-- [ ] T-1 Cognito admin client + dependency  (deps: none)
+- [x] T-1 Cognito admin client + dependency  (deps: none)
       Scope: Add `@aws-sdk/client-cognito-identity-provider` to `backend/package.json`. Create `backend/src/users/cognito-admin.client.ts` — a lazy `CognitoIdentityProviderClient` (region from `auth.config.ts` / `AWS_REGION`), mirroring `jwt-verifier.ts` lazy-singleton style. Expose the user-pool id from config. No routes yet.
       Traces: FR-12 (requirements.md); design.md §4, §8 (DR Cognito SoT)
       Files: backend/package.json, backend/src/users/cognito-admin.client.ts

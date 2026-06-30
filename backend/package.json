@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1077.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
