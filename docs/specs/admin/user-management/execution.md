@@ -26,3 +26,14 @@
 - **Decisions:** Adopted `npm run build` as the backend gate (lint gap). Kept `getUserPoolId()` direct env read.
 - **Issues:** None blocking.
 - **Final verification:** Build green.
+
+### T-2 — DTOs + serializer + error mapper — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-10, NFR-1, NFR-4.
+- **Attempt 1:**
+  - **Files created (6):** `dto/{create-user,update-user,set-role,list-users-query}.dto.ts`, `users.serializer.ts` (`toAdminUser` explicit allowlist + `AdminUser` type + `SerializableCognitoUser` input type with NO secret fields), `cognito-error.mapper.ts` (`mapCognitoError` → 409/404/400/429/500, generic safe 500).
+  - **Implementer verification:** `npm run build` → exit 0.
+  - **Reviewer verdict:** PASS — all 5 gates (allowlist no-leak, DTO constraints, error mapping no-leak, scope clean, build). Non-blocking warnings: W-1 add `@IsString()` to `CreateUserDto.role`; W-2 narrow `role` to literal union; W-3 empty-string serializer fallbacks; S-1 extract shared role constants.
+- **Decisions:** W-1/W-2/S-1 (DTO role typing + shared constants) folded into **T-3** scope (service-layer task consumes these DTOs — natural place to firm up the role union). W-3 accepted as-is (empty-string fallback only on genuinely-unexpected missing Cognito fields).
+- **Issues:** None blocking.
+- **Final verification:** Build green.

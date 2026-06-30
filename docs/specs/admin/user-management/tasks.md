@@ -17,7 +17,7 @@
       Done when: client compiles, instantiates lazily, reads pool id + region from config; build green.
       Skills: nestjs-expert, aws-serverless
 
-- [ ] T-2 DTOs + serializer + error mapper  (deps: none)
+- [x] T-2 DTOs + serializer + error mapper  (deps: none)
       Scope: `backend/src/users/dto/{create-user,update-user,set-role,list-users-query}.dto.ts` with `class-validator` rules per design §3. `users.serializer.ts` `toAdminUser()` — explicit allowlist (`id,email,status,enabled,roles,createdAt,updatedAt`), never secrets (FR-10). `cognito-error.mapper.ts` mapping Cognito exceptions → HttpException (409/404/400/429/500) without leaking internals (NFR-4).
       Traces: FR-10, NFR-1, NFR-4 (requirements.md); design.md §3
       Files: backend/src/users/dto/*.ts, backend/src/users/users.serializer.ts, backend/src/users/cognito-error.mapper.ts
