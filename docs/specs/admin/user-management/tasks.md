@@ -61,7 +61,7 @@
 
 ### Phase C — Frontend (admin console)
 
-- [ ] T-7 Users API client (Bearer-authed)  (deps: none — contract-driven by design §3)
+- [x] T-7 Users API client (Bearer-authed)  (deps: none — contract-driven by design §3)
       Scope: `frontend/lib/api/users.ts` typed client for the 7 endpoints, attaching the Cognito access token (`Authorization: Bearer`) from the session; extend `frontend/lib/api/client.ts` to accept an auth token if needed. Types mirror the `AdminUser` contract (design §2).
       Traces: FR-1..FR-7, FR-11 (requirements.md); design.md §2, §3, §5
       Files: frontend/lib/api/users.ts, frontend/lib/api/client.ts

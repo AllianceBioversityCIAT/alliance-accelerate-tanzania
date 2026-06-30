@@ -85,3 +85,16 @@
 - **Final verification:** `sam validate` passes.
 
 > **Phase B (infra) COMPLETE** — T-6 PASS. Lambda authorized for least-privilege Cognito admin ops; CORS allows write methods. Applied to AWS only at T-11 deploy.
+
+## Phase C — Frontend
+
+### T-7 — Users API client (Bearer-authed) — **PASS** (1 attempt) — 2026-06-30
+
+- **Requirements covered:** FR-1..FR-7, FR-11 (data layer), NFR-2.
+- **Attempt 1:**
+  - **Files:** NEW `frontend/lib/api/users.ts` (7 typed functions + `AdminUser`/input types); EDITED `frontend/lib/api/client.ts` (additive `apiFetch` + `ApiFetchOptions`).
+  - **Implementer verification:** `npm run build` exit 0; `npm test -- actors` → 2 suites / 32 tests pass (backward compatible).
+  - **Reviewer verdict:** PASS — all 7 gates: 7 endpoint functions attach Bearer; `AdminUser` exact match to design §2 (no secret); token is a parameter (no hooks/Amplify — static-export safe); `client.ts` additive/backward-compatible; 204 handled via `expectEmpty`; 401→`AuthFailureError`. Non-blocking: W-1 `apiFetch.token` optional; W-2 body-less POST for password reset (Nest accepts); W-3 no unit tests for users.ts.
+- **Decisions:** users.ts client tests folded into **T-10** (frontend test task). Token supplied by caller via `getSession().accessToken` (T-9).
+- **Issues:** None blocking.
+- **Final verification:** Build green; actors tests pass.

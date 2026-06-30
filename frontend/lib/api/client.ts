@@ -15,6 +15,11 @@
  *   import { apiGetAuthed } from '@/lib/api/client';
  *   const data = await apiGetAuthed<MyType>('/api/v1/auth/me');
  *   // Throws AuthFailureError on 401 — caller should route to /login (FR-9/NFR-7).
+ *
+ * Usage (explicit token — callers supply token; no Amplify call here):
+ *   import { apiFetch } from '@/lib/api/client';
+ *   const data = await apiFetch<MyType>('/api/v1/users', { token, method: 'GET' });
+ *   await apiFetch<void>('/api/v1/users/123', { token, method: 'DELETE', expectEmpty: true });
  */
 
 import { fetchAuthSession } from 'aws-amplify/auth';
@@ -28,7 +33,7 @@ export interface ApiErrorEnvelope {
 }
 
 /**
- * Thrown by apiGetAuthed when the server responds with HTTP 401.
+ * Thrown by apiGetAuthed (and apiFetch) when the server responds with HTTP 401.
  * Callers can catch this specific type and route the user to /login (FR-9/NFR-7).
  */
 export class AuthFailureError extends Error {
@@ -128,6 +133,92 @@ export async function apiGetAuthed<T>(path: string): Promise<T> {
       // Body is not JSON — use the status line message set above.
     }
     throw new Error(message);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
+// apiFetch — low-level helper for caller-supplied Bearer tokens
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for apiFetch. The caller is responsible for supplying the access
+ * token (retrieved from getSession() or any non-React async getter).
+ * Public (no-token) calls are NOT the intended usage — use apiGet for those.
+ */
+export interface ApiFetchOptions {
+  /** HTTP method. Defaults to 'GET'. */
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  /** If provided, attached as `Authorization: Bearer <token>`. */
+  token?: string;
+  /** JSON-serialisable body (POST/PATCH/PUT). Omit for GET/DELETE. */
+  body?: unknown;
+  /**
+   * When true, the response body is NOT parsed — apiFetch returns undefined
+   * cast as T. Use this for 204 No Content responses (DELETE, password reset).
+   */
+  expectEmpty?: boolean;
+}
+
+/**
+ * Generic fetch helper that accepts an explicit caller-supplied Bearer token.
+ *
+ * Throws AuthFailureError on HTTP 401.
+ * Throws plain Error on other non-OK statuses (same envelope parsing as apiGet).
+ * Returns undefined (cast to T) when expectEmpty=true (for 204 responses).
+ *
+ * This function does NOT import React hooks and does NOT call Amplify directly —
+ * it is safe to use in pure async modules (e.g. lib/api/users.ts).
+ */
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  if (!baseUrl) {
+    throw new Error(
+      'NEXT_PUBLIC_API_BASE_URL is not set. Configure it in .env.local or the deployment environment.'
+    );
+  }
+
+  const { method = 'GET', token, body, expectEmpty = false } = options;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+
+  if (response.status === 401) {
+    throw new AuthFailureError();
+  }
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status} ${response.statusText}`;
+    try {
+      const envelope = (await response.json()) as Partial<ApiErrorEnvelope>;
+      if (envelope.message) {
+        message = envelope.message;
+      }
+    } catch {
+      // Body is not JSON — use the status line message set above.
+    }
+    throw new Error(message);
+  }
+
+  if (expectEmpty) {
+    return undefined as unknown as T;
   }
 
   return response.json() as Promise<T>;
