@@ -162,6 +162,9 @@ function NavLink({ href, label }: { href: string; label: string }) {
 // ---------------------------------------------------------------------------
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Admin-only entry point into the (admin) console — shown only to Admins.
+  const { role } = useSession();
+  const isAdmin = role === 'Admin';
 
   return (
     <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-sm">
@@ -198,6 +201,8 @@ export default function Header() {
             {NAV_LINKS.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} />
             ))}
+            {/* Admin console — visible only to Admin role (server still gates the API). */}
+            {isAdmin && <NavLink href="/admin/users" label="Admin" />}
           </nav>
 
           {/* Right-hand side: auth slot (desktop) + hamburger (mobile) */}
@@ -270,6 +275,14 @@ export default function Header() {
               onNavigate={() => setMenuOpen(false)}
             />
           ))}
+          {/* Admin console — visible only to Admin role. */}
+          {isAdmin && (
+            <MobileNavLink
+              href="/admin/users"
+              label="Admin"
+              onNavigate={() => setMenuOpen(false)}
+            />
+          )}
         </nav>
 
         {/* Auth control — moved into the menu on mobile (FR-4). */}
