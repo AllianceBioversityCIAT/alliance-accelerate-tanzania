@@ -95,7 +95,7 @@
 
 ### Phase D — Integration & deploy verification
 
-- [ ] T-11 Deploy to dev + live verification  (deps: T-5, T-6, T-10)
+- [x] T-11 Deploy to dev + live verification  (deps: T-5, T-6, T-10)
       Scope: Deploy backend (SAM) + frontend with `--profile IBD-DEV`. Live-verify: an Admin can list/create/update/delete a user, assign roles, and trigger a password reset; a created user completes first-login; CORS preflight passes for write methods; Staff/anonymous receive 403/401. Record evidence in execution.md.
       Traces: FR-1..FR-12 (requirements.md); design.md §7, §10
       Files: (none — deploy + manual verification; note any infra deploy commands)
