@@ -126,19 +126,20 @@ describe('Header — authenticated (Staff)', () => {
     expect(screen.getAllByText('Staff')[0]).toBeInTheDocument();
   });
 
-  it('renders a sign-out button', () => {
+  it('renders a sign-out item inside the account menu', () => {
     renderHeader();
 
-    const signOutBtn = screen.getByRole('button', { name: /sign out/i });
-    expect(signOutBtn).toBeInTheDocument();
+    // Sign-out now lives in the account dropdown (opened via the avatar button).
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it('calls signOut when the sign-out button is clicked', () => {
+  it('calls signOut when the sign-out item is clicked', () => {
     mockSignOut.mockResolvedValue(undefined);
     renderHeader();
 
-    const signOutBtn = screen.getByRole('button', { name: /sign out/i });
-    fireEvent.click(signOutBtn);
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /sign out/i }));
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
@@ -183,9 +184,18 @@ describe('Header — authenticated (Admin)', () => {
     expect(screen.getAllByText('Admin')[0]).toBeInTheDocument();
   });
 
-  it('renders a sign-out button for Admin', () => {
+  it('renders a sign-out item inside the account menu for Admin', () => {
     renderHeader();
 
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it('exposes the Admin console link inside the account menu', () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    const adminLink = screen.getByRole('menuitem', { name: /admin console/i });
+    expect(adminLink).toHaveAttribute('href', '/admin/users');
   });
 });
