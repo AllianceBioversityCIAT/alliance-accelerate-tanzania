@@ -94,21 +94,48 @@ Resources:
               Action: secretsmanager:GetSecretValue
               Resource: !ImportValue
                 Fn::Sub: "${DataAuthStackName}-DbSecretArn"
+            # Admin user-management module (T-6, FR-12): least-privilege Cognito
+            # admin actions, scoped to the SINGLE user-pool ARN (no `*` resource).
+            # Pool ARN is constructed inline from the imported UserPoolId.
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:AdminGetUser
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminDeleteUser
+                - cognito-idp:AdminUpdateUserAttributes
+                - cognito-idp:AdminEnableUser
+                - cognito-idp:AdminDisableUser
+                - cognito-idp:AdminAddUserToGroup
+                - cognito-idp:AdminRemoveUserFromGroup
+                - cognito-idp:AdminListGroupsForUser
+                - cognito-idp:AdminResetUserPassword
+              Resource: !Sub
+                - "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${PoolId}"
+                - PoolId: !ImportValue
+                    Fn::Sub: "${DataAuthStackName}-UserPoolId"
       Events:
-        # HTTP API catch-all - the NestJS app owns the api/v1 prefix internally,
-        # so every path (and the root) proxies to the single handler.
-        Proxy:
+        # Explicit methods (NOT `ANY`) so that OPTIONS matches NO route and API
+        # Gateway's CorsConfiguration auto-answers CORS preflight with 204. With a
+        # catch-all `ANY` route, OPTIONS is proxied to NestJS (no OPTIONS handler →
+        # 404), which browsers reject as a failed preflight — breaking the admin
+        # module's Bearer/JSON write requests (T-11 discovery). NestJS still owns
+        # the api/v1 prefix; every real method proxies to the single handler.
+        ProxyGet:
           Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /{proxy+}
-            Method: ANY
-        Root:
+          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: GET }
+        ProxyPost:
           Type: HttpApi
-          Properties:
-            ApiId: !Ref HttpApi
-            Path: /
-            Method: ANY
+          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: POST }
+        ProxyPatch:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: PATCH }
+        ProxyDelete:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: DELETE }
+        RootGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /, Method: GET }
 
   # ════════════════════════════════════════════════════════════════════════════
   # HTTP API (API Gateway v2) - auto $default stage serves at the root domain,
@@ -117,13 +144,17 @@ Resources:
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      # Read-only public API: GET + OPTIONS (CORS preflight) suffice.
+      # Public reads use GET + OPTIONS (CORS preflight); POST/PATCH/DELETE are
+      # now allowed for the Admin user-management module write endpoints (T-6).
       CorsConfiguration:
         AllowOrigins:
           - !Ref AllowedOrigin
         AllowMethods:
           - GET
           - OPTIONS
+          - POST
+          - PATCH
+          - DELETE
         AllowHeaders:
           - Content-Type
           - Authorization

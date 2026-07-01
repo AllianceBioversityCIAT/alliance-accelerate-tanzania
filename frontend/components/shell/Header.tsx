@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSession } from '@/lib/auth/useSession';
 import { useAuth } from '@/lib/auth/useAuth';
 import type { Role } from '@/lib/auth/useSession';
@@ -58,11 +58,33 @@ function AvatarCircle({ name }: { name: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Auth slot — sign-in (Public) or compact user menu (authenticated)
+// Auth slot — sign-in (Public) or a compact user-menu dropdown (authenticated).
+// The dropdown keeps the top bar uncluttered: the avatar+role button collapses
+// the long email, role, admin console link, and sign-out into a popover, so the
+// primary nav links never get squeezed into wrapping (UX: overflow/no-wrap).
 // ---------------------------------------------------------------------------
 function AuthSlot() {
   const { role, user } = useSession();
   const { signOut }    = useAuth();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside-click and on Escape (a11y: keyboard-dismissable popover).
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   if (!user || role === 'Public') {
     return (
@@ -76,19 +98,83 @@ function AuthSlot() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <AvatarCircle name={user.name} />
-      <span className="hidden sm:block text-sm font-medium text-fg">{user.name}</span>
-      <RoleBadge role={user.role} />
-      {/* Sign-out control — FR-3; accessible button with visible focus (NFR-4) */}
+    <div className="relative" ref={menuRef}>
+      {/* Trigger — avatar + role badge + chevron; collapses the identity block. */}
       <button
         type="button"
-        onClick={() => void signOut()}
-        className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-        aria-label="Sign out"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Account menu for ${user.name}`}
+        className="inline-flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 cursor-pointer"
       >
-        Sign out
+        <AvatarCircle name={user.name} />
+        <RoleBadge role={user.role} />
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={[
+            'h-4 w-4 text-muted transition-transform motion-reduce:transition-none',
+            open ? 'rotate-180' : '',
+          ].join(' ')}
+        >
+          <path fillRule="evenodd" clipRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+        </svg>
       </button>
+
+      {/* Popover menu */}
+      {open && (
+        <div
+          role="menu"
+          aria-label="Account"
+          className="absolute right-0 mt-2 w-64 rounded-md border border-border bg-surface shadow-md z-50 py-1"
+        >
+          {/* Identity block — the long email lives here, free to wrap. */}
+          <div className="flex items-center gap-2.5 px-4 py-3">
+            <AvatarCircle name={user.name} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-fg" title={user.name}>{user.name}</p>
+              <p className="text-xs text-muted">Signed in · {user.role}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* Admin console — role-scoped, lives in the account menu (off the nav). */}
+          {role === 'Admin' && (
+            <Link
+              href="/admin/users"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:bg-surface-alt"
+            >
+              Admin console
+            </Link>
+          )}
+
+          <Link
+            href="/"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-alt hover:text-fg focus-visible:outline-none focus-visible:bg-surface-alt"
+          >
+            View public site
+          </Link>
+
+          <div className="border-t border-border" />
+
+          {/* Sign out — FR-3; accessible menu item with visible focus (NFR-4). */}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpen(false); void signOut(); }}
+            className="block w-full px-4 py-2 text-left text-sm font-medium text-danger transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:bg-surface-alt cursor-pointer"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -115,17 +201,29 @@ function MobileAuth({ onNavigate }: { onNavigate: () => void }) {
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2.5">
         <AvatarCircle name={user.name} />
-        <span className="truncate text-sm font-medium text-fg">{user.name}</span>
-        <RoleBadge role={user.role} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-fg" title={user.name}>{user.name}</p>
+          <p className="text-xs text-muted">Signed in · {user.role}</p>
+        </div>
+        <span className="ml-auto shrink-0"><RoleBadge role={user.role} /></span>
       </div>
+      {/* Admin console — role-scoped, in the account area (not the content nav). */}
+      {role === 'Admin' && (
+        <Link
+          href="/admin/users"
+          onClick={onNavigate}
+          className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-2.5 text-sm font-medium text-fg transition-colors hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+        >
+          Admin console
+        </Link>
+      )}
       <button
         type="button"
         onClick={() => { onNavigate(); void signOut(); }}
-        className="inline-flex shrink-0 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
-        aria-label="Sign out"
+        className="inline-flex w-full items-center justify-center rounded-md border border-border px-3 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
       >
         Sign out
       </button>
@@ -146,7 +244,7 @@ function NavLink({ href, label }: { href: string; label: string }) {
       href={href}
       aria-current={isActive ? 'page' : undefined}
       className={[
-        'text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm px-1 py-0.5',
+        'whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm px-1 py-0.5',
         isActive
           ? 'text-primary underline underline-offset-4 decoration-2 decoration-primary'
           : 'text-muted hover:text-fg',
