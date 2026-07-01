@@ -292,28 +292,27 @@ describe('Header — accessible auth control names (NFR-4)', () => {
     expect(signInLink).toHaveAttribute('href', '/login');
   });
 
-  it('renders a sign-out button with an accessible name in the authenticated state', () => {
+  it('exposes a sign-out control with an accessible name in the authenticated state', () => {
     mockUseSession.mockReturnValue({
       role: 'Staff',
       user: { name: 'Alice Mwangi', role: 'Staff' as const },
     });
     renderHeader();
 
-    // aria-label="Sign out" must be present on the button (FR-3, NFR-4)
-    const signOutBtn = screen.getByRole('button', { name: /sign out/i });
-    expect(signOutBtn).toBeInTheDocument();
-    expect(signOutBtn).toHaveAttribute('aria-label', 'Sign out');
+    // The account trigger is reachable by accessible name (FR-4/NFR-4); sign-out
+    // lives in its dropdown as a menuitem reachable by accessible name (FR-3).
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it('renders a sign-out button with an accessible name for the Admin role', () => {
+  it('exposes a sign-out control with an accessible name for the Admin role', () => {
     mockUseSession.mockReturnValue({
       role: 'Admin',
       user: { name: 'Bob Kariuki', role: 'Admin' as const },
     });
     renderHeader();
 
-    const signOutBtn = screen.getByRole('button', { name: /sign out/i });
-    expect(signOutBtn).toBeInTheDocument();
-    expect(signOutBtn).toHaveAttribute('aria-label', 'Sign out');
+    fireEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
   });
 });
