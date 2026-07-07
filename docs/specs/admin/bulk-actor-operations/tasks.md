@@ -67,7 +67,7 @@
       Done when: bulk actions call the client with correct args; unlock blocked until acknowledgement typed; result summary + refetch; build green.
       Skills: ui-ux-pro-max, shadcn-ui, react-doctor
 
-- [ ] T-8 Frontend tests  (deps: T-7)
+- [x] T-8 Frontend tests  (deps: T-7)
       Scope: RTL — `/admin/actors` renders selectable rows; selecting shows the bulk bar; Unlock opens AcknowledgeDialog and stays disabled until the phrase is typed, then calls `bulkSetConsent` with `acknowledged:true`; Lock/Delete confirm + call the client; result summary renders; non-Admin redirect (mock useSession). API client + session mocked.
       Traces: FR-2, FR-4, FR-9, NFR-3, NFR-5 (requirements.md); design.md §10
       Files: frontend/app/(admin)/admin/actors/*.test.tsx, frontend/components/admin/*.test.tsx

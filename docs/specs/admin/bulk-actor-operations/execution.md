@@ -272,6 +272,46 @@ FR-3, FR-4, FR-5, FR-9, NFR-3, NFR-4.
 
 ---
 
+### T-8 — Frontend tests
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-8 — Frontend tests
+- **Attempts:** 2
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/app/(admin)/admin/actors/page.test.tsx` (new)
+  - `frontend/components/admin/AcknowledgeDialog.test.tsx` (new)
+  - `frontend/components/admin/BulkActionBar.test.tsx` (new)
+- **Implementer verification command:** `cd frontend && npm test -- actors`
+- **Implementer verification result:** 3 passed, 42 tests passed.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:** Missing non-Admin redirect coverage for `/admin/actors` (mock useSession). Only `AuthFailureError` → `/login` was tested.
+
+#### Attempt 2
+
+- **Files changed:**
+  - `frontend/app/(admin)/admin/actors/page.test.tsx` — added Staff/Public redirect tests wrapping `ActorsPage` in `AdminLayout` with `SessionContext.Provider`
+- **Implementer verification commands:**
+  - `cd frontend && npm test -- actors` → 3 passed, 44 tests passed
+  - `cd frontend && npm test` → 61 passed, 773 tests passed
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** All required frontend test scenarios for the bulk actor operations page are covered, the prior non-Admin redirect finding is resolved, and the full frontend suite passes cleanly (773/773).
+
+#### Requirements covered
+FR-2, FR-4, FR-9, NFR-3, NFR-5.
+
+#### Decisions made
+- Wrapped `ActorsPage` inside `AdminLayout` with controlled `SessionContext.Provider` to exercise the `RequireRole` guard.
+- Kept component-level tests for `AcknowledgeDialog` and `BulkActionBar` isolated.
+
+#### Issues encountered
+- Reviewer caught missing non-Admin redirect tests in attempt 1; resolved in attempt 2.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
@@ -281,4 +321,5 @@ FR-3, FR-4, FR-5, FR-9, NFR-3, NFR-4.
 - T-5: PASS (1 attempt)
 - T-6: PASS (2 attempts)
 - T-7: PASS (3 attempts)
+- T-8: PASS (2 attempts)
 
