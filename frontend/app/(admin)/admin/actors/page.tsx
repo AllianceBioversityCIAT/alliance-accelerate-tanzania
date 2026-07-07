@@ -29,12 +29,18 @@ import { useRouter } from 'next/navigation';
 import { getSession } from '@/lib/auth/auth-client';
 import {
   adminListActors,
+  bulkSetConsent,
+  bulkDeleteActors,
   type AdminActor,
   type AdminActorListQuery,
+  type BulkResult,
 } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
 
 import { ActorsTable } from '@/components/admin/ActorsTable';
+import { BulkActionBar } from '@/components/admin/BulkActionBar';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { AcknowledgeDialog } from '@/components/admin/AcknowledgeDialog';
 import Skeleton from '@/components/ui/Skeleton';
 
 import { REGIONS } from '@/lib/content/regions';
@@ -200,6 +206,14 @@ export default function ActorsPage() {
     successTimerRef.current = setTimeout(() => setSuccessMsg(undefined), 3000);
   }, []);
 
+  // ── Bulk-action dialog state ──────────────────────────────────────────────
+
+  type DialogKind = 'unlock' | 'lock' | 'delete' | null;
+
+  const [activeDialog, setActiveDialog] = useState<DialogKind>(null);
+  const [dialogLoading, setDialogLoading] = useState(false);
+  const [dialogError, setDialogError] = useState<string | undefined>();
+
   // ── Auth failure → /login ─────────────────────────────────────────────────
 
   const handleAuthFailure = useCallback(() => {
@@ -335,6 +349,102 @@ export default function ActorsPage() {
       return next;
     });
   }, [actors]);
+
+  // ── Bulk action result summary ────────────────────────────────────────────
+
+  const formatResultSummary = useCallback(
+    (verb: string, result: BulkResult): string => {
+      const parts = [`${verb} ${result.applied} actor${result.applied === 1 ? '' : 's'}`];
+      if (result.notFound.length > 0) {
+        parts.push(`${result.notFound.length} not found`);
+      }
+      return parts.join('. ') + '.';
+    },
+    []
+  );
+
+  // ── Bulk action handlers ──────────────────────────────────────────────────
+
+  const ids = Array.from(selectedIds);
+
+  const handleUnlockConfirm = useCallback(async () => {
+    if (!token || ids.length === 0) return;
+    setDialogError(undefined);
+    setDialogLoading(true);
+    try {
+      const result = await bulkSetConsent(
+        { ids, consentStatus: 'GRANTED', acknowledged: true },
+        token
+      );
+      setActiveDialog(null);
+      setSelectedIds(new Set());
+      await fetchActors(token, { ...filters, page, pageSize });
+      showSuccess(formatResultSummary('Unlocked', result));
+    } catch (caught: unknown) {
+      if (caught instanceof AuthFailureError) {
+        handleAuthFailure();
+        return;
+      }
+      setDialogError(caught instanceof Error ? caught.message : 'Failed to unlock actors.');
+    } finally {
+      setDialogLoading(false);
+    }
+  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+
+  const handleLockConfirm = useCallback(async () => {
+    if (!token || ids.length === 0) return;
+    setDialogError(undefined);
+    setDialogLoading(true);
+    try {
+      const result = await bulkSetConsent(
+        { ids, consentStatus: 'DENIED' },
+        token
+      );
+      setActiveDialog(null);
+      setSelectedIds(new Set());
+      await fetchActors(token, { ...filters, page, pageSize });
+      showSuccess(formatResultSummary('Locked', result));
+    } catch (caught: unknown) {
+      if (caught instanceof AuthFailureError) {
+        handleAuthFailure();
+        return;
+      }
+      setDialogError(caught instanceof Error ? caught.message : 'Failed to lock actors.');
+    } finally {
+      setDialogLoading(false);
+    }
+  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!token || ids.length === 0) return;
+    setDialogError(undefined);
+    setDialogLoading(true);
+    try {
+      const result = await bulkDeleteActors({ ids }, token);
+      setActiveDialog(null);
+      setSelectedIds(new Set());
+      await fetchActors(token, { ...filters, page, pageSize });
+      showSuccess(formatResultSummary('Deleted', result));
+    } catch (caught: unknown) {
+      if (caught instanceof AuthFailureError) {
+        handleAuthFailure();
+        return;
+      }
+      setDialogError(caught instanceof Error ? caught.message : 'Failed to delete actors.');
+    } finally {
+      setDialogLoading(false);
+    }
+  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+
+  const openDialog = useCallback((kind: Exclude<DialogKind, null>) => {
+    setDialogError(undefined);
+    setActiveDialog(kind);
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    setActiveDialog(null);
+    setDialogError(undefined);
+  }, []);
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
@@ -487,6 +597,15 @@ export default function ActorsPage() {
             </div>
           </div>
 
+          {/* Bulk action bar */}
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onUnlock={() => openDialog('unlock')}
+            onLock={() => openDialog('lock')}
+            onDelete={() => openDialog('delete')}
+            loading={dialogLoading}
+          />
+
           {/* Table */}
           <ActorsTable
             actors={actors}
@@ -538,6 +657,43 @@ export default function ActorsPage() {
           </div>
         </>
       )}
+
+      {/* ── Bulk-action dialogs ───────────────────────────────────────────── */}
+
+      <AcknowledgeDialog
+        open={activeDialog === 'unlock'}
+        title={`Unlock ${selectedIds.size} actor${selectedIds.size === 1 ? '' : 's'}?`}
+        description="Unlocking publishes the selected actors' PII and GPS coordinates to the public directory. Only confirm if written consent is on file for every selected actor."
+        acknowledgementText="I confirm consent is on file"
+        confirmLabel="Unlock"
+        onConfirm={handleUnlockConfirm}
+        onCancel={closeDialog}
+        loading={dialogLoading}
+        error={dialogError}
+      />
+
+      <ConfirmDialog
+        open={activeDialog === 'lock'}
+        title={`Lock ${selectedIds.size} actor${selectedIds.size === 1 ? '' : 's'}?`}
+        description="Locking hides the selected actors from the public directory and map. Their records remain in the registry."
+        confirmLabel="Lock"
+        onConfirm={handleLockConfirm}
+        onCancel={closeDialog}
+        loading={dialogLoading}
+        error={dialogError}
+      />
+
+      <ConfirmDialog
+        open={activeDialog === 'delete'}
+        title={`Delete ${selectedIds.size} actor${selectedIds.size === 1 ? '' : 's'}?`}
+        description="This will permanently delete the selected actors and their crop links. This action cannot be undone."
+        acknowledgementText={`delete ${selectedIds.size} actor${selectedIds.size === 1 ? '' : 's'}`}
+        confirmLabel="Delete"
+        onConfirm={handleDeleteConfirm}
+        onCancel={closeDialog}
+        loading={dialogLoading}
+        error={dialogError}
+      />
     </div>
   );
 }

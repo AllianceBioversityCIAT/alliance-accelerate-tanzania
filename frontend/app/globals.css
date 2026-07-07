@@ -22,6 +22,9 @@
     --color-surface:       #FFFFFF;
     --color-surface-alt:   #F7F7F7;
     --color-fg:            #333333;
+    /* Modal/backdrop wash (40% of fg). Explicit token because the hex fg var
+       doesn't support Tailwind /opacity modifiers. */
+    --color-backdrop:      rgba(51, 51, 51, 0.40);
     --color-muted:         #666666;
     --color-border:        #E2E2E2;
     --color-success:       #2F7D32;

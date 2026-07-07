@@ -59,7 +59,7 @@
       Done when: table renders all actors with selection + filters; sidebar Actors active; build (static export) green.
       Skills: ui-ux-pro-max, tailwind-design-system, react-doctor
 
-- [ ] T-7 Bulk-action bar + confirm/acknowledge dialogs  (deps: T-6)
+- [x] T-7 Bulk-action bar + confirm/acknowledge dialogs  (deps: T-6)
       Scope: `frontend/components/admin/BulkActionBar.tsx` (Unlock · Lock · Delete on selection, count shown) + `frontend/components/admin/AcknowledgeDialog.tsx` (typed-phrase acknowledgement variant of ConfirmDialog). Wire: Unlock → AcknowledgeDialog → `bulkSetConsent(GRANTED, acknowledged:true)`; Lock → ConfirmDialog → `bulkSetConsent(DENIED)`; Delete → ConfirmDialog (typed) → `bulkDeleteActors`. Disable in-flight; show result summary (N applied, M not found) via live region; refetch after.
       Traces: FR-3, FR-4, FR-5, FR-9, NFR-3, NFR-4 (requirements.md); design.md §5
       Files: frontend/components/admin/BulkActionBar.tsx, frontend/components/admin/AcknowledgeDialog.tsx, frontend/app/(admin)/admin/actors/page.tsx

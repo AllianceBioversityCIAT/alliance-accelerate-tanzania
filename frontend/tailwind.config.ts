@@ -25,6 +25,7 @@ const config: Config = {
         surface:          'var(--color-surface)',
         'surface-alt':    'var(--color-surface-alt)',
         fg:               'var(--color-fg)',
+        backdrop:         'var(--color-backdrop)',
         muted:       'var(--color-muted)',
         border:      'var(--color-border)',
         success:     'var(--color-success)',

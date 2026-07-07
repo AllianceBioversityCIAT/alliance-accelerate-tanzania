@@ -218,6 +218,60 @@ FR-1, FR-2, FR-9, NFR-2, NFR-3.
 
 ---
 
+### T-7 — Bulk-action bar + confirm/acknowledge dialogs
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-7 — Bulk-action bar + confirm/acknowledge dialogs
+- **Attempts:** 3
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/components/admin/AcknowledgeDialog.tsx` (new)
+  - `frontend/components/admin/BulkActionBar.tsx` (new)
+  - `frontend/app/(admin)/admin/actors/page.tsx` (wired bulk actions)
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded with static export.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:** `AcknowledgeDialog.tsx` used `bg-fg/40` (opacity modifier on hex CSS variable `fg`) for the modal backdrop, violating the design-token-only rule.
+
+#### Attempt 2
+
+- **Files changed:**
+  - `frontend/app/globals.css` — added `--color-backdrop` explicit token
+  - `frontend/tailwind.config.ts` — registered `backdrop` color
+  - `frontend/components/admin/AcknowledgeDialog.tsx` — replaced `bg-fg/40` with `bg-backdrop`
+  - `frontend/components/admin/ConfirmDialog.tsx` — replaced `bg-fg/40` with `bg-backdrop`
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:**
+  1. `ConfirmDialog.tsx` still used `bg-danger/10` on the inline error banner (opacity modifier on hex CSS variable).
+  2. Delete action used `AcknowledgeDialog`; design.md §5 maps Delete → `ConfirmDialog` (typed).
+
+#### Attempt 3
+
+- **Files changed:**
+  - `frontend/components/admin/ConfirmDialog.tsx` — replaced `bg-danger/10` with `bg-danger-soft`; added optional `acknowledgementText` typed-phrase gate
+  - `frontend/app/(admin)/admin/actors/page.tsx` — changed Delete dialog to `ConfirmDialog` with `acknowledgementText`
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded with static export.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** Attempt 3 correctly implements the T-7 bulk-action bar and confirm/acknowledge dialogs. The prior opacity-modifier violations are gone, the correct dialog is used for each action, and the page wiring includes result summaries, refetch, and selection clearing while remaining static-export safe.
+
+#### Requirements covered
+FR-3, FR-4, FR-5, FR-9, NFR-3, NFR-4.
+
+#### Decisions made
+- Extended `ConfirmDialog` with an optional typed-phrase gate instead of using `AcknowledgeDialog` for delete, preserving the design.md §5 component mapping.
+- Added an explicit `--color-backdrop` token and fixed both `AcknowledgeDialog` and `ConfirmDialog` backdrops.
+
+#### Issues encountered
+- Took three attempts to eliminate all opacity-modifier usages and align delete with the specified `ConfirmDialog` mapping.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
@@ -226,4 +280,5 @@ FR-1, FR-2, FR-9, NFR-2, NFR-3.
 - T-4: PASS (2 attempts)
 - T-5: PASS (1 attempt)
 - T-6: PASS (2 attempts)
+- T-7: PASS (3 attempts)
 
