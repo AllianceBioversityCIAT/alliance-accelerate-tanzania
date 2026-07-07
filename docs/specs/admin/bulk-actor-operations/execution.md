@@ -75,8 +75,38 @@ None.
 
 ---
 
+### T-3 — AdminActorsController + module wiring
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-3 — AdminActorsController + module wiring
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/admin-actors.controller.ts` (new)
+  - `backend/src/actors/actors.module.ts` (added `AdminActorsController`)
+- **Implementer verification command:** `cd backend && npm run build`
+- **Implementer verification result:** Build succeeded with no errors.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** The `AdminActorsController` and `ActorsModule` wiring exactly match the T-3 specification, correctly apply Admin-only RBAC, forward all required parameters to `ActorsAdminService`, leave the public `actors.controller.ts` untouched, and build cleanly.
+
+#### Requirements covered
+FR-1, FR-3, FR-5, FR-6.
+
+#### Decisions made
+- Used class-level guards/roles so every route is Admin-only.
+- Used `POST /bulk/delete` per design §3 (avoid request-body-on-DELETE proxy issues).
+
+#### Issues encountered
+None.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
 - T-2: PASS (1 attempt)
+- T-3: PASS (1 attempt)
 

@@ -25,7 +25,7 @@
       Done when: three methods implemented, transactional, per-id result, unlock-acknowledgement guard, no public-path change; build green.
       Skills: nestjs-expert, error-handling-patterns
 
-- [ ] T-3 AdminActorsController + module wiring  (deps: T-2)
+- [x] T-3 AdminActorsController + module wiring  (deps: T-2)
       Scope: `backend/src/actors/admin-actors.controller.ts` — `@Controller('admin/actors')`, class-level `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('Admin')`; routes `GET /` (list), `PATCH /bulk/consent` (pass `@CurrentUser().sub` + dto.acknowledged), `POST /bulk/delete` (`@CurrentUser().sub`). Register controller + `ActorsAdminService` in `actors.module.ts`. Do NOT touch the public `actors.controller.ts`.
       Traces: FR-1, FR-3, FR-5, FR-6 (requirements.md); design.md §3, §6
       Files: backend/src/actors/admin-actors.controller.ts, backend/src/actors/actors.module.ts
