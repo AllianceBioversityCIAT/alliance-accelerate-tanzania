@@ -145,10 +145,38 @@ FR-1..FR-8, NFR-1, NFR-4, NFR-5.
 
 ---
 
+### T-5 — Admin actors API client
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-5 — Admin actors API client
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/lib/api/actors-admin.ts` (new)
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded with static export.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** `frontend/lib/api/actors-admin.ts` fully implements the specified Admin actors API client — all required types and functions are present, endpoints and HTTP methods match the design, it correctly uses `apiFetch`, carries the SDD spec tag, preserves static-export safety, and keeps PII within the Admin-only surface. Frontend build succeeded.
+
+#### Requirements covered
+FR-1, FR-3, FR-5, FR-9.
+
+#### Decisions made
+- Mirrored backend contract types exactly in the client for end-to-end type safety.
+
+#### Issues encountered
+None.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
 - T-2: PASS (1 attempt)
 - T-3: PASS (1 attempt)
 - T-4: PASS (2 attempts)
+- T-5: PASS (1 attempt)
 

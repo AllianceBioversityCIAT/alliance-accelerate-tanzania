@@ -43,7 +43,7 @@
 
 ### Phase B — Frontend (admin actors console)
 
-- [ ] T-5 Admin actors API client  (deps: none — contract-driven by design §3)
+- [x] T-5 Admin actors API client  (deps: none — contract-driven by design §3)
       Scope: `frontend/lib/api/actors-admin.ts` — `adminListActors(query, token)`, `bulkSetConsent({ids, consentStatus, acknowledged}, token)`, `bulkDeleteActors({ids}, token)` via `apiFetch` (Bearer). Types mirror `AdminActor` + `BulkResult` (design §3).
       Traces: FR-1, FR-3, FR-5, FR-9 (requirements.md); design.md §3, §5
       Files: frontend/lib/api/actors-admin.ts
