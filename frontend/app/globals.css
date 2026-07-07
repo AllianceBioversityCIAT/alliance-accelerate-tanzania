@@ -14,6 +14,9 @@
     --color-accent:        #008BDB;
     --color-highlight:     #29C4A9;
     --color-highlight-soft:#82C0C7;
+    /* Soft highlight tint (~10% over white) for success/badge backgrounds.
+       Explicit token because the hex highlight var doesn't support /opacity. */
+    --color-highlight-tint:#E4F5F2;
     --color-bean:          #7A3B2E;
     --color-bg:            #FFFFFF;
     --color-surface:       #FFFFFF;
@@ -24,6 +27,9 @@
     --color-success:       #2F7D32;
     --color-warning:       #C9821B;
     --color-danger:        #B3261E;
+    /* Soft danger tint (~10% over white) for error banners / badge backgrounds.
+       Hex CSS variables don't support Tailwind /opacity, so this is explicit. */
+    --color-danger-soft:   #F5E3E2;
     --color-restricted-bg: #F3F3F3;
 
     /* Crop legend (map + chips) */

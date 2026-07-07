@@ -172,6 +172,52 @@ None.
 
 ---
 
+### T-6 — /admin/actors table + selection + filters
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-6 — /admin/actors table + selection + filters
+- **Attempts:** 2
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/app/(admin)/admin/actors/page.tsx` (new)
+  - `frontend/components/admin/ActorsTable.tsx` (new)
+  - `frontend/components/admin/AdminSidebar.tsx` (Actors enabled)
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded with static export.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:**
+  1. Tailwind opacity modifiers (`bg-danger/10`, `border-danger/30`, `bg-highlight/20`, `border-highlight/40`) used on hex CSS variables — not supported by Tailwind when vars are hex.
+  2. Accidental `* 2*` duplicate files/directories polluting working tree and producing spurious routes like `/admin 2/users`.
+
+#### Attempt 2
+
+- **Files changed:**
+  - `frontend/app/globals.css` — added `--color-danger-soft` and `--color-highlight-tint` tokens
+  - `frontend/tailwind.config.ts` — mapped new tokens as nested color objects while preserving backward compatibility
+  - `frontend/components/admin/ActorsTable.tsx` — replaced opacity modifiers with token classes
+  - `frontend/app/(admin)/admin/actors/page.tsx` — replaced opacity modifiers with token classes
+  - `frontend/components/admin/AdminSidebar.tsx` — updated stale JSDoc comment
+  - Deleted accidental `* 2*` duplicates across frontend, backend, docs, and infra
+- **Implementer verification command:** `cd frontend && npm run build`
+- **Implementer verification result:** Build succeeded; 16 static pages; `/admin/actors` present; no `/admin 2/*` routes.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** T-6 implementation meets the spec for the /admin/actors table, selection, filters, pagination, and sidebar activation; it is static-export safe, token-only, and free of the opacity-modifier and duplicate-file issues from attempt 1. Build verified.
+
+#### Requirements covered
+FR-1, FR-2, FR-9, NFR-2, NFR-3.
+
+#### Decisions made
+- Added `--color-highlight-tint` instead of reusing `--color-highlight-soft` because the existing `--color-highlight-soft` (#82C0C7) is already consumed by chart tokens and has a different semantic meaning.
+- Removed accidental `* 2*` duplicates as repository cleanup because they were polluting the static export.
+
+#### Issues encountered
+- Reviewer caught opacity-modifier and duplicate-file issues in attempt 1; resolved in attempt 2.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
@@ -179,4 +225,5 @@ None.
 - T-3: PASS (1 attempt)
 - T-4: PASS (2 attempts)
 - T-5: PASS (1 attempt)
+- T-6: PASS (2 attempts)
 

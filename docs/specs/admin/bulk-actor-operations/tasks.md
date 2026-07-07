@@ -51,7 +51,7 @@
       Done when: client compiles, attaches Bearer, typed to the contract; build green.
       Skills: vercel-react-best-practices, api-design-principles
 
-- [ ] T-6 /admin/actors table + selection + filters  (deps: T-5)
+- [x] T-6 /admin/actors table + selection + filters  (deps: T-5)
       Scope: `frontend/app/(admin)/admin/actors/page.tsx` ('use client') + `frontend/components/admin/ActorsTable.tsx` — list all actors (consent badge, PII cols), row checkboxes + select-all-on-page (FR-2), filters (region/type/consent), loading/error/empty states, table md+/cards mobile. Activate the Actors item in `AdminSidebar.tsx` (enabled + href `/admin/actors`). Tokens only; WCAG AA.
       Traces: FR-1, FR-2, FR-9, NFR-2, NFR-3 (requirements.md); design.md §5; system-design §6/§10
       Files: frontend/app/(admin)/admin/actors/page.tsx, frontend/components/admin/ActorsTable.tsx, frontend/components/admin/AdminSidebar.tsx

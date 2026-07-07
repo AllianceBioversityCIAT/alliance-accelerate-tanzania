@@ -15,8 +15,11 @@ const config: Config = {
           soft:    'var(--color-primary-soft)',
         },
         accent:           'var(--color-accent)',
-        highlight:        'var(--color-highlight)',
-        'highlight-soft': 'var(--color-highlight-soft)',
+        highlight: {
+          DEFAULT: 'var(--color-highlight)',
+          soft:    'var(--color-highlight-soft)',
+          tint:    'var(--color-highlight-tint)',
+        },
         bean:             'var(--color-bean)',
         bg:               'var(--color-bg)',
         surface:          'var(--color-surface)',
@@ -26,7 +29,10 @@ const config: Config = {
         border:      'var(--color-border)',
         success:     'var(--color-success)',
         warning:     'var(--color-warning)',
-        danger:      'var(--color-danger)',
+        danger: {
+          DEFAULT: 'var(--color-danger)',
+          soft:    'var(--color-danger-soft)',
+        },
         restricted:  'var(--color-restricted-bg)',
         crop: {
           sorghum:   'var(--crop-sorghum)',
