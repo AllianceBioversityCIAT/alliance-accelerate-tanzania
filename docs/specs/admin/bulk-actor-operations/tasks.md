@@ -17,7 +17,7 @@
       Done when: DTOs validate per design §3; serializer emits PII + consentStatus; build green.
       Skills: api-design-principles, nestjs-expert
 
-- [ ] T-2 ActorsAdminService (adminList + bulk consent/delete)  (deps: T-1)
+- [x] T-2 ActorsAdminService (adminList + bulk consent/delete)  (deps: T-1)
       Scope: `backend/src/actors/actors-admin.service.ts` injecting `PrismaService`: `adminList(q)` (filters, NO GRANTED pin, paginated envelope, rows via `toAdminActor`); `bulkSetConsent(ids, status, actingSub, acknowledged)` — throw 400 if status===GRANTED && !acknowledged; in `$transaction` compute notFound + `updateMany`; return `{requested, applied, notFound}`; structured-log the action + acking sub; `bulkDelete(ids, actingSub)` — `$transaction` notFound + `deleteMany` (cascades CropsOnActors); return result + log.
       Traces: FR-1, FR-3, FR-4, FR-5, FR-7, FR-8, NFR-4 (requirements.md); design.md §4, §6, §8
       Files: backend/src/actors/actors-admin.service.ts

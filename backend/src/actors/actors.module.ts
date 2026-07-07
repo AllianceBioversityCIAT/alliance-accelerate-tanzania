@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ActorsController } from './actors.controller';
 import { ActorsService } from './actors.service';
+import { ActorsAdminService } from './actors-admin.service';
 
 /**
- * T-5 — ActorsModule: public read API for the actor directory (FR-6).
+ * T-5 / T-2 — ActorsModule: public read API + Admin-only actor operations.
  *
  * PrismaModule is global (T-1), so the import is for explicitness; the common
  * PII/consent policy + serializer are pure functions imported directly, not Nest
@@ -13,6 +14,6 @@ import { ActorsService } from './actors.service';
 @Module({
   imports: [PrismaModule],
   controllers: [ActorsController],
-  providers: [ActorsService],
+  providers: [ActorsService, ActorsAdminService],
 })
 export class ActorsModule {}

@@ -46,7 +46,37 @@ None.
 
 ---
 
+### T-2 — ActorsAdminService (adminList + bulk consent/delete)
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-2 — ActorsAdminService (adminList + bulk consent/delete)
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/actors-admin.service.ts` (new)
+  - `backend/src/actors/actors.module.ts` (added `ActorsAdminService` provider)
+- **Implementer verification command:** `cd backend && npm run build`
+- **Implementer verification result:** Build succeeded with no errors.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** The implementation correctly creates `ActorsAdminService` with `adminList`, `bulkSetConsent`, and `bulkDelete` matching the T-2 specification, properly registers the service in `ActorsModule`, preserves PII boundaries, uses Prisma transactions for bulk operations, enforces the consent acknowledgement safeguard, and builds cleanly.
+
+#### Requirements covered
+FR-1, FR-3, FR-4, FR-5, FR-7, FR-8, NFR-4.
+
+#### Decisions made
+- Default pagination values mirrored defensively in the service (consistent with DTO defaults).
+- Used `prisma.$transaction` with pre-query + `updateMany`/`deleteMany` for per-id results (design §8 ADR).
+
+#### Issues encountered
+None.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
+- T-2: PASS (1 attempt)
 
