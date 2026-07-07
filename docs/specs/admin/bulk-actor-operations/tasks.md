@@ -33,10 +33,10 @@
       Done when: 3 routes mounted under `/api/v1/admin/actors`, Admin-guarded, app boots; public actors routes unchanged; build green.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-4 Backend tests (unit + e2e RBAC + public-read-unchanged)  (deps: T-3)
-      Scope: `actors-admin.service.spec.ts` (Prisma mocked) — bulk consent flips + notFound; GRANTED without acknowledged → 400; bulk delete calls deleteMany on found + notFound; adminList applies filters without GRANTED pin; serializer includes PII+consentStatus. `admin-actors.e2e-spec.ts` — every route 401/403(Staff&Public)/2xx(Admin); over-cap ids → 400; unlock w/o acknowledgement → 400; **public `GET /actors` still returns only GRANTED, no PII** (regression). Confirm existing `pii-boundary.spec.ts` still passes.
+- [x] T-4 Backend tests (unit + e2e RBAC + public-read-unchanged)  (deps: T-3)
+      Scope: `actors-admin.service.spec.ts` (Prisma mocked) — bulk consent flips + notFound; GRANTED without acknowledged → 400; bulk delete calls deleteMany on found + notFound; adminList applies filters without GRANTED pin; serializer includes PII+consentStatus. `admin-actors.e2e.spec.ts` (under `src/test/` per existing Jest `testRegex`) — every route 401/403(Staff&Public)/2xx(Admin); over-cap ids → 400; unlock w/o acknowledgement → 400; **public `GET /actors` still returns only GRANTED, no PII** (regression). Confirm existing `pii-boundary.spec.ts` still passes.
       Traces: FR-1..FR-8, NFR-1, NFR-4, NFR-5 (requirements.md); design.md §10
-      Files: backend/src/actors/actors-admin.service.spec.ts, backend/src/actors/admin-actors.e2e-spec.ts
+      Files: backend/src/actors/actors-admin.service.spec.ts, backend/src/test/admin-actors.e2e.spec.ts
       Verify: `cd backend && npm test -- actors`
       Done when: unit + e2e pass; RBAC matrix, acknowledgement guard, cascade, and public-read regression all covered.
       Skills: nestjs-expert, systematic-debugging

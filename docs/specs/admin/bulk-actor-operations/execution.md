@@ -104,9 +104,51 @@ None.
 
 ---
 
+### T-4 — Backend tests (unit + e2e RBAC + public-read-unchanged)
+
+- **Status:** PASS
+- **Date:** 2026-07-07
+- **Task ID / Title:** T-4 — Backend tests (unit + e2e RBAC + public-read-unchanged)
+- **Attempts:** 2
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/actors-admin.service.spec.ts` (new)
+  - `backend/src/test/admin-actors.e2e.spec.ts` (new)
+  - `backend/src/actors/admin-actors.controller.ts` (added `@HttpCode(200)` on bulkDelete)
+- **Implementer verification command:** `cd backend && npm test -- actors`
+- **Implementer verification result:** 5 passed, 67 tests passed.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:** `admin-actors.e2e.spec.ts` missing over-cap batch-size tests (501 ids → 400) required by FR-8 / design.md §3 / T-4 spec.
+
+#### Attempt 2
+
+- **Files changed:**
+  - `backend/src/test/admin-actors.e2e.spec.ts` (added two 501-id over-cap tests for bulk consent and bulk delete)
+- **Implementer verification commands:**
+  - `cd backend && npm test -- actors` → 5 passed, 69 tests passed
+  - `cd backend && npm test -- pii-boundary` → 1 passed, 10 tests passed
+  - `cd backend && npm test` → 21 passed, 176 tests passed
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** T-4 now fully satisfies the backend test specification. Unit and e2e suites cover RBAC, batch bounds, consent acknowledgement, bulk lock/unlock/delete behavior, and the public-read + PII regression; all 176 backend tests pass including the existing PII-boundary suite.
+
+#### Requirements covered
+FR-1..FR-8, NFR-1, NFR-4, NFR-5.
+
+#### Decisions made
+- Placed e2e spec under `backend/src/test/` to match existing `pii-boundary.spec.ts` and the Jest `testRegex` (`.*\.spec\.ts$`); updated `tasks.md` file list accordingly.
+- Used in-memory Prisma mock + test JWT guard override for deterministic, no-Cognito e2e tests.
+
+#### Issues encountered
+- Reviewer caught missing over-cap e2e tests in attempt 1; resolved in attempt 2.
+
+---
+
 ## Summary
 
 - T-1: PASS (1 attempt)
 - T-2: PASS (1 attempt)
 - T-3: PASS (1 attempt)
+- T-4: PASS (2 attempts)
 

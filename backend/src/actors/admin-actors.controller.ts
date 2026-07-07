@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Patch,
   Post,
   Query,
@@ -78,6 +79,7 @@ export class AdminActorsController {
    * support. The caller's verified `sub` is forwarded for the action log.
    */
   @Post('bulk/delete')
+  @HttpCode(200)
   bulkDelete(
     @Body() dto: BulkDeleteDto,
     @CurrentUser() user: AuthUser,
