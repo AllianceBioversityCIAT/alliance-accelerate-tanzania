@@ -77,7 +77,7 @@
 
 ### Phase C — Deploy & verification
 
-- [ ] T-9 Deploy to dev + live verification  (deps: T-4, T-8)
+- [x] T-9 Deploy to dev + live verification  (deps: T-4, T-8)
       Scope: Deploy backend + frontend (`--profile IBD-DEV`; backend via `cloudformation package`/`deploy`, no Docker). Live-verify: Admin can list all actors, bulk-unlock (with acknowledgement) → actor appears in public directory/metrics, bulk-lock → disappears, bulk-delete → gone; Staff/anonymous get 403/401; public `GET /actors` unchanged. Record evidence in execution.md.
       Traces: FR-1..FR-9 (requirements.md); design.md §7, §10
       Files: (none — deploy + manual verification)

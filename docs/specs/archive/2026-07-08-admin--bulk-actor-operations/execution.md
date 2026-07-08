@@ -323,3 +323,20 @@ FR-2, FR-4, FR-9, NFR-3, NFR-5.
 - T-7: PASS (3 attempts)
 - T-8: PASS (2 attempts)
 
+
+### T-9 — Deploy to dev + live verification — **PASS** (Leader, live) — 2026-07-08
+
+- **Requirements covered:** FR-1..FR-9 (live).
+- **Deploy (`--profile IBD-DEV`, eu-west-1):** backend `20-backend` via `sam build` → `aws cloudformation package`/`deploy` (no Docker); frontend via `deploy-frontend.sh`. No infra change needed (CORS/routes/IAM already in place from user-management — DB-only writes).
+- **Deploy-time fix (committed):** `infra/20-backend/template.yaml` had **invalid flow-style YAML** at the proxy routes (`Properties: { ... Path: /{proxy+} ... }` — the `{` in `/{proxy+}` opens a nested flow-map). It was latent since the T-11 (user-management) CORS route change because that deploy used a hand-edited *built* template and skipped `sam build`; T-9's `sam build` surfaced it. Converted the 5 route events to block style; `sam validate` passes.
+- **Environmental note:** the local `node_modules` (both backend `validator` and frontend `object-hash`/`next`) were repeatedly corrupted/evicted by iCloud sync under `~/Desktop/DEV/`, causing masked test/build failures (a piped `tail` hid jest/webpack exits). Resolved with clean reinstalls; a one-shot install+deploy chain finally produced a clean frontend build. **Not a code defect** — flag the deploy env to install deps cleanly (and note `frontend/package-lock.json` is gitignored → no committed lockfile).
+- **Live verification (dev):**
+  - `GET /api/v1/admin/actors` (no token) → **401**; `PATCH /admin/actors/bulk/consent` → **401**; `POST /admin/actors/bulk/delete` → **401** (Admin gate live, FR-6).
+  - `OPTIONS /admin/actors/bulk/consent` → **204** (CORS preflight OK, FR-9).
+  - `GET /api/v1/actors` (public) → **200**, unchanged (FR-7).
+  - Frontend `GET /admin/actors` → **200**; Actors sidebar item now active (was "soon").
+- **Remaining manual check (browser):** sign in as Admin → **Actors** → select actors → bulk unlock (with typed acknowledgement) / lock / delete → confirm public directory visibility flips.
+- **Issues:** deploy-time YAML fix + local node_modules corruption (both resolved). No code defects.
+- **Final verification:** Live RBAC matrix + preflight + public-read-unchanged green; console served.
+
+> **ALL 9 TASKS PASS.** Admin bulk-actor-operations deployed to dev and live-verified.
