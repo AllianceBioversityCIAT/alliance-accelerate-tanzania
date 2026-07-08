@@ -16,7 +16,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Users',   href: '/admin/users',  enabled: true  },
-  { label: 'Actors',  href: '/admin/actors', enabled: false },
+  { label: 'Actors',  href: '/admin/actors', enabled: true  },
   { label: 'Import',  href: '/admin/import', enabled: false },
   { label: 'Export',  href: '/admin/export', enabled: false },
 ];
@@ -28,10 +28,11 @@ const NAV_ITEMS: NavItem[] = [
 /**
  * AdminSidebar — persistent left navigation for the admin shell.
  *
- * Active item: Users → /admin/users (marked with aria-current="page").
- * Disabled items: Actors, Import, Export — rendered as non-interactive spans
- * with aria-disabled="true" and a "soon" badge so they seed future modules
- * without creating dead links.
+ * Active item: marked with aria-current="page" based on the current route.
+ * Enabled items: Users, Actors.
+ * Disabled items: Import, Export — rendered as non-interactive spans with
+ * aria-disabled="true" and a "soon" badge so they seed future modules without
+ * creating dead links.
  *
  * Tokens only; no hardcoded colors/geometry.
  */
