@@ -121,21 +121,38 @@ Resources:
         # 404), which browsers reject as a failed preflight — breaking the admin
         # module's Bearer/JSON write requests (T-11 discovery). NestJS still owns
         # the api/v1 prefix; every real method proxies to the single handler.
+        # NB: block style — a flow-style `{ Path: /{proxy+} }` is INVALID YAML
+        # (the `{` in `/{proxy+}` opens a nested flow-map). Keep these expanded.
         ProxyGet:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: GET }
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: GET
         ProxyPost:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: POST }
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: POST
         ProxyPatch:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: PATCH }
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: PATCH
         ProxyDelete:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Path: /{proxy+}, Method: DELETE }
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: DELETE
         RootGet:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Path: /, Method: GET }
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /
+            Method: GET
 
   # ════════════════════════════════════════════════════════════════════════════
   # HTTP API (API Gateway v2) - auto $default stage serves at the root domain,
