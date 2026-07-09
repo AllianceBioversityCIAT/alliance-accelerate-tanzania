@@ -47,7 +47,7 @@
       Done when: unit tests green covering create/update/delete/history/bulk-retrofit incl. 400/404/409 mappings, empty-diff skip, rollback atomicity, and unchanged `BulkResult` shape.
       Skills: nestjs-expert, error-handling-patterns, api-design-principles
 
-- [ ] T-6 Controller routes, module wiring, and e2e  (deps: T-5)
+- [x] T-6 Controller routes, module wiring, and e2e  (deps: T-5)
       Scope: add the 5 routes to `AdminActorsController` per design §3 (bulk routes remain declared first; `@HttpCode` as designed; params validated); register `ActorAuditService` + `ActingAdminResolver` in `ActorsModule`. E2E: per-route 401/403(Staff,Public)/success(Admin); full lifecycle create → detail → update → history → delete → history-after-delete; GRANTED-transition w/o ack → 400; dup `traderId` → 409; **public `GET /actors` + pii-boundary regression green**.
       Traces: FR-1..FR-4, FR-7, FR-11, FR-12, NFR-1, NFR-5; design.md §3, §4, §6
       Files: backend/src/actors/admin-actors.controller.ts, actors.module.ts, backend/test/admin-actors-crud.e2e.spec.ts

@@ -2,8 +2,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Param,
   Patch,
   Post,
   Query,
@@ -22,6 +24,11 @@ import {
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
 import { BulkConsentDto } from './dto/bulk-consent.dto';
 import { BulkDeleteDto } from './dto/bulk-delete.dto';
+import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
+import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
+import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
+import { AdminActor } from './admin-actor.serializer';
+import { AuditEntry } from './audit-entry.serializer';
 
 /**
  * T-3 — Admin-only actor bulk-operations controller (FR-1, FR-3, FR-5, FR-6).
@@ -85,5 +92,52 @@ export class AdminActorsController {
     @CurrentUser() user: AuthUser,
   ): Promise<BulkResult> {
     return this.actorsAdminService.bulkDelete(dto.ids, user.sub);
+  }
+
+  /** `POST /api/v1/admin/actors` — create a single actor (FR-1). */
+  @Post()
+  @HttpCode(201)
+  create(
+    @Body() dto: AdminActorCreateDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<AdminActor> {
+    return this.actorsAdminService.create(dto, user.sub);
+  }
+
+  /** `GET /api/v1/admin/actors/:id` — admin detail for edit (FR-2). */
+  @Get(':id')
+  getById(@Param('id') id: string): Promise<AdminActor> {
+    return this.actorsAdminService.getById(id);
+  }
+
+  /** `PATCH /api/v1/admin/actors/:id` — partial update (FR-3). */
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: AdminActorUpdateDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<AdminActor> {
+    return this.actorsAdminService.update(id, dto, user.sub);
+  }
+
+  /** `DELETE /api/v1/admin/actors/:id` — permanent delete (FR-4). */
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<{ deleted: true; id: string }> {
+    return this.actorsAdminService.remove(id, user.sub);
+  }
+
+  /**
+   * `GET /api/v1/admin/actors/:id/history` — audit history for one actor
+   * (FR-7). Works for deleted actors because no existence check is performed.
+   */
+  @Get(':id/history')
+  history(
+    @Param('id') id: string,
+    @Query() query: ActorHistoryQueryDto,
+  ): Promise<{ data: AuditEntry[]; page: number; pageSize: number; total: number }> {
+    return this.actorsAdminService.history(id, query);
   }
 }

@@ -203,3 +203,41 @@
 
 ---
 
+### T-6 — Controller routes, module wiring, and e2e
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-6 — Controller routes, module wiring, and e2e
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/admin-actors.controller.ts` — added POST, GET `:id`, PATCH `:id`, DELETE `:id`, GET `:id/history` routes (bulk routes remain first).
+  - `backend/src/test/admin-actors-crud.e2e.spec.ts` — new e2e suite (32 tests).
+  - `backend/src/test/admin-actors.e2e.spec.ts` — added no-op `actorAuditLog` delegate to in-memory mock.
+- **Implementer verification commands:**
+  - `cd backend && npm test -- admin-actors-crud` → 32 tests passed
+  - `cd backend && npm test -- pii-boundary` → 10 tests passed
+  - `cd backend && npm run build` → clean
+  - `cd backend && npm test` → 268 tests across 25 suites passed
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** All five new Admin CRUD routes present with correct methods/status codes; bulk routes precede `:id` routes; class-level `@Roles('Admin')` guards every route; e2e covers RBAC matrix, lifecycle with history-after-delete, 400/409 paths, and public PII-boundary regression.
+
+#### Requirements covered
+
+- FR-1..FR-4, FR-7 (routes)
+- FR-11 (server-side Admin RBAC)
+- FR-12 (PII containment, unchanged public read)
+- NFR-1, NFR-5 (security, test coverage)
+
+#### Decisions made
+
+- Created new `backend/src/test/admin-actors-crud.e2e.spec.ts` rather than extending the existing bulk e2e, to keep the new CRUD/lifecycle coverage focused.
+
+#### Issues encountered
+
+- None.
+
+---
+

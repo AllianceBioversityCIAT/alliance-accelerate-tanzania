@@ -263,7 +263,14 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }),
   };
 
-  const tx = { actor };
+  const actorAuditLog = {
+    findMany: jest.fn(async () => []),
+    count: jest.fn(async () => 0),
+    create: jest.fn(async (args: { data: Record<string, unknown> }) => args.data),
+    createMany: jest.fn(async () => ({ count: 0 })),
+  };
+
+  const tx = { actor, actorAuditLog };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -276,7 +283,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     actors = [...initialActors];
   };
 
-  return { actor, $transaction, reset };
+  return { actor, actorAuditLog, $transaction, reset };
 }
 
 /** Recursively scan JSON, asserting no forbidden key appears anywhere. */
