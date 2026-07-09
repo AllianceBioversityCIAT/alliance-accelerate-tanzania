@@ -28,6 +28,23 @@ jest.mock('next/navigation', () => ({
   usePathname: () => '/admin/actors',
 }));
 
+// Prevent jsdom from attempting real navigation when row Edit links are clicked.
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, onClick, ...rest }: any) => (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        onClick?.(e);
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock next/image
 // ---------------------------------------------------------------------------
@@ -67,11 +84,13 @@ jest.mock('@/lib/auth/auth-client', () => ({
 const mockAdminListActors = jest.fn();
 const mockBulkSetConsent = jest.fn();
 const mockBulkDeleteActors = jest.fn();
+const mockDeleteActor = jest.fn();
 
 jest.mock('@/lib/api/actors-admin', () => ({
   adminListActors: (...args: unknown[]) => mockAdminListActors(...args),
   bulkSetConsent: (...args: unknown[]) => mockBulkSetConsent(...args),
   bulkDeleteActors: (...args: unknown[]) => mockBulkDeleteActors(...args),
+  deleteActor: (...args: unknown[]) => mockDeleteActor(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -209,7 +228,7 @@ async function populatePage() {
   mockAdminListActors.mockResolvedValue(LIST_RESULT);
   renderPage();
   await waitFor(() =>
-    expect(screen.getAllByText(ACTOR_A.traderName).length).toBeGreaterThan(0),
+    expect(screen.queryByRole('status', { name: /loading actors/i })).not.toBeInTheDocument(),
   );
 }
 
@@ -403,6 +422,86 @@ describe('ActorsPage — delete flow', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(/deleted 1 actor/i),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Toolbar (T-9)
+// ---------------------------------------------------------------------------
+
+describe('ActorsPage — toolbar', () => {
+  it('renders a New actor link to /admin/actors/new', async () => {
+    await populatePage();
+
+    const link = screen.getByRole('link', { name: /new actor/i });
+    expect(link).toHaveAttribute('href', '/admin/actors/new');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — Row actions (T-9)
+// ---------------------------------------------------------------------------
+
+describe('ActorsPage — row actions', () => {
+  it('navigates to the edit view when a row Edit link is clicked', async () => {
+    await populatePage();
+
+    fireEvent.click(screen.getAllByRole('link', { name: /edit meru agro/i })[0]);
+
+    expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors/edit?id=actor-1');
+  });
+
+  it('deletes a single actor via typed ConfirmDialog and refreshes the list', async () => {
+    mockDeleteActor.mockResolvedValue({ deleted: true, id: ACTOR_A.id });
+
+    await populatePage();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /delete meru agro/i })[0]);
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /delete meru agro/i })).toBeInTheDocument();
+
+    const confirmBtn = within(dialog).getByRole('button', { name: /^delete$/i });
+    expect(confirmBtn).toBeDisabled();
+
+    const input = within(dialog).getByLabelText(/type .* to confirm/i);
+    fireEvent.change(input, { target: { value: 'delete Meru Agro' } });
+
+    expect(confirmBtn).toBeEnabled();
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() =>
+      expect(mockDeleteActor).toHaveBeenCalledWith(ACTOR_A.id, TOKEN),
+    );
+
+    await waitFor(() =>
+      expect(mockAdminListActors).toHaveBeenCalledTimes(2),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/deleted meru agro/i),
+    );
+  });
+
+  it('leaves the bulk action bar unchanged when row actions render with rows selected', async () => {
+    mockDeleteActor.mockResolvedValue({ deleted: true, id: ACTOR_A.id });
+
+    await populatePage();
+    selectActorByName(ACTOR_A.traderName);
+
+    const toolbar = screen.getByRole('toolbar', { name: /bulk actor actions/i });
+    expect(within(toolbar).getByText(/1 actor selected/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /delete meru agro/i })[0]);
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: /delete meru agro/i })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(within(toolbar).getByText(/1 actor selected/i)).toBeInTheDocument();
   });
 });
 

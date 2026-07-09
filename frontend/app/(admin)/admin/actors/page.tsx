@@ -31,6 +31,7 @@ import {
   adminListActors,
   bulkSetConsent,
   bulkDeleteActors,
+  deleteActor,
   type AdminActor,
   type AdminActorListQuery,
   type BulkResult,
@@ -42,6 +43,7 @@ import { BulkActionBar } from '@/components/admin/BulkActionBar';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { AcknowledgeDialog } from '@/components/admin/AcknowledgeDialog';
 import Skeleton from '@/components/ui/Skeleton';
+import Button from '@/components/ui/Button';
 
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
@@ -239,15 +241,12 @@ export default function ActorsPage() {
     [handleAuthFailure]
   );
 
-  // ── On mount: resolve token then load page 1 ──────────────────────────────
+  // ── On mount: resolve token; the pagination/filter effect will load data ──
 
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
-      setLoading(true);
-      setError(undefined);
-
       const session = await getSession();
       if (cancelled) return;
 
@@ -257,16 +256,11 @@ export default function ActorsPage() {
       }
 
       setToken(session.accessToken);
-      await fetchActors(session.accessToken, { page: 1, pageSize: DEFAULT_PAGE_SIZE });
-
-      if (!cancelled) setLoading(false);
     }
 
     void init();
     return () => { cancelled = true; };
-  // fetchActors is stable; run once on mount.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleAuthFailure]);
 
   // ── Fetch when pagination or filters change ───────────────────────────────
 
@@ -349,6 +343,21 @@ export default function ActorsPage() {
       return next;
     });
   }, [actors]);
+
+  // ── Row action handlers ───────────────────────────────────────────────────
+
+  const handleEditActor = useCallback((actor: AdminActor) => {
+    router.push(`/admin/actors/edit?id=${actor.id}`);
+  }, [router]);
+
+  const handleDeleteActor = useCallback(
+    async (actor: AdminActor) => {
+      if (!token) return;
+      await fetchActors(token, { ...filters, page, pageSize });
+      showSuccess(`Deleted ${actor.traderName}`);
+    },
+    [token, filters, page, pageSize, fetchActors, showSuccess],
+  );
 
   // ── Bulk action result summary ────────────────────────────────────────────
 
@@ -456,13 +465,18 @@ export default function ActorsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* ── Page heading ──────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="font-display text-2xl font-extrabold text-fg">
-          Actor management
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          View, filter, and select registry actors for bulk operations.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-fg">
+            Actor management
+          </h1>
+          <p className="mt-1 text-sm text-muted">
+            View, filter, and select registry actors for bulk operations.
+          </p>
+        </div>
+        <Button variant="primary" href="/admin/actors/new">
+          New actor
+        </Button>
       </div>
 
       {/* ── Success banner (reserved for T-7 mutations) ───────────────────── */}
@@ -612,6 +626,10 @@ export default function ActorsPage() {
             selectedIds={selectedIds}
             onToggle={handleToggle}
             onToggleAll={handleToggleAll}
+            token={token}
+            onDelete={handleDeleteActor}
+            onEdit={handleEditActor}
+            onAuthFailure={handleAuthFailure}
           />
 
           {/* Pagination */}

@@ -71,7 +71,7 @@
       Done when: create + edit flows work against the client; ack dialog blocks GRANTED submits until typed; static export build green; tokens only.
       Skills: ui-ux-pro-max, frontend-design, vercel-react-best-practices
 
-- [ ] T-9 Row actions + toolbar on the actors table  (deps: T-7)
+- [x] T-9 Row actions + toolbar on the actors table  (deps: T-7)
       Scope: actions column (Edit link to `edit?id=…`, Delete via existing `ConfirmDialog` typed-confirm calling `deleteActor`, refetch + live-region result); "New actor" button in the toolbar; selection/bulk behavior untouched. Component tests: edit navigation href, delete confirm flow + refetch, bulk bar unaffected with rows selected.
       Traces: FR-4 (UI), FR-9, NFR-3; design.md §5
       Files: frontend/components/admin/ActorsTable.tsx, frontend/app/(admin)/admin/actors/page.tsx, related tests

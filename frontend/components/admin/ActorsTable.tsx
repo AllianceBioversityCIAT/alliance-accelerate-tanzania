@@ -1,11 +1,12 @@
-// @sdd-spec admin/bulk-actor-operations (T-6)
+// @sdd-spec admin/bulk-actor-operations (T-6) + admin/actor-crud-audit (T-9)
 'use client';
 
 /**
  * ActorsTable — selectable admin actor list.
  *
  * Layout:
- *   - md+: <table> with columns: Trader, Region, Type, Consent, Phone, Email, Market.
+ *   - md+: <table> with columns: Trader, Region, Type, Consent, Phone, Email,
+ *     Market, Actions.
  *   - mobile (<md): stacked cards, one per actor.
  *
  * Selection:
@@ -13,6 +14,11 @@
  *   - A select-all checkbox in the table header selects all actors on the
  *     current page (FR-2).
  *   - The count of selected actors is shown above the table/cards.
+ *
+ * Row actions (T-9):
+ *   - Edit   → link to `/admin/actors/edit?id=<actor.id>`.
+ *   - Delete → typed ConfirmDialog; calls `deleteActor(id, token)` and then
+ *     `onDelete(actor)` so the parent can refetch/show a result.
  *
  * Consent status badge (FR-9):
  *   - GRANTED  → published/green
@@ -22,14 +28,20 @@
  * Accessibility (WCAG 2.1 AA / system-design §10):
  *   - <table> with <th scope="col">, <caption> for screen readers.
  *   - Every checkbox has a unique, descriptive aria-label.
+ *   - Action buttons/links have unique aria-labels per actor.
  *   - Visible focus rings on all interactive elements.
  *   - Keyboard-operable controls.
  *
  * Tokens only; no hardcoded colors/geometry.
  */
 
-import { AdminActor } from '@/lib/api/actors-admin';
+import { useState, useCallback } from 'react';
+import Link from 'next/link';
+
+import { deleteActor, type AdminActor } from '@/lib/api/actors-admin';
+import { AuthFailureError } from '@/lib/api/client';
 import { roleLabel, type TraderType } from '@/lib/content/roles';
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +56,14 @@ export interface ActorsTableProps {
   onToggle: (id: string) => void;
   /** Toggle selection for every actor on the current page. */
   onToggleAll: () => void;
+  /** Bearer token for the row delete API call. */
+  token: string;
+  /** Called after a row is successfully deleted so the parent can refetch. */
+  onDelete: (actor: AdminActor) => void;
+  /** Optional callback when the Edit action is activated (the link still navigates). */
+  onEdit?: (actor: AdminActor) => void;
+  /** Optional callback for auth failures during row delete. */
+  onAuthFailure?: () => void;
   /** Optional row click handler (e.g. open detail/edit in a future task). */
   onRowClick?: (actor: AdminActor) => void;
 }
@@ -104,6 +124,55 @@ function ConsentBadge({ status }: { status: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Row actions (shared between table and card views)
+// ---------------------------------------------------------------------------
+
+function RowActions({
+  actor,
+  onEdit,
+  onDelete,
+}: {
+  actor: AdminActor;
+  onEdit?: (actor: AdminActor) => void;
+  onDelete: (actor: AdminActor) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Link
+        href={`/admin/actors/edit?id=${actor.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.(actor);
+        }}
+        aria-label={`Edit ${actor.traderName}`}
+        className={[
+          'rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-fg',
+          'transition-colors hover:bg-surface-alt',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
+        ].join(' ')}
+      >
+        Edit
+      </Link>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(actor);
+        }}
+        aria-label={`Delete ${actor.traderName}`}
+        className={[
+          'rounded-md border border-danger/30 bg-surface px-2.5 py-1 text-xs font-medium text-danger',
+          'transition-colors hover:bg-danger/10',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-1',
+        ].join(' ')}
+      >
+        Delete
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Mobile card
 // ---------------------------------------------------------------------------
 
@@ -112,11 +181,15 @@ function ActorCard({
   selected,
   onToggle,
   onRowClick,
+  onEdit,
+  onDelete,
 }: {
   actor: AdminActor;
   selected: boolean;
   onToggle: (id: string) => void;
   onRowClick?: (actor: AdminActor) => void;
+  onEdit?: (actor: AdminActor) => void;
+  onDelete: (actor: AdminActor) => void;
 }) {
   const handleRowClick = () => {
     if (onRowClick) onRowClick(actor);
@@ -179,6 +252,10 @@ function ActorCard({
           Select
         </label>
       </div>
+
+      <div className="flex items-center gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+        <RowActions actor={actor} onEdit={onEdit} onDelete={onDelete} />
+      </div>
     </article>
   );
 }
@@ -192,11 +269,53 @@ export function ActorsTable({
   selectedIds,
   onToggle,
   onToggleAll,
+  token,
+  onDelete,
+  onEdit,
+  onAuthFailure,
   onRowClick,
 }: ActorsTableProps) {
   const allSelected = actors.length > 0 && actors.every((a) => selectedIds.has(a.id));
   const someSelected = actors.some((a) => selectedIds.has(a.id)) && !allSelected;
   const selectedCount = selectedIds.size;
+
+  // ── Row-delete dialog state ───────────────────────────────────────────────
+
+  const [actorToDelete, setActorToDelete] = useState<AdminActor | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | undefined>();
+
+  const openDelete = useCallback((actor: AdminActor) => {
+    setDeleteError(undefined);
+    setActorToDelete(actor);
+  }, []);
+
+  const closeDelete = useCallback(() => {
+    setActorToDelete(null);
+    setDeleteError(undefined);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!actorToDelete) return;
+
+    setDeleting(true);
+    setDeleteError(undefined);
+
+    try {
+      await deleteActor(actorToDelete.id, token);
+      onDelete(actorToDelete);
+      closeDelete();
+    } catch (caught: unknown) {
+      if (caught instanceof AuthFailureError) {
+        onAuthFailure?.();
+        closeDelete();
+        return;
+      }
+      setDeleteError(caught instanceof Error ? caught.message : 'Failed to delete actor.');
+    } finally {
+      setDeleting(false);
+    }
+  }, [actorToDelete, token, onDelete, onAuthFailure, closeDelete]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -246,6 +365,7 @@ export function ActorsTable({
                 'Phone',
                 'Email',
                 'Market location',
+                'Actions',
               ].map((col) => (
                 <th
                   key={col}
@@ -301,6 +421,13 @@ export function ActorsTable({
                   <td className="px-4 py-3 text-muted whitespace-nowrap">
                     {formatMarket(actor.marketLocation)}
                   </td>
+                  <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <RowActions
+                      actor={actor}
+                      onEdit={onEdit}
+                      onDelete={openDelete}
+                    />
+                  </td>
                 </tr>
               );
             })}
@@ -321,10 +448,25 @@ export function ActorsTable({
               selected={selectedIds.has(actor.id)}
               onToggle={onToggle}
               onRowClick={onRowClick}
+              onEdit={onEdit}
+              onDelete={openDelete}
             />
           </div>
         ))}
       </div>
+
+      {/* ── Row-delete confirmation dialog ─────────────────────────────────── */}
+      <ConfirmDialog
+        open={actorToDelete !== null}
+        title={`Delete ${actorToDelete?.traderName ?? 'actor'}?`}
+        description="This actor and their crop links will be permanently removed. This action cannot be undone."
+        acknowledgementText={actorToDelete ? `delete ${actorToDelete.traderName}` : undefined}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={closeDelete}
+        loading={deleting}
+        error={deleteError}
+      />
     </div>
   );
 }

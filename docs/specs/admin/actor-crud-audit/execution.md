@@ -323,3 +323,41 @@
 
 ---
 
+### T-9 — Row actions + toolbar on the actors table
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-9 — Row actions + toolbar on the actors table
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/components/admin/ActorsTable.tsx` — added row actions (Edit link, Delete typed-confirm dialog) and new props (`token`, `onDelete`, `onEdit`, `onAuthFailure`).
+  - `frontend/app/(admin)/admin/actors/page.tsx` — added "New actor" primary button, wired row delete refetch/success banner, removed duplicate initial fetch.
+  - `frontend/components/admin/ActorsTable.test.tsx` — new tests.
+  - `frontend/app/(admin)/admin/actors/page.test.tsx` — updated mocks and added tests.
+- **Implementer verification commands:**
+  - `cd frontend && npm test -- ActorsTable` → 8 tests passed
+  - `cd frontend && npm test -- --testPathPatterns='admin/actors/page.test.tsx'` → 16 tests passed
+  - `cd frontend && npm run build` → clean
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** T-9 satisfies FR-9 acceptance: per-row Edit links navigate correctly, Delete opens typed `ConfirmDialog` and calls `deleteActor(id, token)`, parent refetches and shows success banner, "New actor" toolbar button links to `/admin/actors/new`, selection/bulk behavior preserved, design tokens only, tests and static export green. Duplicate-fetch cleanup is safe because data loading is gated on resolved token and triggered by pagination/filter effect.
+
+#### Requirements covered
+
+- FR-4 (delete UI)
+- FR-9 (row actions + toolbar)
+- NFR-3 (accessibility of actions)
+
+#### Decisions made
+
+- Row delete API call kept inside `ActorsTable`; parent receives `onDelete` callback for refetch/success.
+- Removed duplicate initial fetch in page to rely on token-driven pagination/filter effect.
+
+#### Issues encountered
+
+- None.
+
+---
+
