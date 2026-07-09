@@ -64,3 +64,28 @@ model CropsOnActors {
 
   @@id([actorId, cropId])
 }
+
+enum ActorAuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  BULK_CONSENT
+  BULK_DELETE
+}
+
+model ActorAuditLog {
+  id           String           @id @default(cuid())
+  // Plain string — deliberately NO relation/FK so rows survive actor deletion.
+  actorId      String
+  // Identity snapshot so history stays meaningful after deletion.
+  traderId     String
+  traderName   String
+  action       ActorAuditAction
+  actingSub    String
+  actingEmail  String?
+  changes      Json
+  acknowledged Boolean?
+  createdAt    DateTime         @default(now())
+
+  @@index([actorId, createdAt])
+}
