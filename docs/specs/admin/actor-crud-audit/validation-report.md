@@ -12,7 +12,9 @@
 
 ## 2. Summary
 
-**Overall: PASS with 2 WARNs — not yet archive-ready because T-11 (deploy + live verification) is `[~]` in progress.**
+> **Post-validation update (2026-07-09, same day):** W-1 was remediated (commit `[SPEC:admin/actor-crud-audit] W-1 fix`, backend now 274 tests green) and T-11 was completed (backend + frontend deployed to dev with `IBD-DEV`, smoke PASSED 8/8, live 401 matrix on all 5 new routes). See execution.md W-1/T-11 entries. Remaining before archive: user's in-browser admin check of the CRUD + History flows. §§3–11 below reflect the original validation snapshot except where marked.
+
+**Overall: PASS with 2 WARNs — not yet archive-ready because T-11 (deploy + live verification) is `[~]` in progress.** *(superseded — see update above)*
 
 T-1..T-10 are implemented, reviewed PASS in `execution.md`, and hold up under independent audit: 23/23 backend conformance checks and 10/10 frontend checks pass; both full test suites are green (backend **268/268**, frontend **849/849**); backend build and frontend static-export build + lint are clean; the migration is exactly the additive-only design (no FK, composite index, no existing-table changes) and is already applied to dev RDS. PII containment of audit data was verified independently (zero references outside the Admin surface). Two WARNs need attention — one integration gap to check during T-11 live verification (400 field-error envelope), one pre-existing tooling gap (backend lint broken).
 
@@ -30,7 +32,7 @@ T-1..T-10 are implemented, reviewed PASS in `execution.md`, and hold up under in
 | T-8 ActorForm + pages | `[x]` | Commit 7dabea0; 18 tests; static-export + ack gating verified (F2/F4) | PASS |
 | T-9 row actions | `[x]` | Commit bdd6345; 8+16 tests; bulk behavior preserved (F5) | PASS |
 | T-10 history panel | `[x]` | Commit d789756; 10 tests; states + pagination verified (F6) | PASS |
-| T-11 deploy + live verify | `[~]` | Migration applied to RDS (during T-1); **backend/frontend app deploys and the live checklist are pending** | **WARN — in progress** |
+| T-11 deploy + live verify | `[x]` | Backend `sam deploy` (CORS preserved) + frontend deploy + CloudFront invalidation; smoke 8/8 PASS; 401 on all 5 new routes; migration was already on RDS. Admin-session browser checks handed to the user (execution.md) | PASS |
 
 **Documented deviation (accepted):** T-1's "local rehearsal only" was redirected by the user to dev RDS; `execution.md` records the decision, the in-process secret handling (no secrets written/printed), and that only `migrate deploy` ran (no seed). Compliant with NFR-7's process intent.
 
@@ -97,17 +99,17 @@ All 16 design-expected new files exist (backend service/resolver/serializer/DTOs
 
 | # | Item | Severity | Action |
 |---|---|---|---|
-| R-1 | Complete T-11: deploy backend + frontend, run the live checklist (`--profile IBD-DEV`); migration is already applied | Required for archive | T-11 |
-| R-2 | W-1: during T-11, exercise a server-side 400 on the form; then fix the details-envelope mismatch (backend exception factory *or* client parsing of `message[]`) | Should-fix (follow-up spec/bugfix acceptable) | Follow-up |
+| R-1 | Complete T-11: deploy backend + frontend, run the live checklist (`--profile IBD-DEV`); migration is already applied | Required for archive | **DONE** (execution.md T-11) |
+| R-2 | W-1: fix the details-envelope mismatch (backend exception factory) | Should-fix | **DONE** — shared `createValidationPipe()` in `common/validation-pipe.ts`, both bootstraps + both e2e suites; +6 tests (274 total) |
 | R-3 | W-2: add ESLint 9 flat config to backend (pre-existing) | Nice-to-have | Follow-up |
 | R-4 | Minor notes in §7 (acknowledged-on-any-update, Decimal comment, Cancel semantics) | Cosmetic | Optional cleanup |
 
 ## 11. Archive Readiness Recommendation
 
-**NOT YET — complete T-11 first.** Code-level validation is a clean PASS (no FAIL findings; every FR/NFR evidenced; both audits fully green). The only blocker is operational: T-11's app deploys + live verification are pending (the DB migration half is already done). Once T-11 passes its live checklist — explicitly exercising W-1 — this spec is ready for:
+**READY (updated)** — R-1 and R-2 are done: W-1 fixed and covered by tests, both apps deployed to dev, smoke 8/8, live 401 matrix green, public surface regression-free. The one remaining human step is the user's in-browser admin confirmation of the CRUD lifecycle + History panel (needs a Cognito Admin session). After that eyeball check:
 
 ```text
 /sdd-archive admin/actor-crud-audit
 ```
 
-R-2/R-3 may be accepted as follow-ups at archive time (mirroring how bulk-actor-operations archived with T-9 as follow-up).
+R-3 (backend ESLint config, pre-existing) and R-4 (cosmetics) are acceptable follow-ups at archive time.

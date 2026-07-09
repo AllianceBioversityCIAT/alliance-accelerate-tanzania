@@ -419,3 +419,24 @@
 
 ---
 
+### T-11 — Deploy: migration + backend + frontend + live verification
+
+- **Status:** PASS (machine-checkable scope; admin-session browser checks handed to the user)
+- **Date:** 2026-07-09
+- **Executor:** Claude (user authorized: "adelante tu"); T-11 had been started and stopped earlier in OpenCode.
+
+#### Deploy evidence (all AWS via `IBD-DEV`, eu-west-1)
+
+1. **Migration** — already applied to dev RDS during T-1 (documented deviation); no action needed.
+2. **Backend** — `npm run build` → `sam build` (built template in `infra/20-backend/.aws-sam/build/`) → `sam deploy` to `accelerate-tz-dev-backend` with `AllowedOrigin=https://d3idqvvg0xa1r7.cloudfront.net` preserved (CORS stays locked; read from the live stack before deploy). Result: `Successfully created/updated stack`; `ApiBaseUrl=https://ffbctg5zb6.execute-api.eu-west-1.amazonaws.com`. Ships T-1..T-6 code + the W-1 envelope fix.
+3. **Frontend** — `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`: static export built with the live API URL, synced to the private S3 bucket, CloudFront invalidation `/*` created. Note: first attempt failed because the shell's `AWS_PROFILE=MELIA-DEV` leaked into the script's default — rerun with the profile forced.
+
+#### Live verification
+
+- `smoke.sh` → **SMOKE PASSED** (8/8): `GET /api/v1/metrics` + `/actors` 200 valid JSON; PII boundary on both bodies (no phone/email/sex/position/marketLocation); PII-safe list contract; CloudFront `/` + `/map` 200; direct S3 object 403 (OAC-only).
+- RBAC 401 matrix (no token) on all five new routes: POST `/admin/actors`, GET/PATCH/DELETE `/admin/actors/:id`, GET `/admin/actors/:id/history` → **401** each.
+- New pages served: CloudFront `/admin/actors/new` and `/admin/actors/edit` → 200 (client-side `RequireRole` guards the UI; the API is the authoritative gate).
+- **Pending user browser confirmation (needs an Admin Cognito session):** CRUD lifecycle from `/admin/actors`, History panel entries (incl. after a bulk consent), history-after-delete visible, and W-1 inline per-field 400 errors on the form. Machine-side equivalents are covered by the 32-test e2e suite running the production pipe.
+
+---
+

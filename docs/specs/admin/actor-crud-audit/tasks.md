@@ -87,7 +87,7 @@
       Done when: panel renders entries newest-first with per-field from→to, paginates, and handles empty/error; export build green.
       Skills: ui-ux-pro-max, frontend-design
 
-- [ ] T-11 Deploy: migration + backend + frontend + live verification  (deps: T-6, T-8, T-9, T-10)
+- [x] T-11 Deploy: migration + backend + frontend + live verification  (deps: T-6, T-8, T-9, T-10)
       Scope: apply the checked-in migration to dev RDS (`npx prisma migrate deploy`, `--profile IBD-DEV`); deploy backend + frontend per the established scripts; live-verify per requirements: CRUD lifecycle from `/admin/actors`, audit entries visible in the history panel (incl. after a bulk consent), history survives a delete, 401/403 on direct API calls without/with wrong role, public directory/map unchanged. Requires explicit user authorization before touching AWS.
       Traces: NFR-7, FR-1..FR-12 (live), NFR-1; design.md §7
       Files: none new (deploy artifacts); execution.md evidence
