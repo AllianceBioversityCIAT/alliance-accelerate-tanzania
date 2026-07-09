@@ -241,3 +241,48 @@
 
 ---
 
+### T-7 — Frontend API client extensions
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-7 — Frontend API client extensions
+- **Attempts:** 2
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/lib/api/actors-admin.ts` — added types and functions for single-actor CRUD + audit history.
+  - `frontend/lib/api/actors-admin.test.ts` — new; 36 unit tests.
+- **Implementer verification command:** `cd frontend && npm test -- actors-admin`
+- **Implementer verification output:** 36 tests passed.
+- **Reviewer verdict:** FAIL
+- **Reviewer findings:**
+  1. `AdminActorCreateInput` types `consentStatus` as a required `string`, but the backend contract (`AdminActorCreateDto` extending `ActorCreateDto`) defines `consentStatus?: ConsentStatus` as optional. This makes the frontend client type stricter than the API contract and uses a looser `string` type instead of the `'GRANTED' | 'DENIED' | 'UNKNOWN'` union the backend enum enforces.
+     - **Violated Rule:** T-7 scope requires types to be "typed per design §3 contracts".
+     - **Remediation Suggestion:** Change `AdminActorCreateInput.consentStatus` from `consentStatus: string` to `consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN'`.
+
+#### Attempt 2
+
+- **Files changed:**
+  - `frontend/lib/api/actors-admin.ts` — changed `AdminActorCreateInput.consentStatus` from required `string` to optional `'GRANTED' | 'DENIED' | 'UNKNOWN'` union.
+- **Implementer verification command:** `cd frontend && npm test -- actors-admin`
+- **Implementer verification output:** 36 tests passed.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** `AdminActorCreateInput.consentStatus` is now optional and typed as the exact `'GRANTED' | 'DENIED' | 'UNKNOWN'` union. All five T-7 functions, supporting types, pageSize ≤ 100 clamp, and 36 unit tests remain intact and green. No PII leakage, AWS profile violation, SSR/route handler, or stack substitution present.
+
+#### Requirements covered
+
+- FR-1..FR-4, FR-7 (frontend API client for CRUD + history)
+- NFR-6 (pageSize clamp)
+
+#### Decisions made
+
+- Used `apiFetch` with caller-supplied token, consistent with existing admin client.
+- Made `AdminActorUpdateInput = Partial<AdminActorCreateInput>`.
+
+#### Issues encountered
+
+- Attempt 1 FAIL on type fidelity; fixed in attempt 2.
+
+---
+

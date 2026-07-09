@@ -55,7 +55,7 @@
       Done when: e2e green incl. RBAC matrix, lifecycle with history-after-delete, and unchanged public/PII behavior; `npm run build` clean.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-7 Frontend API client extensions  (deps: T-6)
+- [x] T-7 Frontend API client extensions  (deps: T-6)
       Scope: extend `lib/api/actors-admin.ts` with `adminGetActor`, `createActor`, `updateActor`, `deleteActor`, `getActorHistory` (typed per design §3 contracts, Bearer via `apiFetch`, pageSize ≤ 100). Unit tests for URL/body/error mapping (400 field errors, 409, 404).
       Traces: FR-1..FR-4, FR-7; design.md §3, §5
       Files: frontend/lib/api/actors-admin.ts, frontend/lib/api/actors-admin.test.ts

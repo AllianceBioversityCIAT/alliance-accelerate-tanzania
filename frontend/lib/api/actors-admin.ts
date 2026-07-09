@@ -100,6 +100,82 @@ export interface BulkDeleteInput {
   ids: string[];
 }
 
+/**
+ * Single audit entry returned by `GET /api/v1/admin/actors/:id/history` (FR-7).
+ *
+ * Mirrors the backend `AuditEntry` serializer exactly. `changes` carries a
+ * field-level diff or full snapshot envelope and is treated as opaque JSON by
+ * the client — the History panel is responsible for presentation.
+ */
+export interface AuditEntry {
+  id: string;
+  actorId: string;
+  traderId: string;
+  traderName: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BULK_CONSENT' | 'BULK_DELETE';
+  actingSub: string;
+  actingEmail: string | null;
+  changes: unknown;
+  acknowledged: boolean | null;
+  createdAt: string;
+}
+
+/** Paginated response envelope for `GET /api/v1/admin/actors/:id/history` (FR-7). */
+export interface ActorHistoryList {
+  data: AuditEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/**
+ * Input for `POST /api/v1/admin/actors` (FR-1).
+ *
+ * Matches `AdminActorCreateDto`: required identity fields + optional scalar
+ * fields + crop names + the explicit consent acknowledgement required when
+ * `consentStatus` is `GRANTED`.
+ */
+export interface AdminActorCreateInput {
+  traderId: string;
+  traderName: string;
+  region: string;
+  traderType: string;
+  consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
+  district?: string | null;
+  sex?: string | null;
+  position?: string | null;
+  marketLocation?: string | null;
+  capacityTons?: number | null;
+  technicalSupport?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  gpsLatitude?: number | null;
+  gpsLongitude?: number | null;
+  gpsAltitude?: number | null;
+  gpsAccuracy?: number | null;
+  crops?: string[];
+  acknowledged?: boolean;
+}
+
+/**
+ * Input for `PATCH /api/v1/admin/actors/:id` (FR-3).
+ *
+ * Every field is optional; only submitted fields are applied by the backend.
+ */
+export type AdminActorUpdateInput = Partial<AdminActorCreateInput>;
+
+/** Query parameters for `getActorHistory` (mirrors `ActorHistoryQueryDto`). */
+export interface ActorHistoryQuery {
+  page?: number;
+  pageSize?: number;
+}
+
+/** Response shape for `DELETE /api/v1/admin/actors/:id` (FR-4). */
+export interface ActorDeleteResult {
+  deleted: true;
+  id: string;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const BASE = '/api/v1/admin/actors';
@@ -173,4 +249,111 @@ export async function bulkDeleteActors(
     token,
     body: input,
   });
+}
+
+/**
+ * GET /api/v1/admin/actors/:id
+ *
+ * Returns a single actor in the Admin projection (full fields + PII + crops),
+ * regardless of consent status (FR-2). Throws AuthFailureError on 401; throws
+ * Error on 404 or other non-OK responses.
+ *
+ * @param id     Actor id to fetch.
+ * @param token  Cognito access token from the caller's session.
+ */
+export async function adminGetActor(id: string, token: string): Promise<AdminActor> {
+  return apiFetch<AdminActor>(`${BASE}/${id}`, { method: 'GET', token });
+}
+
+/**
+ * POST /api/v1/admin/actors
+ *
+ * Creates a new actor with the supplied full field set (FR-1). Returns the
+ * created actor in Admin projection with HTTP 201. Duplicate `traderId` throws
+ * a plain Error (409); missing acknowledgement on a GRANTED consent transition
+ * throws a plain Error (400).
+ *
+ * @param dto    Actor fields to create.
+ * @param token  Cognito access token from the caller's session.
+ */
+export async function createActor(
+  dto: AdminActorCreateInput,
+  token: string,
+): Promise<AdminActor> {
+  return apiFetch<AdminActor>(BASE, {
+    method: 'POST',
+    token,
+    body: dto,
+  });
+}
+
+/**
+ * PATCH /api/v1/admin/actors/:id
+ *
+ * Partially updates an actor (FR-3). Only submitted fields are applied. Returns
+ * the updated Admin projection. Throws AuthFailureError on 401; throws Error on
+ * 400/404/409 or other non-OK responses.
+ *
+ * @param id     Actor id to update.
+ * @param dto    Partial actor fields.
+ * @param token  Cognito access token from the caller's session.
+ */
+export async function updateActor(
+  id: string,
+  dto: AdminActorUpdateInput,
+  token: string,
+): Promise<AdminActor> {
+  return apiFetch<AdminActor>(`${BASE}/${id}`, {
+    method: 'PATCH',
+    token,
+    body: dto,
+  });
+}
+
+/**
+ * DELETE /api/v1/admin/actors/:id
+ *
+ * Permanently deletes a single actor and its crop links (FR-4). Returns
+ * `{ deleted: true, id }`. Throws AuthFailureError on 401; throws Error on 404
+ * or other non-OK responses.
+ *
+ * @param id     Actor id to delete.
+ * @param token  Cognito access token from the caller's session.
+ */
+export async function deleteActor(
+  id: string,
+  token: string,
+): Promise<ActorDeleteResult> {
+  return apiFetch<ActorDeleteResult>(`${BASE}/${id}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+/**
+ * GET /api/v1/admin/actors/:id/history?page=&pageSize=
+ *
+ * Returns a paginated list of audit entries for the given actor id, newest
+ * first (FR-7). Works for deleted actors. `pageSize` is clamped to a maximum
+ * of 100 client-side before the request is sent (NFR-6).
+ *
+ * @param id      Actor id whose history to fetch.
+ * @param query   Optional page / pageSize (pageSize clamped to ≤ 100).
+ * @param token   Cognito access token from the caller's session.
+ */
+export async function getActorHistory(
+  id: string,
+  query: ActorHistoryQuery | undefined,
+  token: string,
+): Promise<ActorHistoryList> {
+  const params = new URLSearchParams();
+  if (query?.page != null) params.set('page', String(query.page));
+  if (query?.pageSize != null) {
+    params.set('pageSize', String(Math.min(query.pageSize, 100)));
+  }
+
+  const qs = params.toString();
+  const path = qs ? `${BASE}/${id}/history?${qs}` : `${BASE}/${id}/history`;
+
+  return apiFetch<ActorHistoryList>(path, { method: 'GET', token });
 }
