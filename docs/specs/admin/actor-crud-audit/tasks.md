@@ -23,7 +23,7 @@
       Done when: DTO tests green; invalid crop / over-cap pageSize / malformed partials rejected; valid payloads pass.
       Skills: nestjs-expert, api-design-principles
 
-- [ ] T-3 `ActingAdminResolver` (sub → email)  (deps: none)
+- [x] T-3 `ActingAdminResolver` (sub → email)  (deps: none)
       Scope: resolver per design §4 — Cognito `ListUsersCommand` filtered by `sub`, per-container `Map` cache, returns `string | null`, never throws to callers (failure → null). Config/client pattern reused from the users module. Unit tests with mocked Cognito client: hit, miss, cache reuse, SDK error → null.
       Traces: FR-5 (attribution), design.md §4, §8 (email ADR)
       Files: backend/src/actors/acting-admin.resolver.ts, acting-admin.resolver.spec.ts

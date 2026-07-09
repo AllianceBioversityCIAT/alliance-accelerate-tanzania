@@ -98,3 +98,36 @@
 
 ---
 
+### T-3 — `ActingAdminResolver` (sub → email)
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-3 — `ActingAdminResolver` (sub → email)
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/acting-admin.resolver.ts` — new; injectable resolver using `ListUsersCommand` filtered by `sub`, per-container `Map` cache, returns `string | null`, never throws.
+  - `backend/src/actors/acting-admin.resolver.spec.ts` — new; mocked unit tests covering cache hit/miss, SDK error, missing email, user not found.
+  - `backend/src/actors/actors.module.ts` — registered `ActingAdminResolver` as provider.
+- **Implementer verification command:** `cd backend && npm test -- acting-admin`
+- **Implementer verification output:** 5 tests passed; full backend suite also green (23 suites, 198 tests).
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** Resolver correctly implements T-3 spec: `ListUsersCommand` with `Filter: sub = "..."` and `Limit: 1`, per-container cache, null-on-failure, reuses existing Cognito client pattern, clean state-resetting tests; no PII/AWS-profile/stack violations.
+
+#### Requirements covered
+
+- FR-5 (audit attribution: acting admin email resolution)
+- NFR-1, NFR-4 (resilience: null on failure, no write blocked)
+
+#### Decisions made
+
+- Wired `ActingAdminResolver` into `ActorsModule` providers immediately so T-5 can inject it.
+
+#### Issues encountered
+
+- None.
+
+---
+

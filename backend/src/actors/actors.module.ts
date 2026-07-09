@@ -4,6 +4,7 @@ import { ActorsController } from './actors.controller';
 import { ActorsService } from './actors.service';
 import { ActorsAdminService } from './actors-admin.service';
 import { AdminActorsController } from './admin-actors.controller';
+import { ActingAdminResolver } from './acting-admin.resolver';
 
 /**
  * T-5 / T-2 / T-3 — ActorsModule: public read API + Admin-only actor operations.
@@ -15,6 +16,6 @@ import { AdminActorsController } from './admin-actors.controller';
 @Module({
   imports: [PrismaModule],
   controllers: [ActorsController, AdminActorsController],
-  providers: [ActorsService, ActorsAdminService],
+  providers: [ActorsService, ActorsAdminService, ActingAdminResolver],
 })
 export class ActorsModule {}
