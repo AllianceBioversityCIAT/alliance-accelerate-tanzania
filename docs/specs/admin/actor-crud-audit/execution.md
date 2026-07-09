@@ -131,3 +131,39 @@
 
 ---
 
+### T-4 — `ActorAuditService` + diff builder
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-4 — `ActorAuditService` + diff builder
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/actor-audit.service.ts` — new; tx-scoped audit writer with `logCreate`, `logDelete`, `logUpdate`, `logBulkConsent`, `logBulkDelete`, diff builder, Decimal→string, crop-name-array serialization.
+  - `backend/src/actors/audit-entry.serializer.ts` — new; `toAuditEntry()` mapping `ActorAuditLog` rows to API response shape with ISO `createdAt`.
+  - `backend/src/actors/actor-audit.service.spec.ts` — new; 17 unit tests.
+- **Implementer verification command:** `cd backend && npm test -- actor-audit`
+- **Implementer verification output:** 17 tests passed; `npm run build` succeeded; full backend suite 215 tests green.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** `ActorAuditService` is transaction-scoped on every method, produces correct snapshot/diff envelopes with Decimal→string and crop name arrays, skips empty diffs, batches bulk writes via `createMany` while skipping no-change rows, persists `acknowledged` when provided, and `toAuditEntry` passes through `changes` with ISO `createdAt`. No PII/AWS-profile/stack violations.
+
+#### Requirements covered
+
+- FR-5 (audit entry on every admin write)
+- FR-6 (identity snapshot in every row)
+- NFR-4 (atomic transaction-scoped writes)
+- NFR-6 (bulk createMany)
+
+#### Decisions made
+
+- `AdminActor` projection used as the input shape for audit snapshots/diffs.
+- `acknowledged` stored on the audit row only when explicitly provided.
+
+#### Issues encountered
+
+- None.
+
+---
+

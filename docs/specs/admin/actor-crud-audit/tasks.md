@@ -31,7 +31,7 @@
       Done when: tests green; a second resolve for the same sub performs no SDK call; SDK failure yields null without throwing.
       Skills: nestjs-expert, aws-serverless, error-handling-patterns
 
-- [ ] T-4 `ActorAuditService` + diff builder  (deps: T-1)
+- [x] T-4 `ActorAuditService` + diff builder  (deps: T-1)
       Scope: tx-scoped writer per design §4 — `logCreate`/`logDelete` (snapshot envelope, Decimal→string, crops as name array), `logUpdate` (`buildDiff` over auditable fields + crops; **empty diff ⇒ no row**), `logBulkConsent`/`logBulkDelete` (single `createMany`, acknowledged persisted). Audit-entry serializer (`toAuditEntry`, ISO dates). Unit tests pin diff exactness, snapshot shape, Decimal string format, empty-diff no-op.
       Traces: FR-5, FR-6, NFR-4, NFR-6; design.md §2 (changes envelope), §4, §8 (envelope + empty-diff ADRs)
       Files: backend/src/actors/actor-audit.service.ts, audit-entry.serializer.ts, actor-audit.service.spec.ts
