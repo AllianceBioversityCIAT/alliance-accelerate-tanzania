@@ -63,12 +63,6 @@ const DECIMAL_FIELDS: readonly AuditableField[] = [
   'gpsAccuracy',
 ] as const;
 
-/** Field-level diff envelope. */
-interface DiffEnvelope {
-  kind: 'diff';
-  fields: Record<string, { from: unknown; to: unknown }>;
-}
-
 /** Full-snapshot envelope. */
 interface SnapshotEnvelope {
   kind: 'snapshot';

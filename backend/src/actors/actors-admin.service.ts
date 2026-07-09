@@ -76,8 +76,6 @@ const SCALAR_FIELDS = [
   'consentStatus',
 ] as const;
 
-type ScalarField = (typeof SCALAR_FIELDS)[number];
-
 @Injectable()
 export class ActorsAdminService {
   constructor(

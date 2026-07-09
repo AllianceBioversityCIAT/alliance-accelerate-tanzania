@@ -18,7 +18,7 @@
  * anti-lockout). Requirements: FR-1..FR-8, FR-10.
  */
 
-import { ConflictException, HttpException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
