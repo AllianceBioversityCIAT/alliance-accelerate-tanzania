@@ -12,7 +12,12 @@
  * and REAL `RolesGuard` run end to end — a token's role is whatever the mocked
  * verifier returns via `cognito:groups`. `UsersService` is mocked so no Cognito
  * is touched; the focus is purely the RBAC layer. The app mirrors production
- * bootstrap (`api/v1` prefix + global `ValidationPipe`).
+ * bootstrap (`api/v1` prefix + shared `createValidationPipe()`).
+ *
+ * Naming convention (bugfix/dead-e2e-tests): e2e suites are named
+ * `*.e2e.spec.ts` (dot). The Jest `testRegex` also collects the NestJS
+ * scaffold default `*.e2e-spec.ts` defensively — this file was originally
+ * named with the hyphen and was silently never collected.
  *
  * Matrix per route:
  *  - no token / invalid token → 401 (JwtAuthGuard)
@@ -20,7 +25,7 @@
  *  - authenticated Admin → 2xx (service mocked)
  */
 
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 
@@ -28,6 +33,7 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { getJwtVerifier } from '../auth/jwt-verifier';
 import { resetJwtVerifier } from '../auth/jwt-verifier';
+import { createValidationPipe } from '../common/validation-pipe';
 
 jest.mock('../auth/jwt-verifier');
 
@@ -80,7 +86,7 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createValidationPipe());
     await app.init();
   });
 

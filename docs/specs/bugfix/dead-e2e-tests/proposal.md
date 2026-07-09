@@ -7,7 +7,7 @@
 | Spec path | `bugfix/dead-e2e-tests` |
 | Proposal date | 2026-07-08 |
 | Author | SDD (Leader) on behalf of JuanCode |
-| Status | Draft — awaiting approval |
+| Status | **Approved** (JuanCode, 2026-07-09 — Option B) |
 | Suggested depth | Lite (single-cause bugfix, but touches RBAC test evidence) |
 
 ## 2. Intent
@@ -81,7 +81,7 @@ Nothing warns when zero test files match a pattern or when an expected suite isn
 
 - **Risk (the important one):** the user-management e2e has **never run**, so enabling it may surface **real failures** (drift since it was written, or assertions that were always wrong). This is a feature of the fix — it converts dead code into real signal — but it may expand the change. Flag any failures for a decision.
 - **Risk:** broadening `testRegex` could pick up a stray file; low, since only the two e2e files exist and both are intended suites.
-- **Dependency:** a **clean clone** — the current local repo is corrupted by iCloud sync (`node_modules` + `.git/objects` hollowed); this bugfix should be executed on a fresh clone outside the iCloud-synced Desktop.
+- **Dependency (stale, resolved 2026-07-09):** ~~a clean clone — the local repo was corrupted by iCloud sync~~ — the local `.git` object store was repaired on 2026-07-09 (refs cleaned, missing objects restored from origin, fsck clean, full suites + push working); no fresh clone needed.
 - **OQ-1:** standardize on `.e2e.spec.ts` (matches current regex, rename the one offender) vs keep `.e2e-spec.ts` and broaden the regex — decide the canonical convention in `/sdd-specify`.
 
 ## 12. Success Criteria
