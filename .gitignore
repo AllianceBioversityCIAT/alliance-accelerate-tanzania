@@ -1,1 +1,5 @@
 .aws-sam/
+
+# CodeGraph — commit config only; the generated database is never committed
+.codegraph/*
+!.codegraph/config.json

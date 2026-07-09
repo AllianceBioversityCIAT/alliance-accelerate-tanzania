@@ -44,4 +44,4 @@ Each spec folder holds `requirements.md`, `design.md`, `tasks.md`, and (during e
 - Product / specs: `product-manager-toolkit`.
 
 ## CodeGraph
-Not initialized for this repo (it was empty at constitution time). If/when the codebase grows, you may run `codegraph init -i` and then prefer codegraph tools for symbol lookup, callers/callees, and impact analysis. Do not commit generated CodeGraph databases.
+**Initialized 2026-07-09** (260 files, ~2.3k nodes indexed). Prefer the `codegraph_*` tools for symbol lookup (`codegraph_search`), tracing flow (`codegraph_callers`/`codegraph_callees`), and pre-change impact analysis (`codegraph_impact`) instead of broad grep scans; tell Explore agents to do the same. After merging a spec (or any large change), re-index with `codegraph index` so the graph tracks reality. `.codegraph/config.json` is committed; the generated database is gitignored — never commit it.

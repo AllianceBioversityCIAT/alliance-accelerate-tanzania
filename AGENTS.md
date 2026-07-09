@@ -30,4 +30,4 @@ Feature specs live in `docs/specs/<domain>/<feature-slug>/` (e.g. `actors/`, `se
 NestJS/API: `nestjs-expert`, `api-design-principles`, `error-handling-patterns`, `aws-serverless`. UI: `frontend-design`, `ui-ux-pro-max`, `shadcn-ui`, `tailwind-design-system`, `vercel-react-best-practices`. Product: `product-manager-toolkit`.
 
 ## CodeGraph
-Not initialized (repo was empty at constitution). Optional later via `codegraph init -i`; never commit generated databases.
+Initialized 2026-07-09 (260 files indexed). Agents should prefer `codegraph_*` tools (search, callers/callees, impact) over broad grep for symbol-level questions, and re-index (`codegraph index`) after merging a spec. Config is committed; the generated database is gitignored — never commit it.
