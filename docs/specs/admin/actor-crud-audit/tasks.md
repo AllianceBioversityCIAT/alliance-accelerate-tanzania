@@ -79,7 +79,7 @@
       Done when: row actions render and behave per FR-9 acceptance; existing table/bulk tests still green.
       Skills: ui-ux-pro-max, frontend-design
 
-- [ ] T-10 `ActorHistoryPanel` in the edit view  (deps: T-8)
+- [x] T-10 `ActorHistoryPanel` in the edit view  (deps: T-8)
       Scope: history section under the form per design §5 — action badge (tokens), actingEmail (fallback sub), formatted date, diff rows "field: from → to", snapshot summary expandable, "load more" pagination, loading/empty/error states; wired to `getActorHistory`. Component tests: diff rendering, snapshot summary, empty state, load-more.
       Traces: FR-10, NFR-3, NFR-6; design.md §5
       Files: frontend/components/admin/ActorHistoryPanel.tsx, frontend/app/(admin)/admin/actors/edit/page.tsx, frontend/components/admin/ActorHistoryPanel.test.tsx

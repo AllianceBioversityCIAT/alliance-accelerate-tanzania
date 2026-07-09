@@ -361,3 +361,39 @@
 
 ---
 
+### T-10 — `ActorHistoryPanel` in the edit view
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-10 — `ActorHistoryPanel` in the edit view
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/components/admin/ActorHistoryPanel.tsx` — new history panel component.
+  - `frontend/components/admin/ActorHistoryPanel.test.tsx` — new component tests (10 tests).
+  - `frontend/app/(admin)/admin/actors/edit/page.tsx` — added `ActorHistoryPanel` under `ActorForm` in edit mode.
+- **Implementer verification commands:**
+  - `cd frontend && npm test -- ActorHistoryPanel && npm run build` → 10 tests passed, static export green.
+  - Full frontend suite → 849 tests across 65 suites passed.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** `ActorHistoryPanel` correctly wires to `getActorHistory`, renders entries newest-first with action badges, acting-email/sub fallback, formatted dates, field-level diffs as "from → to", snapshots as expandable summaries, "load more" pagination, and loading/empty/error states. Edit page remains static-export-safe; all Tailwind classes resolve to design tokens.
+
+#### Requirements covered
+
+- FR-10 (history panel in edit view)
+- NFR-3 (accessibility: list roles, live regions, aria-expanded)
+- NFR-6 (paginated history)
+
+#### Decisions made
+
+- Snapshot summaries are expandable to keep the list compact.
+- PAGE_SIZE fixed at 20 for history.
+
+#### Issues encountered
+
+- None.
+
+---
+

@@ -28,6 +28,7 @@ import { adminGetActor, type AdminActor } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
 
 import ActorForm from '@/components/admin/ActorForm';
+import { ActorHistoryPanel } from '@/components/admin/ActorHistoryPanel';
 import Button from '@/components/ui/Button';
 import Skeleton from '@/components/ui/Skeleton';
 
@@ -176,6 +177,8 @@ function EditActorView() {
         onSuccess={handleSuccess}
         onAuthFailure={handleAuthFailure}
       />
+
+      <ActorHistoryPanel actorId={actor.id} token={token} />
     </div>
   );
 }
