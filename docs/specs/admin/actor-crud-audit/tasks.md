@@ -63,7 +63,7 @@
       Done when: client tests green; types match the API contracts incl. `AuditEntry` and paginated history envelope.
       Skills: vercel-react-best-practices
 
-- [ ] T-8 `ActorForm` + create/edit pages  (deps: T-7)
+- [x] T-8 `ActorForm` + create/edit pages  (deps: T-7)
       Scope: shared `ActorForm` (sections, canonical region/type selects, crops checkbox group, consent select, client validation mirroring DTOs, inline 400/409 mapping via `aria-describedby`); `/admin/actors/new` page; `/admin/actors/edit?id=…` page (`useSearchParams` + Suspense, profile pattern; prefill from `adminGetActor`; not-found state); `AcknowledgeDialog` gating when a submit sets consent to `GRANTED` from another status. Component tests: validation, prefill, ack gating, 409 inline on `traderId`.
       Traces: FR-8, NFR-2, NFR-3; design.md §5, §8 (query-param ADR)
       Files: frontend/components/admin/ActorForm.tsx, frontend/app/(admin)/admin/actors/new/page.tsx, frontend/app/(admin)/admin/actors/edit/page.tsx, frontend/components/admin/ActorForm.test.tsx

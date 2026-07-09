@@ -286,3 +286,40 @@
 
 ---
 
+### T-8 — `ActorForm` + create/edit pages
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-8 — `ActorForm` + create/edit pages
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `frontend/components/admin/ActorForm.tsx` — new shared form component with full-field sections, client validation, inline 400/409 error mapping, GRANTED-transition acknowledgement gating.
+  - `frontend/components/admin/ActorForm.test.tsx` — new component tests (18 tests).
+  - `frontend/app/(admin)/admin/actors/new/page.tsx` — new create page.
+  - `frontend/app/(admin)/admin/actors/edit/page.tsx` — new edit page (`useSearchParams` + `<Suspense>` per profile pattern).
+  - `frontend/lib/api/client.ts` — added `ApiError` class carrying HTTP status + field details for inline form error mapping.
+- **Implementer verification command:** `cd frontend && npm test -- ActorForm && npm run build`
+- **Implementer verification output:** 18 tests passed; static export generated `/admin/actors`, `/admin/actors/edit`, `/admin/actors/new`; full frontend suite 827 passed.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** T-8 delivers complete, spec-compliant `ActorForm` plus create/edit pages: all Actor fields covered in token-only sections with client validation, `AcknowledgeDialog` gates GRANTED transitions, 400/409 errors map inline via `aria-describedby`, pages are `'use client'` and static-export safe, auth failures route to `/login`, success returns to `/admin/actors`.
+
+#### Requirements covered
+
+- FR-8 (actor forms UI)
+- NFR-2 (static export preserved)
+- NFR-3 (accessibility: labels, error association, keyboard dialogs)
+
+#### Decisions made
+
+- Added `ApiError` to `client.ts` so forms can distinguish 400/409 and extract field-level `details`.
+- Reused existing `AcknowledgeDialog` for GRANTED-transition gating.
+
+#### Issues encountered
+
+- None.
+
+---
+

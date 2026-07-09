@@ -47,6 +47,25 @@ export class AuthFailureError extends Error {
 }
 
 /**
+ * Thrown by apiFetch for non-401 error responses.
+ *
+ * Carries the HTTP status and any field-level validation details returned by
+ * the NestJS error envelope so forms can map server errors inline (FR-8).
+ * Extends Error so existing catch-Error handlers continue to work.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly details?: unknown;
+
+  constructor(status: number, message: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
+/**
  * Generic GET helper. Throws on missing base URL, network failure, or non-OK HTTP status.
  * Callers are responsible for wrapping in try/catch; see getMetrics() for the DD-3 pattern.
  *
@@ -206,15 +225,17 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   if (!response.ok) {
     let message = `HTTP ${response.status} ${response.statusText}`;
+    let details: unknown;
     try {
       const envelope = (await response.json()) as Partial<ApiErrorEnvelope>;
       if (envelope.message) {
         message = envelope.message;
       }
+      details = envelope.details;
     } catch {
       // Body is not JSON — use the status line message set above.
     }
-    throw new Error(message);
+    throw new ApiError(response.status, message, details);
   }
 
   if (expectEmpty) {
