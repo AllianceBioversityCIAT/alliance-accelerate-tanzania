@@ -1,10 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
 import serverlessExpress from 'serverless-http';
 import type { Handler } from 'aws-lambda';
 import { AppModule } from './app.module';
+import { createValidationPipe } from './common/validation-pipe';
 
 /**
  * Serverless entrypoint — one Lambda wrapping the whole NestJS app behind
@@ -18,9 +18,7 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
   const expressApp = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
   app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(
-    new ValidationPipe({ transform: true, whitelist: true }),
-  );
+  app.useGlobalPipes(createValidationPipe());
   await app.init();
   return serverlessExpress(expressApp);
 }

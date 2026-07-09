@@ -4,12 +4,12 @@ import {
   INestApplication,
   Injectable,
   UnauthorizedException,
-  ValidationPipe,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConsentStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../app.module';
+import { createValidationPipe } from '../common/validation-pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/auth.types';
@@ -353,7 +353,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
     app = moduleRef.createNestApplication();
     // Mirror production bootstrap (main.ts / lambda.ts) exactly.
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createValidationPipe());
     await app.init();
   });
 

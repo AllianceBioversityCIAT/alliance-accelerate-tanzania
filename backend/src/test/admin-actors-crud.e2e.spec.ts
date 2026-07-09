@@ -4,12 +4,12 @@ import {
   INestApplication,
   Injectable,
   UnauthorizedException,
-  ValidationPipe,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConsentStatus, Prisma } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../app.module';
+import { createValidationPipe } from '../common/validation-pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/auth.types';
@@ -599,7 +599,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createValidationPipe());
     await app.init();
   });
 
@@ -662,6 +662,31 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .set(admin)
         .send(payload)
         .expect(400);
+    });
+
+    it('returns 400 with per-field details for DTO validation failures (W-1 envelope)', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        region: 'Not-A-Region',
+        email: 'not-an-email',
+      };
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(Array.isArray(res.body.details)).toBe(true);
+      const fields = (res.body.details as { field: string; message: string }[]).map(
+        (d) => d.field,
+      );
+      expect(fields).toContain('region');
+      expect(fields).toContain('email');
+      for (const d of res.body.details as { field: string; message: string }[]) {
+        expect(typeof d.field).toBe('string');
+        expect(typeof d.message).toBe('string');
+      }
     });
 
     it('returns 409 for a duplicate traderId', async () => {

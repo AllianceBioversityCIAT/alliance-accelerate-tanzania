@@ -397,3 +397,25 @@
 
 ---
 
+### W-1 — Remediation: per-field `details` in the 400 validation envelope
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Source:** validation-report.md §7 W-1 / §10 R-2 (user directed: "corrige el W-1 primero y luego completa la T-11")
+- **Problem:** `ActorForm` maps server 400 field errors from `ApiError.details` as `{field,message}[]`, but the backend used Nest's default `ValidationPipe` envelope (no `details`, `message: string[]`) — inline per-field 400 mapping could never fire against the real API.
+
+#### Changes
+
+- `backend/src/common/validation-pipe.ts` — new shared factory `createValidationPipe()` with an `exceptionFactory` emitting `{ statusCode: 400, error, message: 'Validation failed', details: [{ field, message }] }`; `flattenValidationErrors()` handles nested properties with dot paths.
+- `backend/src/main.ts`, `backend/src/lambda.ts` — both bootstrap paths now use the shared factory.
+- `backend/src/test/admin-actors-crud.e2e.spec.ts`, `backend/src/test/admin-actors.e2e.spec.ts` — e2e suites use the same factory (deployed envelope and tested envelope cannot drift); new e2e asserts a DTO-invalid create returns `message: 'Validation failed'` + `details` containing `region` and `email` entries.
+- `backend/src/common/validation-pipe.spec.ts` — new; 5 unit tests (per-field mapping, first-constraint pick, nested dot paths, empty input, exceptionFactory envelope).
+- Frontend unchanged — `mapApiError` already consumed this exact shape.
+
+#### Verification
+
+- `cd backend && npm test` → 26 suites, **274 tests passed** (was 268; +5 pipe unit, +1 e2e envelope).
+- `cd backend && npm run build` → clean.
+
+---
+
