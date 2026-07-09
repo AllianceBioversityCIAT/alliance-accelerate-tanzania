@@ -1,7 +1,7 @@
 # Tasks — Admin Actor CRUD + Audit History
 
 - Spec path: docs/specs/admin/actor-crud-audit/
-- Status: Draft
+- Status: Done
 - Author / Date: SDD (Leader) — 2026-07-09
 - Traces: requirements.md FR-1..FR-12 / NFR-1..NFR-7 (Approved); design.md §1–§10 (Approved)
 

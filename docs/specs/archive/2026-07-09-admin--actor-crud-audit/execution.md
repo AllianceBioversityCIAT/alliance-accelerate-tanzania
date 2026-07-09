@@ -436,7 +436,7 @@
 - `smoke.sh` → **SMOKE PASSED** (8/8): `GET /api/v1/metrics` + `/actors` 200 valid JSON; PII boundary on both bodies (no phone/email/sex/position/marketLocation); PII-safe list contract; CloudFront `/` + `/map` 200; direct S3 object 403 (OAC-only).
 - RBAC 401 matrix (no token) on all five new routes: POST `/admin/actors`, GET/PATCH/DELETE `/admin/actors/:id`, GET `/admin/actors/:id/history` → **401** each.
 - New pages served: CloudFront `/admin/actors/new` and `/admin/actors/edit` → 200 (client-side `RequireRole` guards the UI; the API is the authoritative gate).
-- **Pending user browser confirmation (needs an Admin Cognito session):** CRUD lifecycle from `/admin/actors`, History panel entries (incl. after a bulk consent), history-after-delete visible, and W-1 inline per-field 400 errors on the form. Machine-side equivalents are covered by the 32-test e2e suite running the production pipe.
+- **User browser confirmation (2026-07-09): CONFIRMED** — the user verified the admin CRUD + History flows live in the browser ("ya verifiqué en el navegador") and authorized archiving. Machine-side equivalents also covered by the 32-test e2e suite running the production pipe.
 
 ---
 
