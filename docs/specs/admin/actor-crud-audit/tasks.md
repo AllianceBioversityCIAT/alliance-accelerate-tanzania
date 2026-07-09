@@ -15,7 +15,7 @@
       Done when: migration applies on a clean local MySQL, generated client exposes `actorAuditLog`, backend compiles, and the migration diff touches only the new enum + table.
       Skills: nestjs-expert
 
-- [ ] T-2 Admin CRUD DTOs  (deps: none)
+- [x] T-2 Admin CRUD DTOs  (deps: none)
       Scope: `AdminActorCreateDto` extending the existing unwired `ActorCreateDto` (+`crops?: string[]` validated against the crop catalog, `@ArrayUnique`; +`acknowledged?: boolean`); `AdminActorUpdateDto = PartialType(AdminActorCreateDto)`; `ActorHistoryQueryDto` (`page`/`pageSize`, `@Max(100)`). Unit tests for accept/reject cases (bad crop name, GPS bounds inherited, partial update with single field).
       Traces: FR-1, FR-3, FR-7, NFR-1, NFR-6; design.md §3
       Files: backend/src/actors/dto/admin-actor-create.dto.ts, dto/admin-actor-update.dto.ts, dto/actor-history-query.dto.ts, dto/admin-actor-dto.spec.ts

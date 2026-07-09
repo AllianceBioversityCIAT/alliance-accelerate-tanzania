@@ -59,3 +59,42 @@
 
 ---
 
+### T-2 — Admin CRUD DTOs
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-2 — Admin CRUD DTOs
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/dto/admin-actor-create.dto.ts` — new; extends `ActorCreateDto`, adds `crops` (validated against fixed 3-crop catalog with `@ArrayUnique`) and `acknowledged`.
+  - `backend/src/actors/dto/admin-actor-update.dto.ts` — new; `PartialType(AdminActorCreateDto)`.
+  - `backend/src/actors/dto/actor-history-query.dto.ts` — new; paginated history query DTO with `@Type(() => Number)` coercion and `@Max(100)`.
+  - `backend/src/actors/dto/admin-actor-dto.spec.ts` — new; 17 unit tests covering accept/reject cases.
+  - `backend/package.json` — added `@nestjs/mapped-types` dependency.
+  - `backend/package-lock.json` — updated.
+- **Implementer verification command:** `cd backend && npm test -- admin-actor-dto`
+- **Implementer verification output:** 17 tests passed; regression `npm test -- actor-dto` also passed (33 tests total).
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** All T-2 deliverables match design.md §3 and requirements.md FR-1/FR-3/FR-7; no PII, AWS-profile, or stack violations.
+
+#### Requirements covered
+
+- FR-1 (create DTO incl. crops + acknowledgement)
+- FR-3 (partial update DTO)
+- FR-7 (history pagination DTO)
+- NFR-1, NFR-4, NFR-6 (validation, clean errors, bounded pagination)
+
+#### Decisions made
+
+- Reused existing `ActorCreateDto` as the base for `AdminActorCreateDto` to preserve all validation rules.
+- Defined `CROP_NAMES` constant locally in the DTO file; fixed catalog `sorghum`/`common_bean`/`groundnut`.
+
+#### Issues encountered
+
+- None.
+
+---
+
