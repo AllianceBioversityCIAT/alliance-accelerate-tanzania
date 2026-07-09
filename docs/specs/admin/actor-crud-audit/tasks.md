@@ -39,10 +39,10 @@
       Done when: tests green; diff contains exactly the changed fields with from/to; create/delete produce full snapshots; no row written for a no-change update.
       Skills: nestjs-expert, error-handling-patterns
 
-- [ ] T-5 Service CRUD + history + bulk audit retrofit  (deps: T-2, T-3, T-4)
+- [x] T-5 Service CRUD + history + bulk audit retrofit  (deps: T-2, T-3, T-4)
       Scope: extend `ActorsAdminService` per design §4 — `create` (crops links, GRANTED-w/o-ack → 400, P2002 → 409), `getById` (404), `update` (partial apply, crop replacement, before/after diff, consent-transition guard, 404/409), `remove` (snapshot then delete), `history` (newest-first, paginated, **no actor-existence check**); retrofit `bulkSetConsent`/`bulkDelete` to write audit rows in their existing transactions with unchanged `BulkResult` responses. Acting email resolved pre-transaction. Unit tests for each path incl. tx-rollback → no audit row.
       Traces: FR-1..FR-7, NFR-4, NFR-6; design.md §4, §8
-      Files: backend/src/actors/actors-admin.service.ts, actors-admin.service.spec.ts
+      Files: backend/src/actors/actors-admin.service.ts, actors-admin.service.spec.ts, actors.module.ts
       Verify: `cd backend && npm test -- actors-admin`
       Done when: unit tests green covering create/update/delete/history/bulk-retrofit incl. 400/404/409 mappings, empty-diff skip, rollback atomicity, and unchanged `BulkResult` shape.
       Skills: nestjs-expert, error-handling-patterns, api-design-principles

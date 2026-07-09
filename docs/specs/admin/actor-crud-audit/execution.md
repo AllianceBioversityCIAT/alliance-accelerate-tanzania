@@ -167,3 +167,39 @@
 
 ---
 
+### T-5 — Service CRUD + history + bulk audit retrofit
+
+- **Status:** PASS
+- **Date:** 2026-07-09
+- **Task ID / Title:** T-5 — Service CRUD + history + bulk audit retrofit
+- **Attempts:** 1
+
+#### Attempt 1
+
+- **Files changed:**
+  - `backend/src/actors/actors-admin.service.ts` — extended with `create`, `getById`, `update`, `remove`, `history`; retrofitted `bulkSetConsent`/`bulkDelete` to write audit rows in their existing transactions.
+  - `backend/src/actors/actors-admin.service.spec.ts` — extended with 34 unit tests covering CRUD, 400/404/409 mappings, crop links, empty-diff skip, rollback atomicity, history pagination, and bulk retrofit.
+  - `backend/src/actors/actors.module.ts` — registered `ActorAuditService` as provider.
+- **Implementer verification command:** `cd backend && npm test -- actors-admin`
+- **Implementer verification output:** 34 tests passed; `npm run build` green.
+- **Reviewer verdict:** PASS
+- **Reviewer summary:** Service implementation satisfies all T-5 checklist items: CRUD + history + bulk audit retrofit are atomic, PII-contained, and covered by 34 passing unit tests with `npm run build` green. The three `admin-actors.e2e` failures are caused by its in-memory Prisma mock missing `actorAuditLog` and fall under T-6 controller/e2e scope.
+
+#### Requirements covered
+
+- FR-1..FR-7 (single CRUD, audit on every write, history)
+- NFR-4 (atomic transactions)
+- NFR-6 (bulk createMany)
+
+#### Decisions made
+
+- `ActingAdminResolver` and `ActorAuditService` injected into `ActorsAdminService`.
+- `mapPrismaError` maps `P2002` on `traderId` to a clean 409.
+- Crop links built by resolving names to Crop ids inside the transaction.
+
+#### Issues encountered
+
+- Pre-existing `admin-actors.e2e.spec.ts` fails because its mock lacks `actorAuditLog`; deferred to T-6.
+
+---
+
