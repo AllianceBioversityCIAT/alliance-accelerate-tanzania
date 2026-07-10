@@ -20,6 +20,11 @@ Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJ
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `system-design/design.md §7`; no hardcoded colors/geometry.
 
+## Package-level guides (children of this file)
+- `backend/AGENTS.md` (mirrors `backend/CLAUDE.md`) — NestJS/Lambda specifics: the two-entrypoint shared-bootstrap discipline, serverless-http body-parsing gotcha + handler-level test harness, migrations runbook, PII/audit rules, e2e conventions, template generator.
+- `frontend/AGENTS.md` (mirrors `frontend/CLAUDE.md`) — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, generated assets.
+Consult the child guide whenever working inside that package; children add to (never override) this file.
+
 ## Specs & taxonomy
 Feature specs live in `docs/specs/<domain>/<feature-slug>/` (e.g. `actors/`, `seed-map/`, `import-export/`), each with `requirements.md`, `design.md`, `tasks.md`, `execution.md`. Follow the `general-setup` templates.
 

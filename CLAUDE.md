@@ -29,6 +29,11 @@ These form the **constitutional baseline** for all SDD work. Module/feature spec
 - **Static export:** no Next.js SSR/ISR/route handlers — all server logic lives in the NestJS API.
 - **Design tokens:** use tokens from `system-design/design.md §7` — no hardcoded colors/geometry.
 
+## Package-level guides (children of this file)
+- `backend/CLAUDE.md` — NestJS/Lambda specifics: two-entrypoint shared-bootstrap discipline, serverless-http body-parsing gotcha + the handler-level test harness, Prisma migrations runbook, PII/audit rules, e2e naming/harness conventions, import-template generator.
+- `frontend/CLAUDE.md` — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, generated assets.
+Consult the child guide whenever working inside that package; children add to (never override) this file. Mirrored for other tools by `backend/AGENTS.md` / `frontend/AGENTS.md`.
+
 ## Spec taxonomy under `docs/specs/`
 - `general-setup/` — methodology templates (this baseline).
 - `<domain>/<feature-slug>/` — feature specs (e.g. `actors/`, `seed-map/`, `import-export/`).
