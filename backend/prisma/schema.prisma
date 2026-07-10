@@ -71,6 +71,7 @@ enum ActorAuditAction {
   DELETE
   BULK_CONSENT
   BULK_DELETE
+  IMPORT
 }
 
 model ActorAuditLog {

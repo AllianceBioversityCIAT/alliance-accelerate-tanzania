@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `ActorAuditLog` MODIFY `action` ENUM('CREATE', 'UPDATE', 'DELETE', 'BULK_CONSENT', 'BULK_DELETE', 'IMPORT') NOT NULL;
