@@ -101,7 +101,27 @@ Environment note: local MySQL available (docker `accelerate-mysql` on 3306, `bac
 
 ---
 
+### T-9 REOPENED — live browser verification found two defects (2026-07-10)
+
+The user exercised the deployed flow and reported:
+1. **PROD BUG (500):** uploading the empty template returns "The file could not be processed — Internal server error". CloudWatch root evidence: `TypeError: Cannot delete property '0' of [object Uint8Array]` at class-validator's whitelist inside the global ValidationPipe — the body reaches the pipe as RAW BYTES under **serverless-http** (lambda path). Local repro against the service with the same file returns a clean 0-row report, and the e2e suite (supertest) passes — **no test exercises the real Lambda handler**; that harness gap let this ship. Rework: `impl-fix500` (handler-level reproducing test → parser fix in the shared body config + defense-in-depth 400 for non-object bodies).
+2. **UX:** the native file input reads as a text field, not a button; step layout feels flat; the empty-file case and generic errors need clear messaging. Rework: `impl-fixux` (hidden-input + styled button + drop zone, flow polish, rows===0 notice, friendlier generic error).
+
+### T-9 rework — both fixes PASS + redeployed (2026-07-10)
+
+**Fix 1 — latent serverless-http 500 (impl-fix500 / rev-fix500 PASS):**
+- **Root cause (reviewer-verified against installed sources + isolated repro):** `serverless-http@3.2.0` builds its synthetic request with `complete:true`/`readable:false` and pre-assigns `req.body` as a raw Buffer; `body-parser@2.3.0`'s `read()` early-returns on `onFinished.isFinished(req)` → **skips parsing entirely** → the Buffer reaches the global ValidationPipe → class-validator `whitelist` deletes indices off a Uint8Array → TypeError → 500.
+- **Timeline resolved:** NOT a regression — express 5.2.1/body-parser 2.3.0/serverless-http 3.2.0 unchanged since bootstrap (511f426); the exceljs install didn't touch them; T-6's `useBodyParser` didn't cause it (default parsers skip identically, proven in isolation). **No authenticated body-carrying write had ever executed on the deployed Lambda** — prior live verifications were GETs + unauthenticated 401s (rejected at the guard, before body parsing). Import was the first authenticated JSON POST through serverless-http.
+- **Blast radius:** ALL authenticated JSON write routes on the deployed Lambda (admin CRUD, bulk ops, users, import) were latently broken; this fix repairs all of them.
+- **Fix (both entrypoints via the shared helpers — W-1 symmetry):** (a) `normalizeServerlessJsonBody` middleware in `body-parser.config.ts` — parses leftover Buffer/string JSON bodies (8MB → 413, malformed → 400), no-op on the local streamed path; (b) `BodyShapeValidationPipe` in `validation-pipe.ts` — non-plain-object bodies → clean 400 before class-validator (defense in depth; verified safe for all 8 `@Body()` routes).
+- **The harness gap is closed:** new `src/test/lambda-handler.e2e.spec.ts` drives the REAL `lambda.ts` handler with a faithful APIGW v2 event — red (500) before the fix, green after. Full suite 356/33 green; build clean.
+- **Non-blocking nit (follow-up):** `JSON_BODY_LIMIT` ('8mb') and `JSON_BODY_LIMIT_BYTES` are hand-synced literals — derive one from the other.
+
+**Fix 2 — import page UX (impl-fixux / rev-fixux PASS):** sr-only input + styled primary button inside a dashed drop zone (drag & drop through the same validation path), file chip with size + replace control, numbered step badges, `rows===0` friendly notice, generic 5xx message (400 messages still verbatim). Tokens-only verified (zero hardcoded values); WCAG AA preserved; Import tests 22/22, full suite 887, static export green.
+
+**Redeploy:** backend `sam deploy` (Successfully updated) + frontend deploy + invalidation. Post-deploy: smoke PASSED, import route 401 without token. **Authenticated browser re-verification handed to the user.**
+
 ## 3. Summary
 
-All 9 tasks complete — **9/9 Reviewer PASS, every task on its first attempt**. Backend suite 354/354, frontend suite 882/882, both builds green, deployed to dev and live-verified (smoke + RBAC + template byte-integrity). Two Reviewer-accepted judgment calls recorded (DR-5 broadened to malformed GPS; ack-detection string coupling — fails closed, structured-flag follow-up recommended).
+T-1..T-8: Reviewer PASS on first attempt for all. T-9: deployed, then reopened on live user findings (empty-template 500 + picker UX), reworked with two PASS fixes — including the discovery and repair of a **latent bootstrap-era serverless-http/body-parser bug that silently broke every authenticated write on the deployed Lambda** and the handler-level test harness that now guards it. Backend 356/356, frontend 887/887, redeployed to dev. Pending: user browser re-verification of the full import flow.
 
