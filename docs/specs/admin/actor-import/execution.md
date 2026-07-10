@@ -121,7 +121,11 @@ The user exercised the deployed flow and reported:
 
 **Redeploy:** backend `sam deploy` (Successfully updated) + frontend deploy + invalidation. Post-deploy: smoke PASSED, import route 401 without token. **Authenticated browser re-verification handed to the user.**
 
+### T-9 CLOSED — user browser confirmation (2026-07-10)
+
+After the rework redeploy (and the adjacent admin-shell mobile fixes committed outside this spec: sidebar placeholder removal `df7a3e1`, hamburger/stacked-body/brand-link `9f5f1ae`, mobile public-site link `54bced8`), the user re-verified the deployed flow on desktop and mobile and confirmed: **"todo funciona bien"**. T-9 marked `[x]`.
+
 ## 3. Summary
 
-T-1..T-8: Reviewer PASS on first attempt for all. T-9: deployed, then reopened on live user findings (empty-template 500 + picker UX), reworked with two PASS fixes — including the discovery and repair of a **latent bootstrap-era serverless-http/body-parser bug that silently broke every authenticated write on the deployed Lambda** and the handler-level test harness that now guards it. Backend 356/356, frontend 887/887, redeployed to dev. Pending: user browser re-verification of the full import flow.
+All 9 tasks complete — T-1..T-8 Reviewer PASS on first attempt; T-9 deployed, reopened on live user findings (empty-template 500 + picker UX), reworked with two PASS fixes, redeployed, and user-confirmed. The rework surfaced and repaired a **latent bootstrap-era serverless-http/body-parser bug that silently broke every authenticated write on the deployed Lambda**, now guarded by a handler-level test harness. Final gates: backend 356/356 (33 suites), frontend 890/890 (67 suites), builds + lints green, live smoke PASS.
 
