@@ -417,6 +417,80 @@ describe('ActorAuditService', () => {
     });
   });
 
+  describe('logImport', () => {
+    it('creates one IMPORT snapshot per created actor via a single createMany', async () => {
+      const tx = mockTx();
+      const rows = [
+        fixtureActor({ id: 'a1', traderId: 'TZ-1', traderName: 'Actor One' }),
+        fixtureActor({ id: 'a2', traderId: 'TZ-2', traderName: 'Actor Two' }),
+      ];
+      tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 2 });
+
+      const result = await service.logImport(tx, rows, acting);
+
+      expect(result).toEqual({ count: 2 });
+      expect(tx.actorAuditLog.createMany).toHaveBeenCalledTimes(1);
+      const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+        .data as Array<Record<string, unknown>>;
+
+      expect(data).toHaveLength(2);
+      expect(data[0].actorId).toBe('a1');
+      expect(data[1].actorId).toBe('a2');
+      for (const row of data) {
+        expect(row.action).toBe(ActorAuditAction.IMPORT);
+        expect(row.actingSub).toBe(acting.sub);
+        expect(row.actingEmail).toBe(acting.email);
+        expect((row.changes as { kind: string }).kind).toBe('snapshot');
+      }
+      // Snapshot shape: Decimal fields as strings, crops as names.
+      const values = (
+        data[0].changes as { values: Record<string, unknown> }
+      ).values;
+      expect(values.capacityTons).toBe('1850');
+      expect(values.gpsLatitude).toBe('-3.3869');
+      expect(values.crops).toEqual(['sorghum', 'common_bean']);
+    });
+
+    it('persists acknowledged on every row when provided', async () => {
+      const tx = mockTx();
+      const rows = [
+        fixtureActor({ id: 'a1', consentStatus: 'GRANTED' }),
+        fixtureActor({ id: 'a2', consentStatus: 'GRANTED' }),
+      ];
+      tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 2 });
+
+      await service.logImport(tx, rows, acting, true);
+
+      const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+        .data as Array<Record<string, unknown>>;
+      for (const row of data) {
+        expect(row.acknowledged).toBe(true);
+      }
+    });
+
+    it('omits acknowledged from every row when not provided', async () => {
+      const tx = mockTx();
+      const rows = [fixtureActor({ id: 'a1' })];
+      tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 1 });
+
+      await service.logImport(tx, rows, acting);
+
+      const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+        .data as Array<Record<string, unknown>>;
+      expect(data[0]).not.toHaveProperty('acknowledged');
+    });
+
+    it('returns count 0 for an empty input array without calling createMany', async () => {
+      const tx = mockTx();
+      tx.actorAuditLog.createMany = jest.fn();
+
+      const result = await service.logImport(tx, [], acting);
+
+      expect(result).toEqual({ count: 0 });
+      expect(tx.actorAuditLog.createMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('toAuditEntry', () => {
     it('passes changes through and formats createdAt as ISO string', () => {
       const createdAt = new Date('2026-07-09T12:34:56Z');

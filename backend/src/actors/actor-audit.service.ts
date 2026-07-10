@@ -221,6 +221,47 @@ export class ActorAuditService {
     });
   }
 
+  /**
+   * Record `IMPORT` snapshot entries for a chunk of freshly-created actors in a
+   * single `createMany` (FR-8), mirroring {@link logBulkDelete}'s batching.
+   *
+   * Each entry carries a full snapshot envelope (Decimal fields as strings,
+   * crops as names). When `acknowledged` is supplied — the file-level consent
+   * gate for `GRANTED` rows (FR-6) — it is persisted on every entry; when it is
+   * omitted, the column is left unset so `UNKNOWN`/`DENIED`-only imports don't
+   * record a spurious flag.
+   *
+   * @sdd-spec admin/actor-import
+   */
+  async logImport(
+    tx: Prisma.TransactionClient,
+    actors: AdminActor[],
+    acting: ActingAdmin,
+    acknowledged?: boolean,
+  ): Promise<{ count: number }> {
+    if (actors.length === 0) {
+      return { count: 0 };
+    }
+
+    return tx.actorAuditLog.createMany({
+      data: actors.map((actor) => {
+        const row: Prisma.ActorAuditLogCreateManyInput = {
+          actorId: actor.id,
+          traderId: actor.traderId,
+          traderName: actor.traderName,
+          action: ActorAuditAction.IMPORT,
+          actingSub: acting.sub,
+          actingEmail: acting.email ?? null,
+          changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+        };
+        if (acknowledged !== undefined) {
+          row.acknowledged = acknowledged;
+        }
+        return row;
+      }),
+    });
+  }
+
   private buildSnapshot(actor: AdminActor): SnapshotEnvelope {
     const values: Record<string, unknown> = {};
     for (const field of AUDITABLE_FIELDS) {

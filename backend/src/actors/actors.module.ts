@@ -6,6 +6,7 @@ import { ActorsAdminService } from './actors-admin.service';
 import { AdminActorsController } from './admin-actors.controller';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import { ActorAuditService } from './actor-audit.service';
+import { ActorImportService } from './actor-import.service';
 
 /**
  * T-5 / T-2 / T-3 — ActorsModule: public read API + Admin-only actor operations.
@@ -22,6 +23,7 @@ import { ActorAuditService } from './actor-audit.service';
     ActorsAdminService,
     ActingAdminResolver,
     ActorAuditService,
+    ActorImportService,
   ],
 })
 export class ActorsModule {}
