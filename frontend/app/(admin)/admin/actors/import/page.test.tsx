@@ -175,7 +175,7 @@ describe('ActorImportPage — full flow (no acknowledgement)', () => {
     await waitFor(() =>
       expect(mockImportActors).toHaveBeenNthCalledWith(1, file, 'preview', TOKEN),
     );
-    expect(await screen.findByText(/3\. review and confirm/i)).toBeInTheDocument();
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
     // Rendered in both the desktop table and the mobile card.
     expect(screen.getAllByText(/meru agro/i).length).toBeGreaterThan(0);
 
@@ -204,7 +204,7 @@ describe('ActorImportPage — acknowledgement gate', () => {
     await renderReady();
     const file = await selectFile();
 
-    expect(await screen.findByText(/3\. review and confirm/i)).toBeInTheDocument();
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
 
@@ -233,7 +233,7 @@ describe('ActorImportPage — acknowledgement gate', () => {
     await renderReady();
     const file = await selectFile();
 
-    expect(await screen.findByText(/3\. review and confirm/i)).toBeInTheDocument();
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -255,7 +255,7 @@ describe('ActorImportPage — file rejection', () => {
     await selectFile(xlsxFile('actors.csv'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/only \.xlsx files can be imported/i);
-    expect(screen.queryByText(/3\. review and confirm/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/review and confirm/i)).not.toBeInTheDocument();
   });
 
   it('renders an ApiError 400 file-level rejection as an alert', async () => {
@@ -268,7 +268,99 @@ describe('ActorImportPage — file rejection', () => {
 
     expect(await screen.findByText(/the file could not be processed/i)).toBeInTheDocument();
     expect(screen.getByText(/1200 data rows/i)).toBeInTheDocument();
-    expect(screen.queryByText(/3\. review and confirm/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/review and confirm/i)).not.toBeInTheDocument();
+  });
+});
+
+// ── File picker: hidden input + button + drag & drop + chip ──────────────────
+
+describe('ActorImportPage — file picker', () => {
+  it('drives a visually-hidden input from the styled "Select .xlsx file" button', async () => {
+    await renderReady();
+
+    const input = screen.getByLabelText(/excel file/i) as HTMLInputElement;
+    // The native input is present but visually hidden (no default browser chip).
+    expect(input).toHaveClass('sr-only');
+
+    const clickSpy = jest.spyOn(input, 'click').mockImplementation(() => {});
+    fireEvent.click(screen.getByRole('button', { name: /select \.xlsx file/i }));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+  });
+
+  it('previews a file dropped onto the drop zone (same validation path)', async () => {
+    resolveByMode(PREVIEW_REPORT, COMMIT_REPORT);
+
+    await renderReady();
+    const file = xlsxFile('dropped.xlsx');
+    const dropZone = screen.getByText(/drag & drop/i);
+
+    await act(async () => {
+      fireEvent.drop(dropZone, { dataTransfer: { files: [file] } });
+    });
+
+    await waitFor(() =>
+      expect(mockImportActors).toHaveBeenNthCalledWith(1, file, 'preview', TOKEN),
+    );
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+  });
+
+  it('shows the selected file as a chip (name + size) with a replace control', async () => {
+    resolveByMode(PREVIEW_REPORT, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile(xlsxFile('my-actors.xlsx'));
+
+    // The chosen file is surfaced as a chip, not raw input text.
+    expect(await screen.findByText('my-actors.xlsx')).toBeInTheDocument();
+
+    // The replace control clears the file and returns to the drop zone.
+    const replace = screen.getByRole('button', { name: /remove my-actors\.xlsx/i });
+    await act(async () => {
+      fireEvent.click(replace);
+    });
+
+    expect(screen.queryByText('my-actors.xlsx')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /select \.xlsx file/i })).toBeInTheDocument();
+  });
+});
+
+// ── Empty template (rows === 0) ──────────────────────────────────────────────
+
+describe('ActorImportPage — empty template', () => {
+  const EMPTY_REPORT: ImportReport = {
+    mode: 'preview',
+    totals: { rows: 0, toCreate: 0, created: 0, skipped: 0, failed: 0, warnings: 0 },
+    rows: [],
+  };
+
+  it('shows a friendly notice (not empty chips/table) when the file has no data rows', async () => {
+    mockImportActors.mockResolvedValue(EMPTY_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/the file has no data rows/i)).toBeInTheDocument();
+    // No preview table and no dead confirm button.
+    expect(screen.queryByRole('table', { name: /import rows/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /import 0 actor/i })).not.toBeInTheDocument();
+  });
+});
+
+// ── Generic (non-400) server failure ─────────────────────────────────────────
+
+describe('ActorImportPage — generic failure', () => {
+  it('shows a friendly fallback (not the raw server message) for a 5xx ApiError', async () => {
+    mockImportActors.mockRejectedValue(new ApiError(500, 'Internal server error'));
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/something went wrong processing the file/i)).toBeInTheDocument();
+    // The raw passthrough message must not leak to the Admin.
+    expect(screen.queryByText(/internal server error/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/review and confirm/i)).not.toBeInTheDocument();
   });
 });
 

@@ -42,6 +42,79 @@ import Button from '@/components/ui/Button';
 /** Static template asset shipped with the export build (FR-1, DR-7). */
 const TEMPLATE_HREF = '/templates/actor-import-template.xlsx';
 
+/** Friendly fallback when the server fails for a non-validation reason (5xx). */
+const GENERIC_IMPORT_ERROR =
+  'Something went wrong processing the file. Try again; if it persists, contact the administrator.';
+
+// ---------------------------------------------------------------------------
+// Small presentational helpers
+// ---------------------------------------------------------------------------
+
+/** Human-readable file size for the selected-file chip. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+/** Numbered step header — a token badge + heading gives the flow a stepper cue. */
+function StepHeader({ n, id, title }: { n: number; id: string; title: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden="true"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-fg"
+      >
+        {n}
+      </span>
+      <h2 id={id} className="text-base font-semibold text-fg">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+/** Upload glyph for the drop zone (decorative). */
+function UploadIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-8 w-8 text-muted"
+    >
+      <path d="M12 15V4" />
+      <path d="m8 8 4-4 4 4" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+/** File glyph for the selected-file chip (decorative). */
+function FileIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5 shrink-0 text-muted"
+    >
+      <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+      <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+    </svg>
+  );
+}
+
 /**
  * A previewed row requires the consent acknowledgement when it carries the
  * GRANTED warning the backend adds in preview (CONSENT_ACK_WARNING). The GPS
@@ -101,6 +174,7 @@ export default function ActorImportPage() {
   const [apiError, setApiError] = useState<string | undefined>();
 
   const [ackOpen, setAckOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,7 +214,10 @@ export default function ActorImportPage() {
         return;
       }
       if (caught instanceof ApiError) {
-        setApiError(caught.message);
+        // 400 = file-level validation the Admin can act on (format, caps, base64) —
+        // show the server's specific message. Any other status (e.g. 5xx) reads raw,
+        // so present a friendly, actionable fallback instead (NFR-3).
+        setApiError(caught.status === 400 ? caught.message : GENERIC_IMPORT_ERROR);
         return;
       }
       // Plain Error from the client-side guard (non-.xlsx / oversize).
@@ -158,14 +235,14 @@ export default function ActorImportPage() {
     setFileError(undefined);
     setApiError(undefined);
     setAckOpen(false);
+    setDragOver(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
-  // ── Preview on file selection ─────────────────────────────────────────────
+  // ── Preview on file selection (shared by the picker and drag & drop) ──────
 
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const picked = e.target.files?.[0] ?? null;
+  const processFile = useCallback(
+    async (picked: File | null) => {
       setFileError(undefined);
       setApiError(undefined);
       setReport(null);
@@ -194,6 +271,42 @@ export default function ActorImportPage() {
       }
     },
     [token, applyError, handleAuthFailure],
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      void processFile(e.target.files?.[0] ?? null);
+    },
+    [processFile],
+  );
+
+  const openPicker = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  // ── Drag & drop (a keyboard-independent convenience; the button is the a11y path) ──
+
+  const inFlightRef = useRef(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (inFlightRef.current) return;
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      if (inFlightRef.current) return;
+      void processFile(e.dataTransfer.files?.[0] ?? null);
+    },
+    [processFile],
   );
 
   // ── Commit ─────────────────────────────────────────────────────────────────
@@ -233,6 +346,12 @@ export default function ActorImportPage() {
   const toCreate = report?.totals.toCreate ?? 0;
   const inFlight = phase === 'previewing' || phase === 'committing';
 
+  // Mirror inFlight into a ref so the drag handlers read the current value without
+  // being re-created (and re-bound) on every phase change.
+  useEffect(() => {
+    inFlightRef.current = inFlight;
+  }, [inFlight]);
+
   const resultSummary = report
     ? `${report.totals.created} created, ${report.totals.skipped} skipped, ${report.totals.failed} failed.`
     : '';
@@ -260,11 +379,9 @@ export default function ActorImportPage() {
       {/* ── Step 1: template + instructions ──────────────────────────────── */}
       <section
         aria-labelledby="import-step-template"
-        className="flex flex-col gap-3 rounded-md border border-border bg-surface p-5"
+        className="flex flex-col gap-4 rounded-md border border-border bg-surface p-5"
       >
-        <h2 id="import-step-template" className="text-base font-semibold text-fg">
-          1. Download and fill the template
-        </h2>
+        <StepHeader n={1} id="import-step-template" title="Download and fill the template" />
         <p className="text-sm text-muted">
           Field staff fill the canonical template offline. Its Instructions sheet documents every
           column, the required fields, and the allowed values. Do not change the column headers.
@@ -287,45 +404,96 @@ export default function ActorImportPage() {
       {/* ── Step 2: file picker ──────────────────────────────────────────── */}
       <section
         aria-labelledby="import-step-file"
-        className="flex flex-col gap-3 rounded-md border border-border bg-surface p-5"
+        className="flex flex-col gap-4 rounded-md border border-border bg-surface p-5"
       >
-        <h2 id="import-step-file" className="text-base font-semibold text-fg">
-          2. Upload the filled file
-        </h2>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="import-file" className="text-sm font-medium text-fg">
-            Excel file (.xlsx)
-          </label>
-          <input
-            ref={fileInputRef}
-            id="import-file"
-            type="file"
-            accept=".xlsx"
-            onChange={handleFileChange}
-            disabled={inFlight}
-            aria-describedby={fileError ? 'import-file-error' : undefined}
-            aria-invalid={fileError ? 'true' : undefined}
-            className={[
-              'block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg',
-              'file:mr-3 file:rounded-md file:border-0 file:bg-surface-alt file:px-3 file:py-1.5',
-              'file:text-sm file:font-medium file:text-fg',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          />
-          {fileError && (
-            <p
-              id="import-file-error"
-              role="alert"
-              aria-live="assertive"
-              className="mt-1 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-            >
-              {fileError}
-            </p>
-          )}
-        </div>
+        <StepHeader n={2} id="import-step-file" title="Upload the filled file" />
 
-        {/* File-level API rejection (400: bad format / over caps / base64). */}
+        {/* Accessible file input: visually hidden, driven by the styled button and
+            the drop zone below. The label keeps it named for assistive tech. */}
+        <label htmlFor="import-file" className="sr-only">
+          Excel file (.xlsx)
+        </label>
+        <input
+          ref={fileInputRef}
+          id="import-file"
+          type="file"
+          accept=".xlsx"
+          onChange={handleFileChange}
+          disabled={inFlight}
+          aria-describedby={fileError ? 'import-file-error' : 'import-file-help'}
+          aria-invalid={fileError ? 'true' : undefined}
+          className="sr-only"
+        />
+
+        {/* Drop zone + button (shown until a file is chosen). The button is the
+            keyboard/AT path; drag & drop is a pointer convenience. */}
+        {!file && (
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={[
+              'flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed px-6 py-10 text-center',
+              'transition-colors',
+              dragOver
+                ? 'border-primary bg-primary-soft'
+                : 'border-border bg-surface hover:bg-surface-alt',
+            ].join(' ')}
+          >
+            <UploadIcon />
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium text-fg">Drag & drop your filled .xlsx file here</p>
+              <p id="import-file-help" className="text-xs text-muted">
+                Only Excel .xlsx files up to 4 MB are accepted.
+              </p>
+            </div>
+            <Button variant="primary" onClick={openPicker} aria-describedby="import-file-help">
+              Select .xlsx file
+            </Button>
+          </div>
+        )}
+
+        {/* Selected-file chip: name + size + a replace control (never raw input text). */}
+        {file && (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-alt px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <FileIcon />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-fg">{file.name}</p>
+                <p className="text-xs text-muted tabular-nums">{formatFileSize(file.size)}</p>
+              </div>
+            </div>
+            {!inFlight && (
+              <button
+                type="button"
+                onClick={resetFlow}
+                aria-label={`Remove ${file.name} and choose another file`}
+                className={[
+                  'shrink-0 rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-fg',
+                  'transition-colors hover:bg-surface-alt',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                ].join(' ')}
+              >
+                Replace file
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Client-guard rejection (non-.xlsx / oversize) — plain Error. */}
+        {fileError && (
+          <p
+            id="import-file-error"
+            role="alert"
+            aria-live="assertive"
+            className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
+          >
+            {fileError}
+          </p>
+        )}
+
+        {/* File-level API rejection (400: bad format / over caps / base64) or a
+            friendly fallback for an unexpected server failure. */}
         {apiError && (
           <div
             role="alert"
@@ -343,56 +511,68 @@ export default function ActorImportPage() {
             Validating file…
           </p>
         )}
-
-        {file && !inFlight && (
-          <button
-            type="button"
-            onClick={resetFlow}
-            className={[
-              'self-start rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium text-fg',
-              'transition-colors hover:bg-surface-alt',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-            ].join(' ')}
-          >
-            Choose a different file
-          </button>
-        )}
       </section>
 
       {/* ── Step 3: preview + confirm ────────────────────────────────────── */}
       {report && report.mode === 'preview' && phase !== 'result' && (
         <section aria-labelledby="import-step-preview" className="flex flex-col gap-4">
-          <h2 id="import-step-preview" className="text-base font-semibold text-fg">
-            3. Review and confirm
-          </h2>
+          <StepHeader n={3} id="import-step-preview" title="Review and confirm" />
 
-          <TotalsChips report={report} />
-
-          <ImportPreviewTable rows={report.rows} />
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted">
-              {toCreate === 0
-                ? 'No rows are eligible to import. Fix the file and upload again.'
-                : `${toCreate} actor${toCreate === 1 ? '' : 's'} will be created. Skipped and failed rows are not imported.`}
-            </p>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={toCreate === 0 || inFlight}
-              aria-busy={phase === 'committing'}
-              className={[
-                'inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5',
-                'text-sm font-medium text-primary-fg transition-colors hover:bg-primary-hover',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-              ].join(' ')}
+          {report.totals.rows === 0 ? (
+            /* Empty template: the file parsed but has no data rows. Guide the Admin
+               instead of showing empty chips, an empty table, and a dead button. */
+            <div
+              role="status"
+              className="flex flex-col items-center gap-2 rounded-md border border-border bg-surface px-4 py-12 text-center"
             >
-              {phase === 'committing'
-                ? 'Importing…'
-                : `Import ${toCreate} actor${toCreate === 1 ? '' : 's'}`}
-            </button>
-          </div>
+              <p className="text-base font-semibold text-fg">The file has no data rows</p>
+              <p className="max-w-md text-sm text-muted">
+                Fill the Data sheet of the template with at least one actor, then upload the file
+                again.
+              </p>
+              <button
+                type="button"
+                onClick={resetFlow}
+                className={[
+                  'mt-1 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
+                  'transition-colors hover:bg-surface-alt',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                ].join(' ')}
+              >
+                Upload a different file
+              </button>
+            </div>
+          ) : (
+            <>
+              <TotalsChips report={report} />
+
+              <ImportPreviewTable rows={report.rows} />
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted">
+                  {toCreate === 0
+                    ? 'No rows are eligible to import. Fix the file and upload again.'
+                    : `${toCreate} actor${toCreate === 1 ? '' : 's'} will be created. Skipped and failed rows are not imported.`}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={toCreate === 0 || inFlight}
+                  aria-busy={phase === 'committing'}
+                  className={[
+                    'inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5',
+                    'text-sm font-medium text-primary-fg transition-colors hover:bg-primary-hover',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                  ].join(' ')}
+                >
+                  {phase === 'committing'
+                    ? 'Importing…'
+                    : `Import ${toCreate} actor${toCreate === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
 
