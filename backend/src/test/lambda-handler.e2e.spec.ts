@@ -54,7 +54,7 @@ jest.mock('../prisma/prisma.service', () => ({
   },
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 import { handler } from '../lambda';
 
 // --- helpers ----------------------------------------------------------------
