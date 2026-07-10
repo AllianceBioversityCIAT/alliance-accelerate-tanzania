@@ -1,4 +1,5 @@
 import {
+  ArgumentMetadata,
   BadRequestException,
   ValidationError,
   ValidationPipe,
@@ -49,8 +50,47 @@ export function flattenValidationErrors(
   return details;
 }
 
+/**
+ * True for a body value that would crash class-validator's `whitelist` step,
+ * which iterates and `delete`s keys off the value: a Buffer/typed array (delete
+ * on a fixed index throws `TypeError`), an array, or a primitive. A well-formed
+ * request body is always a plain JSON object; `null`/`undefined` are left to the
+ * base pipe. This is the defense-in-depth counterpart to
+ * {@link normalizeServerlessJsonBody}: even if an unparsed body reached the pipe,
+ * it must become a clean 400 — never a 500.
+ */
+function isUnsafeBodyValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value !== 'object') {
+    return true;
+  }
+  return Buffer.isBuffer(value) || ArrayBuffer.isView(value) || Array.isArray(value);
+}
+
+/**
+ * ValidationPipe that rejects a non-object request body with the shared 400
+ * envelope BEFORE class-validator runs, so a raw Buffer (or any non-object) can
+ * never reach — and crash — the `whitelist` step. Only the `body` argument is
+ * guarded; query/param/custom values pass straight through to the base pipe.
+ */
+class BodyShapeValidationPipe extends ValidationPipe {
+  async transform(value: unknown, metadata: ArgumentMetadata): Promise<unknown> {
+    if (metadata.type === 'body' && isUnsafeBodyValue(value)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Request body must be a JSON object',
+        details: [],
+      });
+    }
+    return super.transform(value, metadata);
+  }
+}
+
 export function createValidationPipe(): ValidationPipe {
-  return new ValidationPipe({
+  return new BodyShapeValidationPipe({
     transform: true,
     whitelist: true,
     exceptionFactory: (errors: ValidationError[]) =>
