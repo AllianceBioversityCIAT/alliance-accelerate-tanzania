@@ -201,6 +201,21 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     expect(aside!.className).not.toMatch(/(?:^|\s)hidden(?:\s|$)/);
   });
 
+  it('the expanded mobile menu offers a "View public site" link', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    fireEvent.click(screen.getByRole('button', { name: /open admin menu/i }));
+
+    const aside = document.getElementById('admin-sidebar');
+    const links = Array.from(aside!.querySelectorAll('a')).map((a) => ({
+      text: a.textContent,
+      href: a.getAttribute('href'),
+    }));
+    expect(links).toContainEqual(
+      expect.objectContaining({ href: '/' }),
+    );
+  });
+
   // ── Loading — no premature redirect (NFR-7) ────────────────────────────────
 
   it('renders nothing and does not redirect while session is loading', () => {

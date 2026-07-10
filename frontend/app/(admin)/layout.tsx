@@ -188,6 +188,33 @@ export default function AdminLayout({
             ].join(' ')}
           >
             <AdminSidebar />
+            {/* Mobile-only: the top bar's "View public site" link is sm+ —
+                without this the public site is unreachable on phones. */}
+            <div className="md:hidden border-t border-border px-3 py-3">
+              <Link
+                href="/"
+                className="flex items-center rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              >
+                View public site
+                <svg
+                  aria-hidden="true"
+                  className="ml-1.5 h-3.5 w-3.5"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M8.636 3.5a.5.5 0 00-.5-.5H1.5A1.5 1.5 0 000 4.5v10A1.5 1.5 0 001.5 16h10a1.5 1.5 0 001.5-1.5V7.864a.5.5 0 00-1 0V14.5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5h6.636a.5.5 0 00.5-.5z"
+                    clipRule="evenodd"
+                  />
+                  <path
+                    fillRule="evenodd"
+                    d="M16 .5a.5.5 0 00-.5-.5h-5a.5.5 0 000 1h3.793L6.146 9.146a.5.5 0 10.708.708L15 1.707V5.5a.5.5 0 001 0v-5z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </Link>
+            </div>
           </aside>
 
           {/* Content region */}
