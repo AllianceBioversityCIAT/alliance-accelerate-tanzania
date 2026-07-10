@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation
@@ -170,6 +170,35 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     // Give any async redirect a chance to fire
     await new Promise((r) => setTimeout(r, 50));
     expect(mockRouterReplace).not.toHaveBeenCalled();
+  });
+
+  // ── Shell chrome: brand link + mobile menu toggle ─────────────────────────
+
+  it('brand mark links to /admin/actors (there is no /admin index page)', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    const brand = screen.getByRole('link', {
+      name: /accelerate tanzania — admin console/i,
+    });
+    expect(brand).toHaveAttribute('href', '/admin/actors');
+  });
+
+  it('renders the mobile menu toggle collapsed and expands it on click', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    const toggle = screen.getByRole('button', { name: /open admin menu/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'admin-sidebar');
+
+    fireEvent.click(toggle);
+
+    const openToggle = screen.getByRole('button', { name: /close admin menu/i });
+    expect(openToggle).toHaveAttribute('aria-expanded', 'true');
+    // The sidebar container is the element the toggle controls.
+    const aside = document.getElementById('admin-sidebar');
+    expect(aside).not.toBeNull();
+    expect(aside!.className).toContain('block');
+    expect(aside!.className).not.toMatch(/(?:^|\s)hidden(?:\s|$)/);
   });
 
   // ── Loading — no premature redirect (NFR-7) ────────────────────────────────

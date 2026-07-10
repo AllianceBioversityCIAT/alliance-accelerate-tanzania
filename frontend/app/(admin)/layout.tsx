@@ -9,8 +9,11 @@
  *     before any content is rendered (client-side, static-export safe).
  *
  * Structure:
- *   - Persistent <aside> with <AdminSidebar> (left column on md+; stacked on mobile).
- *   - Top bar with brand mark, "View public site" link, and user identity slot.
+ *   - Persistent <aside> with <AdminSidebar> (left column on md+; on mobile it
+ *     is hidden behind a hamburger toggle in the top bar and closes on
+ *     navigation).
+ *   - Top bar with brand mark (links to /admin/actors — there is no /admin
+ *     index page), "View public site" link, and user identity slot.
  *   - <main> content region rendering {children}.
  *
  * Semantic landmarks: <aside>, <main>, <nav> (inside AdminSidebar).
@@ -22,6 +25,8 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { RequireRole }   from '@/lib/auth/RequireRole';
 import { useSession }    from '@/lib/auth/useSession';
@@ -69,6 +74,14 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close the mobile menu whenever the route changes (post-navigation).
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
   return (
     <RequireRole allow={['Admin']}>
       <div className="min-h-screen bg-surface flex flex-col">
@@ -77,9 +90,41 @@ export default function AdminLayout({
         <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-sm">
           <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
 
+            <div className="flex items-center gap-2">
+              {/* Mobile menu toggle — hidden on md+ where the sidebar is persistent */}
+              <button
+                type="button"
+                onClick={() => setMenuOpen((open) => !open)}
+                aria-expanded={menuOpen}
+                aria-controls="admin-sidebar"
+                aria-label={menuOpen ? 'Close admin menu' : 'Open admin menu'}
+                className="md:hidden inline-flex items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  {menuOpen ? (
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                      clipRule="evenodd"
+                    />
+                  ) : (
+                    <path
+                      fillRule="evenodd"
+                      d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                      clipRule="evenodd"
+                    />
+                  )}
+                </svg>
+              </button>
+
             {/* Brand mark */}
             <Link
-              href="/admin"
+              href="/admin/actors"
               className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
               aria-label="ACCELERATE Tanzania — Admin console"
             >
@@ -95,6 +140,7 @@ export default function AdminLayout({
                 Admin
               </span>
             </Link>
+            </div>
 
             {/* Right: public-site link + user slot */}
             <div className="flex items-center gap-4">
@@ -127,12 +173,19 @@ export default function AdminLayout({
         </header>
 
         {/* ── Body: sidebar + main ─────────────────────────────────────── */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* flex-col on mobile so the (toggleable) sidebar stacks ABOVE main —
+            the previous always-row flex let the w-full aside crush <main> on
+            small screens. */}
+        <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
 
-          {/* Left sidebar — visible on md+; stacked above main on mobile */}
+          {/* Left sidebar — persistent on md+; behind the hamburger on mobile */}
           <aside
+            id="admin-sidebar"
             aria-label="Admin sidebar"
-            className="w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border"
+            className={[
+              menuOpen ? 'block' : 'hidden',
+              'md:block w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border',
+            ].join(' ')}
           >
             <AdminSidebar />
           </aside>
