@@ -27,8 +27,11 @@ import { BulkDeleteDto } from './dto/bulk-delete.dto';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
+import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import { AdminActor } from './admin-actor.serializer';
 import { AuditEntry } from './audit-entry.serializer';
+import { ActorImportService } from './actor-import.service';
+import { ImportReport } from './actor-import.types';
 
 /**
  * T-3 — Admin-only actor bulk-operations controller (FR-1, FR-3, FR-5, FR-6).
@@ -53,7 +56,10 @@ import { AuditEntry } from './audit-entry.serializer';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('Admin')
 export class AdminActorsController {
-  constructor(private readonly actorsAdminService: ActorsAdminService) {}
+  constructor(
+    private readonly actorsAdminService: ActorsAdminService,
+    private readonly actorImportService: ActorImportService,
+  ) {}
 
   /** `GET /api/v1/admin/actors` — paginated Admin actor list with PII (FR-1). */
   @Get()
@@ -102,6 +108,28 @@ export class AdminActorsController {
     @CurrentUser() user: AuthUser,
   ): Promise<AdminActor> {
     return this.actorsAdminService.create(dto, user.sub);
+  }
+
+  /**
+   * `POST /api/v1/admin/actors/import` — bulk-import actors from an uploaded
+   * `.xlsx` workbook (base64 JSON body, DR-1). `mode: 'preview'` validates
+   * without writing (FR-3); `mode: 'commit'` re-validates and creates the
+   * surviving rows in chunked, fault-isolated transactions with `IMPORT` audit
+   * entries (FR-4..FR-8). Declared with the collection-level routes, ahead of the
+   * `:id` routes so the literal `import` segment is not captured as an id.
+   * `@HttpCode(200)` because the report is returned for both modes (matching the
+   * bulk-delete POST-with-200 precedent). The caller's verified `sub` is
+   * forwarded for the audit trail.
+   *
+   * @sdd-spec admin/actor-import
+   */
+  @Post('import')
+  @HttpCode(200)
+  import(
+    @Body() dto: ActorImportRequestDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ImportReport> {
+    return this.actorImportService.run(dto, user.sub);
   }
 
   /** `GET /api/v1/admin/actors/:id` — admin detail for edit (FR-2). */
