@@ -31,14 +31,16 @@ import {
   updateActor,
   deleteActor,
   getActorHistory,
+  importActors,
   type AdminActor,
   type AdminActorCreateInput,
   type AdminActorUpdateInput,
   type AuditEntry,
   type ActorHistoryList,
   type ActorDeleteResult,
+  type ImportReport,
 } from './actors-admin';
-import { AuthFailureError } from './client';
+import { ApiError, AuthFailureError } from './client';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -121,9 +123,43 @@ const UPDATE_INPUT: AdminActorUpdateInput = {
   acknowledged: true,
 };
 
+// Fixed payload whose UTF-8 bytes (65, 66, 67) base64-encode to a known constant.
+const IMPORT_CONTENT = 'ABC';
+const IMPORT_BASE64 = 'QUJD';
+
+const IMPORT_REPORT: ImportReport = {
+  mode: 'preview',
+  templateVersionDetected: 'v1',
+  totals: { rows: 2, toCreate: 1, created: 0, skipped: 1, failed: 0, warnings: 0 },
+  rows: [
+    { rowNumber: 1, traderId: 'T-100', traderName: 'New Trader', outcome: 'create' },
+    {
+      rowNumber: 2,
+      traderId: 'T-001',
+      traderName: 'Mbeya Seeds Ltd',
+      outcome: 'skipped-exists',
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Builds a File with the given content, name, and (optional) forced size. */
+function makeFile(
+  content: string,
+  name: string,
+  sizeOverride?: number,
+): File {
+  const file = new File([content], name, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  if (sizeOverride !== undefined) {
+    Object.defineProperty(file, 'size', { value: sizeOverride });
+  }
+  return file;
+}
 
 function makeFetchOk(body: unknown, status = 200): jest.Mock {
   return jest.fn().mockResolvedValue({
@@ -510,6 +546,161 @@ describe('getActorHistory()', () => {
     });
 
     await expect(getActorHistory(ACTOR_ID, undefined, TOKEN)).rejects.toThrow('Actor not found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// importActors
+// ---------------------------------------------------------------------------
+
+describe('importActors()', () => {
+  it('POSTs to /api/v1/admin/actors/import', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN);
+
+    expect(callUrl()).toBe(`${BASE_URL}/api/v1/admin/actors/import`);
+    expect(callInit().method).toBe('POST');
+  });
+
+  it('attaches Authorization: Bearer <token>', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN);
+
+    const headers = callInit().headers as Record<string, string>;
+    expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('sends fileName, base64-encoded content, and mode in the body', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.fileName).toBe('actors.xlsx');
+    expect(body.fileBase64).toBe(IMPORT_BASE64);
+    expect(body.mode).toBe('preview');
+  });
+
+  it('omits acknowledged when it is not passed', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN);
+
+    const body = JSON.parse(callInit().body as string);
+    expect('acknowledged' in body).toBe(false);
+  });
+
+  it('includes acknowledged: true when passed', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, true);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.acknowledged).toBe(true);
+    expect(body.mode).toBe('commit');
+  });
+
+  it('includes acknowledged: false when explicitly passed false', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, false);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.acknowledged).toBe(false);
+  });
+
+  it('returns the parsed ImportReport', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    const result = await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN);
+
+    expect(result).toEqual(IMPORT_REPORT);
+    expect(result.totals.toCreate).toBe(1);
+    expect(result.rows[1].outcome).toBe('skipped-exists');
+  });
+
+  it('accepts an uppercase .XLSX extension (case-insensitive)', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+
+    await importActors(makeFile(IMPORT_CONTENT, 'ACTORS.XLSX'), 'preview', TOKEN);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a non-.xlsx file with a plain Error and never calls fetch', async () => {
+    global.fetch = jest.fn();
+
+    await expect(
+      importActors(makeFile(IMPORT_CONTENT, 'actors.csv'), 'preview', TOKEN),
+    ).rejects.toThrow(/\.xlsx/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not throw ApiError for a non-.xlsx file (plain Error only)', async () => {
+    global.fetch = jest.fn();
+
+    await expect(
+      importActors(makeFile(IMPORT_CONTENT, 'actors.csv'), 'preview', TOKEN),
+    ).rejects.not.toBeInstanceOf(ApiError);
+  });
+
+  it('rejects an oversized file (> 4 MB) with a plain Error and never calls fetch', async () => {
+    global.fetch = jest.fn();
+    const oversized = makeFile(IMPORT_CONTENT, 'actors.xlsx', 4 * 1024 * 1024 + 1);
+
+    await expect(importActors(oversized, 'preview', TOKEN)).rejects.toThrow(/4 MB/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts a file at exactly the 4 MB boundary', async () => {
+    global.fetch = makeFetchOk(IMPORT_REPORT);
+    const atLimit = makeFile(IMPORT_CONTENT, 'actors.xlsx', 4 * 1024 * 1024);
+
+    await importActors(atLimit, 'preview', TOKEN);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws ApiError with field details on a 400 response', async () => {
+    global.fetch = makeFetchNotOk(400, {
+      statusCode: 400,
+      message: 'File is not a valid .xlsx workbook',
+      error: 'Bad Request',
+      details: [{ field: 'fileBase64', message: 'Unable to parse workbook' }],
+    });
+
+    const attempt = importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN);
+
+    await expect(attempt).rejects.toThrow('File is not a valid .xlsx workbook');
+    await expect(attempt).rejects.toBeInstanceOf(ApiError);
+    await attempt.catch((err: ApiError) => {
+      expect(err.status).toBe(400);
+      expect(err.details).toEqual([
+        { field: 'fileBase64', message: 'Unable to parse workbook' },
+      ]);
+    });
+  });
+
+  it('throws AuthFailureError on 401', async () => {
+    global.fetch = make401();
+
+    await expect(
+      importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN),
+    ).rejects.toThrow(AuthFailureError);
+  });
+
+  it('throws ApiError on 403', async () => {
+    global.fetch = makeFetchNotOk(403, {
+      statusCode: 403,
+      message: 'Forbidden',
+      error: 'Forbidden',
+    });
+
+    await expect(
+      importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'preview', TOKEN),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });
 
