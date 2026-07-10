@@ -436,6 +436,13 @@ describe('ActorsPage — toolbar', () => {
     const link = screen.getByRole('link', { name: /new actor/i });
     expect(link).toHaveAttribute('href', '/admin/actors/new');
   });
+
+  it('renders an Import link to /admin/actors/import', async () => {
+    await populatePage();
+
+    const link = screen.getByRole('link', { name: /^import$/i });
+    expect(link).toHaveAttribute('href', '/admin/actors/import');
+  });
 });
 
 // ---------------------------------------------------------------------------

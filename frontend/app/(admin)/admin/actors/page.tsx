@@ -474,9 +474,14 @@ export default function ActorsPage() {
             View, filter, and select registry actors for bulk operations.
           </p>
         </div>
-        <Button variant="primary" href="/admin/actors/new">
-          New actor
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" href="/admin/actors/import">
+            Import
+          </Button>
+          <Button variant="primary" href="/admin/actors/new">
+            New actor
+          </Button>
+        </div>
       </div>
 
       {/* ── Success banner (reserved for T-7 mutations) ───────────────────── */}
