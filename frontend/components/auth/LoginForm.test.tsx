@@ -243,7 +243,7 @@ describe('LoginForm', () => {
   // ── (g) already-authenticated visitor redirected away (bugfix) ──────────────
 
   it('redirects an already-authenticated visitor away from /login', async () => {
-    mockSession = { role: 'Admin', user: { name: 'j.cadavid@cgiar.org', role: 'Admin' } };
+    mockSession = { role: 'Admin', user: { name: 'admin@example.com', role: 'Admin' } };
     mockLoading = false;
 
     renderForm();
