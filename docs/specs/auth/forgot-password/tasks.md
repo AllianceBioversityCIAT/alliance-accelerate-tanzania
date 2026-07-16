@@ -47,7 +47,7 @@
         must NOT put code/password in the URL or reveal account existence.
       Skills: ui-ux-pro-max, frontend-design, tailwind-design-system
 
-- [ ] T-3 `/forgot-password` static page  (deps: T-2)
+- [x] T-3 `/forgot-password` static page  (deps: T-2)
       Scope: New `frontend/app/(public)/forgot-password/page.tsx` (`'use client'`)
         mirroring `/login/page.tsx`'s centered card layout, rendering
         `<ForgotPasswordForm />`. No `useSearchParams` needed → no Suspense

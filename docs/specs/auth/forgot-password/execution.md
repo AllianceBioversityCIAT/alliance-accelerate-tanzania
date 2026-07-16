@@ -27,3 +27,10 @@
 - **Attempt 1 — Reviewer verdict:** STATUS: PASS. Flow + args correct; token-clean (all real tokens); accessible (alert/polite regions, aria-busy double-submit guard); static-export safe; no enumeration/secret leak; tests genuine.
 - **Final verification:** PASS — 7/7, tsc + lint clean.
 - **Commit:** `[SPEC:auth/forgot-password] T-2 ForgotPasswordForm two-step reset flow component`
+
+### T-3 /forgot-password static page — ✅ PASS (attempt 1/3) — 2026-07-16
+- **Requirements covered:** FR-1, NFR-1. Design: §5.1, §5.4.
+- **Attempt 1 — Implementer:** NEW `frontend/app/(public)/forgot-password/page.tsx` — `'use client'`, mirrors `login/page.tsx` centering wrapper verbatim, renders `<ForgotPasswordForm/>`; no Suspense (no useSearchParams), no SSR/handlers/dynamic segments. Verify: `npm run build` → `○ /forgot-password` prerendered as static.
+- **Attempt 1 — Reviewer verdict:** STATUS: PASS. `'use client'` + correct render; no dynamic surface; wrapper identical to login sibling (the `min-h-[calc(...)]` is pre-existing precedent); static prerender confirmed.
+- **Final verification:** PASS — build lists /forgot-password as ○ Static.
+- **Commit:** `[SPEC:auth/forgot-password] T-3 /forgot-password static page`
