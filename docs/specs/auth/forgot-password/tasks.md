@@ -27,7 +27,7 @@
         `confirmNewPassword`/`getSession`.
       Skills: vercel-react-best-practices, error-handling-patterns
 
-- [ ] T-2 `ForgotPasswordForm` component (request → submit → success)  (deps: T-1)
+- [x] T-2 `ForgotPasswordForm` component (request → submit → success)  (deps: T-1)
       Scope: New `frontend/components/auth/ForgotPasswordForm.tsx` (`'use client'`)
         modeled on `LoginForm`: step machine `'request' | 'submit'`; request step
         (email → `resetPassword`, on `code_sent` set a neutral "if an account
