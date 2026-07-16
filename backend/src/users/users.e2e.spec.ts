@@ -66,7 +66,7 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
     update: jest.fn().mockResolvedValue({ id: 'x' }),
     setRole: jest.fn().mockResolvedValue({ id: 'x' }),
     remove: jest.fn().mockResolvedValue(undefined),
-    resetPassword: jest.fn().mockResolvedValue(undefined),
+    resetPassword: jest.fn().mockResolvedValue({ action: 'RESET' }),
   };
 
   beforeAll(async () => {
@@ -198,6 +198,51 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
         .set('Authorization', bearer('Admin'))
         .expect(204);
       expect(usersServiceMock.remove).toHaveBeenCalled();
+    });
+  });
+
+  // FR-7 reset (POST :id/password) — same class-level guard, but unlike the
+  // other writes it returns 200 with a `{ action }` body (design §3, §4.3), so
+  // it also asserts the status/body contract, not just RBAC.
+  describe('POST /api/v1/users/:id/password', () => {
+    it('401 without a token', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/users/some-id/password')
+        .expect(401);
+    });
+
+    it('403 for authenticated Staff', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/users/some-id/password')
+        .set('Authorization', bearer('Staff'))
+        .expect(403);
+    });
+
+    it('403 for authenticated Public', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/users/some-id/password')
+        .set('Authorization', bearer('Public'))
+        .expect(403);
+    });
+
+    it('200 with { action: "RESET" } for authenticated Admin', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/users/some-id/password')
+        .set('Authorization', bearer('Admin'))
+        .expect(200);
+      expect(res.body).toEqual({ action: 'RESET' });
+      expect(usersServiceMock.resetPassword).toHaveBeenCalledWith('some-id');
+    });
+
+    it('200 with { action: "REINVITE" } when the service re-invites', async () => {
+      usersServiceMock.resetPassword!.mockResolvedValueOnce({
+        action: 'REINVITE',
+      });
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/users/never-signed-in/password')
+        .set('Authorization', bearer('Admin'))
+        .expect(200);
+      expect(res.body).toEqual({ action: 'REINVITE' });
     });
   });
 });
