@@ -262,4 +262,30 @@ describe('LoginForm', () => {
     // No premature redirect during the initial loading state.
     expect(mockReplace).not.toHaveBeenCalled();
   });
+
+  // ── (h) Forgot-password entry link on the credentials step (FR-1) ───────────
+
+  it('renders a "Forgot password?" link to /forgot-password on the credentials step', () => {
+    renderForm();
+
+    const link = screen.getByRole('link', { name: /forgot password/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/forgot-password');
+  });
+
+  // ── (i) ?reset=success post-reset confirmation banner (FR-3) ────────────────
+
+  it('shows the post-reset success banner when ?reset=success is present', () => {
+    useSearchParams.mockReturnValue(new URLSearchParams('reset=success'));
+
+    renderForm();
+
+    expect(screen.getByText(/your password was reset/i)).toBeInTheDocument();
+  });
+
+  it('does not show the post-reset banner without the ?reset=success param', () => {
+    renderForm();
+
+    expect(screen.queryByText(/your password was reset/i)).not.toBeInTheDocument();
+  });
 });

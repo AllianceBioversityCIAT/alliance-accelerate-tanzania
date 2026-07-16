@@ -59,7 +59,7 @@
         form; BUT it must NOT introduce SSR/route handlers/dynamic segments.
       Skills: frontend-design, vercel-react-best-practices
 
-- [ ] T-4 `LoginForm` entry link + `?reset=success` banner  (deps: T-3)
+- [x] T-4 `LoginForm` entry link + `?reset=success` banner  (deps: T-3)
       Scope: In `frontend/components/auth/LoginForm.tsx` add a "Forgot password?"
         `<Link href="/forgot-password">` on the **credentials** step only (OQ-3),
         token-styled + focusable/labelled (FR-1). Read `?reset=success` from the

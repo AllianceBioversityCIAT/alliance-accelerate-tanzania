@@ -18,6 +18,7 @@
  */
 
 import { type FormEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { confirmNewPassword } from '@/lib/auth/auth-client';
@@ -179,6 +180,10 @@ export default function LoginForm() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // Post-reset confirmation banner (FR-3): shown when the reset flow lands the
+  // user back on /login with ?reset=success. Reuses the existing searchParams.
+  const resetSuccess = searchParams?.get('reset') === 'success';
+
   return (
     // Card container — surface token, shadow-md, rounded-md (token geometry, NFR-4)
     <div className="w-full max-w-md bg-surface shadow-md rounded-lg px-8 py-10 border border-border">
@@ -192,6 +197,25 @@ export default function LoginForm() {
           ? 'Sign in to access the ACCELERATE Tanzania registry.'
           : 'Your account requires a new password. Please set one to continue.'}
       </p>
+
+      {/* ── Post-reset success region (FR-3, NFR-4) ────────────────────────── */}
+      {/*
+        Separate accessible region from the error one: role="status" +
+        aria-live="polite" so it's announced without interrupting, distinct
+        from the assertive error alert below.
+      */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="mb-6"
+      >
+        {resetSuccess && (
+          <p className="rounded-md bg-highlight-tint border border-highlight-tint text-success px-4 py-3 text-sm">
+            Your password was reset — sign in with your new password.
+          </p>
+        )}
+      </div>
 
       {/* ── Accessible error region (NFR-7, NFR-4) ─────────────────────────── */}
       {/*
@@ -250,6 +274,14 @@ export default function LoginForm() {
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </Button>
+
+          {/* ── Forgot-password entry link (FR-1) ─────────────────────────── */}
+          <Link
+            href="/forgot-password"
+            className="mt-4 block text-center text-sm text-accent hover:text-primary-hover focus-visible:outline-none focus-visible:underline"
+          >
+            Forgot password?
+          </Link>
         </form>
       )}
 

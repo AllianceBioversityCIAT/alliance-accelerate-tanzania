@@ -34,3 +34,10 @@
 - **Attempt 1 — Reviewer verdict:** STATUS: PASS. `'use client'` + correct render; no dynamic surface; wrapper identical to login sibling (the `min-h-[calc(...)]` is pre-existing precedent); static prerender confirmed.
 - **Final verification:** PASS — build lists /forgot-password as ○ Static.
 - **Commit:** `[SPEC:auth/forgot-password] T-3 /forgot-password static page`
+
+### T-4 LoginForm entry link + ?reset=success banner — ✅ PASS (attempt 1/3) — 2026-07-16
+- **Requirements covered:** FR-1, FR-3, NFR-2, NFR-3, NFR-6. Design: §5.1, §5.3.
+- **Attempt 1 — Implementer:** purely additive to `LoginForm.tsx`: `import Link`; `resetSuccess = searchParams.get('reset')==='success'`; a `role="status" aria-live="polite"` success banner ("Your password was reset — sign in with your new password.") separate from the error region; a "Forgot password?" `<Link href="/forgot-password">` inside the credentials-step form only. No handler/step/redirect change. 3 new tests. Verify: `npm test -- LoginForm` 12/12; build + lint clean.
+- **Attempt 1 — Reviewer verdict:** STATUS: PASS. Link on credentials step only; banner in a separate polite region; all tokens real; NFR-6 upheld (diff purely additive, existing sign-in/challenge untouched); static-export safe (reuses existing searchParams); tests genuine.
+- **Final verification:** PASS — 12/12, build + lint clean.
+- **Commit:** `[SPEC:auth/forgot-password] T-4 LoginForm forgot-password link + post-reset banner`
