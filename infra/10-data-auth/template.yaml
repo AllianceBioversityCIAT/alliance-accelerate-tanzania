@@ -43,6 +43,38 @@ Parameters:
     MinValue: 20
     MaxValue: 100
 
+  # ── Cognito email (SES) parameters — admin-user-invite-and-reset spec §7.1 ──
+  # Two-phase, reversible rollout gates. Defaults preserve today's
+  # COGNITO_DEFAULT mailer behavior (empty SenderEmail / EnableSesSending=false).
+  SenderEmail:
+    Type: String
+    Default: ""
+    Description: >-
+      Project-controlled SES sender address to verify (DEP-1). Empty keeps the
+      default Cognito mailer (COGNITO_DEFAULT) — a safe no-op.
+  EnableSesSending:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Phase-B gate. When "true" (and SenderEmail set), EmailConfiguration flips to
+      DEVELOPER (send through the verified SES identity). Kept "false" for Phase A.
+  PortalUrl:
+    Type: String
+    Default: "https://d3idqvvg0xa1r7.cloudfront.net"
+    Description: >-
+      Admin portal base URL used in the invitation email CTA (/login is appended).
+
+# ── Conditions — gate the SES identity (Phase A) and the DEVELOPER switch
+#    (Phase B). The two-gate split enables the verify-then-configure rollout. ──
+Conditions:
+  # SenderEmail provided → create the SES identity (Phase A).
+  HasSender: !Not [!Equals [!Ref SenderEmail, ""]]
+  # Sender provided AND sending explicitly enabled → DEVELOPER email config (Phase B).
+  UseSes: !And
+    - !Condition HasSender
+    - !Equals [!Ref EnableSesSending, "true"]
+
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
   # T-2 - RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
@@ -141,6 +173,18 @@ Resources:
   # URL for callback URLs, which doesn't exist yet. Anonymous callers map to the
   # Public role and are not modeled in Cognito.
 
+  # SES sender identity (admin-user-invite-and-reset §7.1). Created in Phase A
+  # when SenderEmail is provided; creating it triggers AWS's verification email
+  # (the identity resource reaches CREATE_COMPLETE immediately — verification is
+  # the async operator step, DEP-1). No identity-policy property exists on this
+  # resource; the Cognito sending-authorization policy is attached out-of-band via
+  # `aws ses put-identity-policy` (see ses-cognito-send-policy.json + runbook).
+  SesSenderIdentity:
+    Type: AWS::SES::EmailIdentity
+    Condition: HasSender
+    Properties:
+      EmailIdentity: !Ref SenderEmail
+
   # Email-based sign-in, self-managed by admins (no public self-signup - these
   # are internal staff/admin identities). Strong password policy per §6.
   UserPool:
@@ -153,10 +197,68 @@ Resources:
         - email
       AutoVerifiedAttributes:
         - email
+      # Route Cognito email through SES only in Phase B (UseSes). Unset →
+      # COGNITO_DEFAULT (today's behavior). §7.1: DEVELOPER sends from the verified
+      # project identity; requires the sending-authorization policy (attached
+      # out-of-band, see SesSenderIdentity comment).
+      EmailConfiguration: !If
+        - UseSes
+        - EmailSendingAccount: DEVELOPER
+          From: !Sub "ACCELERATE Seed Registry <${SenderEmail}>"
+          SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderEmail}"
+        - !Ref "AWS::NoValue"
       # Admin-managed only: staff/admin accounts are created by an admin, never via
       # public self-signup (RBAC model - no anonymous registration).
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
+        # Branded English invitation email (FR-2). Table-based, inline styles only
+        # (email-client-safe). MUST contain {username} + {####} or Cognito rejects
+        # it. PortalUrl is CFN-substituted; {username}/{####} are Cognito placeholders
+        # (no ${...}, so safe inside !Sub). CTA links to ${PortalUrl}/login.
+        InviteMessageTemplate:
+          EmailSubject: "Your ACCELERATE Seed Registry admin account"
+          EmailMessage: !Sub |
+            <!DOCTYPE html>
+            <html lang="en">
+              <body style="margin:0;padding:0;background-color:#F7F7F7;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F7F7F7;">
+                  <tr>
+                    <td align="center" style="padding:24px 12px;">
+                      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+                        <tr>
+                          <td style="background-color:#1F4E8C;padding:20px 32px;">
+                            <span style="color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">ACCELERATE Seed Registry</span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">
+                            <p style="margin:0 0 16px;">Welcome! An administrator has created an account for you on the ACCELERATE Seed Registry admin portal.</p>
+                            <p style="margin:0 0 8px;">Use these credentials to sign in for the first time:</p>
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;">
+                              <tr>
+                                <td style="padding:16px 20px;color:#333333;font-size:15px;line-height:1.8;">
+                                  <div><span style="color:#666666;">Username:</span> <strong>{username}</strong></div>
+                                  <div><span style="color:#666666;">Temporary password:</span> <strong>{####}</strong></div>
+                                </td>
+                              </tr>
+                            </table>
+                            <table role="presentation" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td style="border-radius:6px;background-color:#1F4E8C;">
+                                  <a href="${PortalUrl}/login" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;">Sign in to the portal</a>
+                                </td>
+                              </tr>
+                            </table>
+                            <p style="margin:24px 0 4px;color:#666666;font-size:13px;line-height:1.6;">Or open this link: ${PortalUrl}/login</p>
+                            <p style="margin:16px 0 0;color:#666666;font-size:13px;line-height:1.6;">You will be asked to set a new password when you first sign in. If you did not expect this email, you can safely ignore it.</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </body>
+            </html>
       Policies:
         PasswordPolicy:
           MinimumLength: 12
@@ -164,6 +266,42 @@ Resources:
           RequireLowercase: true
           RequireNumbers: true
           RequireSymbols: true
+      # Branded English reset/verification email (FR-3). CONFIRM_WITH_CODE emails a
+      # numeric CODE (not a link); copy says "code". MUST contain {####}.
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailSubject: "Your ACCELERATE Seed Registry verification code"
+        EmailMessage: |
+          <!DOCTYPE html>
+          <html lang="en">
+            <body style="margin:0;padding:0;background-color:#F7F7F7;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F7F7F7;">
+                <tr>
+                  <td align="center" style="padding:24px 12px;">
+                    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+                      <tr>
+                        <td style="background-color:#1F4E8C;padding:20px 32px;">
+                          <span style="color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">ACCELERATE Seed Registry</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">
+                          <p style="margin:0 0 16px;">We received a request to reset your password for the ACCELERATE Seed Registry admin portal.</p>
+                          <p style="margin:0 0 8px;">Enter this verification code to set a new password:</p>
+                          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;">
+                            <tr>
+                              <td align="center" style="padding:20px;color:#1F4E8C;font-size:28px;font-weight:bold;letter-spacing:4px;">{####}</td>
+                            </tr>
+                          </table>
+                          <p style="margin:0;color:#666666;font-size:13px;line-height:1.6;">This code expires shortly. If you did not request a password reset, you can safely ignore this email.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+          </html>
 
   # Public SPA client: NO generated secret (a static SPA can't keep one - NFR-2).
   # SRP + refresh-token flows are the SPA-appropriate set without a Hosted UI; we
