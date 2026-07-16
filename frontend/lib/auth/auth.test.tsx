@@ -17,16 +17,20 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 // Mock aws-amplify/auth before any imports that pull it in
 // ---------------------------------------------------------------------------
 
-const mockFetchAuthSession = jest.fn();
-const mockAmplifySignIn    = jest.fn();
-const mockAmplifySignOut   = jest.fn();
-const mockConfirmSignIn    = jest.fn();
+const mockFetchAuthSession        = jest.fn();
+const mockAmplifySignIn           = jest.fn();
+const mockAmplifySignOut          = jest.fn();
+const mockConfirmSignIn           = jest.fn();
+const mockAmplifyResetPassword    = jest.fn();
+const mockAmplifyConfirmResetPassword = jest.fn();
 
 jest.mock('aws-amplify/auth', () => ({
-  fetchAuthSession: (...args: unknown[]) => mockFetchAuthSession(...args),
-  signIn:           (...args: unknown[]) => mockAmplifySignIn(...args),
-  signOut:          (...args: unknown[]) => mockAmplifySignOut(...args),
-  confirmSignIn:    (...args: unknown[]) => mockConfirmSignIn(...args),
+  fetchAuthSession:     (...args: unknown[]) => mockFetchAuthSession(...args),
+  signIn:               (...args: unknown[]) => mockAmplifySignIn(...args),
+  signOut:              (...args: unknown[]) => mockAmplifySignOut(...args),
+  confirmSignIn:        (...args: unknown[]) => mockConfirmSignIn(...args),
+  resetPassword:        (...args: unknown[]) => mockAmplifyResetPassword(...args),
+  confirmResetPassword: (...args: unknown[]) => mockAmplifyConfirmResetPassword(...args),
 }));
 
 // Mock Amplify.configure so it never actually tries to reach Cognito
@@ -38,7 +42,12 @@ jest.mock('aws-amplify', () => ({
 // Imports (after mocks are in place)
 // ---------------------------------------------------------------------------
 
-import { roleFromGroups, getSession } from './auth-client';
+import {
+  roleFromGroups,
+  getSession,
+  resetPassword,
+  confirmResetPassword,
+} from './auth-client';
 import { SessionProvider, useSessionContext } from './SessionProvider';
 import { useSession }                         from './useSession';
 import { _resetAmplifyConfig }                from './amplify-config';
@@ -216,5 +225,140 @@ describe('SessionProvider + useSession()', () => {
 
     expect(result.current.role).toBe('Public');
     expect(result.current.user).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resetPassword() — FR-5 (account-enumeration safe, never throws, NFR-4)
+// ---------------------------------------------------------------------------
+
+describe('resetPassword()', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns { status: "code_sent" } when Amplify resolves', async () => {
+    mockAmplifyResetPassword.mockResolvedValueOnce({});
+
+    await expect(resetPassword('alice@example.com')).resolves.toEqual({ status: 'code_sent' });
+    expect(mockAmplifyResetPassword).toHaveBeenCalledWith({ username: 'alice@example.com' });
+  });
+
+  it('treats UserNotFoundException as code_sent (no account enumeration)', async () => {
+    mockAmplifyResetPassword.mockRejectedValueOnce({ name: 'UserNotFoundException' });
+
+    await expect(resetPassword('ghost@example.com')).resolves.toEqual({ status: 'code_sent' });
+  });
+
+  it('maps LimitExceededException to a safe error without leaking the raw name', async () => {
+    mockAmplifyResetPassword.mockRejectedValueOnce({
+      name: 'LimitExceededException',
+      message: 'raw internal detail',
+    });
+
+    const result = await resetPassword('alice@example.com');
+
+    expect(result.status).toBe('error');
+    const message = result.status === 'error' ? result.message : '';
+    expect(message).toBe('Too many attempts. Please wait a few minutes and try again.');
+    expect(message).not.toContain('LimitExceededException');
+    expect(message).not.toContain('raw internal detail');
+  });
+
+  it('never throws even when Amplify rejects with a non-Error value', async () => {
+    mockAmplifyResetPassword.mockRejectedValueOnce('boom');
+
+    await expect(resetPassword('alice@example.com')).resolves.toEqual({
+      status: 'error',
+      message: 'Something went wrong. Please try again.',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// confirmResetPassword() — FR-6 (never throws, safe error mapping, NFR-4)
+// ---------------------------------------------------------------------------
+
+describe('confirmResetPassword()', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns { status: "done" } when Amplify resolves', async () => {
+    mockAmplifyConfirmResetPassword.mockResolvedValueOnce(undefined);
+
+    await expect(
+      confirmResetPassword({ username: 'alice@example.com', code: '123456', newPassword: 'Str0ngP@ss!' }),
+    ).resolves.toEqual({ status: 'done' });
+
+    expect(mockAmplifyConfirmResetPassword).toHaveBeenCalledWith({
+      username: 'alice@example.com',
+      confirmationCode: '123456',
+      newPassword: 'Str0ngP@ss!',
+    });
+  });
+
+  it('maps CodeMismatchException to its specific message', async () => {
+    mockAmplifyConfirmResetPassword.mockRejectedValueOnce({ name: 'CodeMismatchException' });
+
+    const result = await confirmResetPassword({
+      username: 'alice@example.com',
+      code: 'wrong',
+      newPassword: 'Str0ngP@ss!',
+    });
+
+    expect(result).toEqual({
+      status: 'error',
+      message: "That code isn't correct. Check the code from your email, or request a new one.",
+    });
+  });
+
+  it('maps ExpiredCodeException to its specific message', async () => {
+    mockAmplifyConfirmResetPassword.mockRejectedValueOnce({ name: 'ExpiredCodeException' });
+
+    const result = await confirmResetPassword({
+      username: 'alice@example.com',
+      code: '123456',
+      newPassword: 'Str0ngP@ss!',
+    });
+
+    expect(result).toEqual({
+      status: 'error',
+      message: 'That code has expired. Request a new one and try again.',
+    });
+  });
+
+  it('maps InvalidPasswordException to its specific message', async () => {
+    mockAmplifyConfirmResetPassword.mockRejectedValueOnce({ name: 'InvalidPasswordException' });
+
+    const result = await confirmResetPassword({
+      username: 'alice@example.com',
+      code: '123456',
+      newPassword: 'weak',
+    });
+
+    expect(result).toEqual({
+      status: 'error',
+      message: "That password doesn't meet the requirements. Try a stronger one.",
+    });
+  });
+
+  it('never leaks the raw error name/message and never throws on unknown errors', async () => {
+    mockAmplifyConfirmResetPassword.mockRejectedValueOnce({
+      name: 'SomeInternalException',
+      message: 'stack trace detail',
+    });
+
+    const result = await confirmResetPassword({
+      username: 'alice@example.com',
+      code: '123456',
+      newPassword: 'Str0ngP@ss!',
+    });
+
+    expect(result.status).toBe('error');
+    const message = result.status === 'error' ? result.message : '';
+    expect(message).toBe('Something went wrong. Please try again.');
+    expect(message).not.toContain('SomeInternalException');
+    expect(message).not.toContain('stack trace detail');
   });
 });

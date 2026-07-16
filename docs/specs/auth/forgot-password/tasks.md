@@ -7,7 +7,7 @@
 
 ## Tasks
 
-- [ ] T-1 `auth-client` reset wrappers + safe error mapper  (deps: none)
+- [x] T-1 `auth-client` reset wrappers + safe error mapper  (deps: none)
       Scope: In `frontend/lib/auth/auth-client.ts` add `resetPassword(username)`
         → `ResetRequestResult` (`{status:'code_sent'} | {status:'error',message}`)
         and `confirmResetPassword({username,code,newPassword})` → `ResetConfirmResult`
