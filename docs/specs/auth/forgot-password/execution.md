@@ -41,3 +41,11 @@
 - **Attempt 1 — Reviewer verdict:** STATUS: PASS. Link on credentials step only; banner in a separate polite region; all tokens real; NFR-6 upheld (diff purely additive, existing sign-in/challenge untouched); static-export safe (reuses existing searchParams); tests genuine.
 - **Final verification:** PASS — 12/12, build + lint clean.
 - **Commit:** `[SPEC:auth/forgot-password] T-4 LoginForm forgot-password link + post-reset banner`
+
+### T-5 Full frontend gate — ✅ PASS (verification-only) — 2026-07-16
+- **Requirements covered:** NFR-1, NFR-2, NFR-6. Design: §10.
+- **Executed by Leader (no code diff):** `npm test` → 68 suites / **909 tests pass**; `npm run build` → static export succeeds, **`/forgot-password` and `/login` both ○ Static**; `npm run lint` → 0 errors (pre-existing `<img>` warnings only).
+- **Final verification:** PASS — nothing regressed; static export intact.
+
+## Summary — all tasks complete (5/5)
+T-1..T-5 all PASS on first attempt (no reworks). Feature: a `/forgot-password` flow (request code → enter code + new password) via new never-throwing `auth-client` wrappers, reachable from `LoginForm` ("Forgot password?"), with a `?reset=success` banner back on `/login`. Frontend-only; no backend/infra/PII change. Closes `bugfix/admin-user-invite-and-reset` §11 / OQ-5. Full gate: 909 frontend tests, static export builds, lint clean.

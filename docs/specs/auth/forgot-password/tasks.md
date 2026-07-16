@@ -77,7 +77,7 @@
         Suspense boundary or hardcode colors.
       Skills: ui-ux-pro-max, frontend-design
 
-- [ ] T-5 Full frontend gate  (deps: T-1, T-2, T-3, T-4)
+- [x] T-5 Full frontend gate  (deps: T-1, T-2, T-3, T-4)
       Scope: Run the complete frontend gates to confirm NFR-6 (nothing regressed)
         and the static export builds `/forgot-password`.
       Traces: NFR-1, NFR-2, NFR-6 (requirements.md), design.md §10
