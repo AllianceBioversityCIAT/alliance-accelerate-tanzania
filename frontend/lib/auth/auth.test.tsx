@@ -45,6 +45,7 @@ jest.mock('aws-amplify', () => ({
 import {
   roleFromGroups,
   getSession,
+  signIn,
   resetPassword,
   confirmResetPassword,
 } from './auth-client';
@@ -360,5 +361,38 @@ describe('confirmResetPassword()', () => {
     expect(message).toBe('Something went wrong. Please try again.');
     expect(message).not.toContain('SomeInternalException');
     expect(message).not.toContain('stack trace detail');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Email case normalization (bugfix/email-case-normalization)
+// The Cognito pool is case-sensitive, so the auth-client lowercases the
+// username before it reaches Cognito on sign-in and password reset.
+// ---------------------------------------------------------------------------
+
+describe('email case normalization', () => {
+  it('signIn lowercases + trims the username before calling Amplify', async () => {
+    mockAmplifySignIn.mockResolvedValueOnce({ isSignedIn: true, nextStep: {} });
+    await signIn({ username: '  Daniela.Gomez@CGIAR.org ', password: 'x' });
+    expect(mockAmplifySignIn).toHaveBeenCalledWith({
+      username: 'daniela.gomez@cgiar.org',
+      password: 'x',
+    });
+  });
+
+  it('resetPassword lowercases the username', async () => {
+    mockAmplifyResetPassword.mockResolvedValueOnce({});
+    await resetPassword('J.Cadavid@Cgiar.Org');
+    expect(mockAmplifyResetPassword).toHaveBeenCalledWith({ username: 'j.cadavid@cgiar.org' });
+  });
+
+  it('confirmResetPassword lowercases the username', async () => {
+    mockAmplifyConfirmResetPassword.mockResolvedValueOnce(undefined);
+    await confirmResetPassword({ username: 'Daniela.Gomez@CGIAR.org', code: '123456', newPassword: 'NewPass1!' });
+    expect(mockAmplifyConfirmResetPassword).toHaveBeenCalledWith({
+      username: 'daniela.gomez@cgiar.org',
+      confirmationCode: '123456',
+      newPassword: 'NewPass1!',
+    });
   });
 });
