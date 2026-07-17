@@ -14,6 +14,10 @@ region = "eu-west-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_NAMED_IAM"
 resolve_s3 = true
+# Stack-level tag propagated by CloudFormation to every taggable resource in
+# all three stacks (DevOps cost-allocation requirement; matches the account's
+# `Project` tag convention).
+tags = "Project=\"ACCELERATE-Tanzania\""
 
 [default.validate.parameters]
 profile = "IBD-DEV"
