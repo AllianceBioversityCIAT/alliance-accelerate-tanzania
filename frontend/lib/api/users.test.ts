@@ -6,7 +6,8 @@
  *   - Each function hits the right URL + method
  *   - Bearer token is attached as Authorization: Bearer <token>
  *   - Correct JSON body is sent for POST/PATCH operations
- *   - deleteUser / resetUserPassword handle 204 (return void / undefined)
+ *   - deleteUser handles 204 (return void / undefined)
+ *   - resetUserPassword returns the typed { action } body on 200
  *   - Any function throws AuthFailureError on a 401 response
  */
 
@@ -369,12 +370,12 @@ describe('deleteUser()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resetUserPassword — 204 No Content → void
+// resetUserPassword — 200 { action } (design.md §5.1, FR-6)
 // ---------------------------------------------------------------------------
 
 describe('resetUserPassword()', () => {
   it('hits POST /api/v1/users/:id/password', async () => {
-    global.fetch = make204();
+    global.fetch = makeFetchOk({ action: 'RESET' });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -383,7 +384,7 @@ describe('resetUserPassword()', () => {
   });
 
   it('attaches Authorization: Bearer <token>', async () => {
-    global.fetch = make204();
+    global.fetch = makeFetchOk({ action: 'RESET' });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -391,12 +392,20 @@ describe('resetUserPassword()', () => {
     expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('resolves to undefined (void) on 204', async () => {
-    global.fetch = make204();
+  it('resolves to { action: "RESET" } on a 200 body', async () => {
+    global.fetch = makeFetchOk({ action: 'RESET' });
 
     const result = await resetUserPassword(USER_ID, TOKEN);
 
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ action: 'RESET' });
+  });
+
+  it('resolves to { action: "REINVITE" } on a 200 body', async () => {
+    global.fetch = makeFetchOk({ action: 'REINVITE' });
+
+    const result = await resetUserPassword(USER_ID, TOKEN);
+
+    expect(result).toEqual({ action: 'REINVITE' });
   });
 
   it('throws AuthFailureError on 401', async () => {

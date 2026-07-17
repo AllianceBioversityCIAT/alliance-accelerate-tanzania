@@ -78,6 +78,15 @@ export interface SetRoleInput {
   role: 'admin' | 'staff' | 'none';
 }
 
+/** Response for POST /api/v1/users/:id/password (design.md §5.1, FR-6). */
+export interface ResetPasswordResult {
+  /**
+   * Which Cognito flow ran: 'RESET' = a reset email was sent to a signed-in user;
+   * 'REINVITE' = the invite was resent to a user who never signed in.
+   */
+  action: 'RESET' | 'REINVITE';
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const BASE = '/api/v1/users';
@@ -193,17 +202,17 @@ export async function deleteUser(id: string, token: string): Promise<void> {
 
 /**
  * POST /api/v1/users/:id/password
- * Triggers AdminResetUserPassword — Cognito emails the reset link to the user (FR-7).
- * Returns void on success (HTTP 204). No plaintext password is involved.
- * Throws on 404 / 401.
+ * Triggers the Cognito reset/re-invite flow — Cognito emails the user (FR-7).
+ * Returns { action } on success (HTTP 200): 'RESET' = reset email sent to a
+ * signed-in user; 'REINVITE' = invite resent to a never-signed-in user.
+ * No plaintext password is involved. Throws on 404 / 401.
  *
  * @param id     Cognito Username (uuid == JWT sub).
  * @param token  Cognito access token from the caller's session.
  */
-export async function resetUserPassword(id: string, token: string): Promise<void> {
-  return apiFetch<void>(`${BASE}/${encodeURIComponent(id)}/password`, {
+export async function resetUserPassword(id: string, token: string): Promise<ResetPasswordResult> {
+  return apiFetch<ResetPasswordResult>(`${BASE}/${encodeURIComponent(id)}/password`, {
     method: 'POST',
     token,
-    expectEmpty: true,
   });
 }

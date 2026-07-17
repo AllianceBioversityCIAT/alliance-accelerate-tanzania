@@ -1,0 +1,25 @@
+{
+  "Version": "2008-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCognitoToSend",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "email.cognito-idp.amazonaws.com"
+      },
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail"
+      ],
+      "Resource": "arn:aws:ses:eu-west-1:<ACCOUNT_ID>:identity/<SENDER_EMAIL>",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": "<ACCOUNT_ID>"
+        },
+        "ArnEquals": {
+          "aws:SourceArn": "<USER_POOL_ARN>"
+        }
+      }
+    }
+  ]
+}

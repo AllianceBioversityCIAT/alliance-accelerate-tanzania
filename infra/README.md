@@ -210,7 +210,142 @@ and exits non-zero if **any** check fails:
 
 ---
 
-## 6. Outputs (where the wiring values come from)
+## 6. Email (SES) setup — two-phase Cognito → SES enablement
+
+Spec: `docs/specs/bugfix/admin-user-invite-and-reset/` (§7.1–§7.3, §11).
+
+**Purpose.** Cognito's transactional emails — the admin **invitation** (first
+sign-in) and the **password-reset code** — are sent via **Amazon SES in
+`DEVELOPER` mode** from a project-controlled, SES-verified sender, replacing the
+`COGNITO_DEFAULT` mailer (`no-reply@verificationemail.com`, rate-capped, poor
+reputation). This fixes deliverability to `cgiar.org` inboxes (FR-1). The
+`10-data-auth/template.yaml` gains three params for this:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `SenderEmail` | `""` | Project sender address to verify in SES. Empty → keep `COGNITO_DEFAULT` (safe no-op). |
+| `EnableSesSending` | `"false"` | Phase-B gate. `"true"` (with `SenderEmail` set) flips the pool's `EmailConfiguration` to `DEVELOPER`. |
+| `PortalUrl` | current dev CloudFront URL | Admin portal base URL for the invitation email CTA (`/login` is appended). |
+
+The two gates (`SenderEmail` non-empty, and `EnableSesSending=true`) exist to
+force a **two-phase rollout**: the SES sending-authorization policy needs the
+user-pool ARN, while the pool's `DEVELOPER` config needs the authorized identity
+— a circular dependency a single change set cannot satisfy. Run the phases **in
+order**; Phase B only succeeds after Phase A's verify + authorize steps.
+
+Validate first (no cost): `./infra/scripts/validate.sh`.
+
+### Phase A — create + verify + authorize the sender (no DEVELOPER switch yet)
+
+The branded email templates install immediately; the `DEVELOPER`
+`EmailConfiguration` stays gated off, so the pool keeps `COGNITO_DEFAULT` through
+this whole phase.
+
+**A-1. Deploy `10-data-auth` with the sender set but SES sending disabled.** This
+creates the `AWS::SES::EmailIdentity` (which triggers AWS's verification email)
+and installs the invite + reset templates; the pool email stays
+`COGNITO_DEFAULT`.
+
+```bash
+sam deploy --template infra/10-data-auth/template.yaml \
+  --stack-name accelerate-tz-dev-data-auth \
+  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
+    SenderEmail=<sender-addr> EnableSesSending=false \
+  --profile IBD-DEV --region eu-west-1
+```
+
+**A-2. Verify the sender identity (DEP-1).** Open the mailbox of `<sender-addr>`
+and click the SES verification link AWS just emailed. The identity must reach
+`Verified` before Phase B.
+
+**A-3. Attach the Cognito sending-authorization policy.** `DEVELOPER` mode means
+Cognito sends *through* your SES identity, which AWS permits **only** if that
+identity carries a sending-authorization policy naming the Cognito service
+principal (`email.cognito-idp.amazonaws.com`). The SES console adds this
+automatically, but **CloudFormation cannot express it** (`AWS::SES::EmailIdentity`
+has no policy property and there is no native `AWS::SES::IdentityPolicy`
+resource) — so the operator attaches it once via the SES v1 API:
+
+```bash
+aws ses put-identity-policy --identity <sender-addr> --policy-name cognito-send \
+  --policy file://infra/10-data-auth/ses-cognito-send-policy.json \
+  --profile IBD-DEV --region eu-west-1
+```
+
+Before running it, edit `infra/10-data-auth/ses-cognito-send-policy.json` and
+replace its placeholders:
+
+- `<ACCOUNT_ID>` — from `aws sts get-caller-identity --profile IBD-DEV --region eu-west-1`.
+- `<SENDER_EMAIL>` — the `<sender-addr>` you verified in A-2.
+- `<USER_POOL_ARN>` — `arn:aws:cognito-idp:eu-west-1:<ACCOUNT_ID>:userpool/<UserPoolId>`,
+  where `<UserPoolId>` is the `UserPoolId` output of the `accelerate-tz-dev-data-auth`
+  stack (see section 7).
+
+If this policy is missing, the Phase-B update is rejected with
+`InvalidEmailRoleAccessPolicyException` (or, worst case, every send fails
+authorization at runtime and FR-1 stays broken) — it is the load-bearing step.
+
+### Phase B — flip the pool to DEVELOPER
+
+**B-1. Re-deploy `10-data-auth` with SES sending enabled.** This is an **in-place
+`UserPool` update (no replacement)** that sets `EmailConfiguration: DEVELOPER`.
+It now succeeds because the identity is verified **and** authorized:
+
+```bash
+sam deploy --template infra/10-data-auth/template.yaml \
+  --stack-name accelerate-tz-dev-data-auth \
+  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
+    SenderEmail=<sender-addr> EnableSesSending=true \
+  --profile IBD-DEV --region eu-west-1
+```
+
+After this, invites and reset codes send via SES from `<sender-addr>`.
+
+### SES sandbox caveat (DEP-2)
+
+This account's SES is in **sandbox** — it delivers **only to verified recipient
+addresses** until AWS grants production access. Do this **before** a real
+rollout. For dev testing, verify each recipient address:
+
+```bash
+aws ses verify-email-identity --email-address <recipient-addr> \
+  --profile IBD-DEV --region eu-west-1
+```
+
+(each recipient clicks their own verification link), **or** request SES
+production access for the account so any recipient can receive mail.
+
+### Reversibility (rollback)
+
+Re-deploy `10-data-auth` with `EnableSesSending=false` (or `SenderEmail=""`) to
+revert the pool to `COGNITO_DEFAULT`:
+
+```bash
+sam deploy --template infra/10-data-auth/template.yaml \
+  --stack-name accelerate-tz-dev-data-auth \
+  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
+    SenderEmail=<sender-addr> EnableSesSending=false \
+  --profile IBD-DEV --region eu-west-1
+```
+
+Caveat: the branded, table-based HTML templates render best via SES; the
+`COGNITO_DEFAULT` mailer's HTML handling is limited, so a reverted pool still
+*sends* but may look degraded — an acceptable rollback state.
+
+### Known limitation — CONFIRMED-user reset code has no in-app entry page (OQ-5)
+
+A **CONFIRMED** user's reset uses the forgot-password flow
+(`AdminResetUserPassword` + `CONFIRM_WITH_CODE`), which emails a numeric **code**
+the user would enter on a "set new password" screen. The app currently ships
+**no** forgot-password / code-entry page, so that reset path **dead-ends in the
+UI** (pre-existing behavior — this change only makes the email correct and
+branded). The **invite / first-sign-in** path (`FORCE_CHANGE_PASSWORD`, served by
+re-invite semantics) **is fully usable** end to end. Building the code-entry page
+is a separate fast-follow (OQ-5), out of scope here.
+
+---
+
+## 7. Outputs (where the wiring values come from)
 
 The deploy emits CloudFormation **outputs** (FR-7) — the values needed to wire and
 operate the app. `deploy.sh` prints them per stack; you can re-read them any time:
@@ -232,7 +367,7 @@ aws cloudformation describe-stacks \
 
 ---
 
-## 7. Cost notes (NFR-6 — keep it cheap, destroy when idle)
+## 8. Cost notes (NFR-6 — keep it cheap, destroy when idle)
 
 The footprint is deliberately small and disposable:
 
@@ -245,11 +380,11 @@ The footprint is deliberately small and disposable:
 - **S3 + Secrets Manager** — pennies (a few MB of static assets + one secret).
 
 **Destroy the environment when you're not actively using it** — RDS is the reason.
-Run `teardown.sh` (section 8) to remove everything so nothing lingers or bills.
+Run `teardown.sh` (section 9) to remove everything so nothing lingers or bills.
 
 ---
 
-## 8. Teardown (destroy everything)
+## 9. Teardown (destroy everything)
 
 ```bash
 ./infra/scripts/teardown.sh                 # interactive — prompts to type 'yes'
@@ -284,7 +419,7 @@ aws cloudformation describe-stacks \
 
 ---
 
-## 9. Hardening follow-up (`infra/network-hardening`)
+## 10. Hardening follow-up (`infra/network-hardening`)
 
 This dev bootstrap intentionally trades production posture for a minimal, cheap,
 easy-to-deploy footprint (DD-1/DD-2/DD-3, NFR-3). The deferred hardening — to be
@@ -299,4 +434,4 @@ specified separately as **`infra/network-hardening`** — covers:
 
 Until then, the public RDS endpoint is mitigated by **TLS-required** connections, a
 **strong generated password** in Secrets Manager, **no real PII** (consented sample
-data only), and **easy teardown** (section 8).
+data only), and **easy teardown** (section 9).

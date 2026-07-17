@@ -51,6 +51,14 @@ export interface ListUsersResult {
   paginationToken?: string;
 }
 
+/**
+ * Outcome of {@link UsersService.resetPassword}: `REINVITE` when the invite was
+ * resent to a never-signed-in user, `RESET` when a password reset was triggered.
+ */
+export interface ResetPasswordResult {
+  action: 'RESET' | 'REINVITE';
+}
+
 @Injectable()
 export class UsersService {
   /**
@@ -259,17 +267,40 @@ export class UsersService {
   }
 
   /**
-   * FR-7 — trigger an email-based password reset (`AdminResetUserPassword`,
-   * OQ-2). No plaintext password is generated, returned, or logged.
+   * FR-7 — status-aware password reset / re-invite. First reads the user's
+   * `UserStatus` (`AdminGetUser`) using the route-param id (sub/UUID), then:
+   *  - `FORCE_CHANGE_PASSWORD` (never signed in): resends the Cognito invite via
+   *    `AdminCreateUser` with `MessageAction: 'RESEND'` (Username = the same
+   *    validated id, never the email alias) → `{ action: 'REINVITE' }`.
+   *  - otherwise (`CONFIRMED` / `RESET_REQUIRED` / default): triggers the
+   *    email-based `AdminResetUserPassword` → `{ action: 'RESET' }`.
+   * No plaintext password is generated, returned, or logged (NFR-1).
    */
-  async resetPassword(id: string): Promise<void> {
+  async resetPassword(id: string): Promise<ResetPasswordResult> {
     try {
       const client = getCognitoAdminClient();
       const UserPoolId = getUserPoolId();
 
+      const detail = await client.send(
+        new AdminGetUserCommand({ UserPoolId, Username: id }),
+      );
+
+      if (detail.UserStatus === 'FORCE_CHANGE_PASSWORD') {
+        await client.send(
+          new AdminCreateUserCommand({
+            UserPoolId,
+            Username: id,
+            MessageAction: 'RESEND',
+            DesiredDeliveryMediums: ['EMAIL'],
+          }),
+        );
+        return { action: 'REINVITE' };
+      }
+
       await client.send(
         new AdminResetUserPasswordCommand({ UserPoolId, Username: id }),
       );
+      return { action: 'RESET' };
     } catch (err) {
       mapCognitoError(err);
     }

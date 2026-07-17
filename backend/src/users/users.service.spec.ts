@@ -252,19 +252,49 @@ describe('UsersService (mocked Cognito)', () => {
     });
   });
 
-  // ── FR-7: resetPassword ──────────────────────────────────────────────────
+  // ── FR-7: resetPassword (status-aware) ────────────────────────────────────
   describe('resetPassword (FR-7)', () => {
-    it('sends AdminResetUserPassword (email-based, no plaintext)', async () => {
+    it('resets a CONFIRMED user via AdminResetUserPassword and returns { action: "RESET" }', async () => {
+      cognitoMock
+        .on(AdminGetUserCommand)
+        .resolves({ UserStatus: 'CONFIRMED' });
       cognitoMock.on(AdminResetUserPasswordCommand).resolves({});
 
-      await service.resetPassword('some-sub');
+      const result = await service.resetPassword('some-sub');
 
+      expect(result).toEqual({ action: 'RESET' });
       const calls = cognitoMock.commandCalls(AdminResetUserPasswordCommand);
       expect(calls).toHaveLength(1);
       expect(calls[0].args[0].input).toMatchObject({
         UserPoolId: 'us-east-1_TESTPOOL',
         Username: 'some-sub',
       });
+      // A never-signed-in re-invite must NOT be issued for a CONFIRMED user.
+      expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
+    });
+
+    it('re-invites a FORCE_CHANGE_PASSWORD user via AdminCreateUser RESEND and returns { action: "REINVITE" }', async () => {
+      cognitoMock
+        .on(AdminGetUserCommand)
+        .resolves({ UserStatus: 'FORCE_CHANGE_PASSWORD' });
+      cognitoMock.on(AdminCreateUserCommand).resolves({});
+
+      const result = await service.resetPassword('sub-uuid-123');
+
+      expect(result).toEqual({ action: 'REINVITE' });
+      const calls = cognitoMock.commandCalls(AdminCreateUserCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args[0].input).toMatchObject({
+        UserPoolId: 'us-east-1_TESTPOOL',
+        MessageAction: 'RESEND',
+        DesiredDeliveryMediums: ['EMAIL'],
+      });
+      // Username MUST be the passed id (sub/UUID), never the email alias.
+      expect(calls[0].args[0].input.Username).toBe('sub-uuid-123');
+      // No password reset is triggered for a never-signed-in user.
+      expect(
+        cognitoMock.commandCalls(AdminResetUserPasswordCommand),
+      ).toHaveLength(0);
     });
   });
 

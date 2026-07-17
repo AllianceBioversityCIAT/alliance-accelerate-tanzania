@@ -363,3 +363,82 @@ describe('UsersPage — delete flow', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — Reset password flow (status-aware banner + confirm copy)
+// ---------------------------------------------------------------------------
+
+describe('UsersPage — reset password flow', () => {
+  it('shows the re-invite banner when resetUserPassword resolves { action: REINVITE }', async () => {
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
+    mockResetPwd.mockResolvedValue({ action: 'REINVITE' });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getAllByText('bob@example.com').length).toBeGreaterThan(0),
+    );
+
+    // Bob is FORCE_CHANGE_PASSWORD → dialog copy mentions re-sending the invitation
+    const resetBtns = screen.getAllByRole('button', { name: /reset password for bob@example\.com/i });
+    fireEvent.click(resetBtns[0]);
+    expect(screen.getByText(/re-send their invitation with a new temporary password/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/invitation re-sent with a new temporary password/i),
+    );
+    expect(mockResetPwd).toHaveBeenCalledWith(USER_B.id, TOKEN);
+  });
+
+  it('shows the reset banner when resetUserPassword resolves { action: RESET }', async () => {
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
+    mockResetPwd.mockResolvedValue({ action: 'RESET' });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
+    );
+
+    // Alice is CONFIRMED → dialog copy mentions a password-reset code (not a link)
+    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
+    fireEvent.click(resetBtns[0]);
+    expect(screen.getByText(/password-reset code/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/password reset email sent/i),
+    );
+    expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN);
+  });
+
+  it('renders the ApiError message in the dialog (not a generic error) on a 409 rejection', async () => {
+    const CONFLICT_MSG =
+      'This user is not in a state where that action is allowed. Try again once the account is confirmed.';
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
+    mockResetPwd.mockRejectedValue(Object.assign(new Error(CONFLICT_MSG), { status: 409 }));
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
+    );
+
+    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
+    fireEvent.click(resetBtns[0]);
+    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(CONFLICT_MSG)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/unexpected error/i)).not.toBeInTheDocument();
+    // Dialog stays open on error
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});

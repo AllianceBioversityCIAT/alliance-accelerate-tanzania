@@ -16,7 +16,11 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
-import { UsersService, ListUsersResult } from './users.service';
+import {
+  UsersService,
+  ListUsersResult,
+  ResetPasswordResult,
+} from './users.service';
 import { AdminUser } from './users.serializer';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -97,12 +101,16 @@ export class UsersController {
   }
 
   /**
-   * `POST /api/v1/users/:id/password` — trigger an email-based password reset
-   * (FR-7). No plaintext password is taken or returned.
+   * `POST /api/v1/users/:id/password` — trigger a status-aware password reset
+   * (FR-7). Returns HTTP 200 with `{ action }`, where the service resolves the
+   * action from the target's Cognito status: `'RESET'` (email-based reset for a
+   * signed-in user) or `'REINVITE'` (invite resent to a never-signed-in user).
+   * `@HttpCode(200)` is explicit — a bare `@Post` would default to 201. No
+   * plaintext password is taken or returned.
    */
   @Post(':id/password')
-  @HttpCode(204)
-  resetPassword(@Param('id') id: string): Promise<void> {
+  @HttpCode(200)
+  resetPassword(@Param('id') id: string): Promise<ResetPasswordResult> {
     return this.usersService.resetPassword(id);
   }
 }

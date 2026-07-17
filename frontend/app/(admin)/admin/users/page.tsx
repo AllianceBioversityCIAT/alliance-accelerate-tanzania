@@ -273,9 +273,13 @@ export default function UsersPage() {
     setConfirmError(undefined);
     setConfirmLoading(true);
     try {
-      await resetUserPassword(resetUser.id, token);
+      const { action } = await resetUserPassword(resetUser.id, token);
       setResetUser(null);
-      showSuccess('Password reset email sent.');
+      showSuccess(
+        action === 'REINVITE'
+          ? 'Invitation re-sent with a new temporary password.'
+          : 'Password reset email sent.',
+      );
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
         handleAuthFailure();
@@ -457,7 +461,11 @@ export default function UsersPage() {
       <ConfirmDialog
         open={!!resetUser}
         title={`Reset password for ${resetUser?.email ?? 'user'}?`}
-        description="Cognito will email a password-reset link to the user. No plaintext password is generated."
+        description={
+          resetUser?.status === 'FORCE_CHANGE_PASSWORD'
+            ? "This user hasn't signed in yet. This will re-send their invitation with a new temporary password."
+            : 'This will email the user a password-reset code to set a new password.'
+        }
         confirmLabel="Send reset email"
         onConfirm={handleResetConfirm}
         onCancel={handleResetCancel}

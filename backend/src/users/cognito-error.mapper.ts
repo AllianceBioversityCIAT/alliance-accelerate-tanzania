@@ -33,6 +33,10 @@ const GENERIC_INTERNAL_MESSAGE = 'An unexpected error occurred.';
  * - `UserNotFoundException` → 404 Not Found
  * - `InvalidParameterException` / `InvalidPasswordException` → 400 Bad Request
  * - `TooManyRequestsException` → 429 Too Many Requests
+ * - `UnsupportedUserStateException` → 409 Conflict (user-state)
+ * - `NotAuthorizedException` → 409 Conflict ONLY when the message signals a
+ *   user-state cause; credential/permission (IAM) causes fall through to 500 so
+ *   a real server misconfiguration is never masked as a client conflict.
  * - anything else → 500 Internal Server Error (generic, no leak)
  */
 export function mapCognitoError(err: unknown): never {
@@ -51,10 +55,39 @@ export function mapCognitoError(err: unknown): never {
         'Too many requests. Please retry later.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
+    case 'UnsupportedUserStateException':
+      throw new ConflictException(
+        'This user is not in a state where that action is allowed. Please refresh and try again.',
+      );
+    case 'NotAuthorizedException':
+      // `NotAuthorizedException` is ambiguous: it covers both benign user-state
+      // conflicts AND server-side IAM/credential failures. Only treat the
+      // user-state signature as a 409; anything else falls through to the
+      // generic 500 so a real credential/permission problem isn't masked.
+      if (isUserStateNotAuthorized(err)) {
+        throw new ConflictException(
+          'This user is not in a state where that action is allowed. Please refresh and try again.',
+        );
+      }
+      break;
     default:
-      // Do NOT surface the raw Cognito error — generic message only (§6).
-      throw new InternalServerErrorException(GENERIC_INTERNAL_MESSAGE);
+      break;
   }
+
+  // Do NOT surface the raw Cognito error — generic message only (§6).
+  throw new InternalServerErrorException(GENERIC_INTERNAL_MESSAGE);
+}
+
+/**
+ * True only for the user-STATE flavor of `NotAuthorizedException` (e.g. "User
+ * password cannot be reset in the current state"). Conservative by design:
+ * credential/permission phrasing ("User is not authorized to perform: ...") and
+ * any unknown message return false, so those collapse to a generic 500 instead
+ * of being mis-reported as a client-side conflict.
+ */
+function isUserStateNotAuthorized(err: unknown): boolean {
+  const message = errorMessage(err);
+  return message !== undefined && /state/i.test(message);
 }
 
 /** Extract the SDK exception `name` discriminator, if present. */
@@ -62,6 +95,15 @@ function errorName(err: unknown): string | undefined {
   if (typeof err === 'object' && err !== null && 'name' in err) {
     const { name } = err as { name?: unknown };
     return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}
+
+/** Safely read the SDK error `message` field, if present. */
+function errorMessage(err: unknown): string | undefined {
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const { message } = err as { message?: unknown };
+    return typeof message === 'string' ? message : undefined;
   }
   return undefined;
 }
