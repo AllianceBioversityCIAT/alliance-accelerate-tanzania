@@ -17,6 +17,8 @@ import {
   signOut as amplifySignOut,
   fetchAuthSession,
   confirmSignIn,
+  resetPassword as amplifyResetPassword,
+  confirmResetPassword as amplifyConfirmResetPassword,
   type SignInOutput,
 } from 'aws-amplify/auth';
 import type { Role } from './useSession';
@@ -40,6 +42,16 @@ export interface SignInCredentials {
 export type SignInResult =
   | { status: 'authenticated' }
   | { status: 'new_password_required' }
+  | { status: 'error'; message: string };
+
+/** Outcome of a password-reset request (FR-5). */
+export type ResetRequestResult =
+  | { status: 'code_sent' }
+  | { status: 'error'; message: string };
+
+/** Outcome of confirming a password reset with a code (FR-6). */
+export type ResetConfirmResult =
+  | { status: 'done' }
   | { status: 'error'; message: string };
 
 // ---------------------------------------------------------------------------
@@ -177,5 +189,78 @@ export async function signOut(): Promise<void> {
     await amplifySignOut();
   } catch {
     // Suppress — session is already gone in the error case.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Password reset (FR-5, FR-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps a Cognito reset error to a safe, user-facing message (design.md §4.2).
+ * Reads the error name defensively and NEVER echoes the raw name or message
+ * back to the caller (NFR-4 — no internal leakage / account enumeration).
+ */
+function resetErrorMessage(err: unknown): string {
+  const name =
+    typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string'
+      ? (err as { name: string }).name
+      : '';
+
+  switch (name) {
+    case 'CodeMismatchException':
+      return "That code isn't correct. Check the code from your email, or request a new one.";
+    case 'ExpiredCodeException':
+      return 'That code has expired. Request a new one and try again.';
+    case 'InvalidPasswordException':
+      return "That password doesn't meet the requirements. Try a stronger one.";
+    case 'LimitExceededException':
+      return 'Too many attempts. Please wait a few minutes and try again.';
+    default:
+      return 'Something went wrong. Please try again.';
+  }
+}
+
+/**
+ * Requests a password-reset code for the given username (FR-5).
+ * Account-enumeration safe (FR-2/NFR-4): a UserNotFoundException is treated as
+ * success — we never reveal whether an account exists.
+ * Never throws — returns a discriminated union result.
+ */
+export async function resetPassword(username: string): Promise<ResetRequestResult> {
+  try {
+    await amplifyResetPassword({ username });
+    return { status: 'code_sent' };
+  } catch (err: unknown) {
+    // Do not reveal non-existence on the request path (NFR-4).
+    const name =
+      typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string'
+        ? (err as { name: string }).name
+        : '';
+    if (name === 'UserNotFoundException') {
+      return { status: 'code_sent' };
+    }
+    return { status: 'error', message: resetErrorMessage(err) };
+  }
+}
+
+/**
+ * Confirms a password reset using the emailed code and a new password (FR-6).
+ * Never throws — returns a discriminated union result.
+ */
+export async function confirmResetPassword(input: {
+  username: string;
+  code: string;
+  newPassword: string;
+}): Promise<ResetConfirmResult> {
+  try {
+    await amplifyConfirmResetPassword({
+      username: input.username,
+      confirmationCode: input.code,
+      newPassword: input.newPassword,
+    });
+    return { status: 'done' };
+  } catch (err: unknown) {
+    return { status: 'error', message: resetErrorMessage(err) };
   }
 }
