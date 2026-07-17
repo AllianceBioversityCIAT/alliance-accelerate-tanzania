@@ -54,6 +54,17 @@ export type ResetConfirmResult =
   | { status: 'done' }
   | { status: 'error'; message: string };
 
+/**
+ * Normalize an email/username to the canonical lowercase, trimmed form before it
+ * reaches Cognito. The pool is case-SENSITIVE, so a user who typed
+ * `Daniela.Gomez@x` must resolve to the same identity as `daniela.gomez@x`.
+ * Paired with lowercasing at user creation (backend), this makes sign-in and
+ * password reset case-insensitive in practice (bugfix/email-case-normalization).
+ */
+function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
 // ---------------------------------------------------------------------------
 // Role helper (FR-2)
 // ---------------------------------------------------------------------------
@@ -124,7 +135,7 @@ export async function getSession(): Promise<AuthSession | null> {
 export async function signIn(credentials: SignInCredentials): Promise<SignInResult> {
   try {
     const output: SignInOutput = await amplifySignIn({
-      username: credentials.username,
+      username: normalizeUsername(credentials.username),
       password: credentials.password,
     });
 
@@ -229,7 +240,7 @@ function resetErrorMessage(err: unknown): string {
  */
 export async function resetPassword(username: string): Promise<ResetRequestResult> {
   try {
-    await amplifyResetPassword({ username });
+    await amplifyResetPassword({ username: normalizeUsername(username) });
     return { status: 'code_sent' };
   } catch (err: unknown) {
     // Do not reveal non-existence on the request path (NFR-4).
@@ -255,7 +266,7 @@ export async function confirmResetPassword(input: {
 }): Promise<ResetConfirmResult> {
   try {
     await amplifyConfirmResetPassword({
-      username: input.username,
+      username: normalizeUsername(input.username),
       confirmationCode: input.code,
       newPassword: input.newPassword,
     });

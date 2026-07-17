@@ -1,5 +1,11 @@
 // @sdd-spec admin/user-management (T-2)
+// @sdd-spec bugfix/email-case-normalization
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsOptional } from 'class-validator';
+
+/** Lowercase + trim an email so it matches the case-sensitive Cognito pool alias. */
+const toLowerEmail = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 /**
  * T-2 — Validated write DTO for `PATCH /api/v1/users/:id` (design §3, FR-4).
@@ -11,8 +17,9 @@ import { IsBoolean, IsEmail, IsOptional } from 'class-validator';
  * Scope note: authored in isolation (T-2). Controller/service wiring is T-3/T-4.
  */
 export class UpdateUserDto {
-  /** New email attribute, validated when present (FR-4). */
+  /** New email attribute, validated when present (FR-4). Normalized to lowercase. */
   @IsOptional()
+  @Transform(toLowerEmail)
   @IsEmail()
   email?: string;
 
