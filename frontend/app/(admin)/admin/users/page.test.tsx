@@ -256,14 +256,14 @@ describe('UsersPage — create user flow', () => {
     expect(screen.getByRole('heading', { name: /create user/i })).toBeInTheDocument();
   });
 
-  it('calls createUser with email+token when the dialog form is submitted', async () => {
+  it('calls createUser then shows the temp password handoff; Done refetches', async () => {
     const NEW_USER: AdminUser = { ...USER_A, id: 'u-new', email: 'new@example.com' };
     mockGetSession.mockResolvedValue(FAKE_SESSION);
-    // first call: initial load; second call after create: refetch
+    // first call: initial load; second call after Done: refetch
     mockListUsers
       .mockResolvedValueOnce(LIST_WITH_USERS)
       .mockResolvedValueOnce({ users: [USER_A, USER_B, NEW_USER] });
-    mockCreateUser.mockResolvedValue(NEW_USER);
+    mockCreateUser.mockResolvedValue({ user: NEW_USER, temporaryPassword: 'Tmp!Create-9' });
 
     renderPage();
 
@@ -287,6 +287,20 @@ describe('UsersPage — create user flow', () => {
         TOKEN,
       ),
     );
+
+    // Handoff view shows the one-time temp password (list not yet refetched)
+    await waitFor(() =>
+      expect(screen.getByText('Tmp!Create-9')).toBeInTheDocument(),
+    );
+    expect(mockListUsers).toHaveBeenCalledTimes(1);
+
+    // Done → refetch + success banner
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+
+    await waitFor(() =>
+      expect(mockListUsers).toHaveBeenCalledTimes(2),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/user created successfully/i);
   });
 });
 
@@ -365,38 +379,14 @@ describe('UsersPage — delete flow', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — Reset password flow (status-aware banner + confirm copy)
+// Tests — Reset password flow (temp-password handoff)
 // ---------------------------------------------------------------------------
 
 describe('UsersPage — reset password flow', () => {
-  it('shows the re-invite banner when resetUserPassword resolves { action: REINVITE }', async () => {
+  it('shows the temp-password handoff after resetUserPassword resolves', async () => {
     mockGetSession.mockResolvedValue(FAKE_SESSION);
     mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-    mockResetPwd.mockResolvedValue({ action: 'REINVITE' });
-
-    renderPage();
-
-    await waitFor(() =>
-      expect(screen.getAllByText('bob@example.com').length).toBeGreaterThan(0),
-    );
-
-    // Bob is FORCE_CHANGE_PASSWORD → dialog copy mentions re-sending the invitation
-    const resetBtns = screen.getAllByRole('button', { name: /reset password for bob@example\.com/i });
-    fireEvent.click(resetBtns[0]);
-    expect(screen.getByText(/re-send their invitation with a new temporary password/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
-
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/invitation re-sent with a new temporary password/i),
-    );
-    expect(mockResetPwd).toHaveBeenCalledWith(USER_B.id, TOKEN);
-  });
-
-  it('shows the reset banner when resetUserPassword resolves { action: RESET }', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-    mockResetPwd.mockResolvedValue({ action: 'RESET' });
+    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-7' });
 
     renderPage();
 
@@ -404,17 +394,28 @@ describe('UsersPage — reset password flow', () => {
       expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
     );
 
-    // Alice is CONFIRMED → dialog copy mentions a password-reset code (not a link)
     const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
     fireEvent.click(resetBtns[0]);
-    expect(screen.getByText(/password-reset code/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
+    // Confirm → API called with the user id + token
+    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/password reset email sent/i),
+      expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN),
     );
-    expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN);
+
+    // Handoff dialog shows the new temporary password + the once-only warning
+    await waitFor(() =>
+      expect(screen.getByText('Tmp!Reset-7')).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/shown only once/i)).toBeInTheDocument();
+
+    // Done → subtle confirmation banner
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(/password reset\./i),
+    );
   });
 
   it('renders the ApiError message in the dialog (not a generic error) on a 409 rejection', async () => {
@@ -432,7 +433,7 @@ describe('UsersPage — reset password flow', () => {
 
     const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
     fireEvent.click(resetBtns[0]);
-    fireEvent.click(screen.getByRole('button', { name: /^send reset email$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
 
     await waitFor(() =>
       expect(screen.getByText(CONFLICT_MSG)).toBeInTheDocument(),

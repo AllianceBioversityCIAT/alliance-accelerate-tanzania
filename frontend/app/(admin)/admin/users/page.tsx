@@ -38,11 +38,12 @@ import {
 } from '@/lib/api/users';
 import { AuthFailureError } from '@/lib/api/client';
 
-import { UsersTable }       from '@/components/admin/UsersTable';
-import { CreateUserDialog } from '@/components/admin/CreateUserDialog';
-import { EditUserDialog }   from '@/components/admin/EditUserDialog';
-import { ConfirmDialog }    from '@/components/admin/ConfirmDialog';
-import Skeleton             from '@/components/ui/Skeleton';
+import { UsersTable }        from '@/components/admin/UsersTable';
+import { CreateUserDialog }  from '@/components/admin/CreateUserDialog';
+import { EditUserDialog }    from '@/components/admin/EditUserDialog';
+import { ConfirmDialog }     from '@/components/admin/ConfirmDialog';
+import { CredentialHandoff } from '@/components/admin/CredentialHandoff';
+import Skeleton              from '@/components/ui/Skeleton';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,6 +138,8 @@ export default function UsersPage() {
   const [editUser,        setEditUser]        = useState<AdminUser | null>(null);
   const [deleteUser_,     setDeleteUser]      = useState<AdminUser | null>(null);
   const [resetUser,       setResetUser]       = useState<AdminUser | null>(null);
+  // Post-reset handoff: the new temp password is shown once before dismiss.
+  const [resetHandoff,    setResetHandoff]    = useState<{ email: string; temporaryPassword: string } | null>(null);
 
   // Confirm dialog in-flight / error (for delete + reset)
   const [confirmLoading,  setConfirmLoading]  = useState(false);
@@ -267,19 +270,16 @@ export default function UsersPage() {
     }
   }, [deleteUser_, token, refetch, showSuccess, handleAuthFailure]);
 
-  // Reset password confirm
+  // Reset password confirm — captures the new temp password for the handoff.
   const handleResetConfirm = useCallback(async () => {
     if (!resetUser || !token) return;
     setConfirmError(undefined);
     setConfirmLoading(true);
     try {
-      const { action } = await resetUserPassword(resetUser.id, token);
+      const { temporaryPassword } = await resetUserPassword(resetUser.id, token);
+      const email = resetUser.email;
       setResetUser(null);
-      showSuccess(
-        action === 'REINVITE'
-          ? 'Invitation re-sent with a new temporary password.'
-          : 'Password reset email sent.',
-      );
+      setResetHandoff({ email, temporaryPassword });
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
         handleAuthFailure();
@@ -289,7 +289,15 @@ export default function UsersPage() {
     } finally {
       setConfirmLoading(false);
     }
-  }, [resetUser, token, showSuccess, handleAuthFailure]);
+  }, [resetUser, token, handleAuthFailure]);
+
+  // Dismiss the reset handoff → close, refresh (status flips to
+  // FORCE_CHANGE_PASSWORD), and a subtle confirmation banner.
+  const handleResetHandoffDone = useCallback(async () => {
+    setResetHandoff(null);
+    await refetch();
+    showSuccess('Password reset.');
+  }, [refetch, showSuccess]);
 
   // Clear confirm error when dialogs close
   const handleDeleteCancel = useCallback(() => {
@@ -461,17 +469,40 @@ export default function UsersPage() {
       <ConfirmDialog
         open={!!resetUser}
         title={`Reset password for ${resetUser?.email ?? 'user'}?`}
-        description={
-          resetUser?.status === 'FORCE_CHANGE_PASSWORD'
-            ? "This user hasn't signed in yet. This will re-send their invitation with a new temporary password."
-            : 'This will email the user a password-reset code to set a new password.'
-        }
-        confirmLabel="Send reset email"
+        description="This generates a new temporary password to share with the user. Their current password stops working immediately, and they must set a new password at first sign-in."
+        confirmLabel="Reset password"
         onConfirm={handleResetConfirm}
         onCancel={handleResetCancel}
         loading={confirmLoading}
         error={confirmError}
       />
+
+      {/* Reset password handoff — shows the new temp password once */}
+      {resetHandoff && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-fg/40"
+            aria-hidden="true"
+            onClick={handleResetHandoffDone}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Password reset — share the new credentials"
+            className={[
+              'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
+              'rounded-md bg-surface p-6 shadow-md border border-border',
+            ].join(' ')}
+          >
+            <CredentialHandoff
+              email={resetHandoff.email}
+              temporaryPassword={resetHandoff.temporaryPassword}
+              title="Password reset — share the new credentials"
+              onDone={handleResetHandoffDone}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
