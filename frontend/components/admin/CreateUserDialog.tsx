@@ -23,6 +23,7 @@ import { useRouter } from 'next/navigation';
 import { createUser } from '@/lib/api/users';
 import { AuthFailureError } from '@/lib/api/client';
 import { RoleSelect, type RoleValue } from './RoleSelect';
+import { CredentialHandoff } from './CredentialHandoff';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +39,8 @@ interface CreateUserDialogProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const HANDOFF_TITLE = 'User created — share these credentials';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -67,6 +70,8 @@ export function CreateUserDialog({
   const [emailError,   setEmailError]   = useState<string | undefined>();
   const [submitError,  setSubmitError]  = useState<string | undefined>();
   const [loading,      setLoading]      = useState(false);
+  // Post-create handoff: the temp password is shown once before onSuccess fires.
+  const [created,      setCreated]      = useState<{ email: string; temporaryPassword: string } | null>(null);
 
   // Reset form state on open/close.
   useEffect(() => {
@@ -76,6 +81,7 @@ export function CreateUserDialog({
       setEmailError(undefined);
       setSubmitError(undefined);
       setLoading(false);
+      setCreated(null);
       // Focus first field after render.
       const id = requestAnimationFrame(() => emailRef.current?.focus());
       return () => cancelAnimationFrame(id);
@@ -88,7 +94,13 @@ export function CreateUserDialog({
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onCancel();
+        // In the handoff view, dismissing still refreshes the list.
+        if (created) {
+          setCreated(null);
+          onSuccess();
+        } else {
+          onCancel();
+        }
         return;
       }
       if (e.key !== 'Tab') return;
@@ -119,7 +131,7 @@ export function CreateUserDialog({
         }
       }
     },
-    [onCancel]
+    [onCancel, created, onSuccess]
   );
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -136,14 +148,17 @@ export function CreateUserDialog({
       setLoading(true);
 
       try {
-        await createUser(
+        const createdEmail = email.trim();
+        const result = await createUser(
           {
-            email: email.trim(),
+            email: createdEmail,
             ...(role !== 'none' ? { role } : {}),
           },
           token
         );
-        onSuccess();
+        // Switch to the handoff view — do NOT close yet; the temp password is
+        // shown once. onSuccess() fires only when the admin clicks Done.
+        setCreated({ email: createdEmail, temporaryPassword: result.temporaryPassword });
       } catch (caught: unknown) {
         if (caught instanceof AuthFailureError) {
           router.push('/login');
@@ -156,8 +171,26 @@ export function CreateUserDialog({
         setLoading(false);
       }
     },
-    [email, role, token, onSuccess, router]
+    [email, role, token, router]
   );
+
+  // ── Handoff done → refresh list + close ─────────────────────────────────────
+
+  const handleDone = useCallback(() => {
+    setCreated(null);
+    onSuccess();
+  }, [onSuccess]);
+
+  // Move focus into the handoff view when it appears (keyboard users land on Copy).
+  useEffect(() => {
+    if (!created) return;
+    const id = requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      const firstBtn = dialog?.querySelector<HTMLElement>('button');
+      firstBtn?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [created]);
 
   if (!open) return null;
 
@@ -167,7 +200,7 @@ export function CreateUserDialog({
       <div
         className="fixed inset-0 z-50 bg-fg/40"
         aria-hidden="true"
-        onClick={onCancel}
+        onClick={created ? handleDone : onCancel}
       />
 
       {/* Dialog panel */}
@@ -175,13 +208,23 @@ export function CreateUserDialog({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        aria-labelledby={created ? undefined : titleId}
+        aria-label={created ? HANDOFF_TITLE : undefined}
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
           'rounded-md bg-surface p-6 shadow-md border border-border',
         ].join(' ')}
       >
+        {created ? (
+          <CredentialHandoff
+            email={created.email}
+            temporaryPassword={created.temporaryPassword}
+            title={HANDOFF_TITLE}
+            onDone={handleDone}
+          />
+        ) : (
+        <>
         <h2
           id={titleId}
           className="text-base font-semibold text-fg"
@@ -283,6 +326,8 @@ export function CreateUserDialog({
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </>
   );

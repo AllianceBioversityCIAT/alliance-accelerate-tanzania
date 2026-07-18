@@ -78,13 +78,26 @@ export interface SetRoleInput {
   role: 'admin' | 'staff' | 'none';
 }
 
-/** Response for POST /api/v1/users/:id/password (design.md §5.1, FR-6). */
+/**
+ * Response for POST /api/v1/users (design.md §5.1, FR-3).
+ * The backend no longer emails the invitation — it RETURNS the temporary
+ * password once so the admin can share it out-of-band. Mirrors the backend
+ * union exactly: { user, temporaryPassword }.
+ */
+export interface CreateUserResult {
+  user: AdminUser;
+  /** One-time temporary password — display once, never persist/log. */
+  temporaryPassword: string;
+}
+
+/**
+ * Response for POST /api/v1/users/:id/password (design.md §5.1, FR-6).
+ * The backend no longer emails the reset — it RETURNS a new temporary
+ * password once so the admin can share it out-of-band.
+ */
 export interface ResetPasswordResult {
-  /**
-   * Which Cognito flow ran: 'RESET' = a reset email was sent to a signed-in user;
-   * 'REINVITE' = the invite was resent to a user who never signed in.
-   */
-  action: 'RESET' | 'REINVITE';
+  /** One-time temporary password — display once, never persist/log. */
+  temporaryPassword: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -128,15 +141,17 @@ export async function getUser(id: string, token: string): Promise<AdminUser> {
 
 /**
  * POST /api/v1/users
- * Creates a new Cognito user, optionally assigns a role group, and triggers
- * the Cognito invitation email (FR-3). Returns 409 if email already exists.
- * Throws wrapped Error on 400/409; AuthFailureError on 401.
+ * Creates a new Cognito user and optionally assigns a role group (FR-3).
+ * Returns 201 { user, temporaryPassword } — the temporary password is shown
+ * once to the admin to share out-of-band (no invitation email is sent).
+ * Returns 409 if email already exists. Throws wrapped Error on 400/409;
+ * AuthFailureError on 401.
  *
  * @param input  { email, role? }
  * @param token  Cognito access token from the caller's session.
  */
-export async function createUser(input: CreateUserInput, token: string): Promise<AdminUser> {
-  return apiFetch<AdminUser>(BASE, { method: 'POST', token, body: input });
+export async function createUser(input: CreateUserInput, token: string): Promise<CreateUserResult> {
+  return apiFetch<CreateUserResult>(BASE, { method: 'POST', token, body: input });
 }
 
 /**
@@ -202,10 +217,9 @@ export async function deleteUser(id: string, token: string): Promise<void> {
 
 /**
  * POST /api/v1/users/:id/password
- * Triggers the Cognito reset/re-invite flow — Cognito emails the user (FR-7).
- * Returns { action } on success (HTTP 200): 'RESET' = reset email sent to a
- * signed-in user; 'REINVITE' = invite resent to a never-signed-in user.
- * No plaintext password is involved. Throws on 404 / 401.
+ * Resets the user's password (FR-7). Returns 200 { temporaryPassword } — a new
+ * one-time temporary password the admin shares out-of-band. The user must set a
+ * new password at first sign-in. No email is sent. Throws on 404 / 401.
  *
  * @param id     Cognito Username (uuid == JWT sub).
  * @param token  Cognito access token from the caller's session.

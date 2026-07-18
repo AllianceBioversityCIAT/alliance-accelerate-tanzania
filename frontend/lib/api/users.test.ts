@@ -7,7 +7,8 @@
  *   - Bearer token is attached as Authorization: Bearer <token>
  *   - Correct JSON body is sent for POST/PATCH operations
  *   - deleteUser handles 204 (return void / undefined)
- *   - resetUserPassword returns the typed { action } body on 200
+ *   - createUser returns the typed { user, temporaryPassword } body on 201
+ *   - resetUserPassword returns the typed { temporaryPassword } body on 200
  *   - Any function throws AuthFailureError on a 401 response
  */
 
@@ -210,8 +211,10 @@ describe('getUser()', () => {
 // ---------------------------------------------------------------------------
 
 describe('createUser()', () => {
+  const CREATE_RESULT = { user: ADMIN_USER, temporaryPassword: 'Temp!Pass-01' };
+
   it('hits POST /api/v1/users', async () => {
-    global.fetch = makeFetchOk(ADMIN_USER, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createUser({ email: 'alice@example.com', role: 'admin' }, TOKEN);
 
@@ -220,7 +223,7 @@ describe('createUser()', () => {
   });
 
   it('attaches Authorization: Bearer <token>', async () => {
-    global.fetch = makeFetchOk(ADMIN_USER, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createUser({ email: 'alice@example.com' }, TOKEN);
 
@@ -229,7 +232,7 @@ describe('createUser()', () => {
   });
 
   it('sends the correct JSON body', async () => {
-    global.fetch = makeFetchOk(ADMIN_USER, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createUser({ email: 'alice@example.com', role: 'staff' }, TOKEN);
 
@@ -238,12 +241,21 @@ describe('createUser()', () => {
   });
 
   it('sends Content-Type: application/json', async () => {
-    global.fetch = makeFetchOk(ADMIN_USER, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createUser({ email: 'alice@example.com' }, TOKEN);
 
     const headers = callInit().headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
+  });
+
+  it('resolves to { user, temporaryPassword } on a 201 body', async () => {
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
+
+    const result = await createUser({ email: 'alice@example.com' }, TOKEN);
+
+    expect(result).toEqual(CREATE_RESULT);
+    expect(result.temporaryPassword).toBe('Temp!Pass-01');
   });
 
   it('throws AuthFailureError on 401', async () => {
@@ -370,12 +382,12 @@ describe('deleteUser()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resetUserPassword — 200 { action } (design.md §5.1, FR-6)
+// resetUserPassword — 200 { temporaryPassword } (design.md §5.1, FR-6)
 // ---------------------------------------------------------------------------
 
 describe('resetUserPassword()', () => {
   it('hits POST /api/v1/users/:id/password', async () => {
-    global.fetch = makeFetchOk({ action: 'RESET' });
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -384,7 +396,7 @@ describe('resetUserPassword()', () => {
   });
 
   it('attaches Authorization: Bearer <token>', async () => {
-    global.fetch = makeFetchOk({ action: 'RESET' });
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -392,20 +404,12 @@ describe('resetUserPassword()', () => {
     expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('resolves to { action: "RESET" } on a 200 body', async () => {
-    global.fetch = makeFetchOk({ action: 'RESET' });
+  it('resolves to { temporaryPassword } on a 200 body', async () => {
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
 
     const result = await resetUserPassword(USER_ID, TOKEN);
 
-    expect(result).toEqual({ action: 'RESET' });
-  });
-
-  it('resolves to { action: "REINVITE" } on a 200 body', async () => {
-    global.fetch = makeFetchOk({ action: 'REINVITE' });
-
-    const result = await resetUserPassword(USER_ID, TOKEN);
-
-    expect(result).toEqual({ action: 'REINVITE' });
+    expect(result).toEqual({ temporaryPassword: 'Temp!Pass-02' });
   });
 
   it('throws AuthFailureError on 401', async () => {
