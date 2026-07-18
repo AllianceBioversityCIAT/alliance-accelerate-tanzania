@@ -64,12 +64,26 @@ Parameters:
     Default: "https://d3idqvvg0xa1r7.cloudfront.net"
     Description: >-
       Admin portal base URL used in the invitation email CTA (/login is appended).
+  CreateSenderIdentity:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Whether CloudFormation creates/owns the SES email-address identity for
+      SenderEmail. Set "false" when the identity is managed OUTSIDE this stack
+      (verified out-of-band, or a domain/DKIM identity) so CFN doesn't try to
+      re-create an existing identity (which fails with AlreadyExists). The
+      DEVELOPER EmailConfiguration still references the identity by ARN.
 
 # ── Conditions — gate the SES identity (Phase A) and the DEVELOPER switch
 #    (Phase B). The two-gate split enables the verify-then-configure rollout. ──
 Conditions:
-  # SenderEmail provided → create the SES identity (Phase A).
+  # SenderEmail provided → the identity exists (managed here or out-of-band).
   HasSender: !Not [!Equals [!Ref SenderEmail, ""]]
+  # Create the SES identity in THIS stack only when asked (Phase A, default).
+  MakeSenderIdentity: !And
+    - !Condition HasSender
+    - !Equals [!Ref CreateSenderIdentity, "true"]
   # Sender provided AND sending explicitly enabled → DEVELOPER email config (Phase B).
   UseSes: !And
     - !Condition HasSender
@@ -181,7 +195,7 @@ Resources:
   # `aws ses put-identity-policy` (see ses-cognito-send-policy.json + runbook).
   SesSenderIdentity:
     Type: AWS::SES::EmailIdentity
-    Condition: HasSender
+    Condition: MakeSenderIdentity
     Properties:
       EmailIdentity: !Ref SenderEmail
 
