@@ -21,6 +21,21 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 - Guard stack: `JwtAuthGuard` + `RolesGuard` + `@Roles('Admin')` class-level on admin controllers. The access token carries only `sub` — the acting admin's email is resolved server-side via `actors/acting-admin.resolver.ts` (Cognito ListUsers, cached per container, null on failure). **Never trust client-sent identity.**
 - Audit: every admin write creates `ActorAuditLog` rows **inside the same `$transaction`** via `actor-audit.service.ts` (diff for updates — empty diff writes no row; snapshots for create/delete/import; bulk ops batch with `createMany`). Audit JSON contains PII → admin-only surface.
 
+## Users module — no-email credential handoff (intentional)
+
+- `users` create/reset deliberately do **NOT** send Cognito email (corporate
+  `@cgiar.org` deliverability + SES sandbox limits). Instead they SUPPRESS Cognito
+  mail and **return a one-time temporary password** for the admin to share
+  out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
+  `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
+  `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a
+  deliberate exception to "never return a plaintext password" — do **not** revert
+  it to email. The temp password (`users/temp-password.util.ts`, CSPRNG) must
+  never be logged/stored/audited; it exits only via the Admin-guarded response.
+- The Cognito pool is **case-sensitive** (immutable `UsernameConfiguration`) — the
+  write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
+  sign-in/reset. Keep new email inputs normalized.
+
 ## Testing conventions
 
 - Jest `testRegex` accepts `.spec.ts` AND `.e2e-spec.ts`; the **canonical e2e name is `*.e2e.spec.ts`** (a hyphen-named file once sat dead for weeks — see archived `bugfix/dead-e2e-tests`).

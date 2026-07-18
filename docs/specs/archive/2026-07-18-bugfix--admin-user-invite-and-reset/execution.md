@@ -94,3 +94,29 @@
 - **Turn-key operator helper added:** `infra/10-data-auth/t9-enable-ses.sh <sender-email>` — resolves account id / pool ARN / VpcId / DevCidr live, runs Phase A deploy, pauses for the human verification-link click, attaches the `cognito-send` policy (substituting the JSON placeholders into a temp file), then Phase B deploy. Forces `--profile IBD-DEV` / eu-west-1; idempotent; `bash -n` clean.
 - **OQ-1 answered (2026-07-16):** a generic/Cognito address canNOT be the sender — SES DEVELOPER mode only sends from an identity the team verifies ownership of (SES emails a link to that address; someone must click it). Recommend a team-controlled shared/role mailbox, ideally on `cgiar.org` for deliverability. Still the user's decision; not hardcoded.
 - Awaiting: the user picks the sender address, then runs `t9-enable-ses.sh` (or the manual `infra/README.md` §6 steps).
+
+### T-9 OPERATOR — SES enablement + deploy — ✅ DONE — 2026-07-18
+- SES DEVELOPER mode enabled on pool `eu-west-1_eKINGUN3I`, sender
+  `j.cadavid@cgiar.org` (verified out-of-band + `cognito-send` identity policy).
+  `noreply@cgiar.org` proved unverifiable (unmonitored mailbox). Template gained a
+  `CreateSenderIdentity` param (PR #44) so CFN references an externally-managed
+  identity instead of re-creating it (AlreadyExists). Backend (set-cors.sh) +
+  frontend deployed; API health + branded invite template verified live; a direct
+  SES send to the verified inbox confirmed delivery.
+
+## Supersession Note — 2026-07-18
+After deploy, corporate `@cgiar.org` (Microsoft 365) email deliverability + SES
+sandbox limits made email an unreliable channel. The team pivoted to a **no-email
+admin credential handoff** (separate feature `feature/admin-credential-handoff`,
+PR #45), which SUPERSEDES parts of this spec:
+- **Create:** now `AdminCreateUser MessageAction: SUPPRESS` + a returned temp
+  password (was: email invite via `DesiredDeliveryMediums`).
+- **Reset (T-1/T-3/T-4/T-5):** the status-aware `{ action: RESET|REINVITE }`
+  design was REPLACED by `AdminSetUserPassword(Permanent:false)` returning
+  `{ temporaryPassword }`, shown once in the admin UI (`CredentialHandoff`).
+- **Still live from this spec:** the branded Cognito email templates + SES config
+  (T-6), now used only by the self-service `/forgot-password` flow; the narrowed
+  Cognito error mapping (T-2); the two-phase SES runbook (T-7).
+The spec's headline goals — reset no longer 500s, users obtain working
+credentials, emails (where used) are branded — are met. Related follow-ups
+delivered separately: email-case normalization (PR #43).
