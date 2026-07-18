@@ -143,7 +143,12 @@
         static-export violation).
       Skills: nestjs-expert, vercel-react-best-practices
 
-- [ ] T-9 OPERATOR: enable SES, deploy, live smoke  (deps: T-6, T-7, T-8)
+- [x] T-9 OPERATOR: enable SES, deploy, live smoke  (deps: T-6, T-7, T-8)
+      DONE 2026-07-18: SES DEVELOPER enabled (sender j.cadavid@cgiar.org verified +
+      cognito-send policy; template `CreateSenderIdentity` param added for the
+      out-of-band identity). Backend + frontend deployed. See SUPERSESSION note in
+      execution.md — the invite/reset EMAIL path was subsequently replaced by a
+      no-email credential handoff (PR #45) due to corporate deliverability limits.
       Scope: OPERATOR-run (holds IBD-DEV creds; not the agent loop). Execute the
         two-phase rollout (design §7.2): Phase A deploy + verify sender + attach
         authorization policy; Phase B redeploy `EnableSesSending=true`; then
