@@ -10,8 +10,9 @@
  * `beforeAll` so `getUserPoolId()` / the lazy client construction succeed.
  *
  * Coverage focus:
- *  - command shape: `AdminCreateUserCommand` (DesiredDeliveryMediums ['EMAIL'])
- *    + group add; `setRole` clears both groups then adds; `resetPassword`.
+ *  - command shape: `AdminCreateUserCommand` (MessageAction 'SUPPRESS' + a
+ *    generated TemporaryPassword, NO email) + group add; `setRole` clears both
+ *    groups then adds; `resetPassword` (`AdminSetUserPassword`, Permanent:false).
  *  - self-lockout (FR-8): demote/delete self → 409 with NO Cognito command;
  *    promoting self to `admin` is allowed.
  *  - no-leak (FR-10): serialized keys are EXACTLY the AdminUser allowlist.
@@ -27,6 +28,7 @@ import {
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
   AdminResetUserPasswordCommand,
+  AdminSetUserPasswordCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -42,6 +44,17 @@ function cognitoError(name: string): Error {
   const err = new Error(name);
   err.name = name;
   return err;
+}
+
+/** Assert a temporary password satisfies the pool policy (>=12, all 4 classes). */
+function expectPolicyValid(pw: unknown): void {
+  expect(typeof pw).toBe('string');
+  const password = pw as string;
+  expect(password.length).toBeGreaterThanOrEqual(12);
+  expect(password).toMatch(/[A-Z]/);
+  expect(password).toMatch(/[a-z]/);
+  expect(password).toMatch(/[0-9]/);
+  expect(password).toMatch(/[!@#$%*?\-_]/);
 }
 
 describe('UsersService (mocked Cognito)', () => {
@@ -91,26 +104,34 @@ describe('UsersService (mocked Cognito)', () => {
     });
   });
 
-  // ── FR-3: create ───────────────────────────────────────────────────────
+  // ── FR-3: create (no-email admin-mediated handoff) ────────────────────────
   describe('create (FR-3)', () => {
-    it('sends AdminCreateUser with DesiredDeliveryMediums ["EMAIL"] and adds to group when role given', async () => {
+    it('sends AdminCreateUser with MessageAction "SUPPRESS" + a temp password (NO email) and adds to group when role given', async () => {
       cognitoMock
         .on(AdminCreateUserCommand)
         .resolves({ User: { Username: 'new@example.com' } });
       cognitoMock.on(AdminAddUserToGroupCommand).resolves({});
 
-      const user = await service.create({
+      const result = await service.create({
         email: 'new@example.com',
         role: 'staff',
       } as never);
 
       const createCalls = cognitoMock.commandCalls(AdminCreateUserCommand);
       expect(createCalls).toHaveLength(1);
-      expect(createCalls[0].args[0].input).toMatchObject({
+      const input = createCalls[0].args[0].input;
+      expect(input).toMatchObject({
         UserPoolId: 'us-east-1_TESTPOOL',
         Username: 'new@example.com',
-        DesiredDeliveryMediums: ['EMAIL'],
+        MessageAction: 'SUPPRESS',
       });
+      // No email is ever requested.
+      expect(input.DesiredDeliveryMediums).toBeUndefined();
+      // A policy-valid temporary password is supplied to Cognito.
+      expectPolicyValid(input.TemporaryPassword);
+      // ...and returned to the admin for out-of-band handoff, matching Cognito's.
+      expectPolicyValid(result.temporaryPassword);
+      expect(result.temporaryPassword).toBe(input.TemporaryPassword);
 
       const addCalls = cognitoMock.commandCalls(AdminAddUserToGroupCommand);
       expect(addCalls).toHaveLength(1);
@@ -118,7 +139,7 @@ describe('UsersService (mocked Cognito)', () => {
         GroupName: 'staff',
         Username: 'new@example.com',
       });
-      expect(user.roles).toEqual(['staff']);
+      expect(result.user.roles).toEqual(['staff']);
     });
 
     it('does NOT add to any group when no role is supplied', async () => {
@@ -126,12 +147,15 @@ describe('UsersService (mocked Cognito)', () => {
         .on(AdminCreateUserCommand)
         .resolves({ User: { Username: 'plain@example.com' } });
 
-      const user = await service.create({ email: 'plain@example.com' } as never);
+      const result = await service.create({
+        email: 'plain@example.com',
+      } as never);
 
       expect(cognitoMock.commandCalls(AdminAddUserToGroupCommand)).toHaveLength(
         0,
       );
-      expect(user.roles).toEqual([]);
+      expect(result.user.roles).toEqual([]);
+      expectPolicyValid(result.temporaryPassword);
     });
 
     // ── Error mapping (NFR-4): UsernameExists → 409 ──────────────────────
@@ -252,49 +276,44 @@ describe('UsersService (mocked Cognito)', () => {
     });
   });
 
-  // ── FR-7: resetPassword (status-aware) ────────────────────────────────────
+  // ── FR-7: resetPassword (no-email admin-mediated handoff) ─────────────────
   describe('resetPassword (FR-7)', () => {
-    it('resets a CONFIRMED user via AdminResetUserPassword and returns { action: "RESET" }', async () => {
-      cognitoMock
-        .on(AdminGetUserCommand)
-        .resolves({ UserStatus: 'CONFIRMED' });
-      cognitoMock.on(AdminResetUserPasswordCommand).resolves({});
+    it('sets a temp password via AdminSetUserPassword (Permanent:false) and returns { temporaryPassword }', async () => {
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
 
       const result = await service.resetPassword('some-sub');
 
-      expect(result).toEqual({ action: 'RESET' });
-      const calls = cognitoMock.commandCalls(AdminResetUserPasswordCommand);
+      expectPolicyValid(result.temporaryPassword);
+      const calls = cognitoMock.commandCalls(AdminSetUserPasswordCommand);
       expect(calls).toHaveLength(1);
-      expect(calls[0].args[0].input).toMatchObject({
+      const input = calls[0].args[0].input;
+      expect(input).toMatchObject({
         UserPoolId: 'us-east-1_TESTPOOL',
         Username: 'some-sub',
+        Permanent: false,
       });
-      // A never-signed-in re-invite must NOT be issued for a CONFIRMED user.
-      expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
-    });
+      // The password sent to Cognito is exactly the one handed back to the admin.
+      expect(input.Password).toBe(result.temporaryPassword);
 
-    it('re-invites a FORCE_CHANGE_PASSWORD user via AdminCreateUser RESEND and returns { action: "REINVITE" }', async () => {
-      cognitoMock
-        .on(AdminGetUserCommand)
-        .resolves({ UserStatus: 'FORCE_CHANGE_PASSWORD' });
-      cognitoMock.on(AdminCreateUserCommand).resolves({});
-
-      const result = await service.resetPassword('sub-uuid-123');
-
-      expect(result).toEqual({ action: 'REINVITE' });
-      const calls = cognitoMock.commandCalls(AdminCreateUserCommand);
-      expect(calls).toHaveLength(1);
-      expect(calls[0].args[0].input).toMatchObject({
-        UserPoolId: 'us-east-1_TESTPOOL',
-        MessageAction: 'RESEND',
-        DesiredDeliveryMediums: ['EMAIL'],
-      });
-      // Username MUST be the passed id (sub/UUID), never the email alias.
-      expect(calls[0].args[0].input.Username).toBe('sub-uuid-123');
-      // No password reset is triggered for a never-signed-in user.
+      // The old email-based / re-invite paths are gone: neither is issued.
       expect(
         cognitoMock.commandCalls(AdminResetUserPasswordCommand),
       ).toHaveLength(0);
+      expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
+    });
+
+    it('works without reading user status first (no AdminGetUser precondition)', async () => {
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+
+      await service.resetPassword('sub-uuid-123');
+
+      // No status probe: the single set-password call covers both
+      // CONFIRMED and FORCE_CHANGE_PASSWORD users.
+      expect(cognitoMock.commandCalls(AdminGetUserCommand)).toHaveLength(0);
+      const calls = cognitoMock.commandCalls(AdminSetUserPasswordCommand);
+      expect(calls).toHaveLength(1);
+      // Username MUST be the passed id (sub/UUID), never an email alias.
+      expect(calls[0].args[0].input.Username).toBe('sub-uuid-123');
     });
   });
 

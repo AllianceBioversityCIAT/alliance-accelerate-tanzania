@@ -19,6 +19,7 @@ import { AuthUser } from '../auth/auth.types';
 import {
   UsersService,
   ListUsersResult,
+  CreateUserResult,
   ResetPasswordResult,
 } from './users.service';
 import { AdminUser } from './users.serializer';
@@ -56,10 +57,14 @@ export class UsersController {
     return this.usersService.get(id);
   }
 
-  /** `POST /api/v1/users` — create a user (Cognito email invite) (FR-3). */
+  /**
+   * `POST /api/v1/users` — create a user (FR-3). No email is sent; the response
+   * body carries the created user plus the one-time temporary password for the
+   * admin to share out-of-band (`CreateUserResult`). Admin-only route.
+   */
   @Post()
   @HttpCode(201)
-  create(@Body() dto: CreateUserDto): Promise<AdminUser> {
+  create(@Body() dto: CreateUserDto): Promise<CreateUserResult> {
     return this.usersService.create(dto);
   }
 
@@ -101,12 +106,11 @@ export class UsersController {
   }
 
   /**
-   * `POST /api/v1/users/:id/password` — trigger a status-aware password reset
-   * (FR-7). Returns HTTP 200 with `{ action }`, where the service resolves the
-   * action from the target's Cognito status: `'RESET'` (email-based reset for a
-   * signed-in user) or `'REINVITE'` (invite resent to a never-signed-in user).
-   * `@HttpCode(200)` is explicit — a bare `@Post` would default to 201. No
-   * plaintext password is taken or returned.
+   * `POST /api/v1/users/:id/password` — reset a user's password (FR-7). No email
+   * is sent; returns HTTP 200 with `{ temporaryPassword }` — a one-time secret
+   * for the admin to share out-of-band. The user is moved to
+   * `FORCE_CHANGE_PASSWORD` and must change it at next sign-in. `@HttpCode(200)`
+   * is explicit — a bare `@Post` would default to 201. Admin-only route.
    */
   @Post(':id/password')
   @HttpCode(200)

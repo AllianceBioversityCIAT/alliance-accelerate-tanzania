@@ -10,9 +10,12 @@
  * enforced BEFORE any Cognito call in `setRole`/`remove`, and those
  * `HttpException`s are rethrown unchanged rather than mapped.
  *
- * No plaintext password is ever sent, returned, or logged — `create` relies on
- * Cognito's email invite (`DesiredDeliveryMediums: ['EMAIL']`, FR-3/OQ-4) and
- * `resetPassword` uses the email-based `AdminResetUserPassword` (OQ-2).
+ * Credential handoff is admin-mediated, NOT email-based: recipients are
+ * corporate @cgiar.org inboxes with poor deliverability, so `create` and
+ * `resetPassword` suppress all Cognito email, generate a temporary password, and
+ * RETURN it once for the admin to share out-of-band. That returned value is a
+ * secret — it is never logged, stored, or placed in an error message; it exits
+ * ONLY through the Admin-guarded HTTP response body.
  *
  * Design refs: design.md §3 (API/Cognito map), §4 (service), §6 (no leakage,
  * anti-lockout). Requirements: FR-1..FR-8, FR-10.
@@ -28,7 +31,7 @@ import {
   AdminGetUserCommand,
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
-  AdminResetUserPasswordCommand,
+  AdminSetUserPasswordCommand,
   AdminUpdateUserAttributesCommand,
   ListUsersCommand,
   type UserType,
@@ -39,6 +42,7 @@ import {
   getUserPoolId,
 } from './cognito-admin.client';
 import { mapCognitoError } from './cognito-error.mapper';
+import { generateTemporaryPassword } from './temp-password.util';
 import { AdminUser, toAdminUser } from './users.serializer';
 import { ASSIGNABLE_ROLES, SettableRole } from './users.constants';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -52,11 +56,22 @@ export interface ListUsersResult {
 }
 
 /**
- * Outcome of {@link UsersService.resetPassword}: `REINVITE` when the invite was
- * resent to a never-signed-in user, `RESET` when a password reset was triggered.
+ * Result of {@link UsersService.create}: the serialized user plus the one-time
+ * temporary password the admin shares out-of-band. The password is a secret and
+ * is returned ONLY in the Admin-guarded create response body.
+ */
+export interface CreateUserResult {
+  user: AdminUser;
+  temporaryPassword: string;
+}
+
+/**
+ * Result of {@link UsersService.resetPassword}: the one-time temporary password
+ * the admin shares out-of-band. The password is a secret and is returned ONLY in
+ * the Admin-guarded reset response body.
  */
 export interface ResetPasswordResult {
-  action: 'RESET' | 'REINVITE';
+  temporaryPassword: string;
 }
 
 @Injectable()
@@ -130,16 +145,23 @@ export class UsersService {
   }
 
   /**
-   * FR-3 — create a user. Cognito emails the invite
-   * (`DesiredDeliveryMediums: ['EMAIL']`, no admin plaintext); email is
-   * pre-verified so the account is immediately usable. When a role is supplied,
-   * the user is added to that group. The created user is serialized directly
-   * with `roles = [dto.role]` (or `[]`).
+   * FR-3 — create a user with an admin-mediated credential handoff (no email).
+   * A cryptographically-random temporary password is generated and passed to
+   * `AdminCreateUser` with `MessageAction: 'SUPPRESS'`, so Cognito sends NO
+   * invite email (recipients are @cgiar.org inboxes with poor deliverability).
+   * The email attribute is pre-verified so the account is immediately usable.
+   * The user is left in `FORCE_CHANGE_PASSWORD` and must change the password at
+   * first sign-in. When a role is supplied, the user is added to that group.
+   * Returns the serialized user plus the temporary password for the admin to
+   * share out-of-band — that password is a secret and is returned only here,
+   * never logged or stored.
    */
-  async create(dto: CreateUserDto): Promise<AdminUser> {
+  async create(dto: CreateUserDto): Promise<CreateUserResult> {
     try {
       const client = getCognitoAdminClient();
       const UserPoolId = getUserPoolId();
+
+      const temporaryPassword = generateTemporaryPassword();
 
       const created = await client.send(
         new AdminCreateUserCommand({
@@ -149,7 +171,8 @@ export class UsersService {
             { Name: 'email', Value: dto.email },
             { Name: 'email_verified', Value: 'true' },
           ],
-          DesiredDeliveryMediums: ['EMAIL'],
+          TemporaryPassword: temporaryPassword,
+          MessageAction: 'SUPPRESS',
         }),
       );
 
@@ -165,7 +188,7 @@ export class UsersService {
         groups.push(dto.role);
       }
 
-      return toAdminUser(created.User ?? {}, groups);
+      return { user: toAdminUser(created.User ?? {}, groups), temporaryPassword };
     } catch (err) {
       mapCognitoError(err);
     }
@@ -267,40 +290,32 @@ export class UsersService {
   }
 
   /**
-   * FR-7 — status-aware password reset / re-invite. First reads the user's
-   * `UserStatus` (`AdminGetUser`) using the route-param id (sub/UUID), then:
-   *  - `FORCE_CHANGE_PASSWORD` (never signed in): resends the Cognito invite via
-   *    `AdminCreateUser` with `MessageAction: 'RESEND'` (Username = the same
-   *    validated id, never the email alias) → `{ action: 'REINVITE' }`.
-   *  - otherwise (`CONFIRMED` / `RESET_REQUIRED` / default): triggers the
-   *    email-based `AdminResetUserPassword` → `{ action: 'RESET' }`.
-   * No plaintext password is generated, returned, or logged (NFR-1).
+   * FR-7 — reset a user's password via an admin-mediated handoff (no email). A
+   * cryptographically-random temporary password is generated and applied with
+   * `AdminSetUserPassword` (`Permanent: false`), which moves the user to
+   * `FORCE_CHANGE_PASSWORD` regardless of their prior state (works for both
+   * `CONFIRMED` and never-signed-in users), so they must change it at next
+   * sign-in. Cognito sends NO email; the temporary password is returned once for
+   * the admin to share out-of-band. That password is a secret — returned only
+   * here, never logged or stored.
    */
   async resetPassword(id: string): Promise<ResetPasswordResult> {
     try {
       const client = getCognitoAdminClient();
       const UserPoolId = getUserPoolId();
 
-      const detail = await client.send(
-        new AdminGetUserCommand({ UserPoolId, Username: id }),
-      );
-
-      if (detail.UserStatus === 'FORCE_CHANGE_PASSWORD') {
-        await client.send(
-          new AdminCreateUserCommand({
-            UserPoolId,
-            Username: id,
-            MessageAction: 'RESEND',
-            DesiredDeliveryMediums: ['EMAIL'],
-          }),
-        );
-        return { action: 'REINVITE' };
-      }
+      const temporaryPassword = generateTemporaryPassword();
 
       await client.send(
-        new AdminResetUserPasswordCommand({ UserPoolId, Username: id }),
+        new AdminSetUserPasswordCommand({
+          UserPoolId,
+          Username: id,
+          Password: temporaryPassword,
+          Permanent: false,
+        }),
       );
-      return { action: 'RESET' };
+
+      return { temporaryPassword };
     } catch (err) {
       mapCognitoError(err);
     }

@@ -62,11 +62,16 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
   const usersServiceMock: Partial<Record<keyof UsersService, jest.Mock>> = {
     list: jest.fn().mockResolvedValue({ users: [], paginationToken: undefined }),
     get: jest.fn().mockResolvedValue({ id: 'x' }),
-    create: jest.fn().mockResolvedValue({ id: 'created' }),
+    create: jest.fn().mockResolvedValue({
+      user: { id: 'created' },
+      temporaryPassword: 'Temp-Pass-16chars',
+    }),
     update: jest.fn().mockResolvedValue({ id: 'x' }),
     setRole: jest.fn().mockResolvedValue({ id: 'x' }),
     remove: jest.fn().mockResolvedValue(undefined),
-    resetPassword: jest.fn().mockResolvedValue({ action: 'RESET' }),
+    resetPassword: jest
+      .fn()
+      .mockResolvedValue({ temporaryPassword: 'Temp-Pass-16chars' }),
   };
 
   beforeAll(async () => {
@@ -161,13 +166,16 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
         .expect(403);
     });
 
-    it('201 for authenticated Admin', async () => {
-      await request(app.getHttpServer())
+    it('201 for authenticated Admin with a { user, temporaryPassword } body', async () => {
+      const res = await request(app.getHttpServer())
         .post('/api/v1/users')
         .set('Authorization', bearer('Admin'))
         .send(body)
         .expect(201);
       expect(usersServiceMock.create).toHaveBeenCalled();
+      expect(res.body).toHaveProperty('user');
+      expect(res.body).toHaveProperty('temporaryPassword');
+      expect(typeof res.body.temporaryPassword).toBe('string');
     });
   });
 
@@ -202,8 +210,8 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
   });
 
   // FR-7 reset (POST :id/password) — same class-level guard, but unlike the
-  // other writes it returns 200 with a `{ action }` body (design §3, §4.3), so
-  // it also asserts the status/body contract, not just RBAC.
+  // other writes it returns 200 with a `{ temporaryPassword }` body (no-email
+  // admin-mediated handoff), so it also asserts the status/body contract.
   describe('POST /api/v1/users/:id/password', () => {
     it('401 without a token', async () => {
       await request(app.getHttpServer())
@@ -225,24 +233,13 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
         .expect(403);
     });
 
-    it('200 with { action: "RESET" } for authenticated Admin', async () => {
+    it('200 with { temporaryPassword } for authenticated Admin', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/users/some-id/password')
         .set('Authorization', bearer('Admin'))
         .expect(200);
-      expect(res.body).toEqual({ action: 'RESET' });
+      expect(res.body).toEqual({ temporaryPassword: 'Temp-Pass-16chars' });
       expect(usersServiceMock.resetPassword).toHaveBeenCalledWith('some-id');
-    });
-
-    it('200 with { action: "REINVITE" } when the service re-invites', async () => {
-      usersServiceMock.resetPassword!.mockResolvedValueOnce({
-        action: 'REINVITE',
-      });
-      const res = await request(app.getHttpServer())
-        .post('/api/v1/users/never-signed-in/password')
-        .set('Authorization', bearer('Admin'))
-        .expect(200);
-      expect(res.body).toEqual({ action: 'REINVITE' });
     });
   });
 });
