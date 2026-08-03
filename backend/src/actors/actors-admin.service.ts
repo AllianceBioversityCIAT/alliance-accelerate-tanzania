@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConsentStatus, Prisma } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
@@ -14,6 +14,8 @@ import { AdminActor, toAdminActor } from './admin-actor.serializer';
 import { AuditEntry, toAuditEntry } from './audit-entry.serializer';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import { ActorAuditService, ActingAdmin } from './actor-audit.service';
+import { FieldErrorDetail } from '../common/validation-pipe';
+import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -74,6 +76,10 @@ const SCALAR_FIELDS = [
   'gpsAltitude',
   'gpsAccuracy',
   'consentStatus',
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
 ] as const;
 
 @Injectable()
@@ -138,6 +144,13 @@ export class ActorsAdminService {
       throw new BadRequestException(
         'Consent acknowledgement is required to set status to GRANTED',
       );
+    }
+
+    // FR-3/NFR-7 — the shared provenance invariant, a gate INDEPENDENT of
+    // `acknowledged` (DD-2): a create has no stored actor, so `stored` is
+    // `null` and the predicate evaluates the payload on its own.
+    if (!isConsentProvenanceSatisfied(null, dto)) {
+      throw this.buildProvenanceError(dto.consentMethod, dto.consentObtainedAt ?? null);
     }
 
     const acting = await this.resolveActing(actingSub);
@@ -226,6 +239,19 @@ export class ActorsAdminService {
           throw new BadRequestException(
             'Consent acknowledgement is required to set status to GRANTED',
           );
+        }
+
+        // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
+        // STORED row loaded above (design.md §4.1's concurrency assumption:
+        // read-then-decide inside this same transaction). Independent of the
+        // `acknowledged` check above (DD-2) — both must pass.
+        if (!isConsentProvenanceSatisfied(before, dto)) {
+          const effectiveMethod = dto.consentMethod ?? before.consentMethod;
+          const effectiveObtainedAt =
+            dto.consentObtainedAt !== undefined
+              ? dto.consentObtainedAt
+              : (before.consentObtainedAt ?? null);
+          throw this.buildProvenanceError(effectiveMethod, effectiveObtainedAt);
         }
 
         const updateData = this.buildScalarData(dto);
@@ -434,6 +460,41 @@ export class ActorsAdminService {
     );
 
     return result;
+  }
+
+  /**
+   * Build the field-level 400 for a write that fails the FR-3 provenance
+   * invariant (`isConsentProvenanceSatisfied` returned `false`). Matches the
+   * project's standard error envelope (`createValidationPipe()`'s
+   * `{ statusCode, error, message, details: [{ field, message }] }`) so the
+   * admin form's existing inline field-error mapping applies unchanged
+   * (design.md §3) — this is a hand-built instance of that same envelope
+   * rather than a differently-shaped ad hoc error.
+   */
+  private buildProvenanceError(
+    effectiveMethod: string | undefined,
+    effectiveObtainedAt: Date | string | null | undefined,
+  ): BadRequestException {
+    const details: FieldErrorDetail[] = [];
+    if (!effectiveMethod || effectiveMethod === ConsentMethod.NOT_RECORDED) {
+      details.push({
+        field: 'consentMethod',
+        message:
+          'consentMethod must be recorded (not NOT_RECORDED) when consentStatus is GRANTED',
+      });
+    }
+    if (effectiveObtainedAt === null || effectiveObtainedAt === undefined) {
+      details.push({
+        field: 'consentObtainedAt',
+        message: 'consentObtainedAt is required when consentStatus is GRANTED',
+      });
+    }
+    return new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: 'Consent provenance is required to set status to GRANTED',
+      details,
+    });
   }
 
   /** Resolve the acting Admin email and package it with the verified sub. */

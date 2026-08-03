@@ -36,6 +36,14 @@ export interface AdminActor {
   gpsAltitude: number | null;
   gpsAccuracy: number | null;
   consentStatus: string;
+  /** T-3 — which track produced this record (FR-1). */
+  registrationSource: string;
+  /** T-3 — how consent was obtained (FR-2). */
+  consentMethod: string;
+  /** T-3 — date consent was obtained (FR-2); `null` when never recorded. */
+  consentObtainedAt: Date | null;
+  /** T-3 — free-text pointer to the consent evidence (FR-2); optional. */
+  consentReference: string | null;
   crops: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +69,10 @@ interface AdminActorInput {
   gpsAltitude?: Prisma.Decimal | number | string | null;
   gpsAccuracy?: Prisma.Decimal | number | string | null;
   consentStatus: string;
+  registrationSource: string;
+  consentMethod: string;
+  consentObtainedAt?: Date | null;
+  consentReference?: string | null;
   crops?: SerializableCropLink[] | null;
   createdAt: Date;
   updatedAt: Date;
@@ -92,6 +104,10 @@ export function toAdminActor(actor: AdminActorInput): AdminActor {
     gpsAltitude: toNullableNumber(actor.gpsAltitude),
     gpsAccuracy: toNullableNumber(actor.gpsAccuracy),
     consentStatus: actor.consentStatus,
+    registrationSource: actor.registrationSource,
+    consentMethod: actor.consentMethod,
+    consentObtainedAt: actor.consentObtainedAt ?? null,
+    consentReference: actor.consentReference ?? null,
     crops: mapCrops(actor.crops),
     createdAt: actor.createdAt,
     updatedAt: actor.updatedAt,

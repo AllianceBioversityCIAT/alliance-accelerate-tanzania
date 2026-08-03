@@ -44,6 +44,13 @@ function fixtureActor(overrides: Partial<AdminActor> = {}): AdminActor {
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: 'UNKNOWN',
+    // T-3 — registration source & consent provenance (FR-1, FR-2); defaults
+    // mirror the Prisma column defaults so a plain fixtureActor() looks like
+    // a legacy row (design.md FR-9).
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: ['sorghum', 'common_bean'],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),

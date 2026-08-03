@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEmail,
   IsIn,
   IsNumber,
@@ -8,8 +9,11 @@ import {
   MaxLength,
   Min,
   MinLength,
+  registerDecorator,
+  ValidationArguments,
+  ValidationOptions,
 } from 'class-validator';
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 
 /**
@@ -30,6 +34,37 @@ import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 
 const SEX_VALUES = ['M', 'F', 'Other'] as const;
 const CONSENT_VALUES = Object.values(ConsentStatus);
+/** T-3 — enum membership derived from the Prisma-generated types (NFR-3, design.md §4.3). */
+const REGISTRATION_SOURCE_VALUES = Object.values(RegistrationSource);
+const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
+
+/**
+ * T-3 — Custom validator rejecting a date string that is later than "now"
+ * (FR-2: "IT MUST reject a consentObtainedAt in the future with a 400").
+ * Applied alongside `@IsDateString()`, which validates the string is a
+ * well-formed date in the first place; this decorator only adds the
+ * not-in-the-future constraint.
+ */
+function IsNotFutureDate(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isNotFutureDate',
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: unknown): boolean {
+          if (typeof value !== 'string') return false;
+          const parsed = new Date(value);
+          return !Number.isNaN(parsed.getTime()) && parsed.getTime() <= Date.now();
+        },
+        defaultMessage(args: ValidationArguments): string {
+          return `${args.property} must not be a future date`;
+        },
+      },
+    });
+  };
+}
 
 export class ActorCreateDto {
   /** Source business key — required, deduped on import (FR-2). */
@@ -115,4 +150,34 @@ export class ActorCreateDto {
   @IsOptional()
   @IsIn(CONSENT_VALUES)
   consentStatus?: ConsentStatus;
+
+  /**
+   * T-3 — Which track produced this record (FR-1). Enum membership enforced
+   * against the Prisma-generated `RegistrationSource`.
+   */
+  @IsOptional()
+  @IsIn(REGISTRATION_SOURCE_VALUES)
+  registrationSource?: RegistrationSource;
+
+  /**
+   * T-3 — How consent was obtained (FR-2). Enum membership enforced against
+   * the Prisma-generated `ConsentMethod`. Whether this satisfies the FR-3
+   * provenance invariant for a `GRANTED` write is decided by
+   * `isConsentProvenanceSatisfied` in the service, not here.
+   */
+  @IsOptional()
+  @IsIn(CONSENT_METHOD_VALUES)
+  consentMethod?: ConsentMethod;
+
+  /** T-3 — Date consent was obtained (FR-2); must not be in the future. */
+  @IsOptional()
+  @IsDateString()
+  @IsNotFutureDate()
+  consentObtainedAt?: string;
+
+  /** T-3 — Free-text pointer to where the consent evidence lives (FR-2). Not required. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  consentReference?: string;
 }

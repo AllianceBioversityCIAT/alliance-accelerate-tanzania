@@ -36,7 +36,7 @@
 
 ## Phase B — Backend write paths
 
-- [ ] **T-3** Wire provenance into admin create and update  (deps: T-2)
+- [x] **T-3** Wire provenance into admin create and update  (deps: T-2)
       **Scope:** Four optional validated fields on `ActorCreateDto` (enum membership from Prisma-generated types, `@IsDateString` + not-in-future, `@MaxLength(255)`); **add the four names to `SCALAR_FIELDS`** (`actors-admin.service.ts:59`); call the T-2 predicate in `create` and `update` alongside — **not instead of** — the existing `acknowledged` checks; extend `admin-actor.serializer.ts`.
       **Traces:** FR-1, FR-2, FR-3, NFR-6 · `design.md` §4.2, §4.3, §4.5, DD-2
       **Files:** `backend/src/actors/dto/actor-create.dto.ts`, `backend/src/actors/actors-admin.service.ts`, `backend/src/actors/admin-actor.serializer.ts`, `backend/src/test/admin-actors-crud.e2e.spec.ts`

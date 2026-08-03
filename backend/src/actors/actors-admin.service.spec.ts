@@ -56,6 +56,14 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: ConsentStatus.GRANTED,
+    // T-3 — registration source & consent provenance (FR-1, FR-2); defaults
+    // mirror the Prisma column defaults so a plain fixtureActor() looks like
+    // a legacy row (design.md FR-9 — 436/436 live actors are GRANTED +
+    // NOT_RECORDED).
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -396,6 +404,91 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       await expect(service.create(dto, ACTING_SUB)).rejects.toThrow('DB unavailable');
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
+
+    it('throws BadRequestException (field-level) when creating GRANTED without provenance (FR-3, R-1/NFR-7)', async () => {
+      const dto: AdminActorCreateDto = {
+        traderId: 'TZ-SEED-0002',
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+        consentStatus: ConsentStatus.GRANTED,
+        acknowledged: true,
+      } as AdminActorCreateDto;
+
+      let caught: unknown;
+      try {
+        await service.create(dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      const response = (caught as BadRequestException).getResponse() as {
+        details: Array<{ field: string }>;
+      };
+      expect(response.details).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ field: 'consentMethod' }),
+          expect.objectContaining({ field: 'consentObtainedAt' }),
+        ]),
+      );
+    });
+
+    it('creates GRANTED with provenance and round-trips registrationSource/consentMethod/consentObtainedAt/consentReference through buildScalarData (R-1)', async () => {
+      const created = fixtureCreatedActor({
+        id: 'actor-new',
+        consentStatus: ConsentStatus.GRANTED,
+        registrationSource: 'SELF_REGISTERED',
+        consentMethod: 'SIGNED_FORM',
+        consentObtainedAt: new Date('2026-01-01T00:00:00Z'),
+        consentReference: 'DOC-123',
+      });
+      const full = fixtureActor({
+        id: 'actor-new',
+        traderId: 'TZ-SEED-0002',
+        traderName: 'New Actor',
+        crops: [],
+        consentStatus: ConsentStatus.GRANTED,
+        registrationSource: 'SELF_REGISTERED',
+        consentMethod: 'SIGNED_FORM',
+        consentObtainedAt: new Date('2026-01-01T00:00:00Z'),
+        consentReference: 'DOC-123',
+      });
+
+      prisma.actor.create.mockResolvedValue(created);
+      prisma.actor.findUnique.mockResolvedValue(full);
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+      const dto: AdminActorCreateDto = {
+        traderId: 'TZ-SEED-0002',
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+        consentStatus: ConsentStatus.GRANTED,
+        acknowledged: true,
+        registrationSource: 'SELF_REGISTERED' as never,
+        consentMethod: 'SIGNED_FORM' as never,
+        consentObtainedAt: '2026-01-01T00:00:00Z' as never,
+        consentReference: 'DOC-123' as never,
+      } as AdminActorCreateDto;
+
+      const res = await service.create(dto, ACTING_SUB);
+
+      // Proves SCALAR_FIELDS actually carries the four fields into the write
+      // (R-1) — not just that the request returns 201.
+      expect(prisma.actor.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          registrationSource: 'SELF_REGISTERED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01T00:00:00Z',
+          consentReference: 'DOC-123',
+        }),
+      });
+      expect(res.registrationSource).toBe('SELF_REGISTERED');
+      expect(res.consentMethod).toBe('SIGNED_FORM');
+      expect(res.consentReference).toBe('DOC-123');
+    });
   });
 
   describe('getById', () => {
@@ -540,9 +633,13 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
 
-    it('allows GRANTED transition when acknowledged is true', async () => {
+    it('allows GRANTED transition when acknowledged is true AND provenance is supplied (FR-3, DD-2)', async () => {
       const before = fixtureActor({ consentStatus: ConsentStatus.UNKNOWN });
-      const after = fixtureActor({ consentStatus: ConsentStatus.GRANTED });
+      const after = fixtureActor({
+        consentStatus: ConsentStatus.GRANTED,
+        consentMethod: 'SIGNED_FORM',
+        consentObtainedAt: new Date('2026-01-01T00:00:00Z'),
+      });
 
       prisma.actor.findUnique
         .mockResolvedValueOnce(before)
@@ -553,6 +650,8 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       const dto: AdminActorUpdateDto = {
         consentStatus: ConsentStatus.GRANTED,
         acknowledged: true,
+        consentMethod: 'SIGNED_FORM' as never,
+        consentObtainedAt: '2026-01-01T00:00:00Z' as never,
       } as AdminActorUpdateDto;
 
       await service.update('actor-1', dto, ACTING_SUB);
@@ -563,6 +662,26 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         from: 'UNKNOWN',
         to: 'GRANTED',
       });
+      expect(auditData.changes.fields.consentMethod).toEqual({
+        from: 'NOT_RECORDED',
+        to: 'SIGNED_FORM',
+      });
+    });
+
+    it('rejects a GRANTED transition with acknowledged but no provenance (FR-3 — acknowledged is NOT a substitute)', async () => {
+      const before = fixtureActor({ consentStatus: ConsentStatus.UNKNOWN });
+      prisma.actor.findUnique.mockResolvedValue(before);
+
+      const dto: AdminActorUpdateDto = {
+        consentStatus: ConsentStatus.GRANTED,
+        acknowledged: true,
+      } as AdminActorUpdateDto;
+
+      await expect(
+        service.update('actor-1', dto, ACTING_SUB),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.actor.update).not.toHaveBeenCalled();
+      expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException when actor id does not exist', async () => {

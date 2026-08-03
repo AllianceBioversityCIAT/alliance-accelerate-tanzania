@@ -280,3 +280,63 @@ The Reviewer also confirmed the value assertions are **mutation-sensitive and fr
 
 **Process note.** The Implementer reported this gap in a `Not Done / Assumptions` field instead of silently narrowing scope, which is what allowed it to be adjudicated properly rather than discovered at release. Per `/akili-execute` Step 2.3.0 the task was held out of `[x]` until the user decided, even though the Reviewer returned PASS.
 
+
+---
+
+### T-3 — Wire provenance into admin create and update
+
+**Status:** `[x]` PASS · **Wave 4** (solo — `actors-admin.service.ts` is the backend's most central file; nothing parallelisable until T-4/T-6)
+**Implementer:** `akili-implementer` (T2 / sonnet, effort `xhigh`) · attempt 1, no rework
+**Reviewers:** parallel lens mode (4R) — effort `xhigh` on a data-integrity surface. `rev-T3-conformance` (T3 / opus, spec conformance + reliability) and `rev-T3-risk` (T3 / opus, risk + resilience). **Both PASS, reached independently.**
+
+**Diff:** 7 files, +600 / −4. Beyond the task's Files list: `actor-audit.service.ts`, `actors-admin.service.spec.ts`, `actor-audit.service.spec.ts`.
+
+#### The two named risks, and how they were actually closed
+
+**R-1 — silent persist.** The four names are in `SCALAR_FIELDS` (`actors-admin.service.ts:79-82`) and consumed by `buildScalarData`'s loop (`:510-520`). What makes the criterion *proven* rather than merely asserted: the e2e harness's Prisma mock is a **real store** — `create` pushes `args.data` into an array (`admin-actors-crud.e2e.spec.ts:382-396`), `update` merges into the stored row (`:397-407`), `findUnique` reads back out of it (`:363-366`). Remove any one name and the follow-up `GET` returns `undefined`. Both Reviewers verified this independently against the mock's source; neither accepted the read-back at face value. `whitelist: true` (`validation-pipe.ts:93`) adds a second witness — an undeclared property would be stripped before the service saw it.
+
+**R-9 — the total-outage risk (436/436 live rows are `GRANTED` + `NOT_RECORDED`).** `rev-T3-risk` traced the ordinary admin edit end to end against the real emitter, not the test's imitation: `ActorForm.buildDto()` sends a full object with `consentStatus: 'GRANTED'` and **none** of the three provenance keys (T-9 has not landed) → `transitionsIntoGranted` false → `provenanceValueChanged` false, guarded twice (`!(field in payload)` **and** `submitted === undefined`, the latter catching the classic `PartialType`-materialises-`undefined` trap) → write proceeds. `rev-T3-conformance` independently diffed the e2e body key-by-key against `buildDto()` (`ActorForm.tsx:186-207`): the same 18 keys, `acknowledged` correctly absent because `needsAcknowledgement()` returns `false` when the initial status is already `GRANTED`. The body carries `consentStatus: 'GRANTED'` — which is exactly what makes the test discriminating, since a key-presence implementation fails it.
+
+#### Five open questions the Leader put to the Reviewers — two resolved against the design doc, not the code
+
+1. **Create-path guard placement.** §4.2's create cell asks for two things that cannot both hold: "beside the existing `acknowledged` check (~L137)" **and** "inside the transaction" — that check has always been outside, and `$transaction` does not open until `:159`. On create `stored` is `null`, the predicate is a pure function of the payload, and §4.1's concurrency assumption is explicitly about the `before` read, so there is no read-then-decide window to race. Both Reviewers ruled: **conformant; the text is self-contradictory and should be corrected.** Placing it at `:149-154` also avoids a Cognito `resolveActing` lookup on a rejected write.
+2. **Three files beyond the Files list — necessity, and `design.md` §4.6 is factually wrong.** §4.6 states the fields "flow through the existing diff machinery ... unchanged". `AUDITABLE_FIELDS` (`actor-audit.service.ts:32-57`) is a **hardcoded literal** driving both `buildDiff` and `buildSnapshot`. Had the Implementer taken §4.6 at its word, **NFR-6 would be silently unmet with the whole suite green.** Two facts place this inside the spec's own boundaries: §12's test plan already assigns NFR-6 to `actor-audit.service.spec.ts`, and T-4's Files list already names `actor-audit.service.ts`. The two fixture edits are compile-forced — `AdminActor` gained two *required* properties. Fixtures were set to the Prisma defaults, making a bare `fixtureActor()` a legacy `GRANTED` + `NOT_RECORDED` row: the R-9 shape.
+3. **The modified pre-existing unit test — correctly updated, coverage net-increases.** `'allows GRANTED transition when acknowledged is true'` asserted behaviour FR-3 now forbids. The allow-case was kept (with provenance added) *and* a new reject-case added asserting neither `actor.update` nor `actorAuditLog.create` fires. One test in, two out.
+4. **The hand-built 400 envelope — exact match**, byte-for-byte with `createValidationPipe()`'s `exceptionFactory` (`validation-pipe.ts:97-102`), using the exported `FieldErrorDetail` type. Noted as *better* than the prevailing service-layer idiom: the neighbouring `acknowledged` rejections throw `new BadRequestException('string')`, which yields no `details` array and maps to no inline field.
+5. **Deficient-fields-only reporting — matches FR-3**'s "naming the missing field" (singular). `rev-T3-conformance` further proved `details: []` is unreachable: the predicate returns `false` only under the exact conditions `buildProvenanceError` pushes a detail for, computed from the same merge.
+
+#### `DATE_FIELDS` — a correctness fix the task would otherwise have shipped broken
+
+`valuesEqual` (`actor-audit.service.ts:325-336`) compares with `===` and has no `Date` branch. In production Prisma returns a fresh `Date` on both the `before` and `after` refetch, so **every unrelated update** to an actor with `consentObtainedAt` set would emit a spurious diff — and defeat the empty-diff skip at `:154-156`, writing an `UPDATE` audit row for a genuine no-op. The fix sits in `serializeValue`, the single funnel for both `buildDiff` and `buildSnapshot`. `consentObtainedAt` is the only `Date`-typed member of `AUDITABLE_FIELDS`, so the fix is complete.
+
+#### Verification
+
+Implementer: `admin-actors` 67/67 · `lambda-handler` 2/2 (release gate — DTO changes cross the serverless-http parse path supertest does not exercise) · `npx eslint "src/**/*.ts" --quiet` clean · `npm run build` clean · full suite `1 failed, 404 passed, 405 total`.
+
+**Leader-run, after both Reviewers reported (tree quiet):** `rev-T3-risk` found the task's own verify command is **insufficient** — the pattern `admin-actors` does not match `actors-admin.service.spec.ts` or `actor-audit.service.spec.ts` ("actors-admin" ≠ "admin-actors"), so the two modified unit specs were outside it. Re-measured explicitly:
+
+```
+PASS src/common/consent-provenance.policy.spec.ts
+PASS src/actors/actor-audit.service.spec.ts
+PASS src/actors/actors-admin.service.spec.ts
+PASS src/test/pii-boundary.spec.ts
+PASS src/test/admin-actors-crud.e2e.spec.ts
+Test Suites: 5 passed, 5 total
+Tests:       123 passed, 123 total
+```
+
+Known-red unchanged and unrelated: `common/generate-template.spec.ts` byte-match, owned by **T-6** (T-5 widened `TRADER_TYPES`, which feeds `template-columns.ts`'s allowed-value lists, so the committed `v1` asset cannot match a fresh generation until T-6 regenerates it and bumps `TEMPLATE_VERSION`). Baseline moved 388 → 404 passed, no other regressions.
+
+#### ADVISORY findings (recorded, non-gating — no advisory mints a task)
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **E-1** | **C-3 confirmed at the DTO layer, not discharged.** `@IsOptional()` skips only `null`/`undefined`, so `consentReference: ''` passes validation and reaches `isSameValue('', null)` → "changed" → condition (b) fires → a legacy `GRANTED` actor is rejected `400`. Asymmetrically, `consentObtainedAt: ''` is rejected at the DTO by `@IsDateString()`. Nothing ships it today — `buildDto` uses `values.x.trim() \|\| null` throughout. | **Carry-forward to T-6 and T-9 briefs, verbatim.** `rev-T3-risk` notes the cheapest structural close is a `@Transform(({value}) => value === '' ? null : value)` in `actor-create.dto.ts` — i.e. in T-3's own file — rather than a discipline requirement on two future tasks. **Flagged, not applied:** applying it now would widen T-3 after PASS. Raise with the user before T-9. |
+| **E-2** | **Date-only strings are a `500`, not a `400`.** Found by `rev-T3-conformance`, independently confirmed by `rev-T3-risk` via full code trace: `@IsDateString()` is `isISO8601` and accepts `"2026-01-01"`; no `@Type(() => Date)` transforms it; Prisma's `DateTime` requires a full RFC-3339 instant and raises `PrismaClientValidationError`, which is **not** a `PrismaClientKnownRequestError`, so `mapPrismaError` (`:552-565`) rethrows and Nest renders a 500. `IsNotFutureDate` does not rescue it — `new Date('2026-01-01')` parses fine. | **Unreachable today; live the moment T-9 lands**, since `<input type="date">` emits exactly `YYYY-MM-DD`. **Must be in T-9's brief explicitly.** T-3 is not at fault — §4.3 prescribed `@IsDateString`. The same `@Transform` closes E-1 and E-2 together. |
+| **E-3** | `IsNotFutureDate` compares against `Date.now()` in UTC. A date-only value parses as UTC midnight, so an admin at UTC+3 recording "today" between 00:00 and 03:00 local gets a spurious "must not be a future date". | Cosmetic, but it lands on the one field this spec exists to collect. Note for T-9. |
+| **E-4** | `'SELF_REGISTERED' as never` casts in `actors-admin.service.spec.ts` (~L151-154, L196-197). Not masking a real contract gap — the fields are properly declared, `Object.values()`-derived enums are string-literal unions that would typecheck unaided, and the e2e proves acceptance over HTTP under `whitelist: true`. | Real minor erosion: the casts disable checking on precisely the fields under test. The `consentStatus: ConsentStatus.GRANTED` line two rows above shows the right idiom. Fold into a later touch. |
+| **E-5** | Minor DD-1 tension: `actors-admin.service.ts:249-253` recomputes the effective-value merge that the policy already computes internally (`consent-provenance.policy.ts:107-111`), purely to build the error *message*. | Drift yields a misleading `400` detail, never a wrong decision — NFR-7 holds, the *decision* has exactly one implementation. If T-4 needs the same message, have the policy return the failing fields instead of re-deriving at a third call site. |
+
+**Design-doc defects for `/akili-audit` (not this spec's to fix):** `design.md` §4.6's "flows through unchanged" claim is false about `AUDITABLE_FIELDS`, and §4.2's create cell prescribes a self-contradictory placement. Both were caught only because the Reviewers were asked to rule on the text rather than assume it. Recorded here so the code is not later mistaken for drift from the design.
+
+**Process finding — Reviewer delivery failure is now systematic, not anecdotal.** Four of four Reviewers this run (`rev-T5`, `rev-T1`, `rev-T3-conformance`, `rev-T3-risk`) went idle **without delivering a report body**, each recovered by an explicit `SendMessage` resend request. Every brief since T-1 has carried the instruction "deliver your verdict as a normal reply containing the full audit text and the `STATUS:` line" and it did not prevent recurrence. Each resend was explicitly scoped "do NOT re-run the audit — resend the verdict you already reached, and if you did not complete it, say so plainly" so that no verdict is reconstructed post-hoc. **For the Kaizen log.**

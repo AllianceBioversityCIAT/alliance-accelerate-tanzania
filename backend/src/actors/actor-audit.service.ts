@@ -47,6 +47,13 @@ const AUDITABLE_FIELDS = [
   'gpsAltitude',
   'gpsAccuracy',
   'consentStatus',
+  // T-3 — registration source & consent provenance (FR-1, FR-2, NFR-6):
+  // flow through this existing diff/snapshot machinery unchanged
+  // (design.md §4.6) rather than a parallel audit path.
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
 ] as const;
 
 type AuditableField = (typeof AUDITABLE_FIELDS)[number];
@@ -62,6 +69,16 @@ const DECIMAL_FIELDS: readonly AuditableField[] = [
   'gpsAltitude',
   'gpsAccuracy',
 ] as const;
+
+/**
+ * T-3 — Date fields serialized to ISO strings in the `changes` JSON. Without
+ * this, two `Date` instances representing the same instant (e.g. an
+ * unrelated update's before/after `consentObtainedAt`, refetched from Prisma
+ * on both sides) would fail `valuesEqual`'s reference/array checks and
+ * produce a spurious diff entry on every update to an actor that has this
+ * field set — mirrors why `DECIMAL_FIELDS` is compared as strings.
+ */
+const DATE_FIELDS: readonly AuditableField[] = ['consentObtainedAt'] as const;
 
 /** Full-snapshot envelope. */
 interface SnapshotEnvelope {
@@ -297,6 +314,10 @@ export class ActorAuditService {
   private serializeValue(field: AuditableField, value: unknown): unknown {
     if (DECIMAL_FIELDS.includes(field)) {
       return value === null || value === undefined ? null : String(value);
+    }
+    if (DATE_FIELDS.includes(field)) {
+      if (value === null || value === undefined) return null;
+      return value instanceof Date ? value.toISOString() : value;
     }
     return value;
   }
