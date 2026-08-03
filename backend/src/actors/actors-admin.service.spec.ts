@@ -3,7 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { ConsentStatus, Prisma } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { ActorsAdminService } from './actors-admin.service';
 import { ActorAuditService } from './actor-audit.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
@@ -836,7 +836,14 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   });
 
   describe('bulkSetConsent', () => {
-    it('flips status to GRANTED, writes audit rows, and returns unchanged BulkResult', async () => {
+    // T-4 — batch provenance for the fill set (design.md DD-4). Every fixture
+    // actor defaults to consentMethod: 'NOT_RECORDED' (fixtureActor's own
+    // default), so it lands in the fill set unless overridden.
+    const BATCH_METHOD = ConsentMethod.PORTAL_CHECKBOX;
+    const BATCH_DATE = '2026-07-01T00:00:00.000Z';
+    const BATCH_REFERENCE = 'BATCH-2026-07';
+
+    it('flips status to GRANTED, fills provenance on the NOT_RECORDED set, and returns preserved: 0', async () => {
       const existing = [
         fixtureActor({ id: 'actor-1', consentStatus: ConsentStatus.UNKNOWN }),
         fixtureActor({ id: 'actor-2', consentStatus: ConsentStatus.DENIED }),
@@ -850,12 +857,28 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         'GRANTED',
         ACTING_SUB,
         true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
       );
 
-      expect(res).toEqual({ requested: 2, applied: 2, notFound: [] });
+      expect(res).toEqual({
+        requested: 2,
+        applied: 2,
+        notFound: [],
+        preserved: 0,
+      });
+      // Both actors are NOT_RECORDED — one uniform fill updateMany, no
+      // separate status-only call for a (here empty) preserved set.
+      expect(prisma.actor.updateMany).toHaveBeenCalledTimes(1);
       expect(prisma.actor.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['actor-1', 'actor-2'] } },
-        data: { consentStatus: ConsentStatus.GRANTED },
+        data: {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: BATCH_METHOD,
+          consentObtainedAt: BATCH_DATE,
+          consentReference: BATCH_REFERENCE,
+        },
       });
 
       const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
@@ -866,19 +889,272 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         from: 'UNKNOWN',
         to: 'GRANTED',
       });
+      expect(auditData[0].changes.fields.consentMethod).toEqual({
+        from: 'NOT_RECORDED',
+        to: BATCH_METHOD,
+      });
+      expect(auditData[0].changes.fields.consentObtainedAt).toEqual({
+        from: null,
+        to: BATCH_DATE,
+      });
+      expect(auditData[0].changes.fields.consentReference).toEqual({
+        from: null,
+        to: BATCH_REFERENCE,
+      });
       expect(auditData[1].changes.fields.consentStatus).toEqual({
         from: 'DENIED',
         to: 'GRANTED',
       });
     });
 
-    it('skips audit rows for actors already at the target status', async () => {
+    it('mixed batch: preserves an already-evidenced actor untouched and fills only the unevidenced one (R-8, FR-3)', async () => {
+      const evidencedObtainedAt = new Date('2025-06-01T00:00:00Z');
       const existing = [
-        fixtureActor({ id: 'actor-1', consentStatus: ConsentStatus.GRANTED }),
-        fixtureActor({ id: 'actor-2', consentStatus: ConsentStatus.DENIED }),
+        // Already carries its OWN evidence, recorded during an earlier
+        // individual edit — DIFFERENT from the batch values below, so an
+        // overwrite bug would be detectable.
+        fixtureActor({
+          id: 'actor-evidenced',
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: evidencedObtainedAt,
+          consentReference: 'DOC-100',
+        }),
+        fixtureActor({
+          id: 'actor-unevidenced',
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.NOT_RECORDED,
+          consentObtainedAt: null,
+          consentReference: null,
+        }),
       ];
       prisma.actor.findMany.mockResolvedValue(existing);
-      prisma.actor.updateMany.mockResolvedValue({ count: 2 });
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 2 });
+
+      const res = await service.bulkSetConsent(
+        ['actor-evidenced', 'actor-unevidenced'],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(res).toEqual({
+        requested: 2,
+        applied: 2,
+        notFound: [],
+        preserved: 1,
+      });
+
+      // Two distinct updateMany calls: status-only for the preserved actor,
+      // full fill for the unevidenced one. Neither touches the other's row.
+      expect(prisma.actor.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['actor-evidenced'] } },
+        data: { consentStatus: ConsentStatus.GRANTED },
+      });
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['actor-unevidenced'] } },
+        data: {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: BATCH_METHOD,
+          consentObtainedAt: BATCH_DATE,
+          consentReference: BATCH_REFERENCE,
+        },
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      const byId = Object.fromEntries(
+        auditData.map((row: { actorId: string; changes: unknown }) => [
+          row.actorId,
+          row.changes,
+        ]),
+      );
+
+      // The evidenced actor's audit entry shows ONLY the status transition —
+      // its method/date/reference are absent from the diff because they
+      // never changed.
+      expect(byId['actor-evidenced'].fields.consentStatus).toEqual({
+        from: 'DENIED',
+        to: 'GRANTED',
+      });
+      expect(byId['actor-evidenced'].fields.consentMethod).toBeUndefined();
+      expect(byId['actor-evidenced'].fields.consentObtainedAt).toBeUndefined();
+      expect(byId['actor-evidenced'].fields.consentReference).toBeUndefined();
+
+      expect(byId['actor-unevidenced'].fields.consentMethod).toEqual({
+        from: 'NOT_RECORDED',
+        to: BATCH_METHOD,
+      });
+    });
+
+    it('T-4 rework attempt-2 regression: fills a missing date (and a missing reference) on an actor with its OWN recorded method, and never overwrites that method with the batch value', async () => {
+      // Attempt 1's defect: this actor's consentMethod is recorded (EMAIL),
+      // so `consentMethod === NOT_RECORDED` alone put it in "preserved" and
+      // it would have ended GRANTED with consentObtainedAt still null. It
+      // has NO consentReference either, so this also covers the "date +
+      // reference missing, method present" fill group.
+      const existing = [
+        fixtureActor({
+          id: 'actor-date-ref-only',
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL,
+          consentObtainedAt: null,
+          consentReference: null,
+        }),
+      ];
+      prisma.actor.findMany.mockResolvedValue(existing);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      const res = await service.bulkSetConsent(
+        ['actor-date-ref-only'],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      // Not preserved — it was genuinely missing provenance (the date), so
+      // it must end up with COMPLETE provenance, not left GRANTED+null.
+      expect(res).toEqual({
+        requested: 1,
+        applied: 1,
+        notFound: [],
+        preserved: 0,
+      });
+
+      // consentMethod is absent from the write entirely — the actor's own
+      // EMAIL is never touched, let alone overwritten by BATCH_METHOD.
+      expect(prisma.actor.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['actor-date-ref-only'] } },
+        data: {
+          consentStatus: ConsentStatus.GRANTED,
+          consentObtainedAt: BATCH_DATE,
+          consentReference: BATCH_REFERENCE,
+        },
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      expect(auditData).toHaveLength(1);
+      // Exactly the fields written — no phantom consentMethod entry.
+      expect(auditData[0].changes.fields).toEqual({
+        consentStatus: { from: 'DENIED', to: 'GRANTED' },
+        consentObtainedAt: { from: null, to: BATCH_DATE },
+        consentReference: { from: null, to: BATCH_REFERENCE },
+      });
+    });
+
+    it('reachable via un-publish-then-strip (design.md §4.1 row 5): a DENIED actor with its own method and reference but a stripped date is filled on the date alone and keeps its method', async () => {
+      const existing = [
+        fixtureActor({
+          id: 'actor-date-only',
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: null,
+          consentReference: 'DOC-777',
+        }),
+      ];
+      prisma.actor.findMany.mockResolvedValue(existing);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      const res = await service.bulkSetConsent(
+        ['actor-date-only'],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(res.preserved).toBe(0);
+      // Only the date is written — method and reference are the actor's own
+      // and are never touched.
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['actor-date-only'] } },
+        data: {
+          consentStatus: ConsentStatus.GRANTED,
+          consentObtainedAt: BATCH_DATE,
+        },
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      expect(auditData[0].changes.fields).toEqual({
+        consentStatus: { from: 'DENIED', to: 'GRANTED' },
+        consentObtainedAt: { from: null, to: BATCH_DATE },
+      });
+    });
+
+    it('ADVISORY-1: an actor with NOT_RECORDED method and its OWN non-null consentReference keeps that reference — the batch reference never overwrites it', async () => {
+      const existing = [
+        fixtureActor({
+          id: 'actor-ref-preserved',
+          consentStatus: ConsentStatus.UNKNOWN,
+          consentMethod: ConsentMethod.NOT_RECORDED,
+          consentObtainedAt: null,
+          consentReference: 'OWN-REF-1',
+        }),
+      ];
+      prisma.actor.findMany.mockResolvedValue(existing);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      const res = await service.bulkSetConsent(
+        ['actor-ref-preserved'],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(res.preserved).toBe(0);
+      // consentReference is absent — the actor's own OWN-REF-1 survives.
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['actor-ref-preserved'] } },
+        data: {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: BATCH_METHOD,
+          consentObtainedAt: BATCH_DATE,
+        },
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      expect(auditData[0].changes.fields).toEqual({
+        consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
+        consentMethod: { from: 'NOT_RECORDED', to: BATCH_METHOD },
+        consentObtainedAt: { from: null, to: BATCH_DATE },
+      });
+    });
+
+    it('skips the audit row for an actor with no field change at all', async () => {
+      // Already GRANTED with the SAME provenance the batch would apply —
+      // truly nothing changes.
+      const existing = [
+        fixtureActor({
+          id: 'actor-1',
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: BATCH_METHOD,
+          consentObtainedAt: new Date(BATCH_DATE),
+          consentReference: BATCH_REFERENCE,
+        }),
+        fixtureActor({
+          id: 'actor-2',
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.NOT_RECORDED,
+        }),
+      ];
+      prisma.actor.findMany.mockResolvedValue(existing);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
       prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
 
       const res = await service.bulkSetConsent(
@@ -886,15 +1162,43 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         'GRANTED',
         ACTING_SUB,
         true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
       );
 
-      expect(res).toEqual({ requested: 2, applied: 2, notFound: [] });
+      // actor-1 is already GRANTED+BATCH_METHOD, so it lands in the
+      // "preserved" partition (its consentMethod is not NOT_RECORDED) even
+      // though its values happen to equal the batch's.
+      expect(res.preserved).toBe(1);
       const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
       expect(auditData).toHaveLength(1);
       expect(auditData[0].actorId).toBe('actor-2');
     });
 
-    it('flips status to DENIED and returns { requested, applied, notFound }', async () => {
+    it('rejects an unlock with no consentMethod/consentObtainedAt and modifies zero rows', async () => {
+      await expect(
+        service.bulkSetConsent(['actor-1'], 'GRANTED', ACTING_SUB, true),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.actor.findMany).not.toHaveBeenCalled();
+      expect(prisma.actor.updateMany).not.toHaveBeenCalled();
+      expect(prisma.actorAuditLog.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unlock with consentMethod but no consentObtainedAt (partial provenance) and modifies zero rows', async () => {
+      await expect(
+        service.bulkSetConsent(
+          ['actor-1'],
+          'GRANTED',
+          ACTING_SUB,
+          true,
+          BATCH_METHOD,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.actor.findMany).not.toHaveBeenCalled();
+    });
+
+    it('flips status to DENIED and returns { requested, applied, notFound, preserved: 0 } with no provenance required', async () => {
       prisma.actor.findMany.mockResolvedValue([
         fixtureActor({ id: 'actor-1' }),
         fixtureActor({ id: 'actor-2' }),
@@ -908,7 +1212,12 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         ACTING_SUB,
       );
 
-      expect(res).toEqual({ requested: 2, applied: 2, notFound: [] });
+      expect(res).toEqual({
+        requested: 2,
+        applied: 2,
+        notFound: [],
+        preserved: 0,
+      });
       expect(prisma.actor.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['actor-1', 'actor-2'] } },
         data: { consentStatus: ConsentStatus.DENIED },
@@ -930,6 +1239,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         requested: 3,
         applied: 1,
         notFound: ['missing-1', 'missing-2'],
+        preserved: 0,
       });
       expect(prisma.actor.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['actor-1'] } },
@@ -945,14 +1255,19 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actor.updateMany).not.toHaveBeenCalled();
     });
 
-    it('does not require acknowledgement for DENIED (lock)', async () => {
+    it('does not require acknowledgement or provenance for DENIED (lock)', async () => {
       prisma.actor.findMany.mockResolvedValue([fixtureActor({ id: 'actor-1' })]);
       prisma.actor.updateMany.mockResolvedValue({ count: 1 });
       prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
 
       await expect(
         service.bulkSetConsent(['actor-1'], 'DENIED', ACTING_SUB),
-      ).resolves.toEqual({ requested: 1, applied: 1, notFound: [] });
+      ).resolves.toEqual({
+        requested: 1,
+        applied: 1,
+        notFound: [],
+        preserved: 0,
+      });
     });
   });
 

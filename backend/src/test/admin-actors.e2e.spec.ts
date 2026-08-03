@@ -62,6 +62,13 @@ function fixtureActor(
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: ConsentStatus.GRANTED,
+    // T-4 — registration source & consent provenance (FR-1, FR-2) defaults,
+    // matching a legacy row (design.md FR-9): NOT_RECORDED/null until a
+    // write path fills them.
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -93,6 +100,34 @@ const ACTORS: Record<string, unknown>[] = [
     traderType: 'offtaker',
     consentStatus: ConsentStatus.UNKNOWN,
     crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  // T-4 — mixed-batch bulk-consent fixtures (design.md DD-4, R-8). One
+  // legacy/unevidenced actor and one already carrying ITS OWN evidence with
+  // values DIFFERENT from any batch used in tests below, so an overwrite bug
+  // would be detectable rather than accidentally masked by equal values.
+  fixtureActor({
+    id: 'actor-mixed-unevidenced-1',
+    traderId: 'TZ-MIX-0004',
+    traderName: 'Unevidenced Legacy Actor',
+    region: 'Mbeya',
+    traderType: 'seed_company',
+    consentStatus: ConsentStatus.UNKNOWN,
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
+    crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  fixtureActor({
+    id: 'actor-mixed-evidenced-1',
+    traderId: 'TZ-MIX-0005',
+    traderName: 'Evidenced Legacy Actor',
+    region: 'Mbeya',
+    traderType: 'seed_company',
+    consentStatus: ConsentStatus.UNKNOWN,
+    consentMethod: 'SIGNED_FORM',
+    consentObtainedAt: new Date('2025-06-01T00:00:00Z'),
+    consentReference: 'DOC-100',
+    crops: [{ crop: { name: 'groundnut' } }],
   }),
 ];
 
@@ -478,7 +513,31 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         .expect(400);
     });
 
-    it('unlocks with acknowledged: true and reports notFound ids', async () => {
+    // T-4 — FR-3's bulk scenario: the DTO carries acknowledged but no
+    // provenance. Rejected before any read/write happens, so zero rows move.
+    it('returns 400 when unlocking without consentMethod/consentObtainedAt, and modifies zero rows', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-denied-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+        })
+        .expect(400);
+
+      // Zero partial writes — the actor's consentStatus is unchanged.
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentStatus).toBe('DENIED');
+    });
+
+    it('unlocks with acknowledged: true + provenance and reports notFound ids', async () => {
       const res = await request(app.getHttpServer())
         .patch('/api/v1/admin/actors/bulk/consent')
         .set(admin)
@@ -486,6 +545,8 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
           ids: ['actor-denied-1', 'missing-1'],
           consentStatus: 'GRANTED',
           acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01T00:00:00.000Z',
         })
         .expect(200);
 
@@ -493,6 +554,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         requested: 2,
         applied: 1,
         notFound: ['missing-1'],
+        preserved: 0,
       });
 
       // The unlocked actor now appears in public reads.
@@ -501,6 +563,70 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
       const ids = pubRes.body.data.map((a: { id: string }) => a.id);
       expect(ids).toContain('actor-denied-1');
+
+      // And it carries the batch's provenance (FR-3).
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentMethod).toBe('PORTAL_CHECKBOX');
+    });
+
+    // T-4 — the "not done if" case: a batch mixing an actor that already
+    // carries its own evidence with one that has none. Proves the write is
+    // PARTITIONED (design.md DD-4) rather than a uniform updateMany that
+    // would silently overwrite the evidenced actor's provenance (R-8).
+    it('mixed batch: fills the unevidenced actor and leaves the evidenced actor byte-identical (R-8, FR-3)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-mixed-unevidenced-1', 'actor-mixed-evidenced-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01T00:00:00.000Z',
+          consentReference: 'BATCH-2026-07',
+        })
+        .expect(200);
+
+      expect(res.body).toEqual({
+        requested: 2,
+        applied: 2,
+        notFound: [],
+        preserved: 1,
+      });
+
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const byId = Object.fromEntries(
+        adminRes.body.data.map((a: { id: string }) => [a.id, a]),
+      );
+
+      // Filled actor gets the batch's provenance.
+      const filled = byId['actor-mixed-unevidenced-1'];
+      expect(filled.consentStatus).toBe('GRANTED');
+      expect(filled.consentMethod).toBe('PORTAL_CHECKBOX');
+      expect(filled.consentReference).toBe('BATCH-2026-07');
+      expect(new Date(filled.consentObtainedAt).toISOString()).toBe(
+        '2026-07-01T00:00:00.000Z',
+      );
+
+      // Already-evidenced actor is unlocked (status changes) but its OWN
+      // method, date, and reference are byte-identical to before — NOT the
+      // batch's values, which are all deliberately different above.
+      const evidenced = byId['actor-mixed-evidenced-1'];
+      expect(evidenced.consentStatus).toBe('GRANTED');
+      expect(evidenced.consentMethod).toBe('SIGNED_FORM');
+      expect(evidenced.consentReference).toBe('DOC-100');
+      expect(new Date(evidenced.consentObtainedAt).toISOString()).toBe(
+        new Date('2025-06-01T00:00:00Z').toISOString(),
+      );
     });
 
     it('locks actors and they disappear from public reads', async () => {
@@ -517,6 +643,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         requested: 1,
         applied: 1,
         notFound: [],
+        preserved: 0,
       });
 
       const pubRes = await request(app.getHttpServer())

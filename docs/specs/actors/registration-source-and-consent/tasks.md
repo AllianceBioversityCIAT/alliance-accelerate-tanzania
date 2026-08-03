@@ -45,7 +45,7 @@
       **Not done if:** the existing `acknowledged` checks were replaced rather than kept (DD-2 — they are independent gates), or the legacy-edit case is tested with a sparse body instead of the full object the frontend emits.
       **Skills:** `nestjs-expert`, `api-design-principles`, `error-handling-patterns`
 
-- [ ] **T-4** Bulk set-consent: batch provenance that fills without overwriting  (deps: T-2, T-3)
+- [x] **T-4** Bulk set-consent: batch provenance that fills without overwriting  (deps: T-2, T-3)
       **Scope:** `BulkConsentDto` gains `consentMethod` + `consentObtainedAt` (required when `GRANTED`) and optional `consentReference`. Replace the single uniform `updateMany` (`actors-admin.service.ts:373-376`) with a **partitioned** write inside the existing transaction: batch provenance applies **only** to actors whose `consentMethod` is `NOT_RECORDED`; already-evidenced actors get status only. Result envelope gains the preserved count.
       **Traces:** FR-3 (both bulk scenarios), NFR-6 · `design.md` DD-4, §11 R-8
       **Files:** `backend/src/actors/dto/bulk-consent.dto.ts`, `backend/src/actors/actors-admin.service.ts`, `backend/src/actors/actor-audit.service.ts`, `backend/src/test/admin-actors.e2e.spec.ts`
