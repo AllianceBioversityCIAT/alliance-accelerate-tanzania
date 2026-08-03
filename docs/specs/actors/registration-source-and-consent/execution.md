@@ -400,3 +400,68 @@ Attempt 2: `admin-actors` 69/69 · `actors-admin` 43/43 · **`actor-audit` 22/22
 | **F-7** | Reference-fill asymmetry: a `null` `consentReference` is filled for fill-set rows but not for preserved rows. | Defensible and documented ("preserved means provenance is untouched"), but the same missing field is treated two ways within one batch. Noted. |
 
 **Breaking contract change — deploy constraint, not a merge constraint.** Confirmed independently by both lenses at `frontend/app/(admin)/admin/actors/page.tsx:384-386`: `handleUnlockConfirm` sends `{ids, consentStatus:'GRANTED', acknowledged:true}` with no provenance, and `frontend/lib/api/actors-admin.ts` declares neither the new input fields nor `preserved`. **Every admin bulk unlock returns 400 until T-10 lands.** `design.md` §7/§9 anticipate exactly this (*"a clean, legible 400 on one admin action"*) and `tasks.md`'s PR strategy states it. Shipping T-4 before T-10 is spec-sanctioned; **deploying PR 1 to a live environment without PR 2 in the same window is not.** Surfaced to the user.
+
+---
+
+### T-6 — Template columns, version bump, and per-row import enforcement
+
+**Status:** `[x]` PASS on **attempt 2** · **Wave 5** (parallel with T-4; disjoint file lists verified before dispatch)
+**Implementer:** `akili-implementer` (T2 / sonnet, effort `xhigh`) — attempts 1 and 2
+**Reviewers:** parallel lens mode (4R), all T3 / opus. Attempt 1: `rev-T6-conformance` **PASS**, `rev-T6-risk` **FAIL**. Attempt 2: `rev-T6b-risk` **PASS** (single lens — see the dispatch note below).
+
+**Diff (cumulative):** 6 source files, +734 / −26, plus the regenerated binary `frontend/public/templates/actor-import-template.xlsx` (10,373 → 10,864 bytes). Beyond the Files list: `actor-import.service.spec.ts` — two pre-existing tests built `GRANTED` rows with no provenance and now correctly fail, so the fixture update was forced.
+
+**This task also cleared the run's known-red suite.** T-5 (merged) widened `TRADER_TYPES`, which feeds `template-columns.ts`'s allowed-value lists, so the committed `v1` asset could no longer byte-match a fresh generation. The regeneration + `v2` bump closes it. Baseline moved 405 → 437 tests, all green.
+
+#### The split verdict, and the Leader adjudication it required
+
+Conformance returned **PASS** on all four done-criteria; risk returned **FAIL** on two issues, both inside the new `parseConsentObtainedAt`. **I ruled both in scope.**
+
+**Issue 1 — the serial branch had no plausibility bound.** Any bare number in the *Consent Obtained At* cell was silently converted to a date and accepted as consent evidence. Two consequences, and the first is the one that decided it:
+
+- **Silent fabricated evidence.** `2026` → `1905-07-18`; `15` → `1900-01-13`; **`0` — which a formula over an empty reference produces routinely** — → `1899-12-30`. Each satisfied the gate with no error and no warning: the row previewed as `create` and committed, **publishing a `GRANTED` actor whose evidence date was manufactured by a parse.** That is this spec's core failure arriving through the format layer instead of the policy layer.
+- **Loss of per-row isolation at commit.** `20260115` — a plausible way to type `2026-01-15` without separators — maps to year ≈ 57,369. `Number.isNaN` is false, so the function returned `toISOString()`'s **expanded-year** form (`+057369-…`), which is not RFC-3339. Prisma raises `PrismaClientValidationError` *inside* the commit transaction, the chunk `catch` swallows it, and **all up to 100 rows in that chunk fail** with an opaque message — after a preview that reported them all as clean creates. The conformance lens had filed this as advisory A-1; the risk lens elevated it and corrected the mechanism (the failure is Prisma's, before MySQL's).
+
+**Issue 2 — no not-in-the-future check**, unlike both other write paths. `2030-01-01` imported cleanly as satisfied provenance.
+
+**Leader scope ruling on Issue 2, recorded because the Reviewer explicitly offered the opposite.** It noted FR-5 mandates FR-3 parity explicitly and FR-2 parity only by implication, and offered to push this to a follow-up. **I kept it in scope**, on consequence rather than letter: once such an actor exists, an Admin editing *any* unrelated field through `ActorForm` (which submits the full object) receives a `400` from `@IsNotFutureDate` and **cannot save the record** — R-9, this spec's named top risk, re-entering through the import door. And the remediation was the same three lines in the same function, so splitting it would have cost more than fixing it. It widened no file list.
+
+**Leader deviation, recorded (same as T-4):** the rework rule says bump effort one level on retry. **I did not.** The defect was an unspecified plausibility window, not under-thinking. Attempt 2 ran at the same `xhigh` and passed first time.
+
+**Dispatch note — attempt 2 was re-reviewed by one lens, deliberately.** Conformance had already cleared all four criteria on attempt 1, and the rework was confined to `parseConsentObtainedAt` plus two one-liners. A second conformance pass would have been symmetry, not need; I folded the one conformance-flavoured question (whether the e2e lock makes criterion (4) regression-proof) into the risk brief instead.
+
+#### What attempt 2 changed, and what the re-audit verified
+
+Named constants `MIN_PLAUSIBLE_EXCEL_SERIAL = 36526` (1 Jan 2000) and `EXCEL_EPOCH_UTC_MS`; the full-instant branch now round-trips through `new Date(raw)` instead of echoing its input; and a shared `accept(parsed)` helper on **all three** branches rejecting `NaN` or `> Date.now()`.
+
+The Reviewer probed thirteen inputs and confirmed **no reachable throw** — `toISOString()` is only called after the `NaN` guard, so the `RangeError: Invalid time value` leg is unreachable. `46023` stays valid, `46023.5` keeps time-of-day semantics, negatives never reach the epoch arithmetic (the `^\d+` regex bars the sign), and `2026-13-45T99:99:99Z` is now closed.
+
+**It also corrected me.** I had asked whether a magnitude ceiling was needed *in addition* to the future check, suspecting the expanded-year leg was only partly closed. It ruled no, and showed why the set is provably empty: expanded ISO form needs year `< 0` or `> 9999`; the negative side is unreachable because the digit-only regex rejects the sign *before* `Number()`, and the positive side needs a serial implying ~year 10000, necessarily `> now`. Adding a ceiling would be a second guard over an empty set. It noted the closure is *implicit* and suggested a comment recording the dependency instead — cheaper than the guard.
+
+**`MIN_PLAUSIBLE_EXCEL_SERIAL` does not overshoot**, which I had flagged as a risk of its own (rejecting legitimate older data is a different bug, not a win). 36526 is arithmetically exactly 2000-01-01 off the 1899-12-30 epoch, and the bound applies **only to the bare-number branch**: an old date typed as text (`1998-05-01`) goes down the date-only branch, unbounded; a real Excel date-formatted cell arrives as a `Date` and takes the full-instant branch, also unbounded. The only data it can reject is an un-formatted bare number below 36526 — a mistyped year, day, or `0`.
+
+**The `parsed.toISOString()` change is unobservable**, for a more specific reason than the Implementer gave: the branch's dominant source is `cellToString`, which itself produced the string via `toISOString()`, so the round-trip is byte-identical; offsets were never accepted (the regex requires a literal `Z`); and sub-second truncation is moot because **T-1's migration created the column as `DATETIME(3)`**, so MySQL truncates to milliseconds regardless.
+
+**The e2e lock is real, not nominal.** `TEMPLATE_HEADERS.slice(0, 20)` is exactly the pre-T-6 header set, so the fixture genuinely fails `headerMatches`; move the version check back after `locateDataSheet` and the test flips to the generic "no Data sheet" 400 and fails on both `/out of date/i` and `/re-download/i`. And it runs in the **default `npm test` gate** (jest `testRegex` covers `.spec.ts` under `rootDir: src`), not only under `test:e2e`.
+
+**Regression re-check — every attempt-1 clearance holds**, including a check the Reviewer ran unprompted: `applyConsentGate`'s early exit changed from `!row.create?.consentGranted` to `!row.create`, so the predicate now runs for `DENIED`/`UNKNOWN` rows too — safe, they return `true` at the policy's first branch. It also proved `buildProvenanceRowErrors` can never return an empty array on a real failure, so there is no reason-less `failed` row.
+
+#### Verification
+
+Attempt 2: `npm run generate:template && npm test -- "template|import" --silent` → 6 suites, **93/93** · `lambda-handler` 2/2 · `npx eslint "src/**/*.ts" --quiet` clean · `npm run build` clean · full suite **437/437, 37 suites**. Asset md5 `33a2d8c2a0e27465b20ccf537dadfc06` — **unchanged from attempt 1** (the rework touched only validation logic and tests), **independently confirmed by the Leader** against the committed file.
+
+#### ADVISORY findings (recorded, non-gating — no advisory mints a task)
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **G-1** ⚠️ | **The date-only branch still has no lower bound.** `0026-01-15` — a realistic typo — is past, well-formed, accepted, and written. MySQL's `DATETIME` range starts at `1000-01-01`, so this is the **last input class the in-memory Prisma mock cannot adjudicate.** | Deliberately **not** a FAIL, and the reasoning is worth preserving: the admin path accepts the same value (`@IsDateString` + `IsNotFutureDate` have no lower bound either), so the importer is now *exactly* as strict as the write paths FR-5 tells it to match. **Tightening only the importer would be an unspecified divergence.** The right fix is a shared minimum in the policy/DTO layer, owned by a task that covers all paths. |
+| **G-2** | **The rejection message conflates three faults.** A future `2030-01-01`, a bare `2026`, and `"March"` all report *"Consent Obtained At must be a valid date."* Telling an admin that a well-formed date is not a valid date is the same legibility problem FR-5 objects to for stale templates. | Distinct messages cost nothing. Worth scheduling with G-1. |
+| **G-3** | **E-3's timezone issue now lands on the field-staff path.** Tanzania is UTC+3; a date-only "today" parses as UTC midnight, so between 00:00 and 03:00 EAT a spreadsheet carrying today's date fails the row. | Inherited from `IsNotFutureDate` and consistent by design — but the importer is where "today" is the most common entry. Note for T-9 alongside E-3. |
+| **G-4** | **Time-bomb fixture.** The future-date e2e hardcodes `'2030-01-01'`; on 2030-01-02 that row becomes valid and the test inverts. | Derive from `Date.now()` instead. |
+| **G-5** | **Silent month rollover.** `2026-02-30` is accepted and stored as `2026-03-02` — ES ISO parsing range-checks the day 01–31 but not against the month. Not fabricated evidence, but not the date the admin typed. | Recorded. |
+| **G-6** | Version detection was "best effort" (NFR-8) and is now a **blocking 400**, including for a *newer* stamp (*"out of date (found v3, current is v2)"*). | Mitigated in practice: the labelled `Template version: vN` match always overrides a stray bare token, and the generator writes the labelled form. |
+| **G-7** | Ordering nit: version detection now precedes the `MAX_DATA_ROWS` cap, mildly inverting the intent commented at `actor-import.service.ts:179`. | Harmless — it walks only the Instructions sheet, and `workbook.xlsx.load` has already materialised the file. |
+| **G-8** | The **unit-spec** version test is now self-referential (`toBe(TEMPLATE_VERSION)` against a workbook stamped with `TEMPLATE_VERSION`) — it passes for any value. The Implementer flagged this honestly as a declined residual, correctly per my scoping ("the e2e fixture"). | Redundant rather than wrong; the dedicated mismatch test and the e2e `slice(0,20)` lock carry the real assertions. Leaving it is fine. |
+| **G-9** | `generate-import-template.ts:62`'s Instructions prose still lists the dropdown columns without *Registration Source* and *Consent Method*, on the sheet field staff actually read. | Cosmetic — criterion (2) holds via the per-column table. **Deliberately deferred:** the fix changes asset bytes and must be batched with a regeneration, which would have invalidated the byte-match mid-review. |
+
+**Structural verification gap — recorded for `/akili-audit`, not expanded into this task.** Both test harnesses use an in-memory Prisma mock (`backend/CLAUDE.md`'s stated e2e convention), so **nothing in the repo verifies that the string this parser emits is accepted by real Prisma/MySQL.** I proposed recording it rather than widening T-6 and asked the Reviewer to disagree if that was wrong; it agreed, on stronger grounds than mine: the attempt-1 defect class is now closed **by construction** — every accepted string is `toISOString()` of a valid instant in `[2000, now]`, inside `DATETIME(3)`'s range — so the mock's blindness no longer conceals a known-bad value. A real-DB harness is test-architecture work, and dev RDS is reachable (see §1.1) whenever it is scheduled. **G-1 is the concrete form this finding should take.**

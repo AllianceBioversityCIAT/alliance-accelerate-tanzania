@@ -19,7 +19,11 @@ import { ActorAuditService } from './actor-audit.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
-import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
+import {
+  TEMPLATE_COLUMNS,
+  TEMPLATE_HEADERS,
+  TEMPLATE_VERSION,
+} from '../common/template-columns';
 
 type CellMap = Record<string, string | number>;
 
@@ -172,11 +176,24 @@ describe('ActorImportService', () => {
     });
 
     it('reads the template version from the Instructions sheet (best effort)', async () => {
-      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+      const b64 = await buildWorkbook([validRow()], {
+        instructionsVersion: TEMPLATE_VERSION,
+      });
 
       const report = await service.run(previewDto(b64), 'sub-1');
 
-      expect(report.templateVersionDetected).toBe('v1');
+      expect(report.templateVersionDetected).toBe(TEMPLATE_VERSION);
+    });
+
+    // T-6 (FR-5) — a template stamped with an OLDER version is rejected
+    // legibly, telling the admin to re-download, rather than falling through
+    // to the generic "no Data sheet matching" column-mismatch error.
+    it('rejects a workbook stamped with a stale template version', async () => {
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+
+      await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
+        /out of date.*re-download/i,
+      );
     });
 
     it('locates the data sheet by matching headers when it is not named "Data"', async () => {
@@ -333,10 +350,20 @@ describe('ActorImportService', () => {
   });
 
   describe('consent gate (FR-6)', () => {
+    // Rows below carry VALID per-row provenance (consentMethod + a date) so
+    // these tests isolate the pre-existing file-level `acknowledged` gate,
+    // which remains independent of the T-6 per-row provenance gate covered in
+    // its own describe block below (DD-5, NFR-7).
+    const grantedRow = (overrides: CellMap = {}): CellMap =>
+      validRow({
+        consentStatus: 'GRANTED',
+        consentMethod: 'SIGNED_FORM',
+        consentObtainedAt: '2026-01-01',
+        ...overrides,
+      });
+
     it('fails GRANTED rows on commit without acknowledgement', async () => {
-      const b64 = await buildWorkbook([
-        validRow({ consentStatus: 'GRANTED' }),
-      ]);
+      const b64 = await buildWorkbook([grantedRow()]);
 
       const report = await service.run(commitDto(b64), 'sub-1');
 
@@ -346,9 +373,7 @@ describe('ActorImportService', () => {
     });
 
     it('imports GRANTED rows on commit when acknowledged is true', async () => {
-      const b64 = await buildWorkbook([
-        validRow({ consentStatus: 'GRANTED' }),
-      ]);
+      const b64 = await buildWorkbook([grantedRow()]);
 
       const report = await service.run(commitDto(b64, true), 'sub-1');
 
@@ -379,14 +404,194 @@ describe('ActorImportService', () => {
     });
 
     it('marks GRANTED rows as create with an acknowledgement warning in preview', async () => {
-      const b64 = await buildWorkbook([
-        validRow({ consentStatus: 'GRANTED' }),
-      ]);
+      const b64 = await buildWorkbook([grantedRow()]);
 
       const report = await service.run(previewDto(b64), 'sub-1');
 
       expect(report.rows[0].outcome).toBe('create');
       expect(report.rows[0].warnings?.[0]).toMatch(/acknowledgement/i);
+    });
+  });
+
+  describe('per-row consent provenance (T-6, FR-3, NFR-7, DD-5)', () => {
+    it('fails a GRANTED row with no method/date, but leaves its neighbours untouched (QA-9)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-OK-BEFORE', traderName: 'Before' }),
+        validRow({
+          traderId: 'TZ-NO-PROVENANCE',
+          traderName: 'No Provenance',
+          consentStatus: 'GRANTED',
+        }),
+        validRow({ traderId: 'TZ-OK-AFTER', traderName: 'After' }),
+      ]);
+
+      const report = await service.run(commitDto(b64, true), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(report.rows[1].outcome).toBe('failed');
+      const fields = (report.rows[1].errors ?? []).map((e) => e.field).sort();
+      expect(fields).toEqual(['consentMethod', 'consentObtainedAt']);
+      expect(report.rows[2].outcome).toBe('created');
+      expect(report.totals).toMatchObject({ created: 2, failed: 1 });
+    });
+
+    it('fails a GRANTED row that has a method but no date', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64, true), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
+    });
+
+    it('accepts a GRANTED row with full row-level provenance and persists all four new fields', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          consentStatus: 'GRANTED',
+          registrationSource: 'SELF_REGISTERED',
+          consentMethod: 'EMAIL',
+          consentObtainedAt: '2026-01-15',
+          consentReference: 'thread-123',
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64, true), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.registrationSource).toBe('SELF_REGISTERED');
+      expect(created.consentMethod).toBe('EMAIL');
+      expect(created.consentObtainedAt).toBe('2026-01-15T00:00:00.000Z');
+      expect(created.consentReference).toBe('thread-123');
+    });
+
+    it('defaults registrationSource/consentMethod when the columns are blank', async () => {
+      const b64 = await buildWorkbook([validRow()]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.registrationSource).toBe('TEAM_MANAGED');
+      expect(created.consentMethod).toBe('NOT_RECORDED');
+      expect(created).not.toHaveProperty('consentObtainedAt');
+      expect(created).not.toHaveProperty('consentReference');
+    });
+
+    it('rejects an invalid registrationSource/consentMethod value with a field error', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ registrationSource: 'BOGUS', consentMethod: 'BOGUS' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      const fields = (report.rows[0].errors ?? []).map((e) => e.field).sort();
+      expect(fields).toEqual(['consentMethod', 'registrationSource']);
+    });
+
+    it('converts a date-only Consent Obtained At cell to a full instant (E-2)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-02-20',
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64, true), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.consentObtainedAt).toBe('2026-02-20T00:00:00.000Z');
+    });
+
+    it('converts an Excel serial date number for Consent Obtained At (E-2)', async () => {
+      // Excel serial 46023 = 2026-01-01 (epoch 1899-12-30).
+      const b64 = await buildWorkbook([
+        validRow({
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: 46023,
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64, true), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.consentObtainedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    it('rejects an unparsable Consent Obtained At value with a field error, never a 500', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ consentObtainedAt: 'not-a-date' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
+    });
+
+    // T-6 rework attempt 2 — the Excel-serial branch previously had no
+    // plausibility bound, so a bare number typed into the cell (a year, a
+    // day-of-month, or a "0" from a formula over an empty reference) silently
+    // parsed into a fabricated date and satisfied the provenance gate.
+    it.each([0, 2026, 15])(
+      'rejects a bare implausible number (%d) for Consent Obtained At',
+      async (value) => {
+        const b64 = await buildWorkbook([
+          validRow({ consentObtainedAt: value }),
+        ]);
+
+        const report = await service.run(previewDto(b64), 'sub-1');
+
+        expect(report.rows[0].outcome).toBe('failed');
+        expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
+      },
+    );
+
+    it('rejects a large-but-in-range serial that would overflow into an expanded-year ISO string', async () => {
+      // 20260115 is a plausible way to type "2026-01-15" without separators,
+      // but as an Excel serial it maps to year ≈ 57,369 — a string Prisma
+      // (and MySQL's DATETIME bound) rejects. The not-in-the-future check
+      // rejects it as a per-row error before it ever reaches Prisma.
+      const b64 = await buildWorkbook([
+        validRow({ consentObtainedAt: 20260115 }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
+    });
+
+    it('rejects a full-instant Consent Obtained At with out-of-range components', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ consentObtainedAt: '2026-13-45T99:99:99Z' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
     });
   });
 

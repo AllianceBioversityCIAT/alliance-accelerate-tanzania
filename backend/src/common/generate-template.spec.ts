@@ -19,7 +19,9 @@ import {
   generateTemplateBuffer,
 } from '../../scripts/generate-import-template';
 import {
+  CONSENT_METHOD_VALUES,
   CROP_YES_NO,
+  REGISTRATION_SOURCE_VALUES,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
 } from './template-columns';
@@ -66,6 +68,19 @@ describe('generate-import-template', () => {
     expect(text).toContain(CANONICAL_REGIONS[0]);
     expect(text).toContain('Kusini Pemba');
     expect(text).toContain(CANONICAL_REGIONS[CANONICAL_REGIONS.length - 1]);
+  });
+
+  it('lists the allowed values for the T-6 enum columns on the Instructions sheet (FR-5)', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const instructions = workbook.getWorksheet('Instructions');
+    const text = collectText(instructions!);
+
+    for (const value of REGISTRATION_SOURCE_VALUES) {
+      expect(text).toContain(value);
+    }
+    for (const value of CONSENT_METHOD_VALUES) {
+      expect(text).toContain(value);
+    }
   });
 
   it('backs the constrained columns with a hidden Lists sheet of allowed values', async () => {

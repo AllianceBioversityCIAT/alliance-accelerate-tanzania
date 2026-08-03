@@ -64,7 +64,7 @@
       **Human check required (defect class D-g):** the alias table must be read by someone who knows the dataset. A test proves the mapping is *applied*, never that it is *semantically right* — `cbo → qds_producer` is a judgement, not a fact. Surface the table at the review pause.
       **Skills:** *(none beyond repo conventions — pure data + unit tests)*
 
-- [ ] **T-6** Template columns, version bump, and per-row import enforcement  (deps: T-2, T-5)
+- [x] **T-6** Template columns, version bump, and per-row import enforcement  (deps: T-2, T-5)
       **Scope:** Four columns in `TEMPLATE_COLUMNS` (allowed-value lists derived from the Prisma enums, never re-typed); bump `TEMPLATE_VERSION` to `v2`; regenerate the committed asset; parse the columns in `actor-import.service.ts` and call the T-2 predicate **per row** inside `applyConsentGate`, keeping the existing file-level `acknowledged`.
       **Traces:** FR-5, NFR-3, NFR-4 · `design.md` §4.2, DD-5
       **Files:** `backend/src/common/template-columns.ts`, `backend/src/actors/actor-import.service.ts`, `frontend/public/templates/actor-import-template.xlsx`, `backend/src/common/template-columns.spec.ts`, `backend/src/common/generate-template.spec.ts`, `backend/src/test/admin-actor-import.e2e.spec.ts`
