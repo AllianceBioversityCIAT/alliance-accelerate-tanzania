@@ -143,7 +143,7 @@ Functional requirements are `FR-n`; non-functional `NFR-n`. Each is atomic, test
 #### Scenario: Bulk unlock MUST NOT overwrite existing, more specific evidence (J-3)
 - GIVEN a batch selection mixing actors that already carry per-actor provenance (e.g. `SIGNED_FORM` with its own date) and actors with `consentMethod = NOT_RECORDED`
 - WHEN an Admin bulk-unlocks the selection with a batch method and date
-- THEN the batch values are applied **only** to the actors whose `consentMethod` is `NOT_RECORDED`
+- THEN each batch value is applied **only** to the provenance fields a row is actually missing — a row lacking a method or a date is filled on exactly the fields it lacks
 - AND every actor that already carried provenance keeps its own method, date, and reference **unchanged**
 - AND the result envelope reports how many actors were left untouched because they already held evidence
 - BUT it must NOT silently replace specific evidence with generic batch values — that would destroy the audit trail this spec exists to create
