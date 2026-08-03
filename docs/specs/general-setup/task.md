@@ -1,7 +1,7 @@
 # Template — `tasks.md`
 
 > Methodology template. Every feature spec stores its executable task list as `docs/specs/<spec-path>/tasks.md` following this format.
-> Consumed by `/sdd-execute` (Leader → Implementer → Reviewer loop). This is NOT a feature spec.
+> Consumed by `/akili-execute` (Leader → Implementer → Reviewer loop). This is NOT a feature spec.
 
 ## Task Format
 

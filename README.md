@@ -79,8 +79,9 @@ The platform transforms fragmented, static CSV/Excel datasets into a **living, c
 │   └── README.md      # operator runbook
 ├── docs/              # product & technical documentation
 │   ├── prd.md                      # Product Requirements Document
-│   ├── system-design/design.md     # UI/UX system & design tokens
-│   ├── detailed-design/            # architecture, data model, API, RBAC/PII
+│   ├── ux-ui/design.md            # UI/UX system & design tokens
+│   ├── trd/trd.md                 # architecture, data model, API, RBAC/PII
+│   ├── infrastructure.md          # environments, IaC, local-stack contract
 │   └── specs/                      # feature specifications
 ├── .agents/           # multi-agent SDD loop definitions
 ├── AGENTS.md          # AI agent guidance (tool-agnostic)
@@ -138,13 +139,14 @@ See [`infra/README.md`](infra/README.md) for the full deploy → operate → tea
 1. **AWS Profile:** every AWS CLI command uses `--profile IBD-DEV`.
 2. **PII Protection:** `phone` and `email` are never exposed to the `Public` role; enforcement is server-side.
 3. **Static Export:** no Next.js SSR / route handlers — server logic stays in NestJS.
-4. **Design Tokens:** use tokens from `docs/system-design/design.md` §7; no hardcoded colors or geometry.
+4. **Design Tokens:** use tokens from `docs/ux-ui/design.md` §7; no hardcoded colors or geometry.
 
 ## Documentation
 
 - **[`docs/prd.md`](docs/prd.md)** — product requirements, personas, scope, user stories, acceptance criteria.
-- **[`docs/system-design/design.md`](docs/system-design/design.md)** — UI/UX system, information architecture, design tokens.
-- **[`docs/detailed-design/detailed-design.md`](docs/detailed-design/)** — technical blueprint: architecture, data model, API surface, RBAC/PII, infrastructure.
+- **[`docs/ux-ui/design.md`](docs/ux-ui/design.md)** — UI/UX system, information architecture, design tokens.
+- **[`docs/trd/trd.md`](docs/trd/trd.md)** — Technical Requirements Document: C4 views, ADRs, quality-attribute scenarios, data model, API surface, RBAC/PII.
+- **[`docs/infrastructure.md`](docs/infrastructure.md)** — environments blueprint: cloud components, deploy strategy, network/security, and the local-stack contract.
 - **[`docs/specs/`](docs/specs/)** — feature specifications following the `general-setup/` templates.
 - **[`docs/reference/`](docs/reference/)** — source material & content briefs:
   - [`accelerate-project-source-data.md`](docs/reference/accelerate-project-source-data.md) — extracted project facts (partners, actors, varieties, regions, statistics) with full source list.

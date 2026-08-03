@@ -1,6 +1,6 @@
 # CLAUDE.md — frontend/ (Next.js static export)
 
-Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the constitutional baseline (`../docs/system-design/design.md` for tokens/components, `../docs/detailed-design/detailed-design.md` for contracts) first. Root hard constraints apply unconditionally; this file adds frontend-specific rules.
+Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the constitutional baseline (`../docs/ux-ui/design.md` for tokens/components, `../docs/trd/trd.md` for contracts) first. Root hard constraints apply unconditionally; this file adds frontend-specific rules.
 
 ## Static export (non-negotiable shape)
 
@@ -9,7 +9,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 ## Design tokens (zero tolerance)
 
-- Only semantic token classes from `tailwind.config.ts` / system-design §7 (`bg-surface`, `text-fg`, `text-muted`, `border-border`, `bg-primary-soft`, `text-danger`, `bg-danger-soft`, `bg-highlight-tint`, …). No hex, no `rgb()`, no arbitrary values (`bg-[#…]`). Opacity modifiers on tokens (`bg-warning/10`, `border-danger/30`) are acceptable precedent. Reviewers grep for violations — so should you.
+- Only semantic token classes from `tailwind.config.ts` / docs/ux-ui/design.md §7 (`bg-surface`, `text-fg`, `text-muted`, `border-border`, `bg-primary-soft`, `text-danger`, `bg-danger-soft`, `bg-highlight-tint`, …). No hex, no `rgb()`, no arbitrary values (`bg-[#…]`). Opacity modifiers on tokens (`bg-warning/10`, `border-danger/30`) are acceptable precedent. Reviewers grep for violations — so should you.
 
 ## API client conventions (`lib/api/`)
 

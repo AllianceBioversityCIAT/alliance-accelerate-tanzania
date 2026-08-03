@@ -1,6 +1,6 @@
 # CLAUDE.md — backend/ (NestJS API on Lambda)
 
-Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the constitutional baseline (`../docs/prd.md`, `../docs/system-design/design.md`, `../docs/detailed-design/detailed-design.md`) first. Root hard constraints (IBD-DEV profile, server-side PII, no SSR, design tokens) apply unconditionally; this file adds backend-specific rules.
+Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the constitutional baseline (`../docs/prd.md`, `../docs/ux-ui/design.md`, `../docs/trd/trd.md`) first. Root hard constraints (IBD-DEV profile, server-side PII, no SSR, design tokens) apply unconditionally; this file adds backend-specific rules.
 
 ## Runtime & the two entrypoints (critical)
 
