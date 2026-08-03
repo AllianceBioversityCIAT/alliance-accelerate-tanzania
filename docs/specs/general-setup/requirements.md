@@ -1,7 +1,7 @@
 # Template — `requirements.md`
 
 > Methodology template. Every feature spec under `docs/specs/<spec-path>/requirements.md` MUST follow this structure.
-> This is NOT a feature spec. Copy and fill it when running `/sdd-specify`.
+> This is NOT a feature spec. Copy and fill it when running `/akili-specify`.
 
 ## Spec Header (required)
 
@@ -10,7 +10,7 @@
 - Spec path: docs/specs/<taxonomy>/<feature-slug>/
 - Status: Draft | Approved | In Progress | Done | Archived
 - Author / Date:
-- Related: docs/prd.md §<n>, docs/system-design/design.md §<n>, docs/detailed-design/detailed-design.md §<n>
+- Related: docs/prd.md §<n>, docs/ux-ui/design.md §<n>, docs/trd/trd.md §<n>
 ```
 
 ## 1. Summary
@@ -30,14 +30,14 @@ For each:
 - **Rationale / Source:** PRD US-<n> / AC-<n>
 - **Acceptance criteria (Given/When/Then):**
   - GIVEN <context> WHEN <action> THEN <observable outcome>
-- **PII/RBAC impact:** <which roles; is PII involved? reference detailed-design §8>
+- **PII/RBAC impact:** <which roles; is PII involved? reference docs/trd/trd.md §8>
 ```
 
 ## 4. Non-Functional Requirements
 Performance, security, accessibility (WCAG 2.1 AA), availability, cost. Each measurable (e.g. "p95 < 1s over 1,000 records").
 
 ## 5. Data & Schema Impact
-New/changed entities or fields vs. `detailed-design.md §3`. Flag any new **PII** field (must be added to the PII allowlist).
+New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new **PII** field (must be added to the PII allowlist).
 
 ## 6. Out of Scope
 Explicit non-goals for this spec.
@@ -46,7 +46,7 @@ Explicit non-goals for this spec.
 Upstream specs, AWS resources (note `IBD-DEV` profile), open questions inherited from the PRD.
 
 ## 8. Open Questions
-Anything needing user/stakeholder confirmation before `/sdd-execute`.
+Anything needing user/stakeholder confirmation before `/akili-execute`.
 
 ---
 **Conventions reminder:** RBAC roles are `Public` / `Staff` / `Admin`; PII = `phone`, `email` (+ any newly flagged). All AWS commands use `--profile IBD-DEV`.

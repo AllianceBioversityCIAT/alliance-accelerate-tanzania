@@ -1,6 +1,6 @@
 # System Design — UI/UX Blueprint — ACCELERATE Tanzania Seed Registry
 
-> The visual and interaction system. Not low-level technical implementation (see `docs/detailed-design/detailed-design.md` for that).
+> The visual and interaction system. Not low-level technical implementation (see `docs/trd/trd.md` for that).
 > Constitutional baseline. Last reviewed: 2026-06-22.
 
 ## 1. Product Experience Principles
