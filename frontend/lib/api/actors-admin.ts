@@ -184,6 +184,12 @@ export interface ActorHistoryList {
  * Matches `AdminActorCreateDto`: required identity fields + optional scalar
  * fields + crop names + the explicit consent acknowledgement required when
  * `consentStatus` is `GRANTED`.
+ *
+ * `consentMethod`/`consentObtainedAt`/`consentReference` (T-9, FR-2/FR-3) mirror
+ * `ActorCreateDto`'s optional provenance fields exactly. `registrationSource`
+ * (T-9 FR-6 closure) mirrors `ActorCreateDto`'s optional `registrationSource`
+ * field the same way — `ActorForm`'s Consent & provenance fieldset now
+ * surfaces it alongside the three consent fields.
  */
 export interface AdminActorCreateInput {
   traderId: string;
@@ -191,6 +197,11 @@ export interface AdminActorCreateInput {
   region: string;
   traderType: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
+  registrationSource?: RegistrationSource;
+  consentMethod?: ConsentMethod;
+  /** Full RFC-3339 instant, or `null`. NEVER a bare `YYYY-MM-DD` — see `ActorForm.tsx`'s `dateOnlyToInstant`. */
+  consentObtainedAt?: string | null;
+  consentReference?: string | null;
   district?: string | null;
   sex?: string | null;
   position?: string | null;

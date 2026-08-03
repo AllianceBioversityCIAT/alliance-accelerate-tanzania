@@ -546,3 +546,85 @@ The work order: *"`jest-axe` sees DOM semantics and contrast, **not** column cro
 | **H-8** | `consentMethodLabel`/`sourceLabel` use a `default:` branch meaning `NOT_RECORDED`/`TEAM_MANAGED`. Safe under the exact-union types, but a future sixth `ConsentMethod` would render a `GRANTED` actor as "Not recorded" **without** the warning — mislabelled rather than merely unlabelled. | Recorded. Same class as H-1: an enum widened in one place and not another. |
 | **H-9** | `DirectoryView.tsx:170-175` still carries the inverted `router.replace` rationale that T-8 corrected in its own copy. Pre-existing, on a public-surface file. | One-line fix whenever that file is next opened. |
 | **H-10** | `admin-actors.e2e.spec.ts`'s `FORBIDDEN_KEYS` hand-lists `PII_ALLOWLIST + traderId/gpsAltitude/gpsAccuracy` under a comment claiming *"Mirrors pii-boundary.spec.ts exactly."* False since **T-7**, and T-8 added a `GRANTED` fixture carrying `SIGNED_FORM`/`DOC-200` that now flows through this file's public-read regression, checked by a scanner blind to those four keys. **Not a leak** — the real gate (`pii-boundary.spec.ts`) iterates the derived union and covers it. | T-7 territory; the local scan is weaker than its comment reads. |
+
+---
+
+### T-9 — Add the Consent & provenance fieldset to the actor form
+
+**Status:** `[x]` PASS on **attempt 2**, plus a scope-completion increment.
+**Implementers:** `akili-implementer` (T2 / sonnet). `impl-T9` (attempt 1, `xhigh`) · `impl-T9b` (rework, `xhigh`) · `impl-T9-source` (FR-6 scope gap, `high`).
+**Reviewers:** parallel lens mode (4R), all T3 / opus. Attempt 1: `rev-T9-conformance` **FAIL**, `rev-T9-risk` **PASS**. Attempt 2: `rev-T9b-conformance` **PASS**, `rev-T9b-risk` **PASS**. Increment: `rev-T9c-risk` **PASS** (single lens — deliberate, see below).
+
+**Diff (cumulative):** 3 files, +611 / −13.
+
+#### The two lenses split on severity, and the FAIL lens was right
+
+Both lenses found the **same fact**: `dateOnlyToInstant`'s `+03:00` output never compares byte-equal to a stored `Date.toISOString()` inside `isSameValue`, so the server's condition (b) fires on **every** save of an actor holding a consent date. They diverged on what that costs.
+
+`rev-T9-risk` classed it **ADVISORY** because no live `400` was reachable. `rev-T9-conformance` classed it **blocking** on different harm — and the Leader adjudicated in its favour:
+
+- **Silent rewrite of an evidence field.** A `consentObtainedAt` carrying a real time-of-day (written via API, import, or bulk) was rewritten to Tanzania midnight by an *unrelated* edit; import-written UTC-midnight instants drifted **−3h**.
+- **Phantom audit entry.** `logUpdate` diffs before/after rows, so that rewrite produced a real `UPDATE` row naming `consentObtainedAt` on an edit the admin never made — on the spec whose purpose is a trustworthy consent audit trail (NFR-6, §4.6).
+
+**Reachability of a `400` was the wrong axis to judge it on**, and `rev-T9b-risk` opened its re-audit by saying so unprompted. This is the mirror of T-6, where the risk lens elevated what conformance had filed as a footnote. **Two lenses earn their cost by disagreeing, not by agreeing** — in both directions.
+
+**Second FAIL (conformance):** NFR-5's verification is *"`jest-axe` clean on the changed **table and form**"*, and `design.md` §12 lists it as a required component test. T-8 delivered the table half; `ActorForm.test.tsx` had **zero** `axe` usage, and **T-10 touches only `AcknowledgeDialog`**, so the form half would never have been closed.
+
+#### The remediation, and why it beat the Leader's own plan
+
+The Leader's instinct was to align T-6's importer to `+03:00`. The conformance lens's remediation was better and was adopted verbatim: **resend the stored value byte-verbatim when the date field was not edited.** That fixes the corruption for dates **already written** by the importer and the bulk path — not only future ones — and preserves any stored time-of-day. **T-6 was therefore not reopened**, which was the right call: the corruption path is closed at the consumer, so the cross-path convention difference stops mattering for data integrity.
+
+`resolveConsentObtainedAt(values, mode, initialValues)`: **untouched** (edit mode **and** `instantToDateOnly(stored) === field`) → resend `stored` verbatim; **new or changed** → `dateOnlyToInstant`, still `+03:00`-anchored. Both lenses independently confirmed the anchoring is correct and closes a real `IsNotFutureDate` bug for admins recording "today" between 00:00–03:00 EAT.
+
+#### What the re-audit established that the Implementer did not claim
+
+- **Byte-equality holds by construction, not by hope.** `admin-actor.serializer.ts` returns the raw Prisma `Date`, Nest serializes it via `JSON.stringify` → `toISOString()`, and `actor-create.dto.ts` carries **no** `@Type(() => Date)` — so the resent string reaches `isSameValue` as a string and is compared against `normalize(storedDate) = toISOString()`. The column is `DATETIME(3)`, so millisecond precision survives. Verified for **every** writer: form (`+03:00`), API, importer (UTC midnight), bulk (batch instant) — all canonicalised to `…sssZ` by `toAdminActor`, so all four round-trip byte-identically.
+- **The ambiguous-rendering case the Leader raised is not reachable as a defect.** `instantToDateOnly` is many-to-one (`10:30Z` and the previous day's `22:00Z` both render the same date), but the verbatim branch fires only when the admin's chosen **calendar date** equals that rendering — and a calendar date is the *only* state an `<input type="date">` can express. To change anything visible, the admin must change the date, which flips to rebuild. The residual is a **capability limit, not a bug**: a wrong stored *time-of-day* cannot be corrected from this form, which is inherent to a date-only control.
+- **The client mirror and the wire body agree by construction** on `consentObtainedAt`: `needsProvenanceCheck` compares against `toFormValues(initialValues).consentObtainedAt`, which *is* the same expression `resolveConsentObtainedAt` uses as its predicate.
+- **The fix could not introduce a rejection.** `rev-T9b-risk` checked every writer for a future-dated store — create/update and bulk DTOs carry `IsNotFutureDate`, and the importer rejects future dates itself — so a stored instant is always ≤ its write time ≤ now. It also noted the pre-fix midnight rebuild had been an **accidental** safety net (it shifted "today" into the past); that net is no longer needed.
+
+#### The FR-6 scope gap — the second decomposition gap this spec produced
+
+A Reviewer found, and the Leader verified at source, that `requirements.md` **FR-6**'s Description says *"the admin create/edit form MUST capture **all four fields** in a dedicated section"* — including **`registrationSource`**. `tasks.md`'s T-9 scope line reads "status · method · date · reference", dropping it, and T-10 is `AcknowledgeDialog` only. **No task owned it**, so FR-6 would have been marked covered with a MUST unmet.
+
+**Leader error, recorded.** An earlier pass cleared the omission by reading only **FR-1**, whose "Admin sets the source explicitly" scenario *is* payload-level (satisfied by T-3) and which §14 attributes to T-1/T-3/T-8. That reading of FR-1 was right; **FR-6 imposes the form control independently, and FR-6 is the requirement that was missed.** The Leader had reported to the user that the omission was correct, and corrected that statement when the second conformance lens pressed it.
+
+Closed inside T-9 rather than as a new task — the same adjudication as T-8's filter gap, and for the same reason: FR-6 is on T-9's `Traces` line.
+
+**This is the second gap of identical shape** (T-8: `design.md` §3 specified two list-query filters that `tasks.md` assigned to nobody). Both were caught **only because a Reviewer read the requirement rather than the task's scope line.** Recorded as a method finding for `/akili-audit`: this spec contains requirements no task owns, and independent audit was the only net that caught them.
+
+#### The risk the increment introduced, and why it is closed
+
+Before the increment `buildDto` **omitted** `registrationSource`, so `buildScalarData` left the stored value alone. It is now sent explicitly on every save and `SCALAR_FIELDS` includes it, so it is **written on every save** — safe only if prefill is correct in every reachable state. Otherwise an ordinary unrelated edit would **silently flip a `SELF_REGISTERED` actor to `TEAM_MANAGED`**, corrupting the exact field this spec exists to record, and `registrationSource` is in `AUDITABLE_FIELDS`, so the audit would show a change nobody made.
+
+`rev-T9c-risk` closed it **by construction**: `edit/page.tsx` gates the form's mount behind a resolved `adminGetActor` (`loading`, `!token`, `!id`, `error || !actor` all return early), so there is **no mount-with-undefined-then-populate path** — which is the only shape that would freeze `values` at the default, since `useState(() => toFormValues(initialValues))` is one-shot. The serializer always emits the field off a non-nullable column; `''` is unreachable because the bespoke select emits no blank option (the Implementer correctly bypassed the generic `renderSelect`, which always prepends one); and a degenerate `undefined` **fails safe** — `JSON.stringify` drops the key, `field in dto` is false, stored value untouched.
+
+**The Leader asked whether omit-when-unchanged should be required instead. The Reviewer said no, and the reasoning is worth keeping:** given a correct prefill the two shapes are indistinguishable; given an *incorrect* prefill, omit-when-unchanged compares against the same wrong `initialValues`, finds a difference, and sends the wrong value anyway. `resolveConsentObtainedAt` earns its complexity because the date has a lossy representation; a bare enum has none. Also structurally different from the date case: `buildDiff` diffs **before/after DB snapshots**, not the DTO, so re-sending an identical enum writes no audit row.
+
+**Single-lens review for the increment — deliberate.** Both lenses had already passed the fieldset; the increment adds one select, and the risk that mattered was one class (silent corruption). The conformance questions worth asking (FR-6 actually satisfied, labels consistent across surfaces, guard untouched) were folded into the risk brief instead of spawning a second agent for symmetry.
+
+#### Verification
+
+`npm test -- ActorForm --silent` **32/32** · full suite **965/965, 69 suites** (Leader-measured baseline before T-9: **951/951**) · `npm run lint` clean (3 pre-existing `<img>` warnings in unrelated files) · `npm run build` succeeds, static export 20/20 · `react-doctor` **86/100**, one warning on `page.tsx:274` (`ActorsView` > 300 lines — a file T-9 does not touch).
+
+**Labels verified consistent across three surfaces** by the Reviewer at source, not from the report: `ActorsTable.tsx` `sourceLabel`, `page.tsx` `SOURCE_OPTIONS`, and `ActorForm.tsx` all render "Team-managed" / "Self-registered".
+
+A pre-existing `tsc --noEmit` error at `page.test.tsx:45` (`TS2556`, a T-8 test file) was confirmed present on the committed baseline via `git stash` — see **J-4**.
+
+#### ADVISORY findings (recorded, non-gating — no advisory mints a task)
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **J-1** ⚠️ | **Pre-existing data-corruption path, broader than this field.** `ActorForm` initialises `values` once and never re-syncs, and `EditActorView` does not reset `loading`/`actor` when `id` changes — and App Router does not unmount on a searchParams-only navigation. So `edit?id=A → edit?id=B` via browser back/forward keeps A's values while `initialValues.id` is B, and **a save would write A's data onto B**. Predates T-9, hits every field. | `key={actor.id}` on `<ActorForm>` in `edit/page.tsx` closes it. **Follow-up task** — not a rework here, and omit-when-unchanged would not have fixed it. |
+| **J-2** | **The increment's safety property lives outside the diff.** The always-write is safe *because* `edit/page.tsx:131-181` gates the mount on a resolved fetch. Nothing in `ActorForm.tsx` records that dependency; a future change that mounts the form before the fetch resolves, or passes a list row as `initialValues`, reinstates the silent flip. | One comment at `buildDto`'s `registrationSource` line naming the precondition would make the coupling visible where the change would be made. |
+| **J-3** | **The verbatim resend is coupled to the serializer's output shape.** If `admin-actor.serializer.ts` ever formats `consentObtainedAt` differently (custom formatter, date-only, `+03:00`, dropped milliseconds), byte-equality breaks and (b) fires on edits that touched nothing — benign for a fully-evidenced actor, a hard `400` for the reachable `GRANTED` + `NOT_RECORDED` + non-null-date shape. | Discoverable only from the form side today. Worth a note on the serializer, where such a change would actually be made. |
+| **J-4** | **Type errors in `frontend/**/*.test.tsx` are covered by no gate.** Jest runs through SWC without type-checking, and `npm run build` did not surface the T-8 `TS2556`. Test-file type fidelity currently rests on `npx tsc --noEmit`, which is **not** in the verification table. | This spec's own evidence for why it matters: T-9's fixture only satisfies the T-8-widened `AdminActor` because the Implementer added four fields by hand — exactly what a type gate should catch instead of review. Worth deciding whether `tsc --noEmit` becomes a gate. |
+| **J-5** | `consentReference` is the one field where the client mirror compares **form** values (`trim()`) while the wire sends `trim() \|\| null` — a stored `''` or whitespace-padded reference would let the client say "unchanged" while the server reads a change. | Unreachable to a `400` today (any validly-`GRANTED` actor carries method + date; the 436 legacy rows hold `null`); worst case a benign normalising audit line. Making the mirror structural means comparing the **body `buildDto` will send** rather than form values. |
+| **J-6** | `ActorHistoryPanel.tsx` renders audit diff values through `String(value)`, so a Tanzania-midnight instant prints as the **previous UTC day** to an admin auditing consent. | Real, outside T-9's file scope. Format instants at `+03:00` in that panel. |
+| **J-7** | **`jest-axe` cannot verify contrast here.** Under jsdom no CSS custom properties resolve and there is no layout, so axe's `color-contrast` rule cannot fire. NFR-5's "contrast per §7" is **unverified by this gate** and rests on token-class review. Also unverified: keyboard order, focus management, whether the live region actually announces. | Same structural limit recorded for T-8. The contrast question routes to the held D-h check. |
+| **J-8** | `Field` computes a `describedBy` joining hint + error ids and **never applies it**, so the two new hints are visible but not programmatically associated. Pre-existing for every hinted field (`gpsLatitude`, `capacityTons`); T-9 widens it by two. `jest-axe` has no rule that catches it, so the new axe tests stay green through it. | Plumbing `describedBy` onto the control fixes all of them in one edit. |
+| **J-9** | No test pins `aria-invalid="true"` on the two new error fields (the code sets it correctly; axe does not check for presence). `CONSENT_METHOD_OPTIONS` is now duplicated verbatim in `ActorForm.tsx` and `page.tsx`. The date input has no `max` bound, so a future date is caught only server-side — **spec-conformant**, since FR-2 puts that rule server-side and §5 makes the client check UX-only. | Minor. |
+| **J-10** | **Do not delete the `SELF_REGISTERED` prefill test as redundant.** The pre-existing "prefills all fields" assertion is non-discriminating in isolation, because the fixture's `TEAM_MANAGED` equals the create-mode default — it would pass with prefill fully broken. The dedicated `SELF_REGISTERED` test is the real guard against the whole silent-flip class. | Recorded so a future cleanup does not remove the load-bearing test. |
+| **J-11** | `TANZANIA_UTC_OFFSET_HOURS`'s derivation is valid only for whole-hour, non-negative offsets — the comment invites editing it "alone", but `3.5` would silently produce `'+3.5:00'`. Harmless for EAT (fixed UTC+3, no DST). | Comment overstates the safety of editing it. |
+
+**D-h note:** T-9's work order carries **no** human-check requirement, so this task is `[x]`. But the new fieldset is `lg:grid-cols-4` — a density no other fieldset in this form uses (the rest cap at `lg:grid-cols-3`) — and a native date input plus a free-text reference at quarter width may crowd. **Both lenses routed it to T-8's held D-h check**, so that check now covers two surfaces: `/admin/actors` and the edit form, at `md` and `lg`.

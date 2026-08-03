@@ -11,6 +11,7 @@
  *   - server 409 duplicate traderId maps inline to the traderId field
  *   - successful submit calls onSuccess
  *   - AuthFailureError triggers onAuthFailure
+ *   - jest-axe clean in create mode and with the FR-3 inline errors shown (NFR-5)
  */
 
 // ---------------------------------------------------------------------------
@@ -32,11 +33,15 @@ jest.mock('@/lib/api/actors-admin', () => ({
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 
 import ActorForm from './ActorForm';
 import { createActor, updateActor } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import type { AdminActor } from '@/lib/api/actors-admin';
+
+// Extend jest-dom expect with the jest-axe matcher (NFR-5).
+expect.extend(toHaveNoViolations);
 
 // ---------------------------------------------------------------------------
 // Constants & fixtures
@@ -63,6 +68,11 @@ const ADMIN_ACTOR: AdminActor = {
   gpsAltitude: null,
   gpsAccuracy: null,
   consentStatus: 'UNKNOWN',
+  // T-9 — the real-world default: every actor's provenance starts here.
+  registrationSource: 'TEAM_MANAGED',
+  consentMethod: 'NOT_RECORDED',
+  consentObtainedAt: null,
+  consentReference: null,
   crops: ['sorghum', 'common_bean'],
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-06-01T00:00:00.000Z',
@@ -101,6 +111,17 @@ function submitForm() {
   fireEvent.click(screen.getByRole('button', { name: /create actor|save changes/i }));
 }
 
+/**
+ * T-9 — selects GRANTED plus the minimum provenance the FR-3 client guard
+ * requires, so tests that exercise the (unrelated) AcknowledgeDialog gating
+ * reach the dialog rather than being blocked by the new inline validation.
+ */
+function grantConsentWithProvenance() {
+  fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+  fireEvent.change(screen.getByLabelText(/consent method/i), { target: { value: 'SIGNED_FORM' } });
+  fireEvent.change(screen.getByLabelText(/consent obtained/i), { target: { value: '2026-01-15' } });
+}
+
 function getFieldError(name: RegExp) {
   const input = screen.getByLabelText(name) as HTMLElement;
   if (!input) return null;
@@ -131,7 +152,7 @@ describe('ActorForm — rendering', () => {
     expect(screen.getByText('Capacity & support')).toBeInTheDocument();
     expect(screen.getByText('Contact')).toBeInTheDocument();
     expect(screen.getByText('Crops')).toBeInTheDocument();
-    expect(screen.getByText('Consent')).toBeInTheDocument();
+    expect(screen.getByText('Consent & provenance')).toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'Create actor' })).toBeInTheDocument();
   });
@@ -156,6 +177,10 @@ describe('ActorForm — rendering', () => {
     expect(screen.getByLabelText(/phone/i)).toHaveValue(ADMIN_ACTOR.phone);
     expect(screen.getByLabelText(/email/i)).toHaveValue(ADMIN_ACTOR.email);
     expect(screen.getByLabelText(/consent status/i)).toHaveValue(ADMIN_ACTOR.consentStatus);
+    expect(screen.getByLabelText(/registration source/i)).toHaveValue(ADMIN_ACTOR.registrationSource);
+    expect(screen.getByLabelText(/consent method/i)).toHaveValue(ADMIN_ACTOR.consentMethod);
+    expect(screen.getByLabelText(/consent obtained/i)).toHaveValue('');
+    expect(screen.getByLabelText(/consent reference/i)).toHaveValue('');
 
     expect(screen.getByLabelText('Sorghum')).toBeChecked();
     expect(screen.getByLabelText('Common bean')).toBeChecked();
@@ -230,7 +255,7 @@ describe('ActorForm — consent acknowledgement gating', () => {
     renderForm();
 
     fillRequiredFields();
-    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    grantConsentWithProvenance();
     submitForm();
 
     const dialog = await screen.findByRole('dialog');
@@ -252,7 +277,7 @@ describe('ActorForm — consent acknowledgement gating', () => {
     renderForm();
 
     fillRequiredFields();
-    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    grantConsentWithProvenance();
     submitForm();
 
     const dialog = await screen.findByRole('dialog');
@@ -266,7 +291,7 @@ describe('ActorForm — consent acknowledgement gating', () => {
     jest.mocked(updateActor).mockResolvedValue({ ...ADMIN_ACTOR, consentStatus: 'GRANTED' });
     renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
 
-    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    grantConsentWithProvenance();
     submitForm();
 
     const dialog = await screen.findByRole('dialog');
@@ -306,6 +331,273 @@ describe('ActorForm — consent acknowledgement gating', () => {
     await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(jest.mocked(createActor).mock.calls[0][0].acknowledged).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Consent & provenance fieldset (T-9, FR-2/FR-3) — client guard is UX only;
+// the server's independent rejection (T-3) is not re-tested here.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — consent & provenance fieldset', () => {
+  it('prefills consent method, date, and reference from an existing actor, converting the stored instant back to a Tanzania calendar date', () => {
+    // Stored as Tanzania midnight (2026-01-01T00:00+03:00), which is UTC
+    // 2025-12-31T21:00:00.000Z. A naive slice of the UTC string would read
+    // back "2025-12-31" — one day off. This is the exact round-trip the
+    // date-only<->instant conversion exists to get right.
+    const actorWithProvenance: AdminActor = {
+      ...ADMIN_ACTOR,
+      consentMethod: 'SIGNED_FORM',
+      consentObtainedAt: '2025-12-31T21:00:00.000Z',
+      consentReference: 'doc-123',
+    };
+    renderForm({ mode: 'edit', initialValues: actorWithProvenance });
+
+    expect(screen.getByLabelText(/consent method/i)).toHaveValue('SIGNED_FORM');
+    expect(screen.getByLabelText(/consent obtained/i)).toHaveValue('2026-01-01');
+    expect(screen.getByLabelText(/consent reference/i)).toHaveValue('doc-123');
+  });
+
+  it('blocks submit and surfaces field-level, aria-described, live-region errors when GRANTED is selected with no method or date', () => {
+    renderForm();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    submitForm();
+
+    const methodInput = screen.getByLabelText(/consent method/i);
+    const dateInput = screen.getByLabelText(/consent obtained/i);
+    const methodError = getFieldError(/consent method/i);
+    const dateError = getFieldError(/consent obtained/i);
+
+    expect(methodError?.textContent).toMatch(/select how consent was obtained/i);
+    expect(dateError?.textContent).toMatch(/enter the date/i);
+    // aria-describedby binding, both directions.
+    expect(methodInput.getAttribute('aria-describedby')).toBe(methodError?.id);
+    expect(dateInput.getAttribute('aria-describedby')).toBe(dateError?.id);
+    // Live-region announcement — same mechanism as every other field error in this form.
+    expect(methodError).toHaveAttribute('role', 'alert');
+    expect(dateError).toHaveAttribute('role', 'alert');
+
+    expect(createActor).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('requires only the missing field when just one of method/date is absent', () => {
+    renderForm();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    fireEvent.change(screen.getByLabelText(/consent method/i), { target: { value: 'EMAIL' } });
+    submitForm();
+
+    expect(getFieldError(/consent method/i)).toBeNull();
+    expect(getFieldError(/consent obtained/i)?.textContent).toMatch(/enter the date/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('allows a GRANTED submission once method and date are supplied, sending a full RFC-3339 instant anchored at Tanzania midnight', async () => {
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    fireEvent.change(screen.getByLabelText(/consent method/i), { target: { value: 'SIGNED_FORM' } });
+    fireEvent.change(screen.getByLabelText(/consent obtained/i), { target: { value: '2026-01-15' } });
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    const input = within(dialog).getByLabelText(/type .* to confirm/i);
+    fireEvent.change(input, { target: { value: ACKNOWLEDGEMENT_TEXT } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /grant consent/i }));
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.consentMethod).toBe('SIGNED_FORM');
+    expect(dto.consentObtainedAt).toBe('2026-01-15T00:00:00+03:00');
+  });
+
+  it('saves a legacy GRANTED + NOT_RECORDED actor after editing an unrelated field — the guard must not fire merely because the actor is already GRANTED', async () => {
+    const legacyActor: AdminActor = {
+      ...ADMIN_ACTOR,
+      consentStatus: 'GRANTED',
+      consentMethod: 'NOT_RECORDED',
+      consentObtainedAt: null,
+      consentReference: null,
+    };
+    jest.mocked(updateActor).mockResolvedValue(legacyActor);
+    renderForm({ mode: 'edit', initialValues: legacyActor });
+
+    fireEvent.change(screen.getByLabelText(/district/i), { target: { value: 'Mbeya Rural' } });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(getFieldError(/consent method/i)).toBeNull();
+    expect(getFieldError(/consent obtained/i)).toBeNull();
+
+    // C-3/E-1 idiom: the untouched null provenance round-trips as null, never ''.
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.consentMethod).toBe('NOT_RECORDED');
+    expect(dto.consentObtainedAt).toBeNull();
+    expect(dto.consentReference).toBeNull();
+  });
+
+  it('resends an untouched consentObtainedAt verbatim, byte-identical, preserving a stored time-of-day', async () => {
+    // T-9 rework (conformance Issue 1): `isSameValue`
+    // (consent-provenance.policy.ts) compares Date.toISOString() strings, so
+    // rebuilding this date through dateOnlyToInstant would rewrite a stored
+    // time-of-day to Tanzania midnight and register as a phantom change on
+    // an edit that never touched consent. The actor here is stored with a
+    // real time-of-day, not the Tanzania-midnight anchor a form save would
+    // produce — the fix must resend the stored instant untouched.
+    const actorWithTimeOfDay: AdminActor = {
+      ...ADMIN_ACTOR,
+      consentStatus: 'GRANTED',
+      consentMethod: 'SIGNED_FORM',
+      consentObtainedAt: '2026-01-15T10:30:00.000Z',
+      consentReference: 'doc-999',
+    };
+    jest.mocked(updateActor).mockResolvedValue(actorWithTimeOfDay);
+    renderForm({ mode: 'edit', initialValues: actorWithTimeOfDay });
+
+    // Edit an unrelated field only — consent method/date/reference are left alone.
+    fireEvent.change(screen.getByLabelText(/district/i), { target: { value: 'Mbeya Rural' } });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.consentObtainedAt).toBe('2026-01-15T10:30:00.000Z');
+  });
+
+  it('builds a fresh Tanzania-midnight instant when the admin actually changes an untouched date', async () => {
+    // Contrast case for the test above: once the date field itself changes,
+    // the verbatim-resend path must NOT apply — a genuinely new date still
+    // goes through dateOnlyToInstant.
+    const actorWithTimeOfDay: AdminActor = {
+      ...ADMIN_ACTOR,
+      consentStatus: 'GRANTED',
+      consentMethod: 'SIGNED_FORM',
+      consentObtainedAt: '2026-01-15T10:30:00.000Z',
+      consentReference: 'doc-999',
+    };
+    jest.mocked(updateActor).mockResolvedValue(actorWithTimeOfDay);
+    renderForm({ mode: 'edit', initialValues: actorWithTimeOfDay });
+
+    fireEvent.change(screen.getByLabelText(/consent obtained/i), { target: { value: '2026-02-01' } });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.consentObtainedAt).toBe('2026-02-01T00:00:00+03:00');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Registration source (T-9, FR-6 closure) — the admin create/edit form must
+// capture registrationSource in the Consent & provenance fieldset. Unlike the
+// three consent fields, this enum is non-nullable with a schema default
+// (TEAM_MANAGED) and is NOT a provenance field for the FR-3 guard.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — registration source (FR-6)', () => {
+  it('renders the Registration source select inside the Consent & provenance fieldset with an associated label', () => {
+    renderForm();
+
+    const select = screen.getByLabelText(/registration source/i);
+    expect(select).toBeInTheDocument();
+    expect(select.tagName).toBe('SELECT');
+
+    const fieldset = select.closest('fieldset');
+    expect(fieldset).not.toBeNull();
+    expect(within(fieldset as HTMLElement).getByText('Consent & provenance')).toBeInTheDocument();
+  });
+
+  it('prefills Registration source from the actor\'s stored value in edit mode', () => {
+    const selfRegisteredActor: AdminActor = {
+      ...ADMIN_ACTOR,
+      registrationSource: 'SELF_REGISTERED',
+    };
+    renderForm({ mode: 'edit', initialValues: selfRegisteredActor });
+
+    expect(screen.getByLabelText(/registration source/i)).toHaveValue('SELF_REGISTERED');
+  });
+
+  it('round-trips a changed Registration source into the submitted DTO', async () => {
+    jest.mocked(updateActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/registration source/i), {
+      target: { value: 'SELF_REGISTERED' },
+    });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.registrationSource).toBe('SELF_REGISTERED');
+  });
+
+  it('sends registrationSource explicitly as TEAM_MANAGED when a new actor is created without changing the default', async () => {
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+
+    fillRequiredFields();
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.registrationSource).toBe('TEAM_MANAGED');
+  });
+
+  it('does not affect the FR-3 provenance guard — changing Registration source alone on a legacy GRANTED actor does not require a consent method/date', async () => {
+    const legacyActor: AdminActor = {
+      ...ADMIN_ACTOR,
+      consentStatus: 'GRANTED',
+      consentMethod: 'NOT_RECORDED',
+      consentObtainedAt: null,
+      consentReference: null,
+    };
+    jest.mocked(updateActor).mockResolvedValue(legacyActor);
+    renderForm({ mode: 'edit', initialValues: legacyActor });
+
+    fireEvent.change(screen.getByLabelText(/registration source/i), {
+      target: { value: 'SELF_REGISTERED' },
+    });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(getFieldError(/consent method/i)).toBeNull();
+    expect(getFieldError(/consent obtained/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accessibility (jest-axe, NFR-5)
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — accessibility', () => {
+  it('has no axe violations freshly rendered in create mode', async () => {
+    const { container } = renderForm();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('has no axe violations once the FR-3 guard has produced inline errors', async () => {
+    const { container } = renderForm();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    submitForm();
+
+    // Confirm the guard actually fired before asserting a11y on that state.
+    expect(getFieldError(/consent method/i)?.textContent).toMatch(/select how consent was obtained/i);
+    expect(getFieldError(/consent obtained/i)?.textContent).toMatch(/enter the date/i);
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
 

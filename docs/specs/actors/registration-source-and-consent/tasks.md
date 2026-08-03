@@ -99,7 +99,7 @@
       **Human check required (defect class D-h):** `jest-axe` sees DOM semantics and contrast, **not** column crowding. Two more columns on an already-dense table needs a human or T6 look at `md` and `lg` before this is called done.
       **Skills:** `ui-ux-pro-max`, `tailwind-design-system`, `vercel-react-best-practices`, `react-doctor`
 
-- [ ] **T-9** Add the Consent & provenance fieldset to the actor form  (deps: T-3, T-8)
+- [x] **T-9** Add the Consent & provenance fieldset to the actor form  (deps: T-3, T-8)
       **Scope:** New grouped fieldset (status · method · date · reference) in `ActorForm.tsx`; extend `buildDto` and `toFormValues`; client-side FR-3 validation as **UX only**.
       **Traces:** FR-2, FR-3, FR-6, NFR-5, NFR-8 · `design.md` §5
       **Files:** `frontend/components/admin/ActorForm.tsx`, `frontend/components/admin/ActorForm.test.tsx`
