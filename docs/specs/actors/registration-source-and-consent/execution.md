@@ -186,6 +186,46 @@ CREATE INDEX `Actor_registrationSource_idx` ON `Actor`(`registrationSource`);
 | **B-2** | FR-9's enumeration query (`consentStatus = GRANTED AND consentMethod = NOT_RECORDED`, implemented by T-8) has **no supporting index**, and the existing `@@index([consentStatus])` is fully non-selective for it today since all 436 rows are `GRANTED`. `design.md` §3 also promises a `consentMethod` list filter, likewise unindexed. | Non-issue at 436 rows and at the ~1,318-row import scale. **Raise against `design.md` §2 before T-8 starts.** Per Advisory-Never-Becomes-A-Task this mints no task here. |
 | **B-3** | Prisma emitted the four `ADD COLUMN`s alphabetically while `schema.prisma` declares `registrationSource` first. | Cosmetic — Prisma addresses columns by name. Noted so a future reader does not mistake it for drift. |
 
-**Issues encountered**
+**Issues encountered (T-1)**
 - **Second consecutive Reviewer delivery failure.** Both `rev-T5` and `rev-T1` emitted an idle notification with no report body; both verdicts were recovered intact by an explicit resend request, and neither re-ran its audit. This is a harness-level delivery pattern, not an agent defect — it costs one round trip per review. Mitigation applied from T-1 onward: the Reviewer brief now explicitly instructs "deliver your verdict as a normal reply".
+
+---
+
+### T-2 — Implement the shared consent-provenance invariant
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** on attempt 1 (no rework) |
+| Date | 2026-08-03 |
+| Wave | 3 — ran **in parallel with T-7** (disjoint files, both `backend/src/common/`, Jest-only verifies, no Prisma regeneration) |
+| Implementer attempts | 1 |
+| Effort assigned | `xhigh` |
+| Skills assigned | `nestjs-expert`, **`tdd`** — Leader-assigned for this task specifically: a pure business rule with a published five-row truth table is the case where red→green earns its cost |
+| Requirements covered | FR-3, NFR-7 · `design.md` §4.1, DD-1, DD-3 |
+
+**Files changed** — `backend/src/common/consent-provenance.policy.ts` (new), `backend/src/common/consent-provenance.policy.spec.ts` (new). No call sites wired, per scope.
+
+**Verification:** `cd backend && npm test -- consent-provenance --silent` → PASS, 9/9 tests, 1 suite. TDD honored — red confirmed first (`Cannot find module './consent-provenance.policy'`) with expected values written from §4.1 and FR-3 by hand before the implementation existed.
+
+**Reviewer verdict — PASS**, and this audit is the strongest evidence in the run so far because the Reviewer **independently derived all five §4.1 rows from the spec text before opening the Implementer's test file**, then compared. All five matched. That satisfies the task's `Evidence is disqualified if` clause directly: the tests are traceable to the requirements rather than reverse-engineered from behavior.
+
+The discriminating row is **row 3** — stored `GRANTED` + `NOT_RECORDED`, payload the full object as `ActorForm.tsx` actually builds it (status and method present as keys, values equal to stored) → **allowed**. A key-presence implementation returns `false` there. With all 436 live actors in exactly that state, this single row is what keeps the database editable, and the suite genuinely can fail the R-9 bug rather than merely documenting the code.
+
+**Adjudication of the three concerns the Leader raised in the review brief** — all three resolved in the diff's favour:
+
+| Leader's concern | Reviewer's adjudication |
+|---|---|
+| `if (!(field in payload)) return false;` is literally a key-presence check (R-9 re-entry?) | **Not the trigger.** It can only *suppress* condition (b), never fire it, and is provably redundant — `in` returning false implies `payload[field] === undefined`, which the next line already handles identically. The banned idiom is key presence *as the trigger*; this is a pre-filter on provenance fields, not on `consentStatus`. |
+| `??` (line 107) vs `!== undefined` (line 109) asymmetry | **Load-bearing in the correct direction.** FR-3's strip scenario rejects "*or clearing `consentObtainedAt`*". Line 109 must honor an explicit `null`; had it used `??` it would fall back to the stored date and wrongly allow. `consentMethod` is non-nullable in `schema.prisma` with `@IsIn` at the DTO, so a payload cannot legitimately carry `consentMethod: null`. |
+| `consentReference` in `PROVENANCE_FIELDS` (Implementer flagged as assumption) | **Spec-backed, not invented.** `requirements.md` §3 defines provenance as "method, date obtained, reference"; FR-3's trigger fires on "**any** provenance field". FR-2's "must NOT require a reference" is separately preserved — the return expression never tests `consentReference`. |
+
+**ADVISORY findings (recorded, non-gating — no code was changed after the PASS, and none of these mints a task)**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **C-1** | Line 97's `field in payload` is provably redundant and is the exact idiom **DD-3 bans by name**. Removing it is a zero-behavior-change deletion. | Recorded only. Touching audited code post-PASS would invalidate the diff the Reviewer cleared. Worth folding into a future touch of this file. |
+| **C-2** | Line 107 could use `!== undefined` for symmetry with 109. | Not required by any current scenario. Recorded. |
+| **C-3** ⚠️ | **Carry-forward constraint on T-3 / T-6 / T-9.** `isSameValue` treats `''` and `null` as *different*, and the final check treats `consentObtainedAt: ''` as "has a date". `ActorForm.buildDto` currently uses the `values.x.trim() \|\| null` idiom throughout, so the admin path is safe **only if T-9 keeps that idiom for the two new text fields**. The importer is the real exposure: blank spreadsheet cells arrive as `''`, and T-6 calls this predicate per row inside `applyConsentGate`. A row whose `consentReference` parses to `''` against a stored `null` fires condition (b) spuriously and **rejects an otherwise-valid legacy row — R-9's failure mode re-entering through a different door.** Additionally: T-6 must normalize the row's `consentStatus` **before** calling the predicate; a raw `'granted'` short-circuits the early return. | **Must appear verbatim in the T-3, T-6, and T-9 Implementer briefs.** |
+| **C-4** | The explicit-`null` date-clear branch (lines 108–111) is the only line in the module no test exercises — and it is the branch whose asymmetry carries the whole reject semantics. `design.md` §12 places that scenario at Integration level, so it is not a T-2 done-criterion. | Recorded. Cheaper to cover in T-3 than to discover in production. |
+| **C-5** | `tasks.md` T-2 and `design.md` §12 both say "table-driven"; the suite uses five discrete `it` blocks rather than `it.each`. | Substance met (all five rows, both named rows). The per-row spec citations that make the evidence auditable would be lost in a bare data table. Deviation on the record. |
 

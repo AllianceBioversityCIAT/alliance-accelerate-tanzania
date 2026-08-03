@@ -22,7 +22,7 @@
       **Not done if:** any existing column is altered, narrowed, or dropped; any pre-existing row's non-new fields differ; or a backfill populates provenance for legacy `GRANTED` rows (**FR-9 forbids this — the gap must stay visible**).
       **Skills:** `nestjs-expert`
 
-- [ ] **T-2** Implement the shared consent-provenance invariant  (deps: T-1)
+- [x] **T-2** Implement the shared consent-provenance invariant  (deps: T-1)
       **Scope:** New pure, Nest-independent `common/consent-provenance.policy.ts` beside `pii-consent.policy.ts`. Exposes one predicate over (stored state, submitted payload). **Triggers on value change, never on field presence** — conditions (a) and (b) of `design.md` §4.1. No call sites wired in this task.
       **Traces:** FR-3, NFR-7 · `design.md` §4.1, DD-1, DD-3
       **Files:** `backend/src/common/consent-provenance.policy.ts`, `backend/src/common/consent-provenance.policy.spec.ts`
