@@ -73,12 +73,13 @@
       **Not done if:** allowed-value lists were hand-typed rather than derived from the canonical constants (NFR-3), or `TEMPLATE_VERSION` was left at `v1`.
       **Skills:** `nestjs-expert`
 
-- [ ] **T-7** Close the public boundary  (deps: T-1)
+- [x] **T-7** Close the public boundary  (deps: T-1)
       **Scope:** Add `NEVER_PUBLIC_FIELDS` to `pii-consent.policy.ts` covering the four new fields **plus** the already-never-public `traderId`, `gpsAltitude`, `gpsAccuracy` (which today are documented only in prose). `PII_ALLOWLIST` unchanged. Extend `pii-boundary.spec.ts` to iterate the union across every public path.
       **Traces:** FR-7, FR-8, NFR-1 · `design.md` §4.5, §6, DD-6
       **Files:** `backend/src/common/pii-consent.policy.ts`, `backend/src/common/pii-consent.policy.spec.ts`, `backend/src/test/pii-boundary.spec.ts`, `frontend/lib/dashboard/csv.test.ts`
       **Verify:** `cd backend && npm test -- "pii" --silent && cd ../frontend && npm test -- csv --silent`
-      **Done when:** zero occurrences of any `NEVER_PUBLIC_FIELDS` name **or its value** appear in the response body of `/actors`, `/actors/:id`, `/actors/geo`, `/metrics`, asserted end-to-end over HTTP; and the public dashboard CSV likewise contains none.
+      **Done when:** zero occurrences of any `NEVER_PUBLIC_FIELDS` name **or its value** appear in the response body of `/actors`, `/actors/:id`, `/metrics`, asserted end-to-end over HTTP; and the public dashboard CSV likewise contains none.
+      **Scope correction (2026-08-03, approved by JuanCode mid-execution):** this criterion originally also named `/actors/geo`. That endpoint **does not exist** in `backend/src` — it is a *planned* feed documented only in `docs/trd/trd.md` QA-1/QA-6. Independently verified twice. The surface it was meant to protect is covered anyway: the public map consumes `/actors`. See `requirements.md` FR-8's scope-correction note. Mirrors the FR-7 precedent in the same spec.
       **Not done if:** `PII_ALLOWLIST`'s contents changed (DD-6 — it means *PII*, and `registrationSource` is not PII), or the assertion checks only field names and not values.
       **This is a hard release gate (NFR-1).**
       **Skills:** `nestjs-expert`

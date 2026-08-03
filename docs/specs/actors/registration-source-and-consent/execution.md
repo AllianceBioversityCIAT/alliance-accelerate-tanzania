@@ -229,3 +229,54 @@ The discriminating row is **row 3** — stored `GRANTED` + `NOT_RECORDED`, paylo
 | **C-4** | The explicit-`null` date-clear branch (lines 108–111) is the only line in the module no test exercises — and it is the branch whose asymmetry carries the whole reject semantics. `design.md` §12 places that scenario at Integration level, so it is not a T-2 done-criterion. | Recorded. Cheaper to cover in T-3 than to discover in production. |
 | **C-5** | `tasks.md` T-2 and `design.md` §12 both say "table-driven"; the suite uses five discrete `it` blocks rather than `it.each`. | Substance met (all five rows, both named rows). The per-row spec citations that make the evidence auditable would be lost in a bare data table. Deviation on the record. |
 
+---
+
+### T-7 — Close the public boundary (hard release gate, NFR-1)
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** on attempt 1, after an approved scope correction (below) |
+| Date | 2026-08-03 |
+| Wave | 3 — ran **in parallel with T-2** |
+| Implementer attempts | 1 |
+| Effort assigned | `xhigh` |
+| Skills assigned | `nestjs-expert` |
+| Requirements covered | FR-7, FR-8, NFR-1 · `design.md` §4.5, §6, DD-6 |
+
+**Files changed** — `backend/src/common/pii-consent.policy.ts`, `backend/src/common/pii-consent.policy.spec.ts`, `backend/src/test/pii-boundary.spec.ts`, `frontend/lib/dashboard/csv.test.ts`.
+
+`NEVER_PUBLIC_FIELDS = ['traderId', 'gpsAltitude', 'gpsAccuracy', 'registrationSource', 'consentMethod', 'consentObtainedAt', 'consentReference']`. `PII_ALLOWLIST` byte-unchanged and now **test-pinned** by an exact `toEqual` plus a disjointness assertion between the two constants — so a future overload of `PII_ALLOWLIST` breaks a test instead of passing silently. That exceeds DD-6's requirement.
+
+**Verification:** `cd backend && npm test -- "pii" --silent` → PASS, 2 suites, 18 tests. `cd frontend && npm test -- csv --silent` → PASS, 1 suite, 32 tests. `npx eslint --quiet` on the three backend files → clean.
+
+#### SCOPE CORRECTION — `/actors/geo` (approved by JuanCode, 2026-08-03)
+
+The Implementer surfaced this in a `Not Done / Assumptions` field rather than quietly omitting it. **T-7's done-criteria named four public paths; `/actors/geo` has never existed.**
+
+Verified three times independently — by the Implementer, by the Leader, and by the Reviewer with fresh eyes and a deliberate instruction to invert the adjudication if it found the endpoint:
+
+1. Full route inventory of `backend/src`: the entire HTTP surface is `health`, `metrics`, `actors` (`@Get`, `@Get(':id')`), `admin/actors`, `users`, `auth`. No `geo` route, sub-route, or alternate controller.
+2. Case-insensitive string search across `backend/src`: only an unrelated `gpslatitude` import fixture.
+3. Case-insensitive search across all of `frontend/`: matches **only** `package-lock.json` (`@types/geojson`, a transitive Leaflet dependency).
+
+**The Reviewer's finding that settles it:** the public map and directory reach their data through `frontend/lib/api/actors.ts` → `GET /api/v1/actors` and `GET /api/v1/actors/{id}` — **paths this suite already asserts**. So the correction is stronger than "the criterion names a nonexistent path": the surface `/actors/geo` was meant to protect *is covered*.
+
+Decision: **descope `/actors/geo` from the criterion**, mirroring the FR-7 precedent already recorded in this spec's `requirements.md` (its admin export likewise does not exist). `tasks.md` T-7 and `requirements.md` FR-8 both amended with the rationale. When the endpoint is eventually built it inherits the assertion nearly free, because `FORBIDDEN_KEYS` iterates the union of the two constants rather than a hand-maintained literal.
+
+**TRD drift recorded, out of scope for this spec.** `docs/trd/trd.md` documents `/actors/geo` in its API-surface table (§157), map description (§179), tactics (§286), and quality-attribute scenarios QA-1 and QA-6, as though implemented. That divergence pre-dates this spec and belongs to `/akili-audit`.
+
+**Reviewer verdict — PASS.** The finding that matters most is **not** about the tests: `role-aware.serializer.ts:80-91`'s `toPublic` is a literal object construction over seven named keys — no spread, no `delete`, no `Object.assign`, no dynamic key copy — with `PublicActor` as the return type, so an accidental extra key is a **compile error**, not a runtime leak. A column added to Prisma tomorrow is invisible to the public unless someone deliberately types its name in. The tests are correctly positioned as *detection over a structurally sound mechanism*, which is the right relationship and is what FR-8's "must NOT be achieved by omitting them from one serializer while another read path selects `*`" demands. The Prisma reads do select `*`; that is harmless precisely because the pick is downstream and total.
+
+The Reviewer also confirmed the value assertions are **mutation-sensitive and free of false positives**: it enumerated the actual public response body and checked every sentinel against it. `'2026-02-14'` can only appear via a genuine provenance leak, because `PublicActor` emits no date field at all. It named the choice of non-default fixture values "the single best judgement in the diff" — with the live defaults (`TEAM_MANAGED`/`NOT_RECORDED`/`null`/`null`, which all 436 rows carry) the assertions would have passed vacuously.
+
+**ADVISORY findings (recorded, non-gating)**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **D-1** | `gpsAccuracy`'s **value** is not value-asserted. `LEAKABLE_PII_VALUES` covers `traderId` and `gpsAltitude` but not `gpsAccuracy`, whose fixture value is a bare `5` — unassertable, since `35.7416` contains it. The done-criterion does say "any name **or its value**". | Pre-dates this diff. One-line fix using the technique the Implementer already applied correctly to the four new fields: give the fixture a distinctive sentinel (e.g. `7.7331`) and add it to the list. Fold into a later touch of this file. |
+| **D-2** | `expect(collectForbiddenValues(wire)).toHaveLength(0)` is unreachable-by-construction — `expectNoPiiKeys` throws on the first forbidden key one line earlier. | Cosmetic. Reads like the value check when the real one is the `LEAKABLE_PII_VALUES` loop below it. |
+| **D-3** | `pii-boundary.spec.ts:276-278` claims to "mirror production bootstrap exactly" but constructs `new ValidationPipe(...)` directly instead of the shared `createValidationPipe()` (`backend/CLAUDE.md`'s two-entrypoint rule). | Pre-existing code, untouched by this diff, irrelevant to PII. The **comment** overstates. Flagged so it is not later mistaken for a T-7 regression. |
+| **D-4** | `SerializableActor` explicitly declares every *other* never-public column under "Non-public columns — accepted on input, NEVER emitted", but the four new fields were not added there. | **Not a defect** — `design.md` §4.5 mandates "no change" to that file and the Implementer followed the design. Structural safety is unaffected. Noted only: the file's own documentation convention now under-declares by four, and they belong there if a future task touches that interface. |
+
+**Process note.** The Implementer reported this gap in a `Not Done / Assumptions` field instead of silently narrowing scope, which is what allowed it to be adjudicated properly rather than discovered at release. Per `/akili-execute` Step 2.3.0 the task was held out of `[x]` until the user decided, even though the Reviewer returned PASS.
+

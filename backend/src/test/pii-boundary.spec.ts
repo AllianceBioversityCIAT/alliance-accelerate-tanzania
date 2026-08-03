@@ -1,10 +1,13 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { PII_ALLOWLIST } from '../common/pii-consent.policy';
+import {
+  NEVER_PUBLIC_FIELDS,
+  PII_ALLOWLIST,
+} from '../common/pii-consent.policy';
 
 /**
  * T-9 — End-to-end PII-boundary + consent integration tests (NFR-1, NFR-7).
@@ -23,18 +26,31 @@ import { PII_ALLOWLIST } from '../common/pii-consent.policy';
  * absent.
  *
  * Design refs: design.md §10 (DD-1/DD-2/DD-6), §12. Requirements: NFR-1, NFR-7.
+ *
+ * **T-7 scope note.** FR-8/NFR-1 and this spec's `tasks.md` T-7 done-criteria
+ * name FOUR public paths: `/actors`, `/actors/:id`, `/actors/geo`, `/metrics`.
+ * `/actors/geo` is documented in `docs/trd/trd.md` (QA-1/QA-6) as a planned
+ * lightweight map-points endpoint but is **not implemented** anywhere in
+ * `backend/src` — there is no controller, route, or service for it. This
+ * mirrors the FR-7 scope correction already recorded in this spec's
+ * `requirements.md` (the admin export it names is likewise unimplemented). This
+ * suite therefore covers the three public paths that exist (`/actors`,
+ * `/actors/:id`, `/metrics`); `/actors/geo` cannot be asserted over HTTP until
+ * it is built, and building it is out of this spec's scope.
  */
 
 /**
  * The complete set of keys that must NEVER appear anywhere in a public response:
- * the PII allowlist (the single source of truth) plus the non-public columns the
- * serializer accepts but never emits.
+ * the UNION of {@link PII_ALLOWLIST} (personally identifiable fields) and
+ * {@link NEVER_PUBLIC_FIELDS} (admin-only operational fields that are not PII —
+ * `traderId`/`gpsAltitude`/`gpsAccuracy` plus the T-7 registration-source and
+ * consent-provenance fields, DD-6). Iterating the union — rather than a
+ * hand-maintained literal list — means a field added to either constant is
+ * automatically covered here with no second edit.
  */
 const FORBIDDEN_KEYS: readonly string[] = [
   ...PII_ALLOWLIST,
-  'traderId',
-  'gpsAltitude',
-  'gpsAccuracy',
+  ...NEVER_PUBLIC_FIELDS,
 ];
 
 /** A fully Prisma-shaped Actor row with EVERY PII field + full GPS populated. */
@@ -61,6 +77,15 @@ function fixtureActor(
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: ConsentStatus.GRANTED,
+    // T-7 — registration source + consent provenance (FR-1/FR-2). Deliberately
+    // NON-DEFAULT (defaults are TEAM_MANAGED / NOT_RECORDED / null / null) so a
+    // leaked value would be caught: two of these four fields are null on every
+    // live row today, and asserting absence of a null value would pass
+    // vacuously (per the T-1 rollout note — 436/436 rows still default).
+    registrationSource: RegistrationSource.SELF_REGISTERED,
+    consentMethod: ConsentMethod.SIGNED_FORM,
+    consentObtainedAt: new Date('2026-02-14T00:00:00Z'),
+    consentReference: 'CONSENT-REF-SIGNED-9931',
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -215,7 +240,13 @@ function collectForbiddenValues(value: unknown, found: unknown[] = []): unknown[
   return found;
 }
 
-/** The exact PII *values* seeded into the GRANTED fixtures (must never appear). */
+/**
+ * The exact PII/never-public *values* seeded into the GRANTED fixtures (must
+ * never appear). The T-7 provenance values are deliberately non-default
+ * (`SELF_REGISTERED`/`SIGNED_FORM`/a real date/a reference string) — a
+ * default-valued check (`TEAM_MANAGED`, `NOT_RECORDED`, `null`) would pass
+ * vacuously since most live rows carry exactly those defaults today.
+ */
 const LEAKABLE_PII_VALUES = [
   '+255700000000',
   'director@example.com',
@@ -224,6 +255,10 @@ const LEAKABLE_PII_VALUES = [
   'Needs cold storage',
   'TZ-SEED-0001',
   '1400', // gpsAltitude
+  'SELF_REGISTERED', // registrationSource — non-default
+  'SIGNED_FORM', // consentMethod — non-default
+  '2026-02-14', // consentObtainedAt — non-default (ISO date fragment)
+  'CONSENT-REF-SIGNED-9931', // consentReference — non-default
 ];
 
 describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
@@ -303,6 +338,9 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       const wire = JSON.parse(JSON.stringify(res.body));
       expectNoPiiKeys(wire);
       expect(collectForbiddenValues(wire)).toHaveLength(0);
+      for (const forbiddenValue of LEAKABLE_PII_VALUES) {
+        expect(JSON.stringify(wire)).not.toContain(forbiddenValue);
+      }
       expect(wire.id).toBe('actor-granted-1');
       expect(wire.gps).toEqual({ lat: -3.3869, long: 36.683 });
       expect(Object.keys(wire.gps)).toEqual(['lat', 'long']);
@@ -336,6 +374,9 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       const wire = JSON.parse(JSON.stringify(res.body));
       expectNoPiiKeys(wire);
       expect(collectForbiddenValues(wire)).toHaveLength(0);
+      for (const forbiddenValue of LEAKABLE_PII_VALUES) {
+        expect(JSON.stringify(wire)).not.toContain(forbiddenValue);
+      }
     });
 
     it('counts GRANTED actors only — excludes UNKNOWN/DENIED', async () => {

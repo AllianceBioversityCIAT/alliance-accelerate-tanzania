@@ -193,6 +193,69 @@ describe('buildDashboardCsv — PII gate (NFR-1)', () => {
   });
 });
 
+// ── (e) T-7 gate — registration source / consent provenance MUST NEVER appear ─
+//
+// FR-7: registrationSource, consentMethod, consentObtainedAt, and
+// consentReference are admin-only (DD-6 in the registration-source-and-consent
+// spec) and are not on PublicActor. Values below are deliberately NON-DEFAULT
+// (defaults are TEAM_MANAGED / NOT_RECORDED / null / null) — a default-valued
+// check would pass vacuously since most live rows carry exactly those defaults.
+
+describe('buildDashboardCsv — registration source / consent provenance gate (FR-7)', () => {
+  it('does not contain any of the four field names in any case', () => {
+    const csv = buildDashboardCsv({ actors: [makeActor()], kpis: BASE_KPIS });
+    expect(csv.toLowerCase()).not.toContain('registrationsource');
+    expect(csv.toLowerCase()).not.toContain('consentmethod');
+    expect(csv.toLowerCase()).not.toContain('consentobtainedat');
+    expect(csv.toLowerCase()).not.toContain('consentreference');
+  });
+
+  it('does not serialise stray provenance keys even if cast onto an actor object', () => {
+    // Cast a "poisoned" object — the allowlist must ignore extra keys entirely,
+    // including ones the backend would never actually send on PublicActor.
+    const poisonedActor = {
+      ...makeActor(),
+      registrationSource: 'SELF_REGISTERED',
+      consentMethod: 'SIGNED_FORM',
+      consentObtainedAt: '2026-02-14T00:00:00.000Z',
+      consentReference: 'CONSENT-REF-SIGNED-9931',
+    } as unknown as PublicActor;
+
+    const csv = buildDashboardCsv({ actors: [poisonedActor], kpis: BASE_KPIS });
+
+    // The sentinel (non-default) values must not appear anywhere in the output.
+    expect(csv).not.toContain('SELF_REGISTERED');
+    expect(csv).not.toContain('SIGNED_FORM');
+    expect(csv).not.toContain('2026-02-14');
+    expect(csv).not.toContain('CONSENT-REF-SIGNED-9931');
+    // Nor the key names.
+    expect(csv.toLowerCase()).not.toContain('registrationsource');
+    expect(csv.toLowerCase()).not.toContain('consentmethod');
+    expect(csv.toLowerCase()).not.toContain('consentobtainedat');
+    expect(csv.toLowerCase()).not.toContain('consentreference');
+  });
+
+  it('does not serialise stray provenance keys across multiple poisoned actors', () => {
+    const actors = Array.from({ length: 3 }, (_, i) => ({
+      ...makeActor({ id: `actor-${i}`, traderName: `Actor ${i}` }),
+      registrationSource: 'SELF_REGISTERED',
+      consentMethod: 'SIGNED_FORM',
+      consentObtainedAt: `2026-02-1${i}T00:00:00.000Z`,
+      consentReference: `CONSENT-REF-SIGNED-993${i}`,
+    } as unknown as PublicActor));
+
+    const csv = buildDashboardCsv({ actors, kpis: BASE_KPIS });
+    expect(csv.toLowerCase()).not.toContain('registrationsource');
+    expect(csv.toLowerCase()).not.toContain('consentmethod');
+    expect(csv.toLowerCase()).not.toContain('consentobtainedat');
+    expect(csv.toLowerCase()).not.toContain('consentreference');
+    actors.forEach((_, i) => {
+      expect(csv).not.toContain(`2026-02-1${i}`);
+      expect(csv).not.toContain(`CONSENT-REF-SIGNED-993${i}`);
+    });
+  });
+});
+
 // ── (c) CSV escaping ─────────────────────────────────────────────────────────
 
 describe('buildDashboardCsv — CSV escaping', () => {

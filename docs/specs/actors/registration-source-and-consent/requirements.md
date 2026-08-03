@@ -258,8 +258,14 @@ Functional requirements are `FR-n`; non-functional `NFR-n`. Each is atomic, test
 
 ### FR-8: The new fields are never public
 
-- **Description:** No public read path — `/actors`, `/actors/:id`, `/actors/geo`, `/metrics`, public export — may expose `registrationSource`, `consentMethod`, `consentObtainedAt`, or `consentReference`.
+- **Description:** No public read path — `/actors`, `/actors/:id`, `/metrics`, public export — may expose `registrationSource`, `consentMethod`, `consentObtainedAt`, or `consentReference`.
 - **Rationale / Source:** TRD §8, ADR-003, QA-1. See §9 D-3 for why these are admin-only rather than argued individually.
+
+> **Scope correction (2026-08-03, approved by JuanCode during T-7 execution).** This description originally also named **`/actors/geo`**, inherited from `docs/trd/trd.md` QA-1. **That endpoint does not exist** — `backend/src/actors/actors.controller.ts` declares only `@Get()` and `@Get(':id')`, and two independent sweeps of `backend/src` and `frontend/` found no `geo` route, controller, or caller. It appears in the TRD (QA-1, QA-6) as a *planned* lightweight map-points feed. This mirrors the correction already recorded above for FR-7's admin export, which likewise does not exist.
+>
+> **The protected surface is covered regardless:** the public map and directory reach their data through `frontend/lib/api/actors.ts` → `GET /api/v1/actors` and `GET /api/v1/actors/{id}`, both of which this requirement asserts. When `/actors/geo` is eventually built, it inherits the assertion automatically — `pii-boundary.spec.ts` iterates the union of `PII_ALLOWLIST` and `NEVER_PUBLIC_FIELDS` rather than a hand-maintained list, so the new path only needs to be added to the suite's path loop.
+>
+> **TRD drift, pre-dating this spec:** `docs/trd/trd.md` documents `/actors/geo` in its API surface table (§157), its map description (§179), its tactics (§286), and quality-attribute scenarios QA-1 and QA-6, as though it were implemented. That divergence is out of this spec's scope — it belongs to `/akili-audit`.
 - **Acceptance criteria:**
 
 #### Scenario: Public response bodies
