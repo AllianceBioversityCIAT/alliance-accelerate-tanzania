@@ -1,4 +1,5 @@
 // @sdd-spec admin/bulk-actor-operations (T-6)
+// @sdd-spec actors/registration-source-and-consent (T-8)
 'use client';
 
 /**
@@ -9,13 +10,39 @@
  * we additionally guard API calls to never execute without a token.
  *
  * States:
- *   loading   — skeleton rows while adminListActors is in-flight.
- *   error     — error banner + retry button; AuthFailureError routes to /login.
- *   empty     — friendly empty state when no actors match the filters.
- *   populated — ActorsTable with filters + pagination + selection.
+ *   loading   — filter bar (interactive) + skeleton rows while
+ *               adminListActors is in-flight.
+ *   error     — filter bar (interactive) + error banner + retry button;
+ *               AuthFailureError routes to /login.
+ *   empty     — filter bar (interactive) + friendly empty state when no
+ *               actors match the filters.
+ *   populated — filter bar + ActorsTable + pagination + selection.
  *
- * Filters: region, traderType, consentStatus (dropdown selects).
- * Pagination: page and pageSize controls (server-driven).
+ * The filter bar (and its "Clear filters" escape hatch, shown whenever a
+ * filter is set) renders unconditionally across all four states above — it
+ * is not gated on `!loading && !error && actors.length > 0`, so a failed or
+ * empty request never strands the admin without a way to change or clear
+ * filters (T-8 rework, Issue 1; mirrors DirectoryView.tsx's filter-bar
+ * placement above its own loading/error/empty ternary).
+ *
+ * Filters: region, traderType, consentStatus, registrationSource, consentMethod
+ * (dropdown selects). Pagination: page and pageSize controls (server-driven).
+ *
+ * URL sync (T-8, FR-6): every filter and pagination value is read from
+ * `useSearchParams()` and written via `router.replace()` — the repo's
+ * query-param routing pattern (mirrors `components/directory/DirectoryView.tsx`
+ * and `frontend/CLAUDE.md`). This is what makes filter state survive a reload,
+ * and it is FR-9's enumeration mechanism: a shared link with
+ * `?consentStatus=GRANTED&consentMethod=NOT_RECORDED` reproduces the exact
+ * legacy unevidenced-consent set for any admin who opens it. The three
+ * enum-valued filters (`consentStatus`, `registrationSource`,
+ * `consentMethod`) are validated against their option lists on read
+ * (`enumParam`); an unrecognized value (stale link, enum rename, typo)
+ * degrades to "All" instead of reaching the API's `@IsIn` validation, which
+ * would otherwise 400 and strand the admin behind a Retry loop.
+ *
+ * useSearchParams() triggers the Next.js static-export CSR bailout, so the
+ * view is wrapped in <Suspense> by the default-exported page component below.
  *
  * Success affordance: a transient success banner (aria-live="polite") reserved
  * for T-7 bulk-mutation messages.
@@ -23,8 +50,8 @@
  * Tokens only; WCAG 2.1 AA.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { getSession } from '@/lib/auth/auth-client';
 import {
@@ -60,6 +87,70 @@ const CONSENT_OPTIONS: { value: AdminActorListQuery['consentStatus']; label: str
   { value: 'DENIED',  label: 'Hidden (DENIED)' },
   { value: 'UNKNOWN', label: 'Unknown' },
 ];
+
+/** Registration-source filter options (T-8, FR-1/FR-6). */
+const SOURCE_OPTIONS: { value: AdminActorListQuery['registrationSource']; label: string }[] = [
+  { value: 'TEAM_MANAGED',   label: 'Team-managed' },
+  { value: 'SELF_REGISTERED', label: 'Self-registered' },
+];
+
+/**
+ * Consent-method filter options (T-8, FR-2/FR-6). `NOT_RECORDED` combined
+ * with `consentStatus = GRANTED` is FR-9's enumeration mechanism for the
+ * legacy unevidenced-consent backlog.
+ */
+const CONSENT_METHOD_OPTIONS: { value: AdminActorListQuery['consentMethod']; label: string }[] = [
+  { value: 'NOT_RECORDED',    label: 'Not recorded' },
+  { value: 'PORTAL_CHECKBOX', label: 'Portal checkbox' },
+  { value: 'SIGNED_FORM',     label: 'Signed form' },
+  { value: 'EMAIL',           label: 'Email' },
+  { value: 'VERBAL_FIELD',    label: 'Verbal (field)' },
+];
+
+// ---------------------------------------------------------------------------
+// URL param helpers (T-8) — mirrors components/directory/DirectoryView.tsx
+// ---------------------------------------------------------------------------
+
+/** Read a non-empty string param from URLSearchParams, else undefined. */
+function param(params: URLSearchParams, key: string): string | undefined {
+  const v = params.get(key);
+  return v && v.trim() !== '' ? v : undefined;
+}
+
+/** Read a positive integer page param; falls back to 1 on invalid/missing input. */
+function pageParam(params: URLSearchParams): number {
+  const raw = params.get('page');
+  if (!raw) return 1;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/** Read pageSize param; falls back to the default unless it is one of the allowed sizes. */
+function pageSizeParam(params: URLSearchParams): number {
+  const raw = params.get('pageSize');
+  if (!raw) return DEFAULT_PAGE_SIZE;
+  const n = parseInt(raw, 10);
+  return PAGE_SIZE_OPTIONS.includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+/**
+ * Read an enum-valued filter param, but only accept it if it matches one of
+ * the given option values. An unrecognized value — a typo when sharing a
+ * link, or a link that outlives an enum rename — degrades to `undefined`
+ * ("All") instead of flowing to `adminListActors` unchecked: the backend's
+ * `@IsIn` validation 400s on an unknown `consentStatus`/`registrationSource`/
+ * `consentMethod`, which used to strand the admin behind a Retry that
+ * reissues the identical failing request forever (T-8 rework, Issue 1).
+ */
+function enumParam<T extends string>(
+  params: URLSearchParams,
+  key: string,
+  options: readonly { value: T | undefined }[],
+): T | undefined {
+  const raw = param(params, key);
+  if (raw == null) return undefined;
+  return options.some((o) => o.value === raw) ? (raw as T) : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Filter select primitive
@@ -120,13 +211,12 @@ function FilterSelect({
 function TableSkeleton() {
   return (
     <div role="status" aria-label="Loading actors" className="flex flex-col gap-3">
-      {/* Filter bar skeleton */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Skeleton className="h-10 w-full rounded-md" />
-        <Skeleton className="h-10 w-full rounded-md" />
-        <Skeleton className="h-10 w-full rounded-md" />
-        <Skeleton className="h-10 w-full rounded-md" />
-      </div>
+      {/*
+        No filter-bar skeleton here — the real, interactive filter bar now
+        renders unconditionally above this component in ActorsView (T-8
+        rework, Issue 1), so a duplicate skeleton would just stack a second,
+        non-interactive filter row underneath the real one.
+      */}
 
       {/* Desktop skeleton */}
       <div className="hidden md:block rounded-md border border-border overflow-hidden">
@@ -135,6 +225,7 @@ function TableSkeleton() {
           <Skeleton className="h-3 w-40 rounded-sm" />
           <Skeleton className="h-3 w-28 rounded-sm" />
           <Skeleton className="h-3 w-28 rounded-sm" />
+          <Skeleton className="h-3 w-24 rounded-sm" />
           <Skeleton className="h-3 w-20 rounded-sm" />
           <Skeleton className="h-3 w-28 rounded-sm" />
           <Skeleton className="h-3 w-32 rounded-sm" />
@@ -149,6 +240,7 @@ function TableSkeleton() {
             <Skeleton className="h-4 w-40 rounded-sm" />
             <Skeleton className="h-4 w-24 rounded-sm" />
             <Skeleton className="h-4 w-28 rounded-sm" />
+            <Skeleton className="h-5 w-20 rounded-full" />
             <Skeleton className="h-5 w-16 rounded-full" />
             <Skeleton className="h-4 w-24 rounded-sm" />
             <Skeleton className="h-4 w-32 rounded-sm" />
@@ -176,20 +268,38 @@ function TableSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Page component
+// View (uses useSearchParams — must be rendered inside <Suspense>)
 // ---------------------------------------------------------------------------
 
-export default function ActorsPage() {
+function ActorsView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ── Read filter + pagination state from the URL (T-8) ──────────────────────
+
+  const region = param(searchParams, 'region');
+  const traderType = param(searchParams, 'traderType');
+  // Validated against their option lists (T-8 rework, Issue 1) — an
+  // unrecognized value degrades to "All" rather than reaching the API.
+  const consentStatus = enumParam(searchParams, 'consentStatus', CONSENT_OPTIONS);
+  const registrationSource = enumParam(searchParams, 'registrationSource', SOURCE_OPTIONS);
+  const consentMethod = enumParam(searchParams, 'consentMethod', CONSENT_METHOD_OPTIONS);
+  const page = pageParam(searchParams);
+  const pageSize = pageSizeParam(searchParams);
+
+  const filters: AdminActorListQuery = {
+    ...(region ? { region } : {}),
+    ...(traderType ? { traderType } : {}),
+    ...(consentStatus ? { consentStatus } : {}),
+    ...(registrationSource ? { registrationSource } : {}),
+    ...(consentMethod ? { consentMethod } : {}),
+  };
 
   // ── Data state ────────────────────────────────────────────────────────────
 
   const [token,          setToken]          = useState<string | null>(null);
   const [actors,         setActors]         = useState<AdminActor[]>([]);
   const [total,          setTotal]          = useState(0);
-  const [page,           setPage]           = useState(1);
-  const [pageSize,       setPageSize]       = useState(DEFAULT_PAGE_SIZE);
-  const [filters,        setFilters]        = useState<AdminActorListQuery>({});
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState<string | undefined>();
 
@@ -262,7 +372,11 @@ export default function ActorsPage() {
     return () => { cancelled = true; };
   }, [handleAuthFailure]);
 
-  // ── Fetch when pagination or filters change ───────────────────────────────
+  // ── Fetch when pagination or filters (URL) change ─────────────────────────
+  //
+  // Dependencies are the primitive URL values rather than the `filters`
+  // object itself — `filters` is a fresh object every render, so depending on
+  // it directly would re-run this effect (and refetch) on every render.
 
   useEffect(() => {
     if (!token) return;
@@ -281,31 +395,84 @@ export default function ActorsPage() {
 
     void load();
     return () => { cancelled = true; };
-  }, [token, page, pageSize, filters, fetchActors]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    token,
+    page,
+    pageSize,
+    region,
+    traderType,
+    consentStatus,
+    registrationSource,
+    consentMethod,
+    fetchActors,
+  ]);
+
+  // ── URL write helper (T-8) — mirrors components/directory/DirectoryView.tsx ─
+
+  /**
+   * Push a new query-string onto the URL without a full navigation.
+   * Uses router.replace() (shallow) so successive filter/pagination changes
+   * update the current URL in place instead of each pushing a new history
+   * entry — the back button takes the admin out of this filtered view in one
+   * step, not through every intermediate filter state. Static-export safe
+   * (no SSR).
+   */
+  const pushParams = useCallback(
+    (next: Record<string, string | undefined>) => {
+      const p = new URLSearchParams();
+      // Preserve existing params that are not being overwritten.
+      searchParams.forEach((v, k) => {
+        if (!(k in next)) p.set(k, v);
+      });
+      // Apply new values (omit undefined = clear that param).
+      Object.entries(next).forEach(([k, v]) => {
+        if (v != null && v !== '') p.set(k, v);
+      });
+      const qs = p.toString();
+      router.replace(qs ? `?${qs}` : '?', { scroll: false });
+    },
+    [router, searchParams],
+  );
 
   // ── Filter handlers ───────────────────────────────────────────────────────
 
   const handleFilterChange = useCallback(
-    (next: Partial<AdminActorListQuery>) => {
-      setFilters((prev) => ({ ...prev, ...next }));
-      setPage(1);
+    (next: Record<string, string | undefined>) => {
+      pushParams({ ...next, page: undefined }); // any filter change resets to page 1
     },
-    []
+    [pushParams]
   );
 
   const handleClearFilters = useCallback(() => {
-    setFilters({});
-    setPage(1);
-  }, []);
+    pushParams({
+      region: undefined,
+      traderType: undefined,
+      consentStatus: undefined,
+      registrationSource: undefined,
+      consentMethod: undefined,
+      page: undefined,
+    });
+  }, [pushParams]);
 
   // ── Pagination handlers ───────────────────────────────────────────────────
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const handlePageSizeChange = useCallback((size: number) => {
-    setPageSize(size);
-    setPage(1);
-  }, []);
+  const handlePageSizeChange = useCallback(
+    (size: number) => {
+      pushParams({ pageSize: String(size), page: undefined });
+    },
+    [pushParams]
+  );
+
+  const handlePrevPage = useCallback(() => {
+    pushParams({ page: String(Math.max(1, page - 1)) });
+  }, [pushParams, page]);
+
+  const handleNextPage = useCallback(() => {
+    pushParams({ page: String(Math.min(totalPages, page + 1)) });
+  }, [pushParams, page, totalPages]);
 
   const handleRetry = useCallback(async () => {
     if (!token) return;
@@ -313,7 +480,8 @@ export default function ActorsPage() {
     setError(undefined);
     await fetchActors(token, { ...filters, page, pageSize });
     setLoading(false);
-  }, [token, filters, page, pageSize, fetchActors]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors]);
 
   // ── Selection handlers ────────────────────────────────────────────────────
 
@@ -356,7 +524,8 @@ export default function ActorsPage() {
       await fetchActors(token, { ...filters, page, pageSize });
       showSuccess(`Deleted ${actor.traderName}`);
     },
-    [token, filters, page, pageSize, fetchActors, showSuccess],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess],
   );
 
   // ── Bulk action result summary ────────────────────────────────────────────
@@ -398,7 +567,8 @@ export default function ActorsPage() {
     } finally {
       setDialogLoading(false);
     }
-  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const handleLockConfirm = useCallback(async () => {
     if (!token || ids.length === 0) return;
@@ -422,7 +592,8 @@ export default function ActorsPage() {
     } finally {
       setDialogLoading(false);
     }
-  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!token || ids.length === 0) return;
@@ -443,7 +614,8 @@ export default function ActorsPage() {
     } finally {
       setDialogLoading(false);
     }
-  }, [token, ids, filters, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const openDialog = useCallback((kind: Exclude<DialogKind, null>) => {
     setDialogError(undefined);
@@ -495,6 +667,101 @@ export default function ActorsPage() {
         </div>
       )}
 
+      {/*
+        ── Filters + page size (T-8 rework, Issue 1) ──────────────────────
+        Rendered unconditionally, above the loading/error/empty/populated
+        split below — never gated on `!loading && !error && actors.length > 0`.
+        A filter/pagination change never needs `token` (it only rewrites the
+        URL), so this can render before the session resolves too. Mirrors
+        DirectoryView.tsx's placement of its search+filters bar above its own
+        states ternary.
+      */}
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <FilterSelect
+            id="filter-region"
+            label="Region"
+            value={region}
+            options={REGIONS.map((r) => ({ value: r, label: r }))}
+            onChange={(value) => handleFilterChange({ region: value })}
+            disabled={loading}
+          />
+          <FilterSelect
+            id="filter-trader-type"
+            label="Trader type"
+            value={traderType}
+            options={traderTypeOptions}
+            onChange={(value) => handleFilterChange({ traderType: value })}
+            disabled={loading}
+          />
+          <FilterSelect
+            id="filter-consent"
+            label="Consent status"
+            value={consentStatus}
+            options={CONSENT_OPTIONS.map((o) => ({ value: o.value ?? '', label: o.label }))}
+            onChange={(value) => handleFilterChange({ consentStatus: value })}
+            disabled={loading}
+          />
+          <FilterSelect
+            id="filter-registration-source"
+            label="Registration source"
+            value={registrationSource}
+            options={SOURCE_OPTIONS.map((o) => ({ value: o.value ?? '', label: o.label }))}
+            onChange={(value) => handleFilterChange({ registrationSource: value })}
+            disabled={loading}
+          />
+          <FilterSelect
+            id="filter-consent-method"
+            label="Consent method"
+            value={consentMethod}
+            options={CONSENT_METHOD_OPTIONS.map((o) => ({ value: o.value ?? '', label: o.label }))}
+            onChange={(value) => handleFilterChange({ consentMethod: value })}
+            disabled={loading}
+          />
+
+          {/* Page size */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="page-size" className="text-sm font-medium text-fg">
+              Page size
+            </label>
+            <select
+              id="page-size"
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              disabled={loading}
+              aria-label="Page size"
+              className={[
+                'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+                'border-border',
+              ].join(' ')}
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size} per page
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Clear filters — reachable whenever a filter is set, in every state */}
+        {Object.keys(filters).length > 0 && (
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            className={[
+              'self-start rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
+              'transition-colors hover:bg-surface-alt',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+            ].join(' ')}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {/* ── Error banner ──────────────────────────────────────────────────── */}
       {error && !loading && (
         <div
@@ -536,86 +803,12 @@ export default function ActorsPage() {
               ? 'Try clearing the filters to see more results.'
               : 'The registry is currently empty.'}
           </p>
-          {Object.keys(filters).length > 0 && (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className={[
-                'rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
-                'transition-colors hover:bg-surface-alt',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-              ].join(' ')}
-            >
-              Clear filters
-            </button>
-          )}
         </div>
       )}
 
       {/* ── Populated state ───────────────────────────────────────────────── */}
       {!loading && !error && actors.length > 0 && token && (
         <>
-          {/* Filters */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <FilterSelect
-              id="filter-region"
-              label="Region"
-              value={filters.region}
-              options={REGIONS.map((r) => ({ value: r, label: r }))}
-              onChange={(region) => handleFilterChange({ region })}
-              disabled={loading}
-            />
-            <FilterSelect
-              id="filter-trader-type"
-              label="Trader type"
-              value={filters.traderType}
-              options={traderTypeOptions}
-              onChange={(traderType) => handleFilterChange({ traderType })}
-              disabled={loading}
-            />
-            <FilterSelect
-              id="filter-consent"
-              label="Consent status"
-              value={filters.consentStatus}
-              options={CONSENT_OPTIONS.map((o) => ({
-                value: o.value ?? '',
-                label: o.label,
-              }))}
-              onChange={(consentStatus) =>
-                handleFilterChange({
-                  consentStatus: (consentStatus as AdminActorListQuery['consentStatus']) || undefined,
-                })
-              }
-              disabled={loading}
-            />
-
-            {/* Page size */}
-            <div className="flex flex-col gap-1">
-              <label htmlFor="page-size" className="text-sm font-medium text-fg">
-                Page size
-              </label>
-              <select
-                id="page-size"
-                value={pageSize}
-                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                disabled={loading}
-                aria-label="Page size"
-                className={[
-                  'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                  'border-border',
-                ].join(' ')}
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size} per page
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
           {/* Bulk action bar */}
           <BulkActionBar
             selectedCount={selectedIds.size}
@@ -646,7 +839,7 @@ export default function ActorsPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={handlePrevPage}
                 disabled={page <= 1 || loading}
                 aria-label="Previous page"
                 className={[
@@ -664,7 +857,7 @@ export default function ActorsPage() {
               </span>
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                onClick={handleNextPage}
                 disabled={page >= totalPages || loading}
                 aria-label="Next page"
                 className={[
@@ -718,5 +911,17 @@ export default function ActorsPage() {
         error={dialogError}
       />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page with Suspense boundary (T-8 — useSearchParams static-export requirement)
+// ---------------------------------------------------------------------------
+
+export default function ActorsPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <ActorsView />
+    </Suspense>
   );
 }

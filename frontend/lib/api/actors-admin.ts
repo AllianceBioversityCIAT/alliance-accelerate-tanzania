@@ -27,6 +27,27 @@ import { apiFetch } from './client';
 // ── Types — design.md §3 (backend contract) ────────────────────────────────
 
 /**
+ * T-8 (`actors/registration-source-and-consent`) — which track produced an
+ * Actor record (FR-1). Mirrors the backend `RegistrationSource` Prisma enum
+ * exactly — never re-typed as a loose `string` (frontend/CLAUDE.md type
+ * fidelity rule).
+ */
+export type RegistrationSource = 'TEAM_MANAGED' | 'SELF_REGISTERED';
+
+/**
+ * T-8 — how consent was obtained for an Actor (FR-2). Mirrors the backend
+ * `ConsentMethod` Prisma enum exactly. `NOT_RECORDED` is the default for
+ * every actor whose provenance has never been set, including legacy `GRANTED`
+ * rows the migration deliberately left unevidenced (FR-9).
+ */
+export type ConsentMethod =
+  | 'NOT_RECORDED'
+  | 'PORTAL_CHECKBOX'
+  | 'SIGNED_FORM'
+  | 'EMAIL'
+  | 'VERBAL_FIELD';
+
+/**
  * Full Admin actor response shape returned by `GET /api/v1/admin/actors`.
  *
  * Includes every Actor column including PII (`phone`, `email`, `sex`,
@@ -34,6 +55,11 @@ import { apiFetch } from './client';
  * `consentStatus`, and flattened crop names. This is the ONLY client-side
  * shape that carries non-consented actor PII; it is produced exclusively by
  * Admin-gated routes (FR-1, FR-7, NFR-1).
+ *
+ * `registrationSource`, `consentMethod`, `consentObtainedAt`, and
+ * `consentReference` (T-8, FR-1/FR-2) are admin-only operational metadata —
+ * they are declared in `NEVER_PUBLIC_FIELDS` server-side and MUST NOT be
+ * added to any public-facing type (`PublicActor` in `lib/api/actors.ts`).
  */
 export interface AdminActor {
   id: string;
@@ -54,6 +80,12 @@ export interface AdminActor {
   gpsAltitude: number | null;
   gpsAccuracy: number | null;
   consentStatus: string;
+  registrationSource: RegistrationSource;
+  consentMethod: ConsentMethod;
+  /** ISO date string; `null` when consent provenance has never been recorded. */
+  consentObtainedAt: string | null;
+  /** Free-text pointer to the consent evidence; `null` when not supplied. */
+  consentReference: string | null;
   crops: string[];
   createdAt: string;
   updatedAt: string;
@@ -74,13 +106,31 @@ export interface BulkResult {
   notFound: string[];
 }
 
-/** Query parameters for `adminListActors` (mirrors AdminActorListQueryDto). */
+/**
+ * Query parameters for `adminListActors` (mirrors AdminActorListQueryDto).
+ *
+ * `registrationSource` and `consentMethod` (T-8, FR-6) are sent to the API
+ * exactly like the other filters. Both are validated server-side via `@IsIn`
+ * over the Prisma-generated `RegistrationSource`/`ConsentMethod` enums
+ * (`backend/src/actors/dto/admin-actor-list-query.dto.ts`) and AND-composed
+ * into the `where` clause built by `ActorsAdminService.adminList`
+ * (`actors-admin.service.ts`) — see `design.md` §3, `GET /api/v1/admin/actors`.
+ */
 export interface AdminActorListQuery {
   page?: number;
   pageSize?: number;
   region?: string;
   traderType?: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
+  /** FR-6/FR-9 — filter by which track produced the record. */
+  registrationSource?: RegistrationSource;
+  /**
+   * FR-6/FR-9 — filter by consent method. Combined with
+   * `consentStatus: 'GRANTED'`, `consentMethod: 'NOT_RECORDED'` is FR-9's
+   * enumeration mechanism for legacy `GRANTED` actors that carry no
+   * provenance.
+   */
+  consentMethod?: ConsentMethod;
 }
 
 /** Body for `PATCH /api/v1/admin/actors/bulk/consent` (FR-3, FR-4). */
@@ -183,13 +233,17 @@ const BASE = '/api/v1/admin/actors';
 // ── API functions — design.md §3 ───────────────────────────────────────────
 
 /**
- * GET /api/v1/admin/actors?page=&pageSize=&region=&traderType=&consentStatus=
+ * GET /api/v1/admin/actors?page=&pageSize=&region=&traderType=&consentStatus=&registrationSource=&consentMethod=
  *
  * Returns a paginated list of ALL actors regardless of `consentStatus`, with
  * PII fields included (FR-1). Throws AuthFailureError on 401; throws Error on
  * other non-OK responses.
  *
- * @param query  Optional page, pageSize, region, traderType, consentStatus.
+ * `registrationSource`/`consentMethod` are sent whenever supplied (FR-6) and
+ * validated/filtered server-side — see {@link AdminActorListQuery}.
+ *
+ * @param query  Optional page, pageSize, region, traderType, consentStatus,
+ *               registrationSource, consentMethod.
  * @param token  Cognito access token from the caller's session.
  */
 export async function adminListActors(
@@ -202,6 +256,10 @@ export async function adminListActors(
   if (query?.region != null) params.set('region', query.region);
   if (query?.traderType != null) params.set('traderType', query.traderType);
   if (query?.consentStatus != null) params.set('consentStatus', query.consentStatus);
+  if (query?.registrationSource != null) {
+    params.set('registrationSource', query.registrationSource);
+  }
+  if (query?.consentMethod != null) params.set('consentMethod', query.consentMethod);
 
   const qs = params.toString();
   const path = qs ? `${BASE}?${qs}` : BASE;

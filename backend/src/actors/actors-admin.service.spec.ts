@@ -196,6 +196,28 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(where.consentStatus).not.toBe(ConsentStatus.GRANTED);
     });
 
+    // T-8 — registrationSource + consentMethod are FR-9's enumeration
+    // mechanism (`consentStatus=GRANTED&consentMethod=NOT_RECORDED` finds the
+    // legacy unevidenced set); they must AND-compose with each other and with
+    // the existing filters.
+    it('applies registrationSource and consentMethod filters, AND-composed with consentStatus', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.adminList({
+        consentStatus: 'GRANTED',
+        registrationSource: 'TEAM_MANAGED',
+        consentMethod: 'NOT_RECORDED',
+      } as never);
+
+      const where = prisma.actor.findMany.mock.calls[0][0].where;
+      expect(where).toEqual({
+        consentStatus: ConsentStatus.GRANTED,
+        registrationSource: 'TEAM_MANAGED',
+        consentMethod: ConsentMethod.NOT_RECORDED,
+      });
+    });
+
     it('omits absent filters from the WHERE', async () => {
       prisma.actor.findMany.mockResolvedValue([]);
       prisma.actor.count.mockResolvedValue(0);

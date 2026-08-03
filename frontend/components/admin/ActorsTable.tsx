@@ -5,9 +5,14 @@
  * ActorsTable — selectable admin actor list.
  *
  * Layout:
- *   - md+: <table> with columns: Trader, Region, Type, Consent, Phone, Email,
- *     Market, Actions.
- *   - mobile (<md): stacked cards, one per actor.
+ *   - md+: <table> with columns: Trader, Region, Type, Source, Consent,
+ *     Phone, Email, Market, Actions. All columns render — none are
+ *     dropped — wrapped in `overflow-x-auto` so the full row scrolls
+ *     horizontally at this breakpoint and up when it overflows the
+ *     viewport (design.md §9, `registration-source-and-consent` FR-6).
+ *   - mobile (<md): the table is `hidden` and stacked cards render instead,
+ *     one per actor, carrying the same Source badge and consent-method
+ *     caption as the table's Consent column.
  *
  * Selection:
  *   - Row checkboxes let an Admin select individual actors.
@@ -24,6 +29,17 @@
  *   - GRANTED  → published/green
  *   - DENIED   → hidden/red
  *   - UNKNOWN  → neutral/gray
+ *
+ * Source + Consent-method (registration-source-and-consent T-8, FR-1/FR-2/FR-9):
+ *   - Source chip: TEAM_MANAGED (neutral) vs SELF_REGISTERED (primary-toned).
+ *   - Consent column pairs the existing status chip with a method caption
+ *     ("Signed form", "Portal checkbox", "Not recorded", ...). A `GRANTED`
+ *     actor whose method is still `NOT_RECORDED` is the legacy,
+ *     unevidenced-consent case FR-9 exists to surface — its caption renders
+ *     in the warning token instead of muted AND carries an explicit text
+ *     qualifier ("Not recorded — no evidence") so the flag is not
+ *     color-only (WCAG 1.4.1); it is also enumerable via the
+ *     consentStatus+consentMethod filter.
  *
  * Accessibility (WCAG 2.1 AA / system-design §10):
  *   - <table> with <th scope="col">, <caption> for screen readers.
@@ -106,9 +122,85 @@ function formatMarket(location: string | null): string {
   return location ?? '—';
 }
 
+/** Source chip label (registration-source-and-consent FR-1). */
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'SELF_REGISTERED':
+      return 'Self-registered';
+    default:
+      return 'Team-managed';
+  }
+}
+
+/** Source chip tokens — neutral for the curated track, primary for self-registration. */
+function sourceBadgeClasses(source: string): string {
+  switch (source) {
+    case 'SELF_REGISTERED':
+      return 'bg-primary-soft text-primary';
+    default:
+      return 'bg-border text-muted';
+  }
+}
+
+/** Consent-method caption text (registration-source-and-consent FR-2). */
+function consentMethodLabel(method: string): string {
+  switch (method) {
+    case 'PORTAL_CHECKBOX':
+      return 'Portal checkbox';
+    case 'SIGNED_FORM':
+      return 'Signed form';
+    case 'EMAIL':
+      return 'Email';
+    case 'VERBAL_FIELD':
+      return 'Verbal (field)';
+    default:
+      return 'Not recorded';
+  }
+}
+
+/**
+ * FR-9 — a `GRANTED` actor whose consent method is still `NOT_RECORDED` is
+ * the legacy, unevidenced-grant case this spec exists to surface (the
+ * migration deliberately never backfills it). Flagged with the warning
+ * token rather than the neutral muted caption.
+ */
+function isUnevidencedGrant(consentStatus: string, consentMethod: string): boolean {
+  return consentStatus === 'GRANTED' && consentMethod === 'NOT_RECORDED';
+}
+
+function consentMethodClasses(consentStatus: string, consentMethod: string): string {
+  return isUnevidencedGrant(consentStatus, consentMethod) ? 'text-warning' : 'text-muted';
+}
+
+/**
+ * Caption text for the consent-method cell. The warning *color* alone
+ * (`consentMethodClasses` above) is not perceivable to color-blind users or
+ * screen-reader users — WCAG 1.4.1 requires the flag not depend on color as
+ * the only visual/textual cue. The unevidenced-grant case therefore carries
+ * an explicit qualifier in the text itself, not just a different token
+ * (T-8 rework, "FR-9 flag is emphasis-only" fold-in).
+ */
+function consentMethodCaptionText(consentStatus: string, consentMethod: string): string {
+  const label = consentMethodLabel(consentMethod);
+  return isUnevidencedGrant(consentStatus, consentMethod) ? `${label} — no evidence` : label;
+}
+
 // ---------------------------------------------------------------------------
-// Consent badge
+// Source / Consent badges
 // ---------------------------------------------------------------------------
+
+function SourceBadge({ source }: { source: string }) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        sourceBadgeClasses(source),
+      ].join(' ')}
+    >
+      {sourceLabel(source)}
+    </span>
+  );
+}
 
 function ConsentBadge({ status }: { status: string }) {
   return (
@@ -120,6 +212,24 @@ function ConsentBadge({ status }: { status: string }) {
     >
       {consentLabel(status)}
     </span>
+  );
+}
+
+/** Status chip + method caption, stacked (design.md §5 — "status chip + method caption"). */
+function ConsentCell({
+  consentStatus,
+  consentMethod,
+}: {
+  consentStatus: string;
+  consentMethod: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <ConsentBadge status={consentStatus} />
+      <span className={['text-xs', consentMethodClasses(consentStatus, consentMethod)].join(' ')}>
+        {consentMethodCaptionText(consentStatus, consentMethod)}
+      </span>
+    </div>
   );
 }
 
@@ -210,7 +320,20 @@ function ActorCard({
           <p className="truncate text-sm font-medium text-fg">{actor.traderName}</p>
           <p className="text-xs text-muted mt-0.5">{roleLabel(actor.traderType as TraderType)}</p>
         </div>
-        <ConsentBadge status={actor.consentStatus} />
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            <SourceBadge source={actor.registrationSource} />
+            <ConsentBadge status={actor.consentStatus} />
+          </div>
+          <span
+            className={[
+              'text-xs',
+              consentMethodClasses(actor.consentStatus, actor.consentMethod),
+            ].join(' ')}
+          >
+            {consentMethodCaptionText(actor.consentStatus, actor.consentMethod)}
+          </span>
+        </div>
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -337,7 +460,7 @@ export function ActorsTable({
           aria-label="Actors"
         >
           <caption className="sr-only">
-            List of registry actors with consent status and contact details.
+            List of registry actors with registration source, consent status, and contact details.
           </caption>
           <thead className="bg-surface-alt">
             <tr>
@@ -361,6 +484,7 @@ export function ActorsTable({
                 'Trader',
                 'Region',
                 'Type',
+                'Source',
                 'Consent',
                 'Phone',
                 'Email',
@@ -410,7 +534,13 @@ export function ActorsTable({
                     {roleLabel(actor.traderType as TraderType)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <ConsentBadge status={actor.consentStatus} />
+                    <SourceBadge source={actor.registrationSource} />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <ConsentCell
+                      consentStatus={actor.consentStatus}
+                      consentMethod={actor.consentMethod}
+                    />
                   </td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">
                     {formatPhone(actor.phone)}

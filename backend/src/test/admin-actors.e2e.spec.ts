@@ -129,6 +129,34 @@ const ACTORS: Record<string, unknown>[] = [
     consentReference: 'DOC-100',
     crops: [{ crop: { name: 'groundnut' } }],
   }),
+  // T-8 — GRANTED-with-evidence, so the FR-9 enumeration filter
+  // (consentStatus=GRANTED&consentMethod=NOT_RECORDED) has something to
+  // correctly EXCLUDE, proving the two filters AND-compose rather than
+  // either one alone deciding the result.
+  fixtureActor({
+    id: 'actor-granted-evidenced-1',
+    traderId: 'TZ-EVD-0006',
+    traderName: 'Evidenced Published Actor',
+    region: 'Morogoro',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.GRANTED,
+    consentMethod: 'SIGNED_FORM',
+    consentObtainedAt: new Date('2026-02-01T00:00:00Z'),
+    consentReference: 'DOC-200',
+    crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  // T-8 — a SELF_REGISTERED actor to exercise the registrationSource filter
+  // on its own (FR-1).
+  fixtureActor({
+    id: 'actor-self-registered-1',
+    traderId: 'TZ-SELF-0007',
+    traderName: 'Self-Registered Actor',
+    region: 'Singida',
+    traderType: 'cooperative',
+    consentStatus: ConsentStatus.UNKNOWN,
+    registrationSource: 'SELF_REGISTERED',
+    crops: [],
+  }),
 ];
 
 const GRANTED_IDS = ACTORS.filter(
@@ -200,6 +228,17 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }
     if (where.region && actor.region !== where.region) return false;
     if (where.traderType && actor.traderType !== where.traderType) return false;
+    // T-8 — registrationSource + consentMethod filters (FR-9's enumeration
+    // mechanism), AND-composed with the checks above.
+    if (
+      where.registrationSource &&
+      actor.registrationSource !== where.registrationSource
+    ) {
+      return false;
+    }
+    if (where.consentMethod && actor.consentMethod !== where.consentMethod) {
+      return false;
+    }
 
     if (where.id?.in && Array.isArray(where.id.in)) {
       if (!where.id.in.includes(actor.id)) return false;
@@ -478,6 +517,51 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
 
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe('actor-granted-1');
+    });
+
+    // T-8 (FR-9) — `consentStatus=GRANTED&consentMethod=NOT_RECORDED` is the
+    // enumeration mechanism staff use to find the legacy unevidenced set.
+    // `actor-granted-evidenced-1` is GRANTED but has recorded provenance, so
+    // this proves the two filters AND-compose rather than either deciding
+    // the result alone.
+    it('filters by consentStatus=GRANTED AND consentMethod=NOT_RECORDED to find the legacy unevidenced set', async () => {
+      const res = await request(app.getHttpServer())
+        .get(
+          '/api/v1/admin/actors?consentStatus=GRANTED&consentMethod=NOT_RECORDED',
+        )
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe('actor-granted-1');
+    });
+
+    it('filters by registrationSource for Admin', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?registrationSource=SELF_REGISTERED')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe('actor-self-registered-1');
+    });
+
+    it('returns 400 with a field-level error for an invalid consentMethod', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?consentMethod=NOT_A_METHOD')
+        .set(admin)
+        .expect(400);
+
+      expect(JSON.stringify(res.body)).toContain('consentMethod');
+    });
+
+    it('returns 400 with a field-level error for an invalid registrationSource', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?registrationSource=NOT_A_SOURCE')
+        .set(admin)
+        .expect(400);
+
+      expect(JSON.stringify(res.body)).toContain('registrationSource');
     });
   });
 

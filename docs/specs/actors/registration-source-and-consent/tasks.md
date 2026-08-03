@@ -88,7 +88,8 @@
 
 ## Phase C — Admin UI
 
-- [ ] **T-8** Surface source and consent in the admin actors table  (deps: T-3)
+- [~] **T-8** Surface source and consent in the admin actors table  (deps: T-3)
+      **Status 2026-08-03:** code complete, both review lenses PASS, all gates green. **Held at `[~]` pending the D-h human visual check below** — blocked on an authenticated admin session the Leader does not hold. See `execution.md` → T-8.
       **Scope:** Extend the client types in `lib/api/actors-admin.ts`; add **Source** and **Consent** (status chip + method caption) columns; add both filters, URL-synced via the repo's query-param routing pattern.
       **Traces:** FR-1, FR-2, FR-6, FR-9, NFR-5, NFR-8 · `design.md` §5
       **Files:** `frontend/lib/api/actors-admin.ts`, `frontend/components/admin/ActorsTable.tsx`, `frontend/app/(admin)/admin/actors/page.tsx`, plus their `.test.tsx`

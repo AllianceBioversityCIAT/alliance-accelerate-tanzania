@@ -1,4 +1,5 @@
 // @sdd-spec admin/bulk-actor-operations (T-8)
+// @sdd-spec actors/registration-source-and-consent (T-8)
 /**
  * Unit tests for /admin/actors page (ActorsPage).
  *
@@ -10,10 +11,20 @@
  *   - Delete flow opens typed ConfirmDialog and calls bulkDeleteActors
  *   - mutation result summary is rendered in the success banner
  *   - AuthFailureError from listActors routes to /login
+ *
+ * registration-source-and-consent (T-8) extension: the page now reads its
+ * filters from useSearchParams() (URL-sync), so `next/navigation` is mocked
+ * with a `useSearchParams` stub here too — every suite above gets an empty
+ * URLSearchParams by default (the pre-T-8 "no filters applied" behavior).
+ * The new "T-8 filters + URL sync" describe blocks below override it with
+ * `mockUseSearchParams.mockReturnValue(...)` per test.
  */
 
 import React from 'react';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
+
+expect.extend(toHaveNoViolations);
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation
@@ -22,10 +33,16 @@ import { render, screen, waitFor, fireEvent, act, within } from '@testing-librar
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouter = { push: mockRouterPush, replace: mockRouterReplace };
+const mockUseSearchParams = jest.fn(() => new URLSearchParams());
 
 jest.mock('next/navigation', () => ({
   useRouter: () => mockRouter,
   usePathname: () => '/admin/actors',
+  // T-8 (registration-source-and-consent): ActorsView now URL-syncs its
+  // filters via useSearchParams(). Defaults to an empty URLSearchParams so
+  // every pre-existing suite in this file keeps behaving exactly as before;
+  // the T-8 filter/URL-sync tests below reconfigure it per test.
+  useSearchParams: (...args: unknown[]) => mockUseSearchParams(...args),
 }));
 
 // Prevent jsdom from attempting real navigation when row Edit links are clicked.
@@ -155,6 +172,10 @@ const ACTOR_A: AdminActor = {
   gpsAltitude: null,
   gpsAccuracy: null,
   consentStatus: 'GRANTED',
+  registrationSource: 'TEAM_MANAGED',
+  consentMethod: 'SIGNED_FORM',
+  consentObtainedAt: '2023-12-01T00:00:00.000Z',
+  consentReference: 'Form #A-001',
   crops: ['sorghum'],
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
@@ -179,6 +200,10 @@ const ACTOR_B: AdminActor = {
   gpsAltitude: null,
   gpsAccuracy: null,
   consentStatus: 'DENIED',
+  registrationSource: 'SELF_REGISTERED',
+  consentMethod: 'NOT_RECORDED',
+  consentObtainedAt: null,
+  consentReference: null,
   crops: ['common bean'],
   createdAt: '2024-02-01T00:00:00.000Z',
   updatedAt: '2024-02-01T00:00:00.000Z',
@@ -558,5 +583,230 @@ describe('ActorsPage — non-Admin redirect', () => {
     expect(screen.queryByRole('status', { name: /loading actors/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByRole('toolbar', { name: /bulk actor actions/i })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — T-8 registration-source and consent-method filters + URL sync
+// ---------------------------------------------------------------------------
+//
+// Every test below explicitly calls setSearchParams(...) (even with an empty
+// string) rather than relying on the module-level default: jest.clearAllMocks()
+// in the top-level beforeEach clears call history but NOT a previously set
+// mockReturnValue, so an explicit call per test is what actually guarantees
+// isolation from whichever URL a prior test configured.
+
+/** The legacy, unevidenced-grant case FR-9 exists to make enumerable. */
+const ACTOR_LEGACY_UNEVIDENCED: AdminActor = {
+  ...ACTOR_A,
+  id: 'actor-legacy',
+  traderId: 'TZ-LEGACY',
+  traderName: 'Legacy Traders',
+  consentMethod: 'NOT_RECORDED',
+  consentObtainedAt: null,
+  consentReference: null,
+};
+
+function setSearchParams(qs: string) {
+  mockUseSearchParams.mockReturnValue(new URLSearchParams(qs));
+}
+
+describe('ActorsPage — registration-source and consent-method filters (T-8, FR-6)', () => {
+  it('renders the Registration source and Consent method filter selects', async () => {
+    setSearchParams('');
+    await populatePage();
+
+    expect(screen.getByLabelText('Registration source')).toBeInTheDocument();
+    expect(screen.getByLabelText('Consent method')).toBeInTheDocument();
+  });
+
+  it('reads registrationSource and consentMethod from the URL on mount and passes them to adminListActors', async () => {
+    setSearchParams('registrationSource=SELF_REGISTERED&consentMethod=EMAIL');
+    await populatePage();
+
+    expect(mockAdminListActors).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registrationSource: 'SELF_REGISTERED',
+        consentMethod: 'EMAIL',
+      }),
+      TOKEN,
+    );
+  });
+
+  it('restores the filter select values from the URL (filter state survives a reload)', async () => {
+    setSearchParams('registrationSource=SELF_REGISTERED&consentMethod=EMAIL');
+    await populatePage();
+
+    expect(screen.getByLabelText('Registration source')).toHaveValue('SELF_REGISTERED');
+    expect(screen.getByLabelText('Consent method')).toHaveValue('EMAIL');
+  });
+
+  it('writes the selected registration source to the URL and resets the page param', async () => {
+    setSearchParams('');
+    await populatePage();
+
+    fireEvent.change(screen.getByLabelText('Registration source'), {
+      target: { value: 'SELF_REGISTERED' },
+    });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '?registrationSource=SELF_REGISTERED',
+        { scroll: false },
+      ),
+    );
+  });
+
+  it('writes the selected consent method to the URL', async () => {
+    setSearchParams('');
+    await populatePage();
+
+    fireEvent.change(screen.getByLabelText('Consent method'), {
+      target: { value: 'NOT_RECORDED' },
+    });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        '?consentMethod=NOT_RECORDED',
+        { scroll: false },
+      ),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — FR-9 legacy unevidenced-consent enumeration
+// ---------------------------------------------------------------------------
+
+describe('ActorsPage — FR-9 legacy unevidenced-consent enumeration', () => {
+  it('sends consentStatus and consentMethod together as an AND on the same request', async () => {
+    setSearchParams('consentStatus=GRANTED&consentMethod=NOT_RECORDED');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue({
+      data: [ACTOR_LEGACY_UNEVIDENCED],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+    render(<ActorsPage />);
+
+    await waitFor(() =>
+      expect(mockAdminListActors).toHaveBeenCalledWith(
+        expect.objectContaining({ consentStatus: 'GRANTED', consentMethod: 'NOT_RECORDED' }),
+        TOKEN,
+      ),
+    );
+  });
+
+  it('renders exactly the legacy unevidenced set the mocked API returns for that filter combination', async () => {
+    setSearchParams('consentStatus=GRANTED&consentMethod=NOT_RECORDED');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue({
+      data: [ACTOR_LEGACY_UNEVIDENCED],
+      page: 1,
+      pageSize: 25,
+      total: 1,
+    });
+    render(<ActorsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByText('Legacy Traders').length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText(ACTOR_A.traderName)).not.toBeInTheDocument();
+    expect(screen.getByText(/showing/i).closest('p')).toHaveTextContent('Showing 1 of 1 actors');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — invalid URL-borne enum filter values (T-8 rework, Issue 1)
+// ---------------------------------------------------------------------------
+//
+// A shared/stale link, a typo, or an enum rename can put an unrecognized
+// value on consentStatus/registrationSource/consentMethod. Before this
+// rework that value flowed straight to adminListActors, the backend's
+// @IsIn validation 400'd, and the filter bar (rendered only in the
+// populated branch) disappeared along with any way to recover. It must now
+// degrade to "All" on read, and the filter bar/Clear-filters escape hatch
+// must stay reachable through the error and empty states too.
+
+describe('ActorsPage — invalid URL-borne filter values degrade instead of erroring (T-8 rework, Issue 1)', () => {
+  it('sanitizes an unrecognized consentMethod value to "All" and omits it from the adminListActors call', async () => {
+    setSearchParams('consentMethod=NOT_A_METHOD');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue(LIST_RESULT);
+    render(<ActorsPage />);
+
+    await waitFor(() => expect(mockAdminListActors).toHaveBeenCalled());
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('');
+    const [query] = mockAdminListActors.mock.calls[0];
+    expect(query).not.toHaveProperty('consentMethod');
+  });
+
+  it('sanitizes unrecognized consentStatus/registrationSource values the same way', async () => {
+    setSearchParams('consentStatus=NOT_A_STATUS&registrationSource=NOT_A_SOURCE');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue(LIST_RESULT);
+    render(<ActorsPage />);
+
+    await waitFor(() => expect(mockAdminListActors).toHaveBeenCalled());
+
+    expect(screen.getByLabelText('Consent status')).toHaveValue('');
+    expect(screen.getByLabelText('Registration source')).toHaveValue('');
+    const [query] = mockAdminListActors.mock.calls[0];
+    expect(query).not.toHaveProperty('consentStatus');
+    expect(query).not.toHaveProperty('registrationSource');
+  });
+
+  it('keeps the filter bar visible and enabled when adminListActors errors (no dead-end)', async () => {
+    setSearchParams('region=Mbeya');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockRejectedValue(new Error('Network failure'));
+    render(<ActorsPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/network failure/i),
+    );
+
+    // Only genuine in-flight loading disables the filter bar — a failed
+    // request must not leave it stuck disabled or unmounted.
+    const regionSelect = screen.getByLabelText('Region');
+    expect(regionSelect).toBeInTheDocument();
+    expect(regionSelect).toBeEnabled();
+    expect(regionSelect).toHaveValue('Mbeya');
+
+    // Clear filters is reachable from the error state.
+    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+  });
+
+  it('keeps the filter bar and Clear filters reachable in the empty state', async () => {
+    setSearchParams('region=Mbeya');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue({ data: [], page: 1, pageSize: 25, total: 0 });
+    render(<ActorsPage />);
+
+    await waitFor(() => expect(screen.getByText(/no actors found/i)).toBeInTheDocument());
+
+    expect(screen.getByLabelText('Region')).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    expect(mockRouterReplace).toHaveBeenCalledWith('?', { scroll: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — accessibility (jest-axe, NFR-5)
+// ---------------------------------------------------------------------------
+
+describe('ActorsPage — accessibility (T-8 Source/Consent columns + filters)', () => {
+  it('has no axe violations in the populated state', async () => {
+    setSearchParams('');
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue(LIST_RESULT);
+    const { container } = render(<ActorsPage />);
+
+    await waitFor(() => expect(screen.getAllByText(ACTOR_A.traderName).length).toBeGreaterThan(0));
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

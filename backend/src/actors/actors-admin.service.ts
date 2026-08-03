@@ -121,6 +121,13 @@ export class ActorsAdminService {
       ...(q.consentStatus
         ? { consentStatus: q.consentStatus as ConsentStatus }
         : {}),
+      // T-8 — AND-composed with the filters above; this is FR-9's enumeration
+      // mechanism (`consentStatus=GRANTED&consentMethod=NOT_RECORDED` finds
+      // the legacy unevidenced set).
+      ...(q.registrationSource
+        ? { registrationSource: q.registrationSource }
+        : {}),
+      ...(q.consentMethod ? { consentMethod: q.consentMethod } : {}),
     };
 
     const [rows, total] = await Promise.all([
