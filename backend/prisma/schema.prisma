@@ -21,33 +21,51 @@ enum ConsentStatus {
   UNKNOWN
 }
 
+enum RegistrationSource {
+  TEAM_MANAGED
+  SELF_REGISTERED
+}
+
+enum ConsentMethod {
+  NOT_RECORDED
+  PORTAL_CHECKBOX
+  SIGNED_FORM
+  EMAIL
+  VERBAL_FIELD
+}
+
 model Actor {
-  id               String          @id @default(cuid())
-  traderId         String          @unique
-  traderName       String
-  region           String
-  district         String?
-  traderType       String
-  sex              String?
-  position         String?
-  marketLocation   String?
-  capacityTons     Decimal?        @db.Decimal(10, 2)
-  technicalSupport String?         @db.Text
-  phone            String? // PII
-  email            String? // PII
-  gpsLatitude      Decimal?        @db.Decimal(10, 7)
-  gpsLongitude     Decimal?        @db.Decimal(10, 7)
-  gpsAltitude      Decimal?        @db.Decimal(10, 2)
-  gpsAccuracy      Decimal?        @db.Decimal(10, 2)
-  consentStatus    ConsentStatus   @default(UNKNOWN)
-  crops            CropsOnActors[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                 String             @id @default(cuid())
+  traderId           String             @unique
+  traderName         String
+  region             String
+  district           String?
+  traderType         String
+  sex                String?
+  position           String?
+  marketLocation     String?
+  capacityTons       Decimal?           @db.Decimal(10, 2)
+  technicalSupport   String?            @db.Text
+  phone              String? // PII
+  email              String? // PII
+  gpsLatitude        Decimal?           @db.Decimal(10, 7)
+  gpsLongitude       Decimal?           @db.Decimal(10, 7)
+  gpsAltitude        Decimal?           @db.Decimal(10, 2)
+  gpsAccuracy        Decimal?           @db.Decimal(10, 2)
+  consentStatus      ConsentStatus      @default(UNKNOWN)
+  registrationSource RegistrationSource @default(TEAM_MANAGED)
+  consentMethod      ConsentMethod      @default(NOT_RECORDED)
+  consentObtainedAt  DateTime?
+  consentReference   String?            @db.VarChar(255)
+  crops              CropsOnActors[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([region])
   @@index([traderType])
   @@index([consentStatus])
   @@index([traderName])
+  @@index([registrationSource])
 }
 
 model Crop {

@@ -13,7 +13,7 @@
 
 ## Phase A — Foundation
 
-- [ ] **T-1** Add registration-source and consent-provenance columns to the Actor model  (deps: none)
+- [x] **T-1** Add registration-source and consent-provenance columns to the Actor model  (deps: none)
       **Scope:** `RegistrationSource` + `ConsentMethod` enums; four `Actor` columns with defaults per `design.md` §2; index on `registrationSource`. Schema and migration only — no service, DTO, or API change.
       **Traces:** FR-1, FR-2, NFR-2 · `design.md` §2
       **Files:** `backend/prisma/schema.prisma`, `backend/prisma/migrations/*`

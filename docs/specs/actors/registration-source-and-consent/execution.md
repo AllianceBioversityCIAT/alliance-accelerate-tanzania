@@ -121,3 +121,71 @@ FAIL common/generate-template.spec.ts
 **Issues encountered**
 - The Reviewer's first delivery arrived as an idle notification with no report body; the verdict was recovered by an explicit resend request. No re-audit was run.
 
+**D-g human check — RATIFIED 2026-08-03 by JuanCode (dataset owner).** The alias table above was surfaced at the gated review pause with the Reviewer's A-2 objection stated in full (`NGO/INGO` names two live codes and is structurally the same shape as the file's own canonical ambiguous example `"Arusha/Dodoma"`). The user's decision: **keep the mapping as committed** — `cbo`, `INGO`, and `NGO/INGO` → `humanitarian`, with the pre-existing `ngo` alias (formally registered local NGO) left intact and semantically distinct. A-2 is closed; D-g is discharged for this spec.
+
+---
+
+### T-1 — Add registration-source and consent-provenance columns to the Actor model
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** on attempt 1 (no rework) |
+| Date | 2026-08-03 |
+| Wave | 2 (executed alone — `backend/prisma/` is serialize-always) |
+| Implementer attempts | 1 |
+| Effort assigned | `xhigh` |
+| Skills assigned | `nestjs-expert`. **`tdd` deliberately withheld** — this task writes no business logic; red→green would be pure overhead on a schema change |
+| Requirements covered | FR-1, FR-2, NFR-2, FR-9 · `design.md` §2 |
+
+**Effort-vs-tier note.** `.agents/leader.md` calls Prisma migrations `max` work, but the tier↔effort rule forbids `max` on a cheaper tier, and escalating the Implementer to opus would have collapsed `author ≠ auditor` (the Reviewer wrapper is already opus). Resolved by running the T2 Implementer at `xhigh` and having the **Leader personally gate the generated SQL** before it reached the database — the migration was authored with `--create-only`, inspected, and only then applied.
+
+**Files changed**
+- `backend/prisma/schema.prisma` — `RegistrationSource` + `ConsentMethod` enums; four `Actor` columns; `@@index([registrationSource])`
+- `backend/prisma/migrations/20260803182419_add_registration_source_and_consent_provenance/migration.sql` (new)
+
+**Migration SQL (gated by the Leader before apply)**
+
+```sql
+-- AlterTable
+ALTER TABLE `Actor` ADD COLUMN `consentMethod` ENUM('NOT_RECORDED', 'PORTAL_CHECKBOX', 'SIGNED_FORM', 'EMAIL', 'VERBAL_FIELD') NOT NULL DEFAULT 'NOT_RECORDED',
+    ADD COLUMN `consentObtainedAt` DATETIME(3) NULL,
+    ADD COLUMN `consentReference` VARCHAR(255) NULL,
+    ADD COLUMN `registrationSource` ENUM('TEAM_MANAGED', 'SELF_REGISTERED') NOT NULL DEFAULT 'TEAM_MANAGED';
+
+-- CreateIndex
+CREATE INDEX `Actor_registrationSource_idx` ON `Actor`(`registrationSource`);
+```
+
+**Verification (all against the dev RDS — see §1.1)**
+
+| Command | Result |
+|---|---|
+| `npx prisma migrate dev --create-only --name add_registration_source_and_consent_provenance` | Migration authored, **not** applied |
+| Leader inspection of generated SQL | Additive only — no `DROP`, `MODIFY`, `CHANGE`, `RENAME`, `UPDATE`, `INSERT` |
+| `npx prisma migrate deploy` | "All migrations have been successfully applied." |
+| `npx prisma generate` | Prisma Client v6.19.3 generated |
+| `npm run build` | Clean |
+| `npx eslint "{src,test}/**/*.ts" --quiet` | Clean |
+| `npm test -- --silent` | 377/378 — sole failure is the known T-5 template byte-match, closed by T-6 |
+
+**Lossless-migration proof.** 436 rows before, 436 after. Sampled row `cmqsgkbmr0003ca66wayev52j` byte-identical on every pre-existing field. Full-table sweep: 0 rows with non-default `registrationSource`, 0 non-default `consentMethod`, 0 non-null `consentObtainedAt`, 0 non-null `consentReference`. The Reviewer noted this same count independently clears **R-5** — a stray `migrate-seed.sh` run would have moved the row count, and it did not.
+
+**FR-9 confirmed.** No backfill. `consentStatus = GRANTED AND consentMethod = NOT_RECORDED` = **436 of 436**.
+
+> **Carry-forward for T-3 (R-9).** The entire current dataset is the legacy-unevidenced case. That promotes R-9 from an edge case to a total-outage risk: if the T-2 predicate is implemented as *key-present* rather than *value-changed*, **every actor in the database becomes uneditable**, not merely a legacy subset. T-3's brief must state this.
+
+**Reviewer verdict — PASS.** All 21 pre-existing `Actor` fields verified byte-identical across the `prisma format` realignment on name, type, optionality, and attributes — including both `// PII` trailing comments and the two *distinct* `Decimal` precisions (`10,7` for lat/long vs `10,2` for altitude/accuracy), which the Reviewer identified as the classic realignment casualty. Corroborated independently by the SQL containing no `MODIFY`. Enum members and their **order** match §2 exactly, which matters because MySQL stores enum members ordinally. Scope containment verified by repo-wide grep: the four new symbols appear in exactly two files.
+
+**Reviewer correction to the Leader's brief (recorded — the brief was wrong, not the diff).** The Leader's check #5 hypothesised that `design.md` §2 might specify a composite index (`[consentStatus, consentMethod]`) since that is what FR-9's enumeration query needs. It does not: §2 lists exactly one index, `@@index([registrationSource])`, annotated *"Supports the FR-6 filter"*, and `requirements.md` §10 agrees. Implementing the composite would itself have been a §2 divergence and a FAIL. The Implementer built what the spec authorises. *(Second Leader-brief error this run — see the T-5 entry's DD-7 correction. Both were the Leader over-specifying a check against a document section it had not re-read.)*
+
+**ADVISORY findings (recorded, non-gating)**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **B-1** | The local-docker-MySQL rehearsal mandated by `tasks.md` T-1, NFR-2's measure, `design.md` §7, and `backend/CLAUDE.md` was **not** performed — everything ran against the shared dev RDS. | **Accepted, and recorded rather than hidden.** §1.1 above documents the route, the user's decision, and the reason. NFR-2's substance was demonstrated on *stronger* ground than the rehearsal would have given: 436 real rows instead of a scratch DB. This spec has no further migrations; the note binds the next one. |
+| **B-2** | FR-9's enumeration query (`consentStatus = GRANTED AND consentMethod = NOT_RECORDED`, implemented by T-8) has **no supporting index**, and the existing `@@index([consentStatus])` is fully non-selective for it today since all 436 rows are `GRANTED`. `design.md` §3 also promises a `consentMethod` list filter, likewise unindexed. | Non-issue at 436 rows and at the ~1,318-row import scale. **Raise against `design.md` §2 before T-8 starts.** Per Advisory-Never-Becomes-A-Task this mints no task here. |
+| **B-3** | Prisma emitted the four `ADD COLUMN`s alphabetically while `schema.prisma` declares `registrationSource` first. | Cosmetic — Prisma addresses columns by name. Noted so a future reader does not mistake it for drift. |
+
+**Issues encountered**
+- **Second consecutive Reviewer delivery failure.** Both `rev-T5` and `rev-T1` emitted an idle notification with no report body; both verdicts were recovered intact by an explicit resend request, and neither re-ran its audit. This is a harness-level delivery pattern, not an agent defect — it costs one round trip per review. Mitigation applied from T-1 onward: the Reviewer brief now explicitly instructs "deliver your verdict as a normal reply".
+
