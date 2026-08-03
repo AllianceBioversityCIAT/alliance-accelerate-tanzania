@@ -89,7 +89,7 @@ describe('normalizeTraderType', () => {
     expect(normalizeTraderType(null)).toBeNull();
   });
 
-  it('exposes the OQ-2 taxonomy as TRADER_TYPES', () => {
+  it('exposes the OQ-2 taxonomy as TRADER_TYPES, including the FR-4 additions', () => {
     expect(TRADER_TYPES).toEqual([
       'seed_company',
       'cooperative',
@@ -97,7 +97,51 @@ describe('normalizeTraderType', () => {
       'offtaker',
       'research_institute',
       'informal_trader',
+      'humanitarian',
+      'digital_service_provider',
+      'qds_producer',
+      'bulk_buyer',
     ]);
+  });
+
+  // FR-4: workbook category values normalise to the four new canonical codes.
+  it('maps the FR-4 workbook spellings to their canonical codes without quarantine', () => {
+    expect(normalizeTraderType('INGO')).toBe('humanitarian');
+    expect(normalizeTraderType('NGO/INGO')).toBe('humanitarian');
+    expect(normalizeTraderType('cbo')).toBe('humanitarian');
+    expect(normalizeTraderType('Digital Service Provider')).toBe(
+      'digital_service_provider',
+    );
+    expect(normalizeTraderType('QDS')).toBe('qds_producer');
+    expect(normalizeTraderType('Bulk buyer')).toBe('bulk_buyer');
+  });
+
+  it('resolves the FR-4 aliases case- and whitespace-insensitively', () => {
+    expect(normalizeTraderType('  INGO ')).toBe('humanitarian');
+    expect(normalizeTraderType('digital SERVICE provider')).toBe(
+      'digital_service_provider',
+    );
+    expect(normalizeTraderType('  bulk buyer  ')).toBe('bulk_buyer');
+  });
+
+  it('still quarantines (returns null for) values whose mapping would be a guess, not a fact', () => {
+    // Not aliased on purpose: mapping either to an existing type or to one of
+    // the new FR-4 categories would be a judgement call, not a documented fact.
+    expect(normalizeTraderType('Community Group')).toBeNull();
+    expect(normalizeTraderType('Offtaker name')).toBeNull();
+  });
+
+  it('leaves the six pre-existing types byte-identical to before this change', () => {
+    expect(normalizeTraderType('Informal trader/retailer')).toBe(
+      'informal_trader',
+    );
+    expect(normalizeTraderType('Large offtaker')).toBe('offtaker');
+    expect(normalizeTraderType('Seed_Company')).toBe('seed_company');
+    expect(normalizeTraderType('ngo')).toBe('ngo');
+    expect(normalizeTraderType('co-op')).toBe('cooperative');
+    expect(normalizeTraderType('research institution')).toBe(
+      'research_institute',
+    );
   });
 });
 

@@ -133,6 +133,12 @@ export function normalizeRegion(
  * Canonical trader-type taxonomy (OQ-2). Declared as a named constant per DD-5
  * so legal/business can revise it in one place. Exported for DTO enum
  * validation (`actor-create.dto.ts`).
+ *
+ * The last four codes were added per FR-4 / design.md §4.4 / DD-7 to cover
+ * categories present in the client's `Partner Profile 14.4.2026.xlsx` that
+ * previously had no canonical code and would quarantine. Appended after the
+ * original six so existing ordinal/positional assumptions are undisturbed
+ * (additive only — the original six are untouched).
  */
 export const TRADER_TYPES = [
   'seed_company',
@@ -141,6 +147,10 @@ export const TRADER_TYPES = [
   'offtaker',
   'research_institute',
   'informal_trader',
+  'humanitarian',
+  'digital_service_provider',
+  'qds_producer',
+  'bulk_buyer',
 ] as const;
 
 export type TraderType = (typeof TRADER_TYPES)[number];
@@ -153,6 +163,18 @@ const TRADER_TYPE_BY_LOWER = new Map<string, TraderType>(
 /**
  * Source-value aliases for trader types (lower-cased keys) → canonical taxonomy.
  * Maps the free-text labels seen in the source spreadsheet onto OQ-2 codes.
+ *
+ * FR-4 / design.md §4.4 / DD-7 additions (client workbook spellings for the
+ * four new categories): `INGO`, `NGO/INGO`, and `cbo` are unambiguous,
+ * unambiguous-to-*this*-taxonomy synonyms for the new `humanitarian` bucket
+ * — an INGO, an "NGO/INGO"-labelled org, and a community-based organization
+ * are all humanitarian/development actors, distinct from the formally
+ * registered local NGOs already covered by the pre-existing `ngo` alias.
+ * `Digital Service Provider`, `QDS`, and `Bulk buyer` are direct spellings of
+ * their new canonical codes. A value whose mapping would be a guess rather
+ * than a fact (e.g. a bare "Offtaker name"-style variant with no clear target,
+ * or any value not listed here) is deliberately left OUT so it quarantines —
+ * see the file's quarantine philosophy above and requirements.md FR-4.
  */
 const TRADER_TYPE_ALIASES = new Map<string, TraderType>([
   ['informal trader/retailer', 'informal_trader'],
@@ -167,6 +189,12 @@ const TRADER_TYPE_ALIASES = new Map<string, TraderType>([
   ['ngo', 'ngo'],
   ['research institute', 'research_institute'],
   ['research institution', 'research_institute'],
+  ['ingo', 'humanitarian'],
+  ['ngo/ingo', 'humanitarian'],
+  ['cbo', 'humanitarian'],
+  ['digital service provider', 'digital_service_provider'],
+  ['qds', 'qds_producer'],
+  ['bulk buyer', 'bulk_buyer'],
 ]);
 
 /**
