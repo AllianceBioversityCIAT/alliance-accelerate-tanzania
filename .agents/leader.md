@@ -182,3 +182,7 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 3. **Adjudicate results:** a `PRODUCT_BUG` is evidence, not noise. Carry it through as a failure with remediation; **never** let a Tester rewrite a red test to pass.
 4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (`cd backend && npm run test:e2e -- --silent`), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
 5. You write no tests yourself.
+
+## Deferring a check on environment grounds (KZ-003)
+
+Before holding a task at `[~]` because a visual or behavioral check "needs the live stack, a login, or seeded data", **test that assumption**: if the component takes plain props (its token or session is used only for mutations), a throwaway harness page renders it with no stack, no database, and no auth. Presentational surfaces are almost never actually blocked — and a check deferred on a false blocker is a check that finds real defects late.

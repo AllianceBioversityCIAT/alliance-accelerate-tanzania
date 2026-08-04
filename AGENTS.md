@@ -49,7 +49,7 @@ Never guess start commands — the `## Local Environment` contract in `docs/infr
 Children of this file; they add to or narrow these rules and never override them. A child guide missing from this index is drift.
 
 - `backend/AGENTS.md` (mirrors `backend/CLAUDE.md`) — NestJS/Lambda specifics: two-entrypoint shared-bootstrap discipline, serverless-http body-parsing gotcha + handler-level test harness, migrations runbook, PII/audit rules, e2e conventions, template generator.
-- `frontend/AGENTS.md` (mirrors `frontend/CLAUDE.md`) — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, generated assets.
+- `frontend/AGENTS.md` (mirrors `frontend/CLAUDE.md`) — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, per-table table/card breakpoints and sticky-column conventions, generated assets.
 
 ## Specs & taxonomy
 Feature specs live in `docs/specs/<domain>/<feature-slug>/` (e.g. `actors/`, `seed-map/`, `import-export/`), each with `requirements.md`, `design.md`, `tasks.md`, `execution.md`. Use `enhancement/`, `bugfix/`, or `epic/` prefixes for non-domain changes. Completed specs move to `docs/specs/archive/<YYYY-MM-DD>-<domain>--<slug>/`. Follow the `general-setup` templates.
@@ -148,4 +148,4 @@ Stack skills are never hard-referenced by AKILI commands — this map is how the
 During `/akili-specify`, derive each task's required skills from this map. During `/akili-execute` and `/akili-test`, the **Leader assigns** these skills and the Implementer/Tester must load them before writing code or tests.
 
 ## CodeGraph
-Re-indexed 2026-08-03 — 290 files, 2,688 nodes, 6,881 edges. Prefer `codegraph_*` tools (search, callers/callees, impact) over broad grep for symbol-level questions; graph lookups do **not** count toward the Leader's 4-file delegation threshold (that counts full-file reads). Re-index (`codegraph index`) after merging a spec. Config is committed; the generated database is gitignored — never commit it.
+**Per-checkout, not initialized by default.** Only `.codegraph/config.json` is committed; the generated database is gitignored, so a fresh clone has no graph and `codegraph_*` calls fail until `codegraph init` runs in that working copy (verified absent here 2026-08-04). Previously asserted fixed node/edge counts, which are a property of one machine, not the repo — corrected by the `/akili-archive` factual-claims sweep. When the graph is built, prefer `codegraph_*` tools (search, callers/callees, impact) over broad grep for symbol-level questions; graph lookups do **not** count toward the Leader's 4-file delegation threshold (that counts full-file reads). Re-index (`codegraph index`) after merging a spec. Config is committed; the generated database is gitignored — never commit it.
