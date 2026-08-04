@@ -43,7 +43,17 @@ import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
  * Distinctive PII values seeded INTO uploaded rows. FR-11: they must never
  * appear anywhere in an import report body (which echoes only non-PII identity).
  */
-const IMPORT_PII_PHONE = '+255-000-IMPORTLEAK';
+/**
+ * Must be a **valid, canonical** TZ number, not a greppable non-phone
+ * sentinel. Since T-3 wired `normalizePhone()` into the row pipeline (FR-5),
+ * an unnormalizable Phone cell is cleared to `null` — and a phone that is
+ * never stored cannot leak, which would make the `not.toContain` assertion
+ * below pass trivially while testing nothing (KZ-002). Keeping it valid keeps
+ * the canary pointed at a phone that really is persisted and really is PII.
+ * Distinctive digits (unused elsewhere in `src/`) preserve greppability;
+ * already canonical, so it round-trips unchanged.
+ */
+const IMPORT_PII_PHONE = '+255700123456';
 const IMPORT_PII_EMAIL = 'import-leak-detector@example.test';
 const IMPORT_BAD_EMAIL = 'super-secret-leak@bad';
 

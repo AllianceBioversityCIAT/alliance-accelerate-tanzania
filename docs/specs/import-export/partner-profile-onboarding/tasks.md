@@ -35,7 +35,7 @@
 
 ## Phase B — Import pipeline (depends on Phase A)
 
-- [ ] **T-3** Wire phone normalization into the import row pipeline  (deps: T-1)
+- [x] **T-3** Wire phone normalization into the import row pipeline  (deps: T-1)
       **Scope:** Call `normalizePhone()` where the importer currently stores `phone` verbatim (`actor-import.service.ts:531`). Implement the **specified `null` branch**: row is **created**, `phone` written as `null`, and a **warning** raised naming the column. Multi-number cells raise a warning carrying the **count/position only**. No other Actor field receives a second number.
       **Traces:** FR-5 (`null` branch, no-silent-loss, no-PII-in-warning, no-second-field) · `design.md` §4.1, DD-3, §10.1 **F-1**
       **Files:** `backend/src/actors/actor-import.service.ts`, `backend/src/actors/actor-import.service.spec.ts`

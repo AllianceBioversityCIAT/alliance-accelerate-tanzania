@@ -295,4 +295,104 @@ T-1 ADVISORY **B2** records that Excel dropping a leading zero turns a landline 
 
 FR-5's `BUT NOT`-invent-a-country-code clause, tightened one sub-case. NFR-3 (additive), NFR-4, NFR-5 (zero-import purity intact), NFR-6, NFR-9.
 
+---
+
+### T-3 — Wire phone normalization into the import row pipeline
+
+- **Date:** 2026-08-04
+- **Status:** ✅ **PASS** on attempt 1 (0 rework rounds), with **one user-approved edit to an existing test** — see the NFR-3 section below, which is the part of this entry that most deserves scrutiny
+- **Traces:** FR-5 (`null` branch, no-silent-loss, no-PII-in-warning, no-second-field) · `design.md` §4.1, DD-3, §10.1 **F-1**
+- **Skills:** `nestjs-expert`, `error-handling-patterns` (both applied as repo convention rather than loaded — the change adds no Nest construct, no DI, and no new error path; it pushes onto the warning array `resolveGps` already uses) · `tdd` **not followed in its red→green form** — see "TDD deviation" below · **Effort:** `medium`
+- **Ran alone**, as `tasks.md` requires: T-3, T-4, and T-6 all edit `actor-import.service.ts`
+- **Executed inline by the Leader**, same standing no-subagent instruction recorded under Amendment A2. **No independent Reviewer read this diff.** The mutation testing below exists specifically to substitute *some* adversarial pressure for the missing second model; it is not equivalent, and this entry should be discounted accordingly.
+
+#### This task NARROWS shipped behavior (F-1) — stated plainly, not as an additive change
+
+Before T-3, `actor-import.service.ts:531` stored the Phone cell verbatim: `phone: cells.phone || undefined`. After T-3, a value `normalizePhone()` does not recognise stores as **`null` plus a warning**. A caller who previously imported a non-Tanzanian number kept the digits and now loses them from the `phone` column. This is `design.md` §10.1 **F-1**, deliberate and desirable — and it is a **removal**, not an addition. Describing it as purely additive would be false.
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `actor-import.service.ts` | `normalizePhone` import; two warning constants (one fixed string, one count-parameterized builder); a phone-resolution block in `validateRow`; `phone: cells.phone \|\| undefined` → `phone`; `ActorScalarData.phone` widened `string?` → `string \| null \| undefined` |
+| `actor-import.service.spec.ts` | +9 cases in a new `phone normalization (FR-5, T-3)` describe. **No existing case touched** |
+| `admin-actor-import.e2e.spec.ts` | **One existing fixture constant changed** — the subject of the next section |
+
+`ActorScalarData` is module-private (3 references, all in this file), so widening it changes no exported contract. `buildCreateData` drops `undefined` but **keeps `null`**, which is what makes the column write NULL rather than fall to a default — the behavior FR-5 asks for, and the reason `null` rather than `undefined` is the right value to assign.
+
+#### NFR-3 — an existing test WAS edited. Escalated to the user, approved, and recorded here in full
+
+`tasks.md` T-3 disqualifies evidence if "an existing test was edited to accommodate the change". One was. **I stopped and escalated rather than edit it**, and the user chose the resolution.
+
+**What broke.** `admin-actor-import.e2e.spec.ts` asserted `totals.warnings === 1`; it became 2. Verbatim:
+
+```
+● Admin actor import e2e › Commit lifecycle with a mixed fixture (FR-4..FR-8, FR-11)
+  › creates valid rows with crops + IMPORT audit, skips/fails the rest, and never echoes PII
+    - "warnings": 1,
+    + "warnings": 2,
+      at Object.<anonymous> (src/test/admin-actor-import.e2e.spec.ts:668:31)
+Test Suites: 1 failed, 36 passed, 37 total · Tests: 1 failed, 465 passed, 466 total
+```
+
+**Why it broke — a fixture premise, not a contract.** `IMPORT_PII_PHONE` was `'+255-000-IMPORTLEAK'`: a greppable **sentinel string**, not a phone number. It exists so that a PII leak into a report body is unmistakable. Under FR-5 it is now correctly unnormalizable, so the row gains a second warning and `phone` clears.
+
+**The trap, which is why this could not be a routine assertion update.** The same test does `expect(bodyText).not.toContain(IMPORT_PII_PHONE)` and `expect(detail.body.phone).toBe(IMPORT_PII_PHONE)`. Had I simply updated the expectations to `warnings: 2` / `phone: null`, the leak assertion would have become **trivially true** — no phone is stored, so no phone can leak. The PII canary would have stayed green while testing nothing. That is KZ-002 in its most dangerous form: not a weak assertion added, but a strong one silently hollowed out.
+
+**Resolution chosen by the user: repair the fixture, not the assertions.** `IMPORT_PII_PHONE` → `'+255700123456'` — valid, already canonical (so it round-trips unchanged), and its digits appear nowhere else in `src/` (grepped) so greppability survives. **Every assertion in that test is byte-identical to before**, including both PII assertions, and `warnings` stays 1. The set of implementations the test rejects is unchanged; only the fixture's premise was repaired. A comment at the constant records why it must stay a valid number, so a future reader does not "simplify" it back into a sentinel.
+
+The two alternatives were put to the user and declined: accepting the narrowing in the assertions (the hollowing-out above), and additionally seeding an eighth unnormalizable-phone row into `mixedRows()` (more coverage, but it shifts every row-count assertion in a shared fixture — cost not worth it while the unit suite covers the same behavior).
+
+#### TDD deviation — recorded because the skill was assigned and not followed as written
+
+`tasks.md` assigns `tdd`. All 9 new cases passed on their first execution: the implementation was written first. Rather than claim a red→green cycle that did not happen, I substituted **mutation testing** — reverting parts of the implementation and checking the tests actually go red. Two mutations:
+
+| Mutation | Effect |
+|---|---|
+| **M1** — revert the create payload to `phone: cells.phone \|\| undefined`, keep warnings | **5 of 9 red** |
+| **M2** — remove both `warnings.push(...)` calls, keep the payload | **4 of 9 red** |
+
+**7 of 9 cases are killed by at least one mutation.** The remaining three, named rather than glossed:
+
+- *"puts no digit of the discarded numbers anywhere in the report"* and *"writes no second number into any other Actor field"* — **negative assertions, unkillable by construction.** Removing the feature also removes the leak vector, so they pass on an empty implementation. They are supplementary guards against a *future* regression that starts echoing values, not evidence that T-3 works.
+- *"leaves an empty Phone cell absent and unwarned"* — a **deliberate regression pin** (it was green before this change), labeled as such in its own comment so it is never later miscounted as coverage.
+
+Mutation testing is weaker than an independent reviewer and weaker than genuine red→green. It is what was available.
+
+#### Verification
+
+- `npm test -- actor-import.service --silent` → **45 passed, 45 total** (36 + 9)
+- `npm test -- --silent` (full backend) → **475 passed, 37 suites**, 0 failed
+- `npx eslint "{src,test}/**/*.ts" --quiet` → exit 0 (non-mutating form; `npm run lint` deliberately not used — it runs `--fix` and mutates the diff under review)
+- `npm run build` → exit 0
+
+#### Done-when, clause by clause
+
+| Clause | Evidence |
+|---|---|
+| Non-empty unnormalizable cell → **created** row, `phone === null`, warning | `expect(created).toHaveProperty('phone')` + `toBeNull()` + `outcome === 'created'`. The `toHaveProperty` is load-bearing: it distinguishes an explicit `null` from a dropped key |
+| `/`-separated cell → first number + warning | `'700000006/700000007'` → `+255700000006`, exact warning string asserted |
+| No warning text contains any digit from the input | Report JSON greppped for both discarded numbers |
+| Existing import tests green **without edits** | True for `actor-import.service.spec.ts`. **False for the e2e fixture** — see the NFR-3 section |
+
+#### Disqualifier clauses checked explicitly
+
+| T-3 disqualifier | Finding |
+|---|---|
+| Row *failed* instead of created | **Clear.** No `errors.push` on the phone path; the row stays a create candidate. Asserted in three cases |
+| Raw string stored as fallback | **Clear.** Asserted directly, plus a case confirming a mixed free-text cell leaves no trace in the report |
+| Warning embeds discarded digits | **Clear.** The builder takes a `number` count and can only emit positions; `normalizePhone` never returns the values, so there is nothing to embed |
+| Existing test edited | **TRIGGERED and disclosed above.** User-approved, with no assertion weakened |
+| Change described as purely additive | **Clear.** F-1 stated at the top of this entry and in the spec file's own block comment |
+
+#### Interaction with T-1 advisory A2, verified not assumed
+
+A2 warned that `additionalCount` counts **segments**, so `{ phone: null, additionalCount ≥ 1 }` is reachable and the pipeline must never assume `phone !== null` when the count is > 0. The implementation uses two **independent** `if`s, not `if/else`. Covered by *"raises BOTH warnings when the first segment is unusable and later ones exist"* (`'n/a/700000007'` → 3 segments, first unusable), which M1 and M2 both kill.
+
+#### Requirements covered
+
+FR-5's `null`-branch import behavior (row created, `phone` null, warning), the multi-number warning, no-PII-in-warning, and no-second-field. NFR-3 (additive in `actor-import.service.ts`; one approved fixture repair elsewhere), NFR-6 (the warning builder is a pure function of the count).
+
+**NOT covered here:** FR-5's at-scale behavior on the real workbook — this suite mocks Prisma. That belongs to T-11's fixture run and the T-9 operator check.
+
 

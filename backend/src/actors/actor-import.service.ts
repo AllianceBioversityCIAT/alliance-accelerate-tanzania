@@ -44,6 +44,7 @@ import {
 import {
   isValidLatitude,
   isValidLongitude,
+  normalizePhone,
   normalizeRegion,
   normalizeSex,
   normalizeTraderType,
@@ -75,6 +76,35 @@ const GPS_CLEARED_WARNING = 'GPS out of range — imported with GPS cleared';
 const CONSENT_ACK_WARNING =
   'Consent is GRANTED — acknowledgement will be required to import this actor';
 
+/**
+ * T-3 (FR-5) — warning for a non-empty Phone cell that `normalizePhone()`
+ * could not resolve. The row is still **created**: an unusable phone is not
+ * grounds to reject a real organisation. The message names the column so the
+ * AT team can find and repair the source cell, and deliberately carries **no
+ * part of the rejected value** — echoing the digits back would put PII into a
+ * report surface (FR-5, NFR-9).
+ */
+const PHONE_UNNORMALIZABLE_WARNING =
+  'Phone — value is not a recognized Tanzanian number; imported with Phone cleared';
+
+/**
+ * T-3 (FR-5) — warning for a `/`-separated multi-number Phone cell. The first
+ * number is stored; the rest are discarded. `normalizePhone()` never returns
+ * the discarded values, only how many there were, so this message can name
+ * **positions and a count but never a digit of the input** — which is the
+ * whole reason the normalizer returns a count instead of an array.
+ *
+ * Positions are `2…additionalCount+1` because the *kept* number is always the
+ * first non-empty segment (design.md §4.1).
+ */
+function phoneAdditionalValuesWarning(additionalCount: number): string {
+  const subject =
+    additionalCount === 1
+      ? 'an additional value was present at position 2'
+      : `${additionalCount} additional values were present at positions 2–${additionalCount + 1}`;
+  return `Phone — ${subject}; only the first number was imported and the rest were not stored`;
+}
+
 /** Scalar Actor create payload assembled from a validated row. */
 interface ActorScalarData {
   traderId: string;
@@ -87,7 +117,13 @@ interface ActorScalarData {
   marketLocation?: string;
   capacityTons?: number;
   technicalSupport?: string;
-  phone?: string;
+  /**
+   * `null` is meaningful here, not merely "absent": T-3 writes an explicit
+   * `null` for a non-empty cell that could not be normalized, and
+   * `buildCreateData` keeps `null` while dropping `undefined` — so the column
+   * is written NULL rather than left to a default.
+   */
+  phone?: string | null;
   email?: string;
   gpsLatitude?: number;
   gpsLongitude?: number;
@@ -412,6 +448,28 @@ export class ActorImportService {
       }
     }
 
+    // Phone — optional; normalized to E.164 or cleared with a warning (FR-5,
+    // T-3). NOT an error: FR-5 forbids rejecting a real organisation over an
+    // unusable phone, so the row stays a create candidate either way.
+    //
+    // The two branches are independent, not exclusive. `normalizePhone()`
+    // counts *segments*, so a cell like "garbage/<number>" returns
+    // `{ phone: null, additionalCount: 1 }` and must raise BOTH warnings
+    // (T-1 advisory A2). Never assume `phone !== null` when the count is > 0.
+    let phone: string | null | undefined;
+    if (cells.phone) {
+      const normalized = normalizePhone(cells.phone);
+      // `null`, never the raw string — storing an unnormalizable value is the
+      // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
+      phone = normalized.phone;
+      if (normalized.phone === null) {
+        warnings.push(PHONE_UNNORMALIZABLE_WARNING);
+      }
+      if (normalized.additionalCount > 0) {
+        warnings.push(phoneAdditionalValuesWarning(normalized.additionalCount));
+      }
+    }
+
     // Email — optional; when present must be a valid address. Never echo value.
     let email: string | undefined;
     if (cells.email) {
@@ -528,7 +586,7 @@ export class ActorImportService {
           marketLocation: cells.marketLocation || undefined,
           capacityTons,
           technicalSupport: cells.technicalSupport || undefined,
-          phone: cells.phone || undefined,
+          phone,
           email,
           gpsLatitude: gps.lat,
           gpsLongitude: gps.lng,

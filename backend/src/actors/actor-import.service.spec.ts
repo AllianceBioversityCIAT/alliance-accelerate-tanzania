@@ -319,6 +319,176 @@ describe('ActorImportService', () => {
     });
   });
 
+  /**
+   * T-3 — phone normalization wired into the row pipeline (FR-5, design.md
+   * §4.1, F-1). All fixture numbers are synthetic; no real number from the
+   * client workbook appears here (NFR-9).
+   *
+   * **This block covers a NARROWING of shipped behavior (F-1).** Before T-3
+   * the importer stored the Phone cell verbatim (`phone: cells.phone ||
+   * undefined`); a value the normalizer does not recognise now stores as
+   * `null` plus a warning. That is deliberate, and these tests are what make
+   * it visible rather than buried.
+   */
+  describe('phone normalization (FR-5, T-3)', () => {
+    const CLEARED_WARNING =
+      'Phone — value is not a recognized Tanzanian number; imported with Phone cleared';
+
+    it('stores a normalizable phone canonically, with no warning', async () => {
+      const b64 = await buildWorkbook([validRow({ phone: '0700000002' })]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(report.totals.warnings).toBe(0);
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.phone).toBe('+255700000002');
+    });
+
+    it('creates the row with phone null and a warning when the cell cannot be normalized', async () => {
+      // FR-5: an unusable phone is not grounds to reject a real organisation.
+      const b64 = await buildWorkbook([validRow({ phone: 'ring my office' })]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(report.rows[0].warnings).toContain(CLEARED_WARNING);
+      expect(report.totals.warnings).toBe(1);
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      // Explicitly `null` — NOT absent, and NOT the raw string. Storing the
+      // unnormalizable value verbatim is the behavior T-3 removes.
+      expect(created).toHaveProperty('phone');
+      expect(created.phone).toBeNull();
+    });
+
+    it('never stores the raw string as a fallback for a rejected value', async () => {
+      const raw = 'contact via 0700-000-002 or the office';
+      const b64 = await buildWorkbook([validRow({ phone: raw })]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.phone).toBeNull();
+      expect(JSON.stringify(report)).not.toContain(raw);
+    });
+
+    it('keeps the first number of a "/"-separated cell and warns about the rest', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ phone: '700000006/700000007' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(report.rows[0].warnings).toContain(
+        'Phone — an additional value was present at position 2; only the first number was imported and the rest were not stored',
+      );
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.phone).toBe('+255700000006');
+    });
+
+    it('names positions, never digits, when more than one number is discarded', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ phone: '700000006/700000007/700000009' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].warnings).toContain(
+        'Phone — 2 additional values were present at positions 2–3; only the first number was imported and the rest were not stored',
+      );
+    });
+
+    it('puts no digit of the discarded numbers anywhere in the report (FR-5, NFR-9)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ phone: '700000006/700000007/700000009' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      const reportText = JSON.stringify(report);
+      // The KEPT number is legitimately absent from the report too — the
+      // report echoes only non-PII identity — but the discarded ones are the
+      // values that must never have left `normalizePhone()` at all.
+      for (const discarded of ['700000007', '700000009']) {
+        expect(reportText).not.toContain(discarded);
+      }
+    });
+
+    it('raises BOTH warnings when the first segment is unusable and later ones exist', async () => {
+      // T-1 advisory A2: `additionalCount` counts SEGMENTS, so
+      // `{ phone: null, additionalCount: 1 }` is reachable. The pipeline must
+      // not assume a non-null phone whenever the count is > 0.
+      const b64 = await buildWorkbook([validRow({ phone: 'n/a/700000007' })]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(report.rows[0].warnings).toEqual(
+        expect.arrayContaining([
+          CLEARED_WARNING,
+          expect.stringContaining('additional value'),
+        ]),
+      );
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.phone).toBeNull();
+    });
+
+    it('writes no second number into any other Actor field', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ phone: '700000006/700000007' }),
+      ]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      // Scan every scalar written, not just the fields we thought to name —
+      // FR-5's clause is "no OTHER field", which a fixed list cannot prove.
+      for (const [field, value] of Object.entries(created)) {
+        if (field === 'phone') continue;
+        expect(JSON.stringify(value ?? null)).not.toContain('700000007');
+      }
+    });
+
+    it('leaves an empty Phone cell absent and unwarned, exactly as before', async () => {
+      const b64 = await buildWorkbook([validRow()]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.totals.warnings).toBe(0);
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      // `undefined` is dropped by `buildCreateData`, so the column is simply
+      // not written — distinct from the explicit `null` of a rejected value.
+      expect(created).not.toHaveProperty('phone');
+    });
+  });
+
   describe('dedupe (FR-4)', () => {
     it('keeps the first valid in-file occurrence and skips later duplicates', async () => {
       const b64 = await buildWorkbook([
