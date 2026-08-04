@@ -41,7 +41,9 @@ Beyond shape, four concrete blockers:
 
 - **B-1 — `traderId` collisions.** `Trader_id` restarts per sheet: `1036` (beans), `1007` (sorghum), `1006` (groundnuts) all exist. The column is `@unique`. A naive load would silently skip real actors as "duplicates".
 - **B-2 — Missing required `region`.** `region` is required by `ActorCreateDto`. `Offtaker_Groundnuts` has none; `Humantarian`/`DSP` have a free-text `Location` (`"West and South Tanzania "`, `"Arusha"`).
-- **B-3 — Dirty values.** `Retaler`, `Lindi  Town` (double space), `Ye` for yes, trailing spaces throughout, phone numbers in three formats (`755805290`, `255788 275 410`, `0767977370/0684357841` — two numbers in one cell).
+- **B-3 — Dirty values.** `Retaler`, `Lindi  Town` (double space), `Ye` for yes, trailing spaces throughout, phone numbers in several formats — bare 9-digit local (`7XXXXXXXX`), country-prefixed with internal spaces (`255 7XX XXX XXX`), leading-zero national (`07XXXXXXXX`), parenthesized country code (`(255)7XXXXXXXX`), and **two numbers in one cell** (`07XXXXXXXX/06XXXXXXXX`).
+
+> **PII note (2026-08-04, `/akili-specify`):** this section originally quoted three **real** contact phone numbers copied from the client workbook, one belonging to a named contact on the `Seed Company` sheet. They were replaced with the format placeholders above. Real PII must never appear in a committed file — see `requirements.md` NFR-9 and its §9 D-7 grep gate. The redaction does not remove them from git history; that is a separate decision.
 - **B-4 — No consent anywhere in the file.** Not one row carries consent evidence.
 
 ## 4. Proposed Outcome
@@ -62,7 +64,7 @@ Beyond shape, four concrete blockers:
 **Backend hardening (small, targeted):**
 - **Key namespacing:** prefix per source sheet (e.g. `OFB-1036`, `OFS-1007`, `OFG-1006`, `BBB-0042`, `HUM-0007`, `DSP-0003`, `SDC-0002`). Sheets without a source id get a stable positional key. Recorded in `mapping.md`, applied at mapping time.
 - **Region derivation:** district → region against `CANONICAL_REGIONS` for `Offtaker_Groundnuts` and free-text `Location` for `Humantarian`/`DSP`. Unresolvable → **quarantine, never guess** (per R-5 of the epic).
-- **Phone normalisation:** handle bare 9-digit local (`755805290` → `+255755805290`), country-prefixed (`255788 275 410`), leading-zero (`0767977370`), and **multi-number cells** (take the first, preserve the rest in `technicalSupport`? — no: see OQ-2).
+- **Phone normalisation:** handle bare 9-digit local (`7XXXXXXXX` → `+2557XXXXXXXX`), country-prefixed with internal spaces (`255 7XX XXX XXX`), leading-zero national (`07XXXXXXXX`), parenthesized country code (`(255)7XXXXXXXX`), and **multi-number cells** (take the first, preserve the rest in `technicalSupport`? — no: see OQ-2).
 - **Capacity units:** `Offtaker_Groundnuts`'s `Capacity (volume)` has no unit. Treated as tonnes only if the client confirms (OQ-1); otherwise the column is dropped rather than imported wrong.
 - Stale-template message improvement (carried from chunk 1's `v2` bump).
 
@@ -138,7 +140,7 @@ The mapping document is also the higher-value artifact: it is what makes the onb
 | **R-2** | **Real PII at real scale.** ~1,300 phone numbers and emails for real Tanzanian traders enter the DB in one operation. | Everything lands `UNKNOWN` → excluded from every public read by the ADR-004 `WHERE`. `pii-boundary.spec.ts` must be green before the import runs, not after. |
 | **R-3** | **Silent data loss.** Quarantined and dropped rows are the easiest thing to lose track of; a "successful import" of 700 rows from a 1,318-row file reads as success. | The reconciliation report is a **deliverable**, not a log line. Every source row must be classified. |
 | **R-4** | **`Bulk buyers_beans` has no trader id and no contact person** — only an offtaker name, region, district, and metrics. | Positional keys + name-based dedup flagging. If the sheet cannot yield a usable identity, defer it rather than importing ghosts. |
-| **R-5** | **Multi-number phone cells** (`0767977370/0684357841`) — picking one silently discards a real contact. | See OQ-2. Do not decide this silently in code. |
+| **R-5** | **Multi-number phone cells** (`07XXXXXXXX/06XXXXXXXX`) — picking one silently discards a real contact. | See OQ-2. Do not decide this silently in code. |
 | **R-6** | **Import runs against dev RDS via Lambda** with a bounded row count and a synchronous request (archived `admin/actor-import` design). ~1,000 rows in one upload may approach that bound. | Split into per-sheet uploads (which the mapping produces naturally) and confirm the row cap during `/akili-specify`. |
 | **OQ-1** | `Offtaker_Groundnuts` `Capacity (volume)` has **no unit** — values like `400`, `70`. Tonnes, kg, or bags? | **Ask the client.** Importing this wrong corrupts the map's capacity filter. Drop the column until answered. |
 | **OQ-2** | Multi-number phone cells: keep first, keep both in a new field, or quarantine? | Product decision; `phone` is PII so a second field expands the PII surface. |
