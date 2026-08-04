@@ -395,4 +395,87 @@ FR-5's `null`-branch import behavior (row created, `phone` null, warning), the m
 
 **NOT covered here:** FR-5's at-scale behavior on the real workbook — this suite mocks Prisma. That belongs to T-11's fixture run and the T-9 operator check.
 
+---
+
+### T-7 — HALTED BEFORE START: the source workbook is not reachable
+
+- **Date:** 2026-08-04
+- **Status:** ⛔ **BLOCKED on an input** — not started, nothing written. `tasks.md` T-7 stays `[ ]`
+- **Escalated to the user**, who owns supplying the workbook
+
+T-7 was selected as the next task (deps `T-2` satisfied, and it is the deliverable most likely to overrun the §13 budget). It cannot be authored.
+
+**What is missing.** `mapping.md` requires *complete* per-column dispositions for `Offtaker_Beans` (16 columns), `Offtaker_Sorghum` (13), and `Offtaker_Groundnuts` (13). The source workbook is **not in this repository** — `find . -iname "*.xlsx"` outside `node_modules` returns only the generated canonical template (`frontend/public/templates/`, `frontend/out/templates/`). And **no complete column inventory was ever recorded in the spec.** What exists is reconnaissance fragments:
+
+| Source | What it records | Coverage |
+|---|---|---|
+| `proposal.md:31` | `Offtaker_Beans`: `Trader_id`, `gpslatitude`, `Trader/processor type` | 3 of 16 |
+| `proposal.md:32` | `Offtaker_Sorghum`: 4 named present, 4 named **absent** | partial, of 13 |
+| `proposal.md:33` | `Offtaker_Groundnuts`: `District`, `Town`, `Need for Tecncal support`, `Capacity (volume)` | 4 of 13 |
+| `requirements.md` §3.1 | Header rows, physical row counts, anomalies | **no column names at all** |
+
+**Why proceeding would be worse than stopping.** Authoring the document means inventing roughly 30 column names. FR-1's only automated gate (`requirements.md` §9 **D-5**) is **arithmetic** — dispositions must sum to the measured column count — and 16 fabricated names sum to 16. The gate goes green on fabrication. This is T-7's own disqualifier ("arithmetic closure is not mapping correctness", D-6) in its worst form: not merely unverified, but invented, in the spec's load-bearing deliverable, with **T-8, T-9, and T-10 all inheriting from it**.
+
+Under-coverage in T-2 was safe because an absent district quarantines (see T-2 ADVISORY A-1). **This is the opposite direction** — a fabricated mapping produces confident, wrong onboarding with no gate anywhere in the chain to catch it.
+
+**Unblocks when** the workbook is readable from this checkout. Then T-7's evidence requirement — a stated cell-by-cell trace, with the sheets and row counts named — becomes satisfiable rather than theatrical.
+
+**T-8, T-9, T-10 are transitively blocked** (`T-7→T-8→{T-9,T-10}`). T-11 depends on T-7 as well, though its fixture is PII-scrubbed and synthetic by design, so it may prove partially executable once T-3/T-4 are in — to be assessed when reached, not assumed now.
+
+---
+
+### T-4 — Add the per-reason breakdown to the import report
+
+- **Date:** 2026-08-04
+- **Status:** ✅ **PASS** on attempt 1 (0 rework rounds)
+- **Traces:** FR-7 (all clauses) · `design.md` §3, §4.3, DD-4 · NFR-3, NFR-6, NFR-7, NFR-8
+- **Skills:** `nestjs-expert`, `api-design-principles`, `error-handling-patterns` as repo convention; `tdd` **not followed in its red→green form**, mutation testing substituted again (same reason and same discount as T-3) · **Effort:** `medium`
+- **Ran alone** — T-3, T-4, T-6 all edit `actor-import.service.ts`
+- **Executed inline by the Leader; no independent Reviewer.** Same standing constraint recorded under Amendment A2 and T-3
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `actor-import.types.ts` | New exported `ImportFailureReason { reason, count }`; new **optional** `failureBreakdown?: ImportFailureReason[]` on `ImportReport`. No existing member altered |
+| `actor-import.service.ts` | `ROW_LEVEL_ERROR_FIELD` / `BATCH_ROLLED_BACK_REASON` constants; module-level `templateColumnIndex()`; `buildFailureBreakdown()` + `failureReasonFor()`; 4 lines in `buildReport` |
+| `actor-import.service.spec.ts` | +9 cases in a new `failure breakdown (FR-7, T-4)` describe. **No existing case touched** |
+
+**Purely additive, and this one genuinely is** — unlike T-3, which narrowed (F-1). Asserted rather than claimed: a test pins `Object.keys(report.totals).sort()` and `Object.keys(report).sort()`, so adding, renaming, or dropping any report field fails the suite.
+
+#### The one-reason-per-row rule, and the trap it exists for
+
+`tasks.md` is explicit that `errors[0]` is **not** correct, and the reason is concrete rather than stylistic: `validateRow` pushes `region` (line ~358) **before** `traderType` (line ~374), while `TEMPLATE_COLUMNS` orders **Trader Type at index 2 and Region at index 3**. A row failing both is therefore attributed to `region` by insertion order and `traderType` by template order. Verified at source before implementing, not assumed from the task text.
+
+The implementation sorts a **copy** of the row's errors on `templateColumnIndex` and takes the first. `_row` is not a template column, so it returns `MAX_SAFE_INTEGER` and sorts last; `Array#sort` is stable in V8, so ties keep insertion order and repeated runs agree (NFR-6).
+
+**Mutation check on exactly this rule:** replacing the sort with `const [first] = errors` turns *"names a multi-error row by TEMPLATE ORDER, not by insertion order"* red and leaves the other 8 green — the discrimination is real, and it is isolated to the test written for it. That test also pins its own premise (`errors.map(e => e.field)` equals `['region','traderType']`), so if `validateRow`'s push order ever changes the test fails loudly instead of quietly passing for the wrong reason.
+
+#### Determinism — one deliberate choice worth recording
+
+Ordering is count descending, then reason ascending, with the tie-break written as a plain `<`/`>` comparison rather than `localeCompare`. `localeCompare` is locale-sensitive; under a different `LANG` the same input could order differently, which is precisely what NFR-6 forbids. A cheap, easy-to-miss determinism leak, avoided on purpose.
+
+#### Done-when, clause by clause
+
+| Clause | Evidence |
+|---|---|
+| Counts **sum to `failed + skipped` exactly** on a mixed fixture | Asserted on a 6-row fixture containing a create, an in-file duplicate, an existing-id skip, **a multi-error row**, and a single-error row. Both sides pinned independently (`failed` 2, `skipped` 2, sum 4) so a change moving both together cannot stay green |
+| Ordering stable across two runs on identical input | Two full runs, `JSON.stringify` compared |
+| `_row` surfaces as `batch-rolled-back`, never a column name | Rollback forced via `$transaction.mockRejectedValueOnce`; exact-array assertion plus `not.toContain('_row')` |
+| Every pre-existing field keeps name, type, optionality | `Object.keys` assertions on both `report` and `report.totals` |
+
+#### Disqualifier clauses checked explicitly
+
+| T-4 disqualifier | Finding |
+|---|---|
+| Sum invariant asserted on a fixture with **no multi-error row** | **Clear.** The mixed fixture contains one, and a second test isolates the multi-error attribution rule on its own |
+| Any existing test needed editing | **Clear.** Nothing outside the new describe changed. (Contrast T-3, where one fixture edit was required and disclosed) |
+| A reason slug can carry a value rather than a field/outcome name | **Clear.** The vocabulary is closed by construction: slugs come only from `ImportRowError.field`, from `outcome` strings, or from the `batch-rolled-back` literal. No code path interpolates a cell value into a reason |
+
+#### Requirements covered
+
+FR-7 (breakdown, sum invariant, deterministic ordering, `_row` mapping, additive). NFR-3 (additive, asserted), NFR-6 (ordering + locale-independent tie-break). **NFR-7 and NFR-8 are traced by `tasks.md` to this task but are not exercised by it** — the breakdown is computed from already-assembled row results and touches no transaction boundary, so audit-in-same-`$transaction` and no-partial-corruption remain properties of the pre-existing commit path, unchanged and unretested here. Stating that rather than claiming coverage the change does not provide.
+
+**FR-7's frontend clauses are T-5's**, which is now unblocked.
+
 

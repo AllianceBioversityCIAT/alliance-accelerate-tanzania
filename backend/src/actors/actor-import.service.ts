@@ -27,6 +27,7 @@ import { ActorAuditService, ActingAdmin } from './actor-audit.service';
 import { AdminActor, toAdminActor } from './admin-actor.serializer';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import {
+  ImportFailureReason,
   ImportReport,
   ImportRowError,
   ImportRowResult,
@@ -103,6 +104,33 @@ function phoneAdditionalValuesWarning(additionalCount: number): string {
       ? 'an additional value was present at position 2'
       : `${additionalCount} additional values were present at positions 2–${additionalCount + 1}`;
   return `Phone — ${subject}; only the first number was imported and the rest were not stored`;
+}
+
+/**
+ * T-4 — the internal pseudo-field a rolled-back commit chunk pushes onto its
+ * rows, and the slug it surfaces as in the breakdown (FR-7). `_row` is not a
+ * template column; emitting it raw would put a non-column in a vocabulary the
+ * client reads as column names.
+ */
+const ROW_LEVEL_ERROR_FIELD = '_row';
+const BATCH_ROLLED_BACK_REASON = 'batch-rolled-back';
+
+/**
+ * T-4 — position of a field in the canonical template's column order, used to
+ * pick **which** of a multi-error row's errors names the row (FR-7).
+ *
+ * `errors[0]` is the wrong answer and this is not hypothetical: `validateRow`
+ * pushes `region` before `traderType`, while `TEMPLATE_COLUMNS` orders Trader
+ * Type *first*. A row failing both would be attributed to `region` by
+ * insertion order and to `traderType` by template order — so the two rules are
+ * observably different, and FR-7 wants the template's.
+ *
+ * Unknown fields (i.e. `_row`) sort last. `Array#sort` is stable in V8, so
+ * ties keep insertion order and the result is deterministic (NFR-6).
+ */
+function templateColumnIndex(field: string): number {
+  const index = TEMPLATE_COLUMNS.findIndex((column) => column.field === field);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 /** Scalar Actor create payload assembled from a validated row. */
@@ -1019,7 +1047,63 @@ export class ActorImportService {
     if (templateVersionDetected) {
       report.templateVersionDetected = templateVersionDetected;
     }
+    const failureBreakdown = this.buildFailureBreakdown(resultRows);
+    if (failureBreakdown.length > 0) {
+      report.failureBreakdown = failureBreakdown;
+    }
     return report;
+  }
+
+  /**
+   * T-4 (FR-7) — tally why rows did not import, **one reason per row**, so the
+   * counts sum to `failed + skipped` exactly.
+   *
+   * Ordering is count descending, then reason ascending. The tie-break uses a
+   * plain `<` on the slugs rather than `localeCompare`, which is
+   * locale-sensitive and would let the same input order differently on a
+   * differently-configured runtime — the opposite of what NFR-6 asks for.
+   */
+  private buildFailureBreakdown(
+    resultRows: ImportRowResult[],
+  ): ImportFailureReason[] {
+    const counts = new Map<string, number>();
+    for (const row of resultRows) {
+      const reason = this.failureReasonFor(row);
+      if (reason !== null) {
+        counts.set(reason, (counts.get(reason) ?? 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => {
+        if (a.count !== b.count) return b.count - a.count;
+        return a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0;
+      });
+  }
+
+  /**
+   * The single reason a row did not import, or `null` if it did (or will).
+   *
+   * A skipped row is named by its outcome; a failed row by the template-first
+   * of its errors. Both vocabularies are closed and value-free (FR-7, NFR-9).
+   */
+  private failureReasonFor(row: ImportRowResult): string | null {
+    if (row.outcome.startsWith('skipped')) return row.outcome;
+    if (row.outcome !== 'failed') return null;
+
+    const errors = row.errors ?? [];
+    // A `failed` row always carries at least one error; guard anyway so a
+    // future path that fails a row without one cannot silently break the sum
+    // invariant by contributing zero reasons.
+    if (errors.length === 0) return BATCH_ROLLED_BACK_REASON;
+
+    const [first] = [...errors].sort(
+      (a, b) => templateColumnIndex(a.field) - templateColumnIndex(b.field),
+    );
+    return first.field === ROW_LEVEL_ERROR_FIELD
+      ? BATCH_ROLLED_BACK_REASON
+      : first.field;
   }
 
   /** Project one working row onto the reportable row result. */

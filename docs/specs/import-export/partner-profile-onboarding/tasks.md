@@ -44,7 +44,7 @@
       **Evidence is DISQUALIFIED if:** the row is *failed* instead of created (FR-5 forbids rejecting an organisation over an unusable phone); the raw string is stored as a fallback; a warning message embeds the discarded digits; or an existing test was edited to accommodate the change (NFR-3 — that is the signal you changed a contract, not a value). **This task narrows shipped behavior (F-1)** — say so explicitly in the report rather than describing the change as purely additive.
       **Skills:** `nestjs-expert`, `tdd`, `error-handling-patterns`
 
-- [ ] **T-4** Add the per-reason breakdown to the import report  (deps: none)
+- [x] **T-4** Add the per-reason breakdown to the import report  (deps: none)
       **Scope:** One **additive optional** field on `ImportReport`. Reason vocabulary closed to three sources: the failing column's `field`, the `skipped-*` outcomes, and `_row` mapped to the explicit slug `batch-rolled-back`. **One reason per row**, selected by sorting the row's errors on each field's index in `TEMPLATE_COLUMNS` and taking the first (`errors[0]` is **not** correct — `validateRow` pushes `region` before `traderType` while the template orders Trader Type first). Deterministic ordering: count descending, then reason ascending.
       **Traces:** FR-7 (all clauses) · `design.md` §3, §4.3, DD-4, NFR-3, NFR-6, NFR-7, NFR-8
       **Files:** `backend/src/actors/actor-import.types.ts`, `backend/src/actors/actor-import.service.ts`, `backend/src/actors/actor-import.service.spec.ts`
@@ -77,7 +77,7 @@
 
 > Split into two tasks deliberately, pre-empting `design.md` §13's watch item. Each must follow the **§4.5 required structure** exactly.
 
-- [ ] **T-7** `mapping.md` — structure + the three offtaker sheets  (deps: T-2)
+- [ ] **T-7** `mapping.md` — structure + the three offtaker sheets  (deps: T-2) — ⛔ **BLOCKED: source workbook not in the checkout** (see `execution.md`). No complete column inventory exists in the spec either, so the per-column dispositions cannot be authored without fabricating ~30 column names — which FR-1's arithmetic gate (D-5) would pass. **T-8, T-9, T-10 are transitively blocked.**
       **Scope:** The document skeleton per `design.md` §4.5, the published district→region table (sourced from `DISTRICT_TO_REGION`), plus complete per-column dispositions for `Offtaker_Beans` (16 cols), `Offtaker_Sorghum` (13), `Offtaker_Groundnuts` (13). **Column-driven** trader types. Records: the 52-blank-id positional keys, the 2 intra-sheet duplicate ids, the `"Retaler"` quarantine decision (no alias), the 4 phone-in-trader-type-column rows, `Offtaker_Beans.Email` as **`EMPTY-IN-SOURCE`**, and the contaminated tail register (`Offtaker_Sorghum` 110–116, `Offtaker_Groundnuts` 147–151) **by row number only**. Adds the **doc↔constant test** asserting the published table matches the constant.
       **Traces:** FR-1 (all clauses + both scenarios) · FR-2 (blank ids, intra-sheet dups, physical row numbers, no-reuse/no-renumber) · FR-3 (OFG derivation, no placeholder) · FR-4 (column-driven, `"Retaler"`, phone-in-type rows, never feed raw values to `normalizeTraderType`) · NFR-9 · `design.md` §4.2, §4.5, DD-2, DD-5, DD-9
       **Files:** `docs/specs/import-export/partner-profile-onboarding/mapping.md`, `backend/src/common/normalize.spec.ts` (doc↔constant assertion)

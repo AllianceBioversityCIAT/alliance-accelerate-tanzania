@@ -489,6 +489,175 @@ describe('ActorImportService', () => {
     });
   });
 
+  /**
+   * T-4 — per-reason breakdown of rows that did not import (FR-7, design.md
+   * §4.3, DD-4). Purely additive: every pre-existing report field keeps its
+   * name, type, and optionality, and no existing test needed a change.
+   */
+  describe('failure breakdown (FR-7, T-4)', () => {
+    /** Fails BOTH traderType and region — the one row that separates the rules. */
+    const multiErrorRow = (overrides: CellMap = {}): CellMap =>
+      validRow({ region: 'Atlantis', traderType: 'not-a-real-type', ...overrides });
+
+    it('names a multi-error row by TEMPLATE ORDER, not by insertion order', async () => {
+      // The whole point of the rule. `validateRow` pushes `region` BEFORE
+      // `traderType`, while TEMPLATE_COLUMNS orders Trader Type FIRST. So
+      // `errors[0]` yields `region` and the correct answer is `traderType` —
+      // a fixture without a multi-error row cannot tell the two apart, which
+      // is exactly what T-4's disqualifier warns about.
+      const b64 = await buildWorkbook([multiErrorRow()]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      // Guard the premise: if validateRow's push order ever changes, this
+      // test must fail loudly rather than quietly start passing for the wrong
+      // reason.
+      expect(report.rows[0].errors?.map((e) => e.field)).toEqual([
+        'region',
+        'traderType',
+      ]);
+
+      expect(report.failureBreakdown).toEqual([
+        { reason: 'traderType', count: 1 },
+      ]);
+    });
+
+    it('sums to failed + skipped exactly on a mixed fixture containing a multi-error row', async () => {
+      prisma.actor.findMany.mockResolvedValueOnce([{ traderId: 'TZ-EXISTS' }]);
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-OK' }),
+        validRow({ traderId: 'TZ-DUP' }),
+        validRow({ traderId: 'TZ-DUP' }),
+        validRow({ traderId: 'TZ-EXISTS' }),
+        multiErrorRow({ traderId: 'TZ-MULTI' }),
+        validRow({ traderId: 'TZ-REGION', region: 'Atlantis' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      const breakdown = report.failureBreakdown ?? [];
+      const total = breakdown.reduce((sum, entry) => sum + entry.count, 0);
+      expect(total).toBe(report.totals.failed + report.totals.skipped);
+      // Pin the arithmetic too, so a change that moves BOTH sides together
+      // (e.g. rows silently dropped) cannot keep this green.
+      expect(report.totals.failed).toBe(2);
+      expect(report.totals.skipped).toBe(2);
+      expect(total).toBe(4);
+    });
+
+    it('orders by count descending, then reason ascending', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-R1', region: 'Atlantis' }),
+        validRow({ traderId: 'TZ-R2', region: 'Atlantis' }),
+        validRow({ traderId: '', traderName: 'No Id' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      // `region` (2) outranks `traderId` (1) on count; had they tied, the
+      // ascending slug comparison would still put `region` first.
+      expect(report.failureBreakdown).toEqual([
+        { reason: 'region', count: 2 },
+        { reason: 'traderId', count: 1 },
+      ]);
+    });
+
+    it('breaks a count tie on the reason slug, ascending', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-R1', region: 'Atlantis' }),
+        validRow({ traderId: '', traderName: 'No Id' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.failureBreakdown).toEqual([
+        { reason: 'region', count: 1 },
+        { reason: 'traderId', count: 1 },
+      ]);
+    });
+
+    it('is byte-identical across two runs over the same input (NFR-6)', async () => {
+      const rows = [
+        validRow({ traderId: 'TZ-R1', region: 'Atlantis' }),
+        validRow({ traderId: 'TZ-R2', region: 'Atlantis' }),
+        validRow({ traderId: '', traderName: 'No Id' }),
+        multiErrorRow({ traderId: 'TZ-MULTI' }),
+      ];
+
+      const first = await service.run(previewDto(await buildWorkbook(rows)), 'sub-1');
+      const second = await service.run(previewDto(await buildWorkbook(rows)), 'sub-1');
+
+      expect(JSON.stringify(first.failureBreakdown)).toBe(
+        JSON.stringify(second.failureBreakdown),
+      );
+    });
+
+    it('names skipped rows by their outcome', async () => {
+      prisma.actor.findMany.mockResolvedValueOnce([{ traderId: 'TZ-EXISTS' }]);
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-EXISTS' }),
+        validRow({ traderId: 'TZ-DUP' }),
+        validRow({ traderId: 'TZ-DUP' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.failureBreakdown).toEqual([
+        { reason: 'skipped-duplicate-in-file', count: 1 },
+        { reason: 'skipped-exists', count: 1 },
+      ]);
+    });
+
+    it('surfaces a rolled-back batch as batch-rolled-back, never as _row', async () => {
+      prisma.$transaction.mockRejectedValueOnce(new Error('chunk exploded'));
+      const b64 = await buildWorkbook([validRow({ traderId: 'TZ-BOOM' })]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.failureBreakdown).toEqual([
+        { reason: 'batch-rolled-back', count: 1 },
+      ]);
+      // `_row` is an internal pseudo-field. It may appear in the row's own
+      // errors, but never in the breakdown, where it would read as a column.
+      const reasons = (report.failureBreakdown ?? []).map((e) => e.reason);
+      expect(reasons).not.toContain('_row');
+    });
+
+    it('is omitted entirely when every row imports', async () => {
+      const b64 = await buildWorkbook([validRow({ traderId: 'TZ-CLEAN' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.totals.failed).toBe(0);
+      expect(report.totals.skipped).toBe(0);
+      expect(report).not.toHaveProperty('failureBreakdown');
+    });
+
+    it('leaves every pre-existing report field untouched (NFR-3)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-OK' }),
+        validRow({ traderId: 'TZ-R1', region: 'Atlantis' }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(Object.keys(report.totals).sort()).toEqual([
+        'created',
+        'failed',
+        'rows',
+        'skipped',
+        'toCreate',
+        'warnings',
+      ]);
+      expect(Object.keys(report).sort()).toEqual([
+        'failureBreakdown',
+        'mode',
+        'rows',
+        'totals',
+      ]);
+    });
+  });
+
   describe('dedupe (FR-4)', () => {
     it('keeps the first valid in-file occurrence and skips later duplicates', async () => {
       const b64 = await buildWorkbook([
