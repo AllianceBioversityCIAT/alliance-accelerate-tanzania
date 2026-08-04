@@ -665,3 +665,185 @@ FR-11, both acceptance criteria, including the BUT-NOT clause. **Nothing in this
 #### Issues encountered
 
 None in the work. One orchestration note: the Reviewer completed its audit but went idle without delivering the report, and had to be asked for it explicitly. No effect on the verdict or the evidence.
+
+---
+
+### T-11 — Worked-example fixture + preview assertions, and the PII release gate
+
+- **Date:** 2026-08-04
+- **Status:** 🔄 **IN PROGRESS** — attempt 1 FAILed review, attempt 2 dispatched. `tasks.md` T-11 is `[~]`
+- **Traces:** FR-2 (idempotent re-run scenario) · FR-3 (district-rescue, quarantine on absent district) · FR-5 · FR-7 · NFR-1 · `design.md` §12, R-1 substitute 2
+- **Skills:** `nestjs-expert`, `tdd`, `systematic-debugging` as `tasks.md` specifies — no deviation · **Effort:** `xhigh`
+- **Review mode:** **parallel lens reviewers** (3), per `/akili-execute`'s effort-`xhigh` rule — spec conformance / scenario closure, PII+NFR-9+risk, and evidence quality. Each received the same file and one named lens
+
+#### Dependency-order deviation — approved, and the reason it was safe
+
+T-11 declares `deps: T-3, T-4, T-7`. T-3 and T-4 are `[x]`; **T-7 is blocked** on the source workbook and `mapping.md` does not exist. The Leader assessed the `T-7 → T-11` edge as **nominal** and the user approved running out of order:
+
+- the fixture is driven through the import endpoint, which accepts only the canonical template (`locateDataSheet` matches on `TEMPLATE_HEADERS`), so its columns come from `TEMPLATE_COLUMNS` — the source workbook could not have supplied them;
+- T-11's five dirt classes are enumerated in its own scope line and `requirements.md` §3.1, not derived from `mapping.md`;
+- NFR-9 mandates synthetic values regardless.
+
+The brief carried a hard stop-condition: if any clause needed a mapping decision, park at `[~]` rather than invent one. **It was not triggered.** The conformance Reviewer verified this independently against the file — the three inputs that could plausibly have needed `mapping.md` are `Mbozi → Songwe` (read from the shipped `DISTRICT_TO_REGION` at `normalize.ts:175`), the trader types (prescribed by FR-4 / DD-2), and the column shape (`TEMPLATE_COLUMNS`). The assessment held.
+
+#### Attempt 1 — files changed
+
+| File | Change |
+|---|---|
+| `backend/src/test/partner-profile-onboarding-import.e2e.spec.ts` | **New**, 526 lines. Own Prisma mock, workbook builder, `TestJwtAuthGuard`; real `AppModule` with `PrismaService` overridden. No existing file touched |
+
+Renamed from `-onboarding.e2e.spec.ts` during the attempt so the `npm test -- import` substring pattern collects it.
+
+#### Attempt 1 — verification
+
+| Command | Result |
+|---|---|
+| `npm test -- pii-boundary --silent` | PASS, 10/10 |
+| `npm test -- import --silent` | PASS, 5 suites / 95 tests |
+| `npm test -- --silent` (full backend) | PASS, 38 suites / 489 tests, 0 failed |
+| `npx eslint "{src,test}/**/*.ts" --quiet` | exit 0 |
+| `npm run build` | exit 0 |
+
+#### Attempt 1 — lens verdicts
+
+| Lens | Verdict |
+|---|---|
+| Spec conformance / scenario closure | ❌ **FAIL** — 1 issue |
+| PII / NFR-9 / risk | ✅ **PASS** — 5 advisories |
+| Evidence quality (KZ-002) | ❌ **FAIL** — 1 issue |
+
+**Both FAILs adjudicated in scope by the Leader before consuming the attempt**, per the parallel-lens rule. Neither is a lens straying outside the task: the conformance issue cites a clause `tasks.md`'s own coverage-closure table assigns to T-11, and the evidence issue cites `tasks.md` § Testing & Verification Expectations, which is a standard this spec set for itself.
+
+**FAIL 1 (conformance) — FR-10's DMS scenario has no closing assertion.** The coverage table co-assigns *"Scenario: DMS coordinates blanked, actor still imports"* to **T-8 and T-11**. T-8 is a document task with explicitly no automated gate, so accepting T-11 as-is would leave the code-observable half of the clause owned by nobody. No fixture row sets any GPS cell and no assertion references coordinates. The Reviewer checked the nearest pre-existing coverage and ruled it does not read across: `actor-import.service.spec.ts:290-315` covers an out-of-range **numeric** latitude (`200`), while FR-10's clause concerns a **DMS string** reaching a decimal column — a different input class. It further noted the legacy `src/import` module *quarantines* on non-numeric GPS while the admin importer clears-and-warns, so the two paths genuinely differ.
+
+**FAIL 2 (evidence, KZ-002) — a label claims a property the harness cannot evaluate.** The describe at line 470 is titled `'Idempotent re-run (FR-2 scenario: "re-running the mapping on an unchanged workbook")'`. The test proves the upload half well — re-POSTing byte-identical input creates nothing — but it cannot touch the *mapping* half, because no mapping is re-run and the keys are literals in the test file. Re-POSTing identical bytes holds key generation constant by construction, which is exactly the step FR-2's determinism clause is about. That property is enumerated as ungated in three places (`design.md` §12.1 item **6**, `requirements.md` §9 substitute 6, the `tasks.md` preamble). The file's *"What this suite does NOT claim"* block disclaims §12.1 items 1-5 by name and is **silent on item 6** — the one item this describe title would lead a reader to believe was just discharged. Remediation is documentation only; no assertion is wrong.
+
+#### Attempt 1 — what the reviewers confirmed was sound
+
+Recorded because a FAIL entry that lists only defects misrepresents the attempt, and because these were the properties most likely to produce a false green.
+
+- **Preview-writes-nothing is a real proof, not a vacuous one.** The mock asserted on is the instance injected via `overrideProvider(PrismaService)`, and the transaction client is wired to the same `jest.fn` objects, so a write inside `$transaction` would increment the same counter. Confirmed live by the commit test asserting `toHaveBeenCalledTimes(3)`/`(1)` on those same mocks. The Reviewer traced every Prisma call site in `actor-import.service.ts` and found all mutation nested inside the single `$transaction` at `:922`, making `$transaction` `not.toHaveBeenCalled()` a chokepoint that forecloses `createMany`, `upsert`, and audit writes as a class.
+- **Idempotency genuinely persists state between the two POSTs.** `reset()` is called only in `beforeEach`, not between runs; run 2 re-enters the real service, `dedupeAgainstDb` queries the mock's `findMany`, and both rows route to `skipped-exists` through production code. The load-bearing assertion is the cumulative `actor.create` count of **2** across both runs — 4 if run 2 had written.
+- **All five outcome classes are non-vacuous.** The Implementer mutation-checked two; the Reviewer judged the other three by reading. `rowByNumber` returns `undefined` on a miss so a dropped row throws rather than skips, and every assertion is exact-value rather than presence.
+- **PII: exhaustively clean.** Every literal enumerated, not sampled. No client-workbook name, phone, email, or coordinate. No path read, snapshot, env lookup, or fixture directory through which real data could later be absorbed; no `.only`/`.skip`. `+44 20 7946 0958` verified inside Ofcom's reserved `020 7946 0xxx` drama block — provably not anyone's real number.
+- **FR-6's two non-at-scale clauses, discharged by citation, were verified rather than accepted.** The conformance Reviewer read `pii-boundary.spec.ts` and confirmed both hold there, with one mechanism nuance worth recording: for `/actors` and `/metrics` consent really is pinned in the `WHERE`, but the **detail** path (`findOnePublic`) fetches by id and re-checks via `isPublic()` — a service-level guard applied before projection, not a `WHERE`. Satisfies the clause's intent; "WHERE-pinned" is not literally true on all three paths. Chunk-1 shipped design, not introduced here.
+- **FR-3's district-rescue scenario is partially covered, and the uncovered half is an inherent limit.** DD-1 places derivation at mapping time and states the constant is not consumed by the importer, so no code path exists to exercise the stronger reading. The suite records this at the point of use rather than overselling it.
+
+#### Attempt 1 — ADVISORY findings (recorded, non-gating, and not tasks)
+
+| # | Lens | Finding | Leader disposition |
+|---|---|---|---|
+| A-1 | PII | The docblock justifies `Mbozi` as "not a value read from the client workbook." The `DISTRICT_TO_REGION` district **set** demonstrably was derived from workbook measurement in T-2 (`design.md` §4.2). The conclusion is unaffected — district names are in none of NFR-9's four categories and the pairing is already committed — but the premise is false, in a file that is itself an audit artifact | **Folded into attempt 2's brief.** Not scope growth: a false factual statement in the deliverable under rework, and the same defect class as FAIL 2 (prose claiming more than the facts support) |
+| A-2 | Evidence | The comment at `:403` claims "deterministic order" and the sum invariant. All three breakdown counts are `1`, so the count-descending primary key is never exercised, and the fixture has no multi-error row. Both properties **are** gated — by T-4, in the same `npm test -- import` run — so there is no coverage gap, but a reader of this file alone would take the comment at face value | **Folded into attempt 2's brief**, same reasoning as A-1 |
+| A-3 | Evidence | `:489-491` and `:509-512` use `expect(rows.every(…)).toBe(true)`, which prints only "Expected: true / Received: false" on failure. Diagnosability only; neither is vacuous | Passed as optional. Not required for PASS |
+| A-4 | Evidence | Collection by `npm test -- import` rests on the substring surviving in the filename. Bounded — the full run still collects it via `testRegex` | Recorded so the coupling is known |
+| A-5 | PII | `requirements.md` §9 D-7 says the grep gate is clean "once the **three** `+2557000000*`-style fixtures are excluded"; a repo-wide grep now returns ~30 across a dozen files. **Already stale before T-11** (T-1 added several), so not chargeable here. Recommend restating D-7's exclusion as a pattern rather than a count | **Out of scope for this spec's tasks.** Candidate for the archive doc sweep, not for T-11 |
+| A-6 | PII | Fixture ids track the class number, not the Excel row number (`PPO-3` sits on row 4). Cosmetic | No action |
+| A-7 | Evidence | The zero-write proof's durability is incidental: a future pre-transaction write would evade both assertions, though the trimmed mock would throw rather than pass silently | Recorded |
+| A-8 | Conformance | `pii-boundary.spec.ts`'s header frames its scope note as "T-7", meaning **chunk 1's** T-7 — momentarily confusing beside this spec's blocked T-7. Pre-existing; NFR-3 forbids editing it here | No action |
+
+#### Attempt 2 — effort held at `xhigh`, deviating from the rework bump rule
+
+The rework rule bumps effort one level on every retry, which would put attempt 2 at `max`. Held at `xhigh` deliberately, for two reasons that both point the same way:
+
+1. **The tier↔effort rule forbids it.** `max` on a T2 Implementer is exactly the "never `max` a cheaper tier" case; the prescribed alternative is escalating the tier, which here would collide with `author ≠ auditor` (the Reviewers run on the T3 model).
+2. **The rule's rationale does not apply.** It exists because "a fix that failed is usually under-thinking." Neither FAIL is a reasoning failure: attempt 1 was strong on every property most likely to produce a false green, and both remediations arrived fully specified — the conformance Reviewer traced its proposed fixture row through `resolveGps` → `numOrNull` and confirmed it passes against the shipped importer with no production change, including the exact totals the sum assertion must become.
+
+#### Attempt 2 — ❌ FAIL (both prior FAILs closed; the fix introduced two new findings)
+
+Same three lenses re-run. **PII PASSed again** after ruling on the delta's new literals. Conformance and evidence both FAILed, and — importantly — **they converged independently on the same two issues**, which is why attempt 3's brief could be written as a single consolidated remediation rather than a merge of competing opinions.
+
+**What attempt 2 closed, verified by the lens that raised it:**
+
+- **Conformance FAIL 1 (FR-10's DMS scenario) — preview half closed.** `dmsCoordinatesRow` added as Class 6 / Excel row 8. `outcome === 'create'` asserted; the warning string verified **byte-exact** against the shipped `GPS_CLEARED_WARNING` (`actor-import.service.ts:75`), em dash included. The mechanism was re-traced at source: `numOrNull` → `null` → `isValidLatitude(null)` false → cleared. Sum invariant holds on both sides (4 + 1 + 2 = 7); `failureBreakdown` correctly unchanged; no pre-existing row's assertions shifted.
+- **Evidence FAIL (KZ-002 label overclaim) — closed.** The lens checked the replacement prose against the sources it cites rather than accepting it: the new "does NOT claim" bullet faithfully restates `design.md` §12.1 item 6, and its ownership claim matches `tasks.md:231`. The retitled describe no longer quotes the "re-running the mapping" clause.
+- Advisories A-2 and A-3 applied; the `every(...)` → `map(...).toEqual([...])` swap was judged a **strengthening** (it now pins order and length) rather than a cosmetic change.
+
+**FAIL A (both lenses) — the commit-side GPS assertion is laundered by the serializer.** `admin-actor.serializer.ts:127-134` (`toNullableNumber`) coerces every non-finite and non-numeric value to `null` before a test can observe it. So `expect(body.gpsLatitude).toBeNull()` passes identically whether GPS was correctly cleared, or `NaN` was stored, or **the raw DMS string was persisted into the decimal column** — the last being precisely what FR-10 forbids. Only a coercion to a *finite* number would go red. The comment above it claimed the assertion proved "the DMS string never reached the decimal columns", which is the one case it is structurally blind to.
+
+The conformance lens noted this was a weakness in **its own attempt-1 remediation**, not a deviation by the Implementer — it prescribed the weaker of the two available observations. Recorded because a review loop that never catches its own prescriptions is not adversarial.
+
+**FAIL B (both lenses) — stale counts survived the rework, two of them in Jest-printed titles.** `:83` and `:387` still said "five dirt classes" over six; `:465` said `creates 3 rows` four lines above an assertion of `created: 4`. The file-header docblock *was* updated, which is what made the rest easy to miss. These strings appear verbatim in the run output this task is evidenced by, so the primary evidence surface would have reported the wrong counts.
+
+**Attempt 3 also adopts a fixture-value change both lenses converged on independently.** The PII lens (ADVISORY-1) and the conformance lens (advisory 1) each proposed replacing the valid DMS coordinate with an **out-of-range** one (`8°75'13"S`). It is better on three counts at once: provably not a location, so the residual "is this a real place" question closes permanently; identical code path, so zero coverage loss; and **more faithful to the measured data** — `design.md` DD-10 records that of the 71 DMS cells in the QDS sheet at least one has out-of-range minutes, and `requirements.md` FR-10's GIVEN names exactly that. The fixture's stated purpose is to reproduce the structure of measured anomalies; the valid coordinate did not.
+
+**On the coordinate that prompted it.** The Leader flagged `8°55'13"S, 33°27'39"E` as possibly landing in Mbozi district, beside the client material. **That was wrong, and the PII lens corrected it:** the point decimalizes to −8.9203, 33.4608 — the urban core of **Mbeya city**, ~60 km from Mbozi and in a different region. Its longitude matches to four decimal places a Mbeya coordinate already committed and cleared inside `pii-boundary.spec.ts:119-120`, the release-gate suite itself. The lens also sharpened the applicable test: NFR-9's operative clause for a coordinate is **provenance**, not geographic reality — a public gazetteer fact is out of scope even if it names a real place, while a value copied from one of the 71 QDS cells would be in scope even though "coordinate" is absent from NFR-9's four enumerated categories. Ruled NFR-9-safe, not marginal. The swap in attempt 3 is an improvement on an already-passing value, not a remediation.
+
+#### Attempt 3 — ✅ PASS (both gating lenses)
+
+Both attempt-2 FAILs closed, plus a fixture improvement and three prose corrections, in one pass.
+
+**Item 1 — the unlaundered write-path assertion.** Both lenses had prescribed the same fix and it was taken: pull the `prismaMock.actor.create` call whose `data.traderId === 'PPO-6'` and assert the four GPS keys are **absent** from the payload. Both reviewers then verified the assertion actually discriminates, at source:
+
+- the cleared path returns `{}` from `resolveGps` (`:723-726`), so the fields are `undefined` at `:619-622` and `buildCreateData` (`:998-1002`) copies only `value !== undefined` — the keys are **omitted**, never set to `null`, so `not.toHaveProperty` is the matcher that matches reality;
+- both regressions the GET is blind to — a raw-string persist and a `parseFloat`-style coercion — leave the key **present**, and fail;
+- `mock.calls` survives to the assertion: `mockClear()` is reached only via `reset()` in `beforeEach`, no `clearMocks`/`resetMocks` exists in the backend config, and the three intervening GETs touch `findUnique` only;
+- `expect(dmsCreateCall).toBeDefined()` closes the `.find()` vacuity hole, and the `!` is only reachable past that throw;
+- the mock spreads `data` into a fresh object and never mutates the captured arg, so `call[0].data` is the payload as the service built it.
+
+The idiom is the repo's own: `actor-import.service.spec.ts:313-316` already does exactly this for the adjacent case, and that test is unedited.
+
+**Item 2 — the three stale counts and the missing traces.** `:84` and `:395` now read "six dirt classes" over six classes; `:473` reads "creates 4 rows" above assertions of `created: 4` and `toHaveBeenCalledTimes(4)`; `FR-10` appears in the header trace, the preview describe, and the commit describe. Confirmed against the actual `--verbose` output, since these strings *are* the evidence surface.
+
+**Item 3 — the out-of-range DMS value, adopted from two independent advisories.** `8°75'13"S` / `33°75'39"E`. Both lenses confirmed it takes the byte-identical branch (`Number()` → `NaN` → `numOrNull` → `null` → `isValidLatitude(null)` false → cleared + warning) and that it is *more* faithful than the value it replaced: `requirements.md:292` puts "at least one value with an out-of-range minutes component" in FR-10's own GIVEN, and DD-10 records the measured anomaly. The conformance lens added an argument neither advisory had made — it also hardens the test against FR-10's *permitted alternative* branch ("converted by a rule stated in `mapping.md`"), because a future DMS converter would still have to reject 75 minutes.
+
+**Item 4 — three prose corrections.** The unverifiable negative is gone (an out-of-range value cannot correspond to any location, so provenance is irrelevant rather than merely unchecked); the FR-10 ownership claim is narrowed to "T-11's half, T-8 owns the mapping-side half", verified against `tasks.md:222`; and a clause now states that nothing in Class 6 is DMS-specific — the gate is `Number()` non-finiteness, so any unparseable string exercises the identical path.
+
+**Optional strengthening also taken:** `toContain` → `toEqual(['GPS out of range — imported with GPS cleared'])` on the warnings array. Both lenses independently proved this is not brittle rather than assuming it: only three warning strings exist in the backend, row 8 has no phone cell (both phone warnings sit inside `if (cells.phone)` and `buildWorkbook` writes `''`), and a blank consent cell defaults to `UNKNOWN` so `CONSENT_ACK_WARNING` is unreachable. Exactly one warning can fire.
+
+#### Verification — re-run by the Leader after the workers reported, tree quiet
+
+Both reviewers are read-only and explicitly handed the whole-tree confirmation to the Leader. Taken rather than assumed:
+
+| Command | Result |
+|---|---|
+| `git status --porcelain` | `?? backend/src/test/partner-profile-onboarding-import.e2e.spec.ts` plus `M` on this spec's `execution.md` and `tasks.md` (Leader bookkeeping) — **nothing else** |
+| `npm test -- pii-boundary --silent` | 1 suite, **10/10 passed** |
+| `npm test -- import --silent` | 5 suites, **95/95 passed** |
+| `npx eslint "{src,test}/**/*.ts" --quiet` | clean, no output |
+
+**NFR-3 confirmed at the tree level:** no production file and no pre-existing test file was modified across all three attempts. The entire task is one new untracked file.
+
+#### Final lens verdicts — `STATUS: PASS` ×2
+
+> **Conformance:** Both attempt-2 FAILs are genuinely closed — the call-args assertion reaches past `toNullableNumber` and discriminates both the coercion and the raw-string regression on a path proven to omit the keys, and all three counts plus all three FR-10 trace parentheticals are corrected. The out-of-range fixture value takes the identical code path, matches FR-10's own GIVEN, and leaves every Class 6 assertion with teeth.
+
+> **Evidence:** Both prior FAILs are genuinely closed — the call-args assertion reaches past the serializer that provably launders the read surface, and the split comment claims exactly what `buildCreateData`'s undefined-dropping delivers; all three counts and the FR-10 trace parentheticals are corrected, and the tightened `toEqual` is unreachable-by-construction from any other warning path.
+
+The PII lens PASSed attempts 1 and 2 and was **not re-run on attempt 3**, deliberately: the delta adopted that lens's own prescription and *removed* the only real-location value in the file, replacing it with a coordinate that cannot resolve to any place. There was no new PII surface for it to rule on. Recorded as a Leader decision rather than an omission.
+
+#### Done-when, clause by clause
+
+| Clause | Evidence |
+|---|---|
+| Fixture exercises ≥5 distinct outcome classes | **Six.** Dirty district, contaminated row, unnormalizable phone, duplicate key, blank required field, DMS coordinates |
+| Preview writes nothing — **asserted, not assumed** | `actor.create` and `$transaction` both `not.toHaveBeenCalled()` on the injected mock. The evidence lens verified the mock is the instance the service resolves and that the transaction client is the same `jest.fn` set, so a write inside the transaction would move the same counter — and that the counter demonstrably moves, since the commit test reads 4 and 1 on those same mocks |
+| A second identical run yields zero creates | `created: 0, skipped: 2`, every row `skipped-exists`, and the cumulative `actor.create` count still **2** across both POSTs. No `reset()` between them — verified, this was the run's most likely false green |
+| `pii-boundary.spec.ts` is green | 10/10, unmodified |
+
+#### Requirements covered — and what is not
+
+Closed by assertion: FR-2's idempotent-re-run scenario (upload half), FR-3's quarantine-on-absent-district clause, FR-5, FR-7's HTTP-boundary regression pin, FR-10's DMS scenario (T-11's half), NFR-1.
+
+**Not covered, and now stated in the file itself rather than only here:**
+
+1. **FR-2's key determinism across two *mapping* runs** (`design.md` §12.1 item 6). Re-POSTing byte-identical input holds key generation constant by construction. Owned by T-7/T-8, verified only by re-running and diffing.
+2. **FR-6's at-scale public-invisibility clause.** The suite mocks Prisma and structurally cannot observe an onboarded dataset. Discharged by T-9's operator check.
+3. **FR-3's district-rescue derivation.** DD-1 places derivation at mapping time and the constant is not consumed by the importer, so no code path exists to exercise. The suite asserts the code-observable half (created, not quarantined) and says so at the point of use.
+
+FR-6's two other clauses ("`gps` null for non-`GRANTED`", "consent pinned in `WHERE`") are discharged by `pii-boundary.spec.ts`. The conformance lens **read that suite rather than accepting the citation** and confirmed both hold, with one nuance worth recording: for `/actors` and `/metrics` consent really is pinned in the `WHERE`, but the detail path (`findOnePublic`) fetches by id and re-checks via `isPublic()` — a service-level guard before projection, not a `WHERE`. Satisfies the clause's intent; "WHERE-pinned" is not literally true on all three paths. Chunk-1 shipped design, not introduced here.
+
+#### Attempt-3 advisories (recorded, non-gating, not tasks)
+
+| # | Lens | Finding |
+|---|---|---|
+| A-9 | Evidence | `not.toHaveProperty('gpsAltitude')`/`('gpsAccuracy')` are tautological for *this* fixture — both cells are blank, so the keys would be absent even under a regression that stopped clearing all four. Harmless (no prose claims otherwise) and the load-bearing version already exists at `actor-import.service.spec.ts:290-317`, where the fixture supplies real altitude and accuracy |
+| A-10 | Conformance | The file-header trace lists NFR-1 but not FR-6, though `tasks.md:200,202` assign two FR-6 clauses to T-11. The coverage is real — carried by `pii-boundary.spec.ts` — only its trail is implicit |
+
+#### Issues encountered
+
+Three orchestration notes, none affecting a verdict:
+
+1. **Reviewers repeatedly went idle without delivering their reports** — the conformance lens once, the evidence lens twice (it eventually sent in two parts, then resent the whole audit unprompted). Each had to be chased by explicit request. The audits themselves were complete and high quality; the delivery step was unreliable.
+2. **A Leader hypothesis was wrong and a Reviewer corrected it.** The Leader flagged the attempt-2 DMS coordinate as possibly landing in Mbozi district beside the client material. It is Mbeya city centre, ~60 km away and in a different region. Recorded because the correction is the reason the value was ruled safe on evidence rather than on the Leader's suspicion.
+3. **A Reviewer identified a weakness in its own prior prescription.** The attempt-1 conformance remediation prescribed the GET-based GPS check, which attempt 2 implemented faithfully — and the same lens then failed it, on the grounds that its own prescription was the weaker of the two available observations. Worth recording: a review loop that never overturns its own prescriptions is not adversarial.
