@@ -10,6 +10,11 @@
  *     dropped — wrapped in `overflow-x-auto` so the full row scrolls
  *     horizontally at this breakpoint and up when it overflows the
  *     viewport (design.md §9, `registration-source-and-consent` FR-6).
+ *     The checkbox and Trader columns are `sticky left-*` within that
+ *     scroll container (FR-6's small-screen scenario, T-8 scope
+ *     correction 2026-08-04) — together they are what lets an admin
+ *     select *and* identify a row after scrolling right to read Consent
+ *     on the nine-column, sidebar-narrowed `lg` layout.
  *   - mobile (<md): the table is `hidden` and stacked cards render instead,
  *     one per actor, carrying the same Source badge and consent-method
  *     caption as the table's Consent column.
@@ -83,6 +88,92 @@ export interface ActorsTableProps {
   /** Optional row click handler (e.g. open detail/edit in a future task). */
   onRowClick?: (actor: AdminActor) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Sticky first column (FR-6 small-screen scenario, T-8 scope correction)
+// ---------------------------------------------------------------------------
+
+/**
+ * The checkbox column's width and the Trader column's left offset must be
+ * the same physical distance (3rem/48px) for the two sticky columns to sit
+ * flush against each other with no gap or overlap. Centralized here as
+ * `CHECKBOX_COL_WIDTH_CLASS` / `TRADER_COL_LEFT_CLASS` rather than left as
+ * four independent literals, so a reviewer changing one sees the other.
+ *
+ * These stay separate string constants rather than one computed value:
+ * Tailwind's compiler extracts classes by scanning source for complete,
+ * literal class-name strings. A template literal like `` `left-${n}` ``
+ * would not be found by that scan, so the class would render in the DOM
+ * with **no matching CSS rule** — a silent failure strictly worse than the
+ * prose-only coupling this fixes. Both are standard Tailwind scale values
+ * (no arbitrary `[…]` geometry, NFR-8). `ActorsTable.test.tsx` asserts
+ * both classes together on the checkbox cells as the enforcement backstop
+ * dynamic derivation can't safely provide here.
+ *
+ * Sticky cells need their own opaque background: a transparent `td`/`th`
+ * lets non-sticky columns show through underneath as they scroll past.
+ * The header row's ambient background is `bg-surface-alt` (on `<thead>`),
+ * the body row's is `bg-surface` (on `<tbody>`) with `hover:bg-surface-alt`
+ * currently applied to the `<tr>` itself — a transparent `td` inherits
+ * that through the row, but an opaque sticky `td` cannot, so the hover
+ * state is re-declared here via the `group`/`group-hover` pattern (the
+ * `<tr>` carries `group`). There is no separate "selected row" background
+ * in this table today (checkbox-checked is the only selection cue), so
+ * there is no third state to replicate. `transition-colors` is repeated
+ * on the sticky cells (rather than relying solely on the `<tr>`'s copy) so
+ * their `group-hover` repaint fades in step with the rest of the row
+ * instead of snapping instantly.
+ *
+ * No z-index is added: `position: sticky` makes these `td`/`th` elements
+ * "positioned", and per the CSS painting order, in-flow non-positioned
+ * siblings (the scrolling columns) always paint *before* — i.e. underneath
+ * — positioned siblings at the default stack level, regardless of DOM
+ * order. That already puts the sticky columns visually on top. There is
+ * no sticky header here to create a second, vertical stacking need.
+ *
+ * A `border-r` marks the sticky/scrollable boundary so the cut is visible
+ * even before the user starts scrolling.
+ */
+const CHECKBOX_COL_WIDTH_CLASS = 'w-12';
+const TRADER_COL_LEFT_CLASS = 'left-12';
+
+const STICKY_CHECKBOX_TH = 'sticky left-0 bg-surface-alt';
+const STICKY_TRADER_TH = `sticky ${TRADER_COL_LEFT_CLASS} bg-surface-alt border-r border-border`;
+const STICKY_CHECKBOX_TD = 'sticky left-0 bg-surface group-hover:bg-surface-alt transition-colors';
+const STICKY_TRADER_TD = [
+  'sticky',
+  TRADER_COL_LEFT_CLASS,
+  'bg-surface group-hover:bg-surface-alt transition-colors',
+  'border-r border-border',
+].join(' ');
+
+/**
+ * Width clamp for the rendered Trader name — deliberately on an inner
+ * `<span>`, never on the `<td>` itself.
+ *
+ * `max-w-xs` on a table cell is a no-op once the cell is `whitespace-nowrap`
+ * (which `truncate` itself sets): under `nowrap`, a cell's min-content width
+ * equals its max-content width — the full unwrapped string — and
+ * css-tables-3's column measure only applies `max-width` inside
+ * `min(max-width, max-content)`, a term that's floored by min-content.
+ * `max(FULL, 320px)` = `FULL`. The column resolves to the full name's width
+ * regardless of the clamp, nothing overflows, `overflow:hidden` never clips,
+ * and no ellipsis renders — a clamp that looks correct and does nothing.
+ *
+ * A block-level child obeys a different rule: CSS sizing clamps a
+ * **non-table** block box's min-content *contribution* by its own
+ * `max-width`, so the `<span>` contributes `min(320px, FULL)` = 320px, the
+ * `<td>`'s min-content becomes `320px + padding`, the column resolves to
+ * that, and the nowrap text genuinely overflows the 320px span — real
+ * ellipsis. Same pattern the mobile card already uses successfully
+ * (`<p className="truncate">` inside `<div className="min-w-0 flex-1">`,
+ * below). Trader is a pre-existing column, not one of FR-6's "new columns",
+ * so its MUST-NOT-truncate clause doesn't cover it — worst case this caps
+ * the frozen (checkbox + Trader) pair at ~400px instead of an unbounded
+ * cooperative legal name eating most of the ~494px scroll container at
+ * exactly `md`.
+ */
+const TRADER_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -464,7 +555,10 @@ export function ActorsTable({
           </caption>
           <thead className="bg-surface-alt">
             <tr>
-              <th scope="col" className="px-4 py-3 w-12">
+              <th
+                scope="col"
+                className={['px-4 py-3', CHECKBOX_COL_WIDTH_CLASS, STICKY_CHECKBOX_TH].join(' ')}
+              >
                 <input
                   type="checkbox"
                   id="select-all-actors"
@@ -494,7 +588,10 @@ export function ActorsTable({
                 <th
                   key={col}
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted whitespace-nowrap"
+                  className={[
+                    'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted whitespace-nowrap',
+                    col === 'Trader' ? STICKY_TRADER_TH : '',
+                  ].join(' ')}
                 >
                   {col}
                 </th>
@@ -508,12 +605,15 @@ export function ActorsTable({
                 <tr
                   key={actor.id}
                   className={[
-                    'hover:bg-surface-alt transition-colors',
+                    'group hover:bg-surface-alt transition-colors',
                     onRowClick ? 'cursor-pointer' : '',
                   ].join(' ')}
                   onClick={onRowClick ? () => onRowClick(actor) : undefined}
                 >
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className={['px-4 py-3', CHECKBOX_COL_WIDTH_CLASS, STICKY_CHECKBOX_TD].join(' ')}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       id={`select-actor-${actor.id}`}
@@ -526,8 +626,16 @@ export function ActorsTable({
                       ].join(' ')}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-fg whitespace-nowrap">
-                    {actor.traderName}
+                  <td
+                    className={['px-4 py-3 font-medium text-fg', STICKY_TRADER_TD].join(' ')}
+                    // Visual affordance only — not an accessibility measure.
+                    // `title` is not keyboard-reachable and is inconsistently
+                    // exposed to assistive tech; screen readers already read
+                    // the full name below regardless of visual truncation,
+                    // since the text content itself is never shortened.
+                    title={actor.traderName}
+                  >
+                    <span className={TRADER_NAME_CLAMP_CLASS}>{actor.traderName}</span>
                   </td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">{actor.region}</td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">

@@ -712,3 +712,84 @@ Leader-verified independently, not taken on report: `git diff --stat` confirms `
 | **A-11** | **Pre-existing, not introduced by T-10.** (a) Browser Back while a bulk dialog is open fires the filter effect, clearing `selectedIds`; the confirm button then looks enabled but silently no-ops on `ids.length === 0`, with "Unlock 0 actors?" the only cue. Identical for lock and delete. (b) The backdrop click is not `loading`-guarded, so it can dismiss the dialog mid-flight; the request still completes and reports correctly. | Outside T-10's scope. |
 
 **Deferred set (for the follow-up spec, surfaced together at archive rather than accreting silently):** A-3 (extract the shared date helper) · A-6 (H-2) · J-1 from T-9 (`key={actor.id}` on `<ActorForm>` — a real cross-actor data-corruption path) · J-4 (whether `npx tsc --noEmit` becomes a gate).
+
+---
+
+### T-8 (reopened) — FR-6 scope correction: the sticky first column
+
+**Status:** code complete, both lenses PASS after one **FAIL** round. **T-8 stays `[~]`** — the D-h human visual check is now the only thing between this spec and completion, and it needs an authenticated admin session the Leader does not hold.
+**Implementer:** `impl-T8-sticky` (T2 / sonnet, `high`).
+**Reviewers:** parallel lens mode, both T3 / opus. `rev-T8s-conformance` **PASS** (3 advisories) · `rev-T8s-risk` **PASS** (3 advisories, 4 items routed to D-h). Increment: `rev-T8s-risk` **FAIL**, then **PASS** on the fix.
+
+**Diff:** 4 files, +134 / −8 before the increment rounds. Suite **990/990, 69 suites** (Leader-measured, independently of the Implementer's report).
+
+#### Why this work existed at all
+
+`rev-T10-conformance` was briefed to read FR-6 in full rather than T-10's scope line, and found that **FR-6's small-screen scenario — horizontal scroll with a sticky first column — was implemented nowhere and owned by no task.** The reason nobody owned it: **the requirement's GIVEN is unsatisfiable as written.** Below `md` there is no table, only a card list.
+
+**The false premise was in four places at once**, and they were consistent with each other: `requirements.md` FR-6's scenario, `design.md` §5's claim that "the existing table pattern already does this", `tasks.md` T-8's "Not done if … scrolled below `md`", and `docs/ux-ui/design.md:149`'s unqualified rule. Nine tasks executed against that set without anyone noticing, because each document agreed with the others. **Cross-document consistency is not evidence — here it was one wrong idea copied forward four times.**
+
+Resolution approved by JuanCode on 2026-08-04: implement the sticky column at `md+`, then amend the documents. Folded into T-8 (which still owns the table and still traces FR-6) rather than minting an eleventh task past the budget tripwire.
+
+#### What shipped
+
+**Two** columns sticky, not one: the checkbox (`left-0`) and Trader (`left-12`). `rev-T8s-conformance` judged this **the minimum that satisfies FR-6**, not scope creep — Trader-only pins identity but scrolls the checkbox away (you can identify a row you can no longer select); checkbox-only reproduces the original harm exactly (you select a row you cannot identify). `docs/ux-ui/design.md:149` says "sticky first column" singular, but the checkbox is a selection affordance rather than a data column, so pinning it plus the first data column is a superset of the blueprint's intent.
+
+Both documents were amended in the **T-7 note form** — dated, attributed, and **quoting the original false text verbatim before replacing it** (`requirements.md:242`, `design.md:162`) — so a future reader learns a correction happened and what the text used to say. The Leader swept a third residue in `tasks.md:98`, marked as corrected rather than silently rewritten.
+
+#### The FAIL: a gate the Leader imposed that turned out to do nothing
+
+Both lenses independently found that the sticky Trader cell was `whitespace-nowrap` with no width bound. `rev-T8s-risk` worked the budget at exactly `md` (768px): sidebar 224px + padding 48px leaves a ~494px container, and a realistic 55–60 char cooperative name makes the frozen pair ~450px — **leaving ~45px to scroll eight columns through, worse than the problem the task exists to solve**, reachable on real data and invisible to every test. The Leader escalated it to gating.
+
+The Implementer applied `max-w-xs truncate` **directly to the `<td>`**. The Leader did not accept the accompanying justification and sent it back with a specific question. **It was a no-op**, and the mechanism is self-defeating in a way worth recording:
+
+- `truncate` expands to include `white-space: nowrap`. Under nowrap, a cell's **min-content width equals its max-content width** — the full unwrapped string.
+- In css-tables-3's column-measure algorithm, `max-width` appears **only** inside `min(max-width, max-content width)`, and that term is floored by min-content width. Substituting: `max(FULL, 320px)` = **FULL**.
+- **The clamp is floored out by the `nowrap` that `truncate` itself supplies.**
+- Worse than partial: the cell ends up *at* its content width, so nothing overflows, `overflow: hidden` never clips, **no ellipsis renders either**, and `title` "restores" a name that was never hidden.
+
+The Implementer's stated reason was wrong at one identifiable step: the column resolves to the widest cell's **min-content** floor, not its max-content width.
+
+**The test passed throughout.** It asserted class presence on the `td` — exactly the silent-failure shape the same reviewer had warned about for `position: sticky` two rounds earlier: *the classes are present, the test is green, and the feature does nothing.*
+
+**The reviewer declined the escape hatch it was offered.** The Leader explicitly allowed "only a rendered page can settle this" as an answer. It refused, on the grounds that the failure is **over-determined** — it holds under both the spec-correct reading and the browsers-ignore-`max-width`-on-`td` folklore, so the two converge and there is nothing for D-h to adjudicate. That is a stronger answer than the one made available to it.
+
+**The working pattern was already in the file, twelve lines away.** `ActorCard` truncates the same field correctly with a block wrapper (`:394`). The table reached for the same classes on the wrong element.
+
+**Fix:** `<span className="block max-w-xs truncate">` inside the `<td>`, clamp removed from `STICKY_TRADER_TD`. It works by a mechanically different rule — for a **non-table block box**, CSS-sizing clamps the box's min-content *contribution* by its own `max-width`. The wrapper contributes `min(320px, FULL)` = 320px, the cell floor becomes 352px, and the text genuinely overflows into a real ellipsis. Frozen pair caps at ~400px. The reasoning is now recorded in the source comment (`:154`), verified accurate by the reviewer against css-tables-3 and css-sizing, so the no-op form cannot be quietly restored.
+
+**The retargeted test bites on the exact revert it exists to prevent:** a straight revert makes `getByText(longName)` return the `<td>`, failing the `tagName === 'SPAN'` assertion; changing `block` to inline fails separately, which matters because an inline span would silently reintroduce the no-op.
+
+#### What the reviewers established that the Implementer did not claim
+
+- **The feature is actually live.** The scrollport is the table's own `overflow-x-auto` div; `<main overflow-auto>` and the layout's `overflow-hidden` flex row are both **outside** it and cannot affect it. **But the Implementer's stated reason was the wrong rule** — "not clipping the table's own render box" is not the test; the rule is that an intervening `overflow: hidden` breaks sticky only when it sits *between* the sticky element and the intended scrollport. Right answer, wrong rule. Recorded because the next person to move this markup will reuse the rule, not the conclusion.
+- **The `w-12` / `left-12` arithmetic is exact and unwidenable.** `tailwind.config.ts` is extend-only so the default scale is intact; both resolve to 48px; the header cell is `px-4` (32px) around a 16px checkbox = exactly 48px under border-box; `w-12` is on both the `th` and the `td`. Reached independently by both lenses.
+- **No z-index was needed, for a stated reason rather than by omission.** Zero positioned or `z-`ed elements exist in the table; sticky makes an element positioned, and positioned boxes paint above in-flow siblings regardless of DOM order. The focus ring is a box-shadow that fits inside the cell and paints with it.
+- **The background claims are all true**: no zebra striping, no selected-row background (`selected` reaches only the checkbox's `checked` prop), no `focus-within`. `--color-surface` and `--color-surface-alt` are opaque hex, so occlusion is sound. `group-hover` preserves hover through the now-opaque cells, with no ancestor `group` to false-trigger it.
+- **`min-w-full` is inert here** and should not be chased: it only raises the table's width when content is narrower than the container, and at `md` the table is overflowing.
+- **No JIT-purge risk:** all sticky class strings appear as complete literals in a scanned path. This is also why the Implementer **correctly refused** the "derive `left-12` from `w-12`" advisory — Tailwind's extractor scans for literal class strings, so a computed `` `left-${n}` `` would render a class with no CSS behind it, a silent failure strictly worse than prose coupling. It took the test backstop instead.
+
+#### Verification
+
+`npm test -- "ActorsTable|actors/page" --silent` **58/58, 2 suites** · full suite **990/990, 69 suites** · `npm run lint` clean (same 3 pre-existing `no-img-element` warnings) · `npm run build` succeeds, static export 20/20 · `npx tsc --noEmit` only the pre-existing `TS2556` (J-4) · `react-doctor` **83/100**, the same pre-existing `ActorsView` > 300 lines warning in a file this change does not touch.
+
+**Leader-measured independently, not taken on report:** full suite 990/990 and a clean static-export build, run in a quiet tree after the Implementer went idle. Token grep over both changed files: zero hex / `rgb()` / bracket matches.
+
+**Known intermittent, recorded rather than dropped:** the Implementer reported one failure in `import/page.test.tsx` (an `mockImportActors` nth-call assertion) on a full-suite run, summarized rather than pasted. The Leader re-ran it: **3 standalone and 2 full-suite runs, all clean**, plus a third full run at commit time. Unreproduced, in a file this diff never touched. **The asymmetry rule requires failures to print complete and verbatim** — "passed on rerun" is the signature of an order-dependent test and is worth more than a green line. Flagged to the Implementer, who acknowledged it.
+
+**Both reviewers again ran without a shell and said so.** Neither executed the suite.
+
+#### ADVISORY findings (recorded, non-gating — no advisory mints a task)
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **S-1** ✅ | Unbounded sticky Trader column could freeze ~450px of a ~494px container at `md`. | **Escalated to gating.** First fix was a no-op; closed by the block-wrapper fix. |
+| **S-2** ✅ | `transition-colors` was on the `<tr>` only, so sticky cells snapped while the row faded. | Fixed — added to both sticky TD constants. |
+| **S-3** ✅ | `w-12` ↔ `left-12` coupled only by prose. | Partly fixed: each is now a single named constant, with tests asserting `w-12` and `left-0` together. Full derivation is **unsafe** (Tailwind literal-scanning); recorded so nobody "improves" it later. |
+| **S-4** | **Collapsed-border artifact.** Preflight sets `border-collapse: collapse`; borders on sticky cells are a known Chromium/Firefox artifact that may not travel with the sticky offset, so the `border-r` seam could drift on scroll. Backgrounds *do* travel, so occlusion still works — worst case is a missing seam, not a broken freeze. | **Routed to D-h.** ⚠️ **If confirmed, do NOT fix with `border-separate border-spacing-0`** — in the separate border model `<tr>` borders are not painted, which would **silently delete every row separator** produced by `divide-y divide-border`. Safe directions: an inset box-shadow on the sticky cells, or accept no seam. |
+| **S-5** | Whether the `divide-y` row divider stays continuous across the pinned columns. The risk lens expects it does (cell backgrounds paint over row backgrounds, but collapsed borders paint over backgrounds — the ordinary working case) but declined to accept its own reasoning over one look. | **Routed to D-h**, same pass as S-4. Symptom if wrong: the divider breaks across exactly the leftmost two columns. |
+| **S-6** | `title` fires on every Trader cell including short names where nothing is hidden. | Minor noise, accepted. No conditional logic added. |
+| **S-7** | A test comment originally claimed `title` lets assistive tech recover the full name. It does not — `title` is not keyboard-reachable and is inconsistently exposed. | **Corrected in source.** The real a11y story is that the full name stays in the cell's text content, so screen readers read it whole regardless of visual truncation. |
+| **S-8** | A third residue of the false premise survived in `tasks.md:98` ("scrolled below `md`"). | **Swept by the Leader**, marked as corrected rather than silently rewritten. |
+
+**D-h now covers four surfaces** and is the last gate on this spec: `/admin/actors` at `md` and `lg` including the new sticky columns (S-4, S-5, and a long-name pass to confirm **the ellipsis renders** — no longer to measure an unbounded column), T-9's `lg:grid-cols-4` fieldset on the edit form, T-10's dialog focus order (A-2), and column crowding generally. It requires an authenticated admin session.

@@ -429,6 +429,111 @@ describe('ActorsTable — Consent column (status + method caption)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sticky first column (T-8 scope correction, FR-6 small-screen scenario)
+//
+// jsdom does not run layout and resolves no CSS custom properties, so it
+// cannot prove anything actually *sticks* to the viewport during a real
+// horizontal scroll, nor that the opaque background truly occludes the
+// columns scrolling underneath. What it *can* prove — and what these tests
+// assert — is that the `sticky` positioning class and a same-column `left-*`
+// offset are present on both the header and body cells for the checkbox and
+// Trader columns, so a regression that strips those classes fails here.
+// ---------------------------------------------------------------------------
+
+describe('ActorsTable — sticky first column (FR-6)', () => {
+  it('makes the select-all checkbox header cell sticky at the left edge, w-12 wide', () => {
+    renderTable();
+
+    // Asserted together, not just `left-0`: `w-12` on this cell and
+    // `left-12` on the Trader cell (below) must stay the same physical
+    // distance for the two sticky columns to sit flush with no gap or
+    // overlap. This pair of assertions is the test-level backstop for that
+    // coupling — Tailwind's static class extraction rules out deriving one
+    // from the other at runtime (see the doc comment above the STICKY_*
+    // constants in ActorsTable.tsx).
+    const checkboxHeaderCell = screen
+      .getByRole('checkbox', { name: /select all actors/i })
+      .closest('th');
+    expect(checkboxHeaderCell).toHaveClass('sticky', 'left-0', 'w-12');
+  });
+
+  it('makes the Trader header cell sticky, offset past the checkbox column', () => {
+    renderTable();
+
+    const traderHeaderCell = within(getTable()).getByRole('columnheader', { name: /trader/i });
+    expect(traderHeaderCell).toHaveClass('sticky', 'left-12');
+  });
+
+  it('makes a row checkbox and Trader cell sticky at matching offsets', () => {
+    renderTable({ actors: [ACTOR_A] });
+
+    // The mobile card renders its own "Select Meru Agro" checkbox with the
+    // same accessible name, so scope to the table (both render in jsdom
+    // regardless of the `md:hidden` / `hidden md:block` breakpoint classes).
+    const rowCheckboxCell = within(getTable())
+      .getByRole('checkbox', { name: /select meru agro/i })
+      .closest('td');
+    expect(rowCheckboxCell).toHaveClass('sticky', 'left-0', 'w-12');
+
+    const traderCell = within(getTable()).getByText('Meru Agro').closest('td');
+    expect(traderCell).toHaveClass('sticky', 'left-12');
+  });
+
+  it('does not make any other column sticky', () => {
+    renderTable({ actors: [ACTOR_A] });
+
+    const regionCell = within(getTable()).getByText('Arusha').closest('td');
+    expect(regionCell).not.toHaveClass('sticky');
+  });
+
+  it('leaves the mobile card list unaffected (no sticky classes below md)', () => {
+    renderTable({ actors: [ACTOR_A] });
+
+    const card = screen.getByLabelText('Meru Agro');
+    expect(card.querySelector('.sticky')).toBeNull();
+  });
+
+  it('caps the sticky Trader name width via an inner span, not the td, and sets title', () => {
+    // A realistic long registry name (a cooperative's full legal name) must
+    // not be allowed to eat the horizontal-scroll budget: at exactly `md`
+    // the scroll container is only ~494px wide (sidebar + main padding
+    // subtracted from a 768px viewport), and an unbounded Trader cell can
+    // consume most of that on its own, defeating the point of this task.
+    //
+    // The clamp must live on an inner block-level `<span>`, not the `<td>`
+    // itself: under `nowrap` (which `truncate` sets), a cell's min-content
+    // width equals its max-content width, so `max-width` on the `<td>` is
+    // floored out by the full unwrapped string and never actually clamps
+    // anything. A non-table block child's min-content *contribution* is
+    // clamped by its own `max-width`, which is what makes the column (and
+    // therefore the ellipsis) genuinely resolve to the capped width.
+    const longName = 'Mtandao wa Vikundi vya Wakulima wa Mtama na Choroko Kaskazini';
+    renderTable({ actors: [{ ...ACTOR_A, traderName: longName }] });
+
+    const nameSpan = within(getTable()).getByText(longName);
+    expect(nameSpan.tagName).toBe('SPAN');
+    expect(nameSpan).toHaveClass('block', 'max-w-xs', 'truncate');
+
+    // `title` sits on the `<td>` so the tooltip covers the whole cell, not
+    // just the clamped span.
+    const traderCell = nameSpan.closest('td');
+    expect(traderCell).toHaveAttribute('title', longName);
+  });
+
+  it('fades the sticky cells’ hover repaint in step with the rest of the row', () => {
+    renderTable({ actors: [ACTOR_A] });
+
+    const rowCheckboxCell = within(getTable())
+      .getByRole('checkbox', { name: /select meru agro/i })
+      .closest('td');
+    const traderCell = within(getTable()).getByText('Meru Agro').closest('td');
+
+    expect(rowCheckboxCell).toHaveClass('transition-colors');
+    expect(traderCell).toHaveClass('transition-colors');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Mobile card parity (T-8) — new fields must not be dropped below `md`
 // ---------------------------------------------------------------------------
 

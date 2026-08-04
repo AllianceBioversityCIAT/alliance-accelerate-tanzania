@@ -153,11 +153,15 @@ All within `(admin)`. No public surface changes.
 | Component | Change |
 |---|---|
 | `lib/api/actors-admin.ts` | `AdminActor`, `AdminActorCreateInput`, `AdminActorListQuery`, `BulkConsentInput` gain the fields. Type fidelity with the backend contract is the file's stated job. |
-| `components/admin/ActorsTable.tsx` | **Source** column (chip) and **Consent** column (status chip + method caption). Horizontal scroll with sticky first column below `md` per `docs/ux-ui/design.md` §9 — the existing table pattern already does this. |
+| `components/admin/ActorsTable.tsx` | **Source** column (chip) and **Consent** column (status chip + method caption). At `md`+, the table scrolls horizontally within its `overflow-x-auto` container with the checkbox and Trader columns pinned `sticky` at the left edge (`docs/ux-ui/design.md` §9). Below `md` the table does not render — a `md:hidden` stacked-card list carries the same values instead. |
 | `app/(admin)/admin/actors/page.tsx` | Two filters, URL-synced via the established query-param routing pattern (`frontend/CLAUDE.md`). |
 | `components/admin/ActorForm.tsx` | New **Consent & provenance** fieldset (status · method · date · reference) with client-side FR-3 validation as UX only. |
 | `components/admin/AcknowledgeDialog.tsx` | Gains **optional** method + date inputs, enabled by a new prop. See the shared-component note below — this is not a blanket change. |
 | `lib/dashboard/csv.ts` | **No change — and that is the requirement.** It serializes `PublicActor` through a named public-column allowlist with an explicit no-spread rule. The new fields are not on `PublicActor`, so FR-7 holds by construction. A test asserts their absence. There is **no admin export** to extend (see `requirements.md` FR-7 scope correction and OQ-5). |
+
+> **Scope correction (2026-08-04, approved by JuanCode mid-execution).** This section's `ActorsTable.tsx` row originally read *"Horizontal scroll with sticky first column below `md` per `docs/ux-ui/design.md` §9 — the existing table pattern already does this."* Both halves were false: below `md` there is no `<table>` at all (`hidden md:block` + a `md:hidden` card list), and `ActorsTable.tsx` contained zero `sticky` classes anywhere. Discovered during T-10's requirement-level review (`execution.md` → T-10, "the third unowned requirement"; mirrors the FR-7/FR-8 corrections already recorded in `requirements.md`).
+>
+> The table row above is corrected to describe what T-8 shipped: sticky positioning applies **at `md` and up**, inside the scroll container, on the checkbox and Trader columns specifically (not merely "the first column" — both are needed, one to select the row and one to identify it). Below `md` the card list was already correct and needed no change. See `requirements.md` FR-6 for the matching scenario-level correction.
 
 **`AcknowledgeDialog` is shared by three call sites (J-2).** An earlier draft treated it as a bulk-only component. It is not:
 
