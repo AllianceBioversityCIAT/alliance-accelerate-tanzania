@@ -196,6 +196,19 @@ describe('ActorImportService', () => {
       );
     });
 
+    // T-6 (FR-11) — the message must also point to WHERE to get the current
+    // template, not just that one is needed. This is a new element on top of
+    // the pre-existing "out of date ... re-download" pair above (KZ-002: a
+    // presence check that only re-proves the old substrings is not evidence
+    // for this task).
+    it('names the template download location in the stale-template message', async () => {
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+
+      await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
+        /link on this page/i,
+      );
+    });
+
     it('locates the data sheet by matching headers when it is not named "Data"', async () => {
       const b64 = await buildWorkbook([validRow()], { sheetName: 'Sheet1' });
 

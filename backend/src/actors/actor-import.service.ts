@@ -229,7 +229,7 @@ export class ActorImportService {
       templateVersionDetected.toLowerCase() !== TEMPLATE_VERSION.toLowerCase()
     ) {
       throw new BadRequestException(
-        `This template is out of date (found ${templateVersionDetected}, current is ${TEMPLATE_VERSION}). Please re-download the import template and try again.`,
+        `This template is out of date (found ${templateVersionDetected}, current is ${TEMPLATE_VERSION}). Please re-download the import template from the "Download template" link on this page and try again.`,
       );
     }
 

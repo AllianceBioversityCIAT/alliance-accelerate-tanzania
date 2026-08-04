@@ -1000,6 +1000,29 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.message).toMatch(/out of date/i);
       expect(res.body.message).toMatch(/re-download/i);
     });
+
+    // T-6 (FR-11) — the download location is a new element on top of the two
+    // pre-existing assertions above; asserted separately so it fails against
+    // the pre-T-6 message and isn't satisfied by "names both versions" alone.
+    it('points the admin to where to download the current template', async () => {
+      const oldHeaders = TEMPLATE_HEADERS.slice(0, 20);
+      const wb = new ExcelJS.Workbook();
+      const ins = wb.addWorksheet('Instructions');
+      ins.getCell('A1').value = 'Template version: v1';
+      const ws = wb.addWorksheet('Data');
+      ws.addRow([...oldHeaders]);
+      ws.addRow(TEMPLATE_COLUMNS.map((col) => validRow()[col.field] ?? ''));
+      const buf = await wb.xlsx.writeBuffer();
+      const fileBase64 = Buffer.from(buf).toString('base64');
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' })
+        .expect(400);
+
+      expect(res.body.message).toMatch(/link on this page/i);
+    });
   });
 
   describe('Bad inputs → 400 (FR-2, NFR-1)', () => {

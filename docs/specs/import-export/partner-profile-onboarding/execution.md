@@ -577,3 +577,91 @@ The ordering test deliberately feeds an order the client would *not* produce on 
 FR-7's frontend clauses — exact mirror, preview-branch placement, `aria-live` region, token discipline. **NOT covered:** whether the region actually announces to a screen reader (no harness can evaluate it — human/AT check), and FR-7's backend clauses, which are T-4's.
 
 
+
+---
+
+### T-6 — Add the download location to the stale-template message
+
+- **Date:** 2026-08-04
+- **Status:** ✅ **PASS** on attempt 1 (0 rework rounds)
+- **Traces:** FR-11 (both acceptance criteria) · `design.md` §4.4 · NFR-3
+- **Skills:** none beyond repo conventions, as `tasks.md` specifies — no deviation · **Effort:** `medium` (not `low`: the task is one string, but two disqualifiers turn on test construction rather than on the string)
+- **Ran alone** — T-3, T-4, T-6 all edit `actor-import.service.ts`
+- **Independent Reviewer gate restored.** T-3 and T-4 record a standing constraint that the Leader executed them inline with no independent Reviewer. That constraint did **not** apply here: `akili-implementer` and `akili-reviewer` both spawned normally on their wrapper-bound models, so this task had genuine `author ≠ auditor` separation
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `actor-import.service.ts` | **One** template literal at line 232. Nothing else |
+| `actor-import.service.spec.ts` | +1 `it` block after line 197. No existing case touched |
+| `admin-actor-import.e2e.spec.ts` | +1 `it` block after line 1002. No existing case touched |
+
+Before → after, the only production change in the task:
+
+```
+- Please re-download the import template and try again.
++ Please re-download the import template from the "Download template" link on this page and try again.
+```
+
+#### File-scope deviation from the declared `Files` list — adjudicated in scope
+
+The diff touches `backend/src/test/admin-actor-import.e2e.spec.ts`, which the task's `Files` list does not name. Recorded because an undeclared file is exactly the kind of quiet widening this log exists to catch.
+
+Adjudicated **in scope**, on the spec's own text rather than on convenience: the task's disqualifier clause names `admin-actor-import.e2e.spec.ts:990` as a protected artifact, `design.md` §4.4 names both suites as FR-11's assertion surface, and the task's own `Verify` command (`npm test -- import`) is the pattern that pulls the e2e suite in. A `Files` list that cites a file's line number as a constraint has already admitted that file into the task's blast radius. The change there is additive test coverage with zero production code.
+
+**Process note, non-gating:** the Implementer did not flag the undeclared file in its report; the Leader found it while extracting the diff. A completion report should name a file outside the declared list.
+
+#### Why the new assertions are evidence and not restatement
+
+This is the task's primary disqualifier: the pre-existing assertions (`actor-import.service.spec.ts:195`, `admin-actor-import.e2e.spec.ts:1000-1001`) are **already green with zero code change**, so any test that only re-proves "names both versions" proves nothing about T-6.
+
+Both new assertions pin `/link on this page/i`. That substring does not occur anywhere in the pre-change message, so each fails deterministically against HEAD and passes only because of the production edit. This is the same discrimination property T-3 and T-4 established by mutation: revert the one string and both new tests go red while every pre-existing assertion stays green.
+
+#### NFR-3 — additive only, verified at source rather than from the diff
+
+The Reviewer checked the protected assertions in the files, not merely in diff context: `actor-import.service.spec.ts:191-197` and `admin-actor-import.e2e.spec.ts:974-1002` are byte-identical to HEAD, with insertions beginning after each. Both `out of date` and `re-download` survive the reword verbatim, so neither pre-existing regex needed editing. A repo-wide grep for the message substrings found no other pinning site. `TEMPLATE_VERSION`, exported signatures, report fields, and template columns are untouched.
+
+#### FR-11's BUT-NOT clause
+
+`detectTemplateVersion`, the case-insensitive comparison at lines 227-230, the ordering relative to `locateDataSheet`, and the `BadRequestException` envelope shape are all unchanged. The diff is one line inside the existing throw.
+
+#### Verification
+
+| Command | Result |
+|---|---|
+| `cd backend && npm test -- --silent import` | **92 passed, 4 suites** |
+| `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | clean, no output — the non-mutating form the root guide requires for a diff under review |
+
+**Leader check on the verification's own coverage, because a green run can be green for the wrong reason.** `npx jest import --listTests` returns `src/test/admin-actor-import.e2e.spec.ts`, `src/actors/actor-import.service.spec.ts`, `src/import/import.service.spec.ts`, `src/actors/dto/actor-import-request.dto.spec.ts`. Both new assertions are inside that set. Had the e2e suite fallen outside the pattern, the 92-green run would have been evidence of nothing for half the change — the backend `testRegex` is `.*\.(spec|e2e-spec)\.ts$` with `rootDir: src`, so an `.e2e.spec.ts` file under `src/` is collected by the default run.
+
+#### Reviewer verdict — `STATUS: PASS`
+
+> The reword adds the download location while preserving both `out of date` and `re-download`, so neither protected assertion was edited (NFR-3 holds); the two new assertions on `/link on this page/i` fail against the pre-change message and therefore prove the new element specifically, clearing the task's disqualifier. Detection logic and the 400 envelope are untouched (FR-11 BUT-NOT), and the e2e file, though outside the declared Files list, is the assertion surface `design.md` §4.4 itself names — additive coverage, not scope creep.
+
+#### ADVISORY (4R lens findings — recorded, non-gating, and not tasks)
+
+Per `/akili-execute`, these are recorded here and die here. None may become a task in this spec.
+
+| # | Finding | Leader disposition |
+|---|---|---|
+| A-1 | **Cross-layer coupling with no binding test.** The backend 400 now quotes a frontend label that lives at `frontend/app/(admin)/admin/actors/import/page.tsx:442` as `Download template (.xlsx)`. Nothing binds the two — renaming the link sends the admin hunting for a control that no longer exists, and every backend test still passes | Real, and out of scope. FR-11 asks for a download location, not for a cross-layer lock. Candidate for a future proposal, not for this spec |
+| A-2 | **The message assumes a browser context the API cannot guarantee.** "on this page" is meaningful only to the import page; a script or future integration caller receives an unactionable instruction | Accurate. The endpoint's only current client is that page (`lib/api/actors-admin.ts` → `importActors`), and `page.tsx:263` renders the server's 400 message verbatim on the same screen as the link, so the wording is literally true for every caller that exists today. Not a requirement breach |
+| A-3 | **Fixture duplication.** The new e2e test copies ~10 lines of workbook construction from the test above it | Noted. Folding the assertion into the existing test would have required editing the protected block, which NFR-3 forbids — the separate test is the defensible call |
+
+#### Done-when, clause by clause
+
+| Clause | Evidence |
+|---|---|
+| Message contains the detected version | `found ${templateVersionDetected}` — unchanged from HEAD |
+| Message contains the current version | `current is ${TEMPLATE_VERSION}` — unchanged from HEAD |
+| Message contains the **download location** | `the "Download template" link on this page` — new; matches the real affordance at `page.tsx:427,442` |
+| `out of date` and `re-download` both remain present | Both verbatim in the new string; both pre-existing regexes still match, unedited |
+
+#### Requirements covered
+
+FR-11, both acceptance criteria, including the BUT-NOT clause. **Nothing in this task is in the uncoverable set** — unlike most of this spec, FR-11 is fully gated by a runnable assertion, and the gate discriminates.
+
+#### Issues encountered
+
+None in the work. One orchestration note: the Reviewer completed its audit but went idle without delivering the report, and had to be asked for it explicitly. No effect on the verdict or the evidence.

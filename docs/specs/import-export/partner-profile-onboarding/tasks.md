@@ -62,7 +62,7 @@
       **Evidence is DISQUALIFIED if:** the union was widened to `string` or optionality flipped to make types compile (this has FAILed review here before); the assertion checks only that the element **renders** without checking the announced region (`jest-axe` cannot evaluate whether a live region actually announces — say so); or any hex, `rgb()`, or arbitrary `bg-[#…]` value appears. `npm test` passing while `npx tsc --noEmit` was never run is **not** evidence — the frontend Jest transform does no type checking.
       **Skills:** `vercel-react-best-practices`, `react-doctor` (run before reporting), `tailwind-design-system`, `shadcn-ui`
 
-- [ ] **T-6** Add the download location to the stale-template message  (deps: none)
+- [x] **T-6** Add the download location to the stale-template message  (deps: none)
       **Scope:** Text only. Append where to obtain the current template. Detection logic (`detectTemplateVersion`) and the 400 envelope are untouched.
       **Traces:** FR-11 · `design.md` §4.4
       **Files:** `backend/src/actors/actor-import.service.ts`, `backend/src/actors/actor-import.service.spec.ts`
