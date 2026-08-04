@@ -175,9 +175,11 @@ export const DISTRICT_TO_REGION = new Map<string, CanonicalRegion>([
   ['mbozi', 'Songwe'],
   ['misungwi', 'Mwanza'],
   ['mlele', 'Katavi'],
-  // Momba District (est. 2015, carved from Mbozi) sits in Songwe region
-  // alongside Mbozi, Ileje, and Songwe/Tunduma — the same 2016 split as
-  // above, not Mbeya.
+  // Momba District (carved from Mbozi) sits in Songwe region alongside
+  // Mbozi, Ileje, and Songwe/Tunduma — the same 2016 split as above, not
+  // Mbeya. The district's establishment year is deliberately not asserted
+  // here: two reviews disagreed on it and neither could substantiate a
+  // source. The pairing does not depend on it.
   ['momba', 'Songwe'],
   ['mpanda', 'Katavi'],
   ['mpanda town', 'Katavi'],
@@ -398,12 +400,21 @@ function normalizeSinglePhone(candidate: string): string | null {
   const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '');
   if (cleaned === '') return null;
 
-  // Already `+255` + 9 digits.
-  if (new RegExp(`^\\+${TZ_COUNTRY_CODE}\\d{9}$`).test(cleaned)) {
+  // Already `+255` + 9 digits. The subscriber part may not begin with `0`
+  // (user-approved amendment A2, T-1): a trunk prefix and a country code are
+  // mutually exclusive, so `+2550…` is malformed under any reading — it is a
+  // national number that had `255` pasted in front of it without the trunk
+  // `0` being dropped. Normalizing it would silently produce a number one
+  // digit off from the intended subscriber. Unlike the mobile-vs-landline
+  // question (left open on purpose — real data should settle that, not a
+  // guess), this branch has no defensible interpretation, so it falls
+  // through to the never-guess `null` branch.
+  if (new RegExp(`^\\+${TZ_COUNTRY_CODE}[1-9]\\d{8}$`).test(cleaned)) {
     return cleaned;
   }
-  // Country-prefixed without the leading `+` (incl. de-parenthesized).
-  if (new RegExp(`^${TZ_COUNTRY_CODE}\\d{9}$`).test(cleaned)) {
+  // Country-prefixed without the leading `+` (incl. de-parenthesized). Same
+  // A2 constraint as above.
+  if (new RegExp(`^${TZ_COUNTRY_CODE}[1-9]\\d{8}$`).test(cleaned)) {
     return `+${cleaned}`;
   }
   // Leading-zero national (mobile or landline) — 0 + 9 digits.

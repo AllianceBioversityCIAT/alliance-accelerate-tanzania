@@ -248,4 +248,51 @@ FR-3's derivation-table clause and the `DISTRICT_TO_REGION` half of "quarantined
 
 FR-5 — all six measured formats, the multi-number first-plus-count behavior, and the never-guess `null` return. **Not** FR-5's `null`-branch *import* behavior (row created, `phone` null, warning) — that is T-3, correctly out of scope here. NFR-4 (`TZ_COUNTRY_CODE` in `normalize.ts`, no duplicated pattern), NFR-5 (zero-import purity), NFR-6 (determinism asserted), NFR-9 (synthetic fixtures only), NFR-3 (purely additive — no existing export, signature, or test altered).
 
+---
+
+### Amendment A2 (T-1) + A-6 closure — country-prefix trunk-0, and the disputed date
+
+- **Date:** 2026-08-04
+- **Status:** ✅ **PASS** · **Effort:** `medium` (two well-specified deltas, neither a rework — nothing failed)
+- **Traces:** FR-5 (`BUT NOT` invent a country code) · T-1 §"Residual asymmetry after A1" · T-2 ADVISORY **A-6**
+- **Executed inline by the Leader** rather than through an Implementer → Reviewer loop. Recorded plainly because it is a **deviation from the `/akili-execute` persona rule**: the session operates under a standing instruction not to spawn subagents unless the user asks. Both deltas are user-approved decisions with the rationale already written by the prior Reviewer rounds, so no new design judgment was exercised here — but the independent second reader is genuinely absent, and this entry should be read with that discount rather than as a two-model PASS.
+
+#### Delta 1 — A2, the trunk-0 sub-case (`normalize.ts`)
+
+The user chose the Reviewer's **cheap offer** from T-1's residual-asymmetry advisory, not the symmetric copy of A1. Both country-prefixed branches move from `^\+?255\d{9}$` to `^\+?255[1-9]\d{8}$`.
+
+- **What this rejects:** `+2550…` / `2550…` only. A national trunk `0` and a country code are mutually exclusive in E.164, so this shape has no valid reading — it is a national number with `255` pasted in front and the trunk `0` never dropped. Normalizing it yields a number one digit off from the intended subscriber, which no downstream gate can see.
+- **What this deliberately does NOT do:** constrain mobile-vs-landline. That question stays open for real data, exactly as the Reviewer framed it — `^\+?255[67]\d{8}$` would have rejected a country-prefixed **landline**, a plausible source value.
+- **Length semantics preserved:** `[1-9]` + 8 = 9 digits, so FR-5's length-based clause is not contradicted; only the first subscriber digit is constrained.
+
+#### Delta 2 — A-6, the disputed date (`normalize.ts`)
+
+`est. 2015` removed from the Momba comment. Two reviews disagreed (2015 vs 2012) and neither could substantiate a source from this repository; the pairing does not depend on the year, since any creation before 2016 routes Momba into Songwe via Mbozi. The substantive reasoning chain (carved from Mbozi → travelled into Songwe in the 2016 split) is kept, and the comment now states **why** the year is absent so a future reader does not helpfully restore it. **A-6 is closed.**
+
+#### Verification
+
+- `npm test -- normalize --silent` → **42 passed, 42 total** (38 + 4 new)
+- `npm test -- --silent` (full backend) → **466 passed, 37 suites**, 0 failed — run because `normalize.ts` is consumed repo-wide and this delta narrows a shipped branch
+- `npx eslint "{src,test}/**/*.ts" --quiet` → exit 0 (non-mutating form)
+- No existing test edited (NFR-3) — the 4 new cases are additive inside the existing country-prefixed `describe`
+
+#### Tests added, and the one that exists to catch over-tightening
+
+| Case | Asserts |
+|---|---|
+| `+255012345678` → `null` | plus-prefixed trunk-0 quarantines |
+| `255012345678` → `null` | bare-prefixed trunk-0 quarantines |
+| `(255) 012345678` → `null` | the de-parenthesized path routes through the same constraint |
+| `255 22 700 0005` → `+255227000005` | **a country-prefixed landline still normalizes** |
+
+The fourth is the load-bearing one. Without it a future edit to `[67]` would pass every other assertion in the block while silently quarantining landlines — the precise over-tightening the Reviewer warned against. All fixtures synthetic (NFR-9).
+
+#### Interaction with B2, checked rather than assumed
+
+T-1 ADVISORY **B2** records that Excel dropping a leading zero turns a landline into a bare `2XXXXXXXX`, which A1 already quarantines. A2 does **not** widen that: it touches only the two *country-prefixed* branches, and the bare-9 and leading-zero branches are byte-identical. B2's documented one-line remedy (`^2\d{8}$`) remains available and remains unexercised.
+
+#### Requirements covered
+
+FR-5's `BUT NOT`-invent-a-country-code clause, tightened one sub-case. NFR-3 (additive), NFR-4, NFR-5 (zero-import purity intact), NFR-6, NFR-9.
+
 

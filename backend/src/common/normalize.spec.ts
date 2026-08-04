@@ -288,6 +288,35 @@ describe('normalizePhone', () => {
         additionalCount: 0,
       });
     });
+
+    it('quarantines a country code followed by a trunk 0, with or without the + (amendment A2)', () => {
+      // A trunk prefix and a country code are mutually exclusive: `+2550…`
+      // is a national number that had `255` pasted in front without the
+      // trunk `0` being dropped. There is no reading under which it is
+      // well-formed, so it must not normalize. Synthetic values (NFR-9).
+      expect(normalizePhone('+255012345678')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+      expect(normalizePhone('255012345678')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+      expect(normalizePhone('(255) 012345678')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+    });
+
+    it('still normalizes a country-prefixed landline, so A2 did not over-tighten', () => {
+      // A2 constrains only the trunk-0 case. A landline subscriber part
+      // begins with a non-zero digit and must keep normalizing — the
+      // mobile-vs-landline question is deliberately left to real data.
+      expect(normalizePhone('255 22 700 0005')).toEqual({
+        phone: '+255227000005',
+        additionalCount: 0,
+      });
+    });
   });
 
   describe('format: parenthesized country code', () => {
