@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   CANONICAL_REGIONS,
   DISTRICT_TO_REGION,
@@ -96,6 +98,63 @@ describe('DISTRICT_TO_REGION', () => {
       region: null,
       quarantined: true,
     });
+  });
+});
+
+/**
+ * T-7 — doc↔constant agreement (`requirements.md` FR-1/FR-3, `design.md`
+ * §4.2's "two assertions, because one is not enough"). Membership (above)
+ * catches a typo'd region; this catches DRIFT between the published table in
+ * `mapping.md` and this file — the two are maintained by different tasks and
+ * nothing else keeps them in step. It does NOT and cannot assert that a
+ * pairing is the CORRECT region for its district (`requirements.md` §9
+ * D-1b has no automated gate for that).
+ */
+describe('mapping.md ↔ DISTRICT_TO_REGION (doc↔constant agreement)', () => {
+  it('publishes the exact same district→region pairs as the constant, entry-for-entry', () => {
+    const mappingPath = path.join(
+      __dirname,
+      '../../../docs/specs/import-export/partner-profile-onboarding/mapping.md',
+    );
+    const content = fs.readFileSync(mappingPath, 'utf8');
+
+    const startMarker = '<!-- DISTRICT_TO_REGION:TABLE:START -->';
+    const endMarker = '<!-- DISTRICT_TO_REGION:TABLE:END -->';
+    const start = content.indexOf(startMarker);
+    const end = content.indexOf(endMarker);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const tableBlock = content.slice(start + startMarker.length, end);
+    const rows = tableBlock
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('|') && line.endsWith('|'))
+      // drop the header row and the `|---|---|` separator row
+      .filter((line) => !/^\|\s*-+\s*\|/.test(line))
+      .filter((line) => !line.toLowerCase().includes('district (lowercase key)'));
+
+    expect(rows.length).toBeGreaterThan(0);
+
+    const published = new Map<string, string>();
+    for (const row of rows) {
+      const cells = row
+        .split('|')
+        .slice(1, -1) // drop the empty strings before the first and after the last `|`
+        .map((cell) => cell.trim());
+      expect(cells).toHaveLength(2);
+      const [district, region] = cells;
+      published.set(district, region);
+    }
+
+    // Same size — catches a published row silently missing or duplicated.
+    expect(published.size).toBe(DISTRICT_TO_REGION.size);
+
+    // Entry-for-entry — catches a district present in one but not the other,
+    // or the same district paired with a different region in each.
+    for (const [district, region] of DISTRICT_TO_REGION) {
+      expect(published.get(district)).toBe(region);
+    }
   });
 });
 

@@ -77,8 +77,8 @@
 
 > Split into two tasks deliberately, pre-empting `design.md` §13's watch item. Each must follow the **§4.5 required structure** exactly.
 
-- [ ] **T-7** `mapping.md` — structure + the three offtaker sheets  (deps: T-2) — ⛔ **BLOCKED: source workbook not in the checkout** (see `execution.md`). No complete column inventory exists in the spec either, so the per-column dispositions cannot be authored without fabricating ~30 column names — which FR-1's arithmetic gate (D-5) would pass. **T-8, T-9, T-10 are transitively blocked.**
-      **Scope:** The document skeleton per `design.md` §4.5, the published district→region table (sourced from `DISTRICT_TO_REGION`), plus complete per-column dispositions for `Offtaker_Beans` (16 cols), `Offtaker_Sorghum` (13), `Offtaker_Groundnuts` (13). **Column-driven** trader types. Records: the 52-blank-id positional keys, the 2 intra-sheet duplicate ids, the `"Retaler"` quarantine decision (no alias), the 4 phone-in-trader-type-column rows, `Offtaker_Beans.Email` as **`EMPTY-IN-SOURCE`**, and the contaminated tail register (`Offtaker_Sorghum` 110–116, `Offtaker_Groundnuts` 147–151) **by row number only**. Adds the **doc↔constant test** asserting the published table matches the constant.
+- [x] **T-7** `mapping.md` — structure + the three offtaker sheets  (deps: T-2) — ✅ **PASS on attempt 3 of 3.** Unblocked 2026-08-04: the source workbook was located at `~/Downloads/Partner Profile 14.4.2026.xlsx`, outside the checkout, and its 8 sheets / column counts / header rows were verified against `requirements.md` §3.1 before dispatch (see `execution.md`). It is read in place and **never copied into the repository** (NFR-9). T-8, T-9, T-10 are no longer transitively blocked.
+      **Scope:** The document skeleton per `design.md` §4.5, the published district→region table (sourced from `DISTRICT_TO_REGION`), plus complete per-column dispositions for `Offtaker_Beans` (16 named cols + 1 unnamed-with-data = **17**), `Offtaker_Sorghum` (13), `Offtaker_Groundnuts` (13). **Column-driven** trader types. Records: the **38**-blank-id positional keys (corrected from 52 at the T-7 pivot, `execution.md` Finding 1), the 2 intra-sheet duplicate ids, the `"Retaler"` quarantine decision (no alias), the 4 phone-in-trader-type-column rows, `Offtaker_Beans.Email` as **`EMPTY-IN-SOURCE`**, `Offtaker_Beans` physical column 2 (unnamed row-serial-number, disposed per the FR-1 denominator rule), and the contaminated tail register (`Offtaker_Sorghum` 110–116, `Offtaker_Groundnuts` **149–152**, corrected from 147–151 at the T-7 pivot) **by row number only**. Adds the **doc↔constant test** asserting the published table matches the constant.
       **Traces:** FR-1 (all clauses + both scenarios) · FR-2 (blank ids, intra-sheet dups, physical row numbers, no-reuse/no-renumber) · FR-3 (OFG derivation, no placeholder) · FR-4 (column-driven, `"Retaler"`, phone-in-type rows, never feed raw values to `normalizeTraderType`) · NFR-9 · `design.md` §4.2, §4.5, DD-2, DD-5, DD-9
       **Files:** `docs/specs/import-export/partner-profile-onboarding/mapping.md`, `backend/src/common/normalize.spec.ts` (doc↔constant assertion)
       **Verify:** `cd backend && npm test -- normalize` (doc↔constant) **+** per-sheet column-count arithmetic against `requirements.md` §3.1 **+** the NFR-9 grep gate from `requirements.md` §9 D-7
@@ -87,7 +87,7 @@
       **Skills:** `cognitive-doc-design`, `product-manager-toolkit`
 
 - [ ] **T-8** `mapping.md` — the five remaining sheets  (deps: T-7)
-      **Scope:** Complete per-column dispositions for `Bulk buyers_beans` (17 cols), `Humantarian` (9), `Digital Service Provider` (9), `Seed Company` (26), `QDS_ Seed producers` (41+). Records: the BBB **forward-fill** rule collapsing 166 rows → 26; positional keys for all five sheets; sheet-level trader types; `HUM`/`DSP` `Category` as **`DROPPED`** with measured resolve rates; `DSP.Website` and the 7 empty `Seed Company` columns as **`EMPTY-IN-SOURCE`**; the 3 foreign DSP exclusions (**D-3**); the 8 region-less BBB quarantines; **all 11 `Seed Company` quarantines** (DD-11); the QDS rules — exclude 249 individuals, exclude rows 289–312, case-insensitive name dedup, blank-category quarantine, DMS coordinates blanked; and the `…AMCOs`/OQ-4 flag.
+      **Scope:** Complete per-column dispositions for `Bulk buyers_beans` (17 cols, unchanged), `Humantarian` (9 named + 1 unnamed-with-data = **10**), `Digital Service Provider` (9 named + 1 unnamed-with-data = **10**), `Seed Company` (26 named + 2 unnamed-with-data = **28**), `QDS_ Seed producers` (41 named + 12 unnamed-with-data = **53**) — denominators corrected at the T-7 pivot (`execution.md` Finding 3; `requirements.md` §3.1, FR-1's denominator rule). **Every unnamed data-bearing column MUST be dispositioned like any other column**, identified by its physical column position since it has no header name (e.g. `Humantarian` and `Digital Service Provider` physical column 1; `Seed Company` physical columns 8 and 12; `QDS` physical columns 13, 19, and 45–54). Records: the BBB **forward-fill** rule collapsing 166 rows → 26; positional keys for all five sheets; sheet-level trader types; `HUM`/`DSP` `Category` as **`DROPPED`** with measured resolve rates; `DSP.Website` and the 7 empty `Seed Company` columns as **`EMPTY-IN-SOURCE`**; the 3 foreign DSP exclusions (**D-3**); the 8 region-less BBB quarantines; **all 11 `Seed Company` quarantines** (DD-11); the QDS rules — exclude 249 individuals, exclude rows 289–312, case-insensitive name dedup, blank-category quarantine, DMS coordinates blanked; and the `…AMCOs`/OQ-4 flag.
       **Traces:** FR-1 (both scenarios) · FR-2 (five positional-key sheets) · FR-3 (HUM ambiguous, foreign exclusion, BBB and SDC quarantines, no reverse-geocode) · FR-4 (sheet-level, `Category` dropped) · FR-10 (all clauses + DMS scenario) · NFR-9 · `design.md` DD-2, DD-6, DD-7, DD-10, DD-11
       **Files:** `docs/specs/import-export/partner-profile-onboarding/mapping.md`
       **Verify:** per-sheet column-count arithmetic against `requirements.md` §3.1 **+** the NFR-9 grep gate — **no automated gate for correctness**
@@ -109,7 +109,7 @@
       **Skills:** `cognitive-doc-design`
 
 - [ ] **T-10** `reconciliation.md` — skeleton with expected counts  (deps: T-7, T-8)
-      **Scope:** The reconciliation structure with **expected** figures pre-filled from `design.md` §9.1 (806 candidates → ~748 net) and actuals left blank for the onboarding run. Per `requirements.md` FR-8's stated reading: per-sheet totals per bucket **plus explicit enumeration by row number** of every `quarantined` and `excluded` row. Includes the cross-sheet duplicate-candidate list (8 groups / 18 records, by organisation name and row), the 249 QDS individual exclusions and 3 foreign exclusions **as decisions citing D-1 and D-3**, a slot for the ≥5-row-per-sheet cell-by-cell trace, and a slot for the operator post-commit check result.
+      **Scope:** The reconciliation structure with **expected** figures pre-filled from `design.md` §9.1 (806 candidates → ~757 net, corrected from ~748 at the T-7 pivot and from ~752 at the T-7 rework — C-5) and actuals left blank for the onboarding run. Per `requirements.md` FR-8's stated reading: per-sheet totals per bucket **plus explicit enumeration by row number** of every `quarantined` and `excluded` row. Includes the cross-sheet duplicate-candidate list (8 groups / 18 records, by organisation name and row), the 249 QDS individual exclusions and 3 foreign exclusions **as decisions citing D-1 and D-3**, a slot for the ≥5-row-per-sheet cell-by-cell trace, and a slot for the operator post-commit check result.
       **Traces:** FR-8 (all clauses) · FR-6 · FR-10 (exclusions recorded) · NFR-2, NFR-9 · `design.md` §9.1, DD-6, DD-7, §7.1
       **Files:** `docs/specs/import-export/partner-profile-onboarding/reconciliation.md`
       **Verify:** arithmetic — each sheet's four bucket counts sum to its **measured physical data-row count** in `requirements.md` §3.1 (1,237 total)
@@ -170,7 +170,7 @@ Chunk 1 shipped three requirement scenarios owned by no task because decompositi
 | | *Scenario:* BBB forward-fill → 26, year rows dropped | T-8 |
 | | *Scenario:* `EMPTY-IN-SOURCE` ≠ `DROPPED` (Beans.Email) | T-7 |
 | **FR-2** | Zero collisions across the onboarding | T-7, T-8, T-11 |
-| | Positional keys for 52 blank + 2 intra-sheet dups | T-7 |
+| | Positional keys for 38 blank + 2 intra-sheet dups | T-7 |
 | | Positional keys for the 5 id-less sheets | T-8 |
 | | Physical source row number in the key | T-7, T-8 |
 | | `BUT NOT` reuse an earlier id / renumber rows | T-7, T-8 |
@@ -207,7 +207,7 @@ Chunk 1 shipped three requirement scenarios owned by no task because decompositi
 | | `BUT NOT` PII in a key or message | T-4 |
 | | FE exact mirror + `aria-live` | T-5 |
 | **FR-8** | Four buckets, per-sheet reconciliation to 1,237 | T-10 |
-| | Expected (~748) vs actual, difference explained | T-10 |
+| | Expected (~757) vs actual, difference explained | T-10 |
 | | Cross-sheet duplicate candidates listed | T-10 |
 | | 249 individuals + 3 foreign recorded as decisions (D-1, D-3) | T-10 |
 | | `BUT NOT` bare success count | T-10 |

@@ -32,17 +32,19 @@ The deliverable is deliberately **a mapping specification plus narrow importer h
 
 ### 3.1 Measured source workbook
 
-| Sheet | Header row | Physical data rows | **Actors yielded** | Notes that change the mapping |
-|---|:--:|--:|--:|---|
-| `Offtaker_Beans` | 1 | 436 | **436** | `Trader_id` blank on 15 rows · `Email` column present but **100% empty** |
-| `Offtaker_Sorghum` | 1 | 115 | **115** | `Trader_ID` blank on 30 · **2 duplicate ids within the sheet** · `Region` blank on 6 · type `"Retaler"` (typo) on 11 |
-| `Offtaker_Groundnuts` | 1 | 150 | **150** | No `Region` column at all · `Trader_ID` blank on 7 · **4 rows carry a phone number in the trader-type column** (column-shifted rows) · `Capacity (volume)` has no unit |
-| `Bulk buyers_beans` | **3** | 166 | **26** | **Block-structured**: one identity row (region · district · offtaker name) followed by year-metric rows with blank identity. No id column. Only **14 of 26** have a resolvable region |
-| `Humantarian` | **2** | 35 | **35** | Row 1 is a merged title (`D1:H1`). No id column. `Category` resolves for only 26 of 35 |
-| `Digital Service Provider` | **2** | 13 | **10** | `Website` column present but **100% empty** · `Category` resolves for **0 of 13** · **3 actors are outside Tanzania** |
-| `Seed Company` | 1 (+ **sub-header row 2** = `lat`/`long`) | 11 | **11 candidates → 0 net** | Data starts at **row 3**. No id column · 7 columns entirely empty · **no region and no district data at all** (location column 0/12 filled), so all 11 quarantine pending an AT-team region pass — FR-3, `design.md` DD-11 |
-| `QDS_ Seed producers` | 1 | 311 (292 distinct names) | **~23** | 55 columns · sorted by category · **249 of 292 (85%) are `individual` — natural persons** · **rows 289–312 are not producers at all** (research institutes + the `Seed Company` sheet repeated — the `seed source` vocabulary) · **71 coordinate cells are DMS, not decimal** · altitude carries units in-cell |
-| **Total** | | **1,237** | **806 candidates → ~748 net** | 806 is the pre-quarantine ceiling; ~748 is the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1) |
+| Sheet | Header row | Physical data rows | **Actors yielded** | Column denominator (FR-1 D-5, see rule below) | Notes that change the mapping |
+|---|:--:|--:|--:|:--:|---|
+| `Offtaker_Beans` | 1 | 436 | **436** | 16 named + 1 unnamed-with-data → **17** | `Trader_id` blank on 15 rows · `Email` column present but **100% empty** · physical column 2 is unnamed but **421/436 (97%)** filled |
+| `Offtaker_Sorghum` | 1 | 115 | **115** | 13 named + 0 unnamed → **13** | `Trader_ID` blank on 17 · **2 duplicate ids within the sheet** · `Region` blank on 6 · type `"Retaler"` (typo) on 11 |
+| `Offtaker_Groundnuts` | 1 | 150 | **150** | 13 named + 0 unnamed → **13** | No `Region` column at all · `Trader_ID` blank on 6 · **4 rows carry a phone number in the trader-type column** (column-shifted rows) · `Capacity (volume)` has no unit |
+| `Bulk buyers_beans` | **3** | 166 | **26** | 17 named + 0 unnamed → **17** | **Block-structured**: one identity row (region · district · offtaker name) followed by year-metric rows with blank identity. No id column. Only **14 of 26** have a resolvable region |
+| `Humantarian` | **2** | 35 | **35** | 9 named + 1 unnamed-with-data → **10** | Row 1 is a merged title (`D1:H1`). No id column. `Category` resolves for only 26 of 35 · physical column 1 is unnamed but **35/35 (100%)** filled |
+| `Digital Service Provider` | **2** | 13 | **10** | 9 named + 1 unnamed-with-data → **10** | `Website` column present but **100% empty** · `Category` resolves for **0 of 13** · **3 actors are outside Tanzania** · physical column 1 is unnamed but **13/13 (100%)** filled |
+| `Seed Company` | 1 (+ **sub-header row 2** = `lat`/`long`) | 11 | **11 candidates → 0 net** | 26 named + 2 unnamed-with-data → **28** | Data starts at **row 3**. No id column · 7 columns entirely empty · **no region and no district data at all** (location column 0/12 filled), so all 11 quarantine pending an AT-team region pass — FR-3, `design.md` DD-11 · two unnamed columns carry data: physical col 12 (11/11) and col 8 (6/11) |
+| `QDS_ Seed producers` | 1 | 311 (292 distinct names) | **~23** | 41 named + 12 unnamed-with-data → **53** | 55 physical columns · sorted by category · **249 of 292 (85%) are `individual` — natural persons** · **rows 289–312 are not producers at all** (research institutes + the `Seed Company` sheet repeated — the `seed source` vocabulary) · **71 coordinate cells are DMS, not decimal** · altitude carries units in-cell · unnamed data-bearing columns: physical col 13 (305/311), col 19 (108/311), and cols 45–54 (2–4 rows each) |
+| **Total** | | **1,237** | **806 candidates → ~757 net** | | 806 is the pre-quarantine ceiling; ~757 is the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected to ~757 at the T-7 rework — C-5) |
+
+**Column denominator rule (FR-1, added by the T-7 pivot — 2026-08-04):** the "column denominator" column above is what FR-1's acceptance criteria and D-5's arithmetic gate (§9) hold `mapping.md` to. It is **not** the same as a sheet's *named*-column count. See FR-1's acceptance criteria for the rule itself.
 
 > **Count correction (during Phase 2).** An earlier draft of this table put QDS at 42 and the total at 825, by trusting `producer_category` to distinguish organisations from individuals. Deeper measurement showed the sheet's tail (rows 289–312) is the *seed-source vocabulary*, not a producer list — see `design.md` §9 and DD-6. The organisation-only decision (D-1) stands and is better justified; only the count changed. `reconciliation.md` reports the actual figure; no requirement depends on the estimate (A-2).
 
@@ -55,7 +57,7 @@ The deliverable is deliberately **a mapping specification plus narrow importer h
 | `Digital Service Provider` adds a `Website` column | Column exists, **0 of 13 filled** |
 | QDS onboarded "only as organisations" | The sheet **is** 85% natural persons; genuine producer organisations must be *selected out*, and are only **~23** — its tail is the seed-source vocabulary, not producers (`design.md` DD-6) |
 | Expected yield ≈ 900–1,000 (A-2) | **~806** after the §4 exclusion decisions |
-| `traderId` collisions are the cross-sheet problem (B-1) | Cross-sheet overlap is only **6 ids**; the larger problems are **52 blank ids** and **2 intra-sheet duplicates** |
+| `traderId` collisions are the cross-sheet problem (B-1) | Cross-sheet overlap is only **6 ids**; the larger problems are **38 blank ids** and **2 intra-sheet duplicates** |
 
 ### 3.2 In scope
 
@@ -108,9 +110,10 @@ Sheet prefixes fixed by D-2: `OFB` · `OFS` · `OFG` · `BBB` · `HUM` · `DSP` 
 - **Artifact class:** Document.
 - **Rationale / Source:** epic §12 success criterion 1; `proposal.md` §4.1. `EMPTY-IN-SOURCE` is a new fourth disposition required by measurement — `Offtaker_Beans.Email`, `DSP.Website`, and 7 `Seed Company` columns exist but hold no data, and recording them as "dropped" would misrepresent the source.
 - **Acceptance criteria:**
-  - GIVEN `mapping.md` WHEN every sheet's column count is compared against the measured counts in §3.1 THEN each sheet's dispositions sum to its full column count
+  - **Column universe / D-5 denominator rule (added by the T-7 pivot — 2026-08-04, resolving `execution.md` Finding 3):** the column universe a sheet's dispositions must sum to is **every column that carries a header name, OR contains data in any data row.** A column that is physically present but both unnamed and empty is recorded once as the sheet's physical extent and is **not** dispositioned. This is the denominator §3.1's "Column denominator" column states per sheet, and it can exceed the *named*-column count — e.g. `Offtaker_Beans` has 16 named columns but a denominator of **17**, because physical column 2 is unnamed yet 97% filled
+  - GIVEN `mapping.md` WHEN every sheet's column count is compared against the measured **denominators** in §3.1 THEN each sheet's dispositions sum to its full denominator, not merely its named-column count
   - AND IT MUST record the **header row** and **first data row** per sheet, including `Bulk buyers_beans` = row 3 and `Seed Company` data starting at **row 3** because row 2 is a `lat`/`long` sub-header
-  - BUT it must NOT leave any column implicit — a column absent from `mapping.md` is a spec defect, not a silent drop
+  - BUT it must NOT leave any column implicit — a column absent from `mapping.md` is a spec defect, not a silent drop, and an unnamed data-bearing column is a column like any other for this purpose
 - **PII/RBAC impact:** `mapping.md` describes PII columns (`phone`, `Email`, `Contact person`, `Telephone`, `contact_number`) but MUST NOT contain **any real PII value** as an example (NFR-9).
 
 #### Scenario: Block-structured sheet is flattened by forward-fill
@@ -138,7 +141,7 @@ Sheet prefixes fixed by D-2: `OFB` · `OFS` · `OFG` · `BBB` · `HUM` · `DSP` 
 - **Rationale / Source:** epic R-6; `proposal.md` R-1 (irreversible); PRD AC-5.
 - **Acceptance criteria:**
   - GIVEN the 3 offtaker sheets, whose ids overlap on 6 values WHEN keys are assigned THEN zero `traderId` collisions occur across the whole onboarding
-  - AND IT MUST assign a positional key to each of the **52** rows whose source id is blank and to the **2** `Offtaker_Sorghum` rows whose id duplicates another row in the same sheet
+  - AND IT MUST assign a positional key to each of the **38** rows whose source id is blank and to the **2** `Offtaker_Sorghum` rows whose id duplicates another row in the same sheet
   - AND IT MUST use `<PREFIX>-R<row>` for all of `Bulk buyers_beans`, `Humantarian`, `Digital Service Provider`, `Seed Company`, and `QDS_ Seed producers`, which have no id column
   - AND `<rowNumber>` MUST be the **physical source row number** so a key resolves back to a cell in the client's file
   - BUT it must NOT reuse a source id that appeared earlier in the same sheet, and MUST NOT renumber rows to close gaps
@@ -380,7 +383,7 @@ The dominant risk here is **not** a code defect. It is a **semantically wrong ma
 | ID | Assumption | If wrong |
 |---|---|---|
 | **A-1** | The AT/Alliance team performs the flattening from `mapping.md` (epic Option A) | Escalate to Option B; re-scope entirely |
-| **A-2** | **806** is the pre-quarantine ceiling and **~748** the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1); the net is right to ±5% | `reconciliation.md` reports the truth; no logic depends on the estimate |
+| **A-2** | **806** is the pre-quarantine ceiling and **~757** the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected from ~748 to ~752 at the T-7 pivot, then to ~757 at the T-7 rework — C-5); the net is right to ±5% | `reconciliation.md` reports the truth; no logic depends on the estimate |
 | **A-3** | Dropping QDS production data and commercial trade metrics is acceptable to the program | Those become their own epic. Cheapest to reverse **now** |
 | **A-4** | `Offtaker_Groundnuts.Capacity (volume)` unit is unconfirmed, so the column is **dropped**, not guessed | If the client confirms tonnes, a follow-up maps 144 capacity values |
 

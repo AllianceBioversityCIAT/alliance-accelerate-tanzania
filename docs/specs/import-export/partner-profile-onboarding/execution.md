@@ -847,3 +847,276 @@ Three orchestration notes, none affecting a verdict:
 1. **Reviewers repeatedly went idle without delivering their reports** — the conformance lens once, the evidence lens twice (it eventually sent in two parts, then resent the whole audit unprompted). Each had to be chased by explicit request. The audits themselves were complete and high quality; the delivery step was unreliable.
 2. **A Leader hypothesis was wrong and a Reviewer corrected it.** The Leader flagged the attempt-2 DMS coordinate as possibly landing in Mbozi district beside the client material. It is Mbeya city centre, ~60 km away and in a different region. Recorded because the correction is the reason the value was ruled safe on evidence rather than on the Leader's suspicion.
 3. **A Reviewer identified a weakness in its own prior prescription.** The attempt-1 conformance remediation prescribed the GET-based GPS check, which attempt 2 implemented faithfully — and the same lens then failed it, on the grounds that its own prescription was the weaker of the two available observations. Worth recording: a review loop that never overturns its own prescriptions is not adversarial.
+
+---
+
+### T-7 UNBLOCKED — the source workbook was located outside the repository
+
+- **Date:** 2026-08-04
+- **Found at:** `~/Downloads/Partner Profile 14.4.2026.xlsx` — outside the checkout, which is why every prior `find` inside the repo returned only the generated canonical template
+
+The earlier HALT recorded the blocker as "the workbook is not in this repository", which was true and remained true — the file had simply never been searched for outside it. Located by searching the user's `Downloads`, `Desktop`, `Documents`, and `Development` folders.
+
+**It stays outside the repository.** NFR-9's headline clause is "the source workbook and its PII stay out of the repository" — the file is read in place and is never copied, committed, or added to a fixture directory.
+
+**Identity confirmed against `requirements.md` §3.1 before any task ran**, so no task proceeds on an assumed-correct input:
+
+| Sheet | Measured rows | Header row | Measured columns | §3.1 expects |
+|---|---|---|---|---|
+| `Offtaker_Beans` | 437 | 1 | 16 | 16 ✅ |
+| `Offtaker_Sorghum` | 129 | 1 | 13 | 13 ✅ |
+| `Offtaker_Groundnuts` | 152 | 1 | 13 | 13 ✅ |
+| `Bulk buyers_beans` | 235 | **3** | 17 | 17, header 3 ✅ |
+| `Humantarian` | 44 | **3** | **10** | 9 ⚠ see below |
+| `Digital Service Provider` | 20 | **2** | 9 | 9 ✅ |
+| `Seed Company` | 13 | 1 | 26 | 26 ✅ |
+| `QDS_ Seed producers` | 312 | 1 | 41 | 41+ ✅ |
+
+8 sheets, as the spec records. Seven of eight column counts match exactly, and all four non-standard header rows match.
+
+**One discrepancy, flagged not settled:** `Humantarian` measured **10** non-empty header cells where `tasks.md` T-8 says 9. The Leader's measurement took the widest of the first five rows, which can over-count if a stray cell sits outside the header band. This is **T-8's** sheet, not T-7's, so it is recorded here for T-8 to resolve at source rather than adopted as a correction now. T-8 must reconcile it explicitly — FR-1's only automated gate is that dispositions sum to the measured column count, so an unresolved ±1 would make that gate meaningless for this sheet.
+
+**Correction to the table above, made by the Leader against its own entry:** the "Measured rows" column reports `ws.rowCount` — the sheet's physical extent including the header and any trailing formatting — **not** data rows. Read as data rows it would contradict `requirements.md` §3.1, which it does not: 437/129/152 correspond to §3.1's 436/115/150 data rows exactly. Corrected here rather than left to be misread, since this log is an audit artifact.
+
+---
+
+## Pivot Record: T-7 — `requirements.md` §3.1 measurements contradict the source workbook
+
+- **Date:** 2026-08-04
+- **Trigger:** T-7's Implementer, having the real workbook for the first time, reported two figures that disagree with the approved spec. **The Leader verified both independently before treating either as true** — the spec's numbers and the worker's numbers were given equal suspicion.
+- **Status:** T-7 is `[~]`, **not** reviewed and **not** certified. **T-8 is not started.** Execution is stopped for user approval per the Pivot Protocol.
+
+### Why this is a pivot and not a rework
+
+Nothing is wrong with T-7's *implementation*. What is wrong is the **approved requirements**: they record measurements of a workbook nobody could open when they were written, and the workbook now says otherwise. The rework loop cannot fix that — an Implementer told to match `requirements.md` would faithfully reproduce the wrong numbers, and a Reviewer auditing against `requirements.md` would pass them.
+
+This is also the moment the spec was designed to catch. `requirements.md` §9 **D-6** states that arithmetic closure is not mapping correctness, and FR-1's only automated gate (**D-5**) is that dispositions sum to the measured column count. **If the "measured" counts are wrong, D-5 certifies fabrication.** T-8, T-9 and T-10 all inherit these figures, and T-10's entire deliverable is a reconciliation whose arithmetic must close against them.
+
+### Finding 1 — blank source ids: **38**, not 52
+
+| Sheet | `requirements.md` §3.1 | Leader measurement | Implementer measurement |
+|---|--:|--:|--:|
+| `Offtaker_Beans` | 15 | **15** ✅ | 15 |
+| `Offtaker_Sorghum` | 30 | **17** ❌ | 17 |
+| `Offtaker_Groundnuts` | 7 | **6** ❌ | 6 |
+| **Total** | **52** | **38** | 38 |
+
+Method: counted rows whose `Trader_id`/`Trader_ID` cell is empty after trimming, over rows with at least one non-empty cell. The blank-id rows are contiguous tails in every sheet — Beans 423-437, Sorghum 100-116, Groundnuts 147-152 — which is consistent with unfinished data entry rather than scattered omissions, and makes the count easy to confirm by inspection.
+
+The 2 `Offtaker_Sorghum` intra-sheet duplicate ids are **confirmed correct** (the only sheet with `dupIds > 0`).
+
+**Consequence:** the positional-key population for these three sheets is **38 blank + 2 duplicate = 40**, not 54.
+
+Cited and now wrong in: `requirements.md` §3.1 (per-sheet notes), `requirements.md` §4 comparison row, `requirements.md` **FR-2's acceptance criterion** (*"a positional key to each of the **52** rows"*), `design.md` §9 sizing table, `design.md` DD-9 context, `tasks.md` T-7 scope, `tasks.md` coverage-closure row *"Positional keys for 52 blank + 2 intra-sheet dups"*.
+
+### Finding 2 — `Offtaker_Groundnuts` contaminated tail: rows **149-152**, not 147-151
+
+The Implementer's claim was checked by measuring the contamination *shape* per row, without reading any value into the log:
+
+| Row | Long digit run in `Trader type` | Word count in `District` |
+|---|---|---|
+| 144-146 | no | 0-1 |
+| **147** | **no** | 1 |
+| **148** | **no** | 1 (an ordinary category word) |
+| **149** | **yes** | 2 |
+| **150** | **yes** | 2 |
+| **151** | **yes** | 3 |
+| **152** | **yes** | 3 |
+
+Exactly **four** rows carry a phone number in the trader-type column — which independently corroborates `requirements.md` §3.1's own figure of 4 for this sheet, a figure the spec gets *right*. Rows 147 and 148 have a blank id but are otherwise ordinary data; they belong in the positional-key register, not the contamination register.
+
+Cited and now wrong in: `design.md` §9 (*"rows **147–151**"*), `tasks.md` T-7 scope. Note `Offtaker_Sorghum` 110-116 was **not** contradicted and stands.
+
+### Suspected, not verified — and why T-8 must not start on them
+
+These surfaced from the Leader's coarse sheet scan (widest of the first rows), which is reliable enough to raise a question and **not** reliable enough to correct a requirement:
+
+| Item | §3.1 says | Coarse measurement |
+|---|---|---|
+| `Humantarian` header row | 2 | 3 |
+| `Humantarian` columns | 9 (`tasks.md` T-8) | 10 |
+| `QDS_ Seed producers` columns | **55** | 41 (`tasks.md` T-8 says "41+") |
+
+`requirements.md` §3.1 and `tasks.md` T-8 **already disagree with each other** on the QDS column count — 55 versus "41+" — independently of any measurement. That disagreement predates this pivot and was invisible while the workbook was unreachable.
+
+All three items are inputs to T-8's arithmetic gate. Starting T-8 before they are settled would run the spec's load-bearing document against a gate that cannot fail.
+
+### Options
+
+1. **Re-measure §3.1 in full, correct the derived figures, then resume.** One scripted pass over all eight sheets producing header row, data rows, and column count; correct `requirements.md` §3.1 and every derived figure in `design.md` and `tasks.md`; then review T-7 against corrected numbers and run T-8. Highest confidence, and it makes D-5 a real gate for the first time.
+2. **Correct only the two verified findings and proceed.** Cheaper, but leaves T-8 running against the unresolved `Humantarian` and QDS counts — i.e. against a gate known to be untrustworthy for two of its five sheets.
+3. **Accept the spec's figures and record the workbook as disagreeing.** Rejected on its face; it would mean knowingly shipping a mapping whose row registers do not match the file it maps.
+
+**Leader recommendation: option 1.** The cost is one measurement pass, and it is the only option under which T-8, T-9 and T-10 inherit numbers anyone has checked.
+
+### Awaiting
+
+Explicit user approval of the pivot and the option, per the Pivot Protocol. No approved requirement has been edited yet — the corrections depend on which option is chosen, and churning `requirements.md` twice would be worse than waiting.
+
+### Resolution — user approved **option 1** (full §3.1 re-measurement), and it shrank the pivot
+
+The re-measurement was run over all eight sheets. **`requirements.md` §3.1 is correct on every sheet for header row, named-column count, and physical data rows.** The pivot reduces to the two originally verified findings.
+
+| Sheet | Header row | Named columns | Data rows | §3.1 |
+|---|--:|--:|--:|---|
+| `Offtaker_Beans` | 1 | 16 | 436 | ✅ |
+| `Offtaker_Sorghum` | 1 | 13 | 115 | ✅ |
+| `Offtaker_Groundnuts` | 1 | 13 | 150 | ✅ |
+| `Bulk buyers_beans` | 3 | 17 | 166 | ✅ |
+| `Humantarian` | 2 | 9 | 35 | ✅ |
+| `Digital Service Provider` | 2 | 9 | 13 | ✅ |
+| `Seed Company` | 1 (+ sub-header row 2 = `lat`/`long`) | 26 | 11 | ✅ |
+| `QDS_ Seed producers` | 1 | 41 named / **55 physical** | 311 | ✅ both, see below |
+
+**All three "suspected" items were the Leader's measurement error, not the spec's.** Recorded plainly because the earlier entry above asserted them:
+
+- `Humantarian` is header row **2** with **9** named columns and 35 data rows, exactly as §3.1 says. The earlier "header row 3, 10 columns" came from a heuristic that took the widest of the first rows — which lands on a data row when the header has a gap. The `⚠` on that sheet is **withdrawn**, and T-8 does *not* need to reconcile a ±1.
+- `Digital Service Provider` and `Seed Company` likewise match, once the merged title row and the `lat`/`long` sub-header are accounted for. `Seed Company`'s data genuinely starts at row 3.
+
+**The QDS "55 vs 41" disagreement is definitional, not factual — and it is the more useful finding.** The sheet has **55 physical columns**, of which **41 carry a header name**; `columnCount` is 55 and `actualColumnCount` is 53. `requirements.md` §3.1's "55 columns" counts physical extent; `tasks.md` T-8's "41+" counts named headers. Both are accurate measurements of different things.
+
+That matters because FR-1's only automated gate (**D-5**) is *"dispositions sum to the measured column count"* — and with two defensible counts differing by 14, the gate is ambiguous rather than wrong. **T-8 cannot satisfy D-5 until the spec says which count it means.** A disposition per named header (41) leaves 14 physical columns undocumented; a disposition per physical column (55) requires dispositioning 14 columns that have no name to disposition. The spec has to choose, and the choice belongs in `requirements.md` FR-1, not in an Implementer's judgment.
+
+### Corrections to make, and their blast radius
+
+| # | Correction | Sites |
+|---|---|---|
+| C-1 | Blank source ids **52 → 38** (Sorghum 30 → **17**, Groundnuts 7 → **6**; Beans 15 unchanged) | `requirements.md` §3.1 rows, §4 comparison row, **FR-2 acceptance criterion**; `design.md` §9 sizing table, DD-9 context; `tasks.md` T-7 scope, coverage-closure row |
+| C-2 | `Offtaker_Groundnuts` contaminated tail **147–151 → 149–152** | `design.md` §9; `tasks.md` T-7 scope |
+| C-3 | `design.md` §9's `Offtaker_Groundnuts` row reads "4 phone-in-type-column · **5** contaminated tail". The 4 phone-in-type rows **are** rows 149–152 — the same 4 rows, not 4 plus 5. Its `~141` net yield is derived from the double count | `design.md` §9 row, and §9.1's expected-yield chain if the total moves |
+| C-4 | FR-1 must state **which** column count D-5 gates on (41 named or 55 physical), for QDS and as a general rule | `requirements.md` FR-1; `tasks.md` T-8 scope |
+
+C-3 and C-4 both feed **T-10**, whose entire deliverable is a reconciliation that must close arithmetically. C-4 blocks T-8 outright.
+
+### Finding 3 — the column-count denominator is wrong on five sheets, and it reopens T-7
+
+Resolving C-4 required knowing whether unnamed columns hold data. They do, and not marginally. Fill rates measured over data rows:
+
+| Sheet | Unnamed column | Filled | §3.1 column count |
+|---|---|--:|--:|
+| `Offtaker_Beans` | physical col 2 | **421/436 (97%)** | 16 |
+| `Humantarian` | physical col 1 | **35/35 (100%)** | 9 |
+| `Digital Service Provider` | physical col 1 | **13/13 (100%)** | 9 |
+| `Seed Company` | physical col 12 · col 8 | 11/11 · 6/11 | 26 |
+| `QDS_ Seed producers` | physical col 13 · col 19 | 305/311 (98%) · 108/311 | 55 (physical) / 41 named |
+| `Offtaker_Sorghum` · `Offtaker_Groundnuts` · `Bulk buyers_beans` | — | none | complete as stated |
+
+QDS additionally has physical columns 45-54 filled on 2-4 rows each — plausibly stray notes rather than columns, and a judgment T-8 must record either way.
+
+**This reopens T-7.** Its `Offtaker_Beans` dispositions sum to 16/16 and were produced from a genuine full trace of all 436 rows — but the trace covered the **named** columns, because that is the universe `requirements.md` §3.1 defines. A column filled on 97% of rows is undocumented, which is precisely what FR-1's *"BUT NOT leave any column implicit"* forbids. `Offtaker_Sorghum` and `Offtaker_Groundnuts` are unaffected: both are complete at 13.
+
+**This is D-6's warning arriving in its exact predicted form**, and worth recording precisely because the gate went green. The spec anticipated "the counts sum but a column's target was never checked". What happened is one level beneath that: the counts summed against a **denominator that omitted a data-bearing column**, so no per-column check could have surfaced it. Neither the Implementer nor an arithmetic gate could catch this — only re-deriving the column universe from the file could, which is what this pass did.
+
+**C-4 is therefore not a choice between 41 and 55.** Neither is right: 41 omits 12 data-bearing columns, and 55 demands dispositions for 2 columns that are empty. The defensible rule, which also generalises to the other four sheets:
+
+> D-5's denominator is **every column that carries a header name or contains data in any data row**. Columns that are physically present but both unnamed and empty are recorded once as sheet extent and are not dispositioned.
+
+Under that rule the per-sheet denominators become: Beans **17**, Sorghum 13, Groundnuts 13, BBB 17, Humantarian **10**, DSP **10**, Seed Company **28**, QDS **53**.
+
+This is a change to FR-1's acceptance criterion, not an implementation detail, so it is held for user approval with the rest of the pivot.
+
+### Pivot applied — user approved all four corrections; the worker died after writing, before reporting
+
+The Implementer dispatched to apply C-1…C-4 and finish T-7 **failed on a runtime condition, not a work condition**: `You've hit your session limit · resets 7:30pm (America/Bogota)`. It produced no completion report. The Leader therefore inspected the working tree directly rather than assuming either success or failure.
+
+**Finding: the work is complete.** The agent finished every write and died before reporting. Verified by reading the diff and the artifact, not by trusting the absence of an error:
+
+| Correction | Applied at | Verified |
+|---|---|---|
+| C-1 · blank ids 52 → 38 | `requirements.md` §3.1 (Sorghum 30→17, Groundnuts 7→6), §4 comparison row, **FR-2 acceptance criterion**; `design.md` §9 sizing, DD-9; `tasks.md` T-7 scope, coverage row | ✅ |
+| C-2 · contaminated tail 147–151 → 149–152 | `design.md` §9; `tasks.md` T-7 scope | ✅ |
+| C-3 · the 4-plus-5 double count | `design.md` §9.1 row corrected to 5 distinct rows (148 free-text type + 149–152 contaminated), **and the chain propagated**: sheet net ~141 → ~145, grand total ~748 → **~752**, carried into DD-8, `requirements.md` §3.1 total and assumption **A-2**, `tasks.md` T-10 scope and the FR-8 coverage row | ✅ |
+| C-4 · FR-1 column-universe rule | `requirements.md` **FR-1 acceptance criteria** (the rule itself), §3.1 (new per-sheet denominator column), `mapping.md` §1.4, `tasks.md` T-7 and **T-8** scopes with all five denominators pre-computed | ✅ |
+
+**Item E — `Offtaker_Beans` physical column 2 — resolved, and resolved on evidence.** The column holds sequential whole numbers `1…421`, equal to `(row − 1)` for every filled row, blank on exactly the 15 rows whose `Trader_id` is blank (423–437, the unfinished-entry tail). It is a **row-serial-number / auto-index column**: no name, contact value, or free text, and it carries nothing the physical row number does not already give. Disposed `DROPPED (redundant row-serial-number)` with that reasoning recorded in `mapping.md`, and explicitly ruled **not PII**.
+
+`Offtaker_Beans` now reconciles **14 MAPPED + 1 DERIVED + 1 EMPTY-IN-SOURCE + 1 DROPPED = 17 = 17**. `Offtaker_Sorghum` and `Offtaker_Groundnuts` are unaffected at 13 each — neither has an unnamed data-bearing column.
+
+`mapping.md` §5 additionally publishes the denominator table for all eight sheets, so T-8 inherits verified numbers rather than re-deriving them.
+
+**Leader verification, run with the tree quiet:** `npm test -- normalize --silent` → **43/43 passed, 1 suite**. The doc↔constant assertion added by T-7 is green against the corrected document.
+
+### T-7 status: complete but **not certified** — awaiting the independent Reviewer
+
+T-7 stays `[~]`. Everything it owes is written and the Leader's own checks pass, but **no Reviewer has audited it**, and `author ≠ auditor` is not waived by a runtime failure — `/akili-execute`'s fallback table is explicit that the Reviewer role is never performed inline by the Leader.
+
+**Resume point, for whoever picks this up:**
+
+1. Spawn the Reviewer on the T-7 diff — `mapping.md` (new), `normalize.spec.ts` (+59), and the pivot edits to `requirements.md` / `design.md` / `tasks.md`. The pivot edits change **approved requirements**, so they deserve the same audit as the mapping itself; FR-1's new acceptance criterion and the ~752 chain are the two highest-value things to check.
+2. On PASS: flip T-7 to `[x]` (evidence first, per the standing rule) and commit.
+3. Then T-8, which is now fully unblocked and has its five denominators pre-computed in `mapping.md` §5 and `tasks.md`.
+
+**Uncommitted at this point:** `mapping.md` (new), and modifications to `normalize.spec.ts`, `requirements.md`, `design.md`, `tasks.md`, `execution.md`. Nothing is staged. The work is intact in the working tree.
+
+### T-7 attempt 1 — ❌ Reviewer FAIL, 3 issues (8 advisories)
+
+The Reviewer cleared the things most likely to be wrong, and the clearances were argued rather than asserted:
+
+- **NFR-9 clean.** No phone, email, contact-person name, individual producer name — or any organisation name — appears in `mapping.md`. Both contaminated registers are row-number only, each closed with an exhaustiveness statement. The hand-repair note describes *where* the real values sit without reproducing them.
+- **D-6's disqualifier not triggered.** The Reviewer found four independent signals of a real trace: value-frequency tables closing exactly against data-row counts on all three sheets, fill counts at a granularity nobody invents, Groundnuts' 4 contaminated rows corroborated three mutually-agreeing ways, and — the strongest — `mapping.md` §2's "Sorghum contributes zero real districts" reconciling exactly with `design.md` §4.2's independently measured T-2 figure of 10 contaminated district cells (Sorghum 6 + Groundnuts 4). It also confirmed targets were checked semantically, citing `Town → marketLocation` while a `District` column exists, which is D-6's own worked example.
+- **Beans column 2's `DROPPED` is the only defensible label**, since `EMPTY-IN-SOURCE` is defined as 0% filled and no canonical field accepts a source row serial.
+- **The doc↔constant test is well built** — it parses only between explicit markers and asserts **both** directions, so neither a dropped row nor a swapped pairing can pass.
+- C-1, C-2, C-4 land at every site; no stale figure survives outside "corrected from …" annotations; no section renumbered.
+
+**FAIL 1 — the ~752 chain is still wrong, in the same way C-3 fixed.** `design.md` §9.1's `Offtaker_Sorghum` row quarantines `11 "Retaler" · 6 blank region · 7 contaminated tail` = 24. But `mapping.md` — the deliverable under review — states in two places that the **6 blank-`Region` rows are inside the 7-row contaminated register**, not beside it. The distinct set is `11 + 7 = 18`, so the sheet is ~97, not ~91. Six rows counted twice: structurally identical to the "4 phone-in-type + 5 contaminated" defect C-3 corrected one row above in the same table.
+
+The Reviewer also flagged that §9.1's Beans row assumes a single quarantine while `mapping.md` newly measures a second (an `"Arusha/Dodoma"` value `normalizeRegion` refuses), and correctly declined to guess whether it is the same row as the blank-trader-type one.
+
+**Leader measurement settling it:** they are **distinct rows** — the ambiguous region is row **425**, the blank trader type is row **436**. Beans therefore has 2 quarantines and nets **434**.
+
+Re-derived chain, now closed on measurement rather than estimate:
+
+`434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = **~757**`
+
+**FAIL 2 — `mapping.md` §3.3 asserts a false statement about its sibling documents**, claiming they "still say 147–151". As of the pivot edits in this same change set they say 149–152, and per Finding 2 `requirements.md` never carried that range at all. A committed document asserting a state that is not the current state.
+
+**FAIL 3 — FR-1's `EMPTY-IN-SOURCE` scenario has an unmet MUST clause.** The scenario requires stating that the canonical `Email` column is *therefore left blank for every beans row*; `mapping.md` records the 0/436 measurement and stops. `tasks.md` assigns that scenario wholly to T-7.
+
+**Leader adjudication on ownership.** The Reviewer noted FAIL 1 may be cleaner as a pivot amendment (**C-5**) than a T-7 rework, since C-3 as approved was scoped to the Groundnuts row. Adjudicated as **in scope for this rework**: it is the same defect class the user already approved correcting, exposed by T-7's own trace, and the corrected figure is what T-10 will reconcile against. Extending an approved correction to a site the approved scope did not name is faithful to its intent, not new scope. Recorded as **C-5** so the amendment is visible as an amendment.
+
+### T-7 attempt 2 — ❌ FAIL, one narrow issue (the three prior FAILs closed)
+
+All three attempt-1 FAILs closed and independently re-verified: the ~752 chain re-derived to **~757** at all six propagation sites with no live stale citation, `mapping.md` §3.3's false claim replaced with a resolution marker, and FR-1's `EMPTY-IN-SOURCE` MUST clause satisfied. The Reviewer also confirmed `mapping.md` and `design.md` §9.1 now agree sheet-by-sheet — the disagreement that exposed the whole defect is gone.
+
+**The one blocking item was in prose the fix itself introduced.** Resolving advisory A1 required declaring a convention for §9.1's pre-quarantine column, and the declared sentence listed **DD-11** among the "structural candidacy decisions already made elsewhere". But §9.1's own `Seed Company` row applies DD-11 as a quarantine *inside* the table. Applied literally the rule yields a pre-quarantine sum of **795**, contradicting the **806** the same table states two rows below — reintroducing precisely the mismatch the convention was written to remove.
+
+The Reviewer's diagnosis was the useful part: DD-11 is not a candidacy decision at all. D-1, D-3 and DD-6 each remove rows from candidacy (249 individuals, 3 foreign actors, the 289-312 tail); DD-11 removes none — it quarantines 11 candidates *pending* the AT-team region pass meant to unblock them. The table was right; the parenthetical was wrong.
+
+### T-7 attempt 3 — ✅ **PASS**
+
+Three text edits, no figure permitted to move. Took the carve-out option rather than striking `DD-11`, so the distinction is taught in place instead of hidden:
+
+> …(D-1, D-3, DD-6) — **DD-11 excepted**: its 11 `Seed Company` rows stay in the pre-quarantine count as candidates, because DD-11 quarantines them pending the AT-team region pass rather than removing them from candidacy, so this table records that exclusion in its own quarantine column…
+
+Also folded in two advisories of the same defect class: rows **425** and **436** were added to `mapping.md` §3.1 (so `design.md` §9.1's C-5 attribution became true as written, rather than citing row numbers only the Leader's measurement held), and one present-tense stale-state verb was corrected.
+
+**Reviewer verification, done from the file rather than from the report:**
+
+- The carve-out **does necessary work** — without it the convention could be read as absorbing DD-11, netting `Seed Company` to 0 before the table and dropping the column to 795. Applied literally it now produces exactly the printed table.
+- The amended sentence **describes all four decisions correctly**, checked against each decision's own source text (`requirements.md:86`, `:88`; `design.md:335`, `:372`), and agrees with `requirements.md` §3.1's independent "11 candidates → 0 net".
+- Both columns re-derived **from the file**: pre-quarantine **806**, nets **757**, every per-sheet figure unchanged. The attempt's one hard constraint held.
+- NFR-9 still clean: `425` and `436` are 3-digit ordinals that cannot match the D-7 gate pattern, and physical row numbers are the identification form DD-5 and FR-2 *require*.
+
+**Leader verification, tree quiet:** `npm test -- normalize --silent` → **43/43 passed**. `git status` shows only the six expected paths. The four surviving `~752`/`~748` occurrences are all "corrected from …" history, as the Reviewer independently found.
+
+#### What T-7 delivered
+
+| Artifact | Content |
+|---|---|
+| `mapping.md` (new) | Structure per `design.md` §4.5; the published 28-row district→region table; complete per-column dispositions for `Offtaker_Beans` (**17**), `Offtaker_Sorghum` (13), `Offtaker_Groundnuts` (13); the 38-blank-id positional keys; the 2 intra-sheet duplicates; the `"Retaler"` quarantine decision; the 4 phone-in-trader-type rows; `Beans.Email` as `EMPTY-IN-SOURCE` with its consequence stated; both contaminated registers **by row number only**; and §5's denominator table for all eight sheets, which T-8 inherits |
+| `normalize.spec.ts` | The doc↔constant test — parses only between explicit markers and asserts **both** directions, so neither a dropped row nor a swapped pairing can pass |
+| `requirements.md` · `design.md` · `tasks.md` | Corrections C-1…C-5 under the user-approved pivot |
+
+#### Requirements covered — and what remains ungated
+
+FR-1 (all clauses and both scenarios), FR-2's blank-id/duplicate/physical-row clauses, FR-3's OFG derivation, FR-4's column-driven typing and the `"Retaler"` decision, NFR-9.
+
+**Still ungated, by design (`design.md` §12.1):** whether each column maps to the *right* canonical field (D-6 — the arithmetic gate cannot see it; discharged here by a full cell-by-cell trace of 436/115/150 rows, which is evidence, not a gate), district→region *correctness*, and key determinism across mapping runs.
+
+#### Attempt-3 advisories (recorded, non-gating, not tasks)
+
+| # | Finding |
+|---|---|
+| A-11 | Two more present-tense stale-state assertions survive in `mapping.md` (lines 235 and 316: "cite" for states now corrected). Each sits directly above its own explicit resolution sentence, so no reader is misled; one verb each would close them |
+| A-12 | §9.1's convention sentence is correct but its "after X … and before Y" frame is now split by a ~50-word carve-out. Splitting it into two sentences would restore scannability without changing the rule |
+| A-13 | **Pre-existing and outside T-7's scope:** `design.md` §7 still sizes the PII exposure against a "retained ~795-record set", a figure the C-3/C-5 chain moved to ~757. C-5's propagation list did not include §7. The derived values there (~750 phones, ~43 emails, echoed in R-2) are proportional estimates that gate nothing. Belongs to whoever next touches §7 or T-10 |

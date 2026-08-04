@@ -244,8 +244,8 @@ Each invalidated something in `proposal.md` and now drives a decision.
 |---|---|
 | `Bulk buyers_beans` is block-structured — 166 rows → **26** organisations | Forward-fill is a mapping rule (FR-1), not an importer feature |
 | **4 sheets' category columns cannot type actors**; DSP resolves **0 of 13**; QDS `cbo` → `humanitarian` via the *existing* alias | DD-2: canonical codes written directly, per-sheet or column-driven as FR-4 specifies |
-| **52 blank source ids · 2 intra-sheet duplicates · 5 sheets with no id column** (`Bulk buyers_beans`, `Humantarian`, `Digital Service Provider`, `Seed Company`, `QDS` ≈ 105 actors) | DD-9's positional-fallback key |
-| **Contaminated tail blocks**: `Offtaker_Sorghum` rows 110–116 and `Offtaker_Groundnuts` rows **147–151** hold company names in the district column; 4 groundnut rows hold a phone in the trader-type column | DD-5: register by physical row number, hand-repair-or-quarantine |
+| **38 blank source ids · 2 intra-sheet duplicates · 5 sheets with no id column** (`Bulk buyers_beans`, `Humantarian`, `Digital Service Provider`, `Seed Company`, `QDS` ≈ 105 actors) — corrected from 52 at the T-7 pivot (`execution.md` Finding 1) | DD-9's positional-fallback key |
+| **Contaminated tail blocks**: `Offtaker_Sorghum` rows 110–116 and `Offtaker_Groundnuts` rows **149–152** hold company/person names in the district and town columns, and the same 4 rows hold a phone number in the trader-type column — corrected from 147–151 at the T-7 pivot (`execution.md` Finding 2) | DD-5: register by physical row number, hand-repair-or-quarantine |
 | **QDS rows 289–312 are not producers** — the `seed source` vocabulary (research institutes + the `Seed Company` sheet repeated verbatim) | DD-6: QDS yields ~**23**, not 42 |
 | **8 cross-sheet duplicate groups, 18 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS | DD-7: flag, never merge |
 | **71 QDS coordinate cells are DMS**, one with out-of-range minutes | DD-10: blank + flag, never coerce |
@@ -257,19 +257,27 @@ Each invalidated something in `proposal.md` and now drives a decision.
 
 The previous draft presented a single figure that was in fact the **pre-quarantine** sum, while the requirements mandate quarantining specific counted rows inside it.
 
+> **Correction (T-7 pivot, 2026-08-04 — `execution.md` Finding 2 / correction C-3).** The `Offtaker_Groundnuts` row below previously read "4 phone-in-type-column · 5 contaminated tail", summing to 9 quarantined rows and a net of ~141. **Those two counts named the same 4 rows twice** — the contaminated tail *is* rows 149–152, the same rows that carry the phone number in the trader-type column, not a separate set of 5. `mapping.md` §3.3's own measurement records the real, non-overlapping quarantine set for this sheet: row 148 (free-text trader type, no defensible alias) **plus** rows 149–152 (contaminated, phone-in-type-column) = **5** distinct rows, not 9. The row below is corrected to that, which moves this sheet's net from ~141 to **~145** and the grand total from ~748 to **~752**.
+
+> **Amendment C-5 (T-7 rework, 2026-08-04 — audit found two more of the same class of double-count).** Two further rows below repeated C-3's mistake: (1) `Offtaker_Sorghum` quarantined "11 `"Retaler"` · 6 blank region · 7 contaminated tail" = 24 — but `mapping.md` §3.2 states in two places that the 6 blank-`Region` rows sit **inside** the 7-row contaminated tail (rows 110–116), not beside it. The distinct set is **11 + 7 = 18**, not 24, moving this sheet's net from ~91 to **~97**. (2) `Offtaker_Beans` quarantined only "1 blank trader type" — but `mapping.md` §3.1 also records a second, distinct quarantine on this sheet: one ambiguous-region row (row 425, region value `"Arusha/Dodoma"`, refused by `normalizeRegion`) that is **not** the same row as the blank-trader-type row (row 436). The Leader confirmed the two rows are distinct by direct measurement of the source workbook. Beans therefore quarantines **2**, not 1, moving this sheet's net from ~435 to **~434**. Net effect on the grand total: ~752 → **~757**. Propagated to DD-8 below, `requirements.md` §3.1 and assumption **A-2**, and `tasks.md` T-10's scope and the FR-8 coverage row.
+
 | Sheet | Pre-quarantine | Mandated quarantines / exclusions | Expected net |
 |---|--:|---|--:|
-| `Offtaker_Beans` | 436 | 1 blank trader type | ~435 |
-| `Offtaker_Sorghum` | 115 | 11 `"Retaler"` (DD-2) · 6 blank region · 7 contaminated tail | ~91 |
-| `Offtaker_Groundnuts` | 150 | 4 phone-in-type-column · 5 contaminated tail | ~141 |
+| `Offtaker_Beans` | 436 | 1 ambiguous region (row 425) · 1 blank trader type (row 436) — **2 distinct** | ~434 |
+| `Offtaker_Sorghum` | 115 | 11 `"Retaler"` (DD-2) · 7 contaminated tail (rows 110–116, which contain all 6 blank-region rows) — **18 distinct** | ~97 |
+| `Offtaker_Groundnuts` | 150 | 1 free-text trader type (row 148) · 4 contaminated tail (rows 149–152, phone-in-type-column) — **5 distinct, not 9** | ~145 |
 | `Bulk buyers_beans` | 26 | 8 with neither region nor district | 18 |
 | `Humantarian` | 35 | 4 ambiguous locations | 31 |
-| `Digital Service Provider` | 13 | 3 foreign (D-3) | 10 |
+| `Digital Service Provider` | 10 | 3 foreign (D-3) — already excluded from this candidate count; see the pre-quarantine-convention note below | 10 |
 | `Seed Company` | 11 | **11 — no region data (DD-11)** | 0 |
 | `QDS` (organisations) | ~23 | 1 blank category | ~22 |
-| **Total** | **806** | | **~748** |
+| **Total** | **806** | | **~757** |
 
-**~748 is the figure to expect; 806 is the pre-quarantine ceiling.** Both are estimates against one workbook version. `reconciliation.md` reports the truth and no requirement depends on either number (A-2). A result near ~748 is the requirements **working**, not a defect — which is precisely why the earlier single figure was hazardous.
+`434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = 757`.
+
+**Pre-quarantine-column convention (advisory, predates the T-7 pivot).** This column previously listed `Digital Service Provider` at its raw physical row count (13) and then subtracted the 3 D-3 foreign exclusions as a mandated quarantine — which made the column sum to 809, not the 806 the Total row stated, and disagreed with `requirements.md` §3.1, which already nets DSP to 10 (treating D-3's foreign exclusion as a candidacy decision made before this table, not a quarantine bucket inside it). This table now uses that same convention throughout: **"Pre-quarantine" is the candidate count after any structural candidacy decision already made elsewhere in this spec (D-1, D-3, DD-6) — DD-11 excepted: its 11 `Seed Company` rows stay in the pre-quarantine count as candidates, because DD-11 quarantines them pending the AT-team region pass rather than removing them from candidacy, so this table records that exclusion in its own quarantine column — and before the quarantine/exclusion decisions this table itself records.** DSP's row is corrected to 10 pre-quarantine, with D-3's exclusion noted for traceability but not subtracted a second time; the column now sums to **806**, unchanged from the ceiling already published everywhere else in this spec.
+
+**~757 is the figure to expect; 806 is the pre-quarantine ceiling.** Both are estimates against one workbook version. `reconciliation.md` reports the truth and no requirement depends on either number (A-2). A result near ~757 is the requirements **working**, not a defect — which is precisely why the earlier single figure was hazardous.
 
 ---
 
@@ -340,13 +348,13 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 ### DD-8: One upload per source sheet
 
-- **Context:** `MAX_DATA_ROWS = 1000`, 4 MB decoded cap, single synchronous Lambda request. Total net yield ~748 would *fit* one upload; the largest single sheet (436) fits comfortably.
+- **Context:** `MAX_DATA_ROWS = 1000`, 4 MB decoded cap, single synchronous Lambda request. Total net yield ~757 (§9.1) would *fit* one upload; the largest single sheet (436) fits comfortably.
 - **Decision:** one upload per sheet anyway.
 - **Consequences:** Per-sheet reconciliation counts come for free, a failure's blast radius is one sheet, and headroom under both caps stays wide. **The cap does not force splitting at this volume — auditability is the actual reason.**
 
 ### DD-9: Key scheme — prefix + source id, positional fallback
 
-- **Context:** Decision D-2 in `requirements.md` §4, sized by measurement: 52 blank ids, 2 intra-sheet duplicates, **5 sheets with no id column** (≈105 actors), 6 cross-sheet collisions.
+- **Context:** Decision D-2 in `requirements.md` §4, sized by measurement: **38** blank ids (corrected from 52 at the T-7 pivot, `execution.md` Finding 1), 2 intra-sheet duplicates, **5 sheets with no id column** (≈105 actors), 6 cross-sheet collisions.
 - **Decision:** `<PREFIX>-<sourceId>` where the id exists and is unique in its sheet; `<PREFIX>-R<physicalRow>` otherwise.
 - **Consequences:** Deterministic and reproducible, so FR-2's idempotent re-run works and `skipped-exists` is meaningful. Traceable to a cell in the client's file. **Irreversible in practice** — epic **R-6** (`traderId` collisions) and this spec's `proposal.md` **R-1** (key namespacing is effectively irreversible); the earlier draft mis-cited epic R-1, which is chunk 3's PII-surface risk (`judgment.md` S-14). This is why the scheme required explicit approval before any import.
 - **Determinism has no automated gate.** Keys are produced by hand in a spreadsheet, so FR-2's "same workbook mapped twice yields byte-identical keys" and NFR-6's key clause are verifiable only by re-running the mapping and diffing. Listed in §12's uncoverable set.
