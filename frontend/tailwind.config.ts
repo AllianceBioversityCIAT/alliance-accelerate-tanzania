@@ -54,6 +54,12 @@ const config: Config = {
       boxShadow: {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
+        // Sticky-column boundary marker (admin ActorsTable, FR-6). An inset
+        // shadow is painted by the cell it's applied to, so — unlike a
+        // border, which under `border-collapse` belongs to the table's
+        // border grid — it travels with the cell's sticky offset instead of
+        // staying pinned to the border grid's original position.
+        'sticky-edge': 'inset -1px 0 0 var(--color-border)',
       },
       fontFamily: {
         sans:    ['var(--font-sans)'],

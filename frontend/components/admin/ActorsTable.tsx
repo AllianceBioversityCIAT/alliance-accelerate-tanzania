@@ -5,7 +5,7 @@
  * ActorsTable — selectable admin actor list.
  *
  * Layout:
- *   - md+: <table> with columns: Trader, Region, Type, Source, Consent,
+ *   - lg+: <table> with columns: Trader, Region, Type, Source, Consent,
  *     Phone, Email, Market, Actions. All columns render — none are
  *     dropped — wrapped in `overflow-x-auto` so the full row scrolls
  *     horizontally at this breakpoint and up when it overflows the
@@ -15,9 +15,19 @@
  *     correction 2026-08-04) — together they are what lets an admin
  *     select *and* identify a row after scrolling right to read Consent
  *     on the nine-column, sidebar-narrowed `lg` layout.
- *   - mobile (<md): the table is `hidden` and stacked cards render instead,
- *     one per actor, carrying the same Source badge and consent-method
- *     caption as the table's Consent column.
+ *
+ *     **The breakpoint is `lg`, not `md`** (T-8 scope correction
+ *     2026-08-04, second pass) — a live D-h visual check measured the
+ *     scroll container at `md` (768px viewport) at only ~494px once the
+ *     persistent sidebar and content padding are subtracted, leaving ~94px
+ *     to scroll eight non-frozen columns through even with the Trader
+ *     clamp in place; Consent rendered as unreadable fragments
+ *     ("lished", "ecorded — no ev"). At `lg` (1024px) the container is
+ *     ~718px and the sticky columns do their job.
+ *   - below lg: the table is `hidden` and stacked cards render instead, one
+ *     per actor, carrying the same Source badge and consent-method caption
+ *     as the table's Consent column — including at `md`, which now gets
+ *     the card treatment rather than a cramped table.
  *
  * Selection:
  *   - Row checkboxes let an Admin select individual actors.
@@ -131,20 +141,26 @@ export interface ActorsTableProps {
  * order. That already puts the sticky columns visually on top. There is
  * no sticky header here to create a second, vertical stacking need.
  *
- * A `border-r` marks the sticky/scrollable boundary so the cut is visible
- * even before the user starts scrolling.
+ * The sticky/scrollable boundary is marked with `shadow-sticky-edge` (an
+ * inset box-shadow, `tailwind.config.ts`), **not** `border-r`. A live
+ * D-h visual check (2026-08-04) confirmed the border regression: under
+ * `border-collapse`, a cell border belongs to the table's border grid, not
+ * the cell's own paint — so it stays put at its original table position
+ * while the sticky cell scrolls past it, and the boundary visibly detaches
+ * once the table scrolls. An inset shadow is painted by the cell itself, so
+ * it travels with the sticky offset instead.
  */
 const CHECKBOX_COL_WIDTH_CLASS = 'w-12';
 const TRADER_COL_LEFT_CLASS = 'left-12';
 
 const STICKY_CHECKBOX_TH = 'sticky left-0 bg-surface-alt';
-const STICKY_TRADER_TH = `sticky ${TRADER_COL_LEFT_CLASS} bg-surface-alt border-r border-border`;
+const STICKY_TRADER_TH = `sticky ${TRADER_COL_LEFT_CLASS} bg-surface-alt shadow-sticky-edge`;
 const STICKY_CHECKBOX_TD = 'sticky left-0 bg-surface group-hover:bg-surface-alt transition-colors';
 const STICKY_TRADER_TD = [
   'sticky',
   TRADER_COL_LEFT_CLASS,
   'bg-surface group-hover:bg-surface-alt transition-colors',
-  'border-r border-border',
+  'shadow-sticky-edge',
 ].join(' ');
 
 /**
@@ -170,8 +186,11 @@ const STICKY_TRADER_TD = [
  * below). Trader is a pre-existing column, not one of FR-6's "new columns",
  * so its MUST-NOT-truncate clause doesn't cover it — worst case this caps
  * the frozen (checkbox + Trader) pair at ~400px instead of an unbounded
- * cooperative legal name eating most of the ~494px scroll container at
- * exactly `md`.
+ * cooperative legal name eating the scroll container's budget. The table
+ * only renders at `lg`+ (measured ~718px container at `lg 1024`; a live
+ * D-h check found `md` left too little room even with this clamp, which is
+ * why the breakpoint moved — see the layout doc comment at the top of this
+ * file).
  */
 const TRADER_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
 
@@ -544,8 +563,8 @@ export function ActorsTable({
           : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`}
       </div>
 
-      {/* ── Desktop table (md+) ───────────────────────────────────────────── */}
-      <div className="hidden md:block overflow-x-auto rounded-md border border-border">
+      {/* ── Desktop table (lg+) ───────────────────────────────────────────── */}
+      <div className="hidden lg:block overflow-x-auto rounded-md border border-border">
         <table
           className="min-w-full divide-y divide-border text-sm"
           aria-label="Actors"
@@ -673,9 +692,9 @@ export function ActorsTable({
         </table>
       </div>
 
-      {/* ── Mobile cards (<md) ─────────────────────────────────────────────── */}
+      {/* ── Mobile/tablet cards (<lg) ──────────────────────────────────────── */}
       <div
-        className="flex flex-col gap-3 md:hidden"
+        className="flex flex-col gap-3 lg:hidden"
         role="list"
         aria-label="Actors"
       >

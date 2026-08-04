@@ -228,20 +228,32 @@ Functional requirements are `FR-n`; non-functional `NFR-n`. Each is atomic, test
 - AND the error MUST be associated with its input via `aria-describedby` and announced in a live region
 
 #### Scenario: Small-screen behavior
-- GIVEN the admin actors table below `md`
+- GIVEN the admin actors table below `lg`
 - WHEN the new columns are present
 - THEN the table is not rendered at all — a stacked card per actor renders instead, each carrying the Source badge and the Consent status-chip-plus-method-caption alongside the actor's other fields
 - BUT it must NOT truncate or drop the new columns' values silently (met: both new values render in full on every card)
 
-#### Scenario: Small-screen behavior at `md` and up
-- GIVEN the admin actors table at `md` or wider
-- WHEN the row count of columns exceeds the viewport width — which it reliably does at `lg`, where a nine-column table competes with the persistent admin sidebar
+#### Scenario: Small-screen behavior at `lg` and up
+- GIVEN the admin actors table at `lg` or wider
+- WHEN the row count of columns exceeds the viewport width — which it reliably does once the persistent admin sidebar is subtracted from the available width
 - THEN the table scrolls horizontally within its container, and the checkbox and Trader (row-identifying) columns stay sticky at the left edge so an admin can select and identify a row while any scrolled-to column, including Consent, is in view
 - BUT it must NOT truncate or drop the new columns' values silently
 
 > **Scope correction (2026-08-04, approved by JuanCode mid-execution).** The original scenario's GIVEN — "the admin actors table on a viewport narrower than `md`" — is unsatisfiable as written: below `md` there is no `<table>` to scroll. `ActorsTable.tsx` renders `hidden md:block` for the table and a `md:hidden` stacked-card list instead; `design.md` §5 shared the same false premise ("the existing table pattern already does this"). Discovered during T-10's requirement-level review (see `execution.md` → T-10, "the third unowned requirement") and assigned to T-8, which still owns the table.
 >
 > The scenario above is split in two to describe what actually ships: the card list below `md` (already correct — nothing was dropped or truncated), and the sticky-first-column table at `md` and up, where the crowding this requirement cares about actually occurs — most acutely at `lg`, where the sidebar narrows the available width. The "MUST NOT truncate or drop values silently" clause is unchanged and is met on both halves.
+
+> **Scope correction (2026-08-04, approved by JuanCode mid-execution, second pass).** The correction directly above set the table's threshold at `md` and up. A live D-h visual check (browser harness, not jsdom) measured the actual scroll container at three widths and found `md` itself unusable, not merely crowded:
+>
+> | viewport | scroll container | frozen (checkbox + Trader) | scrollable strip | non-frozen content hidden |
+> |---|---|---|---|---|
+> | `md` 768px | ~494px | ~81% | ~94px | ~1036px |
+> | `lg` 1024px | ~718px | ~56% | ~318px | ~812px |
+> | `xl` 1280px | ~974px | ~41% | ~574px | ~556px |
+>
+> At `md`, Consent — the column this spec exists to surface — rendered as unreadable fragments ("lished", "ecorded — no ev"). The Trader-cell width clamp (T-8 increment, same date) improved the scrollable strip at `md` from ~45px to ~94px but did not make it usable. At `lg` the sticky columns do the job FR-6 describes.
+>
+> The threshold in the scenarios above is therefore `lg`, not `md`: `ActorsTable.tsx` now renders `hidden lg:block` for the table and `lg:hidden` for the stacked-card list — `md` gets the card treatment, same as everything below it. This does not reopen the first correction's finding (the GIVEN-below-`md` scenario was and remains unsatisfiable); it moves where the satisfiable table scenario begins. `frontend/CLAUDE.md`'s description of the admin table pattern is stale against this and is being synced separately, outside this task.
 
 ---
 

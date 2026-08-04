@@ -469,7 +469,7 @@ describe('ActorsTable — sticky first column (FR-6)', () => {
 
     // The mobile card renders its own "Select Meru Agro" checkbox with the
     // same accessible name, so scope to the table (both render in jsdom
-    // regardless of the `md:hidden` / `hidden md:block` breakpoint classes).
+    // regardless of the `lg:hidden` / `hidden lg:block` breakpoint classes).
     const rowCheckboxCell = within(getTable())
       .getByRole('checkbox', { name: /select meru agro/i })
       .closest('td');
@@ -486,7 +486,7 @@ describe('ActorsTable — sticky first column (FR-6)', () => {
     expect(regionCell).not.toHaveClass('sticky');
   });
 
-  it('leaves the mobile card list unaffected (no sticky classes below md)', () => {
+  it('leaves the mobile/tablet card list unaffected (no sticky classes below lg)', () => {
     renderTable({ actors: [ACTOR_A] });
 
     const card = screen.getByLabelText('Meru Agro');
@@ -495,10 +495,10 @@ describe('ActorsTable — sticky first column (FR-6)', () => {
 
   it('caps the sticky Trader name width via an inner span, not the td, and sets title', () => {
     // A realistic long registry name (a cooperative's full legal name) must
-    // not be allowed to eat the horizontal-scroll budget: at exactly `md`
-    // the scroll container is only ~494px wide (sidebar + main padding
-    // subtracted from a 768px viewport), and an unbounded Trader cell can
-    // consume most of that on its own, defeating the point of this task.
+    // not be allowed to eat the horizontal-scroll budget: even at the `lg`
+    // threshold this table now renders at, an unbounded Trader cell can
+    // consume a large share of the ~718px scroll container on its own,
+    // defeating the point of this task.
     //
     // The clamp must live on an inner block-level `<span>`, not the `<td>`
     // itself: under `nowrap` (which `truncate` sets), a cell's min-content
@@ -531,10 +531,30 @@ describe('ActorsTable — sticky first column (FR-6)', () => {
     expect(rowCheckboxCell).toHaveClass('transition-colors');
     expect(traderCell).toHaveClass('transition-colors');
   });
+
+  it('marks the sticky boundary with the token-derived shadow, not a border', () => {
+    // A live visual check found `border-r` on the sticky Trader cell
+    // detaches from the boundary on scroll: under `border-collapse`, a
+    // cell border belongs to the table's border grid and doesn't travel
+    // with the cell's sticky offset. `shadow-sticky-edge` (an inset
+    // box-shadow defined in tailwind.config.ts from `--color-border`) is
+    // painted by the cell itself, so it does. Both the header and body
+    // Trader cells must carry it, and neither should have regressed back
+    // to a `border-r` class.
+    renderTable({ actors: [ACTOR_A] });
+
+    const traderHeaderCell = within(getTable()).getByRole('columnheader', { name: /trader/i });
+    expect(traderHeaderCell).toHaveClass('shadow-sticky-edge');
+    expect(traderHeaderCell).not.toHaveClass('border-r');
+
+    const traderCell = within(getTable()).getByText('Meru Agro').closest('td');
+    expect(traderCell).toHaveClass('shadow-sticky-edge');
+    expect(traderCell).not.toHaveClass('border-r');
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Mobile card parity (T-8) — new fields must not be dropped below `md`
+// Mobile card parity (T-8) — new fields must not be dropped below `lg`
 // ---------------------------------------------------------------------------
 
 describe('ActorsTable — mobile card parity', () => {

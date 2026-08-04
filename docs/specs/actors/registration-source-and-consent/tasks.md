@@ -88,8 +88,9 @@
 
 ## Phase C — Admin UI
 
-- [~] **T-8** Surface source and consent in the admin actors table  (deps: T-3)
-      **Status 2026-08-04:** code complete **including the FR-6 sticky-column scope correction below**; all four review lenses PASS (one FAIL round on the clamp, closed). All gates green: 990/990, 69 suites. **Held at `[~]` pending the D-h human visual check** — blocked on an authenticated admin session the Leader does not hold. **This is now the only thing between this spec and completion.** See `execution.md` → T-8 and T-8 (reopened).
+- [x] **T-8** Surface source and consent in the admin actors table  (deps: T-3)
+      **Status 2026-08-04:** complete. Code, the FR-6 sticky-column scope correction below, and the **D-h visual check** (performed by the Leader as a T6 pass on a rendered page — `ActorsTable` takes plain props, so it needed neither the live stack nor a login; the earlier "blocked on auth" framing was wrong). The check produced two real fixes: the sticky boundary now uses a token-derived `shadow-sticky-edge` because a collapsed-model `border-r` **does not travel with the sticky offset** (confirmed visually), and the table threshold moved `md` → `lg` because `md` froze 81% of the container, leaving a 94px strip that rendered Consent as unreadable fragments. FR-6 amended a second time. All four review lenses PASS (one FAIL round on the clamp, closed). See `execution.md` → T-8, T-8 (reopened), and D-h visual check.
+      **Not gating, still unexamined:** two surfaces *routed* to this check for convenience — T-9's `lg:grid-cols-4` fieldset density and T-10's dialog focus order (A-2).
       **Scope:** Extend the client types in `lib/api/actors-admin.ts`; add **Source** and **Consent** (status chip + method caption) columns; add both filters, URL-synced via the repo's query-param routing pattern.
       **Traces:** FR-1, FR-2, FR-6, FR-9, NFR-5, NFR-8 · `design.md` §5
       **Files:** `frontend/lib/api/actors-admin.ts`, `frontend/components/admin/ActorsTable.tsx`, `frontend/app/(admin)/admin/actors/page.tsx`, plus their `.test.tsx`

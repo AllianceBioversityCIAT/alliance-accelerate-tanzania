@@ -220,8 +220,13 @@ function TableSkeleton() {
         stack a second, disabled filter row underneath the real one.
       */}
 
-      {/* Desktop skeleton */}
-      <div className="hidden md:block rounded-md border border-border overflow-hidden">
+      {/*
+        Desktop skeleton — breakpoint matches ActorsTable.tsx's `lg` table
+        threshold (T-8 scope correction 2026-08-04, second pass). A `md`
+        skeleton showing a table shape while the real content renders cards
+        at `md` would flash the wrong layout on load.
+      */}
+      <div className="hidden lg:block rounded-md border border-border overflow-hidden">
         <div className="bg-surface-alt px-4 py-3 flex gap-4">
           <Skeleton className="h-3 w-8 rounded-sm" />
           <Skeleton className="h-3 w-40 rounded-sm" />
@@ -251,8 +256,8 @@ function TableSkeleton() {
         ))}
       </div>
 
-      {/* Mobile skeleton */}
-      <div className="flex flex-col gap-3 md:hidden">
+      {/* Mobile/tablet skeleton — mirrors ActorsTable.tsx's `<lg` card view */}
+      <div className="flex flex-col gap-3 lg:hidden">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="rounded-md border border-border p-4 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-2">

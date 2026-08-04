@@ -793,3 +793,73 @@ The Implementer's stated reason was wrong at one identifiable step: the column r
 | **S-8** | A third residue of the false premise survived in `tasks.md:98` ("scrolled below `md`"). | **Swept by the Leader**, marked as corrected rather than silently rewritten. |
 
 **D-h now covers four surfaces** and is the last gate on this spec: `/admin/actors` at `md` and `lg` including the new sticky columns (S-4, S-5, and a long-name pass to confirm **the ellipsis renders** — no longer to measure an unbounded column), T-9's `lg:grid-cols-4` fieldset on the edit form, T-10's dialog focus order (A-2), and column crowding generally. It requires an authenticated admin session.
+
+---
+
+### D-h visual check — performed 2026-08-04 (T6, Leader)
+
+**Performed by the Leader** as a T6 multimodal pass on a rendered page in Chrome, not jsdom. The earlier "blocked on an authenticated admin session" framing was **wrong**: `ActorsTable` takes plain props and its `token` is used only for row deletes, so the component renders standalone. A throwaway harness page reproduced the production geometry (a stand-in for the persistent sidebar plus `main`'s padding), the check was run, and the harness was deleted — the tree carries no trace of it.
+
+**Recorded because it changes the standing assumption:** a surface whose component takes plain props does not need the live stack or a login to be visually checked. Future D-h items on presentational components should not be deferred on auth grounds.
+
+#### What passed, measured in a browser rather than argued
+
+- **Sticky is live.** At `scrollLeft: 400` the Trader cell holds at 49px from the container's left edge — exactly behind the 48px checkbox. The `overflow: hidden` ancestor question is settled empirically, not only by reading.
+- **The clamp works and the earlier no-op is definitively closed.** The inner span measures **320px against a 431px scrollWidth** — a real overflow, so a real ellipsis. The `td`-level version would have produced no ellipsis at all, which is how a rendered check distinguishes the two where jsdom cannot.
+- **Occlusion is clean**: opaque cells, scrolled chips cut sharply at the frozen edge, no bleed-through.
+- **S-5 resolves benign** — row dividers run continuous across the pinned columns, exactly as `rev-T8s-risk` predicted while declining to trust its own prediction.
+
+#### S-4 — CONFIRMED, then fixed and re-verified
+
+At `scrollLeft: 0` the vertical seam between Trader and Region is clearly present; at `scrollLeft: 400` it is **gone** from the frozen boundary. The collapsed-border artifact is real: the border belongs to the table's border grid and does not travel with the sticky offset.
+
+Fixed with a named `boxShadow` utility — `'sticky-edge': 'inset -1px 0 0 var(--color-border)'` in `tailwind.config.ts` (`extend`-only, default scale untouched, so the `w-12`/`left-12` arithmetic is unaffected). **The naïve fix would have violated NFR-8 twice**, as both an arbitrary value and a hardcoded hex; the token-derived utility avoids both. Applied to header and body cells; `border-r border-border` removed.
+
+**Re-verified in the browser after the fix:** computed style resolves to `rgb(226, 226, 226) -1px 0px 0px 0px inset` on both `th` and `td` with `border-right: 0px`, and the seam now renders as a crisp full-height line at the frozen boundary **while scrolled** — where nothing rendered before. ⚠️ The `border-separate` trap recorded under S-4 was never taken.
+
+#### The finding the reviewers computed but nobody had seen
+
+Both lenses had reasoned about the `md` budget. Measured at three widths:
+
+| viewport | container | frozen | scrollable strip | hidden content |
+|---|---|---|---|---|
+| **`md` 768** | 494px | **81%** | **94px** | 1036px |
+| `lg` 1024 | 718px | 56% | 318px | 812px |
+| `xl` 1280 | 974px | 41% | 574px | 556px |
+
+At `md`, Consent — the column this spec exists to surface — rendered as unreadable fragments ("lished", "ecorded — no ev"). **The Trader clamp had improved the strip from ~45px to ~94px without making it usable**, which is the part no amount of reading would have settled: the fix was real, and still insufficient.
+
+**Approved by JuanCode: raise the table threshold from `md` to `lg`.** `hidden md:block` → `hidden lg:block`, `md:hidden` → `lg:hidden`, so `md` receives the stacked cards, which show every field with no horizontal scroll at all. FR-6 and `design.md` §5 amended a **second** time, with the first correction note left byte-intact and the second appended below it — the sequence of what was believed and when stays legible, which matters on a spec whose central lesson is that quietly-consistent documents are how four places end up wrong at once.
+
+**The Implementer's own sweep found a defect the brief did not name:** `TableSkeleton` in `page.tsx` mirrored the same split at `md`, so the loading state would have flashed a table-shaped skeleton at a viewport where the real content renders cards. Moved to the same threshold. This is what "sweep for other breakpoints, do not assume those two are the only ones" was for.
+
+**Honest limit:** `resize_window` reported success but `innerWidth` stayed 2048, so a sub-1024 viewport could not be forced in this browser session. The `md`→cards swap is therefore verified by **class correctness plus the demonstrably working media query at `lg`+** (table `display: block`, cards `display: none`), **not** by direct observation of the card layout at 768px. Recorded rather than glossed.
+
+#### Module-guide sync (Leader, not delegated)
+
+`frontend/CLAUDE.md` documented the admin-table pattern as a fixed `hidden md:block` / `md:hidden` split, which this change makes drift. Updated to state that **the breakpoint is per-table, chosen by column count** (`UsersTable` at `md`, `ActorsTable` at `lg`, with the measured reason), that a mirrored loading skeleton must move with it, and — as new conventions — the two mechanisms that cost this task review rounds: mark a sticky boundary with `shadow-sticky-edge` **not `border-r`** (with the `border-separate` trap called out), and clamp a sticky cell on a **block-level child, never the `<td>`** (because `truncate` supplies `white-space: nowrap`, which floors `max-width` out). Both are traps a future contributor hits by writing the obvious thing.
+
+#### Verification
+
+`npm test -- "ActorsTable|actors/page" --silent` **59/59, 2 suites** · `npm run lint` clean · `npm run build` succeeds, static export 20/20 — **which also proves Tailwind's JIT generated CSS for `shadow-sticky-edge` and the new `lg:` classes**, the tell if the config edit were wrong · `npx tsc --noEmit` only the pre-existing `TS2556` (J-4) · `react-doctor` **83/100**, same pre-existing `ActorsView` warning · token grep across all four changed source files: zero matches.
+
+**The full suite is 991 tests, and one run of it FAILED.** Reported here rather than as a green line, per the asymmetry rule:
+
+```
+FAIL app/(admin)/admin/actors/import/page.test.tsx
+  ● ActorImportPage — full flow (no acknowledgement) › previews on file select,
+    then commits and shows the result summary
+    expect(jest.fn()).toHaveBeenNthCalledWith(n, ...expected)
+    n: 1   Expected: {}, "preview", "test-access-token"
+    Number of calls: 0
+  console.error: An update to ActorImportPage inside a test was not wrapped in act(...)
+    at setToken (app/(admin)/admin/actors/import/page.tsx:199:7)
+```
+
+This is the intermittent first reported (as a summary) during the T-8 sticky round, **now reproduced with a root cause**: the component's async `init()` effect calls `setToken` outside `act`, so when the test fires the file-select before that promise resolves, `previewImport` is never called. Frequency across today's runs: **1 failure in 7 full-suite runs**; 3 standalone runs and 4 further full runs all clean, including 3 consecutive after the failure.
+
+**Not caused by this diff** — `import/page.test.tsx` and `import/page.tsx` are untouched by T-8 (the file was last touched by T-10, which added a per-call-site test to it; whether that shifted timing enough to expose this is unestablished and stated as such). **Added to the deferred set as a defect with a diagnosis, not as a flake to tolerate: a gate that fails 1 in 7 is not a gate.**
+
+#### Outcome
+
+T-8's own D-h obligation — column crowding on `/admin/actors` at `md` and `lg` — is **discharged**, and produced two real fixes. **T-8 → `[x]`.** Two surfaces that were *routed* to this check for convenience remain unexamined and are advisory-level, not gating: T-9's `lg:grid-cols-4` fieldset density on the edit form, and T-10's dialog focus order (A-2).
