@@ -126,7 +126,7 @@
       **Evidence is DISQUALIFIED if:** the fixture contains **any real value** from the client workbook — names, phones, emails (NFR-9: structure only, synthetic values); the pass is claimed for FR-6's **at-scale** clause (this suite mocks the database and **cannot** observe onboarded records — `design.md` §7.1; that clause is discharged by T-9's operator check, not here); or preview is asserted to write nothing by inspecting the report rather than the database mock.
       **Skills:** `nestjs-expert`, `tdd`, `systematic-debugging`
 
-- [ ] **T-12** Add the TRD clarifying note  (deps: none)
+- [x] **T-12** Add the TRD clarifying note  (deps: none)
       **Scope:** A short note in `docs/trd/trd.md` §3 distinguishing the **canonical import template** (which the CSV-header→field table describes) from **this client workbook** (which it does not). No section renumbering, no ADR change.
       **Traces:** `requirements.md` §8 (TRD clarification)
       **Files:** `docs/trd/trd.md`

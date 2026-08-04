@@ -88,6 +88,8 @@ Canonical **Actor** entity derived from the existing field dataset. CSV header �
 | — | `id` | `String @id @default(cuid())` | Internal PK. |
 | — | `createdAt` / `updatedAt` | `DateTime` | Audit timestamps. |
 
+**Canonical template vs. source workbooks.** The table above is authoritative for the **canonical import template** — the CSV headers the import service accepts — not for any particular client-supplied workbook. A source workbook with its own column spellings (e.g. `gpslatitude` variants) or sheet structure is mapped onto this template by a per-source mapping specification before import; it is never read against this table directly. A worked example of that mapping step is produced per onboarding as the `mapping.md` of the relevant import-export spec.
+
 ```prisma
 // schema.prisma (reference — authoritative shape, finalized during general-setup spec)
 enum ConsentStatus {
