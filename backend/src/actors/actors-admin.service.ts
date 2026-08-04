@@ -427,7 +427,7 @@ export class ActorsAdminService {
     acknowledged?: boolean,
     consentMethod?: ConsentMethod,
     consentObtainedAt?: string,
-    consentReference?: string,
+    consentReference?: string | null,
   ): Promise<BulkConsentResult> {
     if (status === ConsentStatus.GRANTED && !acknowledged) {
       throw new BadRequestException(

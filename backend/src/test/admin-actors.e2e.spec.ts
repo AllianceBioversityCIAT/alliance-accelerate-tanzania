@@ -621,6 +621,48 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
       expect(denied.consentStatus).toBe('DENIED');
     });
 
+    /**
+     * Delta-round item 1 (R-2/E-1 symmetry) — `bulkSetConsent` has NO
+     * try/catch at all (unlike the single-actor create/update path, which at
+     * least reaches `mapPrismaError`), so a date-only `consentObtainedAt`
+     * used to reach Prisma untransformed and raise an UNHANDLED 500 on this
+     * path — worse than the one already fixed in `actor-create.dto.ts`.
+     * `@IsFullInstant()` (now shared via `common/consent-date-validators.ts`)
+     * rejects it at the DTO layer before the request ever reaches Prisma.
+     */
+    it('rejects a date-only consentObtainedAt on bulk unlock — field-level 400, not a 500 (R-2/E-1 symmetry)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-denied-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01',
+        })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(Array.isArray(res.body.details)).toBe(true);
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+
+      // Zero partial writes — the actor's consentStatus is unchanged.
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentStatus).toBe('DENIED');
+    });
+
     it('unlocks with acknowledged: true + provenance and reports notFound ids', async () => {
       const res = await request(app.getHttpServer())
         .patch('/api/v1/admin/actors/bulk/consent')

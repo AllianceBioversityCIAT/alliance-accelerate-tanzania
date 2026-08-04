@@ -1296,6 +1296,90 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .send({ ...validCreatePayload(), consentReference: 'x'.repeat(256) })
         .expect(400);
     });
+
+    /**
+     * validation-report.md R-2/E-1 — `@IsDateString()` alone accepts a bare
+     * `YYYY-MM-DD` date-only string, which reaches Prisma untransformed and
+     * raises an unhandled 500 (`PrismaClientValidationError` is not a
+     * `PrismaClientKnownRequestError`, so `mapPrismaError` rethrows it). Both
+     * frontend callers already build a full instant before sending
+     * (`ActorForm.tsx`'s `dateOnlyToInstant`), so this is unreachable through
+     * the UI — but reachable by any direct Admin API call. These two tests
+     * assert the DTO rejects it with a clean, field-level 400 BEFORE the
+     * request ever reaches Prisma, on both write paths.
+     */
+    it('rejects a date-only consentObtainedAt on create — field-level 400, not a 500 (R-2/E-1)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), consentObtainedAt: '2026-01-15' })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(Array.isArray(res.body.details)).toBe(true);
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      // Names the actual problem (a full instant is required) rather than a
+      // generic "must be a valid date" (R-10 — one message per fault).
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+    });
+
+    it('rejects a date-only consentObtainedAt on update — field-level 400, not a 500 (R-2/E-1)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({ consentObtainedAt: '2026-01-15' })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+    });
+
+    /**
+     * validation-report.md R-2/E-2 — `consentReference: ''` used to read as
+     * *changed* against a stored `null` in `isConsentProvenanceSatisfied`'s
+     * comparison, wrongly firing the FR-3 guard and rejecting an edit that
+     * changed nothing relevant. `actor-granted-1` is exactly the legacy shape
+     * FR-9 describes: GRANTED + NOT_RECORDED + null date + null reference,
+     * live on 436/436 actors today — this is the reachable, user-facing half
+     * of R-2, unlike E-1 above.
+     *
+     * Delta-round item 2 — the original fix (`value === '' ? null : value`)
+     * did not trim, so `'   '` (whitespace-only) would still read as
+     * *changed* against stored `null` and re-fire the same guard, one space
+     * away from the bug just closed. Covering both `''` and `'   '` proves
+     * the fix actually trims first, matching the doc comment's claimed
+     * `trim() || null` parity with `ActorForm.tsx`.
+     */
+    it.each([
+      ['an empty string', ''],
+      ['a whitespace-only string', '   '],
+    ])(
+      'allows %s consentReference on a legacy GRANTED + NOT_RECORDED actor ' +
+        'without re-triggering the FR-3 guard (R-2/E-2)',
+      async (_label, submitted) => {
+        const res = await request(app.getHttpServer())
+          .patch('/api/v1/admin/actors/actor-granted-1')
+          .set(admin)
+          .send({ consentReference: submitted })
+          .expect(200);
+
+        expect(res.body.consentStatus).toBe('GRANTED');
+        expect(res.body.consentMethod).toBe('NOT_RECORDED');
+        expect(res.body.consentObtainedAt).toBeNull();
+        // Both '' and '   ' are trimmed and normalized to null, not stored
+        // as a literal empty/whitespace string.
+        expect(res.body.consentReference).toBeNull();
+      },
+    );
   });
 
   describe('Public read + PII boundary regression', () => {

@@ -8,11 +8,10 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  registerDecorator,
-  ValidationArguments,
-  ValidationOptions,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ConsentMethod } from '@prisma/client';
+import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
 
 /**
  * T-1 — Bulk set-consent (lock/unlock) request body.
@@ -40,33 +39,6 @@ const CONSENT_STATUSES = ['GRANTED', 'DENIED'] as const;
 const MAX_BATCH_SIZE = 500;
 const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
 
-/**
- * T-4 — Rejects a date string later than "now" (FR-2's not-in-the-future
- * rule, applied to the batch's `consentObtainedAt`). Duplicated in miniature
- * from `actor-create.dto.ts`'s `IsNotFutureDate` (not exported there) rather
- * than importing across files outside this task's scope.
- */
-function IsNotFutureDate(validationOptions?: ValidationOptions) {
-  return function (object: object, propertyName: string) {
-    registerDecorator({
-      name: 'isNotFutureDate',
-      target: object.constructor,
-      propertyName,
-      options: validationOptions,
-      validator: {
-        validate(value: unknown): boolean {
-          if (typeof value !== 'string') return false;
-          const parsed = new Date(value);
-          return !Number.isNaN(parsed.getTime()) && parsed.getTime() <= Date.now();
-        },
-        defaultMessage(args: ValidationArguments): string {
-          return `${args.property} must not be a future date`;
-        },
-      },
-    });
-  };
-}
-
 export class BulkConsentDto {
   @ArrayNotEmpty()
   @ArrayUnique()
@@ -89,18 +61,38 @@ export class BulkConsentDto {
   @IsIn(CONSENT_METHOD_VALUES)
   consentMethod?: ConsentMethod;
 
-  /** T-4 — Batch consent date (FR-2); must not be in the future. */
+  /**
+   * T-4 — Batch consent date (FR-2); must not be in the future.
+   *
+   * (delta-round fix, R-2/E-1 symmetry) `bulkSetConsent` has no try/catch at
+   * all — unlike the single-actor create/update path, a date-only value here
+   * used to reach Prisma untransformed and raise an UNHANDLED 500 (not even
+   * remapped to a 409/400 by `mapPrismaError`, since that function is never
+   * called on this path). `@IsFullInstant()` — shared with
+   * `actor-create.dto.ts` via `common/consent-date-validators.ts` (NFR-7/DD-1)
+   * — closes it the same way: reject with a clean field-level 400.
+   */
   @IsOptional()
   @IsDateString()
+  @IsFullInstant()
   @IsNotFutureDate()
   consentObtainedAt?: string;
 
   /**
    * T-4 — Batch free-text evidence pointer (FR-2). Applied only to the
    * actors the batch actually fills (DD-4); optional even when granting.
+   *
+   * (R-2/E-2 carry-forward) A string value is trimmed, and an empty or
+   * whitespace-only result normalized to `null`, before validation — same
+   * transform as `ActorCreateDto.consentReference`. Without this,
+   * `consentReference !== undefined` in `ActorsAdminService.bulkSetConsent`'s
+   * fill-patch check would treat a submitted `''`/`'   '` as a real value and
+   * write it literally into every row missing a reference, instead of
+   * leaving it untouched/null.
    */
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || null : value))
   @IsString()
   @MaxLength(255)
-  consentReference?: string;
+  consentReference?: string | null;
 }

@@ -161,8 +161,15 @@ export interface BulkConsentInput {
    * when unlocking.
    */
   consentObtainedAt?: string;
-  /** T-10 — batch free-text evidence pointer; optional even when unlocking. */
-  consentReference?: string;
+  /**
+   * T-10 — batch free-text evidence pointer; optional even when unlocking.
+   * `string | null` mirrors the backend `BulkConsentDto.consentReference`
+   * exactly (delta-round item 4, `frontend/CLAUDE.md` type-fidelity rule) —
+   * the backend now trims and normalizes an empty/whitespace-only value to
+   * `null` before validation (R-2/E-2), so `null` is a real value on the
+   * wire, not just an absent key.
+   */
+  consentReference?: string | null;
 }
 
 /**

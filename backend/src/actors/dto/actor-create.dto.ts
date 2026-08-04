@@ -9,12 +9,11 @@ import {
   MaxLength,
   Min,
   MinLength,
-  registerDecorator,
-  ValidationArguments,
-  ValidationOptions,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
+import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
 
 /**
  * T-3 — Validated write DTO for creating an Actor (NFR-4).
@@ -37,34 +36,6 @@ const CONSENT_VALUES = Object.values(ConsentStatus);
 /** T-3 — enum membership derived from the Prisma-generated types (NFR-3, design.md §4.3). */
 const REGISTRATION_SOURCE_VALUES = Object.values(RegistrationSource);
 const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
-
-/**
- * T-3 — Custom validator rejecting a date string that is later than "now"
- * (FR-2: "IT MUST reject a consentObtainedAt in the future with a 400").
- * Applied alongside `@IsDateString()`, which validates the string is a
- * well-formed date in the first place; this decorator only adds the
- * not-in-the-future constraint.
- */
-function IsNotFutureDate(validationOptions?: ValidationOptions) {
-  return function (object: object, propertyName: string) {
-    registerDecorator({
-      name: 'isNotFutureDate',
-      target: object.constructor,
-      propertyName,
-      options: validationOptions,
-      validator: {
-        validate(value: unknown): boolean {
-          if (typeof value !== 'string') return false;
-          const parsed = new Date(value);
-          return !Number.isNaN(parsed.getTime()) && parsed.getTime() <= Date.now();
-        },
-        defaultMessage(args: ValidationArguments): string {
-          return `${args.property} must not be a future date`;
-        },
-      },
-    });
-  };
-}
 
 export class ActorCreateDto {
   /** Source business key — required, deduped on import (FR-2). */
@@ -169,15 +140,38 @@ export class ActorCreateDto {
   @IsIn(CONSENT_METHOD_VALUES)
   consentMethod?: ConsentMethod;
 
-  /** T-3 — Date consent was obtained (FR-2); must not be in the future. */
+  /**
+   * T-3 — Date consent was obtained (FR-2); must not be in the future, and
+   * (R-2/E-1 fix) must be a full RFC-3339 instant, not a date-only string.
+   * Both validators are shared with `bulk-consent.dto.ts` via
+   * `common/consent-date-validators.ts` (NFR-7/DD-1 — one implementation).
+   */
   @IsOptional()
   @IsDateString()
+  @IsFullInstant()
   @IsNotFutureDate()
   consentObtainedAt?: string;
 
-  /** T-3 — Free-text pointer to where the consent evidence lives (FR-2). Not required. */
+  /**
+   * T-3 — Free-text pointer to where the consent evidence lives (FR-2). Not
+   * required.
+   *
+   * (R-2/E-2 fix) A string value is trimmed, and an empty/whitespace-only
+   * result is normalized to `null`, before validation. Without this, an
+   * explicit `''` (or `'   '`) reads as a *changed* value against a stored
+   * `null` in `isConsentProvenanceSatisfied`'s comparison
+   * (`consent-provenance.policy.ts`), which wrongly fires the FR-3 guard on
+   * an edit that changed nothing relevant — rejecting a legacy `GRANTED` +
+   * `NOT_RECORDED` actor's unrelated edit with a 400. This mirrors the
+   * frontend's own `values.consentReference.trim() || null` convention
+   * (`ActorForm.tsx buildDto`) exactly — trim first, then treat emptiness as
+   * absent — so both clients and this DTO agree that an empty or
+   * whitespace-only reference means "absent", never a distinct value from
+   * `null`. Same transform on `bulk-consent.dto.ts`'s `consentReference`.
+   */
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || null : value))
   @IsString()
   @MaxLength(255)
-  consentReference?: string;
+  consentReference?: string | null;
 }
