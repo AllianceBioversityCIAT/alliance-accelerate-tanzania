@@ -10,8 +10,8 @@
  * we additionally guard API calls to never execute without a token.
  *
  * States:
- *   loading   — filter bar (interactive) + skeleton rows while
- *               adminListActors is in-flight.
+ *   loading   — filter bar (present, disabled while in-flight) + skeleton
+ *               rows while adminListActors is in-flight.
  *   error     — filter bar (interactive) + error banner + retry button;
  *               AuthFailureError routes to /login.
  *   empty     — filter bar (interactive) + friendly empty state when no
@@ -59,9 +59,11 @@ import {
   bulkSetConsent,
   bulkDeleteActors,
   deleteActor,
+  dateOnlyToInstant,
   type AdminActor,
   type AdminActorListQuery,
   type BulkResult,
+  type ConsentMethod,
 } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
 
@@ -212,10 +214,10 @@ function TableSkeleton() {
   return (
     <div role="status" aria-label="Loading actors" className="flex flex-col gap-3">
       {/*
-        No filter-bar skeleton here — the real, interactive filter bar now
-        renders unconditionally above this component in ActorsView (T-8
-        rework, Issue 1), so a duplicate skeleton would just stack a second,
-        non-interactive filter row underneath the real one.
+        No filter-bar skeleton here — the real filter bar (present, disabled
+        while in-flight) now renders unconditionally above this component in
+        ActorsView (T-8 rework, Issue 1), so a duplicate skeleton would just
+        stack a second, disabled filter row underneath the real one.
       */}
 
       {/* Desktop skeleton */}
@@ -325,6 +327,16 @@ function ActorsView() {
   const [activeDialog, setActiveDialog] = useState<DialogKind>(null);
   const [dialogLoading, setDialogLoading] = useState(false);
   const [dialogError, setDialogError] = useState<string | undefined>();
+
+  // ── Bulk unlock consent-provenance inputs (T-10, FR-3, DD-4) ──────────────
+  //
+  // Owned here (not inside AcknowledgeDialog) because handleUnlockConfirm
+  // needs the values at confirm time to build the bulkSetConsent request.
+  // Reset on open/close so a stale value from a previous unlock never
+  // carries into the next one.
+
+  const [unlockMethod, setUnlockMethod] = useState<ConsentMethod | ''>('');
+  const [unlockDate, setUnlockDate] = useState('');
 
   // ── Auth failure → /login ─────────────────────────────────────────────────
 
@@ -531,10 +543,18 @@ function ActorsView() {
   // ── Bulk action result summary ────────────────────────────────────────────
 
   const formatResultSummary = useCallback(
-    (verb: string, result: BulkResult): string => {
+    (verb: string, result: BulkResult, preserved?: number): string => {
       const parts = [`${verb} ${result.applied} actor${result.applied === 1 ? '' : 's'}`];
       if (result.notFound.length > 0) {
         parts.push(`${result.notFound.length} not found`);
+      }
+      // T-10 (DD-4) — surfaces how many selected actors already carried their
+      // own consent method + date and so were left untouched by the batch
+      // fill. Only passed by the unlock flow; grammatical at both 0 and 1.
+      if (preserved !== undefined) {
+        parts.push(
+          `${preserved} actor${preserved === 1 ? '' : 's'} already had evidence on file and kept it unchanged`,
+        );
       }
       return parts.join('. ') + '.';
     },
@@ -551,13 +571,21 @@ function ActorsView() {
     setDialogLoading(true);
     try {
       const result = await bulkSetConsent(
-        { ids, consentStatus: 'GRANTED', acknowledged: true },
+        {
+          ids,
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          // T-10 (FR-3, DD-4) — batch provenance the dialog collects; the
+          // server rejects the unlock with a 400 if either is missing.
+          consentMethod: unlockMethod || undefined,
+          consentObtainedAt: dateOnlyToInstant(unlockDate) ?? undefined,
+        },
         token
       );
       setActiveDialog(null);
       setSelectedIds(new Set());
       await fetchActors(token, { ...filters, page, pageSize });
-      showSuccess(formatResultSummary('Unlocked', result));
+      showSuccess(formatResultSummary('Unlocked', result, result.preserved));
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
         handleAuthFailure();
@@ -568,7 +596,7 @@ function ActorsView() {
       setDialogLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+  }, [token, ids, unlockMethod, unlockDate, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const handleLockConfirm = useCallback(async () => {
     if (!token || ids.length === 0) return;
@@ -620,11 +648,18 @@ function ActorsView() {
   const openDialog = useCallback((kind: Exclude<DialogKind, null>) => {
     setDialogError(undefined);
     setActiveDialog(kind);
+    // T-10 — a stale method/date from a previous unlock must never carry
+    // into the next one; AcknowledgeDialog resets its own acknowledgement
+    // text on open, but this provenance state is caller-owned.
+    setUnlockMethod('');
+    setUnlockDate('');
   }, []);
 
   const closeDialog = useCallback(() => {
     setActiveDialog(null);
     setDialogError(undefined);
+    setUnlockMethod('');
+    setUnlockDate('');
   }, []);
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -886,6 +921,12 @@ function ActorsView() {
         onCancel={closeDialog}
         loading={dialogLoading}
         error={dialogError}
+        provenance={{
+          method: unlockMethod,
+          onMethodChange: setUnlockMethod,
+          date: unlockDate,
+          onDateChange: setUnlockDate,
+        }}
       />
 
       <ConfirmDialog

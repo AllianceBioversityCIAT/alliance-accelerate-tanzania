@@ -320,6 +320,22 @@ describe('ActorForm — consent acknowledgement gating', () => {
     expect(jest.mocked(updateActor).mock.calls[0][1].acknowledged).toBeUndefined();
   });
 
+  // T-10 (registration-source-and-consent, design.md §5) — the single-actor
+  // call site already collects method/date via the form's own "Consent &
+  // provenance" fieldset (T-9), so it omits AcknowledgeDialog's opt-in
+  // `provenance` prop and must render no duplicate method/date inputs.
+  it('T-10: renders no consent-method or consent-date inputs on the acknowledge dialog', async () => {
+    renderForm();
+
+    fillRequiredFields();
+    grantConsentWithProvenance();
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByLabelText(/consent method/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/consent obtained on/i)).not.toBeInTheDocument();
+  });
+
   it('does not gate submits with consent DENIED or UNKNOWN', async () => {
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     renderForm();

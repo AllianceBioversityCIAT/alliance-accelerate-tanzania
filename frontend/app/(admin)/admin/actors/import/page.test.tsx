@@ -241,6 +241,24 @@ describe('ActorImportPage — acknowledgement gate', () => {
       expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined),
     );
   });
+
+  // T-10 (registration-source-and-consent, design.md §5) — the import commit
+  // call site structurally cannot supply per-row provenance (it comes from
+  // the per-row template columns, DD-5), so it omits AcknowledgeDialog's
+  // opt-in `provenance` prop and must render no method/date inputs.
+  it('T-10: renders no consent-method or consent-date inputs on the acknowledge dialog', async () => {
+    resolveByMode(PREVIEW_REPORT_GRANTED, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByLabelText(/consent method/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/consent obtained on/i)).not.toBeInTheDocument();
+  });
 });
 
 // ── Client-side rejection (non-.xlsx) ────────────────────────────────────────

@@ -96,7 +96,8 @@
       **Verify:** `cd frontend && npm test -- "ActorsTable|actors/page" --silent`
       **Done when:** filtering `consentStatus = GRANTED` **and** `consentMethod = NOT_RECORDED` returns exactly the legacy unevidenced set (**this is FR-9's enumeration mechanism**); filter state survives a reload via the URL; `jest-axe` clean.
       **Not done if:** any color or radius is hardcoded instead of using `docs/ux-ui/design.md` §7 tokens (NFR-8), or the new columns are dropped rather than scrolled below `md`.
-      **Human check required (defect class D-h):** `jest-axe` sees DOM semantics and contrast, **not** column crowding. Two more columns on an already-dense table needs a human or T6 look at `md` and `lg` before this is called done.
+      **Scope correction (2026-08-04, approved by JuanCode mid-execution):** T-8 additionally owns **FR-6's small-screen scenario**, which no task owned. FR-6 requires the table to scroll horizontally with a **sticky first column**; `ActorsTable.tsx` contains zero `sticky`. Nobody owned it because the requirement's GIVEN is unsatisfiable as written — below `md` there is no table (`hidden md:block` + a `md:hidden` card list), so `design.md` §5's premise that "the existing table pattern already does this" is false on both halves. The substantive harm is at **`lg`**: nine columns minus the persistent sidebar guarantees horizontal scroll, and scrolling right to read Consent takes the trader-name column off-screen, so an admin acts on a row they can no longer identify. **Two deliverables:** (1) implement the sticky first column at `md+`; (2) amend `requirements.md` FR-6's scenario and `design.md` §5's false premise to describe the shipped cards-below-`md` / table-at-`md`+ pattern with an explicit `md`/`lg` disposition. Folded into T-8 rather than minting an eleventh task past the budget tripwire. **The spec cannot be marked complete on FR-6 until both ship.**
+      **Human check required (defect class D-h):** `jest-axe` sees DOM semantics and contrast, **not** column crowding. Two more columns on an already-dense table needs a human or T6 look at `md` and `lg` before this is called done. **This check now covers three surfaces:** `/admin/actors` (including the new sticky column), T-9's `lg:grid-cols-4` fieldset on the edit form, and T-10's dialog focus order (A-2).
       **Skills:** `ui-ux-pro-max`, `tailwind-design-system`, `vercel-react-best-practices`, `react-doctor`
 
 - [x] **T-9** Add the Consent & provenance fieldset to the actor form  (deps: T-3, T-8)
@@ -108,7 +109,8 @@
       **Not done if:** the client guard is treated as the enforcement point — T-3's server rejection must remain independently tested (`design.md` §5, "client check is UX only").
       **Skills:** `ui-ux-pro-max`, `shadcn-ui`, `tailwind-design-system`, `react-doctor`
 
-- [ ] **T-10** Add opt-in provenance inputs to the shared acknowledge dialog  (deps: T-4, T-9)
+- [x] **T-10** Add opt-in provenance inputs to the shared acknowledge dialog  (deps: T-4, T-9)
+      **Status 2026-08-04:** PASS, both lenses, plus a Leader-escalated increment (false hint copy). **This repaired the live `400` on every admin bulk unlock** that PR 1 had introduced. See `execution.md` → T-10. **T-10's PASS does not close the spec — FR-6's sticky first column is still open under T-8.**
       **Scope:** New **optional** prop on `AcknowledgeDialog` enabling method + date inputs. Wire it **only** at the bulk-unlock call site (`admin/actors/page.tsx:686`). The import call site (`admin/actors/import/page.tsx:618`) and the single-actor call site (`ActorForm.tsx:609`) keep today's behavior unchanged.
       **Traces:** FR-3, FR-6, NFR-5 · `design.md` §5 (three-call-site table), §9, DD-4/DD-5
       **Files:** `frontend/components/admin/AcknowledgeDialog.tsx`, `frontend/app/(admin)/admin/actors/page.tsx`, `frontend/lib/api/actors-admin.ts`, `frontend/components/admin/AcknowledgeDialog.test.tsx`

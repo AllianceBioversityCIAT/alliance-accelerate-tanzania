@@ -628,3 +628,87 @@ A pre-existing `tsc --noEmit` error at `page.test.tsx:45` (`TS2556`, a T-8 test 
 | **J-11** | `TANZANIA_UTC_OFFSET_HOURS`'s derivation is valid only for whole-hour, non-negative offsets — the comment invites editing it "alone", but `3.5` would silently produce `'+3.5:00'`. Harmless for EAT (fixed UTC+3, no DST). | Comment overstates the safety of editing it. |
 
 **D-h note:** T-9's work order carries **no** human-check requirement, so this task is `[x]`. But the new fieldset is `lg:grid-cols-4` — a density no other fieldset in this form uses (the rest cap at `lg:grid-cols-3`) — and a native date input plus a free-text reference at quarter width may crowd. **Both lenses routed it to T-8's held D-h check**, so that check now covers two surfaces: `/admin/actors` and the edit form, at `md` and `lg`.
+
+---
+
+### T-10 — Add opt-in provenance inputs to the shared acknowledge dialog
+
+**Status:** `[x]` PASS, plus one Leader-escalated increment.
+**Implementer:** `impl-T10` (T2 / sonnet, `high`) — **killed mid-task by a session limit**, leaving uncommitted partial work. Resumed by `impl-T10b` (T2 / sonnet, `high`), which finished from that state rather than restarting; the A-1/A-4 increment is the same agent at one effort level up (rework rule).
+**Reviewers:** parallel lens mode, both T3 / opus. `rev-T10-risk` **PASS** (8 advisories) · `rev-T10-conformance` **PASS** (7 advisories, one escalated). Increment: `rev-T10-conformance` **PASS** (single lens — the increment raises only its own finding).
+
+**Diff (cumulative):** 7 files, +651 / −37. Suite **983/983, 69 suites** (Leader-measured baseline before T-10: **965/965**).
+
+#### What this task actually repaired
+
+T-4 changed the bulk-consent contract; the frontend was never updated. **Every bulk unlock in the admin console had been returning `400` since T-4 shipped** — `isConsentProvenanceSatisfied(null, …)` rejects at `actors-admin.service.ts:440-451` before the transaction opens, so the failure was total and touched zero rows. The Implementer was asked to confirm the breakage at source before repairing it, and did; this entry records a verified failure, not an assumed one.
+
+This is the cost of the deploy note in `tasks.md` §PR Strategy being real: PR 1 breaks bulk unlock until PR 2 ships. It did.
+
+#### The resume, and why it was cheaper than a restart
+
+`impl-T10` died having completed `AcknowledgeDialog.tsx` (the opt-in `provenance` prop) and `actors-admin.ts` (types + `dateOnlyToInstant`) but having wired **nothing** in `page.tsx` beyond two `useState` lines — so the headline defect was still live, and no test file had been touched at all. The resume brief enumerated done-vs-remaining explicitly. `impl-T10b` audited the existing work rather than rewriting it and reported both files correct as found, which the conformance lens independently confirmed.
+
+**One artefact of the death needed reconciling:** the dead agent had written a `page.tsx` header comment describing an *"(T-10, H-2) page-reset affordance"* that it never implemented. The Leader instructed: implement it or delete it, but **do not implement the clamp** — `totalPages` derives from `total`, which is `0` until the response lands, so a clamp would collapse every deep link to page 1. The comment was deleted. H-2 remains open (A-6), unresolved for a third time.
+
+#### The Leader escalated one advisory to gating, and the reasoning is the point
+
+`rev-T10-conformance` filed **A-1** as advisory, with the note *"this is the one I would most understand you choosing to gate on."* It was gated.
+
+The dialog's hint read *"Confirm is disabled until the acknowledgement is entered exactly."* With `provenance` supplied that sentence is **false in the shipped UI** — Confirm stays disabled after the phrase is entered exactly, because method and date also gate it, and nothing said so. An Admin who types the phrase correctly and sees a dead button concludes the dialog is broken, on the action that publishes PII and GPS to the public directory.
+
+The lens was right that no MUST names it. **That is precisely the reasoning that has now let three requirements slip in this spec**, and it is not a sufficient reason to ship false user-facing copy from a file the task already owns. Distinct in class from T-8's H-3, which was a developer-facing comment.
+
+Remediation: the hint branches on `provenance`. Absent → **byte-identical** to the pre-T-10 string (Leader-verified against `git show HEAD:…AcknowledgeDialog.tsx:200` before review, because that byte-equality *is* the non-regression promise for the two untouched call sites). Supplied → names all three conditions. Both provenance labels gained the required marker.
+
+**The Implementer checked the convention instead of inventing one**, as instructed: `ActorForm.tsx`'s `Field` (`:490-493`) uses a visual `aria-hidden` asterisk with **no** `aria-required`, and the increment copied it byte-identically. The reviewer verified at source that `aria-required` is genuinely absent there — so the increment neither added an attribute `ActorForm` lacks nor omitted one it has.
+
+#### What the re-audit established that the Implementer did not claim
+
+- **A-1 is closed against the gate, not against intent.** The new sentence was compared clause-by-clause to `provenanceValid`/`canConfirm` (`:137-139`): "entered exactly" ↔ `value === acknowledgementText`; "method **and** date" ↔ a real conjunction. No reachable state where it is false. The one omitted condition (`loading`) was omitted at HEAD too and is signalled separately by `aria-busy` — so the fix did not trade one false statement for a different one.
+- **The absent-`provenance` path is unchanged in five respects**, each checked independently: hint string, `aria-describedby` composition (the middle template slot yields `''`, no doubled space), live-region element identity, gate logic, and emitted DOM (`{provenance && …}` renders nothing — no wrapper, no whitespace node). Three tests now guard it.
+- **The wire-shape assertion is not tautological.** `page.test.tsx:47-56` spreads `jest.requireActual` and stubs four functions, `dateOnlyToInstant` not among them — so `'2026-01-15T00:00:00+03:00'` is a real round-trip through the EAT-anchoring helper.
+- **The per-call-site absence tests do not pass vacuously.** The `ActorForm` case was the one that could have: the form has its own "Consent method" field. `within(dialog)` scoping is what makes it bite, because the form's fieldset sits outside the dialog panel.
+- **DD-4's reassurance copy is literally true.** `rev-T10-risk` read T-4's partition (`actors-admin.service.ts:484-518`) and tested the case that could have falsified it — an actor with `EMAIL` recorded but a null date is **not** preserved; it keeps its method and receives the batch date. The copy's conjunction ("method **and** date on file") is load-bearing and correct. `consentReference` is never overwritten. A confident, wrong reassurance on a consent screen would have been worse than no copy at all.
+- **The stale-closure hazard is closed.** `handleUnlockConfirm` carries an `eslint-disable` on `exhaustive-deps` with a hand-maintained array; both new state vars are present at `page.tsx:599`. Had they been omitted, a previous render's method and date would have gone on the wire into `AUDITABLE_FIELDS`.
+- **A reviewer corrected the Implementer's stated reasoning.** The report justified avoiding `getByText` on the labels by claiming the label's aggregate `textContent` now includes the `*` span. RTL's `getByText` concatenates only **direct text-node children** and skips element children, so `getByText('Consent method')` would still have matched. The substitute assertion is sound regardless — it is the right instrument because `getByText` cannot assert the marker at all. **Recorded because a wrong premise in this document misleads the next reader.** The related true fact: `getByLabelText` *does* use full `textContent`, now `"Consent method*"`, so an exact-string label lookup would break; every existing lookup across all four test files uses regexes.
+
+#### The third unowned requirement — and this one is not closed
+
+`rev-T10-conformance` was briefed to read FR-3 and FR-6 in full rather than T-10's scope line, because two gaps of identical shape had already slipped. It found a third.
+
+**FR-6's small-screen scenario requires the actors table to scroll horizontally with a sticky first column. `ActorsTable.tsx` contains zero `sticky`. No task owns it.**
+
+The reason nobody owned it: **the requirement's GIVEN is unsatisfiable as written.** Below `md` there is no table — it is `hidden md:block` (`:457`) with a `md:hidden` card list (`:570`). `design.md` §5's premise that *"the existing table pattern already does this"* is false on both halves. T-8's entry already recorded that false premise, but classed it advisory **because it was pre-existing** — reasoning that discharges T-8's diff and not FR-6.
+
+The half that holds: the cards render both new values (`:325`, `:331-334`), so nothing is dropped or truncated silently. **The half that bites is at `lg`:** nine columns against an `lg` viewport minus the persistent sidebar guarantees horizontal scroll, and scrolling right to read Consent takes the trader-name column off-screen — so an admin acts on a row they can no longer identify.
+
+**Scope correction (2026-08-04, approved by JuanCode mid-execution):** implement the sticky first column at `md+`, then amend FR-6's scenario to describe the shipped cards-below-`md` / table-at-`md`+ pattern with an explicit `md`/`lg` disposition. Assigned to **T-8**, which still owns the table, still traces FR-6, and is still `[~]` — rather than minting an eleventh task past the budget tripwire. **T-10's PASS does not close the spec.**
+
+**All three gaps in this spec were caught only because a Reviewer read the requirement rather than the task's scope line.** In two of the three the Leader had already cleared the omission from the more convenient reading. Recorded as a method finding for `/akili-audit`.
+
+#### Verification
+
+`npm test -- "AcknowledgeDialog|actors/page|ActorForm|import/page" --silent` **98/98, 4 suites** · full suite **983/983, 69 suites** · `npm run lint` clean (3 pre-existing `no-img-element` warnings in unrelated files) · `npm run build` succeeds, static export 20/20 · `npx tsc --noEmit` shows only the pre-existing `TS2556` at `page.test.tsx:45` (J-4) · `react-doctor` **83/100**, one warning: `ActorsView` > 300 lines (`no-giant-component`), a pre-existing condition of the file that T-10 widened by ~35 lines.
+
+**Both reviewers ran without a shell and said so unprompted.** Neither ran the suite; the green-run evidence above rests on the Implementer's report alone. Recorded rather than glossed — it is the standing limit of the `Read`/`Grep`/`Glob` reviewer harness, not a lapse.
+
+Leader-verified independently, not taken on report: `git diff --stat` confirms `ActorForm.tsx` and `import/page.tsx` have **zero source diff** (only their tests changed), and the absent-`provenance` hint string is byte-identical to HEAD.
+
+#### ADVISORY findings (recorded, non-gating — no advisory mints a task)
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **A-1** ✅ | The acknowledgement hint was false at the bulk call site. | **Escalated to gating and fixed** — see above. |
+| **A-2** | **Initial focus lands below the two new required inputs.** The provenance block renders above the acknowledgement input, but the open effect focuses the acknowledgement input. A keyboard-only Admin must Shift+Tab back to reach the controls that now gate confirm. DOM order equals focus order, so not a 2.4.3 failure. | Routed to T-8's held **D-h** check, which now covers three surfaces. The A-1 fix mitigates the confusion but not the order. |
+| **A-3** | **Second copy of the Tanzania offset.** `dateOnlyToInstant` + `TANZANIA_UTC_OFFSET_HOURS` now exist in both `lib/api/actors-admin.ts` and `ActorForm.tsx`'s private helper. Not an NFR-7 violation — NFR-7 governs the FR-3 rule, which lives once in `consent-provenance.policy.ts`. | Self-declared by the Implementer in the doc comment, as the Leader asked. **The copies must not drift: T-9's FAIL turned on this helper's `+03:00` semantics.** Extraction is follow-up work. |
+| **A-4** ✅ | Done-criterion 3's copy had no test. | **Fixed in the increment** — deleting the sentence now fails a named test. |
+| **A-5** | **`preserved: 0` always emits its clause** — "Unlocked 1 actor. 0 actors already had evidence on file and kept it unchanged." Grammatical at 0 and 1, but noise on the common case. | `page.test.tsx` pins the wording, so suppressing at `0` is a deliberate decision, not a cleanup. FR-3's MUST is on the envelope, which the backend satisfies either way. |
+| **A-6** | **H-2 is still unimplemented** — T-8 recorded *"Home: T-10"* with a prescribed remediation (empty-state copy accounting for `page > 1`, plus a page-reset affordance). T-10 correctly did not implement it and correctly does not claim to. | **Unresolved a third time.** Follow-up work. The naïve clamp is known-broken (`totalPages` derives from `total`, `0` until the response lands → collapses every deep link to page 1). |
+| **A-7** | Minor docblock staleness at `page.tsx:47-48`: the success affordance is described as *"reserved for T-7 bulk-mutation messages"* while it now also carries T-10's preserved-count summary. Narrower than reality, not false. | Minor. |
+| **A-8** | The required-marker test asserts the `*` is present but **not** that the span still carries `aria-hidden="true"`. Drop that attribute and the marker enters the accessible name (`"Consent method *"`), every existing regex lookup still passes, and no test catches it. | Same class as A-4, much lower stakes. One extra assertion closes it. |
+| **A-9** | **The repo carries two required-field conventions**: `ActorForm`'s `Field` (visual `*`, no `aria-required`) and the user dialogs (`CreateUserDialog.tsx:256`, `EditUserDialog.tsx:215` use `aria-required="true"`). The increment followed `ActorForm` as instructed, so screen-reader users get the requirement in prose from the live region rather than programmatically. | Defensible and consistent with the instruction. Recorded so the split is on record. |
+| **A-10** | **`jest-axe` proves less than it appears to.** Under jsdom no layout runs and no CSS custom properties resolve, so axe-core's `color-contrast` rule returns *incomplete*, not *pass* — and `toHaveNoViolations` does not fail on incomplete. Proven: accessible names, unique ids (the `useId` prefixing holds with two more), valid ARIA references and roles. **Not** proven: NFR-5's contrast clause, focus visibility, focus order. | Same structural limit as J-7 (T-9) and its T-8 predecessor, now recorded for a third surface. Routes to the D-h check. |
+| **A-11** | **Pre-existing, not introduced by T-10.** (a) Browser Back while a bulk dialog is open fires the filter effect, clearing `selectedIds`; the confirm button then looks enabled but silently no-ops on `ids.length === 0`, with "Unlock 0 actors?" the only cue. Identical for lock and delete. (b) The backdrop click is not `loading`-guarded, so it can dismiss the dialog mid-flight; the request still completes and reports correctly. | Outside T-10's scope. |
+
+**Deferred set (for the follow-up spec, surfaced together at archive rather than accreting silently):** A-3 (extract the shared date helper) · A-6 (H-2) · J-1 from T-9 (`key={actor.id}` on `<ActorForm>` — a real cross-actor data-corruption path) · J-4 (whether `npx tsc --noEmit` becomes a gate).

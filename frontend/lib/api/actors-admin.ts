@@ -133,7 +133,17 @@ export interface AdminActorListQuery {
   consentMethod?: ConsentMethod;
 }
 
-/** Body for `PATCH /api/v1/admin/actors/bulk/consent` (FR-3, FR-4). */
+/**
+ * Body for `PATCH /api/v1/admin/actors/bulk/consent` (FR-3, FR-4).
+ *
+ * T-10 (`actors/registration-source-and-consent`, DD-4) — `consentMethod` +
+ * `consentObtainedAt` carry the BATCH-level provenance the admin console
+ * collects when unlocking. Mirrors `BulkConsentDto` on the backend exactly:
+ * shape-optional here, but the service rejects an unlock (`GRANTED`) that
+ * omits them (`isConsentProvenanceSatisfied`, FR-3). The backend applies
+ * each value only to the provenance fields a row actually lacks — an actor
+ * that already carries its own method/date keeps it untouched.
+ */
 export interface BulkConsentInput {
   ids: string[];
   consentStatus: 'GRANTED' | 'DENIED';
@@ -143,6 +153,27 @@ export interface BulkConsentInput {
    * consent is on file before the request is accepted.
    */
   acknowledged?: boolean;
+  /** T-10 — batch consent method; required by the server when unlocking. */
+  consentMethod?: ConsentMethod;
+  /**
+   * T-10 — batch consent date. Full RFC-3339 instant, never a bare
+   * `YYYY-MM-DD` — see {@link dateOnlyToInstant}. Required by the server
+   * when unlocking.
+   */
+  consentObtainedAt?: string;
+  /** T-10 — batch free-text evidence pointer; optional even when unlocking. */
+  consentReference?: string;
+}
+
+/**
+ * Result envelope for `bulkSetConsent` (T-10, DD-4). `preserved` counts
+ * actors in the batch that already carried both a method and a date and so
+ * received no provenance write at all — the legible half of DD-4's
+ * fill-only-what's-missing rule. Mirrors the backend's `BulkConsentResult`
+ * (`backend/src/actors/actors-admin.service.ts`).
+ */
+export interface BulkConsentResult extends BulkResult {
+  preserved: number;
 }
 
 /** Body for `POST /api/v1/admin/actors/bulk/delete` (FR-5). */
@@ -241,6 +272,36 @@ export interface ActorDeleteResult {
 
 const BASE = '/api/v1/admin/actors';
 
+/**
+ * Tanzania is East Africa Time, UTC+3 year-round (no DST). T-10 duplicates
+ * this fixed offset from `ActorForm.tsx`'s own `TANZANIA_UTC_OFFSET_HOURS` /
+ * `dateOnlyToInstant` rather than importing it — that copy is a private,
+ * unexported helper local to the form, and T-10's scope excludes editing
+ * `ActorForm.tsx`. This is a **second copy of the same convention**; flagged
+ * here (and in T-10's completion report) as a drift surface a future task
+ * should resolve by extracting one shared helper both files import.
+ */
+export const TANZANIA_UTC_OFFSET_HOURS = 3;
+const TANZANIA_UTC_OFFSET = `+${String(TANZANIA_UTC_OFFSET_HOURS).padStart(2, '0')}:00`;
+
+/**
+ * Converts a `YYYY-MM-DD` date-only string — the native shape of
+ * `<input type="date">` — into a full RFC-3339 instant anchored at Tanzania
+ * midnight, or `null` when empty.
+ *
+ * Prisma's `DateTime` column rejects a bare date-only string with an
+ * unhandled 500 rather than a clean 400 (no `@Type(() => Date)` on the DTOs;
+ * see `ActorForm.tsx`'s `dateOnlyToInstant` for the full rationale this
+ * mirrors) — building the full instant client-side avoids ever sending one.
+ * Anchoring at Tanzania midnight rather than UTC midnight avoids a spurious
+ * `IsNotFutureDate` rejection for an admin recording "today" between
+ * 00:00–03:00 EAT.
+ */
+export function dateOnlyToInstant(dateOnly: string): string | null {
+  const trimmed = dateOnly.trim();
+  return trimmed ? `${trimmed}T00:00:00${TANZANIA_UTC_OFFSET}` : null;
+}
+
 // ── API functions — design.md §3 ───────────────────────────────────────────
 
 /**
@@ -283,17 +344,20 @@ export async function adminListActors(
  *
  * Sets `consentStatus` to `GRANTED` (unlock) or `DENIED` (lock) for the
  * supplied actor ids in one transactional request (FR-3). Unlocking requires
- * `acknowledged: true` because it publishes PII + GPS (FR-4). Returns a
- * per-id result envelope.
+ * `acknowledged: true` because it publishes PII + GPS (FR-4), and — as of
+ * T-10 — `consentMethod` + `consentObtainedAt` (FR-3, DD-4); the server
+ * rejects an unlock missing either with a `400`. Returns a per-id result
+ * envelope that also reports how many actors were `preserved` (already
+ * evidenced, so left untouched).
  *
- * @param input  { ids, consentStatus, acknowledged? }
+ * @param input  { ids, consentStatus, acknowledged?, consentMethod?, consentObtainedAt?, consentReference? }
  * @param token  Cognito access token from the caller's session.
  */
 export async function bulkSetConsent(
   input: BulkConsentInput,
   token: string,
-): Promise<BulkResult> {
-  return apiFetch<BulkResult>(`${BASE}/bulk/consent`, {
+): Promise<BulkConsentResult> {
+  return apiFetch<BulkConsentResult>(`${BASE}/bulk/consent`, {
     method: 'PATCH',
     token,
     body: input,

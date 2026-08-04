@@ -103,12 +103,19 @@ const mockBulkSetConsent = jest.fn();
 const mockBulkDeleteActors = jest.fn();
 const mockDeleteActor = jest.fn();
 
-jest.mock('@/lib/api/actors-admin', () => ({
-  adminListActors: (...args: unknown[]) => mockAdminListActors(...args),
-  bulkSetConsent: (...args: unknown[]) => mockBulkSetConsent(...args),
-  bulkDeleteActors: (...args: unknown[]) => mockBulkDeleteActors(...args),
-  deleteActor: (...args: unknown[]) => mockDeleteActor(...args),
-}));
+// T-10: dateOnlyToInstant is a pure wire-shape helper (not a mutation) —
+// pulled through from the real module via requireActual so the unlock tests
+// below assert the real RFC-3339 conversion the page sends, not a stub.
+jest.mock('@/lib/api/actors-admin', () => {
+  const actual = jest.requireActual('@/lib/api/actors-admin');
+  return {
+    ...actual,
+    adminListActors: (...args: unknown[]) => mockAdminListActors(...args),
+    bulkSetConsent: (...args: unknown[]) => mockBulkSetConsent(...args),
+    bulkDeleteActors: (...args: unknown[]) => mockBulkDeleteActors(...args),
+    deleteActor: (...args: unknown[]) => mockDeleteActor(...args),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Mock AuthFailureError (keep real class behaviour for instanceof checks)
@@ -151,7 +158,7 @@ const FAKE_SESSION = {
 const PUBLIC_SESSION = { role: 'Public' as const, user: null };
 const STAFF_SESSION = { role: 'Staff' as const, user: { name: 'Bob', role: 'Staff' as const } };
 
-import type { AdminActor, AdminActorList, BulkResult } from '@/lib/api/actors-admin';
+import type { AdminActor, AdminActorList, BulkResult, BulkConsentResult } from '@/lib/api/actors-admin';
 
 const ACTOR_A: AdminActor = {
   id: 'actor-1',
@@ -220,6 +227,19 @@ const BULK_RESULT: BulkResult = {
   requested: 1,
   applied: 1,
   notFound: [],
+};
+
+/**
+ * T-10 — `bulkSetConsent` always returns `BulkConsentResult` (DD-4's
+ * `preserved` count, `actors-admin.service.ts`). `preserved: 0` is the
+ * ordinary case: this batch's one selected actor had no provenance of its
+ * own, so nothing was left untouched.
+ */
+const UNLOCK_RESULT: BulkConsentResult = {
+  requested: 1,
+  applied: 1,
+  notFound: [],
+  preserved: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -324,8 +344,8 @@ describe('ActorsPage — selection surfaces bulk actions', () => {
 // ---------------------------------------------------------------------------
 
 describe('ActorsPage — unlock flow', () => {
-  it('opens AcknowledgeDialog when Unlock is clicked and confirms only after typing the acknowledgement', async () => {
-    mockBulkSetConsent.mockResolvedValue(BULK_RESULT);
+  it('opens AcknowledgeDialog when Unlock is clicked and confirms only after typing the acknowledgement, method, and date', async () => {
+    mockBulkSetConsent.mockResolvedValue(UNLOCK_RESULT);
 
     await populatePage();
     selectActorByName(ACTOR_A.traderName);
@@ -342,32 +362,140 @@ describe('ActorsPage — unlock flow', () => {
     const input = within(dialog).getByLabelText(/type .* to confirm/i);
     fireEvent.change(input, { target: { value: 'I confirm consent is on file' } });
 
+    // T-10 — the phrase alone no longer suffices; the bulk-unlock dialog
+    // also requires the batch consent method and date (FR-3, DD-4).
+    expect(confirmBtn).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(/consent method/i), {
+      target: { value: 'SIGNED_FORM' },
+    });
+    expect(confirmBtn).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(/consent obtained on/i), {
+      target: { value: '2026-01-15' },
+    });
+
     expect(confirmBtn).toBeEnabled();
     fireEvent.click(confirmBtn);
 
+    // Real wire shape: consentObtainedAt is a full RFC-3339 instant anchored
+    // at Tanzania (UTC+3) midnight, never the bare YYYY-MM-DD the date input
+    // produces (see `dateOnlyToInstant`, lib/api/actors-admin.ts).
     await waitFor(() =>
       expect(mockBulkSetConsent).toHaveBeenCalledWith(
-        { ids: [ACTOR_A.id], consentStatus: 'GRANTED', acknowledged: true },
+        {
+          ids: [ACTOR_A.id],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-15T00:00:00+03:00',
+        },
         TOKEN,
       ),
     );
   });
 
-  it('renders a result summary after a successful unlock', async () => {
-    mockBulkSetConsent.mockResolvedValue(BULK_RESULT);
+  it('renders a result summary reporting the preserved count after a successful unlock', async () => {
+    mockBulkSetConsent.mockResolvedValue({ ...UNLOCK_RESULT, preserved: 0 });
 
     await populatePage();
     selectActorByName(ACTOR_A.traderName);
 
     fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
     const dialog = screen.getByRole('dialog');
-    const input = within(dialog).getByLabelText(/type .* to confirm/i);
-    fireEvent.change(input, { target: { value: 'I confirm consent is on file' } });
+    fireEvent.change(within(dialog).getByLabelText(/type .* to confirm/i), {
+      target: { value: 'I confirm consent is on file' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent method/i), {
+      target: { value: 'SIGNED_FORM' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent obtained on/i), {
+      target: { value: '2026-01-15' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: /^unlock$/i }));
 
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/unlocked 1 actor/i),
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /unlocked 1 actor\. 0 actors already had evidence on file and kept it unchanged\./i,
+      ),
     );
+  });
+
+  it('keeps the preserved-count summary grammatical when exactly one actor was preserved (DD-4)', async () => {
+    mockBulkSetConsent.mockResolvedValue({ ...UNLOCK_RESULT, preserved: 1 });
+
+    await populatePage();
+    selectActorByName(ACTOR_A.traderName);
+
+    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/type .* to confirm/i), {
+      target: { value: 'I confirm consent is on file' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent method/i), {
+      target: { value: 'SIGNED_FORM' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent obtained on/i), {
+      target: { value: '2026-01-15' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^unlock$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /1 actor already had evidence on file and kept it unchanged\./i,
+      ),
+    );
+  });
+
+  it('resets the method and date inputs when the dialog is re-opened after a completed unlock', async () => {
+    mockBulkSetConsent.mockResolvedValue(UNLOCK_RESULT);
+
+    await populatePage();
+    selectActorByName(ACTOR_A.traderName);
+
+    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+    let dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/type .* to confirm/i), {
+      target: { value: 'I confirm consent is on file' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent method/i), {
+      target: { value: 'SIGNED_FORM' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent obtained on/i), {
+      target: { value: '2026-01-15' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^unlock$/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    selectActorByName(ACTOR_B.traderName);
+    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+
+    dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText(/consent method/i)).toHaveValue('');
+    expect(within(dialog).getByLabelText(/consent obtained on/i)).toHaveValue('');
+  });
+
+  it('resets the method and date inputs when the dialog is cancelled and re-opened', async () => {
+    await populatePage();
+    selectActorByName(ACTOR_A.traderName);
+
+    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+    let dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/consent method/i), {
+      target: { value: 'SIGNED_FORM' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/consent obtained on/i), {
+      target: { value: '2026-01-15' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+    dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText(/consent method/i)).toHaveValue('');
+    expect(within(dialog).getByLabelText(/consent obtained on/i)).toHaveValue('');
   });
 });
 
