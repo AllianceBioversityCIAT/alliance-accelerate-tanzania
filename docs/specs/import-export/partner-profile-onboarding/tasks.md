@@ -13,7 +13,7 @@
 
 ## Phase A — Pure normalizers (no dependencies)
 
-- [ ] **T-1** Add `normalizePhone()` to `common/normalize.ts`  (deps: none)
+- [x] **T-1** Add `normalizePhone()` to `common/normalize.ts`  (deps: none)
       **Scope:** One exported pure function. Handles the six measured formats — bare 9-digit local, leading-zero national, country-prefixed with internal spaces, parenthesized country code, landline with internal spaces, and a `/`-separated multi-number cell. Returns canonical `+255…` E.164 **or `null`**, plus a **count** of additional numbers found. No Nest, no Prisma, no I/O. **Does not** wire into the import pipeline — that is T-3.
       **Traces:** FR-5 (all clauses) · `design.md` §4.1, DD-3, NFR-4, NFR-5, NFR-6
       **Files:** `backend/src/common/normalize.ts`, `backend/src/common/normalize.spec.ts`

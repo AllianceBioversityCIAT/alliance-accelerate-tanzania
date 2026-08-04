@@ -3,6 +3,7 @@ import {
   TRADER_TYPES,
   isValidLatitude,
   isValidLongitude,
+  normalizePhone,
   normalizeRegion,
   normalizeSex,
   normalizeTraderType,
@@ -198,5 +199,136 @@ describe('GPS guards', () => {
     expect(isValidLongitude(200)).toBe(false);
     expect(isValidLongitude(-181)).toBe(false);
     expect(isValidLongitude(undefined)).toBe(false);
+  });
+});
+
+/**
+ * T-1 — normalizePhone (FR-5). Table-driven cases, one group per measured
+ * source format (requirements.md FR-5), plus the multi-number-cell scenario
+ * and the never-guess null branch. All fixture numbers are synthetic
+ * (`+2557000000*` shape, NFR-9) — no real phone number from the client
+ * workbook appears anywhere in this file.
+ */
+describe('normalizePhone', () => {
+  describe('format: bare 9-digit local number', () => {
+    it('prepends +255 to a bare 9-digit number', () => {
+      expect(normalizePhone('700000001')).toEqual({
+        phone: '+255700000001',
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('format: leading-zero national number (0 + 9 digits)', () => {
+    it('replaces the leading 0 with +255', () => {
+      expect(normalizePhone('0700000002')).toEqual({
+        phone: '+255700000002',
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('format: country-prefixed number with internal spaces', () => {
+    it('strips internal spaces and prepends +', () => {
+      expect(normalizePhone('255 700 000 003')).toEqual({
+        phone: '+255700000003',
+        additionalCount: 0,
+      });
+    });
+
+    it('leaves an already-plus-prefixed, space-separated number canonical', () => {
+      expect(normalizePhone('+255 700 000 008')).toEqual({
+        phone: '+255700000008',
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('format: parenthesized country code', () => {
+    it('strips the parentheses around the country code', () => {
+      expect(normalizePhone('(255) 700000004')).toEqual({
+        phone: '+255700000004',
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('format: landline with internal spaces', () => {
+    it('normalizes a spaced landline number without loss', () => {
+      expect(normalizePhone('022 700 0005')).toEqual({
+        phone: '+255227000005',
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('format: "/"-separated multi-number cell', () => {
+    it('normalizes the first number and counts the discarded one', () => {
+      expect(normalizePhone('700000006/700000007')).toEqual({
+        phone: '+255700000006',
+        additionalCount: 1,
+      });
+    });
+
+    it('counts every number beyond the first, for more than two', () => {
+      expect(normalizePhone('700000006/700000007/700000009')).toEqual({
+        phone: '+255700000006',
+        additionalCount: 2,
+      });
+    });
+
+    it('never includes the discarded digits anywhere in the return value', () => {
+      const result = normalizePhone('700000006/700000007');
+      expect(JSON.stringify(result)).not.toContain('700000007');
+      expect(Object.keys(result).sort()).toEqual([
+        'additionalCount',
+        'phone',
+      ]);
+    });
+  });
+
+  describe('never-guess null branch', () => {
+    it('returns null (never a partial string) for input it cannot confidently normalize', () => {
+      expect(normalizePhone('12345')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+      expect(normalizePhone('not-a-phone-number')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+    });
+
+    it('returns null with additionalCount 0 for blank, empty, null, and undefined input', () => {
+      expect(normalizePhone(null)).toEqual({ phone: null, additionalCount: 0 });
+      expect(normalizePhone(undefined)).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+      expect(normalizePhone('')).toEqual({ phone: null, additionalCount: 0 });
+      expect(normalizePhone('   ')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+    });
+
+    it('does not invent a country code for a number of unrecognized length', () => {
+      expect(normalizePhone('12345678')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+      expect(normalizePhone('70000000123')).toEqual({
+        phone: null,
+        additionalCount: 0,
+      });
+    });
+  });
+
+  describe('determinism (NFR-6)', () => {
+    it('returns an identical result for the same input on repeated calls', () => {
+      const first = normalizePhone('255 700 000 003');
+      const second = normalizePhone('255 700 000 003');
+      expect(first).toEqual(second);
+    });
   });
 });

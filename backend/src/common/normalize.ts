@@ -270,6 +270,92 @@ export function parseCapacityTons(
   return n;
 }
 
+/**
+ * Tanzania E.164 country calling code (FR-5). Named per DD-5/NFR-4 so a
+ * future country-code change (unlikely, but the point of a constant) is a
+ * one-line edit rather than a scattered literal.
+ */
+const TZ_COUNTRY_CODE = '255';
+
+/** Result of {@link normalizePhone}: a canonical `+255…` number or `null`. */
+export interface PhoneNormalizationResult {
+  phone: string | null;
+  additionalCount: number;
+}
+
+/**
+ * Normalize a raw `phone` cell to Tanzanian E.164 (`+255…`), or `null` (FR-5).
+ *
+ * Quarantine philosophy (matching `normalizeRegion` / `normalizeTraderType`
+ * above): a value is normalized only when the mapping is unambiguous — a
+ * bare 9-digit local number, a leading-zero national number, a
+ * country-prefixed number (with or without internal spaces or a
+ * parenthesized country code), or a landline with internal spaces. Anything
+ * else — wrong length, non-numeric, or empty — returns `null` rather than a
+ * partially-mangled string; the caller decides what a `null` means (import
+ * quarantine vs. DTO validation), per the file's existing convention.
+ *
+ * **Multi-number cells (`/`-separated) are never silently truncated.** The
+ * first number is the one normalized into `phone`; every number after it is
+ * *discarded from the return value entirely* and only counted, never
+ * surfaced — a count of `n` means the discarded values sat at positions
+ * `2…n+1` of the source cell (design.md §4.1). This is what lets a caller
+ * warn "a second number was present" without this function — or anything
+ * downstream — ever holding, logging, or persisting the discarded digits
+ * (PII — FR-5, NFR-9).
+ */
+export function normalizePhone(
+  raw: string | null | undefined,
+): PhoneNormalizationResult {
+  if (raw == null) return { phone: null, additionalCount: 0 };
+
+  const trimmed = raw.trim();
+  if (trimmed === '') return { phone: null, additionalCount: 0 };
+
+  const parts = trimmed
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  if (parts.length === 0) return { phone: null, additionalCount: 0 };
+
+  return {
+    phone: normalizeSinglePhone(parts[0]),
+    additionalCount: parts.length - 1,
+  };
+}
+
+/**
+ * Normalize one phone candidate (already trimmed, no `/` splitting). Strips
+ * parentheses and internal whitespace, then matches the resulting digit
+ * string against the four length/prefix shapes that unambiguously resolve
+ * to a Tanzanian E.164 number. No other punctuation is stripped — a value
+ * with a dash or other separator is not a measured format, so it falls
+ * through to `null` rather than being guessed at.
+ */
+function normalizeSinglePhone(candidate: string): string | null {
+  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '');
+  if (cleaned === '') return null;
+
+  // Already `+255` + 9 digits.
+  if (new RegExp(`^\\+${TZ_COUNTRY_CODE}\\d{9}$`).test(cleaned)) {
+    return cleaned;
+  }
+  // Country-prefixed without the leading `+` (incl. de-parenthesized).
+  if (new RegExp(`^${TZ_COUNTRY_CODE}\\d{9}$`).test(cleaned)) {
+    return `+${cleaned}`;
+  }
+  // Leading-zero national (mobile or landline) — 0 + 9 digits.
+  if (/^0\d{9}$/.test(cleaned)) {
+    return `+${TZ_COUNTRY_CODE}${cleaned.slice(1)}`;
+  }
+  // Bare 9-digit local number — no leading zero, no country code.
+  if (/^\d{9}$/.test(cleaned)) {
+    return `+${TZ_COUNTRY_CODE}${cleaned}`;
+  }
+
+  return null;
+}
+
 /** GPS latitude guard: finite and within [−90, 90]. */
 export function isValidLatitude(n: number | null | undefined): boolean {
   return typeof n === 'number' && Number.isFinite(n) && n >= -90 && n <= 90;
