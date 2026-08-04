@@ -67,7 +67,7 @@ No new endpoints. Four existing contracts change.
 | `POST /api/v1/admin/actors/import` | Parses the new template columns; enforces the invariant per row | No — new columns optional |
 | `GET /api/v1/admin/actors` | Response gains four fields; query gains `registrationSource` + `consentMethod` filters | No — additive |
 
-Every **public** contract (`/actors`, `/actors/:id`, `/actors/geo`, `/metrics`) is unchanged, including its response shape (FR-8).
+Every **public** contract (`/actors`, `/actors/:id`, `/metrics`) is unchanged, including its response shape (FR-8). *(Corrected 2026-08-04 by `/akili-validate`: this list also named `/actors/geo`, which **does not exist** — see FR-8's 2026-08-03 scope correction in `requirements.md`. Listing it here as an unchanged public contract contradicted that correction three sections away.)*
 
 Error envelope stays the project standard — `{ statusCode, error, message, details: [{field, message}] }` from `createValidationPipe()`, so the frontend's existing inline field-error mapping works with no change.
 
@@ -144,6 +144,8 @@ Ambiguous values stay **absent** from the alias map so they quarantine — the f
 
 No new `ActorAuditAction`. The four fields flow through the existing diff machinery in `actor-audit.service.ts`, so an update touching them produces a normal `UPDATE` row and bulk consent keeps writing `BULK_CONSENT` (NFR-6). Audit JSON already contains PII and is already admin-only.
 
+> **Correction (2026-08-04, `/akili-validate`).** The sentence above said the fields flow through *"unchanged"* — **that was false and load-bearing.** `AUDITABLE_FIELDS` in `actor-audit.service.ts` is a **hardcoded literal list**, so the four fields had to be added to it explicitly; a `DateTime` column also needed adding to `DATE_FIELDS` to avoid a `Date`-identity false diff. An implementer who trusted this section as written would have shipped **NFR-6 unmet with a fully green suite**, because no existing test asserts that a *new* field appears in a diff. Both edits were made during T-3/T-4 and are recorded in `execution.md`; this note corrects the design so the next reader is not misled. Same defect class as DD-3's banned wording: design prose that describes machinery as automatic when it is a list someone must remember to edit.
+
 ---
 
 ## 5. Frontend Design
@@ -165,7 +167,7 @@ All within `(admin)`. No public surface changes.
 
 > **Scope correction (2026-08-04, approved by JuanCode mid-execution, second pass).** The correction directly above set the table threshold at `md` and up — this row (above) has since been updated to say `lg` and up instead. A live D-h visual check found `md` itself unusable: at a 768px viewport the scroll container is only ~494px once the persistent sidebar and content padding are subtracted, leaving ~94px (even after the Trader-cell width clamp) to scroll eight non-frozen columns through, and Consent — the column this spec exists to surface — rendered as unreadable fragments. At `lg` (1024px, ~718px container) the sticky columns do the job this section describes. Full measured figures are in `requirements.md` FR-6's matching second correction.
 >
-> `ActorsTable.tsx` now renders `hidden lg:block` for the table and `lg:hidden` for the card list; `app/(admin)/admin/actors/page.tsx`'s loading skeleton (`TableSkeleton`) moved to the same `lg` threshold so it doesn't flash a table-shaped skeleton at a viewport where the real content renders cards. `frontend/CLAUDE.md`'s admin-table description is stale against this and is being synced separately, outside this task.
+> `ActorsTable.tsx` now renders `hidden lg:block` for the table and `lg:hidden` for the card list; `app/(admin)/admin/actors/page.tsx`'s loading skeleton (`TableSkeleton`) moved to the same `lg` threshold so it doesn't flash a table-shaped skeleton at a viewport where the real content renders cards. `frontend/CLAUDE.md`'s admin-table description was stale against this and **has since been synced** (2026-08-04): it now documents the breakpoint as per-table (`UsersTable` at `md`, `ActorsTable` at `lg`, with the measured reason), plus the `shadow-sticky-edge` and block-child-clamp conventions.
 
 **`AcknowledgeDialog` is shared by three call sites (J-2).** An earlier draft treated it as a bulk-only component. It is not:
 
