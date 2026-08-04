@@ -211,9 +211,26 @@ describe('GPS guards', () => {
  */
 describe('normalizePhone', () => {
   describe('format: bare 9-digit local number', () => {
-    it('prepends +255 to a bare 9-digit number', () => {
+    it('prepends +255 to a bare 9-digit number starting with 7', () => {
       expect(normalizePhone('700000001')).toEqual({
         phone: '+255700000001',
+        additionalCount: 0,
+      });
+    });
+
+    it('prepends +255 to a bare 9-digit number starting with 6', () => {
+      expect(normalizePhone('612345678')).toEqual({
+        phone: '+255612345678',
+        additionalCount: 0,
+      });
+    });
+
+    it('quarantines a bare 9-digit number whose leading digit is not 6 or 7 (amendment A1, D-6)', () => {
+      // A non-6/7 leading digit cannot be a Tanzanian mobile number, so it is
+      // never a bare local number — it is more likely a column-shifted
+      // numeric (ID, capacity figure). Synthetic value only (NFR-9).
+      expect(normalizePhone('812345678')).toEqual({
+        phone: null,
         additionalCount: 0,
       });
     });

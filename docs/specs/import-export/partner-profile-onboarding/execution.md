@@ -146,6 +146,46 @@ Recorded as an inaccuracy in the requirement's gate description, owned by the Le
 - **A3 (readability).** `normalizeSinglePhone` builds two `RegExp` objects per call via `new RegExp(...)`, whereas this file hoists lookups to module load (`REGION_BY_LOWER`, `TRADER_TYPE_BY_LOWER`). At ~1,300 rows the runtime cost is irrelevant; the style inconsistency and the double-escaped `\\+${TZ_COUNTRY_CODE}\\d{9}` are the real cost. The first two branches also differ only by an optional `+`.
 - **A4 (evidence accuracy).** The Implementer reported a baseline of 24 tests; it was **23** (23 existing `it(` blocks + 13 new = 36, matching the reported "36 passed, 36 total" exactly). The final figure and the "existing tests untouched" claim both hold, so nothing was hidden — recorded only because **a wrong baseline is the mechanism by which a silently-deleted test would hide**, and that mechanism deserves to be named even when it did not fire.
 
+#### Amendment A1 — user-approved tightening of the bare-9 branch (in flight)
+
+At the gated approval pause the user reviewed ADVISORY A1 and chose the Reviewer's **option (a)**: constrain the bare-9-digit branch to the real Tanzanian mobile prefixes `^[67]\d{8}$`, leaving landlines to the existing leading-zero branch.
+
+This is an **approved scope amendment, not a rework**: T-1 passed review against FR-5 as written, and the Reviewer explicitly declined to FAIL because FR-5's clause turns on *length*. Effort is therefore `medium` (a small, well-specified regex + test change) rather than a bump — the rework escalation rule applies to failed fixes, and nothing failed here.
+
+**Status handling.** `tasks.md` T-1 is moved back to `[~]` for the duration, even though it holds a genuine Reviewer PASS. Rationale: the two writes (`tasks.md`, code) are not atomic, and a `[x]` sitting over half-amended code is the unfalsifiable-completion state this methodology exists to prevent. `[~]` plus this paragraph is recoverable; the reverse is not. It returns to `[x]` on the amendment's PASS.
+
+**Amendment outcome: ✅ PASS** (Reviewer, scoped delta audit; prior T-1 PASS stands for the remainder).
+
+- **Files changed:** `backend/src/common/normalize.ts` (bare-9 branch `/^\d{9}$/` → `/^[67]\d{8}$/`, with the durable rationale in the code comment rather than only in this log), `backend/src/common/normalize.spec.ts` (+2 cases inside the existing bare-9 `describe`: a `6…` positive and an `812345678` → `{phone: null, additionalCount: 0}` negative)
+- **Verification:** `npm test -- --silent normalize` → **38 passed, 38 total** (36 + 2) · `npx eslint … --quiet` → exit 0, non-mutating form · `npm run build` → clean
+- **Reviewer confirmed at source** that `normalize.ts:360` and `normalize.spec.ts:214-236` match the diff exactly, with 38 `it(` blocks matching the reported count and no other code change
+- **Landline clause re-verified by hand:** the leading-zero branch is byte-identical, so `'022 700 0005'` → `0227000005` → `slice(1)` → **`+255227000005`** is unaffected. Branch order still resolves the three earlier branches first, so no country-prefixed or leading-zero value is touched by the narrower fourth
+- **`^[67]\d{8}$` preserves the length semantics** (1 prefix + 8 = 9 digits); only the leading digit is constrained, so FR-5's length-based clause is not contradicted
+
+**NFR-3 — the edited test title, ruled on explicitly rather than waved through.** The Implementer retitled `'prepends +255 to a bare 9-digit number'` → `'…starting with 7'`, body byte-identical. Reviewer verdict: **acceptable clarification, not a violation**, on two independent grounds. Substantively, NFR-3's clause exists to catch a contract change masked by a weakened assertion; the assertion here is byte-for-byte unchanged, so the set of implementations it rejects is exactly what it rejected before — nothing was accommodated. Formally, `tasks.md` §Coverage-closure assigns NFR-3's test-edit clause to T-3/T-4/T-5/T-6, and T-1's own disqualifier list contains no test-edit clause. Additional note for the record: leaving the title alone would have produced a case titled *"prepends +255 to a bare 9-digit number"* sitting beside one asserting a bare 9-digit number returns `null` — the rename removes a real inconsistency rather than creating one.
+
+**NFR-9 on the new fixtures:** met. `612345678` / `812345678` are ascending digit runs, obviously synthetic, and `812345678` is not a valid TZ prefix at all. D-7 bookkeeping: `612345678` and `+255612345678` **do** match the D-7 pattern (`[67][0-9]{8}`), so the repo-wide count rises from 43 by ~3; `812345678` does not match (leading `8`). All synthetic.
+
+#### Residual asymmetry after A1 — ADVISORY, escalated to the user, NOT expanded unilaterally
+
+Both country-prefixed branches still accept `^\+?255\d{9}$`, so `255012345678` → `+255012345678`. Reviewer agrees with the Implementer that this is **not a defect** — FR-5's `BUT NOT` clause constrains *length*, and 255 + 9 digits matches a known TZ length; the branch is also unchanged by this delta and already carried a PASS at `3f1b533`. There is no `Violated Rule` to cite.
+
+**Two corrections the Reviewer made to the Implementer's framing, both material to the user's decision:**
+
+1. **The fix is *not* a symmetric copy of A1.** Tightening to `^\+?255[67]\d{8}$` would reject a country-prefixed **landline** (`255 22 700 0005` → `255227000005`, leading digit `2`) — a plausible source value. The consistent rule after a country code is "mobile **or** landline" (roughly `^\+?255(?:[67]\d{8}|2\d{8})$`), not just `[67]`. A1 was a *deduction* (absent the trunk `0`, a bare 9-digit can only be mobile); this is a *preference*, which is why it needs the user rather than an inline edit.
+2. **One sub-case is indefensible under any reading and is the cheap offer:** a leading `0` after the country code (`255` + `0…` → `+2550…`). The national trunk `0` and a country code are mutually exclusive in E.164, so no valid TZ number has that shape and rejecting it costs no measured format. `^\+?255[1-9]\d{8}$` closes it while leaving the mobile-vs-landline question open.
+
+#### ADVISORY from the amendment round
+
+- **B1 (accuracy of a committed claim) — being fixed, see A1b below.** The block header at `normalize.spec.ts:208-210` still claims *"All fixture numbers are synthetic (`+2557000000*` shape, NFR-9)"*. The two new fixtures are not of that shape, so the comment now misdescribes the file **in exactly the place a future reader checks the PII rule**.
+- **B2 (behavior narrowing worth recording — safe direction, but real).** The mechanism producing bare 9-digit values in this workbook is Excel dropping a leading zero from a numeric cell, and that mechanism applies to **landlines** too: `022 700 0005` stored as a number becomes `227000005`, which the old branch accepted as `+255227000005` and the new one **quarantines**. This is the *safe* direction (null + warning + a created row, recoverable by the AT team per FR-5's null branch) and not an FR-5 violation, since the measured landline format retains its leading zero. But it is a narrowing beyond the mobile/column-shift rationale in the code comment. **Recorded here so it is a decision and not a surprise mid-run:** if the onboarding surfaces a batch of `2XXXXXXXX` quarantines, adding `^2\d{8}$` is the documented one-line amendment.
+
+#### Amendment A1b — B1 comment accuracy (landed with T-2)
+
+B1 is an inaccuracy **introduced by A1 itself**: the new fixtures outgrew the shape the block comment pins. Fixing it is completing A1, not improving something A1 found. It is one comment line in `normalize.spec.ts`, which is also one of the two files **T-2 already edits** — so rather than spend a second full Implementer round on a single line, it is dispatched inside T-2's Implementer brief, explicitly labeled as a T-1 amendment and audited as a separate item. The Leader does not write it (the no-code rule stands; a runtime failure or an advisory does not waive it).
+
+**Rationale recorded for future readers:** the accepted-breadth risk was not theoretical. This spec's own FR-4 documents 4 `Offtaker_Groundnuts` rows carrying a phone number in the trader-type column, so a column-shifted 9-digit ID or capacity value would have normalized into a syntactically valid `+255…` — a wrong value that every gate accepts, which is precisely the defect class `requirements.md` §9 D-6 names as ungated. Quarantining it instead aligns the function with the "never guess" contract the rest of `normalize.ts` follows.
+
 #### Requirements covered
 
 FR-5 — all six measured formats, the multi-number first-plus-count behavior, and the never-guess `null` return. **Not** FR-5's `null`-branch *import* behavior (row created, `phone` null, warning) — that is T-3, correctly out of scope here. NFR-4 (`TZ_COUNTRY_CODE` in `normalize.ts`, no duplicated pattern), NFR-5 (zero-import purity), NFR-6 (determinism asserted), NFR-9 (synthetic fixtures only), NFR-3 (purely additive — no existing export, signature, or test altered).

@@ -348,8 +348,16 @@ function normalizeSinglePhone(candidate: string): string | null {
   if (/^0\d{9}$/.test(cleaned)) {
     return `+${TZ_COUNTRY_CODE}${cleaned.slice(1)}`;
   }
-  // Bare 9-digit local number — no leading zero, no country code.
-  if (/^\d{9}$/.test(cleaned)) {
+  // Bare 9-digit local number — no leading zero, no country code. Constrained
+  // to the real Tanzanian mobile prefixes (6/7) per user-approved amendment
+  // A1 (T-1): a bare 9-digit value with no leading zero and no country code
+  // can only be a Tanzanian MOBILE number, which begins 6 or 7. Accepting any
+  // 9 digits let a column-shifted numeric (an ID, a capacity figure) coerce
+  // into a syntactically valid `+255…` — a wrong value every downstream gate
+  // then accepts (requirements.md §9 D-6; FR-4 measures 4 such rows in
+  // `Offtaker_Groundnuts`). A non-6/7 leading digit now falls through to the
+  // never-guess `null` branch (quarantine + warning) instead.
+  if (/^[67]\d{8}$/.test(cleaned)) {
     return `+${TZ_COUNTRY_CODE}${cleaned}`;
   }
 
