@@ -1,5 +1,6 @@
 import {
   CANONICAL_REGIONS,
+  DISTRICT_TO_REGION,
   TRADER_TYPES,
   isValidLatitude,
   isValidLongitude,
@@ -66,6 +67,35 @@ describe('normalizeRegion', () => {
     for (const region of CANONICAL_REGIONS) {
       expect(normalizeRegion(region)).toEqual({ region, quarantined: false });
     }
+  });
+});
+
+/**
+ * T-2 — DISTRICT_TO_REGION (FR-3, design.md §4.2). Membership only: every
+ * value in the map is a member of CANONICAL_REGIONS. This does NOT — and
+ * cannot — assert that a pairing is the CORRECT region for its district
+ * (requirements.md §9 D-1b has no automated gate for that; see this task's
+ * report). It also asserts the constant leaves normalizeRegion's own
+ * quarantine behavior untouched, since DISTRICT_TO_REGION is not consumed by
+ * normalizeRegion at all (design.md DD-1).
+ */
+describe('DISTRICT_TO_REGION', () => {
+  it('maps every district to a value that is a member of CANONICAL_REGIONS', () => {
+    expect(DISTRICT_TO_REGION.size).toBeGreaterThan(0);
+    for (const [district, region] of DISTRICT_TO_REGION) {
+      expect(district).toBe(district.toLowerCase());
+      expect(CANONICAL_REGIONS).toContain(region);
+    }
+  });
+
+  it('does not change normalizeRegion — an ambiguous value still quarantines', () => {
+    // DISTRICT_TO_REGION is not consumed by normalizeRegion (DD-1); this
+    // pins that "Arusha/Dodoma" keeps quarantining after this constant was
+    // added, rather than merely re-asserting the pre-existing behavior.
+    expect(normalizeRegion('Arusha/Dodoma')).toEqual({
+      region: null,
+      quarantined: true,
+    });
   });
 });
 
@@ -205,9 +235,8 @@ describe('GPS guards', () => {
 /**
  * T-1 — normalizePhone (FR-5). Table-driven cases, one group per measured
  * source format (requirements.md FR-5), plus the multi-number-cell scenario
- * and the never-guess null branch. All fixture numbers are synthetic
- * (`+2557000000*` shape, NFR-9) — no real phone number from the client
- * workbook appears anywhere in this file.
+ * and the never-guess null branch. All fixture numbers are synthetic; no real
+ * number from the client workbook appears anywhere in this file (NFR-9).
  */
 describe('normalizePhone', () => {
   describe('format: bare 9-digit local number', () => {

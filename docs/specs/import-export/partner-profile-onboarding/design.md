@@ -93,7 +93,7 @@ No new module, controller, guard, or provider. Four narrow code changes in two e
 | # | Change | File | Kind |
 |---|---|---|---|
 | 4.1 | `normalizePhone()` — pure; canonical E.164 or `null`, plus a count of additional numbers in the cell | `src/common/normalize.ts` | Added pure function |
-| 4.2 | `DISTRICT_TO_REGION` — closed lookup over the 29 real district values needing derivation | `src/common/normalize.ts` | Added constant |
+| 4.2 | `DISTRICT_TO_REGION` — closed lookup over the 28 real district values needing derivation | `src/common/normalize.ts` | Added constant |
 | 4.3 | Reason breakdown assembled in `buildReport()` | `src/actors/actor-import.service.ts`, `actor-import.types.ts` | Added optional field |
 | 4.4 | Stale-template message gains the download location | `src/actors/actor-import.service.ts` | Changed string |
 | 4.5 | `mapping.md` required structure | *document* | Specification |
@@ -116,7 +116,17 @@ This is a deliberate behavior change from today's verbatim store (`actor-import.
 
 ### 4.2 District → region lookup (FR-3)
 
-A closed map from district name to `CanonicalRegion` covering the **29 real district values** measured as requiring derivation. (40 distinct values appear in the district position; **11 are contaminated cells holding company or person names**, not districts — DD-5 routes those to the register, not the lookup.) Sits beside `CANONICAL_REGIONS` as the single source of truth (NFR-4).
+A closed map from district name to `CanonicalRegion` covering the **28 real district values** measured as requiring derivation. (38 distinct values appear in the district position of the qualifying rows; **10 are contaminated cells holding company or person names**, not districts — DD-5 routes those to the register, not the lookup.) Sits beside `CANONICAL_REGIONS` as the single source of truth (NFR-4).
+
+> **Count correction (during execution, T-2 — 2026-08-04).** This section previously read **29 real / 40 distinct / 11 contaminated**. Direct re-measurement of the workbook during T-2 yielded **28 / 38 / 10**, and per §3.1's standing rule — *measurement wins over estimate* — the measured figures govern. Recorded rather than reconciled away, exactly as §3.1's earlier "Count correction (during Phase 2)" handled QDS 42 → ~23.
+>
+> **The operative definition matters more than the count, and is stated here because a future re-measurement must reproduce it:** the qualifying rows are those whose **`region` is blank** — `Offtaker_Sorghum` (6), `Offtaker_Groundnuts` (150, no `Region` column at all), and `Bulk buyers_beans` (4 with a district but no region). `QDS` contributes **zero** (all 26 `cbo` rows already carry `region_name`); `Seed Company` is excluded by DD-11.
+>
+> The earlier "40 distinct values appear in the district position" was unqualified by region-blankness. Narrowing it is not merely a recount — it is what **FR-3 licenses**: FR-3 permits derivation only where the region column is absent or blank, and *requires* an ambiguous region value to quarantine ("matching `normalizeRegion`'s existing refusal to resolve `Arusha/Dodoma`"). District-rescuing a row whose region is present-but-ambiguous would be the guess FR-3 twice forbids. One of the two dropped values is exactly that case: an `Offtaker_Sorghum` row holding a person name in the district position whose own `Region` cell carries an ambiguous multi-region value, so it quarantines through the existing path regardless.
+>
+> **Corroboration (produced by the T-2 conformance reviewer without re-reading the workbook):** BBB's 4 = §3.1's "only 14 of 26 have a resolvable region" (⇒ 12 region-less) minus FR-3's "8 of 26 with neither a region nor a district" — an exact match across two independent spec figures.
+>
+> **Unresolved and tracked:** DD-1's "162 rows across 5 sheets" does not reconcile with the measured **160 rows across 3 contributing sheets**; see DD-1's own correction note. The residual is the safe direction — an absent district quarantines, which FR-3 prefers to a derivation.
 
 **Not consumed by the importer** (DD-1). It exists to be tested and to source the lookup table published in `mapping.md`.
 
@@ -240,7 +250,7 @@ Each invalidated something in `proposal.md` and now drives a decision.
 | **8 cross-sheet duplicate groups, 18 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS | DD-7: flag, never merge |
 | **71 QDS coordinate cells are DMS**, one with out-of-range minutes | DD-10: blank + flag, never coerce |
 | **`Seed Company` has no region and no district data** (its location column is 0/12 filled) | **DD-11**: all 11 quarantine pending an AT-team region pass |
-| 40 distinct district values need derivation, but only **29 are real districts** | Sizes `DISTRICT_TO_REGION` (§4.2) and separates it from contamination |
+| ~~40 distinct district values need derivation, but only **29 are real districts**~~ → **corrected at T-2 to 38 distinct / 28 real / 10 contaminated** (§4.2) | Sizes `DISTRICT_TO_REGION` (§4.2) and separates it from contamination |
 | **1,023 of 1,097** identity rows carry a phone; **56** carry an email | Sizes the real PII exposure (§7) with a measurement instead of an assertion |
 
 ### 9.1 Expected yield — pre- and post-quarantine (`judgment.md` S-8)
@@ -268,6 +278,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 ### DD-1: Region derivation happens at mapping time, not in the importer
 
 - **Context:** 162 rows across 5 sheets need `region` derived from `district`. `Offtaker_Groundnuts` has no `Region` column at all.
+- **Measurement correction (T-2, 2026-08-04) — open, and deliberately left open.** Direct measurement found **160 rows across 3 contributing sheets**: `Offtaker_Sorghum` 6 · `Offtaker_Groundnuts` 150 · `Bulk buyers_beans` 4. `QDS` contributes **zero** (all 26 `cbo` rows already carry `region_name`) and `Seed Company` is excluded by DD-11, so the "5 sheets" does not hold either. The 2-row residual is numerically identical to the 2 dropped distinct values in §4.2's correction, which suggests the original count included one district-position value from each of two sheets outside the blank-region scan. One is explained (an ambiguous-region `Offtaker_Sorghum` row); the second is not. The outstanding candidate is **`Humantarian`** — the only sheet with location data covered by neither DD-11 nor a blank-region scan — and confirming whether its 31 non-ambiguous rows resolve as *regions* (closing this at 3 sheets) or include district-level values (in which case `DISTRICT_TO_REGION` is short by one) belongs to **T-8**, which owns that sheet's columns. **Not closed by guessing:** the omission direction is the safe one, since an absent district quarantines on `region` — which FR-3 explicitly prefers to a derivation — and surfaces as a visible line item in `reconciliation.md`. Under-coverage cannot produce a D-1b defect; over-coverage can.
 - **Options:** (a) importer derives when `Region` is blank · (b) reference sheet added to the template for VLOOKUP · (c) published lookup table in `mapping.md`, sourced from a tested constant.
 - **Decision: (c).**
 - **Consequences:** The importer's contract is unchanged, so a blank or unresolvable `Region` still fails → quarantine. **(a) rejected** because it would silently rescue genuinely region-less rows on *every future import*, weakening a required field system-wide to serve one onboarding. **(b) rejected on cost, not on a version constraint** — correcting the earlier reasoning (`judgment.md` S-5): `TEMPLATE_VERSION` bumps on *column* change (`template-columns.ts:23-28`), and a new worksheet changes no column and no `TEMPLATE_HEADERS`, so it would **not** force a version bump. It is declined because it puts a reference dataset inside a distributed binary asset that must then be regenerated and re-shipped whenever Tanzania's administrative map changes, where (c) is a text edit.

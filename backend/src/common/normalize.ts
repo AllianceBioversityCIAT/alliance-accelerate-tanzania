@@ -130,6 +130,68 @@ export function normalizeRegion(
 }
 
 /**
+ * District → CanonicalRegion lookup (FR-3, design.md §4.2, NFR-4). Closed and
+ * exhaustive over the 28 real district values measured — by re-reading the
+ * client's `Partner Profile 14.4.2026.xlsx` workbook in place, never copied
+ * into this repository (NFR-9) — as appearing in the "district position" of
+ * rows whose region is blank across `Offtaker_Sorghum`, `Offtaker_Groundnuts`,
+ * and `Bulk buyers_beans`. This is a fixture of ONE workbook, not a general
+ * Tanzania gazetteer — it grows only when the next workbook measurement adds
+ * to it (`design.md` DD-1).
+ *
+ * **Not consumed by `normalizeRegion` or the importer** (`design.md` DD-1):
+ * it exists to be tested and to source the published table in `mapping.md`.
+ * `normalizeRegion`'s existing ambiguous/unknown quarantine behavior is
+ * completely untouched by this constant.
+ *
+ * **A district is present here only when its region is unambiguous.** Ten
+ * other values measured in the same district-position columns are
+ * contaminated cells holding a company or person name, not a district — see
+ * `mapping.md`'s contaminated-row register (physical row number only, per
+ * DD-5); they are deliberately excluded from this constant and never appear
+ * in this file. Per the quarantine philosophy above, a district whose region
+ * was uncertain is likewise omitted so its rows quarantine on `region` rather
+ * than import under a guess — see the `Mbozi`/`Momba` comments below for the
+ * two closest calls this measurement had to make.
+ */
+export const DISTRICT_TO_REGION = new Map<string, CanonicalRegion>([
+  ['bariadi', 'Simiyu'],
+  ['dodoma', 'Dodoma'],
+  ['kahama', 'Shinyanga'],
+  ['kahama town', 'Shinyanga'],
+  ['kakonko', 'Kigoma'],
+  ['kasulu', 'Kigoma'],
+  ['kibondo', 'Kigoma'],
+  ['kigoma', 'Kigoma'],
+  ['kishapu', 'Shinyanga'],
+  ['kongwa', 'Dodoma'],
+  ['masasi', 'Mtwara'],
+  ['masasi town', 'Mtwara'],
+  ['mbeya', 'Mbeya'],
+  ['mbeya city', 'Mbeya'],
+  // Mbozi moved from Mbeya to the newly-created Songwe region in the 2016
+  // split — the exact trap this constant exists to avoid (requirements.md
+  // §9 D-1b's worked example). NOT "Mbeya".
+  ['mbozi', 'Songwe'],
+  ['misungwi', 'Mwanza'],
+  ['mlele', 'Katavi'],
+  // Momba District (est. 2015, carved from Mbozi) sits in Songwe region
+  // alongside Mbozi, Ileje, and Songwe/Tunduma — the same 2016 split as
+  // above, not Mbeya.
+  ['momba', 'Songwe'],
+  ['mpanda', 'Katavi'],
+  ['mpanda town', 'Katavi'],
+  ['mtwara', 'Mtwara'],
+  ['nanyumbu', 'Mtwara'],
+  ['nyamagana', 'Mwanza'],
+  ['sengerema', 'Mwanza'],
+  ['singida', 'Singida'],
+  ['tabora', 'Tabora'],
+  ['temeke', 'Dar es Salaam'],
+  ['uvinza', 'Kigoma'],
+]);
+
+/**
  * Canonical trader-type taxonomy (OQ-2). Declared as a named constant per DD-5
  * so legal/business can revise it in one place. Exported for DTO enum
  * validation (`actor-create.dto.ts`).

@@ -22,8 +22,8 @@
       **Evidence is DISQUALIFIED if:** any test asserts only that the function *exists* or that a return is non-null (KZ-002 — assert the exact normalized string per input); **any test fixture or assertion message contains a real phone number** from the client workbook (NFR-9 — use synthetic digits); or the tests pass while a format from `requirements.md` FR-5 has no case. A green run with fewer than six format groups covered is **not** evidence.
       **Skills:** `tdd` (logic-heavy, Leader-assigned), `systematic-debugging` if a case fights back
 
-- [ ] **T-2** Add `DISTRICT_TO_REGION` to `common/normalize.ts`  (deps: none)
-      **Scope:** A closed lookup covering the **29 real district values** measured as needing derivation. Constant + membership test only. **Excludes** the 11 contaminated values that occupy the district position but hold company/person names — those belong to the register (DD-5), not the lookup. Does **not** change `normalizeRegion` and is **not** consumed by the importer (DD-1).
+- [x] **T-2** Add `DISTRICT_TO_REGION` to `common/normalize.ts`  (deps: none)
+      **Scope:** A closed lookup covering the **28 real district values** measured as needing derivation (corrected at execution from the design's estimate of 29 — see `design.md` §4.2 "Count correction"; the qualifying rows are those whose `region` is **blank**). Constant + membership test only. **Excludes** the 10 contaminated values that occupy the district position but hold company/person names — those belong to the register (DD-5), not the lookup. Does **not** change `normalizeRegion` and is **not** consumed by the importer (DD-1).
       **Traces:** FR-3 · `design.md` §4.2, DD-1, NFR-4
       **Files:** `backend/src/common/normalize.ts`, `backend/src/common/normalize.spec.ts`
       **Verify:** `cd backend && npm test -- normalize`
