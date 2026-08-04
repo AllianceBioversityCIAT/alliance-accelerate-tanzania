@@ -53,7 +53,7 @@
       **Evidence is DISQUALIFIED if:** the sum invariant is asserted on a fixture with no multi-error row (that is the case the one-reason-per-row rule exists for — a single-error fixture cannot distinguish a correct implementation from `errors[0]`); any existing test needed editing; or a reason slug can carry a value rather than a field/outcome name.
       **Skills:** `nestjs-expert`, `api-design-principles`, `error-handling-patterns`, `tdd`
 
-- [ ] **T-5** Mirror the breakdown in the frontend and render it in the preview branch  (deps: T-4)
+- [x] **T-5** Mirror the breakdown in the frontend and render it in the preview branch  (deps: T-4)
       **Scope:** Mirror the additive field in `lib/api/actors-admin.ts` with **exact** optionality and union. Render the breakdown in the **preview** branch of `import/page.tsx`, beside `TotalsChips`, inside a `role="status" aria-live="polite"` region. `ImportPreviewTable.tsx` is **not** the home — it takes only `{ rows }` and contains no live region.
       **Traces:** FR-7 (FE clauses) · `design.md` §5, §6, R-6
       **Files:** `frontend/lib/api/actors-admin.ts`, `frontend/app/(admin)/admin/actors/import/page.tsx`, and that page's test

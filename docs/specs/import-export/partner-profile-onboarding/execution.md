@@ -478,4 +478,102 @@ FR-7 (breakdown, sum invariant, deterministic ordering, `_row` mapping, additive
 
 **FR-7's frontend clauses are T-5's**, which is now unblocked.
 
+---
+
+### T-5 — Mirror the breakdown in the frontend and render it in the preview branch
+
+- **Date:** 2026-08-04
+- **Status:** ✅ **PASS** on attempt 1 (0 rework rounds)
+- **Traces:** FR-7 (FE clauses) · `design.md` §5, §6, R-6
+- **Skills:** `react-doctor` **run before reporting** (as `tasks.md` requires — results below); `vercel-react-best-practices` and `tailwind-design-system` as convention; `shadcn-ui` **not loaded** — no primitive was added or adapted, the breakdown is a `div`/`ul` using classes already present in this file · **Effort:** `medium`
+- **Executed inline by the Leader; no independent Reviewer.** Same standing constraint as T-3/T-4
+
+#### Files changed
+
+| File | Change |
+|---|---|
+| `frontend/lib/api/actors-admin.ts` | Mirrored `ImportFailureReason` + optional `failureBreakdown?` on `ImportReport` |
+| `frontend/app/(admin)/admin/actors/import/page.tsx` | New `FailureBreakdown` component; rendered in the **preview** branch beside `TotalsChips`, wrapped in `role="status" aria-live="polite"` |
+| `frontend/app/(admin)/admin/actors/import/page.test.tsx` | +5 cases. **No existing case touched** |
+
+`ImportPreviewTable.tsx` **unchanged**, per `design.md` §5 / judgment C-14 — its prop surface is `{ rows }` and it holds no live region.
+
+#### "Exact optionality and union" — what that meant here, since it is the disqualifier
+
+The mirror is character-for-character: `reason: string`, `count: number`, and `failureBreakdown?:` optional.
+
+`reason` is `string` on **both** sides. This is a faithful mirror, **not** a union widened to make something compile — the distinction the disqualifier turns on. There is no narrower type to mirror: `TEMPLATE_COLUMNS` is annotated `readonly TemplateColumn[]` whose `field` is `string`, so the column half of the reason vocabulary produces no literal union at the type level even though it is closed in behavior. Narrowing the frontend alone would make it assert something the wire does not guarantee. Recorded in a comment on the type so a future reader does not "restore" a union that never existed.
+
+**Optionality carries a real semantic**, also commented: the backend **omits** `failureBreakdown` on a clean import rather than sending `[]`. The component handles both anyway (`!breakdown || length === 0`), and there is a test for each.
+
+#### Verification
+
+- `npm test -- import --silent` → **28 passed, 2 suites** (23 + 5)
+- `npm test -- --silent` (full frontend) → **998 passed, 70 suites** — see the flake note below
+- `npm run lint` → exit 0 (1 pre-existing `<img>` warning in `layout.test.tsx`, untouched)
+- `npm run build` → static export succeeded, all routes `○ (Static)`
+- `npx tsc --noEmit` → **exits non-zero on a PRE-EXISTING error**, see below
+
+#### `npx tsc --noEmit` is red on this branch, and it is not T-5's
+
+```
+app/(admin)/admin/actors/page.test.tsx(45,64): error TS2556:
+A spread argument must either have a tuple type or be passed to a rest parameter.
+```
+
+**Proven pre-existing, not assumed:** `git stash push -- .` then `npx tsc --noEmit` reproduces the identical error with every T-5 change removed. `git log` attributes the line to `[SPEC:actors/registration-source-and-consent] T-8` (`useSearchParams: (...args: unknown[]) => mockUseSearchParams(...args)`).
+
+It is the **only** error `tsc` reports, so all three T-5 files are type-clean — the property T-5's gate actually cares about (the disqualifier exists because the SWC transform does no type checking). But the gate as written cannot go green on this branch until that unrelated line is fixed.
+
+**Not fixed here, deliberately.** It belongs to a different spec, in a file T-5 does not touch; folding it into this commit would put an unrelated repair inside T-5's audit trail. **Flagged for the user** as a candidate `bugfix/` spec — the likely one-line fix is `useSearchParams: () => mockUseSearchParams()`.
+
+#### A one-off test failure I could not identify — reported rather than explained away
+
+One full-suite run reported `1 failed, 997 passed`. The failing test's name was not captured, and **four consecutive re-runs since are 998/998 green**. Two earlier one-off failures this session *were* explained (I ran `cp` and `jest` in one command, so jest read a half-written file — the concurrency trap `CLAUDE.md` §Concurrency names, self-inflicted); this one has no such explanation, because nothing was being written at the time.
+
+Per `tasks.md` §Testing ("inconclusive is a legitimate outcome"), recorded as **observed once, unidentified, not reproduced in 4 runs**. It is not evidence of a T-5 defect and it is not evidence of a clean suite either. If it recurs, `--runInBand` plus a captured name is the next step.
+
+#### `react-doctor` — run before reporting, as assigned
+
+Score **79/100**, 3 warnings, **none in T-5's code**. The scan scope is the whole branch (`actor-register → main`), not this diff.
+
+| Finding | Location | Verdict |
+|---|---|---|
+| `ActorsView` over 300 lines | `admin/actors/page.tsx:281` | Pre-existing, different spec |
+| `ActorImportPage` updates 7 `useState` | `import/page.tsx:206` | Pre-existing page-state block. **T-5 added no state at all** |
+| Loading flag reset outside `finally` | `admin/actors/edit/page.tsx:127` | Pre-existing, file untouched |
+
+`FailureBreakdown` is a pure presentational component — no state, no effects, nothing to memoize. Per the skill's own guidance ("ignore unrelated pre-existing code"), none of the three is actioned here.
+
+#### Done-when, clause by clause
+
+| Clause | Evidence |
+|---|---|
+| Type matches the backend character-for-character in optionality and union | Side-by-side mirror; both `string`; both optional. `npx tsc --noEmit` reports nothing in this file |
+| Breakdown renders after a preview | 5 reasons/counts asserted via `getAllByRole('listitem')` |
+| Sits inside a live region | `closest('[aria-live]')` asserted `polite` + `role="status"` |
+| Only semantic token classes | `bg-surface`, `border-border`, `text-fg`, `text-muted`. Grep for `#hex`, `rgb(`, `bg-[`, `text-[`, `border-[` over the file returns nothing |
+
+#### Disqualifier clauses checked explicitly
+
+| T-5 disqualifier | Finding |
+|---|---|
+| Union widened to `string` / optionality flipped to make types compile | **Clear**, and argued above rather than asserted: `string` is the backend's own type, and optionality was preserved *with* its semantic (absent ≠ empty), each covered by a test |
+| Assertion checks only that the element **renders** | **Clear.** The live-region test asserts the attributes — **and records what it cannot prove**: jsdom builds no accessibility tree and `jest-axe` cannot evaluate whether a live region actually announces. That is a human/AT check, explicitly **not covered** (KZ-002). Written into the test body, not just this log |
+| Any hex, `rgb()`, or arbitrary `bg-[…]` | **Clear** by grep |
+| `npm test` green while `npx tsc --noEmit` was never run | **Clear** — it was run, it is red, and the red is pre-existing and located |
+
+#### Mutation check (same substitute for red→green as T-3/T-4)
+
+| Mutation | Effect |
+|---|---|
+| Drop `role="status" aria-live="polite"` from the wrapper | **1 red** — the live-region test |
+| Re-sort the list client-side by reason | **2 red** — the ordering test and the render test |
+
+The ordering test deliberately feeds an order the client would *not* produce on its own (`zzz…` count 9 before `aaa…` count 1), so it proves the component renders backend order rather than imposing its own. Ordering is a backend invariant (NFR-6); a client-side sort would silently make the backend's guarantee untestable from the UI.
+
+#### Requirements covered
+
+FR-7's frontend clauses — exact mirror, preview-branch placement, `aria-live` region, token discipline. **NOT covered:** whether the region actually announces to a screen reader (no harness can evaluate it — human/AT check), and FR-7's backend clauses, which are T-4's.
+
 

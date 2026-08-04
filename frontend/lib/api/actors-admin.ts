@@ -561,12 +561,40 @@ export interface ImportReportTotals {
  * `toCreate` counts prospective creates and `created` is 0; on commit `created`
  * reflects reality.
  */
+/**
+ * T-4/T-5 — one entry of the per-reason breakdown of rows that did not import
+ * (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
+ *
+ * `reason` is `string` here because it is `string` on the backend, **not**
+ * because a narrower type was loosened to make something compile. The
+ * vocabulary is closed in behavior (a template column's `field`, a
+ * `skipped-*` outcome, or the literal `batch-rolled-back`) but not in the
+ * type system: `TEMPLATE_COLUMNS` is annotated `readonly TemplateColumn[]`,
+ * whose `field` is `string`, so the column half of the vocabulary has no
+ * literal union to mirror. Narrowing this side alone would make the frontend
+ * type claim something the wire does not guarantee.
+ */
+export interface ImportFailureReason {
+  reason: string;
+  count: number;
+}
+
 export interface ImportReport {
   mode: 'preview' | 'commit';
   /** Template version read from the Instructions sheet, if present (best effort, NFR-8). */
   templateVersionDetected?: string;
   totals: ImportReportTotals;
   rows: ImportRowResult[];
+  /**
+   * T-4 (FR-7) — why rows did not import, one reason per row, so the counts
+   * sum to `totals.failed + totals.skipped` exactly. Ordered by count
+   * descending, then reason ascending (NFR-6).
+   *
+   * **Optional, and absent — not empty — when nothing failed or was skipped.**
+   * The backend omits the key entirely on a clean import, so a consumer must
+   * handle `undefined` rather than assume `[]`.
+   */
+  failureBreakdown?: ImportFailureReason[];
 }
 
 /**
