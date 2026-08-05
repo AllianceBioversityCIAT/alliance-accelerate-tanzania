@@ -29,8 +29,8 @@
       **Disqualifying:** a test that only asserts the endpoint returns 200 proves nothing about FR-3 — it must assert that the *returned* version is the one the server will later accept, or the drift hole DD-7 exists to close is untested.
       Skills: `nestjs-expert`, `api-design-principles`
 
-- [ ] **T-3** `mail` module: `MailService`, SES transport, no-op transport  (deps: none)
-      Scope: Interface + SES implementation + no-op transport selected by `MAIL_TRANSPORT`. Verification-code and receipt templates only (decision notices are 3b's). Every message carries the reference. Bodies and codes never logged.
+- [x] **T-3** `mail` module: `MailService`, SES transport, no-op transport  (deps: none)
+      Scope: Interface + SES implementation + no-op transport selected by `MAIL_TRANSPORT`. Verification-code and receipt templates only (decision notices are 3b's). **The receipt carries the reference; the verification code cannot and does not** — it is sent before the reference is allocated, which is FR-14's own stated exception (corrected 2026-08-05 during execution; the prior "Every message carries the reference" contradicted `requirements.md` FR-14 and was unsatisfiable — see `execution.md` → T-3). Bodies and codes never logged.
       Traces: FR-14, NFR-10, `design.md` §4.9
       Files: `backend/src/mail/**`
       Verify: `cd backend && npm test -- mail`

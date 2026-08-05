@@ -441,3 +441,77 @@ Both off by 0.01 from intermediate rounding — **arithmetic drift, not the 8.6-
 **Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
 
 ---
+
+### T-3 — `mail` module: `MailService`, SES transport, no-op transport
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| Date | 2026-08-05 |
+| Implementer attempts | **1** |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort assigned | `medium` |
+| Skills assigned | `aws-serverless`, `nestjs-expert` (as listed; no deviation) |
+| Requirements covered | **FR-14** (the no-op-transport half), **NFR-10**, **NFR-8**/**DC-14** (the mail-side logging half). T-20/T-21 own the applicant-visible halves of FR-14; T-4 owns the request interceptor. |
+
+#### Attempt 1 — `STATUS: PASS`
+
+**Files created** (`backend/src/mail/**`): `mail-transport.interface.ts` · `mail.config.ts` · `ses-mail.transport.ts` · `no-op-mail.transport.ts` · `mail-transport.factory.ts` · `mail.service.ts` · `mail.module.ts` · `templates/verification-code.template.ts` · `templates/receipt.template.ts` · four spec files.
+**Dependency added:** `@aws-sdk/client-ses@^3.1077.0` in `dependencies`, matching the installed Cognito client's floor. No other add or bump.
+
+**Verification:** `npm test -- mail --silent` → 19/19 · `npm run build` → clean · `npx eslint … --quiet` → clean, no files mutated · **full suite 43/43 suites, 512/512 tests** (from 39/39 · 496/496 — **+4 suites, +16 tests, zero regressions**).
+
+**Reviewer verdict: `STATUS: PASS`**
+> The mail module conforms to FR-14, NFR-10, NFR-8 and `design.md` §4.9; the transport-selection test is a genuine sent-vs-not-sent distinction on a shared SES mock that fails in both directions, and every logging test proves emission before proving absence.
+
+**The Disqualifying clause — satisfied, verified by reading the test.** `mail.service.spec.ts:38-66` issues the *identical* `sendReceipt('applicant@example.org', 'REG-2026-0007')` against **one shared** `mockClient(SESClient)`, with only `MAIL_TRANSPORT` differing: `toHaveLength(0)` under `no-op`, `toHaveLength(1)` under `ses`. It fails in **both** directions. The Leader's stale-memo concern was checked and **inverts safely**: `resetMailTransport()` (`mail-transport.factory.ts:26`) clears the module-level transport and is called in `beforeEach` *and* explicitly between the halves — if it failed to clear, the `ses` half would reuse the no-op and assert 0 ≠ 1. **Staleness cannot produce a false pass here.** Counts are cumulative since the single `sesMock.reset()`, so the terminal `toHaveLength(1)` re-confirms the no-op half sent nothing (a leak would read 2).
+
+**The log-vacuity guard — ordering confirmed present.** All three logging tests (`:108`, `:128`, `:145`) assert `totalCalls > 0` **first** (`:117-118`, `:135-136`, `:158-159`), then assert absence. `emittedText()` flattens both the `log` and `error` spies, so the failure path is covered, and the receipt test asserts the reference **is** present as a positive control (`:142`). Nothing can log a body, phone or payload field: `dispatch()` (`mail.service.ts:54-65`) emits exactly two format strings containing only `kind` and `reference ?? 'n/a'`, and no `Logger`/`console.*`/stdout call exists anywhere else under `backend/src/mail/`.
+
+**DEP-6 honesty — met.** The SES tests assert command shape, error propagation, and config-missing-before-any-SDK-call (`sesMock.calls()` length 0). Both `ses-mail.transport.ts:29-35` and its spec header state **in writing** that they cannot prove delivery, identity verification, or sandbox/quota. Nothing asserts or implies delivery — **DC-18 respected.**
+
+**Cold start — matches the in-repo precedent line for line.** `let client: SESClient | undefined` + lazy `getSesClient()` (`ses-mail.transport.ts:17-24`) mirrors `users/cognito-admin.client.ts:15-23`, including `resetSesClient()` as the seam mirroring `resetCognitoAdminClient()`. The seam has **no production call site** (grep: only the two spec files). One client per container.
+
+**Module boundary clean:** `backend/src/logging/**` does not exist; nothing pre-empts T-4. `MailService`'s logger is a private field behind a single `dispatch()` call site, so T-4 swaps it by replacing one field.
+
+---
+
+#### ⚠️ Spec correction applied — `design.md` contradicted the requirement it traces to
+
+**The finding.** The Implementer could not satisfy *"every message carries the reference"* and **flagged it rather than inventing a value**, typing `MailMessage.reference` as `string | undefined`. The Reviewer traced the contradiction to its root and ruled the **spec sentence wrong**, not the implementation:
+
+- `requirements.md` **FR-14** enumerates exactly **three** messages (*"submission, approval, and rejection"*) and states explicitly: *"The single deliberate exception is FR-4's verification gate, which precedes submission … **this requirement does not cover it and must not be read as promising otherwise**."*
+- `design.md` §4.9 said *"Four messages — verification code, receipt, approval, rejection — **each carrying the reference**"*, folding FR-4's code into FR-14's set.
+- The contradiction is **unsatisfiable, not merely sloppy**: `design.md` §4.1 allocates the reference **inside** the submission `$transaction`, entered only after the code matches. At verification-code send time no `Registration` row and no reference exist. Carrying one would require fabricating it.
+
+**Why `string | undefined` is right and a discriminated union is not.** The guarantee the Leader worried about — "T-10 ships a reference-less receipt undetected" — **is already unreachable**: `MailService.sendReceipt(to: string, reference: string)` (`mail.service.ts:43`) takes `reference` as a **required** parameter, `buildReceiptMessage` sets it unconditionally, and `MailMessage` is module-internal — T-10 never constructs one. A union would relocate an existing compile-time guarantee, not create one. **Carried to 3b:** keep the same shape (`sendApproval(to, reference)`, `sendRejection(to, reference, note?)`) so the rule stays compiler-enforced there too.
+
+**No weakening of FR-5/NFR-10:** FR-5's fallback is the reference on the **receipt screen** (T-20), and NFR-10's measure scopes itself — *"The measure starts at a submitted registration, because a submission cannot be reached without the OTP (FR-4)."*
+
+**Correction applied, with the KZ-004 two-direction sweep** across the spec folder, 3b's proposal and the epic:
+
+| Site | State | Action |
+|---|---|---|
+| `requirements.md:549` (FR-14) | **Correct** — already excludes FR-4 | none |
+| `requirements.md:268` | Correct — about the API *response* body (FR-5), not email | none |
+| `proposal.md:96`, `:149` | **Correct** — name only the three post-submission messages | none |
+| `admin/registration-review-queue/proposal.md:41` | **Correct** — approval/rejection only | none |
+| `design.md:399` (§4.9) | **WRONG** | **corrected + amendment note** |
+| `design.md:693` (test-plan table) | **WRONG** (unscoped "every message") | **corrected** |
+| `tasks.md:33` (T-3 Scope) | **WRONG** in context | **corrected + pointer here** |
+
+The defect was confined to `design.md` (2 sites) and `tasks.md` (1) — the design had drifted from its own parent requirement, which was right all along. **Not treated as a Pivot:** no plan, task, budget or approved scope changes; this aligns a design sentence with the requirement above it. Corrected during execution so **3b's Implementer does not re-derive the same contradiction**.
+
+#### ADVISORY findings (recorded; never gate, never become tasks in this spec)
+
+- **T3-A1 — 🚨 UNOWNED DEPLOYMENT GAP. The only finding in this run that can reach production. Escalated to the user.** `MAIL_TRANSPORT` and `MAIL_SENDER_ADDRESS` are wired into **nothing**: `infra/20-backend/template.yaml:55-85` defines `Environment.Variables` with DB and Cognito entries and **no `MAIL_*`**; `Policies:` (line 86) grants `GetSecretValue` only — **no `ses:SendEmail`**. The Reviewer checked **T-1…T-23: no task touches `infra/20-backend/template.yaml`**, and T-23 amends documentation only. `design.md` §7 (lines 543-545) lists three deploy obligations — SES enablement, `ses:SendEmail` on the Lambda role, `MAIL_TRANSPORT` + sender address — and **none maps to a task.**
+  **Why it bites:** `getMailTransportKind()` **throws** when `MAIL_TRANSPORT` is unset (`mail.config.ts:14-22`). A 3a deploy without wiring turns the first send into a **500**, breaking T-8's *"202, empty body, always"* **in the deployed environment while every test stays green.** A decomposition gap of the KZ-001 shape, not an implementation defect. **Minting a task is forbidden by the methodology, so the user decides.**
+  **One concrete trap for whoever fixes it:** do **not** add `AWS_REGION` to the template — Lambda reserves it and a template defining it **fails to deploy**. The runtime supplies it, which `getSesMailConfig()` correctly relies on.
+- **T3-A2 — carried into T-7's brief.** `templates/verification-code.template.ts:17` hardcodes *"It expires in 15 minutes"*, duplicating `design.md` §4.3's OTP lifetime that **T-7 implements independently**. If T-7 picks or later tunes a different value, **the email silently lies to applicants and no test can catch it** — two unconnected literals. T-7 must export the lifetime as a constant and interpolate it here.
+- **T3-A3 — carried into T-7's brief.** `MailModule` is registered nowhere and exercised by **no test** — a presence-only artifact until a consumer imports it. Scope-correct for T-3 ("both transports satisfy the interface" is proven independently of DI: `implements MailTransport` is compiler-checked, both are exercised behaviourally through `MailService`, and `MailService` has **zero constructor dependencies** so DI cannot fail). **T-7 must import `MailModule` and inject `MailService` — not `new MailService()` — or the module stays dead.**
+- **T3-A4** — `NoOpMailTransport.recorded` (`no-op-mail.transport.ts:21`) grows **unbounded**. Under NFR-10 the no-op is a *production* configuration, so a warm container accumulates one `{reference, at}` per send forever, and `getRecordedSends()` has no production consumer. Negligible at ~150 expected submissions, but it is an unbounded in-memory array in a long-lived process.
+- **T3-A5** — `getSesClient(region)` ignores `region` after the first call. Harmless (fixed per container) and identical to the Cognito precedent; noted only against a future multi-region change.
+
+**Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
+
+---
