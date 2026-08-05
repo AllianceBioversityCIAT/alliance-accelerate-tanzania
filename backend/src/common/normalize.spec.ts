@@ -112,9 +112,13 @@ describe('DISTRICT_TO_REGION', () => {
  */
 describe('mapping.md ↔ DISTRICT_TO_REGION (doc↔constant agreement)', () => {
   it('publishes the exact same district→region pairs as the constant, entry-for-entry', () => {
+    // The spec archived on 2026-08-05; `mapping.md` moved with it. Archived
+    // specs are frozen records, so this path is stable — but if a future
+    // archive relocates it again, this test fails loudly with ENOENT rather
+    // than silently skipping, which is the intended behaviour.
     const mappingPath = path.join(
       __dirname,
-      '../../../docs/specs/import-export/partner-profile-onboarding/mapping.md',
+      '../../../docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/mapping.md',
     );
     const content = fs.readFileSync(mappingPath, 'utf8');
 

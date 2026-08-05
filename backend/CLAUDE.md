@@ -11,8 +11,12 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 ## Data & migrations
 
-- Prisma + MySQL. Migrations are **additive-only** unless a spec explicitly says otherwise; rehearse locally first (docker `accelerate-mysql` on localhost:3306, `.env` → `mysql://user:pass@localhost:3306/accelerate`).
-- RDS dev apply: `npx prisma migrate deploy` with `DATABASE_URL` **composed in-process** from Secrets Manager (see `../infra/scripts/migrate-seed.sh` for the canonical pattern — resolve stack outputs → read secret → URL-encode → pass inline). Never write the URL to a file or print it. Beware: `migrate-seed.sh` also seeds — don't run it whole against a live DB.
+- Prisma + MySQL. Migrations are **additive-only** unless a spec explicitly says otherwise.
+- **Rehearsal target — describes what this team actually does (amended 2026-08-05).** Rehearse on whatever MySQL 8 your `backend/.env` `DATABASE_URL` points at. In practice that is usually the **shared dev RDS**, not a local container: `docs/infrastructure.md` §6 lists a dev RDS instance as a legitimate local-route database, and checkouts here frequently have no local MySQL at all. A local docker MySQL (`accelerate-mysql` on `localhost:3306`) is still the **safer** rehearsal target and is preferred when one is running — but it is not a precondition, and a guide that mandated it would be describing a step most checkouts cannot perform.
+  - **Know what `migrate dev` does to a shared target:** it reads `DATABASE_URL` **from `.env`** and **provisions a shadow database** on the server it points at. That is acceptable on dev RDS and is what this project does; it is **never** acceptable against PROD.
+  - **Always additive, always inspect the emitted SQL before it lands.** On a shared target the blast radius is other people's work, so a reset or drift prompt is an **abort-and-report** condition — never answer it. `prisma migrate reset` and `db push` are forbidden against RDS.
+  - *Why this was rewritten:* the previous text mandated local-first rehearsal and reserved RDS for `migrate deploy` only. Execution of `actors/public-self-registration` T-1 (2026-08-05) found no local MySQL in the checkout, applied via `migrate dev` against dev RDS, and only then discovered the rule — a rule nobody could follow is worse than an honest one. See that spec's `execution.md` → T-1 *Runbook deviation*.
+- **PROD / governed RDS apply:** `npx prisma migrate deploy` with `DATABASE_URL` **composed in-process** from Secrets Manager (see `../infra/scripts/migrate-seed.sh` for the canonical pattern — resolve stack outputs → read secret → URL-encode → pass inline). Never write the URL to a file or print it. Beware: `migrate-seed.sh` also seeds — don't run it whole against a live DB.
 - `binaryTargets` includes `rhel-openssl-3.0.x` for the Lambda runtime — don't remove it.
 
 ## PII & RBAC (release gates)
