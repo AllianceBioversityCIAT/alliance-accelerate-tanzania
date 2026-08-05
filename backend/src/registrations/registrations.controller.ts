@@ -21,6 +21,16 @@ export interface ConsentPolicyResponse {
  * `POST /registrations/verify` (T-8), `POST /registrations` (T-10), and
  * `POST /registrations/lookup` (T-11) land in later tasks — do not add stub
  * handlers for them here.
+ *
+ * T-4 — structured request logging for this controller's routes is emitted
+ * by `RequestContextMiddleware` (design.md §4.10), applied in
+ * `RegistrationsModule.configure()` via `forRoutes(RegistrationsController)`
+ * — not by a class-level interceptor here. Rework attempt 2 moved emission
+ * out of the interceptor because interceptors run after guards and so cannot
+ * see a guard-rejected request (see `request-context.middleware.ts`); no
+ * `@UseInterceptors`/`@UseGuards` decorator is needed on this controller for
+ * logging to apply. Every handler this module adds inherits it automatically
+ * because the middleware is scoped to the whole controller.
  */
 @Controller('registrations')
 export class RegistrationsController {

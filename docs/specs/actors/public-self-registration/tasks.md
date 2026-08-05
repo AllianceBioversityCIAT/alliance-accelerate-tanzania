@@ -38,7 +38,8 @@
       **Disqualifying:** asserting the SES client was *constructed* is a presence assertion (KZ-002). The behavioural claim is that selecting the no-op transport makes the flow complete with nothing sent — if the test cannot distinguish "sent" from "not sent", it is not evidence.
       Skills: `aws-serverless`, `nestjs-expert`
 
-- [ ] **T-4** `logging` module: request-id middleware + structured interceptor  (deps: none)
+- [x] **T-4** `logging` module: request-id middleware emitting the structured line  (deps: none)
+      *(Title corrected 2026-08-05 during execution — was "request-id middleware + structured interceptor". An interceptor runs **after** guards and so cannot emit for a guard-rejected request, including T-5's `429`; emission lives in the middleware. See `design.md` §4.10's correction and `execution.md` → T-4.)*
       Scope: Deliberately minimal (`design.md` §4.10). Request-id source; one JSON line per request carrying request id, route, method, status, role, latency — applied to **this module's controllers only**, not globally. Never logs OTP codes, payload fields, phone numbers, email addresses or mail bodies.
       Traces: NFR-8, DC-14, DC-22, DEP-11
       Files: `backend/src/logging/**`

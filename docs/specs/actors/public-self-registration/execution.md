@@ -575,3 +575,149 @@ The Leader's brief instructed importing `CROP_NAMES` from `backend/src/common/no
 **Final verification result:** PASS. One Implementer attempt plus a runtime-failure resume, one Reviewer, **zero rework rounds consumed**.
 
 ---
+
+### T-4 — `logging` module: request-id middleware + structured interceptor
+
+| Field | Value |
+|---|---|
+| **Status** | **IN PROGRESS** — attempt 1 FAIL, rework in flight |
+| Date | 2026-08-05 |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort | attempt 1 `medium` → attempt 2 **`high`** |
+| Skills | `nestjs-expert`, `error-handling-patterns` |
+| Requirements covered | **NFR-8** (sole owner per `tasks.md` §NFR ownership), **DC-14**, DC-22's diagnosability substitute |
+
+#### Attempt 1 — `STATUS: FAIL`
+
+**Files created:** `backend/src/logging/` — `request-context.types.ts`, `request-context.middleware.ts`, `structured-log.interceptor.ts`, `logging.module.ts` + three spec files.
+**Also modified (scope excursion, disclosed by the Implementer):** `registrations.module.ts` (`implements NestModule`, `configure()` with `.forRoutes(RegistrationsController)`), `registrations.controller.ts` (class-level `@UseInterceptors`).
+
+**Verification:** `npm test -- logging` → 3 suites / 11 tests · build clean · eslint clean · **full suite 47/47 suites, 545/545 tests**, no regressions.
+
+**Nine of ten checks passed** — recorded because attempt 2 must not regress them:
+- **Scope excursion ruled JUSTIFIED, not creep.** Both edits are strictly additive and behaviour-preserving. T-4's Done-when and Scope are **wiring claims** — unmountable code satisfies neither, and a `LoggingModule` nobody imports is the KZ-002 shape. **The T-3 asymmetry is justified and neither ruling is wrong:** T-3's Done-when concerns transport selection and interface conformance, fully provable unregistered; T-4's contains a **negative scoping claim**, falsifiable only against a real route table.
+- **Emission-before-absence ordering holds in every PII/OTP test** (`:141-148`, `:171-176`), with fixtures for OTP, email, phone **and payload fields** (planted on `req.body` *and* `req.query`). Mail bodies correctly not fixtured — §4.10 attributes those to `MailService`, T-3 already gates them, and the interceptor cannot structurally reach one.
+- **`route` capture verified.** `req.path` is `parseurl(req).pathname`, a disjoint parse from `req.query`/`req.url`/`req.originalUrl`; a test plants an email in all three and proves `route` carries none of it.
+- **`role` correct** — `'Public'` matches `auth.types.ts:9` and root `CLAUDE.md`; the field read matches `roles.guard.ts:33`; a mocked `Admin` reads through unchanged, so the fallback is generic.
+- **Not global — independently grepped.** Zero `APP_INTERCEPTOR`, zero `useGlobalInterceptors`, zero `forRoutes('*')`; `main.ts`/`lambda.ts` untouched.
+- **`mail.service.ts` untouched and not absorbed**; no log-capture collision (mail lines are prose, `capturedLines()` filters on `startsWith('{')`).
+- **Request-id hygiene** — `randomUUID()` CSPRNG, no header read, a pre-set `requestId` is overwritten. Not PII-derived.
+- **Negative-scope test ruled NOT vacuous and NOT order-dependent** in the B28 sense: `.expect(200)` inside test 2's own body excludes "route didn't boot", and the shared `beforeEach` excludes "spy never wired". Only the predicate-matches-nothing case is carried by a sibling test — file-scoped rather than test-scoped. Sound, but one deleted `it` from being vacuous.
+
+**Reviewer FAIL finding — reproduced verbatim (Structured Feedback rule):**
+
+> **Discovered Issue — guard-rejected requests emit no log line, and the source comment asserts the opposite for the exact case T-5 will build.**
+> `structured-log.interceptor.ts:20-25` states the design handles *"a validation `400` or **a throttled `429`**"*. The first half is true; the second is false. NestJS runs **guards before interceptors** (middleware → guards → interceptors → pipes → handler). A `ThrottlerException` thrown by T-5's `registrations-throttle.guard.ts` short-circuits the pipeline **before `intercept()` is ever called**, so no `res.on('finish')` listener is registered and **no line is emitted at all** — not a wrong `status`, but silence. The same applies to any future `401`/`403` from `JwtAuthGuard`/`RolesGuard` on a controller in this module. A pipe-thrown `400` and a handler-thrown exception *are* correctly captured, because `intercept()` has already run by then.
+> Compounding it: no test exercises a non-2xx status through a **real** HTTP pipeline. The `400`/`404` unit tests hand-set `statusCode` on a response double and call `emitFinish()` manually — that proves the serializer formats a non-200 status, not that the interceptor is reached or that `finish` fires on a real failure. The one real-HTTP test covers only the `200` path.
+> **Violated Rule:** `tasks.md` T-4 Scope — *"one JSON line per request carrying request id, route, method, status, role, latency"*; and `requirements.md` NFR-8, whose sole task owner is T-4 (`tasks.md` §NFR ownership: *"NFR-8 → T-4"*). A throttled submission is a request that emits nothing, and once T-4 closes, no downstream task owns the gap.
+
+**Leader adjudication — FAIL accepted; remediation (b) selected; and this exposes a design defect.**
+
+The Reviewer offered two fixes and left the scope call to the Leader:
+- **(a)** correct the comment, record the blind spot, and hand the `429` line to T-5's `throttler-exception.filter.ts` (exception filters *do* run for guard-thrown exceptions, and `req.requestId` is available since the middleware precedes guards).
+- **(b)** move the `res.on('finish')` registration into `RequestContextMiddleware`, which is already `forRoutes(RegistrationsController)`-scoped and runs **ahead of guards**, so every request through this module's routes emits regardless of where it is rejected.
+
+**(b) chosen.** (a) fixes the `429` instance but leaves the **class** open — any future `401`/`403` guard on this module still emits nothing — and it quietly transfers part of NFR-8 to T-5, which `tasks.md` assigns solely to T-4. Emission must survive its own module's guards.
+
+**The design defect this reveals, recorded rather than papered over.** `design.md` §4.10 prescribes *"a `structured-log.interceptor.ts` emitting one JSON line per request"*. **An interceptor structurally cannot satisfy "per request" when guards precede it.** §4.10 names the wrong primitive for the obligation it states — the same shape as T-3's `reference` contradiction, where the design asserted something the flow could not deliver. The requirement (one line per request, six fields, scoped to this module, never PII) is unchanged and is what attempt 2 must satisfy; only the emission point moves, and `design.md` §4.10 will be corrected to match once attempt 2 passes.
+
+**Factual correction to the Leader's own brief, from the Reviewer:** *"T-13 does not depend on interceptor emission — its `400`/`429` assertions are on **response bodies** in `pii-boundary.spec.ts`, not on log lines. T-5 is the only real downstream dependent."* The Leader had told the Reviewer both T-5 and T-13 depended on this. Only T-5 does.
+
+#### Attempt 2 — `STATUS: PASS`
+
+Reviewed by a **fresh, independent** Reviewer (not the one that proposed the remediation).
+
+**The fix.** Emission moved into `RequestContextMiddleware.use()`, registering `res.on('finish')` **synchronously before `next()`** so the listener exists before the guard stage. **`StructuredLogInterceptor` deleted entirely** (source + spec), `@UseInterceptors` removed from the controller, `logging.module.ts` reduced to the middleware. The Implementer's reasoning for deleting rather than reducing — *"keeping it either does nothing or double-emits; no scenario adds value"* — is accepted.
+
+**Proven empirically, not architecturally.** A throwaway `AlwaysForbiddenGuard` + controller + module, local to the spec file, boots a real Nest app and asserts one captured line with `status: 403`. The Reviewer confirmed the test is **discriminating, not decorative**: under attempt 1's interceptor it would capture **zero** lines, and it also fails if the middleware is unwired.
+
+**Reviewer verdict: `STATUS: PASS`**
+> NFR-8's obligation ("one JSON line per request", six fields, scoped to this module, never PII) is met by `RequestContextMiddleware`, and the guard-rejection gap that failed attempt 1 is closed and proven through a real HTTP pipeline. The only spec deviation is the one the Leader already adjudicated; I found no second deviation, no lost coverage, no false comment, and no scope leak.
+
+**Evidence stated by class — the honesty the Verification Expectations require:**
+- **Proven (real HTTP):** guard-thrown exception → line with `status: 403`.
+- **Argued, structurally sound, not directly exercised:** pipe-thrown `400`, handler-thrown exception, and **a custom exception filter (T-5's coming `throttler-exception.filter.ts`)**. All three collapse to the mechanism the 403 case proves — the listener precedes every later stage, and any stage that *writes a response* fires `finish`. The 403 case proves it for Nest's built-in filter; a custom filter doing `res.status().json()` is the identical write path. **T-5 will exercise its own `429`.**
+- **Neither proven nor argued — real, and accepted:** **a client abort fires `close` without `finish`, so an aborted request emits nothing.** Not read as an NFR-8 violation: there is no response, hence no `status`/`latencyMs` to record, and the attempt-1 FAIL concerned requests that *do* get a response. **No comment claims otherwise** — the limit is recorded rather than hidden.
+- **Lambda checked, not a defect:** serverless-http resolves off the synthetic `ServerResponse`'s `finish`; listeners run synchronously during `res.end()`, so the line is emitted before the handler's promise settles. No freeze-truncation risk.
+
+**No coverage lost to the deletion.** Accounting verified honest: logging suites 3/11 → 2/10, matching full-suite 545 → 544 (interceptor's 6 tests → 5 moved; e2e 2 → 2, with 2 folded to 1 asymmetry test plus the new guard test). **Emission-before-absence ordering survives in each absence test** (`request-context.middleware.spec.ts:171-178`, `:203-208`), with the fixture set intact — OTP `482913`, email, phone, planted on **`req.body` and `req.query`**.
+
+**Single-emission proof sound — cancellation excluded.** `toHaveLength(1)` across a wired and an unwired route cannot be reached by a double-emit cancelling a missing-emit: (2,0) fails the length; (0,1) passes length but fails the **exact** `line.route` pin. Only (1,0) survives both. Nothing anywhere still references the deleted interceptor (repo-wide grep; no stale `dist/` artifact).
+
+**All attempt-1 passing checks survived the wholesale rewrite** — six fields, `route = req.path` (query-string-proof, disjoint-parse test retained), `role` with generic fallback, CSPRNG request id with no header trust, `mail.service.ts` untouched. **Scoping unchanged** (grepped independently: zero `APP_INTERCEPTOR`/`useGlobalInterceptors`/`forRoutes('*')`/`APP_FILTER`/`APP_GUARD`). **Test fixtures inert** — declared inside the `describe`, unexported. **No comment asserts anything false**; the Reviewer re-checked every surviving claim against adjacent code, including the `admin-actors.controller.ts` analogy and the §3.1 citation.
+
+**Verification:** `npm test -- logging` → 2 suites / 10 tests · build clean · eslint clean · **full suite 46/46 suites, 544/544 tests**.
+
+#### Doc correction applied — KZ-004 sweep, four sites
+
+The Reviewer found the stale "interceptor" mechanism in **four** places beyond the code. All corrected in the same change:
+
+| Site | Action |
+|---|---|
+| `design.md` §4.10 prose | **Corrected** + a full amendment note explaining why an interceptor cannot satisfy the obligation |
+| `design.md` §7 file tree | **Corrected** — no interceptor file |
+| `tasks.md` T-4 title | **Corrected** + pointer |
+| `requirements.md` DEP-11 | **Corrected** + pointer |
+| `judgment.md` C-5 | **Left unchanged, deliberately** — it is a frozen record of what the blind dual review found at the time, not a live specification. Editing it would falsify the audit trail, which is the KZ-004 failure mode wearing the opposite sign. |
+
+#### ADVISORY findings
+
+- **T4-A1** — client abort emits nothing. A `res.on('close')` guarded by `!res.writableFinished` (status `499`) would close it, but the Reviewer recommends **deferring**: it adds a second emission path that must then be proven non-double-emitting — the exact hazard attempt 2 just eliminated. **Leader concurs, deferred.**
+- **T4-A2** — `new Logger('registrations')` is hardcoded in a module-generic middleware, so a second importing module's lines would be misattributed. Cosmetic today; a constructor arg if `LoggingModule` is ever reused.
+- **T4-A3** — one `setImmediate` tick is the e2e's only timing assumption for `finish`. Server-side `finish` reliably precedes supertest's client callback, so flake risk is low; noted because it is the sole timing dependency.
+- **T4-A4 — carried into T-5's brief.** T-5's `throttler-exception.filter.ts` is the one *argued-but-unproven* path above. **T-5's evidence must assert that a throttled request emits a log line with `status: 429`**, which both closes this gap and satisfies its own DC-26 envelope check.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 2 Reviewers (second fresh), **1 rework round consumed**.
+
+---
+
+
+---
+
+### T-17 — `RegistrationForm`: sections, validation, error contract
+
+| Field | Value |
+|---|---|
+| **Status** | **IN PROGRESS** — attempt 1 FAIL, rework in flight |
+| Date | 2026-08-05 |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort | attempt 1 `high` → attempt 2 **`xhigh`** |
+| Skills | `frontend-design`, `tailwind-design-system`, `react-doctor`, `vercel-react-best-practices` |
+| Requirements covered | **FR-2** scenarios 2, 3, 4 (client half) · NFR-5, NFR-6, NFR-7 |
+
+#### Attempt 1 — `STATUS: FAIL` (2 issues)
+
+**Files:** `frontend/components/register/RegistrationForm.tsx` + test (15 tests) · `frontend/app/(public)/register/page.tsx` + test (2 tests).
+**Verification:** `npm test -- RegistrationForm` 15/15 · full frontend suite **74/74 suites, 1031/1031** · build **20 → 21 static pages** · lint clean · zero hex literals.
+
+**FAIL 1 — FR-2 scenario 2's client half is not discharged; the malformed-email error is unowned.**
+
+The Implementer chose not to collect `email` in the form, reasoning that S-6 places it in the OTP step (T-19). **The Reviewer overturned this at source, and the Leader accepts the overturn:**
+- `RegistrationPayloadDto` genuinely has no `email` — **correct**.
+- But `design.md:183` (§3.1) makes `email` a **top-level sibling of `payload`**, exactly like `consent`; and §4.1's prohibition (*"No `email` in the payload"*) is scoped **verbatim to the payload**.
+- **S-6's own clause (`requirements.md:232`) says *"one address is **collected**, verified, stored, and published"* — it forbids a *second* address, not collection in the form.**
+- The component already proves the distinction: it hands `consent` up as a **second argument** because consent is a top-level sibling of `payload`. `email` is the same shape of thing and can travel the same way.
+- Nothing in `design.md` §5.1, §5.3 or §12's FR-2 row assigns an email input to the OTP step; §5.3 describes only the resend affordance.
+
+**So the reading is correct about the DTO and wrong about the form.** The *mechanism* (count, one inline message per field, summary↔inline agreement) is field-agnostic and **is** proven — but the scenario's own named instance cannot occur, because no surface collects an email. `tasks.md:265` assigns this clause to **T-17 alone**; T-17 disclaimed it; T-19's block never mentions an email input, format validation, or an inline email error. **The clause is unowned — the exact KZ-001 discharge-by-pointing-at-a-neighbour the spec forbids** (`requirements.md:45`, `tasks.md:288`).
+*Violated:* FR-2 scenario 2 (lines 152-160), §2's KZ-001 rule (line 45), `tasks.md` Coverage Closure line 265.
+
+**Leader adjudication — remediation (a): collect `email` in the form.** The Reviewer offered a second path (amend the spec so T-19 owns email entry, editing `tasks.md:265` and T-19's Scope/Done-when **before** T-17 closes). **(a) chosen:** it satisfies the requirement as written without reopening the approved decomposition, S-6 demonstrably permits it, and the flow stays coherent — the form collects every field including the address, T-19 verifies that address, and one address is collected once. Path (b) would be a spec amendment requiring a fresh approval gate for no gain.
+
+**FAIL 2 — the `crops` inline error is associated with no input, and its summary link is a dead anchor.**
+`crops` is one of the three fields in the very error case T-17's Done-when names, and it is the one field that escapes the accessibility contract:
+- `RegistrationForm.tsx:588-592` renders the crops error as `<p id={…-crops-error}>`, but **no checkbox at `:572-580` carries `aria-describedby` pointing at it.** Every other errored control does (`:448`, `:481`, `:635`).
+- `:511` links the summary entry to `#${fieldId('crops')}` = `${baseId}-crops`, and **no element has that id** — the checkboxes are `${baseId}-crop-<value>` (`:568`). **The Crops summary link navigates nowhere.** Every other summary anchor resolves.
+- `jest-axe` cannot catch either (axe does not require `aria-describedby`), and the test at `:173-186` samples only `phone` — **so the suite is green over both.**
+*Violated:* FR-2 scenario 2's *"AND IT MUST associate each inline error with its input via `aria-describedby`"* (line 160); NFR-5 (line 595).
+
+**Verified clean on attempt 1 — attempt 2 must not regress these:**
+- **One error source CONFIRMED by reading the component**, not the test: exactly one `useState<Record<string,string>>` (`:385`); summary reads `Object.entries(errors)` (`:509`), inline reads `errors[field]`; no memo, no derived slice, no submit-time snapshot. The proof test **would** catch a two-source implementation — a summary snapshotted at submit would still read "3 fields" after the phone edit and fail line 169.
+- **GPS trap fully closed.** No path can emit `''` (`parseOptionalNumber` and `trimmedOrUndefined` both test `trimmed === ''`); `'0'` → `0`, and `capacityTons: '0'` likewise; keys are **omitted, never `null`**, consistently on both coordinates. The JSON round-trip proof is **valid** — `frontend/lib/api/client.ts:219` does `body: JSON.stringify(body)`. *Carried to T-19:* `apiGet` has no POST and these are tokenless public paths, so it must use `apiFetch` with `token` omitted or the guarantee moves to an untested helper.
+- **`consentPolicyVersion: ''` fails closed** — `ConsentInputDto.policyVersion` carries `@MinLength(1)`, so the pipe `400`s before `isKnownConsentPolicyVersion` is ever reached. Worst case is a loudly-rejecting path, never a bad consent record. *T-19's Done-when should assert a non-empty version so it cannot ship half-wired silently.*
+- Five fieldsets per §5.1; no `lib/api/*` import, no `fetch`; ten trader types from `ROLES`, not re-declared; **NFR-6 spot-checked and resolved to hex** (`text-danger` `#B3261E` on `bg-danger-soft` `#F5E3E2` = 5.28:1; `text-primary-fg` on `bg-primary` = 8.3:1; `text-muted` on `bg-surface` = 5.74:1); A25 copy is standalone prose; A26 no entrance motion; NFR-7 clean; **the PROVEN/DEFERRED split is honest.**
+- *Advisory carried to T-18:* the one-source contract survives only if `ConsentPolicyDisclosure` takes `checked`/`onChange`/`error` as **props**. If it holds its own `accepted` state, the contract breaks at that moment.
+
+#### ⚠️ Leader record corrected — the frontend flake is file-level, not line-level
+
+The Leader recorded the known flake as `admin/actors/import/page.test.tsx:275`. **T-17's run failed at a *different assertion in the same file*.** Two distinct failure points in one file points at shared or ordering state rather than one flaky assertion. **The signature is corrected to file-level**, and every subsequent frontend brief must say so. Consequence, and it cuts the important way: **the next failure in that file must NOT be treated as pre-cleared** — re-run to confirm, but do not assume.

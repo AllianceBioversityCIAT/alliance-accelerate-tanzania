@@ -221,7 +221,7 @@ backend/src/
 │   ├── payload-cap.middleware.ts
 │   ├── dto/ · serializers/{public,admin}-registration.serializer.ts
 ├── mail/  mail.module.ts · mail.service.ts (SES + no-op transport) · templates/
-└── logging/  logging.module.ts · request-context.middleware.ts · structured-log.interceptor.ts
+└── logging/  logging.module.ts · request-context.middleware.ts   (emission lives in the middleware — see §4.10's correction; there is deliberately no interceptor)
 ```
 
 ### 4.1 Submission (FR-2, FR-3, FR-4)
@@ -404,7 +404,9 @@ A `MailService` interface with an SES implementation and a **no-op transport** s
 
 **Nothing exists to extend**: zero `Logger`/`console.*` in `backend/src`. NFR-8's structured entries, DC-14's log-capture gate and DC-22's diagnosability substitute were all unowned in revision 1 — and DC-22 makes this logging *the thing traded* for accepting the OTP-lockout risk, so it cannot be assumed (C-5).
 
-Scope is deliberately narrow: a `request-context.middleware.ts` generating a request id, and a `structured-log.interceptor.ts` emitting one JSON line per request — request id, route, method, status, role, latency — applied to **this module's controllers only**, not globally. Plus explicit send-attempt/outcome entries from `MailService`.
+Scope is deliberately narrow: a `request-context.middleware.ts` generating a request id **and emitting one JSON line per request** — request id, route, method, status, role, latency — applied to **this module's controllers only**, not globally. Plus explicit send-attempt/outcome entries from `MailService`.
+
+> **Corrected 2026-08-05 during T-4 execution — the original prescribed a primitive that cannot satisfy the obligation.** This paragraph previously assigned emission to a `structured-log.interceptor.ts`. **NestJS runs guards before interceptors** (middleware → guards → interceptors → pipes → handler), so a guard-thrown exception short-circuits *before* `intercept()` is ever called and **no line is emitted at all** — not a wrong `status`, silence. That is not a hypothetical: **T-5's `ThrottlerException` is thrown from a guard**, so every throttled request — exactly the abuse traffic NFR-8 and DC-22 exist to make diagnosable — would have gone unlogged. Any future `401`/`403` on this module would too. Emission therefore moved to the middleware, which registers its `res.on('finish')` listener synchronously **before `next()`** and so precedes every later stage; the interceptor was deleted rather than kept, since retaining it would either do nothing or double-emit. **The obligation is unchanged** — one line per request, six fields, scoped to this module's controllers, never PII. Only the emission point moved. Proven through a real HTTP pipeline with a guard-thrown `ForbiddenException` (`logging-scope.e2e.spec.ts`). **Known limit, accepted:** a client abort fires `close` without `finish`, so an aborted request emits nothing — there is no response, hence no `status` or `latency` to record. Corrected at every site (KZ-004 sweep): here, §7's file tree, `tasks.md` T-4, and `requirements.md` DEP-11.
 
 **Never logged:** OTP codes, payload fields, phone numbers, email addresses, mail bodies. Note this is *why* §3.1 decision 3 moved the lookup off the query string: with an email in the URL, "log the route" and "never log an email address" are contradictory instructions.
 
