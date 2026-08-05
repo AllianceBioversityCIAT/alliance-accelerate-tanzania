@@ -10,10 +10,59 @@ keep it at 10 rows or fewer.
 | ID | Lesson | Source Spec | Severity | Target | Standardized In | Status |
 |---|---|---|---|---|---|---|
 | KZ-001 | Decomposition must close coverage at **scenario and clause** granularity, not requirement ID; a gap may never be discharged by citing a different requirement that is satisfied | actors/registration-source-and-consent | High | Product + Methodology | `docs/specs/general-setup/task.md` § Coverage closure | Applied |
-| KZ-002 | A presence-assertion (class/config/attribute exists) is not a behavioral proof — it must record what it cannot prove, and a property the harness cannot evaluate is **not covered** | actors/registration-source-and-consent | High | Product + Methodology | `docs/specs/general-setup/task.md` § Testing & Verification | Applied |
+| KZ-002 | A presence-assertion (class/config/attribute exists) is not a behavioral proof — it must record what it cannot prove, and a property the harness cannot evaluate is **not covered**. **Recurrence ×2 (2026-08-05): now extended to documents** — a procedure carrying every required clause can still be unexecutable | actors/registration-source-and-consent · import-export/partner-profile-onboarding | High | Product + Methodology | `docs/specs/general-setup/task.md` § Testing & Verification | Applied |
 | KZ-003 | Before deferring a check because it "needs the stack/login/seed data", test that assumption — a component taking plain props renders in a throwaway harness | actors/registration-source-and-consent | Medium | Product + Methodology | `.agents/leader.md` § Deferring a check | Applied |
+| KZ-004 | A correction is not applied when its cited site is fixed — grep the superseded value across every document, and mark as resolved everything that *quotes* the corrected figure, in the same change | import-export/partner-profile-onboarding | High | Product + Methodology | `.agents/leader.md` § Applying a correction | Applied |
+| KZ-005 | Every numeric claim must be cross-checked against narrative prose in the same spec before publication; a count that contradicts a sentence in a sibling document is a defect detectable without re-measuring | import-export/partner-profile-onboarding | Medium | Product + Methodology | `docs/specs/general-setup/requirements.md` § Writing Standards | Applied |
 
 ## Entries
+
+### 2026-08-05 — import-export/partner-profile-onboarding
+
+**Metrics**
+
+| Signal | Value | Source |
+|---|---|---|
+| Tasks executed | 12 / 12 — **budget exact** | `tasks.md` |
+| Reviewer FAIL rework rounds | 6 (T-7 ×2, T-8, T-9, T-10, pivot amendment) | `execution.md` |
+| HALTs / FATAL_FAILs / PRODUCT_BUGs | **0 / 0 / 0** | `execution.md` |
+| Pivots | **2** formal `## Pivot Record` blocks, both user-approved | `execution.md` |
+| Measurement corrections | **15** (C-1…C-15) | `execution.md` |
+| Advisories recorded | 27 (A-1…A-27), none converted to tasks | `execution.md` |
+| Documentation lines | 1,124 vs ~1,250 planned — **under budget** | `mapping.md` · `reconciliation.md` · `runbook.md` |
+| Runtime worker failures | 4 Reviewers lost to `ENOTFOUND` / mid-response disconnects; **0 rework attempts consumed** | `execution.md` |
+| Validation FAIL / WARN | — (`/akili-validate` not run; absence accepted at archive) | `archive-summary.md` §6 |
+| NFR-9 near-misses | **1** — a real workbook phone written into a draft, self-caught before reporting | `execution.md` T-8 |
+
+**Lessons**
+
+- **KZ-004 — A correction is not applied when its cited site is fixed.** (Product + Methodology, High)
+  - Root cause: amendments were driven by the site list the **finding** supplied rather than by grepping the superseded value across every spec document. It failed in **both directions**. *Forward:* C-9, C-10 and C-11 each had a live second site the finding did not name, and the Leader's own first pass at C-15 corrected `design.md` while leaving two live `requirements.md` sites. *Reverse:* correcting `design.md` falsified everything **quoting** it — `mapping.md` and `reconciliation.md` went on describing resolved discrepancies as open.
+  - Evidence: `execution.md` → "Pivot amendment C-6…C-13" (Reviewer FAIL: one orphaned §4.1 site) · "C-15 propagation correction, same day" · T-7 attempt 1 FAIL 2 (*"asserts a false statement about its sibling documents"*).
+  - Cost: one extra review round on the C-6…C-13 pivot, and a Leader-committed defect that only the post-commit sweep caught. The reverse direction was anticipated in the brief for C-14 and closed on attempt 1 — evidence the rule works once stated.
+  - Standardization: append-only rule in `.agents/leader.md`. → **Applied 2026-08-05 (user-approved)**
+  - Upstream: propose as a Leader-persona rule — nothing in it is project-specific.
+
+- **KZ-005 — Numeric estimates were never reconciled against the spec's own prose.** (Product + Methodology, Medium)
+  - Root cause: specify-time figures entered `design.md` §9/§9.1 and `requirements.md` §3.1 and were never cross-checked against narrative statements elsewhere in the same spec. `design.md`'s *"8 cross-sheet duplicate groups, 18 records"* sat beside `mapping.md` §4.5's *"Rows 301–312 repeat all **11** `Seed Company` organisations verbatim"* — mutually contradictory, detectable **without opening the workbook**, and it survived two documents and a Judgment Day.
+  - Evidence: `execution.md` → T-10 finding F-2 and correction C-14; `design.md` §9 vs `mapping.md` §4.5.
+  - A corroboration worth keeping: 18 records over 8 groups requires exactly two 3-sheet groups, and direct measurement found exactly two. **The estimate's shape was right; only its pair count was short** — which is why nobody questioned it.
+  - Standardization: writing-standards line in `docs/specs/general-setup/requirements.md`. → **Applied 2026-08-05 (user-approved)**
+  - Upstream: generalizable — any spec that carries both figures and narrative can contradict itself this way.
+
+- **KZ-002 — recurrence ×2, now in documents rather than tests.** (Product + Methodology, High)
+  - Not a new lesson: the same root cause KZ-002 already names — *a presence-assertion is not a behavioral proof*. T-9 attempt 1 carried **all five** `design.md` §4.6 MUST clauses, every figure correct, every disqualifier clear — and described an import UI **that does not exist**. It told the operator to upload twice and "choose commit"; the shipped page previews automatically on selection and commits via an *"Import N actors"* button the runbook never named.
+  - The sharpest instance: the public-detail check asked for *"the id of one record you just committed"* without saying that is the **internal** id, not the `traderId` the operator builds. The post-commit table renders `traderId` only — so an operator would have used `OFB-1036`, received a 404 for the wrong reason, and **recorded a false pass on the check whose only purpose is catching a PII leak.**
+  - Evidence: `execution.md` → T-9 attempt 1, Reviewer FAIL issues 1–3 (verified against `frontend/app/(admin)/admin/actors/import/page.tsx`).
+  - Standardization: one-line scope extension where KZ-002 already lives (`docs/specs/general-setup/task.md` § Testing & Verification) — operator-facing documents are verified against the **running product**, not the spec. → **Applied 2026-08-05 (user-approved)**
+
+**The single sentence worth carrying forward**
+
+> Clause-completeness and executability are different properties, and only one of them can be checked without leaving the spec.
+
+T-9's first attempt satisfied every clause the design required and would have failed the first operator who tried to follow it. The previous spec's lesson was that *cross-document consistency is not evidence of correctness*; this one is its sibling — **conformance to a specification is not evidence that the thing works**. Both were caught only by a Reviewer that went and looked at the real artifact.
+
+**A design property discovered, not designed:** the shipped Admin import UI **structurally enforces preview-before-commit** — the commit reuses the exact previewed `File`, with no path to commit an unpreviewed one. Stronger than `design.md` §4.6 item 1 requires, and worth knowing before anyone "improves" that flow.
 
 ### 2026-08-04 — actors/registration-source-and-consent
 

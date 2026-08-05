@@ -22,6 +22,10 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
 - Use **MUST / SHOULD / MAY** (RFC 2119) to signal priority.
 - Each requirement traces upward (to a PRD user story / acceptance criterion) and downward (to tasks in `task.md`).
 
+- **Reconcile figures against prose (KZ-005).** Every numeric claim must be cross-checked against narrative
+  statements elsewhere in the same spec before it is published; a count that contradicts a sentence in a
+  sibling document is a defect detectable without re-measuring.
+
 ## 3. Functional Requirements
 For each:
 ```

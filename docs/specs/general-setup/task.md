@@ -34,6 +34,10 @@ T-1 → T-3 → T-4
 A task is **eligible** when its status is `[ ]`/`[~]` and every dependency is `[x]`. Order ties broken by document order.
 
 ## Testing & Verification Expectations
+
+**Presence is not behaviour — and this applies to documents, not only tests (KZ-002, recurrence).** A procedure
+carrying every required clause can still be unexecutable. Operator-facing documents are verified against the
+**running product**, not against the spec that specified them.
 - Every task MUST carry a runnable `Verify` command; the Implementer runs it before reporting completion.
 - Prefer the smallest verifying command (targeted test) over full-suite runs.
 - Backend: `npm run test` / `npm run build` / `npm run lint`. Frontend: `npm run build` / `npm run lint` / component tests.

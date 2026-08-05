@@ -186,3 +186,7 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 ## Deferring a check on environment grounds (KZ-003)
 
 Before holding a task at `[~]` because a visual or behavioral check "needs the live stack, a login, or seeded data", **test that assumption**: if the component takes plain props (its token or session is used only for mutations), a throwaway harness page renders it with no stack, no database, and no auth. Presentational surfaces are almost never actually blocked — and a check deferred on a false blocker is a check that finds real defects late.
+
+## Applying a correction — both directions (KZ-004)
+
+**Never work the site list a finding hands you.** Grep the superseded value across every spec document before declaring an amendment applied, and in the same change mark as resolved every document that *quotes* the corrected figure — correcting a sibling falsifies anything citing it.
