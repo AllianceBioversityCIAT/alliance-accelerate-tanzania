@@ -761,3 +761,90 @@ Reviewed by a **fresh, independent** Reviewer.
 
 ---
 
+
+### Wave 6 dispatch — T-5 ‖ T-18 (Leader record, written before the reports arrive)
+
+Both eligible by document order with all dependencies `[x]` (T-5 ← T-2; T-18 ← T-2, T-17). Disjoint trees — `backend/src/registrations/**` and `frontend/components/register/**` — so they run concurrently at the standing width cap of 2.
+
+**Effort `high` on both.** T-5 is a security surface with two independent disqualifying clauses. T-18 is a small component, but it inherits T-17's one-error-source contract and carries the DC-17 jsdom trap, where the failure mode is a green suite over a control that never gates; the marginal cost of `high` is far below one rework round, and the review-round budget is the binding constraint at this point in the run.
+
+**Review lens mode — `high` effort selects the lens checklist, and T-5 gets it despite touching a security surface. Recorded as a deliberate Leader deviation.** The 4R rule would ordinarily route a security surface to parallel lens Reviewers. Two reasons not to here: the run is at 22 of ~37 review rounds with 13 tasks left, so a 2–4× review fan-out on one task materially threatens the budget tripwire; and T-5's risk is already pinned by two *named, mechanically checkable* clauses (envelope shape, zero Prisma invocations) rather than the open-ended judgment that parallel lenses exist to cover. A single T3 Reviewer aimed at those clauses is the better instrument here. **If T-5 FAILs, attempt 2 escalates to parallel lens Reviewers** — the budget argument does not survive evidence that one lens missed something.
+
+**Obligations carried into the briefs beyond each task's own Done-when:**
+
+| Task | Carried obligation | Origin |
+|---|---|---|
+| T-5 | Prove a throttled request emits a structured log line carrying `status: 429` | T-4 relocated emission from an interceptor to middleware **precisely** on the argument that a guard-rejected request must still log. Nothing in the tree was guard-rejected until now, so the claim was argued and never exercised. T-5 is the first task that can falsify it |
+| T-5 | `@nestjs/throttler` is not installed; no exception filter exists anywhere in `backend/src` | Leader pre-check. Recorded so the Implementer does not spend the discovery, and so a surprising resolved version is visible in the audit trail |
+| T-18 | `ConsentPolicyDisclosure` must take `checked` / `onChange` / `error` as **props** | T17-A5 |
+| T-18 | Progress text derives its section count from the fetched payload — the mockup says six sections, the backend ships four | Leader pre-check against `consent-policy.ts` |
+| T-18 | Use `apiFetch` with `token` omitted, not `apiGet` | T-17's Reviewer, on the public tokenless paths |
+| T-18 | Do **not** wire into `RegistrationForm`; if `onValidated` must change, convert it to a single object rather than adding a fourth positional argument | T-17's Reviewer, sent as a scope guard after dispatch |
+| T-18 | The frontend flake signature is **file-level**, and a failure there is **not** pre-cleared | Leader record corrected during T-17 |
+
+
+#### ⚠️ Leader error — L-ERR-2: a scope guard that created the gap it was meant to prevent
+
+**What I did.** Immediately after dispatching T-18 I sent its Implementer an unsolicited addendum instructing it that *"wiring `ConsentPolicyDisclosure` into `RegistrationForm` is NOT in T-18's scope."* I inferred that from two things: T-18's `Files:` line, which names only the component, its predicate module and their tests; and T-17's Reviewer note warning that `onValidated`'s third positional argument becomes a maintenance hazard at a fourth. I read a *hazard warning about a callback signature* as a *scope boundary*, and I did not check the three places that say otherwise:
+
+| Evidence | Says |
+|---|---|
+| `RegistrationForm.tsx:679-686` (written by T-17) | *"T-18 replaces this paragraph and checkbox with `ConsentPolicyDisclosure` (design.md §5.2)… This placeholder keeps the fieldset structurally present and its acceptance state part of THIS component's one `errors`/`values` pair, so T-18 can swap the body in without relocating consent out of the shared error contract."* |
+| `RegistrationForm.tsx:19` (file header) | The fifth fieldset is listed as *"placeholder seam for T-18"* |
+| `tasks.md` → Coverage Closure (KZ-001) | FR-3 *"Consent must be given before submission"* → **T-18 (control)** + T-10 (server) · FR-3 *"Policy readable before acceptable"* → **T-18** (+ DC-17 human check) |
+
+T-17 built a seam and named T-18 as the task that fills it. I told T-18 not to fill it.
+
+**What it would have shipped.** `ConsentPolicyDisclosure` imported by nothing; the running form still rendering T-17's ungated placeholder checkbox; `policyVersion: ''` still hardcoded at `RegistrationForm.tsx:466`. **Both FR-3 scenarios that T-18 owns would have been unsatisfied in the actual application, with 77 suites and 1066 tests green** — the KZ-002 failure mode exactly, and the one this spec's Coverage Closure table exists to prevent.
+
+**Why the `Files:` line misled me, stated so the next task does not repeat it.** Throughout this spec `Files:` has been *indicative, not restrictive* — T-18's own Implementer correctly added `frontend/lib/api/registrations.ts`, likewise absent from the list, and no one would call that scope creep. A `Files:` line is a starting point for the diff; **the Coverage Closure table is the authority on what a task must make true.** I consulted the weaker artifact and overrode the stronger one with it.
+
+**Attribution and cost.** Leader error, not an Implementer FAIL: **no rework attempt consumed**, on the same principle as T-9's session-limit interruption. The Implementer followed my instruction and then flagged the consequence under `Not Done / Assumptions` rather than silently skipping it — the field working exactly as Step 2.3 intends. **The gap was caught by the Implementer's honesty, not by my review**, which is worth recording as its own fact.
+
+**One part of the guard survives, on re-examination.** I also told the Implementer not to convert `onValidated` to a single object parameter. That half stands and I reaffirmed it: `consent` already carries a `policyVersion` field, so flowing the real version through needs no fourth positional argument and T-17's Reviewer's hazard condition never materialises. Converting would have been genuine scope creep. **The error was in the first instruction, not the second** — recorded separately so a future reader does not discard both.
+
+**Remainder dispatched** to the same Implementer (full context, no respawn): swap the fieldset body, flow the fetched `policyVersion` into the consent object, update `page.tsx` only as far as that forces, and report — rather than silently weaken — T-17's *"no `lib/api/*` import, no `fetch`"* assertion if it is now legitimately obsolete. Reviewer deliberately **not** spawned on the partial diff; one review of the complete change instead of two of halves.
+
+**Also found while checking this:** T-18's stated verify command `npm test -- ConsentPolicy` does **not** match `consent-scroll-gate.test.ts` — the predicate suite, which is the *covered half* of a task whose other half is an explicit human check. The Implementer ran it separately of its own accord and reported it. Carried as an advisory against `tasks.md`'s verification lines, not against this task.
+
+
+### T-5 — Throttle guard + `429` envelope filter
+
+**Dispatched** with effort `high`, skills `nestjs-expert` + `error-handling-patterns`, single Reviewer on the lens checklist (deviation from the security-surface default recorded in the Wave 6 dispatch note above).
+
+#### Attempt 1 — `STATUS: PASS`
+
+**Delivered.** `RegistrationsThrottleGuard` (a thin `ThrottlerGuard` subclass carrying this module's limit constants and rationale) and `ThrottlerExceptionFilter`, both applied at the **class level** on `RegistrationsController` so T-8's `/verify`, T-10's `POST /registrations` and T-11's `/lookup` inherit them with no further wiring. `ThrottlerModule.forRoot([{ttl: 60_000, limit: 20}])` imported in `RegistrationsModule`. New dependency `@nestjs/throttler@6.5.0`.
+
+**Both Disqualifying clauses closed, and the Reviewer confirmed the assertions are non-vacuous:**
+
+| Clause | Evidence | Reviewer's finding |
+|---|---|---|
+| The `429` envelope (DC-26, A21) | `toEqual({statusCode: 429, error: 'Too Many Requests', message: expect.any(String)})`, plus `Object.keys(body).sort()` in the unit test | Closed. `toEqual` fails on extra keys, so a stray `details` or a library-added key goes red. Matches `common/validation-pipe.ts:82-83`'s convention for `400`s |
+| **Zero** Prisma invocations on the rejected request (FR-7) | A test-only Prisma-touching controller behind the **real** guard class: assert the mock fired `TEST_LIMIT` times, drive one more request, assert the count **has not advanced** | Closed, and the construction is right — the pre-assertion proves the mock is genuinely wired, so its later silence is meaningful rather than vacuous |
+
+**FR-7 scenario 1's unnamed clause — *"MUST NOT leak internal detail or a stack trace"* (QA-3, QA-10) — checked at my request and genuinely closed, by a different test than the obvious one.** The filter builds a **constant** body and never reads the exception (its parameter is `_exception`), so no library string, cause or stack can reach the response *by construction*. The Reviewer identified which test actually carries the clause: because a `ThrottlerGuard` subclass **can** inject a custom message (`throttler.guard.js:152-164`), it is the test passing `ThrottlerException('some other internal detail')` and still getting the fixed envelope that proves the property — **the `/ThrottlerException/i` substring assertions alone would not have.**
+
+#### The carried-forward T-4 obligation — discharged, and my own earlier characterisation corrected
+
+I had recorded T-4's middleware relocation as *"argued but never proven."* That was wrong, and the Reviewer verified the correct account rather than taking the Implementer's word: **`logging/logging-scope.e2e.spec.ts:115-190` already proved guard-rejection logging** — against a local `AlwaysForbiddenGuard` commented *"standing in for T-5's not-yet-built throttle guard"*, asserting `status === 403`. What was missing was the **real** `ThrottlerException` path, and T-5 supplies it. **No defect in T-4.**
+
+Non-vacuity confirmed structurally, which is A5's actual trap: `capturedLines()` parses only `{`-prefixed strings, `lines.find(l => l.status === 429)` yields `undefined` on an empty capture, and `expect(throttledLine).toBeDefined()` **fails hard** on that — it is not a `forEach`-over-an-empty-array shape. Emission holds because `request-context.middleware.ts:97-109` registers `res.on('finish')` **before** `next()`, and `res.statusCode` is 429 because the filter set it.
+
+#### Scoping — confirmed correct, by source reading rather than inference
+
+`ThrottlerModule.forRoot()` registers **only** `THROTTLER_OPTIONS` + `ThrottlerStorageProvider` and **no `APP_GUARD`** (`throttler.module.js:14-22`). **No controller outside `RegistrationsController` is throttled**, and `auth/no-global-guard.spec.ts`'s fence is untouched. Nothing in FR-7, NFR-4, §4.4 or DD-5 requires global registration; DEP-10 pushes the other way, since opt-in-per-controller is this codebase's convention.
+
+**Verification (Implementer's, and the Reviewer states plainly that it ran no suite):** `npm test -- registrations` 4 suites/33 tests · `npm test -- logging` 2 suites/10 tests unchanged · eslint `--quiet` clean · `npm run build` clean · **full suite 48 suites / 549 tests** (from 46/544 — delta is exactly the 2 new spec files / 5 new tests).
+
+#### ADVISORY findings
+
+- **T5-A1 → carry to T-6, highest value.** T-5's `429` evidence is **supertest-only**, but `design.md:689` says over-rate **and** over-cap are *"**both** proven through `lambda-handler.e2e.spec.ts`"*, and NFR-4's measure names both entrypoints. Not a T-5 failure — `tasks.md:291` assigns NFR-4 to *"T-5, T-6"* jointly, FR-7's entrypoint clause is textually attached to scenario 2 (the cap), and T-6's Done-when owns the harness. **But it is not ceremonial:** the tracker resolves through a `serverless-http`-specific path supertest never exercises. The Reviewer traced it — `create-request.js:16` maps `event.requestContext.http.sourceIp` onto an own `ip` property shadowing Express's prototype getter — but that is a **source reading, not evidence**. If a synthetic event omits `sourceIp`, **every caller shares one bucket and 20 req/min becomes a global self-DoS.** T-6 must add one `429` assertion through the real handler.
+- **T5-A2 → carry to T-11, a real cross-task collision.** The class-level guard means `POST /lookup` can return a `429` **in a distinct envelope**, while L-2 (`design.md:341`) demands *"Same status, same body, same message for: reference absent · reference present + email mismatch · **rate-limited**"* against T-11's byte-identical `404`. The Reviewer's analysis: the `429` is **not** a membership oracle — the throttler key is `sha256(class + handler + ip)`, independent of whether the reference exists, so it discloses nothing. **But it violates L-2's literal text.** T-11 must resolve this **deliberately** — either `@SkipThrottle()` on that handler with the shared control carrying the load, or a documented reading of L-2 as oracle-freedom rather than byte-identity — **not discover it while chasing a red test.**
+- **T5-A3 — budget granularity, disclosed and conformant.** `generateKey` hashes class **+ handler** + tracker, so 20/60s is **per route**, not per module: one IP gets **80** requests/min across the four public paths. The guard's own doc comment states this accurately and FR-7's *"on any public registration path"* reads naturally as per-path. Know the aggregate is 80.
+- **T5-A4 — the value itself.** 20/60s is reasonable. Note `blockDuration` defaults to `ttl` and hits stop counting while blocked, so a tripped applicant waits the full 60 s. Acceptable.
+- **T5-A5 → carry to T-13.** The guard makes any future suite driving >20 requests at one registration handler on a *shared* app instance order-dependent — B28's concern, already recorded at `design.md:690`. T-5 handled it correctly (each `describe` gets its own app and storage); T-13 must keep that discipline. No lingering-timer hazard: `ThrottlerStorageService.onApplicationShutdown` clears all timeouts and both suites call `app.close()`.
+- **T5-A6 — `@Global()` consequence, narrow but real.** `THROTTLER_OPTIONS` and `ThrottlerStorage` are now injectable from **every** module, exported from a feature module. A second `ThrottlerModule.forRoot()` registered anywhere later **collides on the same global token** and this module's limit silently becomes whichever registration won, with no test to notice.
+
+**Final verification result:** **PASS on attempt 1.** 1 Implementer attempt, 1 Reviewer, **0 rework rounds consumed.**
+

@@ -1,7 +1,13 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { RegistrationsController } from './registrations.controller';
 import { LoggingModule } from '../logging/logging.module';
 import { RequestContextMiddleware } from '../logging/request-context.middleware';
+import {
+  REGISTRATIONS_THROTTLE_LIMIT,
+  REGISTRATIONS_THROTTLE_TTL_MS,
+  RegistrationsThrottleGuard,
+} from './registrations-throttle.guard';
 
 /**
  * T-2 — RegistrationsModule: public consent-policy endpoint (FR-3).
@@ -14,14 +20,26 @@ import { RequestContextMiddleware } from '../logging/request-context.middleware'
  * `request-context.middleware.ts`) because middleware, unlike an
  * interceptor, runs ahead of guards and so cannot miss a guard-rejected
  * request.
+ * T-5 — imports `ThrottlerModule.forRoot(...)` (in-memory, per container —
+ * design.md §4.4/DD-5) so `RegistrationsThrottleGuard` (applied at the
+ * controller class level, see `registrations.controller.ts`) can resolve its
+ * `ThrottlerModuleOptions`/`ThrottlerStorage` dependencies. `ThrottlerModule`
+ * is `@Global()`, so this single registration is enough for every route in
+ * this controller, present and future.
  *
  * Registered in `app.module.ts`. This module grows in later tasks (T-7…T-13)
  * to add the OTP, submission and lookup services/controllers; only the
  * consent-policy controller exists as of this task.
  */
 @Module({
-  imports: [LoggingModule],
+  imports: [
+    LoggingModule,
+    ThrottlerModule.forRoot([
+      { ttl: REGISTRATIONS_THROTTLE_TTL_MS, limit: REGISTRATIONS_THROTTLE_LIMIT },
+    ]),
+  ],
   controllers: [RegistrationsController],
+  providers: [RegistrationsThrottleGuard],
 })
 export class RegistrationsModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

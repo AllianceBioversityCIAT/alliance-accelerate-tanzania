@@ -48,7 +48,7 @@
       **Disqualifying:** an empty log stream passes a naive "no PII in logs" assertion vacuously (this is exactly A5's point). The test must first prove a line *was* emitted, then prove what it does not contain. If no line is captured, the result is inconclusive, not a pass.
       Skills: `nestjs-expert`, `error-handling-patterns`
 
-- [ ] **T-5** Throttle guard + `429` envelope filter  (deps: T-2)
+- [x] **T-5** Throttle guard + `429` envelope filter  (deps: T-2)
       Scope: `@nestjs/throttler` in-memory per container, on the four public routes. An exception filter shaping `ThrottlerException` into `{statusCode, message, error}` — the library omits `error` (A21, DC-26).
       Traces: FR-7, NFR-4, DC-26, `design.md` §4.4, DD-5
       Files: `backend/src/registrations/registrations-throttle.guard.ts`, `throttler-exception.filter.ts`
