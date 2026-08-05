@@ -39,10 +39,10 @@ The deliverable is deliberately **a mapping specification plus narrow importer h
 | `Offtaker_Groundnuts` | 1 | 150 | **150** | 13 named + 0 unnamed → **13** | No `Region` column at all · `Trader_ID` blank on 6 · **4 rows carry a phone number in the trader-type column** (column-shifted rows) · `Capacity (volume)` has no unit |
 | `Bulk buyers_beans` | **3** | 166 | **26** | 17 named + 0 unnamed → **17** | **Block-structured**: one identity row (region · district · offtaker name) followed by year-metric rows with blank identity. No id column. Only **14 of 26** have a resolvable region |
 | `Humantarian` | **2** | 35 | **35** | 9 named + 1 unnamed-with-data → **10** | Row 1 is a merged title (`D1:H1`). No id column. `Category` resolves for only 26 of 35 · physical column 1 is unnamed but **35/35 (100%)** filled |
-| `Digital Service Provider` | **2** | 13 | **10** | 9 named + 1 unnamed-with-data → **10** | `Website` column present but **100% empty** · `Category` resolves for **0 of 13** · **3 actors are outside Tanzania** · physical column 1 is unnamed but **13/13 (100%)** filled |
+| `Digital Service Provider` | **2** | 13 | **10 candidates → 8 net** | 9 named + 1 unnamed-with-data → **10** | `Website` column present but **100% empty** · `Category` resolves for **0 of 13** · **3 actors are outside Tanzania** · physical column 1 is unnamed but **13/13 (100%)** filled · 2 of the 10 domestic rows carry a region-ambiguous value (`"West and South Tanzania "`) that `normalizeRegion` refuses, the same refusal class as `Humantarian`'s `"Across Tz"` — net corrected 10 → 8 at the T-8 pivot (`execution.md`) — C-6 |
 | `Seed Company` | 1 (+ **sub-header row 2** = `lat`/`long`) | 11 | **11 candidates → 0 net** | 26 named + 2 unnamed-with-data → **28** | Data starts at **row 3**. No id column · 7 columns entirely empty · **no region and no district data at all** (location column 0/12 filled), so all 11 quarantine pending an AT-team region pass — FR-3, `design.md` DD-11 · two unnamed columns carry data: physical col 12 (11/11) and col 8 (6/11) |
-| `QDS_ Seed producers` | 1 | 311 (292 distinct names) | **~23** | 41 named + 12 unnamed-with-data → **53** | 55 physical columns · sorted by category · **249 of 292 (85%) are `individual` — natural persons** · **rows 289–312 are not producers at all** (research institutes + the `Seed Company` sheet repeated — the `seed source` vocabulary) · **71 coordinate cells are DMS, not decimal** · altitude carries units in-cell · unnamed data-bearing columns: physical col 13 (305/311), col 19 (108/311), and cols 45–54 (2–4 rows each) |
-| **Total** | | **1,237** | **806 candidates → ~757 net** | | 806 is the pre-quarantine ceiling; ~757 is the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected to ~757 at the T-7 rework — C-5) |
+| `QDS_ Seed producers` | 1 | 311 (292 distinct names) | **~23 candidates → 18 net** | 41 named + 12 unnamed-with-data → **53** | 55 physical columns · sorted by category · **249 of 292 (85%) are `individual` — natural persons** · **rows 289–312 are not producers at all** (research institutes + the `Seed Company` sheet repeated — the `seed source` vocabulary) · **70 coordinate cells are DMS, not decimal** (corrected from 71 at the T-8 pivot, `execution.md` — C-11) · altitude carries units in-cell · unnamed data-bearing columns: physical col 13 (305/311), col 19 (108/311), and cols 45–54 (2–4 rows each) · DD-6's mandatory hand-classification excludes 5 of the 23 distinct `cbo` names as personal names (D-1) — net corrected ~22 → 18 at the T-8 pivot (`execution.md`) — C-7; the sheet's one blank-`producer_category` row (312) sits inside the already-excluded 289–312 tail, not a separate quarantine |
+| **Total** | | **1,237** | **806 candidates → ~751 net** | | 806 is the pre-quarantine ceiling; ~751 is the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected from ~748 to ~752 to ~757 across the T-7 pivot/rework — C-3/C-5, then to ~751 at the T-8 pivot — C-8) |
 
 **Column denominator rule (FR-1, added by the T-7 pivot — 2026-08-04):** the "column denominator" column above is what FR-1's acceptance criteria and D-5's arithmetic gate (§9) hold `mapping.md` to. It is **not** the same as a sheet's *named*-column count. See FR-1's acceptance criteria for the rule itself.
 
@@ -167,7 +167,7 @@ Sheet prefixes fixed by D-2: `OFB` · `OFS` · `OFG` · `BBB` · `HUM` · `DSP` 
   - AND IT MUST exclude the 3 foreign DSP actors with the recorded reason from D-3
   - AND IT MUST quarantine the **8 of 26** `Bulk buyers_beans` organisations that have neither a region nor a district
   - AND IT MUST quarantine **all 11 `Seed Company` organisations** on the first pass: that sheet has no region column and its location column is **0 of 12 filled**, so district derivation cannot serve it. The AT team supplies a region per organisation to unblock them — these are 11 named companies with public addresses. Added after Judgment Day S-1, which found the sheet counted in the yield with no mechanism to satisfy a required field (`design.md` DD-11)
-  - BUT it must NOT reverse-geocode GPS to an administrative region as a substitute — that is a guess wearing the costume of a derivation, and only 7 of the 11 have coordinates anyway
+  - BUT it must NOT reverse-geocode GPS to an administrative region as a substitute — that is a guess wearing the costume of a derivation, and only 6 of the 11 have coordinates anyway (corrected from 7 at the T-8 pivot, `execution.md` — C-10)
   - BUT it must NOT substitute a placeholder, a nearest-neighbour, or a most-frequent region for an unresolved value
 
 #### Scenario: District rescues a region-less record
@@ -292,7 +292,7 @@ Sheet prefixes fixed by D-2: `OFB` · `OFS` · `OFG` · `BBB` · `HUM` · `DSP` 
 
 #### Scenario: DMS coordinates are not silently coerced
 
-- GIVEN a QDS row whose latitude/longitude are in degrees-minutes form (measured on **71** cells), including at least one value with an out-of-range minutes component
+- GIVEN a QDS row whose latitude/longitude are in degrees-minutes form (measured on **70** cells, corrected from 71 at the T-8 pivot — `execution.md` — C-11), including at least one value with an out-of-range minutes component
 - WHEN the row is mapped
 - THEN GPS is either converted by a rule stated in `mapping.md` **or** left blank with the row flagged
 - AND IT MUST NOT pass a DMS string into a decimal GPS column, where `Number()` coercion yields `NaN` or a wrong number
@@ -383,7 +383,7 @@ The dominant risk here is **not** a code defect. It is a **semantically wrong ma
 | ID | Assumption | If wrong |
 |---|---|---|
 | **A-1** | The AT/Alliance team performs the flattening from `mapping.md` (epic Option A) | Escalate to Option B; re-scope entirely |
-| **A-2** | **806** is the pre-quarantine ceiling and **~757** the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected from ~748 to ~752 at the T-7 pivot, then to ~757 at the T-7 rework — C-5); the net is right to ±5% | `reconciliation.md` reports the truth; no logic depends on the estimate |
+| **A-2** | **806** is the pre-quarantine ceiling and **~751** the expected net after the quarantines FR-3/FR-4/FR-10 mandate (`design.md` §9.1, corrected from ~748 to ~752 at the T-7 pivot, to ~757 at the T-7 rework — C-5, and to ~751 at the T-8 pivot — C-8); the net is right to ±5% | `reconciliation.md` reports the truth; no logic depends on the estimate |
 | **A-3** | Dropping QDS production data and commercial trade metrics is acceptable to the program | Those become their own epic. Cheapest to reverse **now** |
 | **A-4** | `Offtaker_Groundnuts.Capacity (volume)` unit is unconfirmed, so the column is **dropped**, not guessed | If the client confirms tonnes, a follow-up maps 144 capacity values |
 
@@ -392,7 +392,7 @@ The dominant risk here is **not** a code defect. It is a **semantically wrong ma
 - **OQ-1 — RESOLVED 2026-08-04 during this specify run.** `proposal.md` lines 44, 65, and 141 contained **three real contact phone numbers** copied from the workbook, one belonging to a named contact on the `Seed Company` sheet. All three were redacted to format placeholders and the D-7 gate now returns clean. **Residual decision for the user:** the values remain in git history; rewriting history is out of this spec's scope.
 - **OQ-2:** `Offtaker_Groundnuts.Capacity (volume)` — tonnes, kg, or bags? Blocks 144 capacity values only; A-4 drops the column until answered.
 - **OQ-3:** Should the 11 `"Retaler"` rows get a deliberate typo alias (`retaler → informal_trader`), or be corrected by the AT team in the source? Both are defensible; FR-4 requires the choice be recorded either way.
-- **OQ-4:** 15 of the 26 `Bulk buyers_beans` organisations are named `…AMCOs` (Agricultural Marketing Co-operative Societies). Type them `bulk_buyer` per sheet identity, or `cooperative` per what they are? FR-4 currently prescribes sheet identity.
+- **OQ-4:** 12 of the 26 `Bulk buyers_beans` organisations are named `…AMCOs` (Agricultural Marketing Co-operative Societies) (corrected from 15 at the T-8 pivot, `execution.md` — C-9). Type them `bulk_buyer` per sheet identity, or `cooperative` per what they are? FR-4 currently prescribes sheet identity.
 - **OQ-5:** Does the program want the QDS production dataset represented at all (epic OQ-3, still open)? D-1 makes the organisation/individual split explicit but does not answer this.
 
 ---

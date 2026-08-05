@@ -295,6 +295,8 @@ Authored by T-8 (2026-08-04). Every count below was re-measured directly from th
 
 **OQ-4, measured (not resolved — interim default per DD-2 stands).** OQ-4 asks whether the `…AMCOs` organisations should type as `cooperative` rather than sheet-level `bulk_buyer`. `requirements.md` §10 states **15** such organisations. Direct measurement of all 26 identity-row names found **12** containing `AMCOs`/`AMCos` (case-insensitive): identity rows 143, 150, 154, 160, 166, 170, 175, 180, 186, 191, 196, 202. This is a measured discrepancy with the published figure, reported as a finding (§8) rather than silently adopted either way; it does not change DD-2's interim `bulk_buyer` assignment, which this task leaves standing and un-overridden.
 
+**Resolved 2026-08-05.** `requirements.md` §10 (OQ-4), `design.md` DD-2, and `design.md` §10.1 F-3 are now corrected to **12** — see `execution.md`'s Pivot Record — C-9. This resolves only the **count** discrepancy. OQ-4's underlying taxonomy question — `bulk_buyer` vs `cooperative` — is untouched by the amendment and remains genuinely open, per the "not resolved — interim default per DD-2 stands" clause above.
+
 **Column disposition table (17 of 17):**
 
 | # | Source column | Disposition |
@@ -334,6 +336,8 @@ Authored by T-8 (2026-08-04). Every count below was re-measured directly from th
 **Trader type — sheet-level (DD-2).** Every `HUM` actor is typed `humanitarian`. The source `Category` column is **not** the driver (FR-4): it resolves against `TRADER_TYPE_ALIASES`/`TRADER_TYPE_BY_LOWER` for only **26 of 35** rows — measured directly by evaluating every filled `Category` value against the live alias map. The 9 that do not resolve are `FO` (1), `Public` (2), `UN` (1), `"Cooperative for University Graduates"` (1, does not exact-match the `cooperative` alias), `Program` (1), and 3 blank cells. Matches `requirements.md` FR-4's cited resolve rate exactly.
 
 **DD-1 residual, resolved by this task.** `design.md` DD-1 left open whether `Humantarian`'s ~31 non-ambiguous `Location` values are region-level (closing DD-1 at 3 contributing sheets) or include district-level values (in which case `DISTRICT_TO_REGION` would be short by one or more entries). Measured: **every one of the 31 non-ambiguous values is an exact, case-correct member of `CANONICAL_REGIONS`** — `Arusha`, `Iringa`, `Manyara`, `Dodoma`, `Kagera`, `Songwe`, `Mbeya`, `Dar es Salaam`, `Morogoro`, `Kigoma`, `Tanga`. None require district derivation. **This closes DD-1 at 3 contributing sheets** (`Offtaker_Sorghum`, `Offtaker_Groundnuts`, `Bulk buyers_beans`, per §2's corroborating note); `Humantarian` contributes **zero** entries to `DISTRICT_TO_REGION`. Per this task's brief, no entry is added to `normalize.ts` or §2's table — there is nothing to add.
+
+**Resolved 2026-08-05.** `design.md` DD-1 is now updated to record this closure directly — its "open, and deliberately left open" framing is replaced with "closed at the T-8 pivot", and a new closing bullet states the 3-sheet closure and leaves the separate 2-row residual open — see `execution.md`'s Pivot Record — C-12.
 
 **Region — the 4 ambiguous quarantines (FR-3 Scenario):**
 
@@ -433,6 +437,8 @@ The remaining **8** domestic rows carry a clean, exact `CANONICAL_REGIONS` value
 
 **GPS coordinates — measured discrepancy (reported in §8).** `design.md` DD-11 states "only 7 of the 11 have coordinates anyway." Direct measurement of physical columns 7–8 (`lat`/`long`) finds **6 of 11** rows filled (rows 3, 5, 7, 8, 9, 10), not 7. Does not change DD-11's decision to reject reverse-geocoding as a substitute derivation, which holds regardless of whether the count is 6 or 7.
 
+**Resolved 2026-08-05.** `design.md` DD-11 and `requirements.md` FR-3 now read "6 of 11", matching this measurement — see `execution.md`'s Pivot Record — C-10.
+
 **Column disposition table (28 of 28):**
 
 | # | Source column | Disposition |
@@ -522,7 +528,7 @@ The remaining **8** domestic rows carry a clean, exact `CANONICAL_REGIONS` value
 
 **Region / district.** All 26 `cbo` rows carry a non-blank `region_name`, and it is always a canonical region value — **QDS contributes zero rows to `DISTRICT_TO_REGION`** (matches `design.md` §4.2's operative definition exactly). `district_name` is filled for most rows and left blank (harmless — optional) where absent (e.g. rows 15, 16, 23).
 
-**DMS coordinates (FR-10 Scenario).** Measured **70** DMS-format coordinate cells (35 `latitude` + 35 `longitude`, the same 35 rows for both) — a small measured difference from `requirements.md`'s cited **71**, reported in §8 and not resolved here; it does not change the disposition below. DMS values use the pattern `01⁰33.939″` (degree symbol `⁰`, seconds mark `″`) rather than plain ASCII. At least 5 confirmed values carry an out-of-range minutes component (≥ 60), e.g. row 6's longitude `030⁰94.818″`. Per DD-10: DMS cells are **left blank and the row flagged**, never passed to `Number()` coercion. `gpsLatitude`/`gpsLongitude` are optional, so affected rows still import.
+**DMS coordinates (FR-10 Scenario).** Measured **70** DMS-format coordinate cells (35 `latitude` + 35 `longitude`, the same 35 rows for both) — a small measured difference from `requirements.md`'s cited **71**, reported in §8. **Resolved 2026-08-05:** `requirements.md` FR-10's scenario, `requirements.md` §3.1's QDS cell, `design.md` §9's findings table, and `design.md` DD-10 are now corrected to **70** — see `execution.md`'s Pivot Record — C-11. It does not change the disposition below. DMS values use the pattern `01⁰33.939″` (degree symbol `⁰`, seconds mark `″`) rather than plain ASCII. At least 5 confirmed values carry an out-of-range minutes component (≥ 60), e.g. row 6's longitude `030⁰94.818″`. Per DD-10: DMS cells are **left blank and the row flagged**, never passed to `Number()` coercion. `gpsLatitude`/`gpsLongitude` are optional, so affected rows still import.
 
 **Altitude unit text.** `altitude` (physical column 12) mixes plain numbers with `"<number> masl"` strings (e.g. `"1325 masl"`). `DERIVED → gpsAltitude (rule: strip the trailing unit suffix "masl", keep the numeric value; plain numeric cells pass through unchanged)`.
 
@@ -649,9 +655,13 @@ Per this spec's standing rule (`requirements.md` §1: *"measurement wins over es
 
 `requirements.md` §10 (OQ-4) states **15** of the 26 organisations are named `…AMCOs`. Direct measurement of all 26 identity-row names (§4.1) found **12**: identity rows 143, 150, 154, 160, 166, 170, 175, 180, 186, 191, 196, 202. Does not affect DD-2's interim `bulk_buyer` assignment (OQ-4 remains open either way), and does not change the 26/18-net BBB figures anywhere else in this spec.
 
+**Resolved 2026-08-05.** `requirements.md` OQ-4, `design.md` DD-2's OQ-4 paragraph, and `design.md` §10.1 F-3 are now corrected to **12** throughout — see `execution.md`'s Pivot Record — C-9.
+
 ### 8.2 `Digital Service Provider` — 2 additional region-ambiguous domestic rows
 
 `design.md` §9.1 nets `Digital Service Provider` at **10** (the 13 physical rows minus the 3 D-3 foreign exclusions, with no further quarantine). Direct measurement of the 10 domestic rows' `Location` values (§4.3) found rows 3 and 4 both hold `"West and South Tanzania "` — a multi-region descriptive value that `normalizeRegion` refuses, the same class of refusal FR-3 already documents for `Humantarian`'s `"Across Tz"`. If these 2 rows quarantine on `region` the same way the `Humantarian` scenario is required to, `Digital Service Provider`'s expected net becomes **8**, not 10 — a **−2** shift to `design.md` §9.1's yield table and the ~757 grand total. This task does not alter the DSP disposition table's `MAPPED → region` label (a source value being ambiguous does not change what it maps to); it flags that the yield table's arithmetic needs the Leader's review.
+
+**Resolved 2026-08-05.** `design.md` §9.1's DSP row and `requirements.md` §3.1's DSP cell are now corrected to net **8** — see `execution.md`'s Pivot Record — C-6.
 
 ### 8.3 `Seed Company` — physical column 12 and the GPS count
 
@@ -659,6 +669,8 @@ Two related measurements against DD-11 and its "only 7 of the 11 have coordinate
 
 - **Column 12** (unnamed on both header rows, 11/11 filled) holds what reads as the sheet's true "Where is the offtaker based" data, physically displaced from its own header (column 9, 0/11 filled). This does not change DD-11's binding quarantine-all-11 disposition, but it changes how the AT team's mandated region pass gets done — from "no information" to "mostly-there text needing light cleanup."
 - **GPS coordinates**: measured **6 of 11** rows filled (rows 3, 5, 7, 8, 9, 10), not the 7 DD-11 cites. Does not change DD-11's rejection of reverse-geocoding as a substitute derivation.
+
+**Resolved 2026-08-05 (GPS count only — the column-12 finding above is unrelated to this correction and stays advisory).** `design.md` DD-11 and `requirements.md` FR-3 are now corrected to **6 of 11** — see `execution.md`'s Pivot Record — C-10.
 
 ### 8.4 `QDS_ Seed producers` — the cbo-block net and the "1 blank category" line
 
@@ -670,10 +682,14 @@ Two related measurements against DD-11 and its "only 7 of the 11 have coordinate
 
 Net: **23 − 5 = 18**, not ~22 — a **−4** shift to `design.md` §9.1's yield table and the ~757 grand total.
 
-**Combined effect if the Leader accepts 8.2 and 8.4 as written:** `design.md` §9.1's total moves from **434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = 757** to **434 + 97 + 145 + 18 + 31 + 8 + 0 + 18 = 751**. `Humantarian` (31) and `Bulk buyers_beans` (18) are independently **confirmed**, not contradicted, by this task's measurement — stated explicitly because T-7 FAILed once on an unverified sibling-document claim, and this task verified both before writing this line.
+**Resolved 2026-08-05.** `design.md` §9.1's QDS row and `requirements.md` §3.1's QDS cell are now corrected to net **18**, with the "1 blank category" quarantine replaced by the DD-6 5-personal-name basis — see `execution.md`'s Pivot Record — C-7.
+
+**Combined effect of 8.2 and 8.4 — applied, not merely proposed (Resolved 2026-08-05 — C-8):** `design.md` §9.1's total moved from **434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = 757** to **434 + 97 + 145 + 18 + 31 + 8 + 0 + 18 = 751** — see `execution.md`'s Pivot Record. `Humantarian` (31) and `Bulk buyers_beans` (18) are independently **confirmed**, not contradicted, by this task's measurement — stated explicitly because T-7 FAILed once on an unverified sibling-document claim, and this task verified both before writing this line.
 
 ### 8.5 Minor: QDS DMS cell count
 
 `requirements.md`/`design.md` cite **71** DMS-format coordinate cells. Direct measurement found **70** (35 latitude + 35 longitude, the same 35 rows for both). Does not change DD-10's blank-and-flag disposition.
 
-**None of §8.1–8.5 required editing `normalize.ts`, `requirements.md`, `design.md`, or `tasks.md` — per this task's file-list constraint, they are reported here for the Leader to adjudicate, not resolved by edit.**
+**Resolved 2026-08-05.** `requirements.md` FR-10's scenario, `requirements.md` §3.1's QDS cell, `design.md` §9's findings table, and `design.md` DD-10 are now corrected to **70** — see `execution.md`'s Pivot Record — C-11.
+
+**Resolved 2026-08-05, all five findings above (plus DD-1's closure, §4.2).** The Leader adjudicated §8.1–§8.5 and the user approved a full amendment: `requirements.md`, `design.md`, and `tasks.md` are now corrected throughout as **C-6…C-13** — see `execution.md`'s Pivot Record. `mapping.md` (this document) and `judgment.md` remain frozen — no figure in either was revised by that amendment, only annotated here. The sentence below was accurate when T-8 wrote it and is superseded by the Leader's subsequent adjudication, not retracted: **"None of §8.1–8.5 required editing `normalize.ts`, `requirements.md`, `design.md`, or `tasks.md` — per this task's file-list constraint, they are reported here for the Leader to adjudicate, not resolved by edit."**

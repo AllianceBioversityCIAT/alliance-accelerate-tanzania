@@ -1189,7 +1189,7 @@ Corroboration available without the workbook: BBB's 12 `…AMCOs` identity rows 
 
 #### Pivot Record: T-8 — user approved the full amendment (2026-08-05)
 
-**Decision: option 1 — amend now, in full.** All five §8 findings plus `design.md` DD-1's closure propagate into `requirements.md`, `design.md`, and `tasks.md`, recorded as corrections **C-6…C-11** in the shape of T-7's approved C-1…C-5. Rationale accepted: T-10's entire deliverable is reconciliation arithmetic against `design.md` §9.1, and T-9's runbook is written against the same figures — opening either against a known-wrong 757 guarantees rework, and the correction would then land with no approval gate of its own.
+**Decision: option 1 — amend now, in full.** All five §8 findings plus `design.md` DD-1's closure propagate into `requirements.md`, `design.md`, and `tasks.md`, recorded as corrections **C-6…C-13** in the shape of T-7's approved C-1…C-5. *(Range corrected from "C-6…C-11" — a Leader labelling error caught by the amendment's Reviewer. The approved **scope** is unchanged and always included both items the extra IDs cover: DD-1's closure is **C-12** and `design.md` §7's stale ~795 PII sizing is **C-13**, both named in the amendment-surface paragraph below when the user approved it. Only the label was short.)* Rationale accepted: T-10's entire deliverable is reconciliation arithmetic against `design.md` §9.1, and T-9's runbook is written against the same figures — opening either against a known-wrong 757 guarantees rework, and the correction would then land with no approval gate of its own.
 
 **Sequenced after T-8's rework, deliberately.** The amendment is *not* dispatched concurrently with the in-flight rework attempt 2, despite touching a disjoint file set. Conformance FAIL 3 (261 physical rows vs FR-10's 249 distinct names) may resolve into a **sixth §8 finding**, and an amendment drafted from the current §8 would then be incomplete at exactly the point this pivot exists to fix. The correction list is finalized against the **post-rework** §8, not the present one.
 
@@ -1242,3 +1242,41 @@ Eight discrete edits, 62 lines, `mapping.md` only. **No figure moved** — verif
 | Per-sheet column arithmetic | Manual, shown in §4.1–§4.5 and §5 | **17 / 10 / 10 / 28 / 53**, all closing; 118 total |
 
 **Not offered as evidence of mapping correctness** — per `tasks.md` T-8's own disqualifier, this task has no correctness gate. What remains unverified is `design.md` §12.1's uncoverable set: whether each column landed on the semantically right canonical field (D-6/R-1), whether each trader-type assignment is factually correct, and whether the QDS hand-classification is right. **No Reviewer could open the workbook** (the wrapper grants `Read`/`Grep`/`Glob` only), so every workbook-sourced figure rests on the Implementer's full-sheet trace of 536 rows and on internal consistency across five denominators, four disjointness partitions, and every sibling-document citation checked at source.
+
+#### Pivot amendment C-6…C-13 — applied, reviewed, ✅ **PASS on attempt 2**
+
+**Files:** `requirements.md`, `design.md`, `tasks.md` (the corrections) + `mapping.md` (resolution markers). `judgment.md` untouched — it is a frozen historical record. No code touched.
+
+**Attempt 1 — ❌ FAIL, one issue.** An independent Reviewer cleared both invariants, the arithmetic, C-13's rescale, and every second-site propagation, and FAILed on a single orphan: `mapping.md` §4.1 still read *"`requirements.md` §10 states **15**"* and framed it as a live discrepancy, 358 lines from the §8.1 marker that resolved it. Every other falsified quotation was covered; this was the sole site of its class left uncovered.
+
+**Attempt 2 — ✅ PASS.** The marker was added in the established form, and it keeps two things distinct that were easy to conflate: the **count** discrepancy (15 → 12) is resolved, while **OQ-4's taxonomy question** (`bulk_buyer` vs `cooperative`) remains genuinely open per DD-2's interim default. Marking the whole paragraph resolved would have silently settled an open question — precisely what `tasks.md` T-8 forbids ("OQ-4 is flagged, not silently settled").
+
+**Verification discipline, stated rather than implied:** attempt 2's delta was **one marker, at the line the Reviewer named, in the text the Reviewer dictated**. The Leader verified it inline — the marker is present, its content matches, OQ-4's open question survives beside it, and a diff of the two states confirms nothing else changed. **A second full audit was not run for that single marker**, on proportionality. Everything else in this amendment carries a genuine independent PASS.
+
+#### Two Leader errors in this amendment, recorded rather than quietly fixed
+
+1. **The `mapping.md` staleness was a briefing error.** The amendment brief said *"do not touch `mapping.md`"* — correct while §8 was being used as the drafting authority, and wrong the moment the corrections landed, because `mapping.md`'s claims about its siblings were falsified by the very edits it authorized. Caught by the Leader's own post-amendment verification, before review. **The general lesson: when a document records "the sibling says X", correcting the sibling is not the end of the change — it is the middle of it.**
+2. **The correction-ID range was mislabelled.** Recorded and reported as "C-6…C-11" when the approved scope contained **eight** items. The scope was never short — DD-1's closure (**C-12**) and `design.md` §7's stale ~795 PII sizing (**C-13**) were both named in the amendment-surface paragraph the user approved. Only the label was. Caught by the amendment's Reviewer; corrected in this file and in `tasks.md` with the reason visible.
+
+#### Invariants — verified independently by the Leader, not accepted on report
+
+| Invariant | Result |
+|---|---|
+| `806` pre-quarantine ceiling untouched | ✅ No diff line moves it; `436+115+150+26+35+10+11+23 = 806` still closes. Both changed cells are net-column-only |
+| A-2's ±5% tolerance survives | ✅ 751 vs 757 is 0.8% |
+| Per-sheet cells use `candidates → net`, not overwrite | ✅ `10 candidates → 8 net`, `~23 candidates → 18 net`, matching §3.1's pre-existing `11 candidates → 0 net` |
+| Chain re-derives | ✅ `434 + 97 + 145 + 18 + 31 + 8 + 0 + 18 = 751` |
+| Superseded figures legible, not rewritten | ✅ 11 `Resolved 2026-08-05` markers; every surviving `757`/`752`/`748`/`795`/`71`/`15`/`7 of 11` is a "corrected from …" annotation |
+| Candidate counts unchanged | ✅ `requirements.md`'s `~23` in §3.1's count-correction note, D-1, and FR-10 are candidate figures and stay |
+| Gates | ✅ `npm test -- normalize --silent` 43/43 · NFR-9 D-7 clean · wide digit/email scan returns only arithmetic, dates, counts |
+
+**Extra live sites found during the work, beyond the Leader's mapped surface:** `design.md` §9's findings-table row (a fourth C-11 site) and `mapping.md` §4.5's "reported in §8 and not resolved here" sentence, which its own resolution falsified. Both found by the Implementer verifying line by line rather than working the list — the behavior the brief asked for.
+
+#### Advisories (recorded, non-gating)
+
+| # | Finding |
+|---|---|
+| A-19 | `requirements.md:88` (D-3's consequence) says "DSP yields 10, not 13" and `design.md:280` says §3.1 "already **nets** DSP to 10". Under the new rendering 10 is DSP's *candidate* count and 8 its net. Both are defensible as descriptions of D-3's own effect, but they use yield vocabulary for a candidacy figure |
+| A-20 | `mapping.md` §8's intro still says the findings "are reported here for the Leader to adjudicate"; covered by the section-closing marker that quotes and supersedes the identical closing sentence, but weaker than a marker at the intro itself |
+
+**Still true after this amendment:** every figure it moved rests on measurement **no Reviewer could verify** — the wrappers grant `Read`/`Grep`/`Glob` and cannot open the workbook. `mapping.md` §8 is the accepted authority, itself verified for internal consistency and sibling fidelity rather than for measurement truth. `design.md` §12.1's uncoverable set is unchanged by any of this.

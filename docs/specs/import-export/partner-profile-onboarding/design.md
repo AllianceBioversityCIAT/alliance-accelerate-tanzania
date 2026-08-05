@@ -211,7 +211,7 @@ Minimal and confined to the existing Admin import screen — no new route, no ne
 | **Consent** | Every record lands `UNKNOWN`, excluded by the ADR-004 Prisma `WHERE` from every public read *and* `/metrics` |
 | **Audit** | Unchanged — import already writes `ActorAuditLog` inside the same `$transaction` |
 | **Release gate** | `src/test/pii-boundary.spec.ts` green **before** any commit-mode upload and after (NFR-1) |
-| **The real exposure** | **Measured, not asserted:** 1,023 of 1,097 identity rows in the workbook carry a phone number and 56 carry an email. In the retained ~795-record set that is roughly **750 phone numbers and ~43 emails** for real Tanzanian organisations and contacts. The protection is consent gating |
+| **The real exposure** | **Measured, not asserted:** 1,023 of 1,097 identity rows in the workbook carry a phone number and 56 carry an email. In the retained **~751-record set** (corrected from ~795 at the T-8 pivot — `execution.md` — C-13; the intervening ~757 figure from the T-7 rework was never propagated to this row, per advisory A-13) that is roughly **~700 phone numbers and ~38 emails** for real Tanzanian organisations and contacts, rescaled at the same 1,023/1,097 and 56/1,097 rates. These are proportional estimates that gate nothing. The protection is consent gating |
 
 ### 7.1 What the PII gate does and does not prove (`judgment.md` C-2, C-3)
 
@@ -248,7 +248,7 @@ Each invalidated something in `proposal.md` and now drives a decision.
 | **Contaminated tail blocks**: `Offtaker_Sorghum` rows 110–116 and `Offtaker_Groundnuts` rows **149–152** hold company/person names in the district and town columns, and the same 4 rows hold a phone number in the trader-type column — corrected from 147–151 at the T-7 pivot (`execution.md` Finding 2) | DD-5: register by physical row number, hand-repair-or-quarantine |
 | **QDS rows 289–312 are not producers** — the `seed source` vocabulary (research institutes + the `Seed Company` sheet repeated verbatim) | DD-6: QDS yields ~**23**, not 42 |
 | **8 cross-sheet duplicate groups, 18 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS | DD-7: flag, never merge |
-| **71 QDS coordinate cells are DMS**, one with out-of-range minutes | DD-10: blank + flag, never coerce |
+| **70 QDS coordinate cells are DMS** (corrected from 71 at the T-8 pivot — `execution.md` — C-11), one with out-of-range minutes | DD-10: blank + flag, never coerce |
 | **`Seed Company` has no region and no district data** (its location column is 0/12 filled) | **DD-11**: all 11 quarantine pending an AT-team region pass |
 | ~~40 distinct district values need derivation, but only **29 are real districts**~~ → **corrected at T-2 to 38 distinct / 28 real / 10 contaminated** (§4.2) | Sizes `DISTRICT_TO_REGION` (§4.2) and separates it from contamination |
 | **1,023 of 1,097** identity rows carry a phone; **56** carry an email | Sizes the real PII exposure (§7) with a measurement instead of an assertion |
@@ -261,6 +261,8 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 > **Amendment C-5 (T-7 rework, 2026-08-04 — audit found two more of the same class of double-count).** Two further rows below repeated C-3's mistake: (1) `Offtaker_Sorghum` quarantined "11 `"Retaler"` · 6 blank region · 7 contaminated tail" = 24 — but `mapping.md` §3.2 states in two places that the 6 blank-`Region` rows sit **inside** the 7-row contaminated tail (rows 110–116), not beside it. The distinct set is **11 + 7 = 18**, not 24, moving this sheet's net from ~91 to **~97**. (2) `Offtaker_Beans` quarantined only "1 blank trader type" — but `mapping.md` §3.1 also records a second, distinct quarantine on this sheet: one ambiguous-region row (row 425, region value `"Arusha/Dodoma"`, refused by `normalizeRegion`) that is **not** the same row as the blank-trader-type row (row 436). The Leader confirmed the two rows are distinct by direct measurement of the source workbook. Beans therefore quarantines **2**, not 1, moving this sheet's net from ~435 to **~434**. Net effect on the grand total: ~752 → **~757**. Propagated to DD-8 below, `requirements.md` §3.1 and assumption **A-2**, and `tasks.md` T-10's scope and the FR-8 coverage row.
 
+> **Amendment C-6/C-7/C-8 (T-8 pivot, 2026-08-05 — `execution.md`, `mapping.md` §8).** T-8's cell-by-cell trace of the five remaining sheets found two further corrections to the table below, independently verified before amendment. (1) **Digital Service Provider:** 2 of its 10 domestic rows carry a region-ambiguous value (`"West and South Tanzania "`) that `normalizeRegion` refuses — the same refusal class as `Humantarian`'s `"Across Tz"` — beyond the 3 D-3 foreign exclusions already netted out of the pre-quarantine count. DSP's expected net moves from 10 to **8** — **C-6**. (2) **QDS:** this table's "1 blank category" quarantine had no basis — the sheet's only blank-`producer_category` row (row 312) sits inside the already-excluded 289–312 tail (FR-10), so it was never a member of the ~23-candidate `cbo` block and cannot be subtracted from it a second time. Applying DD-6's mandatory hand-classification instead finds 5 of the 23 distinct `cbo` names are personal names, which D-1 requires excluding. QDS's expected net moves from ~22 to **18** — **C-7**. Net effect on the grand total: ~757 → **~751** — **C-8**. `Humantarian` (31) and `Bulk buyers_beans` (18) were independently re-confirmed, not contradicted, by this pass.
+
 | Sheet | Pre-quarantine | Mandated quarantines / exclusions | Expected net |
 |---|--:|---|--:|
 | `Offtaker_Beans` | 436 | 1 ambiguous region (row 425) · 1 blank trader type (row 436) — **2 distinct** | ~434 |
@@ -268,16 +270,16 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 | `Offtaker_Groundnuts` | 150 | 1 free-text trader type (row 148) · 4 contaminated tail (rows 149–152, phone-in-type-column) — **5 distinct, not 9** | ~145 |
 | `Bulk buyers_beans` | 26 | 8 with neither region nor district | 18 |
 | `Humantarian` | 35 | 4 ambiguous locations | 31 |
-| `Digital Service Provider` | 10 | 3 foreign (D-3) — already excluded from this candidate count; see the pre-quarantine-convention note below | 10 |
+| `Digital Service Provider` | 10 | 3 foreign (D-3) — already excluded from this candidate count; see the pre-quarantine-convention note below · 2 region-ambiguous domestic rows (same refusal class as `Humantarian`'s `"Across Tz"`) — net corrected 10 → 8 at the T-8 pivot, `execution.md` — **C-6** | 8 |
 | `Seed Company` | 11 | **11 — no region data (DD-11)** | 0 |
-| `QDS` (organisations) | ~23 | 1 blank category | ~22 |
-| **Total** | **806** | | **~757** |
+| `QDS` (organisations) | ~23 | 5 personal names among the `cbo` block (DD-6 hand-classification, D-1) — **not** "1 blank category": that row sits inside the already-excluded 289–312 tail, not the ~23-candidate block. Net corrected ~22 → 18 at the T-8 pivot, `execution.md` — **C-7** | 18 |
+| **Total** | **806** | | **~751** |
 
-`434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = 757`.
+`434 + 97 + 145 + 18 + 31 + 8 + 0 + 18 = 751` (corrected from `434 + 97 + 145 + 18 + 31 + 10 + 0 + 22 = 757` at the T-8 pivot — **C-8**).
 
 **Pre-quarantine-column convention (advisory, predates the T-7 pivot).** This column previously listed `Digital Service Provider` at its raw physical row count (13) and then subtracted the 3 D-3 foreign exclusions as a mandated quarantine — which made the column sum to 809, not the 806 the Total row stated, and disagreed with `requirements.md` §3.1, which already nets DSP to 10 (treating D-3's foreign exclusion as a candidacy decision made before this table, not a quarantine bucket inside it). This table now uses that same convention throughout: **"Pre-quarantine" is the candidate count after any structural candidacy decision already made elsewhere in this spec (D-1, D-3, DD-6) — DD-11 excepted: its 11 `Seed Company` rows stay in the pre-quarantine count as candidates, because DD-11 quarantines them pending the AT-team region pass rather than removing them from candidacy, so this table records that exclusion in its own quarantine column — and before the quarantine/exclusion decisions this table itself records.** DSP's row is corrected to 10 pre-quarantine, with D-3's exclusion noted for traceability but not subtracted a second time; the column now sums to **806**, unchanged from the ceiling already published everywhere else in this spec.
 
-**~757 is the figure to expect; 806 is the pre-quarantine ceiling.** Both are estimates against one workbook version. `reconciliation.md` reports the truth and no requirement depends on either number (A-2). A result near ~757 is the requirements **working**, not a defect — which is precisely why the earlier single figure was hazardous.
+**~751 is the figure to expect; 806 is the pre-quarantine ceiling** (corrected from ~757 at the T-8 pivot, `execution.md` — C-8; the 806 ceiling is unaffected — both C-6 and C-7 are net-column-only corrections). Both are estimates against one workbook version. `reconciliation.md` reports the truth and no requirement depends on either number (A-2). A result near ~751 is the requirements **working**, not a defect — which is precisely why the earlier single figure was hazardous.
 
 ---
 
@@ -286,7 +288,8 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 ### DD-1: Region derivation happens at mapping time, not in the importer
 
 - **Context:** 162 rows across 5 sheets need `region` derived from `district`. `Offtaker_Groundnuts` has no `Region` column at all.
-- **Measurement correction (T-2, 2026-08-04) — open, and deliberately left open.** Direct measurement found **160 rows across 3 contributing sheets**: `Offtaker_Sorghum` 6 · `Offtaker_Groundnuts` 150 · `Bulk buyers_beans` 4. `QDS` contributes **zero** (all 26 `cbo` rows already carry `region_name`) and `Seed Company` is excluded by DD-11, so the "5 sheets" does not hold either. The 2-row residual is numerically identical to the 2 dropped distinct values in §4.2's correction, which suggests the original count included one district-position value from each of two sheets outside the blank-region scan. One is explained (an ambiguous-region `Offtaker_Sorghum` row); the second is not. The outstanding candidate is **`Humantarian`** — the only sheet with location data covered by neither DD-11 nor a blank-region scan — and confirming whether its 31 non-ambiguous rows resolve as *regions* (closing this at 3 sheets) or include district-level values (in which case `DISTRICT_TO_REGION` is short by one) belongs to **T-8**, which owns that sheet's columns. **Not closed by guessing:** the omission direction is the safe one, since an absent district quarantines on `region` — which FR-3 explicitly prefers to a derivation — and surfaces as a visible line item in `reconciliation.md`. Under-coverage cannot produce a D-1b defect; over-coverage can.
+- **Measurement correction (T-2, 2026-08-04) — closed at the T-8 pivot (see below); originally left open deliberately.** Direct measurement found **160 rows across 3 contributing sheets**: `Offtaker_Sorghum` 6 · `Offtaker_Groundnuts` 150 · `Bulk buyers_beans` 4. `QDS` contributes **zero** (all 26 `cbo` rows already carry `region_name`) and `Seed Company` is excluded by DD-11, so the "5 sheets" does not hold either. The 2-row residual is numerically identical to the 2 dropped distinct values in §4.2's correction, which suggests the original count included one district-position value from each of two sheets outside the blank-region scan. One is explained (an ambiguous-region `Offtaker_Sorghum` row); the second is not. The outstanding candidate is **`Humantarian`** — the only sheet with location data covered by neither DD-11 nor a blank-region scan — and confirming whether its 31 non-ambiguous rows resolve as *regions* (closing this at 3 sheets) or include district-level values (in which case `DISTRICT_TO_REGION` is short by one) belongs to **T-8**, which owns that sheet's columns. **Not closed by guessing:** the omission direction is the safe one, since an absent district quarantines on `region` — which FR-3 explicitly prefers to a derivation — and surfaces as a visible line item in `reconciliation.md`. Under-coverage cannot produce a D-1b defect; over-coverage can.
+- **Closed (T-8 pivot, 2026-08-05 — `execution.md`, `mapping.md` §8 via §4.2) — C-12.** T-8 measured all 31 non-ambiguous `Humantarian` `Location` values against `CANONICAL_REGIONS` and found every one an exact member — none are district-level. `DISTRICT_TO_REGION` needs no entry from `Humantarian`, and **DD-1 closes at 3 contributing sheets**: `Offtaker_Sorghum`, `Offtaker_Groundnuts`, `Bulk buyers_beans`. The separate 2-row residual named above (the second, unexplained dropped-distinct-value) is **not** resolved by this finding and **stays open**.
 - **Options:** (a) importer derives when `Region` is blank · (b) reference sheet added to the template for VLOOKUP · (c) published lookup table in `mapping.md`, sourced from a tested constant.
 - **Decision: (c).**
 - **Consequences:** The importer's contract is unchanged, so a blank or unresolvable `Region` still fails → quarantine. **(a) rejected** because it would silently rescue genuinely region-less rows on *every future import*, weakening a required field system-wide to serve one onboarding. **(b) rejected on cost, not on a version constraint** — correcting the earlier reasoning (`judgment.md` S-5): `TEMPLATE_VERSION` bumps on *column* change (`template-columns.ts:23-28`), and a new worksheet changes no column and no `TEMPLATE_HEADERS`, so it would **not** force a version bump. It is declined because it puts a reference dataset inside a distributed binary asset that must then be regenerated and re-shipped whenever Tanzania's administrative map changes, where (c) is a text edit.
@@ -308,7 +311,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 - **The 11 `"Retaler"` rows (FR-4, OQ-3 — `judgment.md` C-5):** **quarantine, do not add an alias.** `normalize.ts:182` already carries the correctly-spelled `retailer → informal_trader`; adding `retaler` would bake a single workbook's typo into a shared taxonomy that every future import consults. The AT team corrects 11 cells in the source instead. **This closes OQ-3.**
 - **`cbo` is avoided by construction, not by impossibility.** Writing canonical codes means the raw `cbo` value never reaches `normalizeTraderType`. But the alias remains live for anyone who *does* submit `cbo` — the previous draft's claim that the collision was "structurally impossible" was false (§1 consequence 2, `judgment.md` C-7). What is true: this onboarding never submits the value, so the collision cannot occur *on this path*.
 - **Consequences:** `normalize.ts`'s alias map needs no change, so no existing import behavior shifts. Cost: the type becomes a mapping decision a human must get right — the R-1 blind spot, covered by the §12 substitutes.
-- **OQ-4 remains open (`judgment.md` S-9):** 15 of the 26 `Bulk buyers_beans` organisations are named `…AMCOs` (Agricultural Marketing Co-operative Societies) and are arguably `cooperative`. Sheet identity (`bulk_buyer`) is the **interim default**; the decision is flagged in `mapping.md` for the AT team and is not silently settled here.
+- **OQ-4 remains open (`judgment.md` S-9):** 12 of the 26 `Bulk buyers_beans` organisations are named `…AMCOs` (Agricultural Marketing Co-operative Societies) (corrected from 15 at the T-8 pivot, `execution.md` — C-9) and are arguably `cooperative`. Sheet identity (`bulk_buyer`) is the **interim default**; the decision is flagged in `mapping.md` for the AT team and is not silently settled here.
 
 ### DD-3: Phone normalization is wired into the import path, not the write DTO
 
@@ -348,7 +351,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 ### DD-8: One upload per source sheet
 
-- **Context:** `MAX_DATA_ROWS = 1000`, 4 MB decoded cap, single synchronous Lambda request. Total net yield ~757 (§9.1) would *fit* one upload; the largest single sheet (436) fits comfortably.
+- **Context:** `MAX_DATA_ROWS = 1000`, 4 MB decoded cap, single synchronous Lambda request. Total net yield ~751 (§9.1, corrected from ~757 at the T-8 pivot — `execution.md` — C-8) would *fit* one upload; the largest single sheet (436) fits comfortably.
 - **Decision:** one upload per sheet anyway.
 - **Consequences:** Per-sheet reconciliation counts come for free, a failure's blast radius is one sheet, and headroom under both caps stays wide. **The cap does not force splitting at this volume — auditability is the actual reason.**
 
@@ -361,7 +364,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 ### DD-10: DMS coordinates are blanked and flagged, never coerced
 
-- **Context:** 71 QDS coordinate cells are degrees-minutes strings; at least one has out-of-range minutes. `Number()` on them yields `NaN`.
+- **Context:** 70 QDS coordinate cells are degrees-minutes strings (corrected from 71 at the T-8 pivot — `execution.md` — C-11); at least one has out-of-range minutes. `Number()` on them yields `NaN`.
 - **Decision:** leave GPS blank and flag the row.
 - **Consequences:** `gpsLatitude`/`gpsLongitude` are optional, so the actor still imports — FR-10 forbids quarantining an actor merely for unusable GPS. Most affected rows disappear with the excluded individuals (D-1). A conversion rule was rejected because one measured value is already invalid, so conversion would need its own validation and quarantine path to serve very few records.
 
@@ -370,7 +373,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 - **Context (`judgment.md` S-1):** the sheet has no region column and its location column (`Where is the offtaker based(Town/District)`) is **0 of 12 filled**. `region` is required at three layers: `schema.prisma:41`, `template-columns.ts:108-113` (`required: true`), and `actor-import.service.ts:357-358`. DD-1's district lookup cannot help — there is no district either.
 - **Options:** (a) quarantine all 11 · (b) derive region from each company's GPS · (c) have a human supply the region.
 - **Decision: (a), with (c) as the unblocking step.** All 11 quarantine; the AT team supplies a region per organisation — these are 11 named seed companies with public addresses, so this is minutes of work, not research.
-- **Consequences:** `Seed Company` contributes **0** actors in the first pass (§9.1). **(b) rejected** — reverse-geocoding to an administrative region is a guess dressed as a derivation, and FR-3 explicitly forbids substituting a placeholder or nearest-neighbour region. Note only 7 of 11 have GPS anyway.
+- **Consequences:** `Seed Company` contributes **0** actors in the first pass (§9.1). **(b) rejected** — reverse-geocoding to an administrative region is a guess dressed as a derivation, and FR-3 explicitly forbids substituting a placeholder or nearest-neighbour region. Note only 6 of 11 have GPS anyway (corrected from 7 at the T-8 pivot — `execution.md` — C-10).
 
 ### 10.1 Follow-ups this spec knowingly defers
 
@@ -380,7 +383,7 @@ Recorded here because the previous draft cited a follow-up register that did not
 |---|---|---|
 | **F-1** | `normalizePhone()`'s `null` branch **narrows** existing import behavior: a value that previously stored verbatim now stores as `null` + warning (§4.1) | Deliberate and desirable, but it is a behavior change and must be visible in review rather than buried in NFR-3's "additive only" |
 | **F-2** | Admin-form-entered phones remain unnormalized, so the same value is normalized on the import path and not on the form path (DD-3) | Fixing it needs a DTO `@Transform` with nowhere to surface the multi-number warning; a separate spec should decide the write-path contract |
-| **F-3** | `OQ-4` — 15 `…AMCOs` typed `bulk_buyer` by sheet identity rather than `cooperative` | Needs the program's taxonomy call; flagged in `mapping.md` |
+| **F-3** | `OQ-4` — 12 `…AMCOs` typed `bulk_buyer` by sheet identity rather than `cooperative` (corrected from 15 at the T-8 pivot — `execution.md` — C-9) | Needs the program's taxonomy call; flagged in `mapping.md` |
 | **F-4** | No automated gate exists for public invisibility over the real committed dataset (§7.1) | Requires a test environment with a reachable database; out of this spec's scope |
 
 ### Reversion challenge (Step 2.3)
@@ -398,7 +401,7 @@ No other decision removes, disables, or inverts delivered behavior. DD-1 and DD-
 | ID | Risk | Mitigation |
 |---|---|---|
 | **R-1** | **A wrong-column mapping passes every gate.** The importer validates shape, not meaning — and its `Region`/`Trader Type` checks accept alias supersets, not the canonical lists (§1 consequence 2) | Mandatory human review of `mapping.md` at the HITL gate; ≥5-row cell-by-cell trace per sheet recorded in the reconciliation; residual risk accepted in writing (`requirements.md` §9) |
-| **R-2** | **~750 real phone numbers and ~43 emails enter the DB** across the onboarding (§7, measured) | Everything `UNKNOWN` → excluded by the ADR-004 `WHERE`. `pii-boundary.spec.ts` green before *and* after, plus the §7.1 operator-run post-commit check |
+| **R-2** | **~700 real phone numbers and ~38 emails enter the DB** across the onboarding (§7, measured; rescaled to the ~751-record set at the T-8 pivot — `execution.md` — C-13) | Everything `UNKNOWN` → excluded by the ADR-004 `WHERE`. `pii-boundary.spec.ts` green before *and* after, plus the §7.1 operator-run post-commit check |
 | **R-3** | **Silent data loss** — a 700-row "success" from a **1,237**-row source reads as success | Reconciliation classifies every physical row into one of four buckets; totals reconcile per sheet (FR-8) |
 | **R-4** | **Irreversible keys** | Scheme fixed and user-approved before execution (DD-9); reproducible by construction, though only verifiable by re-running the mapping |
 | **R-5** | The workbook is a **human artifact that keeps changing** — three header rows, three spellings of one concept, appended blocks already | The mapping doc is the artifact, editable in minutes. The contaminated-row register is version-bound (DD-5) |
