@@ -90,7 +90,7 @@
       **Disqualifying:** testing only known-vs-unknown leaves the over-cap branch — the one C-3 was raised for — unexercised. Three cases or the oracle clause is unproven.
       Skills: `nestjs-expert`, `api-design-principles`
 
-- [ ] **T-9** `RegistrationCreateDto`, enumerated explicitly  (deps: T-1)
+- [x] **T-9** `RegistrationCreateDto`, enumerated explicitly  (deps: T-1)
       Scope: The field table in `design.md` §4.1 verbatim — **not** "mirror `ActorCreateDto`" (C-13: `crops` is `@IsOptional` there and `@MaxLength` covers only 2 of 9 strings). `@ArrayNotEmpty()` on crops. `@MaxLength` on every free-text string. `@ValidateNested()` + `@Type()` on the nested `consent` object, required under the production pipe's `whitelist: true` (B33). Cross-field coordinate pairing. **No `email` in the payload** (S-6).
       Traces: FR-2 (scenarios 1–3), `design.md` §4.1
       Files: `backend/src/registrations/dto/registration-create.dto.ts` (+ spec)

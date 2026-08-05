@@ -515,3 +515,63 @@ The defect was confined to `design.md` (2 sites) and `tasks.md` (1) — the desi
 **Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
 
 ---
+
+### T-9 — `RegistrationCreateDto`, enumerated explicitly
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| Date | 2026-08-05 |
+| Implementer attempts | **1** — plus one **runtime-failure resume** (see below). **No rework round consumed.** |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort | first worker `medium` → resume **`high`** (a resume with partial state starts one level up) |
+| Skills assigned | `nestjs-expert`, `api-design-principles`; **`systematic-debugging` added on the resume** (a live failing test with a precise symptom) |
+| Requirements covered | **FR-2** scenarios 1–3 (server-side half; T-17 owns the client half) |
+
+#### Runtime failure and resume — not a rework
+
+The first Implementer wrote both files and was **killed mid-task by a session limit** before verifying or reporting. Per `/akili-execute`'s runtime-failure fallback this is an **environment blocker, not a work FAIL**, so **no rework attempt was consumed** and the 3-attempt ceiling is untouched.
+
+The work was left in the tree **unverified and unreported** — the one state indistinguishable from "finished" by looking at the file list. The Leader therefore **ran the task's own verification inline** rather than assuming, and found it **red: 2 failed / 20 passed**, both failures one root cause:
+
+```
+TypeError: Cannot read properties of undefined (reading 'accepted')
+  100 |     expect(result!.consent.accepted).toBe(true);
+```
+
+**That is the B33 trap firing exactly as T-9's Disqualifying clause predicted** — *"if `consent.accepted` reads `undefined` in any test, `@ValidateNested` is missing… which a happy-path test would surface but a validation-only test would not."* The happy-path test the brief insisted on **did its job**; the worker simply did not survive to act on it. The spawn was retried once (prescribed) and succeeded — the limit was scoped to that worker, not the account.
+
+**Root cause, confirmed at source by the resumed worker:** `consent` (`registration-create.dto.ts:223`) carried a bare type annotation with **no `@ValidateNested()` / `@Type()`**, while `payload` two lines below had both. `whitelist: true` (`validation-pipe.ts:93-95`) strips any property lacking validation metadata, so `consent` was stripped to nothing. **The file's own header comment (`:211-212`) claimed *"Both nested objects carry `@ValidateNested()` + `@Type()`"* — false about the code beside it.** Fix was three lines.
+
+#### Reviewer verdict: `STATUS: PASS`
+
+> `RegistrationCreateDto` transcribes `design.md` §4.1's field table exactly, the `@ValidateNested()`/`@Type()` fix on `consent` is genuinely present and pinned by unweakened happy-path assertions, and the cross-field coordinate rule is correct for `0`, `null`, `undefined` and empty string — verified against the installed `class-validator` sources rather than inferred.
+
+**The tests were NOT weakened — the central question of this review.** `:100`, `:101` and `:256` are present, unchanged, none `.skip`ped or converted to a `toBeDefined` form. They are in fact **stronger**: `:99` adds `expect(result!.consent).toBeInstanceOf(ConsentInputDto)`, which fails if `@Type()` is dropped **even when `@ValidateNested()` survives**. Relaxing these was the easy path and would have destroyed the only guard against every submission `400`-ing in production.
+
+**⚠️ The `0`-coordinate case — the Leader's concern, and it holds.** Tanzania sits close enough to the equator that latitude `0` is not hypothetical, and `0` is falsy. Verified **at source, not reasoned about**: `class-validator`'s `IsOptional.js:20` gates on `!== null && !== undefined`, and the custom check at `registration-create.dto.ts:76` uses the same test. So lat `0` / lon `0` is **not** skipped — it validates and survives; lat `0` alone yields exactly one violation. `null` behaves identically to `undefined` at both ends. **Empty string fails safe** (`@IsNumber()` rejects it). The Reviewer additionally confirmed the two properties sharing a decorator `name` cannot collide: `register-decorator.js:23-34` mints a fresh anonymous constraint class per call and resolves by `constraintCls`, not by name.
+
+**§4.1 field table verified row by row by the Reviewer independently** (not inherited from the report): all 11 fields conformant. The only additions over the table are `@IsString()` on `traderType`/`region` and `@IsArray()` on `crops` — **additive tightenings**; no rule inverted, no bound wrong, **no string left unbounded** (the C-13/S-5 defect that made "mirror `ActorCreateDto`" wrong). `crops` is required and **no test asserts otherwise** — the Disqualifying inversion is absent.
+
+**S-6 exclusions clean:** no `email`, `traderId`, `consent*` provenance, `gpsAltitude` or `gpsAccuracy` on the payload. `:219-227` submits a `payload.email` and asserts it is **stripped** while the top-level OTP-verified address is untouched — and under `whitelist: true` that test genuinely fails if anyone later adds a *decorated* payload `email`.
+
+**Pipe fidelity:** tests use `createValidationPipe()` driven via `pipe.transform(body, {type:'body', metatype: RegistrationCreateDto})` — the router's actual per-argument call. **The hand-built-pipe defect that T-12 exists to correct in `pii-boundary.spec.ts` is not reintroduced here.**
+
+**Verification:** `npm test -- registration-create` → **22/22** · `npm run build` clean · `eslint --quiet` clean · **full suite 44/44 suites, 534/534 tests** (from 43/43 · 512/512 — +1 suite, +22 tests, **no regressions**). `Not Done / Assumptions`: **none**.
+
+#### Leader error corrected by the Implementer — recorded
+
+The Leader's brief instructed importing `CROP_NAMES` from `backend/src/common/normalize.ts`. **That was wrong.** The Implementer checked rather than complied, found `CROP_NAMES` declared at `actors/dto/admin-actor-create.dto.ts:16`, and imported from the real source instead of re-declaring it. Verified independently by the Leader: `normalize.ts` exports only `CANONICAL_REGIONS`, `DISTRICT_TO_REGION`, `TRADER_TYPES`. **`design.md` §4.1's own opening paragraph already records this** (*"`crops`/`CROP_NAMES` are on `AdminActorCreateDto`"*) — the spec was right and the brief introduced the error. Recorded because an Implementer that verifies its brief against the source, rather than complying with it, is the behaviour this process depends on.
+
+#### ADVISORY findings (recorded; never gate, never become tasks in this spec)
+
+- **T9-A1 — a test that can never fail.** `registration-create.dto.spec.ts:215-217` asserts no `email` property exists via `Object.getOwnPropertyNames(new RegistrationPayloadDto())`. `backend/tsconfig.json` targets **ES2021** with `useDefineForClassFields` off, so uninitialized field declarations emit **no own instance properties** — the array is `[]` regardless. **It would pass even if `email!: string` were declared on the payload.** S-6 is genuinely covered by the sibling stripping test at `:219-227`; this one is a tautology that invites false confidence. Delete it or rewrite against `getMetadataStorage()`. *(A KZ-002 shape that survived two workers and a Reviewer's first pass.)*
+- **T9-A2 — `CROP_NAMES` public→admin coupling: acceptable, keep it.** The direction is unclean, but re-declaring the catalog would be worse. The repo already carries independent crop literals in `common/template-columns.ts`, `actors/dto/list-query.dto.ts` and `metrics/metrics.service.ts`. The real fix is relocating `CROP_NAMES` to `common/normalize.ts` beside `TRADER_TYPES`/`CANONICAL_REGIONS` and repointing **four** consumers — a separate task, not T-9's.
+- **T9-A3 — ⚠️ carried into T-17's brief.** FR-2 s3 requires a **both-blank** GPS submission to be accepted, but a plain-`useState` number input yields `''` when blank, which this DTO correctly rejects with *"must be a number"*. **T-17 must omit the keys or send `null` — never `''`** — or every applicant who leaves GPS blank gets a 400 on a field the requirement says is optional.
+- **T9-A4 — carried into T-10's brief.** `null` coordinates transform through as `null`, not `undefined` (`:170-177` covers only `undefined`). T-10's payload JSON write should normalize, so `{gpsLatitude: null}` is not persisted as a shape distinct from an omitted key.
+- **T9-A5** — `consent.policyVersion` carries `@MinLength(1) @MaxLength(40)`, which **exceeds** §4.1 (that table specifies nothing for the nested consent object). Consistent with §4.4's "bound every field" and safe today (`CONSENT_POLICY_VERSION = 'v1.0-placeholder'`, 19 chars), but **nothing pins the relationship** — a future version string over 40 chars would `400` every submission.
+- **T9-A6** — add `expect(details(error!)).toHaveLength(3)` at `:231-246`. The current assertions prove the three offending fields are named; **the total-count assertion is what proves no *non*-offending field also produced an entry**, which is the other half of FR-2 s2's "one entry per offending field".
+
+**Final verification result:** PASS. One Implementer attempt plus a runtime-failure resume, one Reviewer, **zero rework rounds consumed**.
+
+---
