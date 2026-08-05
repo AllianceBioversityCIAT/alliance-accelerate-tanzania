@@ -10,13 +10,22 @@ import type { Role } from '@/lib/auth/useSession';
 
 // ---------------------------------------------------------------------------
 // Nav links
+//
+// Entries carry an explicit `variant` so NavLink/MobileNavLink can render one
+// entry as a distinct primary action (T-15, FR-1 "Nav entry" scenario) while
+// every other entry keeps its plain-text treatment unchanged.
 // ---------------------------------------------------------------------------
 const NAV_LINKS = [
-  { label: 'Home', href: '/' },
-  { label: 'Discovery Map', href: '/map' },
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Directory', href: '/directory' },
-  { label: 'About', href: '/about' },
+  { label: 'Home', href: '/', variant: 'default' as const },
+  { label: 'Discovery Map', href: '/map', variant: 'default' as const },
+  { label: 'Dashboard', href: '/dashboard', variant: 'default' as const },
+  { label: 'Directory', href: '/directory', variant: 'default' as const },
+  { label: 'About', href: '/about', variant: 'default' as const },
+  // FR-1: a discoverable, visually distinct action into the public
+  // registration form — separate from "Staff sign-in" (AuthSlot), which
+  // continues to serve Staff/Admin. Absent from the admin shell because the
+  // admin shell renders AdminSidebar, not this Header (see AdminSidebar.tsx).
+  { label: 'Register your organisation', href: '/register', variant: 'primary' as const },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -233,11 +242,39 @@ function MobileAuth({ onNavigate }: { onNavigate: () => void }) {
 
 // ---------------------------------------------------------------------------
 // NavLink — active state via usePathname
+//
+// `variant` is additive and optional (T-15, design.md §5.7 A29): every
+// existing call site omits it or passes 'default' and renders exactly as
+// before. 'primary' renders as a solid button-styled action, used only for
+// the "Register your organisation" entry so it reads as an action distinct
+// from the plain-text nav items and from AuthSlot's outlined "Staff sign-in".
 // ---------------------------------------------------------------------------
-function NavLink({ href, label }: { href: string; label: string }) {
+type NavLinkVariant = 'default' | 'primary';
+
+function NavLink({
+  href,
+  label,
+  variant = 'default',
+}: {
+  href: string;
+  label: string;
+  variant?: NavLinkVariant;
+}) {
   const pathname = usePathname();
   // Exact match for "/" to avoid marking it active on every page
   const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+
+  if (variant === 'primary') {
+    return (
+      <Link
+        href={href}
+        aria-current={isActive ? 'page' : undefined}
+        className="inline-flex items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      >
+        {label}
+      </Link>
+    );
+  }
 
   return (
     <Link
@@ -294,7 +331,7 @@ export default function Header() {
             className="hidden md:flex items-center gap-6"
           >
             {NAV_LINKS.map((link) => (
-              <NavLink key={link.href} href={link.href} label={link.label} />
+              <NavLink key={link.href} href={link.href} label={link.label} variant={link.variant} />
             ))}
           </nav>
 
@@ -365,6 +402,7 @@ export default function Header() {
               key={link.href}
               href={link.href}
               label={link.label}
+              variant={link.variant}
               onNavigate={() => setMenuOpen(false)}
             />
           ))}
@@ -381,18 +419,36 @@ export default function Header() {
 
 // ---------------------------------------------------------------------------
 // MobileNavLink — closes the menu on navigation
+//
+// `variant` mirrors NavLink's: additive, optional, defaults to today's
+// appearance so every existing entry is unaffected (T-15).
 // ---------------------------------------------------------------------------
 function MobileNavLink({
   href,
   label,
+  variant = 'default',
   onNavigate,
 }: {
   href: string;
   label: string;
+  variant?: NavLinkVariant;
   onNavigate: () => void;
 }) {
   const pathname = usePathname();
   const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+
+  if (variant === 'primary') {
+    return (
+      <Link
+        href={href}
+        aria-current={isActive ? 'page' : undefined}
+        onClick={onNavigate}
+        className="inline-flex w-full items-center justify-center rounded-md bg-primary px-3 py-2.5 text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-fg focus-visible:ring-inset"
+      >
+        {label}
+      </Link>
+    );
+  }
 
   return (
     <Link

@@ -262,3 +262,103 @@ Recorded here because they changed the conditions every later task runs under, a
 **Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
 
 ---
+
+### T-15 — `NavLink` variant + the nav entry
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS on attempt 2** (1 rework round consumed) |
+| Date | 2026-08-05 |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort | attempt 1 `medium` → attempt 2 **`high`** (rework rule: a fix that failed is usually under-thinking) |
+| Skills assigned | `frontend-design`, `react-doctor`. **Deviation:** dropped `shadcn-ui` from the task's listed set — this project does not use shadcn (`tasks.md` T-17: *"no react-hook-form, no zod, no shadcn — none are in this project"*), so loading it would suggest primitives that do not exist here. |
+| Requirements covered | **FR-1** scenario *"Nav entry"* (all five clauses) · NFR-5, NFR-6, NFR-7 |
+
+#### Attempt 1 — `STATUS: FAIL`
+
+**Files changed:** `frontend/components/shell/Header.tsx`, `frontend/components/shell/Header.test.tsx`
+
+**Implementer verification (all green — and all blind to the defect):**
+- `npm test -- Header` → 19 passed, 0 failed
+- `npm run build` → 20/20 pages exported
+- `npm run lint` → only the 3 pre-existing `next/image` warnings
+- `npx react-doctor` → 79/100, 3 warnings, all in untouched admin files
+- Implementer `Not Done / Assumptions`: none
+
+**Reviewer FAIL finding — reproduced in full (Structured Feedback rule: passed to the next Implementer unchanged):**
+
+> **Discovered Issue:** The **mobile** primary variant has no visible focus ring — a `primary`-coloured ring painted *inside* an element whose background is `primary`.
+>
+> `frontend/components/shell/Header.tsx:446` (MobileNavLink primary branch):
+> `... bg-primary ... focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset`
+>
+> Decidable statically from token values — no DC-16 deferral applies:
+> - `ring-inset` sets `--tw-ring-inset: inset`; with no `ring-offset-*` class, `--tw-ring-offset-width` stays `0px`, so the offset shadow has zero width and the ring resolves to `inset 0 0 0 2px var(--tw-ring-color)`.
+> - `--tw-ring-color` = `--color-primary` = `#1F4E8C` (`globals.css:8`); the element's own background is that same `#1F4E8C`. Contrast **1:1**.
+> - `focus-visible:outline-none` removes the UA fallback outline.
+>
+> Net: a keyboard user tabbing the mobile nav gets **zero** focus indication on the one entry FR-1 exists to make reachable. Every other `ring-inset` in this file is correct because those elements are transparent/`surface`-backed (`MobileAuth` line 205 is `border-primary` on surface; `MobileNavLink`'s default branch line 459 is `text-muted` on surface) — a primary ring is visible against `#FFFFFF`. This diff is the first `ring-inset` to land on a *filled* primary element, and it is the one case where the pattern inverts to invisible.
+>
+> **Violated Rule:** `requirements.md` §6 FR-1, scenario "Nav entry", clause 5 — *"IT MUST be keyboard reachable with a visible focus ring"*. Also `requirements.md:595` **NFR-5** (WCAG 2.1 AA, SC 2.4.7 Focus Visible) and `docs/ux-ui/design.md:154` — *"All interactive elements keyboard reachable with visible focus rings."*
+>
+> **Remediation Suggestion:** On the `MobileNavLink` primary branch **only**, give the inset ring a contrasting token: swap `focus-visible:ring-primary` → `focus-visible:ring-primary-fg` (`#FFFFFF` on `#1F4E8C` ≈ 8.6:1; token-conformant via `tailwind.config.ts:14`). Prefer this over adding `ring-offset-2` — the mobile panel is `flex-col gap-1` (4px between items), so an offset ring would crowd adjacent entries. Then add a test asserting the **mobile** occurrence (`getAllByRole(...)[1]`) does not carry `ring-primary` alongside `bg-primary`; the current test only inspects `[desktopLink]` and would not have caught this. **Do not touch the desktop branch — it is correct.**
+
+**Leader adjudication — FAIL accepted as in-scope; rework attempt consumed.** FR-1's clause 5 is quoted verbatim in T-15's Done-when (*"keyboard reachable with a visible focus ring"*), so this is spec conformance, not an advisory. Two things make the finding unusually strong:
+1. **It is invisible to all four gates by construction.** The suite asserts `expect(className).toContain('focus-visible:ring-2')`, which passes on a ring with 1:1 contrast. `npm run build`, `lint` and `react-doctor` cannot see colour relationships at all. A fully green board proved nothing about the property FR-1 actually requires.
+2. **It correctly refuses a DC-16 deferral.** The Implementer routed *"is the focus ring actually visible"* to the human check — defensible in general, and `design.md:679` sanctions that routing. But a **colour collision between two known token values is decidable at review time**, and handing it to a human is how a real defect reaches a browser. The Reviewer's line (desktop = formality, mobile = decidable defect) is the correct one, and is recorded here as standing guidance for T-17…T-22, which face this judgment repeatedly.
+
+**Reviewer's answers to the Leader's four targeted questions — three clear the diff:**
+1. **No other consumer of `NAV_LINKS`.** Module-local, never exported; the only references outside the declaration are the two `.map()` call sites (`Header.tsx:333`, `:400`). The added property and widened literal type break nothing. *(Nit: the per-entry `as const` is redundant under the array-level `as const` — harmless.)*
+2. **Admin-layout claim CONFIRMED by reading both layouts.** `app/(admin)/layout.tsx:34,190` imports and renders `AdminSidebar`, has no `Header` import, and builds its own inline `<header>` at line 90. `Header` is imported in exactly one place repo-wide: `app/(public)/layout.tsx:1,17`. FR-1's `BUT it must NOT appear in the admin shell navigation` holds structurally.
+3. **Desktop ring is fine — a positive design read, not a concern.** Header is `bg-surface` = `#FFFFFF` (`globals.css:22`); Tailwind's default `--tw-ring-offset-color` is `#fff`, so the offset gap matches the header and the ring (`#1F4E8C`) sits against white at ~7:1. Matches the established pattern in `AuthSlot` (line 102) and the brand link (line 309). **Removed from the DC-16 list** — the colour maths is settled.
+4. **The PROVEN/DEFERRED labelling is honest, but the deferral was trusted to cover more than it can.** `expect(className).toContain('focus-visible:ring-2')` asserts only that a substring exists in a class attribute — not that Tailwind generated the rule, that a ring paints, that it has contrast, or that focus reaches the element. **Not** a KZ-002 recurrence (the test name explicitly says jsdom cannot render focus visibility and routes it to DC-16). Keep the class assertions; do not read them as coverage of visibility.
+
+**Also verified clean on attempt 1:** NFR-6 (zero hex, zero `rgb()`, zero arbitrary values; every class resolves through `tailwind.config.ts:11-16,48-53`) · NFR-7 (no SSR/ISR/route handler; file was already `'use client'`) · scope (two files; no `/register` page — correct, T-17; `AdminSidebar.tsx` untouched — correct) · **`isActive` in the primary branch is deliberate, not a defect** (`pathname.startsWith('/register')` correctly covers `register/`, `register/submitted/`, `register/status/` with no sibling producing a false positive, so `aria-current="page"` will be right once T-17 lands; omitting a *visual* active state is right for a button-styled CTA, and WCAG 1.3.1 is discharged programmatically by `aria-current`).
+
+#### Attempt 2 — `STATUS: PASS`
+
+Reviewed by a **fresh, independent Reviewer** — deliberately not the one that proposed the remediation, since "confirm the suggestion was followed" is trivially true and is not a review.
+
+**The fix — one token, confined to the mobile branch:**
+`focus-visible:ring-primary` → `focus-visible:ring-primary-fg` at `Header.tsx:446`. Desktop (`:272`) confirmed **byte-identical** to attempt 1.
+
+**Contrast, resolved independently from `globals.css` (not from token names — that omission *was* the defect):**
+`--color-primary-fg: #FFFFFF` (`globals.css:10`) on `--color-primary: #1F4E8C` (`:8`) = **8.31:1**. `ring-inset` with no `ring-offset-*` leaves `--tw-ring-offset-width: 0px`, so the shadow resolves to `inset 0 0 0 2px #FFFFFF`, and inset shadows paint above the background — the ring lands on top of the fill. Comfortably over SC 1.4.11's 3:1 floor. NFR-6 clean (no hex; `primary.fg` flattens to `primary-fg` via `tailwind.config.ts:14`, and `ringColor` defaults to `theme('colors')`).
+
+> **Figure corrected (KZ-005).** Attempt 1's Reviewer suggested "≈ 8.6:1" and the Implementer repeated it. The independent recomputation is **8.31:1** (L(#1F4E8C) = 0.07632). Immaterial to the verdict, corrected because an uncross-checked number is exactly what KZ-005 exists to catch. The quoted FAIL report above is left verbatim as the historical record; **8.31:1 is the correct figure.**
+
+**New regression test — falsifiable, with a stated limit.** Reverting to `ring-primary` turns both the negative and positive assertions red. The test also proves the mobile occurrence *exists* with the right accessible name: `const [, mobileLink]` throws `TypeError` on fewer than two matches.
+
+> **The Implementer's stated rationale is inverted — recorded so the next reader is not taught a wrong fact.** It reasoned that a raw-string `.toContain()` check "would pass even if the bug were reintroduced". The consequence runs the other way: `'focus-visible:ring-primary-fg'` **contains** `'focus-visible:ring-primary'`, so a raw-string `not.toContain('focus-visible:ring-primary')` **false-FAILs on the corrected code** — it never false-passes on the buggy code. **The token-split remedy is nonetheless correct and necessary** (it is the only way to write that negative assertion at all). Only the explanation was backwards. The Leader repeated the inverted version to the user before this review landed and has corrected it. See ADVISORY T15-A2.
+
+**Limit of the guard, stated plainly:** it is keyed to **token names, not resolved colours**. It would **not** catch a different colliding token — `ring-primary-hover` (`#163A66` on `#1F4E8C`) computes to ≈**1.4:1**, far under the 3:1 floor, and would pass. Nor would it catch removal of `ring-2`, nor a future edit to `--color-primary-fg`. It is a name-keyed regression guard against *this* reintroduction, not a contrast gate. That limit is spec-sanctioned — `requirements.md` §8 **DC-16** routes focus visibility and contrast to the human HITL check.
+
+**The mobile coverage gap — adjudicated ADVISORY, not FAIL.** The Leader raised this as the headline question and forbade a hedge. Premise **confirmed**: RTL's role queries default `hidden: false` and `dom-accessibility-api`'s `isSubtreeInaccessible` checks `element.hidden` first, so with `Header.tsx:396`'s `hidden={!menuOpen}` the mobile subtree is invisible to `getAllByRole`. **Every attempt-1 test therefore ran on a 1-element result set** (`:182`, `:190`, `:200`, `:231`, `:243` — none reached mobile).
+
+Ruled advisory on this reasoning, which the Leader accepts: `href` and tab-stop are **not properties of the mobile branch**. `href` flows from the single `NAV_LINKS` entry (`:28`) that the desktop assertion already pins, passed verbatim through to `<Link href={href}>` (`:403`, `:443`) with no transformation; tab-stop is `<a href>` default, and the primary branch (`:441-450`) sets no `tabIndex` and no `aria-disabled`. No code path lets either diverge from desktop without editing the shared source the desktop test guards — *"FAILing here demands a second assertion on a single-sourced value: test count, not coverage."* The genuinely **divergent** surface is the class string, and that is now asserted on the mobile occurrence, which is precisely where the attempt-1 defect lived. FR-1's Nav-entry clauses were verified **conformant in the mobile rendering by reading it**. The shortfall is proof strength on non-divergent properties, not non-conformance.
+
+**Verification (Implementer, attempt 2)**
+- `npm test -- Header` → **20/20** (19 baseline + 1 new)
+- `npm run build` → compiled, 20/20 static pages, no new warnings
+- `npm run lint` → identical 3 pre-existing `next/image` warnings, nothing new
+- `npx react-doctor` → 79/100, 3 findings, all in unrelated admin files
+- `Not Done / Assumptions`: **none**
+
+**Reviewer verdict: `STATUS: PASS`**
+> The attempt-2 fix is correct and confined — `focus-visible:ring-primary-fg` resolves to a 2px inset `#FFFFFF` ring at 8.31:1 over the `#1F4E8C` fill, closing the FR-1 "visible focus ring" / NFR-5 (SC 2.4.7, 1.4.11) defect, with the desktop branch untouched and NFR-6 token conformance intact. The mobile-coverage gap is a proof-strength shortfall on single-sourced, non-divergent properties rather than an FR-1 conformance gap.
+
+**File-wide sweep — spot-checked 5 of 8, and the Implementer's claim was overstated.** `L284`, `L309`, `L353`, `L118`, `L227`, `L235`, `L459` are clean as reported (`L459`'s `bg-border` `#E2E2E2` under a primary ring = 6.4:1). **But the sweep evaluated base-state backgrounds only.** `Header.tsx:205` carries `hover:bg-primary` *together with* `focus-visible:ring-primary focus-visible:ring-inset` — **the identical 1:1 inset-ring-on-fill collision in the combined hover+focus-visible state.** Pre-existing, untouched by this diff, out of T-15's scope — but *"no other same-colour collisions"* is **not** an accurate summary of the sweep. See T15-A4.
+
+#### ADVISORY findings (recorded; never gate, never become tasks in this spec)
+
+- **T15-A1 — the one worth acting on, escalated to the user rather than actioned.** `focus-visible:ring-2` is **unasserted on the mobile branch**: dropping it would restore an invisible mobile ring *with a green suite* — the same defect class just fixed. The Reviewer's remedy is two lines in the existing test (`expect(classes).toContain('focus-visible:ring-2')` and `expect(mobileLink).toHaveAttribute('href', '/register')`), which would close FR-1's mobile clauses completely. **Not actioned by the Leader:** the methodology is explicit that an advisory is recorded and dies there — it may not trigger rework and may not widen an approved task. Surfaced to the user as a candidate follow-up so the decision is theirs.
+- **T15-A2** — `Header.test.tsx:222-224`'s comment states the substring failure mode backwards (see the boxed note above). Reword; the token split itself is right.
+- **T15-A3** — contrast figure corrected to **8.31:1** (applied above).
+- **T15-A4 — pre-existing defect, out of scope, genuinely worth its own work.** `Header.tsx:205` (`MobileAuth` "Staff sign-in") reproduces the same inset-ring-on-primary-fill collision in the hover+focus-visible state. Not introduced here and not editable under T-15's scope.
+- **T15-A5 — pre-existing, out of scope.** Account-menu items `:159`, `:169`, `:181` indicate focus **solely** via `focus-visible:bg-surface-alt` (`#F7F7F7` on `#FFFFFF` ≈ **1.05:1**) with `focus-visible:outline-none` — a near-invisible focus indicator. Outside the sweep's `ring-*` scope. Route to the DC-16 HITL pass.
+- **T15-A6** — `const [, mobileLink]` couples to DOM order, but **fail-safe**: a reorder turns the test red (desktop carries `ring-primary`), never falsely green. `within(document.getElementById('mobile-menu'))` would be sturdier.
+- **T15-A7** — T-15's *"reads as an action"* clause and focus **visibility** remain **HITL-only** per DC-16. Do not record them as covered by the automated gates.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 2 Reviewers (one per attempt, second one fresh for adversarial independence), **1 rework round consumed**.
+
+---

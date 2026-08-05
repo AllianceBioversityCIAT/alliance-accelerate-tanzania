@@ -149,7 +149,7 @@
       **Disqualifying:** `ROLE_BG_CLASS` holds full literal class strings for the Tailwind scanner, so **a missing entry degrades silently to a neutral colour rather than erroring** (C-6). A test asserting only `roles.ts` has ten entries will pass while the map renders four types grey. Assert all four maps.
       Skills: `tailwind-design-system`, `vercel-react-best-practices`
 
-- [ ] **T-15** `NavLink` variant + the nav entry  (deps: T-14)
+- [x] **T-15** `NavLink` variant + the nav entry  (deps: T-14)
       Scope: `NAV_LINKS` is `{label, href}` consumed by uniform `NavLink`/`MobileNavLink`, and "Staff sign-in" is not in it — it lives in `AuthSlot`. So an entry cannot be visually distinct without an additive `variant` prop on both components (A29). Add the prop; add the entry.
       Traces: FR-1 (s1), `design.md` §5.7
       Files: `frontend/components/shell/Header.tsx` (+ test)
