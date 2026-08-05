@@ -9,12 +9,16 @@
 // (the static-class-in-JSX approach documented in the task brief).
 //
 // Rendered swatch classes by traderType (must appear verbatim for purge safety):
-//   seed_company       → bg-primary
-//   cooperative        → bg-success
-//   ngo                → bg-accent
-//   offtaker           → bg-crop-sorghum
-//   research_institute → bg-muted
-//   informal_trader    → bg-bean
+//   seed_company             → bg-primary
+//   cooperative              → bg-success
+//   ngo                      → bg-accent
+//   offtaker                 → bg-crop-sorghum
+//   research_institute       → bg-muted
+//   informal_trader          → bg-bean
+//   humanitarian             → bg-highlight
+//   digital_service_provider → bg-highlight-soft
+//   qds_producer             → bg-crop-groundnut
+//   bulk_buyer               → bg-warning
 
 import type { TraderType } from '@/lib/content/roles';
 import { ROLES } from '@/lib/content/roles';
@@ -27,12 +31,16 @@ import { ROLES } from '@/lib/content/roles';
  * picks them up and includes the utility in the bundle.
  */
 export const ROLE_BG_CLASS: Record<TraderType, string> = {
-  seed_company:       'bg-primary',
-  cooperative:        'bg-success',
-  ngo:                'bg-accent',
-  offtaker:           'bg-crop-sorghum',
-  research_institute: 'bg-muted',
-  informal_trader:    'bg-bean',
+  seed_company:             'bg-primary',
+  cooperative:              'bg-success',
+  ngo:                      'bg-accent',
+  offtaker:                 'bg-crop-sorghum',
+  research_institute:       'bg-muted',
+  informal_trader:          'bg-bean',
+  humanitarian:             'bg-highlight',
+  digital_service_provider: 'bg-highlight-soft',
+  qds_producer:             'bg-crop-groundnut',
+  bulk_buyer:               'bg-warning',
 };
 
 /**
@@ -41,12 +49,16 @@ export const ROLE_BG_CLASS: Record<TraderType, string> = {
  * References §7 tokens — never a raw hex value.
  */
 export const ROLE_CSS_VAR: Record<TraderType, string> = {
-  seed_company:       '--color-primary',
-  cooperative:        '--color-success',
-  ngo:                '--color-accent',
-  offtaker:           '--crop-sorghum',
-  research_institute: '--color-muted',
-  informal_trader:    '--color-bean',
+  seed_company:             '--color-primary',
+  cooperative:              '--color-success',
+  ngo:                      '--color-accent',
+  offtaker:                 '--crop-sorghum',
+  research_institute:       '--color-muted',
+  informal_trader:          '--color-bean',
+  humanitarian:             '--color-highlight',
+  digital_service_provider: '--color-highlight-soft',
+  qds_producer:             '--crop-groundnut',
+  bulk_buyer:               '--color-warning',
 };
 
 // ── Props ─────────────────────────────────────────────────────────────────────

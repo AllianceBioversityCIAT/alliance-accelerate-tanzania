@@ -25,6 +25,10 @@ const TRADER_TYPES: TraderType[] = [
   'offtaker',
   'research_institute',
   'informal_trader',
+  'humanitarian',
+  'digital_service_provider',
+  'qds_producer',
+  'bulk_buyer',
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────

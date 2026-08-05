@@ -140,7 +140,7 @@
 
 ## Phase C — Frontend
 
-- [ ] **T-14** Widen the trader taxonomy to ten across **four** files  (deps: none)
+- [x] **T-14** Widen the trader taxonomy to ten across **four** files  (deps: none)
       Scope: The `traderType` union in `lib/api/actors.ts`, `ROLES` in `roles.ts`, `ROLE_BG_CLASS` **and** `ROLE_CSS_VAR` in `RoleBadge.tsx`, `TRADER_TYPES` in `MapLegend.tsx`. Tokens: `humanitarian`→`highlight`, `digital_service_provider`→`highlight-soft`, `qds_producer`→`crop-groundnut`, `bulk_buyer`→`warning`. `danger` stays unused.
       Traces: FR-15, `design.md` §1.3, §5.7. Closes chunk 1's open **R-3**.
       Files: `frontend/lib/api/actors.ts`, `lib/content/roles.ts`, `components/map/RoleBadge.tsx`, `components/map/MapLegend.tsx`
