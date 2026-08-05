@@ -721,3 +721,43 @@ The Implementer chose not to collect `email` in the form, reasoning that S-6 pla
 #### ⚠️ Leader record corrected — the frontend flake is file-level, not line-level
 
 The Leader recorded the known flake as `admin/actors/import/page.test.tsx:275`. **T-17's run failed at a *different assertion in the same file*.** Two distinct failure points in one file points at shared or ordering state rather than one flaky assertion. **The signature is corrected to file-level**, and every subsequent frontend brief must say so. Consequence, and it cuts the important way: **the next failure in that file must NOT be treated as pre-cleared** — re-run to confirm, but do not assume.
+
+#### Attempt 2 — `STATUS: PASS`
+
+Reviewed by a **fresh, independent** Reviewer.
+
+**FAIL 1 remediated — `email` collected in the form.** Added to the Contact fieldset (`type="email"`, required, `EMAIL_REGEX`), keyed into the **same** `errors` record so it inherits the one-source contract. `onValidated` widened to `(payload, consent, email)`; `page.tsx`'s `PendingSubmission` gained the field. **S-6 preserved and verified:** `RegistrationPayloadInput` has **zero** email keys, `buildPayload` never writes one, and a test asserts `'email' in payload === false`. The three-field test is now FR-2 scenario 2's **literal trio** — `capacityTons: -5`, `email: 'not-an-email'`, no crop.
+
+**FAIL 2 remediated — crops association and anchor.** Checkboxes wrapped in `<div role="group" id={fieldId('crops')} aria-labelledby=… aria-describedby=…>`. The Reviewer confirmed the anchor now resolves and that **no anchor-side code changed** — the summary emits `fieldId(field)` generically for all 16 keys, with no crops-specific branch, so only the missing target was added. Computed group name is "Crops" (the asterisk span is `aria-hidden`), unambiguous against the enclosing fieldset "Crops & capacity".
+
+**⚠️ The "mentally" claim was replaced with analysis.** The Implementer's stated evidence that its new generic assertion would have caught the attempt-1 defect was *"ran it against pre-fix code mentally"* — **not evidence**, and the Leader referred it for verification. The Reviewer established it properly:
+- Summary entries are real `<a href={'#'+fieldId(field)}>` elements, so `getAllByRole('link')` returns them; `role="alert"` does not hide descendants.
+- The `links.length > 0` guard is **non-vacuous**: submitting an empty form produces **9** errors (`traderName, traderType, contactPerson, region, crops, capacityTons, phone, email, consentAccepted`).
+- It **would** have gone red pre-fix: `fieldId('crops')` is `${baseId}-crops`, the checkboxes were `${baseId}-crop-<value>`, so `getElementById` returned `null`. (jsdom's `getElementById` is a literal lookup, so React `useId()`'s colons are fine.)
+- **Coverage of the summary space, with the hole checked:** six fields are *not* exercised by this test (`position`, `district`, `marketLocation`, `otherCrops`, `gpsLatitude`, `gpsLongitude`). **Not a live hole** — all six render through the shared `renderInput` helper, which sets `id={fieldId(field)}` unconditionally. **Crops was the sole bespoke render path, and it is now the one the test pins.**
+
+**The email-regex question — settled, and the direction is the safe one.** `RegistrationCreateDto.email` is bare `@IsEmail()` (validator.js defaults). The client regex errs **permissive**, not strict:
+- More permissive (client passes → server `400`, acceptable since the server is authoritative): `a@b.c`, `john..doe@x.com`, `user@ex_ample.com`, over-length addresses.
+- Stricter (blocked client-side) **only** for RFC 5321 *quoted* local parts — `"john smith"@example.com`. No provider issues those, and no `.ac.tz` / `.go.tz` / `.or.tz` / `@cgiar.org` institutional address takes that form. **No practical FR-2 gap.**
+- **Decisive point neither the Leader nor the Implementer made:** this exact literal is already the repo's established email check — `ActorForm.tsx:303` (this task's stated reference implementation), `CreateUserDialog.tsx:45`, `EditUserDialog.tsx:42`. **Introducing a different rule here would have been the drift.**
+
+**Everything from attempt 1 re-verified after substantial edits** — one error source (exactly two `useState` calls, one `Record<string,string>`; no memo, no snapshot), the GPS trap (`''` unreachable, `0` survives, keys omitted not `null`), five fieldsets, ten trader types, zero hex literals, A25 copy, A26 (only `transition-colors` with `motion-reduce:transition-none`), no `lib/api/*` import or `fetch`, static export, and an honest PROVEN/DEFERRED split.
+
+**Positional third argument — ruled acceptable.** The Leader flagged it as a possible maintenance hazard. The Reviewer's ruling: real for *tests*, not for *consumers* — `onValidated` is typed, so a T-19 handler omitting the parameter is caught by `npm run build`. §3.1's `{ email, code, consent, payload }` describes the **HTTP body**, which T-19 assembles; the callback is not obliged to mirror it. **Convert to a single object when T-18 lands** (it will want `policyVersion` flowing back) — a third positional slot plus a fourth is where it becomes a hazard.
+
+**Verification:** `npm test -- RegistrationForm` → 17/17 · **full suite 74/74 suites, 1033/1033 tests** (+2 over baseline: the malformed-email and generic-href tests) · build 21/21 static pages · lint clean but for the 3 pre-existing warnings · react-doctor zero findings in the changed files · **no flake hit**.
+
+> **Reviewer's own honesty note, recorded:** *"I am read-only and ran no suite — all run-evidence traces to the Implementer, unverified by me. The attempt-1 source state is likewise not inspectable from here; the 'would have failed pre-fix' finding is derived from the stated defect plus the current id scheme, not from a diff."*
+
+#### ADVISORY findings
+
+- **T17-A1 — the Reviewer's single recommendation on crops:** move `aria-describedby` onto **each checkbox** and add `aria-invalid="true"` when `errors.crops` is set, keeping the group for the anchor target and the accessible name. Reason: a group's description is announced on *entering* the group, and error recovery is exactly the pattern where users jump straight to a control via quick-nav or a summary link, never crossing the boundary. Group-level is defensible — hence advisory, not FAIL — but it is the weaker of the two.
+- **T17-A2 — `autoComplete` missing on the PII inputs** (`email`, `phone`, `contactPerson`, `traderName`). WCAG 2.1 AA **SC 1.3.5** covers exactly these, and every other email input in the repo sets it (`LoginForm.tsx:249`, `ForgotPasswordForm.tsx:218,245`, both user dialogs). **The Reviewer explicitly declined to FAIL it, on a principle worth preserving:** `ActorForm.tsx` — the stated reference implementation — omits it too, and `contactPerson`/`phone` carried the same gap through attempt 1's PASS, so *"failing it now would be inconsistent gatekeeping."* Cheap fix; route to T-22 if not taken sooner.
+- **T17-A3** — give the crops group `tabIndex={-1}` so the summary link actually lands focus. The other anchors target focusable inputs; `#…-crops` targets a `<div>`, so fragment navigation scrolls but only sets the sequential-focus starting point.
+- **T17-A4 — carried into T-19's brief.** The permissive-regex gap creates a **dead end T-17 structurally cannot cover**: an `a@b.c`-style address passes the client, survives the OTP step, then takes a `400` from `@IsEmail()` at submit. T-19 must map `details[{field:'email'}]` back to a visible message, or the applicant hits a silent failure at the last step.
+- **T17-A5 — carried into T-18's brief** (from attempt 1, still live): the one-error-source contract survives only if `ConsentPolicyDisclosure` takes `checked`/`onChange`/`error` as **props**. If it holds its own `accepted` state, the contract breaks at that moment.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 2 Reviewers (second fresh), **1 rework round consumed**.
+
+---
+

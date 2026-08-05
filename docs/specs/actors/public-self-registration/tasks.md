@@ -168,7 +168,7 @@
       **Disqualifying:** asserting the link exists does not cover the clause — FR-1 requires the *review* fact stated, because a visitor who believes submission equals publication has been misled about their own personal data. Assert the copy.
       Skills: `frontend-design`, `ui-ux-pro-max`
 
-- [ ] **T-17** `RegistrationForm` — sections, validation, error contract  (deps: T-9, T-14)
+- [x] **T-17** `RegistrationForm` — sections, validation, error contract  (deps: T-9, T-14)
       Scope: Plain `useState` per `ActorForm.tsx` (no react-hook-form, no zod, no shadcn — none are in this project). Five fieldsets. Hand-written DTO builder. `errors` record driving **both** the summary and the inline messages from one source. `aria-describedby` per field; live-region summary. **GPS-optional copy** (A25). Single column mobile, two-column at `lg+`. No entrance motion (A26).
       Traces: FR-2 (s2, s3, s4), NFR-5, NFR-6, `design.md` §5.1
       Files: `frontend/components/register/RegistrationForm.tsx`, `frontend/app/(public)/register/page.tsx` (+ tests)
