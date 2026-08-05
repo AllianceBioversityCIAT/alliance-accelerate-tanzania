@@ -177,7 +177,7 @@
       **Disqualifying:** if summary and inline state can be produced from two sources, they can disagree and the test will not notice — assert they derive from one object. `jest-axe` clean does **not** cover contrast or focus order (jsdom returns *incomplete* on `color-contrast` and `toHaveNoViolations` does not fail on it) — route those to DC-16 and say so, do not count them.
       Skills: `frontend-design`, `tailwind-design-system`, `react-doctor`, `vercel-react-best-practices`
 
-- [ ] **T-18** `ConsentPolicyDisclosure` + the pure scroll predicate  (deps: T-2, T-17)
+- [x] **T-18** `ConsentPolicyDisclosure` + the pure scroll predicate  (deps: T-2, T-17)
       Scope: Fetch from `GET /registrations/consent-policy`. Sections in a **focusable** scroll region (`tabIndex={0}`, `role="region"`, labelled) so keyboard users can reach the end. Checkbox `disabled` until the end, **unticked at every initial render**. Progress text. The end-detection predicate is a **pure exported function** over `{scrollTop, clientHeight, scrollHeight}` (DD-8).
       Traces: FR-3 (s1, s2), NFR-5, DC-17, `design.md` §5.2
       Files: `frontend/components/register/ConsentPolicyDisclosure.tsx`, its predicate module (+ tests)

@@ -16,19 +16,24 @@
  *   Location          → region, district, marketLocation, gpsLatitude, gpsLongitude
  *   Crops & capacity  → crops, otherCrops, capacityTons
  *   Contact           → contactPerson, position, sex, phone, email
- *   Data protection & consent → placeholder seam for T-18 (see below)
+ *   Data protection & consent → `ConsentPolicyDisclosure` (T-18)
  *
  * Scope boundary (Leader's brief): this component owns FR-2 only.
- *   - **T-18 seam.** The fifth fieldset renders a minimal, unticked
- *     acceptance checkbox and NOT the real scrollable, scroll-gated policy
- *     text `ConsentPolicyDisclosure` fetches from `GET
- *     /registrations/consent-policy` (design.md §5.2, FR-3). It is a
- *     structural placeholder only — the real disclosure component replaces
- *     this fieldset's body without needing to restructure the surrounding
- *     form. `consentAccepted`/`consentPolicyVersion` stay in this
- *     component's own `values` so the "one error source" property (below)
- *     is not broken by lifting consent state elsewhere.
- *   - **T-19 seam.** This component never calls the network. On successful
+ *   - **T-18 wiring.** The fifth fieldset renders `ConsentPolicyDisclosure`
+ *     (`./ConsentPolicyDisclosure.tsx`) — the real scrollable, scroll-gated
+ *     policy text it fetches from `GET /registrations/consent-policy`
+ *     (design.md §5.2, FR-3). `ConsentPolicyDisclosure` is a fully
+ *     controlled component (`checked`/`onChange`/`error` props): it holds
+ *     no acceptance or error state of its own. `consentAccepted` and
+ *     `consentPolicyVersion` stay in THIS component's own `values` — the
+ *     former driven through the same `setField` every other input uses, the
+ *     latter set once via `onPolicyLoaded` when the fetch resolves — so the
+ *     "one error source" property (below) is not broken by lifting consent
+ *     state into the disclosure.
+ *   - **T-19 seam.** This component never calls the network directly (the
+ *     one exception being `ConsentPolicyDisclosure`'s own read-only
+ *     `GET /registrations/consent-policy` fetch, which returns no PII and
+ *     precedes OTP by design). On successful
  *     validation it calls `onValidated(payload, consent, email)` and stops —
  *     the parent page (T-19's `OtpVerificationStep`) owns requesting/
  *     consuming the OTP and the actual `POST /registrations` call.
@@ -60,6 +65,7 @@ import { useCallback, useId, useState } from 'react';
 
 import { ROLES } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
+import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 
 // ---------------------------------------------------------------------------
 // Constants — mirrors design.md §4.1 / registration-create.dto.ts verbatim
@@ -117,6 +123,10 @@ const FIELD_LABELS: Record<keyof FormValues, string> = {
   phone: 'Phone',
   email: 'Email',
   consentAccepted: 'Data protection & consent',
+  // Never surfaced as an inline/summary error — it is fetched, not
+  // user-entered — but `FIELD_LABELS` is a `Record<keyof FormValues, …>`,
+  // so every key needs an entry.
+  consentPolicyVersion: 'Consent policy version',
 };
 
 // ---------------------------------------------------------------------------
@@ -144,8 +154,20 @@ interface FormValues {
    * header's T-19-seam note.
    */
   email: string;
-  /** T-18 seam — see file header. Unticked at every initial render (FR-3). */
+  /** Unticked at every initial render (FR-3) — driven by `ConsentPolicyDisclosure`. */
   consentAccepted: boolean;
+  /**
+   * The exact policy version the applicant was shown, set once via
+   * `ConsentPolicyDisclosure`'s `onPolicyLoaded` callback when its fetch of
+   * `GET /registrations/consent-policy` resolves. FR-3 requires recording
+   * the version the applicant was SHOWN, not the server's current version
+   * resolved later at write time — so this is read from the child's fetch,
+   * never hardcoded (design.md §4.1 step 4). Not a user-editable field: it
+   * carries no inline error of its own, but must live in this same `values`
+   * object so `buildPayload`'s sibling, the consent object built in
+   * `handleSubmit`, can read the real value rather than a placeholder.
+   */
+  consentPolicyVersion: string;
 }
 
 /**
@@ -173,27 +195,27 @@ export interface RegistrationPayloadInput {
   phone: string;
 }
 
-/** T-18 seam — the applicant's consent acceptance, mirroring `ConsentInputDto`. */
+/** The applicant's consent acceptance, mirroring `ConsentInputDto`. */
 export interface RegistrationConsentInput {
   accepted: boolean;
   /**
-   * Placeholder version literal. T-18 replaces this with the version
-   * `GET /registrations/consent-policy` actually served, per design.md §4.2
-   * ("not duplicated into the frontend bundle") — this component must not
-   * invent or hardcode a real version string.
+   * The exact version `GET /registrations/consent-policy` served to this
+   * applicant (design.md §4.2 — "not duplicated into the frontend bundle"),
+   * relayed here via `ConsentPolicyDisclosure`'s `onPolicyLoaded` callback.
+   * This component never invents or hardcodes a version string.
    */
   policyVersion: string;
 }
 
 export interface RegistrationFormProps {
   /**
-   * Called once client-side validation (including the T-18-seam consent
-   * checkbox and the email format check) passes. This component does not
-   * call the network — the parent page advances to consent disclosure
-   * (T-18) / OTP verification (T-19) from here. `email` is a THIRD, top-level
-   * argument — a sibling of `payload`/`consent`, mirroring design.md §3.1's
-   * request shape `{ email, code, consent, payload }` — not a property of
-   * `payload` (see the file header's T-19-seam note and S-6).
+   * Called once client-side validation (including `ConsentPolicyDisclosure`'s
+   * scroll-gated consent checkbox and the email format check) passes. This
+   * component does not call the network — the parent page advances to OTP
+   * verification (T-19) from here. `email` is a THIRD, top-level argument —
+   * a sibling of `payload`/`consent`, mirroring design.md §3.1's request
+   * shape `{ email, code, consent, payload }` — not a property of `payload`
+   * (see the file header's T-19-seam note and S-6).
    */
   onValidated: (
     payload: RegistrationPayloadInput,
@@ -226,6 +248,7 @@ function toFormValues(): FormValues {
     phone: '',
     email: '',
     consentAccepted: false,
+    consentPolicyVersion: '',
   };
 }
 
@@ -463,12 +486,22 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       const payload = buildPayload(values);
       onValidated(
         payload,
-        { accepted: values.consentAccepted, policyVersion: '' },
+        { accepted: values.consentAccepted, policyVersion: values.consentPolicyVersion },
         values.email.trim(),
       );
     },
     [values, onValidated],
   );
+
+  /**
+   * `ConsentPolicyDisclosure`'s `onPolicyLoaded` callback — records the
+   * exact version string the fetched policy carried, into this component's
+   * own `values` (see the `consentPolicyVersion` field doc). Does not touch
+   * `errors`: a fetch outcome is not a validation result.
+   */
+  const handleConsentPolicyLoaded = useCallback((version: string) => {
+    setValues((prev) => ({ ...prev, consentPolicyVersion: version }));
+  }, []);
 
   // ── Render helpers ───────────────────────────────────────────────────────
 
@@ -673,42 +706,40 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
         </div>
       </fieldset>
 
-      {/* Data protection & consent — T-18 seam, see file header */}
+      {/*
+        Data protection & consent — `ConsentPolicyDisclosure` (T-18):
+        the real scrollable, scroll-gated policy text fetched from
+        `GET /registrations/consent-policy`, a focusable scroll region, and
+        a checkbox that stays disabled until the pure end-detection
+        predicate (`consent-scroll-gate.ts`) reports the end has been
+        reached (design.md §5.2, FR-3). `ConsentPolicyDisclosure` is a fully
+        controlled component — `checked`/`onChange`/`error` are driven from
+        THIS component's own `values`/`errors` pair via the same `setField`
+        every other input uses, so the one-error-source contract holds:
+        there is no second copy of consent state living in the disclosure.
+        `onPolicyLoaded` records the fetched version into `values` (see
+        `handleConsentPolicyLoaded`) so `handleSubmit` sends the version the
+        applicant was actually shown, never a placeholder.
+      */}
       <fieldset className="rounded-md border border-border p-4 sm:p-6">
         <legend className="px-2 text-sm font-semibold text-fg">Data protection & consent</legend>
         {/*
-          T-18 replaces this paragraph and checkbox with `ConsentPolicyDisclosure`
-          (design.md §5.2): a scrollable rendering of `GET
-          /registrations/consent-policy`'s sections, a focusable scroll region,
-          and a checkbox that stays disabled until the pure end-detection
-          predicate reports the end has been reached. This placeholder keeps
-          the fieldset structurally present and its acceptance state part of
-          THIS component's one `errors`/`values` pair, so T-18 can swap the
-          body in without relocating consent out of the shared error contract.
+          The error summary's anchor targets `fieldId('consentAccepted')`
+          (`#${baseId}-consentAccepted`) via `FIELD_LABELS`, the same as
+          every other field — but `ConsentPolicyDisclosure`'s own checkbox
+          carries its own internal `useId()`, not this id. This wrapping div
+          is the landing target, mirroring the crops group's pattern
+          (Reviewer FAIL, attempt 2 caught the identical dead-anchor gap
+          there) so the link resolves to a live element instead of nothing.
         */}
-        <p className="text-sm text-muted">
-          By submitting, you agree that the information above may be published in the public seed
-          system registry once reviewed and approved by the ACCELERATE Tanzania team.
-        </p>
-        <div className="mt-3 flex items-start gap-2">
-          <input
-            id={fieldId('consentAccepted')}
-            type="checkbox"
+        <div id={fieldId('consentAccepted')}>
+          <ConsentPolicyDisclosure
             checked={values.consentAccepted}
-            onChange={(e) => setField('consentAccepted', e.target.checked)}
-            disabled={submitting}
-            aria-describedby={errors.consentAccepted ? `${fieldId('consentAccepted')}-error` : undefined}
-            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            onChange={(checked) => setField('consentAccepted', checked)}
+            error={errors.consentAccepted}
+            onPolicyLoaded={handleConsentPolicyLoaded}
           />
-          <label htmlFor={fieldId('consentAccepted')} className="text-sm text-fg">
-            I have read and accept the Data Protection & Participant Consent Policy.
-          </label>
         </div>
-        {errors.consentAccepted && (
-          <p id={`${fieldId('consentAccepted')}-error`} role="alert" className="mt-1.5 text-xs text-danger">
-            {errors.consentAccepted}
-          </p>
-        )}
       </fieldset>
 
       {/* Actions */}

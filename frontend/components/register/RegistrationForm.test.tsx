@@ -22,6 +22,19 @@
  *     sibling of `payload`/`consent`, never a property of `payload` (S-6)
  *   - jest-axe clean for the rules jsdom can evaluate — contrast, focus
  *     order and focus visibility are explicitly NOT asserted here (DC-16)
+ *   - (T-18 wiring) the real `consent.policyVersion` `ConsentPolicyDisclosure`
+ *     fetches flows through to `onValidated`, never a hardcoded placeholder
+ *
+ * `@/lib/api/registrations` is mocked (per `frontend/CLAUDE.md`: "Page tests
+ * mock the `lib/api/*` module") because `RegistrationForm` now embeds
+ * `ConsentPolicyDisclosure`, which fetches `GET /registrations/consent-policy`
+ * on mount. The default mock never resolves — this file's concern is FR-2's
+ * validation/error contract, not consent-policy content or the scroll gate
+ * (both covered in `ConsentPolicyDisclosure.test.tsx`), and a
+ * never-resolving fetch means no state update ever fires after mount, so
+ * none of the tests below need to await one to avoid an act() warning. The
+ * one test that DOES care about the fetched version overrides this default
+ * and awaits the load explicitly (see "flows the real policyVersion...").
  */
 
 import React from 'react';
@@ -32,8 +45,21 @@ import RegistrationForm, {
   type RegistrationConsentInput,
   type RegistrationPayloadInput,
 } from './RegistrationForm';
+import { getConsentPolicy } from '@/lib/api/registrations';
 
 expect.extend(toHaveNoViolations);
+
+jest.mock('@/lib/api/registrations', () => ({
+  getConsentPolicy: jest.fn(),
+}));
+
+const mockGetConsentPolicy = getConsentPolicy as jest.MockedFunction<typeof getConsentPolicy>;
+
+beforeEach(() => {
+  // Default: never resolves — see file header. Individual tests that care
+  // about the fetched policy override this with mockResolvedValueOnce.
+  mockGetConsentPolicy.mockReturnValue(new Promise(() => {}));
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -354,8 +380,37 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     // `email` travels as a THIRD, top-level argument — never a property of
     // `payload` (S-6, design.md §4.1: "No email in the payload").
     expect('email' in payload).toBe(false);
+    // The default mock never resolves (see file header), so the version the
+    // disclosure would have reported never arrives — this is the "consent
+    // policy never loaded" path, distinct from the happy path below.
     expect(consent).toEqual({ accepted: true, policyVersion: '' });
     expect(email).toBe('jane@kilimanjaroseed.co.tz');
+  });
+
+  it('flows the real policyVersion ConsentPolicyDisclosure fetched through to onValidated, never a placeholder', async () => {
+    mockGetConsentPolicy.mockResolvedValueOnce({
+      version: 'v9.9-test-fixture',
+      sections: [{ heading: 'A section', body: 'Body text.' }],
+    });
+    const onValidated = jest.fn();
+    render(<RegistrationForm onValidated={onValidated} />);
+
+    // Wait for ConsentPolicyDisclosure's fetch to resolve and its version
+    // heading to render, before submitting — proves the version RegistrationForm
+    // hands upward is the one the disclosure actually fetched.
+    await screen.findByText('v9.9-test-fixture', { exact: false });
+
+    fillMinimalValidForm();
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(onValidated).toHaveBeenCalledTimes(1);
+    const [, consent] = onValidated.mock.calls[0] as [
+      RegistrationPayloadInput,
+      RegistrationConsentInput,
+      string,
+    ];
+    expect(consent.policyVersion).not.toBe('');
+    expect(consent.policyVersion).toBe('v9.9-test-fixture');
   });
 
   it('rejects a malformed email and requires one before calling onValidated', () => {

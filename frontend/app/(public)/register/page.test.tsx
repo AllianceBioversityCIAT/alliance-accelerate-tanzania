@@ -4,12 +4,26 @@
  * Covers only what this task owns: the page renders RegistrationForm and
  * states the review-before-publication fact (echoing FR-1's landing CTA
  * copy so a visitor who lands here directly gets the same expectation).
- * The consent/OTP steps this page seams for (T-18/T-19) are not exercised
- * here — they don't exist yet.
+ * The OTP step this page seams for (T-19) is not exercised here — it
+ * doesn't exist yet. Consent (T-18) is exercised only indirectly: it now
+ * renders as part of `RegistrationForm`'s own fifth fieldset (see
+ * `RegistrationForm.tsx`'s file header) — its own behaviour is covered in
+ * `ConsentPolicyDisclosure.test.tsx`, not here.
+ *
+ * `@/lib/api/registrations` is mocked with a never-resolving fetch for the
+ * same reason `RegistrationForm.test.tsx` mocks it: this page renders
+ * `ConsentPolicyDisclosure` transitively, and a real (failing, since no
+ * `NEXT_PUBLIC_API_BASE_URL` is configured in tests) fetch resolving after
+ * `render()` returns triggers an act() warning unrelated to what this file
+ * tests.
  */
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+
+jest.mock('@/lib/api/registrations', () => ({
+  getConsentPolicy: jest.fn(() => new Promise(() => {})),
+}));
 
 import RegisterPage from './page';
 

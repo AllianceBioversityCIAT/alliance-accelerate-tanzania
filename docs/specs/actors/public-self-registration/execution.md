@@ -848,3 +848,86 @@ Non-vacuity confirmed structurally, which is A5's actual trap: `capturedLines()`
 
 **Final verification result:** **PASS on attempt 1.** 1 Implementer attempt, 1 Reviewer, **0 rework rounds consumed.**
 
+
+#### ⚠️ Leader record corrected again — L-ERR-3: the flake signature is **directory-level**, and I quoted the wrong route group
+
+Two separate defects here, one mine and one in the signature itself.
+
+**Mine.** T-18's brief told the Implementer the flake lived in `frontend/app/(public)/**/page.test.tsx`. The record (line 213) says `frontend/app/(admin)/admin/actors/import/page.test.tsx`. **Wrong route group entirely** — `(public)` instead of `(admin)`. This is the *third* time I have mis-stated this signature (first the line number, then the file, now the route group), and the pattern is worth naming: I have been re-deriving it from memory each time instead of reading line 213. **Every future frontend brief must quote the signature by reading it, not recalling it.**
+
+**The signature itself is now too narrow, again.** T-18's Implementer hit a red under full parallel load and — correctly — refused to treat it as pre-cleared, because the path I gave did not match what failed. What it found is a **second** flaky file:
+
+| File | Failure sites observed | Behaviour in isolation |
+|---|---|---|
+| `app/(admin)/admin/actors/import/page.test.tsx` | line 275 (`findByRole('alert')`, T-16) · a different assertion (T-17) | passes |
+| `app/(admin)/admin/actors/page.test.tsx` | line 276 (`toBeInTheDocument` timeout) · line 895 (a `waitFor` on "network failure") | **passes 3×, 32/32 each run** |
+
+Four distinct assertion sites, two files, all in the **admin actors area**, all green in isolation and only red under the full parallel run. One file with two flaky assertions can be dismissed as a slow assertion; **two sibling files with four is a property of the suite, not of any assertion** — shared or ordering state, or worker contention across the admin actors suites.
+
+**Signature widened from file-level to directory-level: `frontend/app/(admin)/admin/actors/**/page.test.tsx`.** The standing rule from line 217 is unchanged and still cuts the same way — **a failure there is NOT pre-cleared.** Re-run and characterise; never wave one through.
+
+**Neither the widening nor the diagnosis is mine.** Both came from an Implementer that took a red seriously despite being handed a wrong signature by its Leader, ran the file three times in isolation to establish the contrast, and reported both runs verbatim. Second time in this wave that a worker's discipline caught what the Leader's brief got wrong (see L-ERR-2).
+
+**De-flaking those suites remains out of this spec's scope** (line 217's judgment stands — they belong to the admin actors feature, which this spec does not touch). What is now in scope is honesty about the cost: **every frontend task from T-19 onward runs against an ambiguous full-suite signal in that directory**, and that ambiguity has grown, not shrunk, over the run. Recommend a follow-up spec against the admin actors test suites; recorded here rather than minted as a task in this spec, per the advisory rule.
+
+
+### T-18 — `ConsentPolicyDisclosure` + the pure scroll predicate
+
+**Dispatched** with effort `high`, skills `frontend-design` + `react-doctor`, single Reviewer on the lens checklist. **One Implementer, two dispatches** — the second being the remainder correcting L-ERR-2 (my scope guard), which consumed **no rework attempt** because the gap was mine, not the Implementer's.
+
+#### Attempt 1 — `STATUS: PASS`
+
+**Delivered.** `consent-scroll-gate.ts` (pure exported predicate over `{scrollTop, clientHeight, scrollHeight}`, 10 metric cases), `ConsentPolicyDisclosure.tsx` (controlled `checked`/`onChange`/`error` + `onPolicyLoaded`), `lib/api/registrations.ts` (`getConsentPolicy()`), and — after the remainder — the real wiring into `RegistrationForm`'s fifth fieldset, replacing T-17's placeholder.
+
+**Conformance verified by the Reviewer reading source, not tests:**
+
+| Property | Finding |
+|---|---|
+| One-error-source contract (T-17's, which T-18 must not break) | **Holds.** `ConsentPolicyDisclosure` declares no `checked`/`error` state — only `policy`, `loadFailed`, `reachedEnd`. `setField('consentAccepted', …)` is the **only** writer; `handleConsentPolicyLoaded` writes `consentPolicyVersion` alone and never touches `errors` |
+| DD-8 predicate | `scrollHeight <= clientHeight → true` is a direct transcription of §5.2's *"returns true when content is shorter than its container"* — no jsdom-specific branch |
+| FR-3 "unticked at every initial render" | Holds. `checked` is a prop from `values.consentAccepted`, `false` in `toFormValues()` and re-initialised on every remount. An async version arrival cannot tick the box or alter `errors` |
+| Fetch-once | Effect has `[]` deps and reads the callback through a ref, so a new inline callback identity per parent render does not refire it; a `cancelled` flag guards post-unmount `setState` |
+| `policyVersion` flow-through | Real fetched version reaches `onValidated`; a test pins it to `'v9.9-test-fixture'` and asserts `!== ''` |
+| NFR-6 tokens | Zero hex literals — `grep '#[0-9a-fA-F]{3,8}|rgb\(|\[#'` over `components/register/` returns **no matches** |
+| Backend type fidelity | `ConsentPolicy {version, sections}` mirrors `ConsentPolicyResponse`; `ConsentPolicySection {heading, body}` mirrors `consent-policy.ts:17-20`. No loosened unions, no flipped optionality |
+| `page.tsx` "comment-only" | **Confirmed independently**, not taken from the Leader's characterisation: `Step`, `handleValidated` and the render switch are byte-identical in behaviour |
+
+**A regression the Implementer introduced, caught, and fixed within the attempt.** Moving the checkbox into `ConsentPolicyDisclosure` gave it its own `useId()`, so the error summary's `#${baseId}-consentAccepted` anchor lost its target — **the identical dead-anchor class that FAILed T-17 attempt 1 on the crops group.** Fixed with a `<div id={fieldId('consentAccepted')}>` landing target, mirroring that precedent. **T-17's generic *"every error-summary link resolves to a live element"* test is what caught it** — written as a guard against the class rather than the instance, and it has now paid for itself on a different field in a different task.
+
+#### ⚠️ The Leader's premise on the jsdom question was wrong, and the correction is the most valuable finding in this review
+
+I asked the Reviewer whether `RegistrationForm`'s tests silently depend on the predicate returning `true` for degenerate all-zero metrics. **The dependency is real but it is not the one I named**, and the true one is worse:
+
+In `RegistrationForm.test.tsx` the default mock **never resolves**, so `policy` stays `null`, the geometry effect returns early, `reachedEnd` stays `false`, and the checkbox renders **`disabled`**. Eight tests tick it anyway and pass — because **jsdom toggles a disabled checkbox on a dispatched click**:
+- `jsdom/living/nodes/HTMLInputElement-impl.js:168-172` — `_legacyPreActivationBehavior()` flips `checked` with **no `disabled` guard**
+- `:191-194` — `_activationBehavior()` explicitly exempts checkbox/radio from the `_mutable` (not-disabled) check
+- React then fires `onChange`, because `shouldPreventMouseEvent` covers `onClick`/mouse handlers, not `onChange`
+
+**Only one** test ("flows the real policyVersion…") depends on degenerate-zeroes-open. **The other eight depend on jsdom ignoring `disabled` entirely** — they assert a successful submission from a state in which a real applicant **could not submit at all**.
+
+**It masks nothing today** — `ConsentPolicyDisclosure.test.tsx:226-275` asserts `toBeDisabled()`/`not.toBeDisabled()` against *injected non-degenerate geometry*, so a gate that opened instantly or never would fail there. That is why this is an advisory and not a FAIL. But it is undocumented, in a file whose header documents the mock at length, and it detonates opaquely on a `userEvent` migration, which **does** respect `disabled`.
+
+#### DC-17 honesty — the Disqualifying clause, genuinely satisfied
+
+The human check is written down at `ConsentPolicyDisclosure.tsx:42-51` as four browser-executable steps. Both test files **disclaim rather than claim**: the describe is *"scroll-gate **wiring**"*, titles say *"on a scroll event that **reports** the end has been reached"* — not "at the end of the policy" — and the `Object.defineProperty` technique is characterised as proving the component *reads DOM metrics and calls the predicate*, and explicitly *"does not and cannot prove that a real browser's layout … produces these numbers."* **Nothing folded into the green result.**
+
+**The human check, carried here so it is findable at the HITL pause rather than only in a source comment (Reviewer A-2):**
+> Open `/register` in a real browser, against a reachable API. **1.** On page load the consent checkbox is unticked and disabled. **2.** Scrolling the policy region partway does **not** enable it. **3.** Scrolling to the true end of the real policy text **does** enable it. **4.** The region is keyboard-reachable and scrollable: Tab focuses it, Arrow Down / Page Down / End reaches the bottom and enables the checkbox with **no pointer used**.
+>
+> **Precondition (A-2):** the API must be reachable, or steps 2–4 are unperformable because the disclosure renders its load-failure state. KZ-003 cuts only partway here — the component takes plain props, but it also *fetches*, so a throwaway harness is **not** sufficient for this one, unlike the other components in this module. Use the local stack (`docs/infrastructure.md` § Local Environment) or a stubbed `NEXT_PUBLIC_API_BASE_URL`. **Also to be added to T-22's human-check list.**
+
+**Verification (Implementer's; the Reviewer states plainly it ran no suite, lint or build):** `ConsentPolicy` 16/16 · `consent-scroll-gate` 10/10 · `RegistrationForm` 18/18 (17 prior + 1 new), 0 `act()` warnings · lint 0 errors · build 21 static pages, `/register` 4.32 kB → 5.57 kB · **full suite 77 suites / 1067 tests** · react-doctor 79/100, 6 findings all pre-existing with line numbers merely shifted.
+
+#### ADVISORY findings
+
+- **A-1 (highest value) — the jsdom `disabled` coupling above.** Cheapest durable fix: make that file's default mock **resolve** a one-section fixture and have `fillMinimalValidForm()` await it, so tests tick a genuinely enabled control via the legitimate DD-8 short-content path — then keep **one** explicitly-named test on the never-resolving path asserting the checkbox is disabled and `onValidated` is never called. That path is also the real *"policy failed to load"* product behaviour, and it is **currently untested at the form level**.
+- **A-2 — human-check precondition.** Recorded above, and to be carried into T-22.
+- **A-3 → T-19.** T-17's placeholder had `disabled={submitting}`; `ConsentPolicyDisclosure` takes no such prop, so the consent checkbox alone stays interactive while submitting. **Not a spec violation** — FR-3, NFR-5 and §5.2 say nothing about in-flight submit state — and **currently unobservable**, since `page.tsx:83` passes no `submitting` prop at all. It becomes a live inconsistency the moment T-19 wires it. T-19 should thread `disabled={!reachedEnd || submitting}`.
+- **A-4 → T-19, forward risk.** The geometry effect measures once, when `policy` lands. A `display:none` or detached element reports 0/0/0, which the predicate reads as "fits" and **opens the gate**. Nothing hides the fieldset today, but §5.3 keeps OTP as a *step within* `/register` — if T-19 hides the form with `display:none` rather than unmounting it, and the disclosure ever remounts hidden, the gate opens silently.
+- **A-5 — a test title that now overstates.** `RegistrationForm.test.tsx:359` still reads *"— no network call"*, but the component transitively calls `getConsentPolicy()` on mount. **The Implementer's negative claim was verified true** — `global.fetch` appears nowhere in the file and no test asserts against imports, so nothing was weakened; the file header discloses the fetch honestly. The defect is confined to the title.
+- **A-6 — a contradiction between two guides, not a T-18 defect.** `getConsentPolicy()` uses tokenless `apiFetch`, while `client.ts:167` says *"Public (no-token) calls are NOT the intended usage — use apiGet for those."* Behaviourally identical here (no `Authorization` header either way, asserted at `registrations.test.ts:88`) and `frontend/CLAUDE.md` names `apiFetch` as the route. **The stale comment is in `client.ts`** and should be corrected so the next implementer is not caught between two guides.
+- **A-7 → T-22.** The disclosure heading is an `<h4>` and the only other heading on `/register` is the `<h1>`, an h1→h4 skip. `RegistrationForm.test.tsx`'s axe run renders the form standalone, where the h4 is the first heading and `heading-order` passes — **no test runs axe over the whole page.** Demote to `<h3>`/`<h2>`, or route to T-22.
+- **T17-A3 revisited and dismissed for T-18.** The crops group also has no `tabIndex={-1}`, so the new wrapper **matches** the established precedent rather than diverging; the wrapper's first focusable child is the `tabIndex={0}` scroll region. Adding `tabIndex={-1}` to both would be an improvement; adding it to one would not.
+
+**Final verification result:** **PASS on attempt 1.** 1 Implementer (2 dispatches — the second a Leader-error correction), 1 Reviewer, **0 rework rounds consumed.**
+
