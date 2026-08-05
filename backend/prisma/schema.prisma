@@ -108,3 +108,79 @@ model ActorAuditLog {
 
   @@index([actorId, createdAt])
 }
+
+// Public self-registration (docs/specs/actors/public-self-registration, T-1).
+// PENDING_REVIEW / APPROVED / REJECTED are reachable by chunk 3a+3b; AWAITING_APPLICANT
+// and WITHDRAWN are declared now so chunk 4 needs no enum migration (design.md §2.1).
+enum RegistrationStatus {
+  PENDING_REVIEW
+  AWAITING_APPLICANT
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+// The full model, including adjudication columns 3a never writes, so chunk 3b
+// (docs/specs/admin/registration-review-queue) needs no migration of its own
+// (design.md §2.2, requirements.md §10).
+model Registration {
+  id                   String             @id @default(cuid())
+  // Applicant-facing: REG-<year>-<4-digit sequence>. Never the internal id.
+  reference            String             @unique
+  status               RegistrationStatus @default(PENDING_REVIEW)
+  // The submission. PII-bearing, admin-only in its entirety — never spread
+  // into a public response.
+  payload              Json
+  // PII. The OTP-verified address — this is the address published as
+  // Actor.email on approval (design.md §4.1, S-6).
+  submitterEmail       String
+  // Non-nullable by design: a row cannot exist unverified.
+  emailVerifiedAt      DateTime
+  // The applicant's acceptance time, not the write time.
+  consentAcceptedAt    DateTime
+  // The version the applicant was shown, echoed by the client, validated
+  // server-side (FR-3).
+  consentPolicyVersion String
+
+  // --- Adjudication (chunk 3b writes these; 3a declares them) ---
+  // Plain string, no FK — mirrors ActorAuditLog.actorId, deliberately FK-less.
+  publishedActorId    String?
+  reviewedBySub       String?
+  reviewedByEmail     String?
+  reviewedAt          DateTime?
+  rejectionReason     String?
+  // Applicant-facing — the one field the public lookup may return.
+  reviewNote          String?   @db.Text
+  // Per-candidate, not row-level: the set of candidate actor ids a reviewer
+  // has cleared, each with who and when (design.md §2.2).
+  duplicateDismissals Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The queue's only access pattern: status segment, oldest-first (design.md
+  // §2.2). No index on submitterEmail — the lookup keys on `reference`.
+  @@index([status, createdAt])
+}
+
+// Pre-Registration OTP store. No row exists until an applicant requests a
+// code; a Registration row exists only once the code has been verified
+// (design.md §2.3).
+model EmailVerification {
+  id String @id @default(cuid())
+
+  // PII. Lowercased. The lookup key (design.md §4.3) — not unique: up to
+  // three live codes per address are permitted by design.
+  email      String
+  // HMAC-SHA-256 under a server secret. Plaintext never stored, never logged.
+  codeHash   String
+  // Incremented on every verification attempt, right or wrong.
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  // Single-use.
+  consumedAt DateTime?
+  // Also the per-email send-rate window.
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
