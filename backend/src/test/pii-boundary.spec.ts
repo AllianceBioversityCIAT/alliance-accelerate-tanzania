@@ -1,5 +1,5 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../app.module';
@@ -8,6 +8,8 @@ import {
   NEVER_PUBLIC_FIELDS,
   PII_ALLOWLIST,
 } from '../common/pii-consent.policy';
+import { createValidationPipe } from '../common/validation-pipe';
+import { configureBodyParser } from '../common/body-parser.config';
 
 /**
  * T-9 — End-to-end PII-boundary + consent integration tests (NFR-1, NFR-7).
@@ -262,7 +264,7 @@ const LEAKABLE_PII_VALUES = [
 ];
 
 describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -272,10 +274,14 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       .useValue(buildPrismaMock())
       .compile();
 
-    app = moduleRef.createNestApplication();
-    // Mirror production bootstrap (main.ts / lambda.ts) exactly.
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    // Bootstrap through the SAME shared helpers main.ts/lambda.ts call
+    // (createValidationPipe() + configureBodyParser()), so the `details`
+    // array DC-2 inspects is actually rendered here — a bare
+    // `new ValidationPipe({...})` does not attach it.
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createValidationPipe());
+    configureBodyParser(app);
     await app.init();
   });
 

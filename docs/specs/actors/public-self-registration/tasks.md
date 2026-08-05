@@ -119,7 +119,7 @@
       **Disqualifying:** **if the chosen bounding mechanism cannot make its refusal indistinguishable from the other two exits, it is the wrong mechanism** (L-2, RA2) — a distinguishable lockout reintroduces the membership oracle this endpoint was designed to avoid, and a test covering only two of three exits will not catch it. A mechanism keyed solely on `reference` fails L-3 and must be rejected at review, not at execution (RA3).
       Skills: `nestjs-expert`, `api-design-principles`, `tdd` (Leader-assigned: this is the module's only public read of a PII-bearing row)
 
-- [ ] **T-12** Correct `pii-boundary.spec.ts` to the production bootstrap  (deps: none)
+- [x] **T-12** Correct `pii-boundary.spec.ts` to the production bootstrap  (deps: none)
       Scope: Replace `new ValidationPipe({...})` with `createValidationPipe()` and add `configureBodyParser(app)` (`pii-boundary.spec.ts:276-278`). Its in-file comment claims it mirrors production *exactly* and it does not — only `createValidationPipe()` attaches the `details` array. Fix the comment too.
       Traces: FR-8, NFR-1, DC-2, `design.md` §1.3, §6.2
       Files: `backend/src/test/pii-boundary.spec.ts`

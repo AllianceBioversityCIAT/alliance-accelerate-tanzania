@@ -931,3 +931,76 @@ The human check is written down at `ConsentPolicyDisclosure.tsx:42-51` as four b
 
 **Final verification result:** **PASS on attempt 1.** 1 Implementer (2 dispatches — the second a Leader-error correction), 1 Reviewer, **0 rework rounds consumed.**
 
+
+### Wave 7 dispatch — T-7 ‖ T-12, with T-6 deliberately held back
+
+**Leader correction to the dependency reading.** At the wave 6 pause I told the user *"T-6 and T-12 are the only ones with no unmet deps."* **Wrong — T-7 is also unblocked** (deps T-1 ✓, T-3 ✓). That matters because T-7 is the critical path: T-8 → T-10 → T-11 gate behind it, and T-13, T-19, T-20, T-21 behind those. Delaying it would have idled the longest chain in the spec. Corrected before dispatch, recorded here because a Leader misreading the dependency graph is a scheduling defect even when nothing was built wrong.
+
+**Three tasks are unblocked (T-6, T-7, T-12) and all three are backend — so the usual backend‖frontend pairing that has kept this run collision-free is unavailable.** Pairing was chosen on file and command disjointness instead:
+
+| | Files | Runs `npm run build`? | Touches shared bootstrap? |
+|---|---|---|---|
+| **T-7** | `registrations/email-verification.service.ts` (+ spec) | No | No |
+| **T-12** | `test/pii-boundary.spec.ts` | No | No |
+| **T-6** *(held)* | `common/payload-cap.config.ts`, **`main.ts`, `lambda.ts`** | **Yes** | **Yes** |
+
+**T-6 runs alone, after.** It edits the two entrypoints that nearly every other suite imports and it runs the build, which writes `dist/`. Running it beside another backend worker is precisely the failure the root guide describes — *"a measurement taken while an Implementer reinstalls dependencies is not a slow measurement, it is a **wrong** one — and it surfaces as an inexplicable error in the other worker."* Both dispatched workers were explicitly forbidden from touching `main.ts`/`lambda.ts` or running the build.
+
+**Effort.** T-7 `xhigh` — concurrency, cryptography and a trap that defeated two consecutive revisions. T-12 `medium` — small, but prerequisite to a release gate. `tdd` assigned to T-7 **specifically, not blanket**: V-1a is only observable if the test is written to observe it.
+
+**Review mode — T-7 gets parallel lens Reviewers, and this is where the budget I saved on T-5 gets spent.** `xhigh` effort selects it by rule, and unlike T-5 (whose risk was pinned by two mechanically checkable clauses) T-7's risk is open-ended judgment across six independent constraints. Planned lenses: **correctness against V-1…V-6**, **security/cryptographic**, and **test-adequacy** (does each constraint have its own non-vacuous evidence, per KZ-001). T-12 gets a single Reviewer.
+
+**Facts supplied to T-7 so it does not spend the discovery:**
+- **There is no SSM SDK anywhere in `backend/src`.** Despite §4.3's phrase *"SSM-sourced secret"*, the established pattern is a lazily-resolved env var that SAM populates at deploy time (`mail/mail.config.ts`, mirroring `auth/auth.config.ts`). Adding an SSM SDK would be the drift, not the fidelity.
+- **T-7's secret inherits T3-A1's deployment gap.** Its HMAC secret env var lands in the same hole as `MAIL_TRANSPORT`/`MAIL_SENDER_ADDRESS`: absent from every SAM template, throwing at first use, invisible to every test. The Implementer was told to name the variable in its report so the escalation can be extended, and **explicitly forbidden from editing any SAM template** — that file is owned by no task in T-1…T-23, which is the whole substance of T3-A1.
+- T-5's per-container throttler and §4.3's 3-sends-per-email-per-hour are **complementary, not redundant** — the latter is the control that survives cold starts.
+
+**Told to T-12 as a report-don't-solve item:** once T-6 lands, *"mirrors the production bootstrap"* will mean **three** helpers, not two. T-12 must structure its correction so the third is a one-line addition, and report how invasive it would be — without implementing it.
+
+
+#### Observation — the first **backend** flaky run of this spec, and it is probably the Leader's doing
+
+T-12's Implementer hit a single Jest timeout in `backend/src/test/admin-actor-import.e2e.spec.ts` on one full-suite run, re-ran that suite alone (22/22 green) and the full suite again (48/48, 549/549 green), and attributed it to CPU contention from concurrent agents.
+
+**Recorded deliberately as *not* a product flake, unlike the frontend one.** Three reasons to treat it differently from `(admin)/admin/actors/**/page.test.tsx`:
+
+1. **It appeared under a condition this run created.** Wave 7 is the first time two backend Implementers have been active in the same package simultaneously — every prior wave paired backend with frontend precisely to avoid this. The root guide's warning is explicit that contention *"surfaces as an inexplicable error in the **other** worker."*
+2. **The worker exceeded its brief in the way that produced it.** T-12's verification list was `npm test -- pii-boundary` plus eslint. It additionally ran the **full** suite — thorough, and I would rather have that instinct than not, but the full run is exactly the expensive measurement that collides. **My brief should have named the full-suite run as out of bounds while a sibling agent was active; it named only `npm run build`.** Leader gap, recorded.
+3. **One occurrence, cleanly non-reproducible in isolation.** The frontend signature earned its status through four distinct assertion sites across two files over three waves. One timeout is not that.
+
+**No entry added to the flake registry.** If it recurs in a *sequential* run it becomes a real finding; until then, treating it as a product defect would launder my own scheduling choice into a property of the codebase. **What does change: future briefs cap the verification at what the task needs while a sibling agent is active** — the full suite is a wave-closing measurement for the Leader to take in the quiet window, not a per-task one.
+
+
+### T-12 — Correct `pii-boundary.spec.ts` to the production bootstrap
+
+**Dispatched** with effort `high`, skills `nestjs-expert` + `systematic-debugging`, single Reviewer on the lens checklist.
+
+#### Attempt 1 — `STATUS: PASS`
+
+**Delivered.** `new ValidationPipe({transform: true, whitelist: true})` → `createValidationPipe()`, plus `configureBodyParser(app)`; app type widened to `NestExpressApplication`; the false comment replaced. **No `it()` block, expectation or fixture was touched** — the Reviewer confirmed all ten tests, both scan helpers, `FORBIDDEN_KEYS` and `LEAKABLE_PII_VALUES` are byte-identical, and reconciled the count as 3 (`/actors`) + 4 (`/actors/:id`) + 3 (`/metrics`).
+
+**Fidelity verified against the real entrypoints, not asserted:** the helper order matches `main.ts:16-18` and `lambda.ts:24-26` exactly — `setGlobalPrefix('api/v1')` → `useGlobalPipes(createValidationPipe())` → `configureBodyParser(app)` → `init()` — and matches the established reference harness `admin-actor-import.e2e.spec.ts:543-548` line for line. `NestExpressApplication` is **forced, not stylistic**: `useBodyParser` does not exist on `INestApplication`. `createNestApplication<T>()` is a type parameter only — with no adapter argument Nest already instantiates an `ExpressAdapter`, so the runtime app is unchanged.
+
+#### The central question — the corrected bootstrap has **zero behavioural coverage**, and that is correct for this task
+
+**The Implementer diagnosed this rather than reporting a bare green.** Nothing went red, and instead of stopping there it established *why*: no `it()` in the suite triggers a validation failure at all. The Reviewer confirmed independently — **every request is a bare `GET` with no body and no query parameter**, so neither `createValidationPipe()`'s `exceptionFactory` (`validation-pipe.ts:96-102`) nor its body-shape guard (`:81-87`) ever fires, and `configureBodyParser` is likewise inert because both `useBodyParser('json', …)` and `normalizeServerlessJsonBody` only act on a request with a body. **Both helpers are correctly wired and behaviourally unexercised.**
+
+**Ruling, delivered without hedging as asked: a behavioural assertion is out of scope for T-12 and must wait for T-13.** Three reasons, and the second is the one I had not seen:
+
+1. **KZ-002 is satisfied, not evaded.** Its standardized form forbids *recording an unevaluated property as covered*. T-12's Done-when never claims coverage of the `details` envelope — it claims the bootstrap and the three existing paths. The Coverage table assigns DC-2's behavioural proof to T-13. *"T-12 is scaffolding for a gate; it is not the gate."*
+2. **An ad-hoc test here would be wrong-shaped, not merely premature.** §6.2 requires the scan be derived from the route table with a **total** fixture map — *"the gate is the totality assertion, not the enumeration"* (RA7/C-9) — and the `429` assertions to live in an isolated describe with a dedicated app and reset limiter (B28). A hand-written `400` case dropped into the shared `beforeAll` app **is precisely the enumeration pattern T-13 must then unpick, in the same file, as its only file.** Scope creep with a rework cost, not cheap insurance.
+3. **My framing of the regression window was wider than the facts.** I put it to the Reviewer that nothing protects the fix. The factory's envelope **does** have behavioural coverage elsewhere today — `common/validation-pipe.spec.ts` (the `exceptionFactory` directly), `registrations/dto/registration-create.dto.spec.ts` (DTOs through the production pipe by name), and both `admin-actors.e2e.spec.ts` and `admin-actors-crud.e2e.spec.ts` assert `details` bodies over HTTP. **What is unprotected is this file's use of the helper, not the helper.** And T-13 depends on T-12, targets the same single file, and ships in the same PR — the window closes inside one PR. *"The correct instrument for that residual risk is the dependency you already enforce, not a test T-13 would delete."*
+
+**T-6 interaction, answered as report-don't-solve:** the diff leaves T-6's insertion slot free and unobstructed. `configureBodyParser` sits after the pipe and **before `await app.init()`**, matching the helper's own contract (`body-parser.config.ts:114-122`); T-6's payload cap must be inserted **before** that line, and adding it here will be a single import plus a single call, in the same shape as this diff. The ordering is load-bearing rather than cosmetic — `app.use()` registers into Express at call time, the same mechanic behind `judgment.md` C-2.
+
+**Verification (Implementer's; the Reviewer states plainly it ran no suite):** `npm test -- pii-boundary` → 1 suite / 10 tests · eslint `--quiet` clean · full suite 48 suites / 549 tests. Note the Implementer used the non-mutating `npx eslint … --quiet` form the root guide requires for a diff under review, not `npm run lint`.
+
+**Project audit gates:** no serializer, policy, route or fixture changed — `FORBIDDEN_KEYS` still derives from `PII_ALLOWLIST ∪ NEVER_PUBLIC_FIELDS`. No AWS command, no IaC, no frontend, no tokens, no Prisma or migration. Test-only diff; nothing under production `src/**` changed.
+
+#### ADVISORY findings
+
+- **T12-A1 → fold into T-13.** One clause of the new comment overreaches: *"so the `details` array DC-2 inspects **is actually rendered here**"* is true read as *"this app is configured such that a validation failure would render it"* and false read as *"this suite renders it."* A T-13 implementer skimming for prior art could take the second reading. Suggested tightening, which makes the comment fully checkable against the file: *"…so a validation failure in this app renders the production `details` envelope — a bare `new ValidationPipe({...})` does not attach it. **No test in this suite currently triggers one; the `400`/`429` bodies are asserted in T-13.**"*
+- **T12-A2 → T-13.** The file's doc header opens *"T-9 — End-to-end PII-boundary + consent integration tests"*, and its `T-4/T-5/T-6/T-7` references belong to **`actors/registration-source-and-consent`'s** numbering, not this spec's. Ambiguous rather than actively wrong, and **deliberately left alone**: T-12's scope names one comment, and T-13 rewrites that header region anyway. Requalify it there so the two specs' numbering stops colliding in one file — making T-12 relitigate it would invite the file-wide comment churn that makes a prerequisite diff hard to audit.
+
+**Final verification result:** **PASS on attempt 1.** 1 Implementer attempt, 1 Reviewer, **0 rework rounds consumed.**
+
