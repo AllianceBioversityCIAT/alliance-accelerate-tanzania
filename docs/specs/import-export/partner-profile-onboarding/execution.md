@@ -1325,3 +1325,48 @@ Rewritten against the real screens (`import/page.tsx`, `MetricsBand.tsx`, `profi
 | A-23 | The `Seed Company` row correctly says 0 created is expected (DD-11), but **the screen will contradict it**: with `toCreate === 0` the commit button is disabled and the page reads *"No rows are eligible to import. Fix the file and upload again."* The runbook says "nothing to do" while the screen says fix the file. Also "its location columns hold no data at all" is slightly strong — lat/long are 6/11 filled; it is the **region/district** column that is empty and drives the quarantine |
 
 **A-21 and A-23 describe the screen contradicting the runbook**, which is FR-9's own subject matter. The Reviewer classified both as non-blocking one-sentence fixes and they are recorded here rather than actioned, per the advisory rule. Flagged to the user as a candidate follow-up.
+
+---
+
+### T-10 — `reconciliation.md`, skeleton with expected counts
+
+**Status: ✅ PASS on attempt 2 of 3.** Date: 2026-08-05. Effort `xhigh`. Skills: `cognitive-doc-design`. Review mode: single lens, one Reviewer, `opus` — author ≠ auditor held.
+
+**Files:** `reconciliation.md` (new). No other file, no code.
+
+#### Scope completed in two passes, the second under an extended workbook grant
+
+The first pass built the document from recorded figures and correctly **reported two gaps rather than fabricating**: `mapping.md` never enumerated `Offtaker_Sorghum`'s 11 `"Retaler"` quarantine rows, and neither `mapping.md` nor `design.md` enumerated DD-7's cross-sheet duplicate list. **Both gaps were a Leader briefing error** — the brief forbade opening the workbook, while FR-8 requires enumerating every quarantined and excluded row and DD-7 requires the duplicate list *by organisation name and row*. Neither dataset existed in the repository. Access was granted for exactly those gaps (and later extended once more, see the FAIL below). **Reporting rather than inventing was the correct behavior and was not charged as a rework attempt.**
+
+#### F-1 and F-2 — measured
+
+- **F-1:** the 11 `"Retaler"` rows are **2, 3, 4, 5, 6, 12, 13, 14, 15, 16, 17**, and are **provably disjoint** from the 7-row contaminated tail (110–116). This **independently confirms correction C-5**'s `11 + 7 = 18` distinct OFS quarantines. No pivot triggered.
+- **F-2 — a new sibling contradiction: 11 duplicate groups / 24 records, not `design.md`'s 8 / 18.** Reported, not adopted. The finding's force is that it was **always detectable without the workbook**: `mapping.md` §4.5 already stated in prose that the QDS tail *"repeats all 11 `Seed Company` organisations verbatim"* — eleven, sitting beside an estimate of eight, unreconciled. The Reviewer added a corroboration the document did not claim: **18 records over 8 groups requires exactly two 3-sheet groups, and the measurement found exactly two** — the estimate's shape survived; only its pair count was short. Two further low-confidence pairs were correctly held *outside* the count. **Operationally material:** two groups (3-sheet) mean that once `Seed Company`'s DD-11 quarantine lifts, **each risks two live actors for one real organisation** — precisely what DD-7 exists to prevent, now identified by name and row *before* the run.
+
+#### Attempt 1 — ❌ FAIL, one issue
+
+**The 261 QDS `individual` rows — 21% of the workbook — were the only members of a non-`imported`, non-`collapsed` bucket never named by row number, and the document contradicted its own §1 in declining.** §4.8 argued FR-8's *"record the 249 as a decision"* clause substituted for the enumeration clause. It does not: FR-8's C-13 clarification carves out exactly **two** buckets as count-only — `imported` and `collapsed-into-block` — and `excluded` is not one of them. The clauses are joined by AND. **This is the KZ-001 failure mode** — discharging a required clause by citing a different satisfied one — and it landed on the single place where the document's answer to *"are all source rows accounted for?"* was weaker than its own promise.
+
+#### Attempt 2 — ✅ PASS
+
+**The fix exceeded the Reviewer's own remedy.** The Reviewer proposed *deriving* the range (28–288) from contiguity and labelling it derived-not-measured. The Leader instead extended the existing workbook grant so it could be **measured**: `producer_category` read across QDS rows 2–312 → a **single contiguous block, rows 28–288 (261 rows)**, 259 `individual` + 2 `individuals`. This **confirms `requirements.md` §3.1's "sorted by category"** exactly, so no non-contiguity finding arises. A derived range would have carried a caveat into the document the program lead reads; a measured one does not.
+
+The Reviewer verified the range is **arithmetically forced** even without the workbook: the tail is 289–312, every cited `cbo` row falls in 2–26, so `311 − 261 − 24 = 26` leaves only one possible contiguous block. Independent confirmation of a measurement it could not take.
+
+**Every identity closes from the file itself:** `288−28+1 = 261` · `26+261+24 = 311` · `290 = 261+24+5` · `806−50−5 = 751` · all eight sheets closing · both axes at **1,237**.
+
+**The 751 agreement is not bookkeeping made to match.** Per-sheet `imported` values (434, 97, 145, 18, 31, 8, 0, 18) match `design.md` §9.1's amended net **sheet by sheet**, not merely in total.
+
+**The 806→751 bridge survived the check that mattered.** The Leader challenged its reasoning rather than its arithmetic — DSP's 3 foreign exclusions also sit in the `excluded` bucket, so "the 5 personal-name exclusions are the only un-netted reason" had to be tested. It holds: `design.md` §9.1's convention nets D-1, D-3 and DD-6 out *before* 806 (which is why DSP enters at 10, not 13, and QDS at ~23), **DD-11 excepted** — so the 50 correctly absorbs `Seed Company`'s 11, and the 5 personal names are genuinely the only `excluded`-bucket reason left. Given this spec produced three double-counts already, the check was worth making.
+
+**NFR-9 clean on the part a grep cannot do.** The 261-row entry is a bare range plus a category value. Rows 2/4/8/20/23 stay row-number-only, and the row-23 corroboration points at no specific counterpart, so it identifies nobody. §6 names organisations only — including the one entry that could have gone wrong, a *live* `cbo` row permitted precisely because it is not among the five personal-name rows.
+
+#### Advisories (recorded, non-gating)
+
+| # | Finding |
+|---|---|
+| A-24 | §4.8 still says the workbook grant covered *"two"* gaps; §1 correctly says three (F-1, F-2, and the 261-row range). Residue from the pre-extension grant |
+| A-25 | §1 promises rows are *"individually named by physical row number"* while §4 legitimately uses exhaustive contiguous ranges for the three large blocks. A range does name each row unambiguously; tightening §1 to "individually or as an exhaustive contiguous range" would close the phrasing gap |
+| A-26 | **Not this document's defect:** `mapping.md` §3.2 is the only sheet section lacking a "physical columns not carrying a name" line, which is why §4.2's physical-vs-ordinal column offset has no corroborating entry to cite. Worth a line whenever `mapping.md` is next touched |
+
+**Still unverified, by design:** every workbook-sourced figure — the `"Retaler"` rows, the 11 duplicate groups and their members, the 28–288 range — rests on measurement **no Reviewer could take**, since the wrappers grant `Read`/`Grep`/`Glob` only. What was verified is internal consistency, forced arithmetic, and fidelity to sibling documents. §7 (cell-by-cell trace) and §8 (operator post-commit check) are **correctly blank** — both require an actual onboarding run.
