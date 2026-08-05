@@ -20,7 +20,7 @@
       **Disqualifying:** if the generated SQL contains a `MODIFY`, the migration is wrong for *this* task — the only legitimate `MODIFY` in this epic is 3b's `ActorAuditAction` widening (`design.md` §2.6), which is **not** in 3a. Do not hand-edit generated SQL to satisfy the criterion; if Prisma emits something unexpected, report the SQL verbatim and stop.
       Skills: `nestjs-expert`
 
-- [ ] **T-2** Consent policy module + `GET /registrations/consent-policy`  (deps: T-1)
+- [x] **T-2** Consent policy module + `GET /registrations/consent-policy`  (deps: T-1)
       Scope: `consent-policy.ts` with an ordered section list and `CONSENT_POLICY_VERSION`; a known-version set that retains superseded versions; the public endpoint. Placeholder text pending OQ-1 — the mechanism is the deliverable, legal owns the wording.
       Traces: FR-3, `design.md` §4.2, DD-7
       Files: `backend/src/registrations/consent-policy.ts`, `registrations.controller.ts`, `registrations.module.ts`, `app.module.ts`

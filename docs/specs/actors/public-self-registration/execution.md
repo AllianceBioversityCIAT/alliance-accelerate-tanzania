@@ -190,3 +190,75 @@ All four real. The **naming asymmetry** the Leader flagged (`--crop-groundnut` w
 **Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
 
 ---
+
+## Out-of-band repairs (not tasks of this spec)
+
+Recorded here because they changed the conditions every later task runs under, and a reader of this log would otherwise not know why the verification baseline moved. **Neither is a task of this spec**, neither carries a task number, and both were explicitly approved by the user at the wave-1 pause. Committed separately as `b359fb5`.
+
+1. **`backend/src/common/normalize.spec.ts` — stale path repaired.** It read `docs/specs/import-export/partner-profile-onboarding/mapping.md`, which commit `8f781e9` renamed into `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/` (git reports `R100`). `backend/` therefore sat at a standing **1-test ENOENT failure** before this spec's execution began. *That commit's own message cites **KZ-004*** — the archive move corrected the documents and left the test quoting the old path, which is KZ-004's exact failure shape occurring inside the commit that standardised KZ-004. Repaired because **every backend task in this spec verifies with `npm test`**, and a permanently red baseline is precisely the condition under which a *new* failure is waved through as "the known one".
+2. **`backend/CLAUDE.md` + `backend/AGENTS.md` § Data & migrations — amended to describe reality.** The guide mandated rehearsing migrations on a local docker MySQL before RDS. Most checkouts here have **no local MySQL**, and `.env` points at the shared dev RDS that `docs/infrastructure.md` §6 explicitly sanctions — so the rule described a step nobody could perform, and was discovered only after being broken (see T-1's *Runbook deviation*). Rewritten to describe actual practice **while making the real hazards explicit**: `migrate dev` reads the URL from `.env` and provisions a **shadow database** on its target; reset/drift prompts are abort-and-report; `migrate reset` and `db push` stay forbidden against RDS. **Both mirrors updated in the same change, per KZ-004.**
+
+**Baseline established.** After these repairs the Leader ran the full backend suite on a quiet tree: **38/38 suites, 490/490 tests passing.** From this point in the log, `backend/` has **no known failures**, and every subsequent backend brief says so — a failure reported by any later Implementer is new by construction.
+
+*(The `b359fb5` commit message carries a caveat that the `normalize.spec.ts` fix had no green run behind it, because the sandbox classifier was unavailable at the moment it landed. The confirming run above happened minutes later. The caveat is left in history as an accurate record of what was known when it was written.)*
+
+---
+
+### T-2 — Consent policy module + `GET /registrations/consent-policy`
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| Date | 2026-08-05 |
+| Implementer attempts | **1** |
+| Review mode | **Lens checklist** (single Reviewer) — effort `medium`; T-2 *serves* the policy, it does not *gate* on it (the consent gate is T-10), so no security/data-loss trigger applies |
+| Effort assigned | `medium` |
+| Skills assigned | `nestjs-expert`, `api-design-principles` (as listed; no deviation) |
+| Requirements covered | **FR-3** — the mechanism behind the version-acceptance clauses. FR-3's *"Server-side acceptance is mandatory"* enforcement is **T-10**; the scroll-gate and readability clauses are **T-18**. Recorded at clause granularity per KZ-001. |
+
+#### Attempt 1
+
+**Files changed**
+- `backend/src/registrations/consent-policy.ts` — **new.** `ConsentPolicySection`, `CONSENT_POLICY_SECTIONS` (4 ordered, placeholder-marked sections), `CONSENT_POLICY_VERSION = 'v1.0-placeholder'`, `KNOWN_CONSENT_POLICY_VERSIONS: readonly string[]` (append-only), `isKnownConsentPolicyVersion(version)`
+- `backend/src/registrations/registrations.controller.ts` — **new.** `@Controller('registrations')`, one `@Get('consent-policy')`, no guards, no DTO, no DI
+- `backend/src/registrations/registrations.module.ts` — **new.** Controller only, no providers
+- `backend/src/registrations/registrations.controller.spec.ts` — **new.** 6 tests
+- `backend/src/app.module.ts` — `RegistrationsModule` added to `imports`; existing comment extended, not rewritten
+
+**Verification (Implementer)**
+- `npm test -- registrations` — PASS, 6/6
+- `npm run build` — clean
+- `npx eslint "{src,test}/**/*.ts" --quiet` — clean, no output
+- Full suite `npm test -- --silent` — **39/39 suites, 496/496 tests.** Against the 38/38 · 490/490 baseline above: +1 suite, +6 tests, **zero regressions**
+- Implementer `Not Done / Assumptions`: **none**
+
+**Reviewer — lens checklist: `STATUS: PASS`**
+> T-2 meets every Done-when clause and satisfies the Disqualifying round-trip requirement with a genuinely falsifiable assertion; the route resolves at the contracted `/api/v1/registrations/consent-policy`, scope is exactly the four declared files plus the `app.module.ts` import, and no guard, stub, or PII surface was introduced.
+
+**The Disqualifying clause — the round-trip, and why it is satisfied.** The clause forbids a test that only asserts a 200: it must assert *the returned version is the one the server will later accept*. The implementation asserts `isKnownConsentPolicyVersion(response.version)` where the input is **the handler's own return value**, not a second hardcoded literal. The Reviewer confirmed this is **falsifiable in both directions**: emit a literal absent from the set → red; drop the served version from the set → red. Two hardcoded `CONSENT_POLICY_VERSION` references would have passed even if the endpoint and the acceptance set silently diverged — which is exactly the drift hole DD-7 exists to close.
+
+**Route resolution — checked statically, because the test structurally cannot.** A controller-method unit test (`new RegistrationsController()`) passes regardless of where the route actually resolves. The Leader raised this explicitly; the Reviewer verified from the bootstraps: `app.setGlobalPrefix('api/v1')` is unconditional and **identical in both entrypoints** (`main.ts:16`, `lambda.ts:24`), and every controller in the repo declares its path unprefixed (`actors`, `metrics`, `users`, `admin/actors`, `health`). So `@Controller('registrations')` is the conforming declaration and the effective path is **`/api/v1/registrations/consent-policy`**, matching `design.md` §3.1. Over-HTTP confirmation remains **T-13**'s (route enumeration) and **T-6**'s (explicit prefix assertion).
+
+**Testing level adjudicated.** The Reviewer ruled controller-method level **sufficient for T-2**: the Done-when concerns the returned object and the predicate, the stated verify is `npm test -- registrations`, and FR-8's over-HTTP proof is explicitly T-13's — *"demanding supertest here would import T-13's obligation into T-2."* Recorded so the boundary is stated rather than assumed.
+
+**DD-7 no-duplication verified, not assumed.** The Reviewer grepped `frontend/` and found no consent-policy content or fetch anywhere (T-18 unstarted). The server is genuinely the single source of truth today.
+
+**Superseded-version retention — honest framing, confirmed.** Only one version exists, so the Implementer verified retention **structurally** (append-only array + a membership predicate rather than a latest-only comparison) and **said so rather than claiming it exercised**. The Reviewer judged this honest and *not* a KZ-002 presence assertion: *"A presence assertion would be `expect(KNOWN_CONSENT_POLICY_VERSIONS).toContain(CONSENT_POLICY_VERSION)` sold as proof of retention."* It also identified the tempting shortcut as a **real defect**: adding a fake superseded version to the shipped array would make the server accept a version it never issued.
+
+**Decisions made**
+1. **Mutable `CONSENT_POLICY_SECTIONS` ruled acceptable, not a defect.** The Leader flagged that the controller returns the same module-level array reference on every request in a long-lived Lambda container, while `KNOWN_CONSENT_POLICY_VERSIONS` beside it is `readonly`. Reviewer's ruling: the only exit path is Nest's JSON serialization (which copies), there is no in-process consumer, and `readonly` is compile-time only — it would not close the runtime aliasing the concern implies (that needs a deep freeze or per-request copy, over-engineering for static content). **No spec rule mandates immutability**, so it is hardening, not a violation. Carried as ADVISORY T2-A1.
+2. Single-Reviewer lens checklist rather than parallel lenses — no parallel trigger applies.
+
+**Issues encountered**
+- The Reviewer went idle without delivering its verdict and had to be re-prompted via `SendMessage` — now observed on **every Reviewer in this run** (both T-1 lenses, T-14, T-2). Harness behaviour, not a work defect; no rework attempt consumed. Recorded as a pattern, since a verdict the Leader cannot see is indistinguishable from an unfinished review.
+
+#### ADVISORY findings (recorded; never gate, never become tasks in this spec)
+
+- **T2-A1** — type `CONSENT_POLICY_SECTIONS` as `readonly ConsentPolicySection[]` with `readonly heading`/`body`, matching `KNOWN_CONSENT_POLICY_VERSIONS` beside it and the `as const` precedent at `backend/src/common/normalize.ts:58, :218`.
+- **T2-A2** — **for genuine retention coverage:** extract a two-arg pure helper (`isVersionKnown(versions, version)`) that `isKnownConsentPolicyVersion` delegates to, then test it against a fixture `['v0.9-superseded', 'v1.0-placeholder']`. This exercises retention **today** without inventing a version in the shipped set. **Natural home is T-10**, when the gate actually consumes the predicate.
+- **T2-A3** — extend the placeholder tripwire to headings and to the version string (`expect(CONSENT_POLICY_VERSION).toContain('placeholder')`). The version is the strongest single marker, since resolving OQ-1 must bump it. Current test checks bodies only, and would not catch authoritative prose appended alongside a retained marker.
+- **T2-A4** — ⚠️ **forward-looking trap for T-18.** FR-3's mockup progress text cites *"Keep scrolling — 2 of **6** sections read"* against the **four** sections shipped here. Content, not contract — but **T-18's progress text must derive the section count from the fetched payload, never a literal**, or it will display a count that contradicts what the user is scrolling through.
+
+**Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
+
+---
