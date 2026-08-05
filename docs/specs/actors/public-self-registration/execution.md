@@ -198,7 +198,23 @@ Recorded here because they changed the conditions every later task runs under, a
 1. **`backend/src/common/normalize.spec.ts` — stale path repaired.** It read `docs/specs/import-export/partner-profile-onboarding/mapping.md`, which commit `8f781e9` renamed into `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/` (git reports `R100`). `backend/` therefore sat at a standing **1-test ENOENT failure** before this spec's execution began. *That commit's own message cites **KZ-004*** — the archive move corrected the documents and left the test quoting the old path, which is KZ-004's exact failure shape occurring inside the commit that standardised KZ-004. Repaired because **every backend task in this spec verifies with `npm test`**, and a permanently red baseline is precisely the condition under which a *new* failure is waved through as "the known one".
 2. **`backend/CLAUDE.md` + `backend/AGENTS.md` § Data & migrations — amended to describe reality.** The guide mandated rehearsing migrations on a local docker MySQL before RDS. Most checkouts here have **no local MySQL**, and `.env` points at the shared dev RDS that `docs/infrastructure.md` §6 explicitly sanctions — so the rule described a step nobody could perform, and was discovered only after being broken (see T-1's *Runbook deviation*). Rewritten to describe actual practice **while making the real hazards explicit**: `migrate dev` reads the URL from `.env` and provisions a **shadow database** on its target; reset/drift prompts are abort-and-report; `migrate reset` and `db push` stay forbidden against RDS. **Both mirrors updated in the same change, per KZ-004.**
 
-**Baseline established.** After these repairs the Leader ran the full backend suite on a quiet tree: **38/38 suites, 490/490 tests passing.** From this point in the log, `backend/` has **no known failures**, and every subsequent backend brief says so — a failure reported by any later Implementer is new by construction.
+**Backend baseline established.** After these repairs the Leader ran the full backend suite on a quiet tree: **38/38 suites, 490/490 tests passing** (39/39 · 496/496 after T-2). From this point in the log, `backend/` has **no known failures**, and every subsequent backend brief says so — a failure reported by any later Implementer is new by construction.
+
+**Frontend baseline established — and a known flake found (2026-08-05, after T-16's implementation).**
+
+Until this point **nobody had run the full frontend suite**: T-14 verified with `npm test -- roles`, T-15 with `-- Header`, T-16 with `-- home`. Each was green on its own slice, and none of them could have caught a cross-task break. The Leader ran the whole suite specifically to test the **T-15 × T-16 interaction** — both tasks add a link with the accessible name *"Register your organisation"* to the same page (T-15 puts one in the desktop nav **and** one in the mobile panel; T-16 adds a third in the landing panel), which is exactly the shape that breaks a singular `getByRole`.
+
+| Run | Result |
+|---|---|
+| Full suite, 1st run | **1 failed**, 71 passed / 72 suites · 1 failed, 1013 passed / 1014 tests |
+| `admin/actors/import` in isolation | **19/19 passed** |
+| Full suite, 2nd run | **72/72 suites · 1014/1014 tests — all green** |
+
+**Verdict: a pre-existing flaky test, not a regression.** The failure was `await screen.findByRole('alert')` timing out at `frontend/app/(admin)/admin/actors/import/page.test.tsx:275`. It is in the **admin** route group, which shares no import path with `components/shell/Header.tsx` or `components/home/LandingCTA.tsx`, and it passes both in isolation and on a clean re-run — a timing failure under parallel-worker load, not a logic defect.
+
+- **Frontend baseline: 72 suites / 1014 tests, green.**
+- **The T-15 × T-16 interaction question is answered empirically: no collision.** Three identically-named links to the same destination on one page break nothing across 1014 tests.
+- ⚠️ **Standing condition for every later frontend task (T-17…T-22).** A red frontend run is now **ambiguous** — it may be a real defect or this flake resurfacing. That is precisely the condition the `normalize.spec.ts` repair removed on the backend side, and it cannot be removed here without fixing or de-flaking that test, which is **out of this spec's scope**. Mitigation adopted instead: every frontend brief from here carries the flake's exact signature (`page.test.tsx:275`, `findByRole('alert')`, `/only \.xlsx files can be imported/i`) so an Implementer neither burns a rework round chasing it **nor** uses it to wave through a genuine failure. **On any red frontend run, re-run before concluding** — and per the Verification Expectations rule, report an inconclusive result as inconclusive rather than collapsing it into a pass.
 
 *(The `b359fb5` commit message carries a caveat that the `normalize.spec.ts` fix had no green run behind it, because the sandbox classifier was unavailable at the moment it landed. The confirming run above happened minutes later. The caveat is left in history as an accurate record of what was known when it was written.)*
 
@@ -360,5 +376,68 @@ Ruled advisory on this reasoning, which the Leader accepts: `href` and tab-stop 
 - **T15-A7** — T-15's *"reads as an action"* clause and focus **visibility** remain **HITL-only** per DC-16. Do not record them as covered by the automated gates.
 
 **Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 2 Reviewers (one per attempt, second one fresh for adversarial independence), **1 rework round consumed**.
+
+---
+
+### T-16 — Landing CTA panel
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| Date | 2026-08-05 |
+| Implementer attempts | **1** |
+| Review mode | Lens checklist (single Reviewer) |
+| Effort assigned | `medium` |
+| Skills assigned | `frontend-design`, `ui-ux-pro-max` (as listed; no deviation) |
+| Requirements covered | **FR-1** scenario *"Landing CTA"* — all three clauses · NFR-6, NFR-7 |
+
+#### Attempt 1 — `STATUS: PASS`
+
+**Files changed**
+- `frontend/components/home/LandingCTA.tsx` — **new.** `<section className="bg-surface-alt py-16" aria-labelledby="landing-cta-heading">`, `<h2>`, body copy, `<Button variant="primary" href="/register">`
+- `frontend/components/home/LandingCTA.test.tsx` — **new.** 4 tests
+- `frontend/app/(public)/page.tsx` — `<LandingCTA />` inserted between `<Hero />` and `<MetricsBand />`
+
+**The copy (verbatim) — this is the deliverable, not the panel:**
+> Seed companies, cooperatives, offtakers, and other seed-system actors can add themselves to the registry. **Every submission is reviewed by the ACCELERATE team before it is published**, so nothing you send goes live automatically.
+
+**Verification (Implementer):** `npm test -- home` → 12 suites / 91 tests · `npm run build` → 20/20 static pages · `npm run lint` → clean (3 pre-existing `next/image` warnings only) · `Not Done / Assumptions`: **none**.
+
+**Reviewer verdict: `STATUS: PASS`**
+> FR-1's "Landing CTA" scenario is fully discharged — all three clauses stated in copy, action links to `/register`, and test (c) is a real behavioural assertion that fails if the review fact is stripped, closing T-16's Disqualifying clause.
+
+**The Disqualifying clause — satisfied.** *"Asserting the link exists does not cover the clause… Assert the copy."* Test (c) asserts the review sentence directly; the Reviewer confirmed the target scenario is covered — **strip the review sentence but keep the link and test (c) goes red while the others stay green.** That is the precise discrimination the clause demands.
+
+**`getByText` verified to pass for the right reason.** The `<p>` body is a single JSX text child spanning four source lines; the transform trims each line and joins with a single space into **one text node**, which RTL's normalizer then collapses. Both regexes **span a source newline**, which is exactly the case that would fail if the collapse did not happen — so they are self-demonstrating rather than accidentally matching. Keying to exact copy is correct here: the clause is legally motivated, and brittleness is the feature.
+
+**No D-10 overreach.** The trailing *"so nothing you send goes live automatically"* **restates** the review fact rather than adding a promise: it asserts only the absence of auto-publication, which is exactly what 3a implements. It promises no timeline, no reply, and no information-request round-trip, so it touches neither D-10 nor T-20's Disqualifying clause (both of which concern the *receipt* promising chunk 4's link-back).
+
+**T-15 × T-16 interaction — cleared both empirically and analytically.** Three links now carry the accessible name *"Register your organisation"* on `/` (desktop nav, mobile panel, landing panel). The Leader ran the **full frontend suite: 72/72 suites, 1014/1014 green** (see the baseline section above). The Reviewer's static analysis agrees and explains why: no test composes `Header` with the home page, all `Header.test.tsx` queries use `getAllByRole`, and no test imports `app/(public)/page.tsx` at all. **On a11y:** identical accessible name **plus identical destination** is conformant — WCAG 2.4.4 requires purpose be determinable from the name, and identical-name/identical-`href` is precisely the case excluded from the "same text, different destinations" failure; axe's `identical-links-same-purpose` passes when destinations match. At most two are in the a11y tree at once (desktop nav is `hidden md:flex`; the mobile panel is `hidden` until the hamburger fires).
+
+**`Button` cleared — and it is the structural opposite of the T-15 defect.** `Button.tsx:78-86`'s `'href' in props` branch returns a `next/link` `<Link>` (static-export compliant). Its ring is `ring-primary` with **`ring-offset-2`** — offset, not inset. Recomputed: `#1F4E8C` vs `#F7F7F7` = **7.76:1**; vs the white offset band = **8.31:1**. Visible; clears SC 1.4.11 and 2.4.11. No advisory needed.
+
+**Contrast recomputed independently (KZ-005).**
+
+| Pair | Implementer reported | Reviewer recomputed |
+|---|---|---|
+| `text-fg` `#333333` on `surface-alt` `#F7F7F7` | 11.78:1 | **11.79:1** |
+| `text-muted` `#666666` on `#F7F7F7` | 5.35:1 | **5.36:1** |
+
+Both off by 0.01 from intermediate rounding — **arithmetic drift, not the 8.6-vs-8.31 class of fabrication.** Both clear AA for body text (`text-muted` clears AA, not AAA; AA is the bar).
+
+**Heading hierarchy verified at source, not on trust:** `Hero.tsx:197` `<h1 id="hero-heading">` is the sole `h1`; `AboutStrip.tsx:66`, `HowItWorks.tsx:57`, `CropCoverage.tsx:60`, `PartnersStrip.tsx:31`, `ClosingCTA.tsx:105` are all `<h2>`; `MetricsBand.tsx:37-39` uses `aria-label` with no heading. The new `<h2>` keeps the hierarchy flat and valid. Placement confirmed: Hero's CTA row is `Hero.tsx:213-224` inside a `py-16 lg:py-24` grid, so the panel genuinely sits below the hero actions and requires scrolling — satisfying the scenario's `WHEN`.
+
+**Decisions made**
+1. **Judgment call accepted:** no video/poster treatment, unlike the cited exemplars `ClosingCTA`/`AboutStrip`. `design.md` §5.7 describes a plain `surface-alt` panel stating a fact, not a media strip; the exemplar was a shape reference, not a mandate to replicate its media layer. Surfaces still alternate cleanly (`#FFFFFF` → `#F7F7F7` → `bg-fg` dark, no seam).
+
+#### ADVISORY findings (recorded; never gate, never become tasks in this spec)
+
+- **T16-A1 — ⚠️ a real hole in the spec's own decomposition, and no task closes it.** `frontend/components/home/home-a11y.test.tsx` is the **only** page-level axe gate for the home page, and its `renderHomePage()` helper (line 101) **hand-composes** sections instead of importing `page.tsx`. T-16 added an 8th section without adding it to that helper, so **`LandingCTA` is never axe-evaluated in composition** — and `LandingCTA.test.tsx` runs no axe of its own, so the component has **no axe coverage at all**. The file's own docstring is now factually wrong about the page it claims to mirror: *"the full rendered composition (all 7 sections)"* (line 5), *"mirrors PublicLayout"* (line 93), and the section-order list (lines 96-98).
+  **Why it is advisory and not a FAIL:** `tasks.md`'s NFR ownership line assigns NFR-5 to **T-17, T-18, T-22** — **not** T-16 — and T-16's Done-when contains no a11y clause. So no T-16 obligation is violated.
+  **Why it still matters:** **T-22 does not close it either** — `tasks.md` T-22 is scoped to `frontend/app/(public)/register/*-a11y.test.tsx`, the three register screens only. The gap is structural, one import plus one line in the helper, and it is exactly the KZ-001 shape (a clause owned by nobody because each task's scope is individually correct). The Implementer's *"home-a11y unaffected"* is true — **and it is true because of the gap.** Escalated to the user rather than absorbed, since minting a task here is forbidden.
+- **T16-A2 — deployment note.** Three live entry points now target `/register`, which **404s until T-17 ships** (`Header.tsx:28` desktop, its mobile twin, and this panel). Not a T-16 defect — the brief directed linking anyway — but the home page is **undeployable mid-spec**. Consistent with `tasks.md`'s PR strategy (*"do not deploy the frontend before PR 2's endpoints exist"*); restated here because T-16 is what makes the dead link visible on the landing page itself.
+- **T16-A3** — the PROVEN/DEFERRED split is accurate. Rendered-pixel contrast, whether the copy *reads as* a compelling CTA, and visual rhythm vs the mockup are genuine DC-16 human checks. The Reviewer audited the hex-vs-hex half independently rather than inheriting the Implementer's arithmetic.
+
+**Final verification result:** PASS on attempt 1, one Reviewer, zero rework rounds consumed.
 
 ---

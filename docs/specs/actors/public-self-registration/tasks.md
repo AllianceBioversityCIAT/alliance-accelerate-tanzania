@@ -158,7 +158,7 @@
       **Disqualifying:** *"reads as an action, not a destination alone"* is not `jest-axe`-assertable — the accessible **name** is assertable via Testing Library and must be; whether it *reads* as an action is a **human check at the HITL pause** (DC-16). Do not record the human half as covered by the automated half.
       Skills: `frontend-design`, `shadcn-ui`, `react-doctor`
 
-- [ ] **T-16** Landing CTA panel  (deps: T-15)
+- [x] **T-16** Landing CTA panel  (deps: T-15)
       Scope: A `surface-alt` panel below the hero actions stating that actors may add themselves and that **submissions are reviewed before publication**.
       Traces: FR-1 (s2), `design.md` §5.7
       Files: `frontend/app/(public)/page.tsx` or its hero component, + test
