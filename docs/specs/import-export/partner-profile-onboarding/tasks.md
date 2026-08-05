@@ -99,7 +99,7 @@
 
 ## Phase D — Operational documents & verification
 
-- [ ] **T-9** Author the re-run runbook  (deps: T-7, T-8)
+- [x] **T-9** Author the re-run runbook  (deps: T-7, T-8) — ✅ **PASS on attempt 2 of 3.** All five `design.md` §4.6 MUST clauses present and all three disqualifiers clear on both attempts; attempt 1 FAILed on **FR-9's executability bar** — its procedure described an import UI that does not exist (no mode selector, no second upload; the commit is an "Import N actors" button it never named), the metrics check demanded a pre-commit baseline no step recorded, and the public-detail check asked for an id the operator had no way to obtain. Rewritten against the real screens and verified control-by-control by the Reviewer. **Surfaced a design property worth keeping:** the shipped UI *structurally* enforces preview-before-commit — the commit reuses the exact previewed file — which is stronger than §4.6 item 1 requires. Advisories A-21…A-23 recorded in `execution.md`.
       **Scope:** A standalone runbook the AT team can follow unaided, carrying all **five MUST clauses** of `design.md` §4.6: preview-per-sheet-before-commit (and that preview writes nothing); the measured upload bounds with one upload per sheet; re-download the `v2` template; the **operator post-commit public-invisibility check**; and **never set `consentStatus` to `GRANTED`**. States the correct endpoint `POST /api/v1/admin/actors/import`.
       **Traces:** FR-9 (all five clauses) · FR-6 (operator check) · NFR-2 · `design.md` §4.6, §7.1, DD-8, R-8
       **Files:** `docs/specs/import-export/partner-profile-onboarding/runbook.md`

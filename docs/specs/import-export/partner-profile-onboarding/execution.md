@@ -1280,3 +1280,48 @@ Eight discrete edits, 62 lines, `mapping.md` only. **No figure moved** — verif
 | A-20 | `mapping.md` §8's intro still says the findings "are reported here for the Leader to adjudicate"; covered by the section-closing marker that quotes and supersedes the identical closing sentence, but weaker than a marker at the intro itself |
 
 **Still true after this amendment:** every figure it moved rests on measurement **no Reviewer could verify** — the wrappers grant `Read`/`Grep`/`Glob` and cannot open the workbook. `mapping.md` §8 is the accepted authority, itself verified for internal consistency and sibling fidelity rather than for measurement truth. `design.md` §12.1's uncoverable set is unchanged by any of this.
+
+---
+
+### T-9 — Author the re-run runbook
+
+**Status: ✅ PASS on attempt 2 of 3.** Date: 2026-08-05. Effort `high` → `xhigh` on rework. Skills: `cognitive-doc-design`. Review mode: single lens (checklist), one Reviewer, `opus` — author ≠ auditor held.
+
+**Files:** `runbook.md` (new). No other file, no code.
+
+#### Attempt 1 — ❌ FAIL, 3 issues. The five clauses were fine; the procedure was fiction.
+
+The Reviewer cleared all five `design.md` §4.6 MUST clauses (preview-writes-nothing appeared at four independent sites) and all three disqualifiers, then failed the document on **FR-9's actual bar — "a competent AT team member can follow this without reading the spec or the source code."**
+
+1. **The preview/commit procedure described a UI that does not exist.** The runbook said to upload each file twice and "choose commit". The shipped page has **no mode selector and no second upload**: `processFile()` fires preview automatically on selection, and the commit is an **"Import N actors"** button the runbook never named. An operator following step 5 literally would re-select the file, trigger *another preview*, and loop.
+2. **The metrics check demanded a pre-commit baseline the runbook never had the operator record.** By step 6 the baseline was unrecoverable, so the natural failure mode was glancing at a plausible number and recording a pass. `design.md` §7.1 makes the comparison the mechanism, not a detail.
+3. **The public-detail check was unreachable** — it asked for "the id of one record you just committed" without saying that this is the **internal database id**, not the `traderId` the operator built (`OFB-1036`), and without giving the `/profile?id=` route. An operator would use the Trader ID, get a 404 for the wrong reason, and record a **false pass on the one check whose purpose is catching a leak**.
+
+**Why this is the most valuable review of this spec's execution:** the document was *correct* — every clause present, every figure right — and **unusable**. Only a Reviewer that opened `import/page.tsx` instead of re-reading the spec could tell the difference. Clause-completeness and executability are different properties, and T-9's gate is the second one.
+
+#### Attempt 2 — ✅ PASS
+
+Rewritten against the real screens (`import/page.tsx`, `MetricsBand.tsx`, `profile/page.tsx`, the admin actors list). Quick path grew 7 → 8 steps with **"Record the pre-commit baseline"** inserted *before* the commit.
+
+**The Reviewer verified each closure against source, not against the report:**
+
+- Preview fires automatically (`processFile` → `importActors(picked, 'preview')`), reached from both picker and drop handler; **no mode selector exists in the file**. Commit is `` `Import ${toCreate} actor${toCreate === 1 ? '' : 's'}` `` inside the "Review and confirm" section, committing the **same in-memory file** — so the runbook's "the system never asks you to upload it a second time" is *literally* true, not a paraphrase.
+- **The baseline is semantically the right comparison, not just obtainable.** `metrics.service.ts` pins `consentStatus: GRANTED` in its `WHERE`, so an import landing every row `UNKNOWN` **must** leave "Actors mapped" untouched. That is what makes "same as the baseline" a real assertion rather than a tautology.
+- **The Trader-ID trap is named where it bites.** The post-commit table renders `row.traderId` only and never `actorId`, so `OFB-1036` is exactly what an operator would reach for — and the warning sits in the same sentence as the id lookup, not in a distant note.
+- Quick path 1–8 maps one-to-one onto detailed steps 1–8; nothing orphaned or doubled by the insertion.
+
+**Regression — all clear after a rewrite that touched most of the document.** Five MUST clauses intact; all three disqualifiers clear (no `/actors/geo`, no `/export`, three `GRANTED` mentions all prohibitions, the check still explicitly manual); endpoint, bounds and `v2` re-download intact; `mapping.md` §3/§4 citations still resolve. **The reworded public surfaces still map to exactly three and no others:** Directory list → `GET /api/v1/actors`, `/profile?id=` → `/actors/:id`, home metrics band → `/metrics`.
+
+**A design property surfaced by this review, worth recording:** the shipped UI **structurally enforces preview-before-commit** — the commit reuses the exact previewed `File` and there is no path to commit an unpreviewed file. That is a **stronger** guarantee than `design.md` §4.6 item 1 asks for: the spec's most safety-critical operational rule is enforced by the product, not by operator discipline.
+
+**A false claim that did not leak.** Attempt 1's report asserted "`mapping.md` has no §5" — false; §5 is "Column-count reconciliation — all 8 sheets". The Reviewer confirmed the error stayed in the *report* and never reached the deliverable, which makes no §5 reference at all.
+
+#### Advisories (recorded, non-gating; per `/akili-execute` they do not become tasks)
+
+| # | Finding |
+|---|---|
+| A-21 | Step 6 overstates the commit screen: `FailureBreakdown` renders **only in the preview branch**; the result branch shows the live summary, `TotalsChips` and the per-row table, with no aggregate breakdown (as `design.md` §5 intends). The "count doesn't match" troubleshooting row therefore sends the operator post-commit to a panel that is not there. Honest wording: read and record the breakdown **at preview time** |
+| A-22 | Two surfaces are described but not named — the public actor list is the **Directory** page and the Admin import page is reached from the **Import** button on `/admin/actors`. Related: the Admin actors list has **no free-text search** (region/traderType/consent filters only, sorted by `traderName`), so "find one record you just committed" among ~750 means filtering or paging alphabetically — an operator will expect a search box |
+| A-23 | The `Seed Company` row correctly says 0 created is expected (DD-11), but **the screen will contradict it**: with `toCreate === 0` the commit button is disabled and the page reads *"No rows are eligible to import. Fix the file and upload again."* The runbook says "nothing to do" while the screen says fix the file. Also "its location columns hold no data at all" is slightly strong — lat/long are 6/11 filled; it is the **region/district** column that is empty and drives the quarantine |
+
+**A-21 and A-23 describe the screen contradicting the runbook**, which is FR-9's own subject matter. The Reviewer classified both as non-blocking one-sentence fixes and they are recorded here rather than actioned, per the advisory rule. Flagged to the user as a candidate follow-up.
