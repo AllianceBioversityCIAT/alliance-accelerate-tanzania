@@ -1412,3 +1412,15 @@ Recorded here explicitly because the author of these two edits is the Leader, so
 | # | Finding |
 |---|---|
 | A-27 | **Candidate C-15, pre-existing and NOT fixed here.** `design.md` §9's table and DD-11's Context still say `Seed Company`'s location column is **"0/12"** / **"0 of 12"** filled. The sheet has **11** data rows, and `mapping.md` §4.4, `reconciliation.md` §4.7 and now `runbook.md` all say **0/11** — `design.md` stands alone against three, inside the very DD-11 bullet that already reads "only 6 of 11 have GPS" post-C-10. It is a live measured claim contradicted by the measurement, and a two-word fix. **Left unfixed deliberately:** it is outside C-14's approved scope, and an advisory may not silently grow a spec (`/akili-execute`). Raised to the user as a separate decision |
+
+#### Correction **C-15** — `Seed Company` location column, "0 of 12" → **0 of 11** filled
+
+*(Corrections series, continuing C-14. Not `judgment.md`'s independent finding series.)*
+
+**User-approved 2026-08-05** at the close of this spec, from advisory **A-27**. `design.md` §9's measured-findings table and DD-11's Context both read "0/12" / "0 of 12", while `mapping.md` §4.4, `reconciliation.md` §4.7 and `runbook.md` all measure **0/11**. The sheet has **11 data rows** (`requirements.md` §3.1), so **12 was never a possible denominator** — `design.md` stood alone against three documents and against the row count, inside the same DD-11 bullet that already reads "only 6 of 11 have GPS" after C-10.
+
+**Moves nothing.** Both figures are zero, so DD-11's decision — all 11 `Seed Company` organisations quarantine pending an AT-team region pass — is unchanged and unchallenged, as is every bucket and yield figure. This corrects a denominator, not a result.
+
+**Leader-applied inline**, from Reviewer-specified text, on the same basis recorded for the two closing wording fixes above: a two-site substitution moving no figure, where an Implementer + Reviewer round would cost more than the fix. **`author ≠ auditor` therefore does not hold for this edit** — recorded so the audit trail says so plainly.
+
+> **C-15 propagation correction, same day.** The first pass applied C-15 to `design.md` only, following the advisory's named sites. The Leader's own verification sweep then found **two further live sites in `requirements.md`** (§3.1's `Seed Company` row and FR-3's DD-11 clause). Both corrected before the commit was finalized. **Recorded rather than quietly fixed, because it is the exact defect this spec has produced at every amendment** — C-9/C-10/C-11 each had a second site the finding did not cite, and the C-6…C-13 pivot needed an extra review round for the same reason. The lesson holds even when the correction is two words and moves nothing: **grep for the superseded value across every spec document, never work the list the finding hands you.**

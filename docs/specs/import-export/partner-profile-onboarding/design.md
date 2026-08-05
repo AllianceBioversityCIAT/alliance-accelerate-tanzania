@@ -249,7 +249,7 @@ Each invalidated something in `proposal.md` and now drives a decision.
 | **QDS rows 289–312 are not producers** — the `seed source` vocabulary (research institutes + the `Seed Company` sheet repeated verbatim) | DD-6: QDS yields ~**23**, not 42 |
 | **11 cross-sheet duplicate groups, 24 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS — corrected from 8 groups / 18 records at the T-10 finding (`execution.md`, `reconciliation.md` §6) — **C-14** | DD-7: flag, never merge |
 | **70 QDS coordinate cells are DMS** (corrected from 71 at the T-8 pivot — `execution.md` — C-11), one with out-of-range minutes | DD-10: blank + flag, never coerce |
-| **`Seed Company` has no region and no district data** (its location column is 0/12 filled) | **DD-11**: all 11 quarantine pending an AT-team region pass |
+| **`Seed Company` has no region and no district data** (its location column is **0/11** filled — corrected from 0/12 at the T-10 close, `execution.md` — **C-15**; the sheet has 11 data rows, so 12 was never a possible denominator) | **DD-11**: all 11 quarantine pending an AT-team region pass |
 | ~~40 distinct district values need derivation, but only **29 are real districts**~~ → **corrected at T-2 to 38 distinct / 28 real / 10 contaminated** (§4.2) | Sizes `DISTRICT_TO_REGION` (§4.2) and separates it from contamination |
 | **1,023 of 1,097** identity rows carry a phone; **56** carry an email | Sizes the real PII exposure (§7) with a measurement instead of an assertion |
 
@@ -370,7 +370,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 ### DD-11: `Seed Company`'s 11 organisations quarantine pending a region pass — *added after judgment*
 
-- **Context (`judgment.md` S-1):** the sheet has no region column and its location column (`Where is the offtaker based(Town/District)`) is **0 of 12 filled**. `region` is required at three layers: `schema.prisma:41`, `template-columns.ts:108-113` (`required: true`), and `actor-import.service.ts:357-358`. DD-1's district lookup cannot help — there is no district either.
+- **Context (`judgment.md` S-1):** the sheet has no region column and its location column (`Where is the offtaker based(Town/District)`) is **0 of 11 filled** (corrected from "0 of 12" at the T-10 close, `execution.md` — **C-15**; `mapping.md` §4.4, `reconciliation.md` §4.7 and `runbook.md` all measure 11 data rows, so 12 was never a possible denominator). `region` is required at three layers: `schema.prisma:41`, `template-columns.ts:108-113` (`required: true`), and `actor-import.service.ts:357-358`. DD-1's district lookup cannot help — there is no district either.
 - **Options:** (a) quarantine all 11 · (b) derive region from each company's GPS · (c) have a human supply the region.
 - **Decision: (a), with (c) as the unblocking step.** All 11 quarantine; the AT team supplies a region per organisation — these are 11 named seed companies with public addresses, so this is minutes of work, not research.
 - **Consequences:** `Seed Company` contributes **0** actors in the first pass (§9.1). **(b) rejected** — reverse-geocoding to an administrative region is a guess dressed as a derivation, and FR-3 explicitly forbids substituting a placeholder or nearest-neighbour region. Note only 6 of 11 have GPS anyway (corrected from 7 at the T-8 pivot — `execution.md` — C-10).
