@@ -1370,3 +1370,45 @@ The Reviewer verified the range is **arithmetically forced** even without the wo
 | A-26 | **Not this document's defect:** `mapping.md` §3.2 is the only sheet section lacking a "physical columns not carrying a name" line, which is why §4.2's physical-vs-ordinal column offset has no corroborating entry to cite. Worth a line whenever `mapping.md` is next touched |
 
 **Still unverified, by design:** every workbook-sourced figure — the `"Retaler"` rows, the 11 duplicate groups and their members, the 28–288 range — rests on measurement **no Reviewer could take**, since the wrappers grant `Read`/`Grep`/`Glob` only. What was verified is internal consistency, forced arithmetic, and fidelity to sibling documents. §7 (cell-by-cell trace) and §8 (operator post-commit check) are **correctly blank** — both require an actual onboarding run.
+
+---
+
+#### Correction **C-14** — DD-7's cross-sheet duplicate count, 8 groups / 18 records → **11 groups / 24 records**
+
+*(This is the **corrections series** C-1…C-14, not `judgment.md`'s independently-numbered finding series, which also contains a "C-14" concerning `ImportPreviewTable`'s live region. The two are unrelated — flagged because `design.md` now cites both labels.)*
+
+**User-approved 2026-08-05**, following T-10's F-2 finding. **Authority:** `reconciliation.md` §6, which enumerates all 11 groups by organisation name, sheet and row, independently cleared by a Reviewer as fit to amend from. ✅ **PASS on attempt 1**, independently reviewed.
+
+**Sites:** `design.md` §9's measured-findings table and DD-7's Context line · `tasks.md` T-10's scope line and completion note (Leader-owned) · resolution markers at **five** sites in `reconciliation.md` — one more than the Implementer counted in its own report, as the Reviewer noticed.
+
+**C-14 moves no bucket and no yield figure**, verified: `reconciliation.md`'s `751 + 143 + 50 + 293 = 1,237` closes on both axes unchanged, and `design.md` §9.1's per-sheet nets, its 806 ceiling and its `806 − 50 − 5 = 751` bridge are all untouched. It corrects a duplicate-**candidate** count only, because DD-7 is flag-never-merge and feeds no arithmetic.
+
+**Why the finding was sound, and why it matters operationally.** The discrepancy was **always detectable without the workbook**: `mapping.md` §4.5 already stated in prose that the QDS tail *"repeats all 11 `Seed Company` organisations verbatim"* — eleven, beside an estimate of eight, unreconciled across two documents and a Judgment Day. The Reviewer's corroboration: **18 records over 8 groups requires exactly two 3-sheet groups, and the measurement found exactly two** — the estimate's *shape* was right, only its pair count was short. Materially, those two 3-sheet groups mean that once `Seed Company`'s DD-11 quarantine lifts, **each risks two live actors for one real organisation** — precisely what DD-7 exists to prevent, now named by row before the run rather than discovered after it.
+
+**`requirements.md` FR-8 was deliberately NOT amended.** Its *"at minimum the one organisation measured in both `Seed Company` and `Bulk buyers_beans`"* states a floor, not a count, and the measurement found **two** such organisations — so the clause is satisfied, not contradicted. Editing it would have been the error.
+
+**The reverse-staleness sweep was done in the same change, not after.** Correcting `design.md` falsifies anything quoting it, and `reconciliation.md` §6 had described the 8/18 gap as **live**. All five sites were converted to resolved-with-history in the same pass. This is the T-7 FAIL-2 defect class, which cost the C-6…C-13 amendment an extra review round when the Leader briefed it away; here it was anticipated in the brief and closed on attempt 1.
+
+#### `runbook.md` advisories A-21 and A-23 — closed (user-approved)
+
+Both were cases of **the shipped screen contradicting the runbook**, in the document whose entire acceptance criterion is unaided executability.
+
+- **A-21:** the runbook claimed the post-commit response shows totals *and the reason breakdown*. `FailureBreakdown` renders **only** in the preview branch; the result branch shows the summary, `TotalsChips` and the per-row table. The troubleshooting row also sent the operator post-commit to a panel that is not on screen. Now states the breakdown must be read and recorded **at preview time**, with the per-row reasons offered as the post-commit reconstruction path.
+- **A-23:** the runbook said 0 created is expected for `Seed Company` (DD-11) while the screen reads *"No rows are eligible to import. Fix the file and upload again."* with the commit button disabled. Now pre-empted by name, stated as expected rather than a defect, with the note that there is no file to fix. Also corrected *"its location columns hold no data at all"* — the **named location** column is 0/11, but **GPS is 6/11 filled**; it is the absent region/district data that drives the quarantine.
+
+**The Reviewer verified both against `import/page.tsx` rather than accepting the report** — including that the quoted `toCreate === 0` string matches the code character for character, and that the 11-row sheet does not hit the separate "no data rows" branch, so the quoted screen is the one the operator actually sees. That check mattered: A-21 is a correction *about* the very screen T-9's first attempt failed for describing unread.
+
+#### Leader-applied closing fixes (recorded, not independently re-reviewed)
+
+Two wording fixes were applied **inline by the Leader** from text the Reviewer specified verbatim, rather than spawning an Implementer + Reviewer round costing more than the fix:
+
+- `reconciliation.md` §6: *"more than the design.md estimate"* → *"more than the original estimate"* — the last present-tense residue against a figure `design.md` no longer holds.
+- `runbook.md` Terms: *"only the per-row result table remains (same rows, no aggregate counts)"* → *"only the per-row result table and the totals remain — no per-reason counts"*. Read literally the old clause contradicted step 6, which correctly says `TotalsChips` renders post-commit.
+
+Recorded here explicitly because the author of these two edits is the Leader, so **`author ≠ auditor` does not hold for them**. They are one-clause substitutions of Reviewer-dictated text, they move no figure, and the alternative was a full delegation round for two phrases.
+
+#### Open advisory carried out of this spec
+
+| # | Finding |
+|---|---|
+| A-27 | **Candidate C-15, pre-existing and NOT fixed here.** `design.md` §9's table and DD-11's Context still say `Seed Company`'s location column is **"0/12"** / **"0 of 12"** filled. The sheet has **11** data rows, and `mapping.md` §4.4, `reconciliation.md` §4.7 and now `runbook.md` all say **0/11** — `design.md` stands alone against three, inside the very DD-11 bullet that already reads "only 6 of 11 have GPS" post-C-10. It is a live measured claim contradicted by the measurement, and a two-word fix. **Left unfixed deliberately:** it is outside C-14's approved scope, and an advisory may not silently grow a spec (`/akili-execute`). Raised to the user as a separate decision |

@@ -247,7 +247,7 @@ Each invalidated something in `proposal.md` and now drives a decision.
 | **38 blank source ids · 2 intra-sheet duplicates · 5 sheets with no id column** (`Bulk buyers_beans`, `Humantarian`, `Digital Service Provider`, `Seed Company`, `QDS` ≈ 105 actors) — corrected from 52 at the T-7 pivot (`execution.md` Finding 1) | DD-9's positional-fallback key |
 | **Contaminated tail blocks**: `Offtaker_Sorghum` rows 110–116 and `Offtaker_Groundnuts` rows **149–152** hold company/person names in the district and town columns, and the same 4 rows hold a phone number in the trader-type column — corrected from 147–151 at the T-7 pivot (`execution.md` Finding 2) | DD-5: register by physical row number, hand-repair-or-quarantine |
 | **QDS rows 289–312 are not producers** — the `seed source` vocabulary (research institutes + the `Seed Company` sheet repeated verbatim) | DD-6: QDS yields ~**23**, not 42 |
-| **8 cross-sheet duplicate groups, 18 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS | DD-7: flag, never merge |
+| **11 cross-sheet duplicate groups, 24 records** — one organisation appears in `Seed Company`, `Bulk buyers_beans`, **and** QDS — corrected from 8 groups / 18 records at the T-10 finding (`execution.md`, `reconciliation.md` §6) — **C-14** | DD-7: flag, never merge |
 | **70 QDS coordinate cells are DMS** (corrected from 71 at the T-8 pivot — `execution.md` — C-11), one with out-of-range minutes | DD-10: blank + flag, never coerce |
 | **`Seed Company` has no region and no district data** (its location column is 0/12 filled) | **DD-11**: all 11 quarantine pending an AT-team region pass |
 | ~~40 distinct district values need derivation, but only **29 are real districts**~~ → **corrected at T-2 to 38 distinct / 28 real / 10 contaminated** (§4.2) | Sizes `DISTRICT_TO_REGION` (§4.2) and separates it from contamination |
@@ -345,7 +345,7 @@ The previous draft presented a single figure that was in fact the **pre-quaranti
 
 ### DD-7: Cross-sheet duplicates are flagged, never merged
 
-- **Context:** 8 duplicate groups spanning 18 records; one organisation appears in three sheets under three spellings.
+- **Context:** 11 duplicate groups spanning 24 records; one organisation appears in three sheets under three spellings — corrected from 8 groups / 18 records at the T-10 finding (`execution.md`, `reconciliation.md` §6) — **C-14**.
 - **Decision:** `reconciliation.md` lists candidates **by organisation name and row number** — organisation names are not PII; **individual** producer names are, and are excluded per DD-6. A human decides; code never merges.
 - **Consequences:** Consistent with `proposal.md` §6. The loose-match key used for *detection* is deliberately not used for *identity* — a false match merging two real organisations would be silent and hard to unwind.
 
