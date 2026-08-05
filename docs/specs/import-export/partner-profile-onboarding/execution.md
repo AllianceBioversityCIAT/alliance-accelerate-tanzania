@@ -1120,3 +1120,125 @@ FR-1 (all clauses and both scenarios), FR-2's blank-id/duplicate/physical-row cl
 | A-11 | Two more present-tense stale-state assertions survive in `mapping.md` (lines 235 and 316: "cite" for states now corrected). Each sits directly above its own explicit resolution sentence, so no reader is misled; one verb each would close them |
 | A-12 | §9.1's convention sentence is correct but its "after X … and before Y" frame is now split by a ~50-word carve-out. Splitting it into two sentences would restore scannability without changing the rule |
 | A-13 | **Pre-existing and outside T-7's scope:** `design.md` §7 still sizes the PII exposure against a "retained ~795-record set", a figure the C-3/C-5 chain moved to ~757. C-5's propagation list did not include §7. The derived values there (~750 phones, ~43 emails, echoed in R-2) are proportional estimates that gate nothing. Belongs to whoever next touches §7 or T-10 |
+
+---
+
+### T-8 — `mapping.md`, the five remaining sheets
+
+**Status: IN REWORK — attempt 1 ❌ FAIL (2 of 3 lens Reviewers), attempt 2 dispatched.** Date: 2026-08-05.
+
+**Leader delegation decisions.** Effort **xhigh** (118 columns, no correctness gate, irreversible keys, an NFR-9 disqualifier this spec has already tripped once). Not `max`: the Implementer is T2/`sonnet` and the tier↔effort rule forbids `max` on a cheaper tier; escalating the tier would have collided with the `opus`-bound Reviewer and broken `author ≠ auditor`. Skills: **`cognitive-doc-design` only** — `product-manager-toolkit` was dropped from the task's listed set because T-8 authors no requirements and `design.md` §4.5 is already the format authority (deviation recorded per `.agents/leader.md`). Review mode: **parallel lens Reviewers** (xhigh + PII/data-loss surface), three lenses — conformance, NFR-9/fidelity, and the §8 findings block.
+
+**Not split.** `design.md` §13's watch item authorizes a per-sheet-group split of the `mapping.md` task. Held in reserve rather than applied pre-emptively: a split costs a `tasks.md` decomposition change and is the right response to a failure, not a prediction of one. Attempt 1 returned all five sheets with correct arithmetic, so the single-unit dispatch was sound.
+
+#### Runtime failures — four dead workers, zero consumed attempts
+
+The first Reviewer round died on `API Error: Connection closed mid-response`; a retry and the two sibling lenses then died together on `ENOTFOUND`. These are **environment blockers, not work FAILs** (`/akili-execute` runtime-failure fallback), and none consumed a rework attempt. Connectivity was verified restored (DNS + API reachable) and the working tree confirmed intact before re-dispatch. **The Reviewer was never inlined** — the fallback table forbids it, because the Leader auditing work it supervised breaks `author ≠ auditor`, and an infrastructure outage does not suspend a correctness constraint. All three lenses then completed but went idle without transmitting; each was queried directly, with an explicit instruction to report an incomplete audit honestly rather than reconstruct a verdict. All three confirmed the analysis had completed and the failure was transmission only.
+
+#### Attempt 1 — Implementer report
+
+`mapping.md` §4 (all five sheets authored, replacing the skeleton), §5 (reconciliation updated, all 8 sheets ✅), §7.1 (verification recorded), §8 (new — findings). No other file touched. Cell-by-cell trace claimed over all five sheets in full: 166+35+13+11+311 = **536 rows**.
+
+| Sheet | Denominator | Dispositions | Sum |
+|---|--:|---|---|
+| `Bulk buyers_beans` | 17 | 6 MAPPED + 11 DROPPED | 17 ✅ |
+| `Humantarian` | 10 | 6 MAPPED + 4 DROPPED | 10 ✅ |
+| `Digital Service Provider` | 10 | 5 MAPPED + 4 DROPPED + 1 EMPTY-IN-SOURCE | 10 ✅ |
+| `Seed Company` | 28 | 5 MAPPED + 1 DERIVED + 15 DROPPED + 7 EMPTY-IN-SOURCE | 28 ✅ |
+| `QDS_ Seed producers` | 53 | 7 MAPPED + 2 DERIVED + 44 DROPPED | 53 ✅ |
+
+**`design.md` DD-1's residual — resolved.** All 31 non-ambiguous `Humantarian` `Location` values are exact `CANONICAL_REGIONS` members; none are district-level. `DISTRICT_TO_REGION` needs no entry, §2's table is unchanged, and DD-1 closes at **3 contributing sheets**. DD-1's separate 2-row residual stays open.
+
+**NFR-9 near-miss, self-caught.** The Implementer's first draft of the `Seed Company` disposition table quoted a real multi-number phone cell verbatim from the workbook, and redacted it before reporting. **Leader independent verification:** the D-7 gate returns clean, and because D-7's pattern covers only mobile prefixes (`6`/`7`), a wider scan was run over every digit run and `@`-token in the 355 new lines — all are arithmetic, dates, or documented synthetic fixtures. Nothing real survives. Recorded because the near-miss, not the catch, is the signal: this spec has now reached for a real value twice (`proposal.md` OQ-1 being the first).
+
+#### Attempt 1 — Reviewer verdicts
+
+| Lens | Verdict |
+|---|---|
+| Spec conformance + clause coverage | ❌ **FAIL** — 4 issues, 6 advisories |
+| NFR-9 / measurement fidelity | ❌ **FAIL** — 2 issues (1 convergent), 9 advisories. **PII containment CLEAN** |
+| §8 findings block + document reliability | ✅ **PASS** — 7 advisories |
+
+**Cleared, argued rather than asserted:**
+
+- **NFR-9 containment clean.** The QDS `cbo` hand-classification names rows only; its stated rationale narrows the name space by nothing — no initial, word count, language, or translation. Every organisation name in the new content was checked individually and each is a research institute or agency, permitted by DD-7. The reviewer re-ran the D-7 gate independently.
+- **All five denominators re-derived by two Reviewers independently**, by counting the tables rather than trusting the report. Physical-extent arithmetic closes separately (SDC 30−2, QDS 55−2, BBB 19−2, HUM 12−2).
+- **Disjointness verified set-wise** — the T-7 FAIL-1 defect class. BBB 14+4+8=26 checked element by element; QDS dedup-removed {19,25,26} and personal-name {2,4,8,20,23} are disjoint with all five inside the retained 23; DSP partitions 13 rows into 2+8+3 with the D-3 exclusions held outside the row arithmetic. **The trap T-7 fell into twice is handled correctly here.**
+- **Eleven sibling-document quotations verified true at source** (T-7 FAIL-2 class).
+- **The "gates green" disqualifier is not triggered** — §7.1 labels the green `normalize` suite a regression guard, not evidence of mapping correctness.
+
+**FAIL issues carried into attempt 2** (full Reviewer text passed to the Implementer unchanged, per the Structured Feedback rule):
+
+1. §4's intro says "three" findings, §8's says "four", §8 has **five**. Internal contradiction in the block whose authority rests on counting carefully.
+2. **FR-1's forward-fill scenario, clause 3 unmet** — the per-block year-metric **rows** are never recorded as `DROPPED (trade metrics — epic §6)`; only the columns are, and the 140-row figure appears nowhere. Same omission shape as T-7's FAIL 3 (measurement recorded, trailing MUST clause dropped). KZ-001 binds.
+3. **261 vs 249 QDS individuals** — §4.5 records 261 physical rows; FR-10 and §3.1 say 249. Almost certainly physical-rows vs distinct-names, but unstated, and unreported in §8 while every *smaller* divergence was reported. T-10 would inherit the ambiguity.
+4. **Stale Status header** — line 5 still declares §4 "pending T-8 — headers only" in the change set that authored it; line 6 points only at §6 now that §8 exists; line 4's `Traces:` omits FR-10, DD-6, DD-10, DD-11. **Flagged independently by both FAILing lenses** — the strongest signal in the batch, and precisely the stale-present-tense class T-7 FAILed on.
+5. **§4.4's `Contact name` disposition contradicts both OQ-1 and its own closing line** — it reads as asserting a phone number sits in a name column, which would be a DD-5 contamination the same paragraph says does not exist. Both cannot stand.
+
+One advisory-origin item was folded into the rework brief, explicitly labeled non-gating: `design.md` §12's FR-10 coverage row holds `mapping.md` to *stating* the blank-`producer_category` rule, which §4.5 records only as a row-specific observation — leaving a refreshed workbook's blank row with no stated disposition (R-5). No figure moves.
+
+#### §8's findings — independently verified, and the basis of a pending pivot
+
+The findings lens returned **PASS** on the block itself. Verified: `434+97+145+18+31+10+0+22 = 757` matches `design.md:276` verbatim; the corrected `434+97+145+18+31+8+0+18 = 751`; deltas −2 (DSP) and −4 (QDS). **The 806 pre-quarantine ceiling is unaffected** — both changed cells are net-column only — so assumption **A-2**'s ±5% tolerance survives (751 is 0.8% off 757).
+
+Finding 8.4 was audited specifically against KZ-001 and **does not discharge a required clause by citing a different one**: it does not claim FR-10's blank-category mandate is inapplicable, it observes that the mandate's only instance in this workbook (row 312) is *also* caught by FR-10's rows-289–312 exclusion, so `design.md` §9.1 subtracted a row from a set the row was never in. **That is T-7's FAIL-1 defect being identified, not committed.**
+
+Corroboration available without the workbook: BBB's 12 `…AMCOs` identity rows are exactly the union of §4.1's 4 district-rescued and 8 quarantined rows — the AMCOs are precisely the 12 blocks with no region on the identity row.
+
+**Pending user decision.** The amendment surface is larger than §8 cites — live sites for the 757 chain at `design.md:274`, `:276`, `:280`, `:351`, `requirements.md:45`, `:386`, `tasks.md:210`; per-sheet cells at `design.md:271`, `:273`, `requirements.md:42`, `:44` (which use a `candidates → net` form and must be extended, not overwritten); a second live "15 AMCOs" at `design.md:311` and `:383`; a second "7 of 11 GPS" at `requirements.md:170`. **`design.md` DD-1's closure is absent from §8** — being an agreement rather than a contradiction — so an amendment drafted from §8 alone would leave DD-1 pointing at a finished task. Added to the adjudication list by Leader.
+
+#### Pivot Record: T-8 — user approved the full amendment (2026-08-05)
+
+**Decision: option 1 — amend now, in full.** All five §8 findings plus `design.md` DD-1's closure propagate into `requirements.md`, `design.md`, and `tasks.md`, recorded as corrections **C-6…C-11** in the shape of T-7's approved C-1…C-5. Rationale accepted: T-10's entire deliverable is reconciliation arithmetic against `design.md` §9.1, and T-9's runbook is written against the same figures — opening either against a known-wrong 757 guarantees rework, and the correction would then land with no approval gate of its own.
+
+**Sequenced after T-8's rework, deliberately.** The amendment is *not* dispatched concurrently with the in-flight rework attempt 2, despite touching a disjoint file set. Conformance FAIL 3 (261 physical rows vs FR-10's 249 distinct names) may resolve into a **sixth §8 finding**, and an amendment drafted from the current §8 would then be incomplete at exactly the point this pivot exists to fix. The correction list is finalized against the **post-rework** §8, not the present one.
+
+**Amendment surface — mapped, and larger than §8 cites.** Yield chain: `design.md:274`, `:276`, `:280`, `:351` (DD-8); `requirements.md:45`, `:386` (A-2); `tasks.md:210`. Per-sheet cells `design.md:271`, `:273` and `requirements.md:42`, `:44` take the **`candidates → net` form** (`10 → 8 net`, `~23 → 18 net`) rather than being overwritten, matching how §3.1 already renders `Seed Company`. Second live sites §8 does not cite: "15 AMCOs" at `design.md:311` and `:383` (F-3); "7 of 11 have GPS" at `requirements.md:170` (FR-3). The `~23` mentions at `requirements.md:58`, `:86`, `:281` are **candidate** counts and stay. `judgment.md` is a frozen record and is not amended. **`design.md` §7's ~795-record PII sizing (advisory A-13 from T-7) is now in scope** — the C-3/C-5 chain moved it to ~757 and this pivot moves it again.
+
+#### T-8 attempt 2 — ✅ **PASS** (both re-audited lenses)
+
+Eight discrete edits, 62 lines, `mapping.md` only. **No figure moved** — verified three ways: the Implementer's own spot-check, the Leader's inline grep for both yield chains and the `17+10+10+28+53` denominator sum, and both Reviewers re-deriving the partitions from the file.
+
+| Lens | Verdict |
+|---|---|
+| Spec conformance + clause coverage | ✅ **PASS** — 3 advisories |
+| NFR-9 / measurement fidelity | ✅ **PASS** — 4 advisories |
+
+**The five FAIL closures, as verified rather than as reported:**
+
+1. **§4/§8 item-count contradiction** — both counts removed; a grep for any residual `(three|four|five) (items|findings|places|disagreements)` returns nothing.
+2. **FR-1 forward-fill clause 3** — `mapping.md` now records the **140** non-identity year-metric rows (166−26) with `requirements.md:125`'s disposition string reproduced **verbatim, parenthetical included**, at the clause's own site. The FR-8 cross-reference was checked at source rather than accepted: `requirements.md:253` defines exactly four buckets and there is no `dropped` bucket, so the 140 rows can only land in `collapsed-into-block`. The note is a real disambiguation of two vocabularies, not a hedge.
+3. **261 vs 249** — cleared on three independent grounds, and **correctly not a sixth §8 finding**. `requirements.md:44` and `:86` both frame 249 as a share of **distinct names** ("249 of 292"), so the by-name reading is textually established, not invented to close a gap. The collapse arithmetic closes under *both* admissible readings of the tail (12+3+4, or 12+3+3+1 via the row-23 cross-block name collision), and the document's hedged "is consistent with" is the correct strength for a claim it did not measure. A finding is warranted when measurement **contradicts** the draft; here measurement and draft are compatible under a stated unit convention, and elevating a unit difference to a finding would have *misreported* it as a disagreement.
+4. **Stale front matter** — `:5`/`:6`/`:4` now true, corroborated inside the document by §5's 8-sheet table. No fresh over-claim: both new paragraphs are explicitly version-scoped ("in *this* workbook version"), the opposite of the failure mode.
+5. **§4.4 `Contact name`** — the rewrite matches `requirements.md:392` and `proposal.md:46` at source. The contradiction with "No contaminated-row register" is gone **structurally**: a person's name in a column headed `Contact name` is not a column shift, so there is nothing to register. Resolving this without re-opening the workbook was legitimate *here specifically* because the rewritten sentence is no longer a claim about a cell — it is a claim about what two sibling documents say, and both say it. Had any assertion about cell contents survived, the re-check would have been mandatory.
+
+**NFR-9 — clean, independently re-established.** The PII Reviewer ran its own digit/email scan (not inheriting the Leader's) and confirmed the 58 synthetic-fixture occurrences across 12 files in `backend/src` are real test data. Attempt 2's only row citation is **312**, already present in §4.5's selection table — no new identification. The `cbo` hand-classification (rows 2, 4, 8, 20, 23) is untouched and row-number-only.
+
+**On the §4.4 identification question, argued rather than waived:** the new sentence names no one, cites no row, and does not narrow to one row among 11. Measured against what a reader already holds, `requirements.md` §10 OQ-1 states the same fact *and* names the three `proposal.md` line numbers that carried the redacted values — a strictly sharper pointer into git history than anything `mapping.md` adds. The Reviewer recorded that it would have FAILed the sentence had it narrowed to a row, or had it been placed where it could be triangulated against the adjacent multi-number-cell reference.
+
+**§8 integrity confirmed against the diff, not by reading alone:** attempt 2 touched §8 at exactly one line — the intro's count word. §8.1–§8.5 are byte-identical. **The amendment basis is safe.**
+
+#### Advisories (recorded, non-gating, and per `/akili-execute` they do not become tasks)
+
+| # | Finding |
+|---|---|
+| A-14 | `Traces:` (`:4`) is now correct but still incomplete — the body cites FR-5, FR-6 and (new this attempt) FR-8. Consistent with the line listing primary traces since T-7; nothing listed is false |
+| A-15 | §4.4's OQ-1 clause is **not load-bearing** — the disposition already stands on "would create a new PII surface". It is a third restatement of a disclosure `requirements.md` §10 OQ-1 and `proposal.md` §46 make more precisely. Deleting it is the cheapest safe form; keeping it is defensible, which is why this is advisory |
+| A-16 | "**the** contact named in this column" uses a definite article over an 11-row column; "a contact" is the accurate form |
+| A-17 | §4.1 and §4.5 state what `reconciliation.md` "buckets" / "uses" in the present tense, but that document does not exist yet. Sound inferences from FR-8, but they are prescriptions on a future task — either hold T-10 to them or soften the tense |
+| A-18 | The **249 by-name figure remains inherited, not independently measured.** T-10 should measure `distinct(individual names)` during its row-level accounting rather than assume it — the measurement that converts consistency into confirmation |
+
+#### Carried into T-9 / T-10 briefs (not gaps in T-8)
+
+- **T-10 must satisfy 261 and 249 in different units**: `requirements.md:258` requires each sheet's four buckets to sum to its physical row count (311 for QDS), so the `excluded` bucket carries **261**; `requirements.md:261` separately requires the **249** excluded individuals and 3 foreign actors be recorded as *decisions* citing D-1 and D-3. Both, not either.
+- A-17's present-tense prescriptions on `reconciliation.md` are now commitments T-10 inherits.
+
+#### Verification (final)
+
+| Check | Command | Result |
+|---|---|---|
+| Doc↔constant regression guard | `cd backend && npm test -- normalize --silent` | **PASS**, 43/43 |
+| NFR-9 grep gate | `requirements.md` §9 D-7's command | **Clean** — documented synthetic fixtures only; re-run independently by the Leader and by the PII Reviewer |
+| Per-sheet column arithmetic | Manual, shown in §4.1–§4.5 and §5 | **17 / 10 / 10 / 28 / 53**, all closing; 118 total |
+
+**Not offered as evidence of mapping correctness** — per `tasks.md` T-8's own disqualifier, this task has no correctness gate. What remains unverified is `design.md` §12.1's uncoverable set: whether each column landed on the semantically right canonical field (D-6/R-1), whether each trader-type assignment is factually correct, and whether the QDS hand-classification is right. **No Reviewer could open the workbook** (the wrapper grants `Read`/`Grep`/`Glob` only), so every workbook-sourced figure rests on the Implementer's full-sheet trace of 536 rows and on internal consistency across five denominators, four disjointness partitions, and every sibling-document citation checked at source.
