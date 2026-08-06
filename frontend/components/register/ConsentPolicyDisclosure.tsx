@@ -152,10 +152,18 @@ export default function ConsentPolicyDisclosure({
 
   return (
     <div className="flex flex-col gap-3">
-      <h4 id={headingId} className="text-sm font-semibold text-fg">
+      {/*
+        T18-A7: this was an <h4>, but the only other heading on /register is
+        RegisterPage's <h1> — an h1 -> h4 skip that only exists once this
+        component is composed into the page (each component's own axe run
+        passed in isolation because the h4 was first there). The fieldset
+        <legend>s around this component are not headings, so this is the
+        page's second real heading and belongs at <h2>.
+      */}
+      <h2 id={headingId} className="text-sm font-semibold text-fg">
         Data Protection &amp; Participant Consent Policy
         {policy && <span className="ml-2 font-normal text-muted">v{policy.version}</span>}
-      </h4>
+      </h2>
 
       {/*
         The focusable scroll region (FR-3 scenario 2's keyboard clause):
@@ -182,7 +190,10 @@ export default function ConsentPolicyDisclosure({
         {!policy && !loadFailed && <p className="text-sm text-muted">Loading policy…</p>}
         {policy?.sections.map((section) => (
           <section key={section.heading} className="mb-4 last:mb-0">
-            <h5 className="text-sm font-semibold text-fg">{section.heading}</h5>
+            {/* h3, one level under the h2 above (T18-A7) — was h5, which
+                skipped two levels once the outer heading moved from h4 to
+                h2 in the same fix. */}
+            <h3 className="text-sm font-semibold text-fg">{section.heading}</h3>
             <p className="mt-1 text-sm text-muted">{section.body}</p>
           </section>
         ))}

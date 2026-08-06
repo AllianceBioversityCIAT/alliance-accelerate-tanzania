@@ -53,7 +53,7 @@
  * Tokens only (NFR-6) — zero hex literals. No entrance motion (A26).
  */
 
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import {
@@ -158,6 +158,20 @@ export default function StatusLookupForm() {
   const emailId = `${baseId}-email`;
   const errorId = `${baseId}-error`;
 
+  // T21-A1: on a successful lookup the form unmounts and is replaced by the
+  // result panel below. An error already announces via role="alert"
+  // (assertive live region); a result did not announce at all and left
+  // focus wherever it was — on the just-removed submit button, which drops
+  // it to <body> once the form is gone. `resultRef` + the effect underneath
+  // move focus onto the result panel itself, and the panel's own
+  // aria-live="polite" region (see the render below) announces the status
+  // to a screen-reader user the same way the error path already does.
+  const resultRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (result) resultRef.current?.focus();
+  }, [result]);
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -196,7 +210,16 @@ export default function StatusLookupForm() {
   if (result) {
     const { label, description } = statusCopy(result.status);
     return (
-      <div className="flex flex-col gap-4 rounded-md border border-border bg-surface p-6">
+      <div
+        ref={resultRef}
+        role="status"
+        aria-live="polite"
+        // T21-A1: focusable-but-not-tabbable, mirroring the OTP step's
+        // blocking-issue container — a valid target for the effect above's
+        // `.focus()` call, not a stop in the normal Tab order.
+        tabIndex={-1}
+        className="flex flex-col gap-4 rounded-md border border-border bg-surface p-6"
+      >
         <div>
           <p className="text-sm font-medium text-muted">Status</p>
           <p className="mt-1 text-xl font-bold text-fg">{label}</p>

@@ -1642,3 +1642,45 @@ The derivation reads **static** `@Module` metadata, so controllers contributed b
 
 **Final result: PASS on attempt 2.** 2 Implementer attempts (three dispatches, one interrupted by a usage limit), 2 Reviewer reports, **1 rework round consumed.**
 
+
+### T-22 — a11y suites for the three public screens
+
+**Dispatched** effort `high`. **PASS on attempt 1**, plus six comment corrections. Its Implementer hit a usage limit but had already delivered a full report.
+
+#### It fixed all six carried findings rather than documenting them — and that was the correct reading
+
+The Disqualifying clause forbids *recording contrast, focus order or focus visibility as covered*. The Implementer read the inverse obligation correctly: **NFR-5's measure puts labelled controls, `aria-describedby` errors and live-region announcement *inside* the jsdom-evaluable gate**, and DC-16 excludes only the other three. The Reviewer upheld it in terms — *"a known-broken `aria-describedby` 'documented' instead of fixed would have expanded DC-16 past what the spec accepts."* **Documenting them would have been the disqualifying failure in the opposite direction.**
+
+All six verified fixed: per-checkbox `aria-invalid`/`aria-describedby` (T17-A1), `autoComplete` on the four PII inputs (T17-A2), `tabIndex={-1}` on the crops anchor target (T17-A3), the consent heading `h4`→`h2` with sections `h5`→`h3` (T18-A7), focus moved to the OTP blocking-issue alert (T19-A4), and the status result panel as `role="status" aria-live="polite"` with a focus move (T21-A1).
+
+**T18-A7's composed hierarchy was verified end to end** — `/register` renders **h1 → h2 → h3 with no other headings**: the five `<legend>`s are not headings and the crops label is a `<span>`. And the heading change was itself caught mid-flight: raising the disclosure to `h2` made its **own** axe suite go red on the intermediate state, which is how the section headings got fixed before shipping.
+
+#### Whole-page runs — the point of the finding
+
+All three suites render the **real page default export**, not a component stand-in. A grep confirmed the four newly-covered states genuinely had no prior axe coverage: the OTP **blocking-issue** state, the status **result** state, and the receipt's **copied** and **no-`?ref=`** states. **Component-level axe structurally cannot see a heading-order violation that only exists once components are composed.**
+
+Strengthening detail the Reviewer found: jest-axe disables only `cat.color` by default, so **`heading-order` is enabled** — the composed runs genuinely *gate* T18-A7's property rather than merely touching it.
+
+#### ⚠️ Six inaccurate comments, in the deliverable whose subject is honest coverage accounting
+
+None changed what is gated; all six changed what a future reader would believe. The two worth keeping in mind:
+- *"A future field added without a `<label>` fails this test"* — **false.** The list is a fixed allowlist, so a *new* unlabelled field is simply absent from it. **axe's `label` rule in the composed runs is what catches that.**
+- **A shipped file pointed at the wrong proof:** `OtpVerificationStep.tsx` sent readers to `OtpVerificationStep.test.tsx` for the focus proof; **that file contains no occurrence of "focus"** — the proof is at the page level, because it is a composition behaviour that component test was never positioned to assert.
+
+Also corrected: a `DD-16` citation that does not exist (the DD series stops at DD-11); a backwards explanation of why the consent checkbox is enabled in jsdom — and there the Implementer **deleted the inert `Object.defineProperty`/`fireEvent.scroll` calls** rather than leave dead code implying a scroll-driven transition that never happens; a heading-order comment misattributing which assertion gates the property; and a test title claiming *"retains the entered values"* that checked nothing — **now asserted rather than renamed.**
+
+#### The residual only a diff could close
+The Reviewer noted that reading current files **cannot detect a *deleted* assertion**. The Implementer closed it with `git diff --stat` over every pre-existing test file in the register surface: **none appear in the diff — zero lines touched.** Only the four shipped components changed (110 insertions, 6 deletions). **No existing assertion was deleted or weakened.**
+
+#### Leader amendments (mine, not the Implementer's)
+- **`tasks.md`'s `Files:` glob was wrong** — the single-star form matches only direct children and **could not reach `submitted/` or `status/`**. Amended to `**/*-a11y.test.tsx`. Co-location with each screen's `page.tsx` is the project convention the task's own Scope defers to (`about-a11y`, `map-a11y` set it).
+- **DC-16's own wording was imprecise, and the correction *strengthens* it.** It said `color-contrast` *"returns incomplete"* — describing a rule that **ran**. This jest-axe **disables the whole `cat.color` set by default**, so it **never runs and never reports**. The conclusion is unchanged and firmer: a green axe result says nothing whatever about contrast. **This is the kind of imprecision that survives indefinitely because the conclusion it supports is correct** — found by reading `node_modules` rather than trusting the spec's own sentence.
+
+**Leader's measurement:** **85 suites / 1151 tests, all green — the first fully clean frontend full run in several waves** (+3 suites, +28 tests) · build **23/23 static pages**.
+
+#### ADVISORY
+- **T22-A1** — the *"cannot prove"* record is the deliverable and it is honest: contrast, tab order and focus visibility each named with a jsdom reason, routed to DC-16's HITL check, with a **screen-specific** justification that the check is not auth-deferrable per KZ-003. The Reviewer's contradiction sweep over all three files came back clean.
+- **T22-A2** — `StatusLookupForm`'s *"Look up a different submission"* does not clear the inputs. Asserting actual behaviour was ruled correct over adding unrequested behaviour to a reviewed component.
+
+**Final result: PASS on attempt 1.** 1 Implementer attempt (two dispatches), 1 Reviewer, **0 rework rounds consumed.**
+

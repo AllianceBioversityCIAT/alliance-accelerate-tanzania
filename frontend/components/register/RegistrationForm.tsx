@@ -105,6 +105,23 @@ const MAX_LENGTHS = {
  */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * `autoComplete` tokens for the PII-bearing text inputs (T17-A2, WCAG 2.1 AA
+ * SC 1.3.5 "Identify Input Purpose") — a Reviewer finding carried into T-22
+ * because every other email input in this codebase (`StatusLookupForm`, the
+ * admin dialogs, `LoginForm`/`ForgotPasswordForm`) already sets
+ * `autoComplete="email"`, and this form's Contact fieldset was the outlier.
+ * Only the fields with a real autofill category get an entry; the rest fall
+ * through to `renderInput`'s `undefined` default (no token asserted either
+ * way for e.g. `district`, `capacityTons`).
+ */
+const AUTOCOMPLETE_HINTS: Partial<Record<keyof FormValues, string>> = {
+  traderName: 'organization',
+  contactPerson: 'name',
+  phone: 'tel',
+  email: 'email',
+};
+
 /** Human labels for the error summary — keyed identically to `FormValues`/`errors`. */
 const FIELD_LABELS: Record<keyof FormValues, string> = {
   traderName: 'Organisation name',
@@ -554,6 +571,11 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
           value={value}
           onChange={(e) => setField(field, e.target.value as FormValues[typeof field])}
           disabled={submitting}
+          // WCAG 2.1 AA SC 1.3.5 (T17-A2): every PII input this form collects
+          // gets an autoComplete token — every other email input in this repo
+          // already sets `autoComplete="email"` (StatusLookupForm, the auth
+          // forms), and this was the one place it was missing.
+          autoComplete={AUTOCOMPLETE_HINTS[field]}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
           className={inputClasses(!!error)}
@@ -653,6 +675,15 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
             role="group"
             aria-labelledby={`${baseId}-crops-label`}
             aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
+            // T17-A3: the error summary's anchor targets this div
+            // (`#${fieldId('crops')}`). A plain <div> is not a native focus
+            // target, so fragment navigation scrolled here without moving
+            // focus — exactly the case where a quick-nav/summary-link user
+            // jumps straight past the group's own on-entry announcement.
+            // tabIndex={-1} makes it a valid, non-tab-order focus target for
+            // `:target`/fragment navigation without adding it to the normal
+            // Tab sequence.
+            tabIndex={-1}
             className="flex flex-wrap gap-4"
           >
             {CROP_NAMES.map((crop) => {
@@ -667,6 +698,15 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
                     checked={checked}
                     onChange={() => toggleCrop(crop.value)}
                     disabled={submitting}
+                    // T17-A1: the group's description is announced on
+                    // ENTERING the group, which a keyboard/screen-reader user
+                    // recovering from the error summary link does not do —
+                    // they land past it. Associating the error at each
+                    // checkbox too means recovery via quick-nav/summary-link
+                    // still surfaces "Select at least one crop." on the
+                    // control the user actually lands on.
+                    aria-invalid={errors.crops ? 'true' : undefined}
+                    aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
                     className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   />
                   <label htmlFor={id} className="text-sm text-fg">

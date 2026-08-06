@@ -62,7 +62,7 @@
  * Tokens only (NFR-6) — zero hex literals. No entrance motion (A26).
  */
 
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import {
@@ -249,6 +249,16 @@ export default function OtpVerificationStep({
   const codeId = `${baseId}-code`;
   const codeErrorId = `${baseId}-code-error`;
 
+  // T19-A4: when a blockingIssue arrives, this component swaps its entire
+  // returned subtree for the blocking-issue screen below — the previously
+  // focused control (the code input, the resend/submit buttons) unmounts
+  // with it, and a browser drops focus to <body> with no announcement. The
+  // blocking screen's own container is the thing that should receive focus
+  // instead, since it already carries role="alert"/aria-live="assertive" —
+  // moving focus there means an AT user's next Tab starts from the message
+  // they need to read, not from the top of the document.
+  const blockingIssueRef = useRef<HTMLDivElement | null>(null);
+
   // Sends the first code automatically on mount (design.md §5.3 — the
   // applicant enters this step already having supplied and format-validated
   // the address in RegistrationForm; there is nothing further for them to
@@ -274,6 +284,21 @@ export default function OtpVerificationStep({
       cancelled = true;
     };
   }, [email]);
+
+  // Fires whenever a blockingIssue newly appears — moves focus onto the
+  // alert container the ref above targets. jsdom's rendered `<div>` DOES
+  // support `.focus()` once it carries `tabIndex`, so this is a real,
+  // testable behaviour. Reviewer correction 5: the proof lives in
+  // `app/(public)/register/register-a11y.test.tsx` ("T19-A4: focus moves
+  // onto the blocking-issue alert…"), NOT in `OtpVerificationStep.test.tsx`
+  // — this is a whole-page composition behaviour (the OTP step unmounting
+  // its own subtree in favour of the blocking screen, inside `RegisterPage`),
+  // and `OtpVerificationStep.test.tsx` never asserts focus. Unlike the
+  // scroll-geometry properties DC-17 routes to a human check, this one IS
+  // jsdom-provable — it just isn't proven in this component's own file.
+  useEffect(() => {
+    if (blockingIssue) blockingIssueRef.current?.focus();
+  }, [blockingIssue]);
 
   const handleCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setCode(e.target.value.replace(/\D/g, '').slice(0, 6));
@@ -346,8 +371,13 @@ export default function OtpVerificationStep({
     const correction = blockingIssue.field === 'email' ? 'a corrected email address' : 'corrected details';
     return (
       <div
+        ref={blockingIssueRef}
         role="alert"
         aria-live="assertive"
+        // T19-A4: tabIndex={-1} makes this container itself focusable so the
+        // effect below can move focus onto it when it replaces the code-entry
+        // subtree, without adding it to the normal Tab sequence.
+        tabIndex={-1}
         className="rounded-md border border-danger bg-danger-soft px-4 py-4 text-sm text-danger"
       >
         <p className="font-semibold">{heading}</p>

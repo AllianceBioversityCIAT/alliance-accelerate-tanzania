@@ -216,7 +216,7 @@
       **Disqualifying:** if the request is a `GET` with query parameters, C-11 has regressed regardless of what the tests assert — check the emitted request, not just the rendered output.
       Skills: `frontend-design`, `react-doctor`
 
-- [ ] **T-22** a11y suites for the three public screens  (deps: T-17, T-18, T-19, T-20, T-21)
+- [x] **T-22** a11y suites for the three public screens  (deps: T-17, T-18, T-19, T-20, T-21)
       Scope: `*-a11y.test.tsx` per the project's per-file convention (there is no central setup). Keyboard operability, labelled controls, `aria-describedby` errors, live-region announcement.
       Traces: NFR-5, QA-11, DC-16
       Files: `frontend/app/(public)/register/**/*-a11y.test.tsx` *(glob corrected 2026-08-06 during execution — the single-star form matches only direct children and could not reach `submitted/` or `status/`. The three suites are co-located with each screen's `page.tsx`, per the project convention this task's own Scope defers to — `about-a11y.test.tsx` and `map-a11y.test.tsx` set that precedent.)*
