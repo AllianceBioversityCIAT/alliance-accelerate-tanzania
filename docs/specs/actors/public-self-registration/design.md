@@ -134,7 +134,7 @@ Indexes: `@@index([status, createdAt])` — the queue's only access pattern (sta
 | `id` | `String @id @default(cuid())` | |
 | `email` | `String` | **PII.** Lowercased. **The lookup key** — see §4.3 |
 | `codeHash` | `String` | HMAC-SHA-256 under a server secret. Plaintext never stored, never logged |
-| `attempts` | `Int @default(0)` | Incremented on **every** verification attempt, right or wrong (§4.3) |
+| `attempts` | `Int @default(0)` | Incremented on a **mismatched** verification attempt only — a correct guess consumes the code instead, so a success never burns the applicant's own attempt (§4.3 V-1/V-1a). *Corrected 2026-08-05 during execution: the prior wording, "on **every** verification attempt, right or wrong", described behaviour no implementation ever had, and T-7's correctness lens ruled the implemented behaviour the better one. See `execution.md` → T-7.* |
 | `expiresAt` | `DateTime` | |
 | `consumedAt` | `DateTime?` | Single-use |
 | `createdAt` | `DateTime @default(now())` | Also the per-email send-rate window |

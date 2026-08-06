@@ -174,13 +174,48 @@ model EmailVerification {
   email      String
   // HMAC-SHA-256 under a server secret. Plaintext never stored, never logged.
   codeHash   String
-  // Incremented on every verification attempt, right or wrong.
+  // Incremented on a MISMATCHED verification attempt only (a correct guess
+  // consumes the code instead of incrementing this — it never burns the
+  // applicant's own attempt on success; see EmailVerificationService.verifyCode,
+  // design.md §4.3 V-1/V-1a). Comment corrected 2026-08-05, T-7 rework attempt 2
+  // — the prior wording ("on every … attempt, right or wrong") described
+  // behaviour the implementation never had; no migration needed, comment-only.
   attempts   Int       @default(0)
   expiresAt  DateTime
   // Single-use.
   consumedAt DateTime?
-  // Also the per-email send-rate window.
   createdAt  DateTime  @default(now())
 
   @@index([email, createdAt])
+}
+
+// Atomic per-email, per-hour-bucket send counter for the OTP send-rate cap
+// (design.md §4.3/§4.4's shared, cross-container control). Added in T-7
+// rework attempt 3, replacing an EmailVerification.createdAt-based rolling
+// count (the comment above used to say "Also the per-email send-rate
+// window" — that was never atomic, see EmailVerificationService's class doc
+// for the full history) and a per-email MySQL advisory lock considered and
+// abandoned in attempt 2 for a pre-commit-visibility race.
+//
+// `sends` is incremented ONLY via a single `INSERT ... ON DUPLICATE KEY
+// UPDATE` statement (never read-then-written from application code) — see
+// EmailVerificationService.issueCode. It increments UNCONDITIONALLY on every
+// attempt in the bucket, including rejected ones (so it is a raw attempt
+// count, not clamped at the cap) — the cap decision is made in application
+// code from the per-call position captured via a MySQL session variable at
+// write time, not from this column's stored value. `windowStart` is a
+// FIXED, epoch-aligned bucket start, not a rolling "last 60 minutes" — a
+// deliberate, recorded deviation from a strictly rolling window (see the
+// service's class doc, which also records why an unconditional increment
+// read back via a session variable is the shape that is actually correct
+// under concurrency, not the two "obvious" alternatives tried first).
+model EmailSendBudget {
+  // PII. Lowercased, matching EmailVerification.email.
+  email       String
+  // The bucket's start instant — part of the primary key, so a new hour
+  // starts a fresh row rather than requiring an in-place reset.
+  windowStart DateTime
+  sends       Int      @default(0)
+
+  @@id([email, windowStart])
 }

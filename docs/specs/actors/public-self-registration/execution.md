@@ -1004,3 +1004,127 @@ T-12's Implementer hit a single Jest timeout in `backend/src/test/admin-actor-im
 
 **Final verification result:** **PASS on attempt 1.** 1 Implementer attempt, 1 Reviewer, **0 rework rounds consumed.**
 
+
+### T-7 — OTP service under constraints V-1…V-6
+
+**Dispatched** with effort `xhigh`, skills `nestjs-expert` + `tdd` (Leader-assigned for this task specifically) + `systematic-debugging`. **Review mode: three parallel lens Reviewers** — correctness against V-1…V-6, security/cryptography, and test-adequacy — selected by the `xhigh` effort rule and by the security surface. This is the budget deliberately saved on T-5.
+
+#### Attempt 1 — `STATUS: FAIL` (2 of 3 lenses)
+
+| Lens | Verdict |
+|---|---|
+| Correctness against V-1…V-6 | **PASS** — 5 advisories |
+| Security / cryptography | **FAIL** — 1 issue, 6 advisories |
+| Test adequacy | **FAIL** — 4 issues |
+
+**The split is the finding.** The correctness lens read the service and passed it — correctly: it verified V-1…V-6 against the source, confirmed all five DC-20 parameters, and confirmed all four §4.3-rejected mechanisms are absent. The test-adequacy lens read the **fake Prisma** and found the evidence does not discriminate. **A single Reviewer would very likely have done the first and not the second**, because the service is the interesting artifact and the harness looks like plumbing. That is the case for parallel lenses, made concretely rather than in principle.
+
+##### FAIL 1 — test adequacy: two named regression tests do not fail when their defect is present
+
+**One root property:** the fake Prisma destructures only `{ where }` and **silently ignores every clause it does not implement** — `take`, `orderBy`, and any unknown `where` key.
+
+- **The RA4 regression test passes with RA4 present.** Written the way Prisma naturally expresses "latest row wins" — `findMany({ where, orderBy: {createdAt: 'desc'}, take: 1 })` — the fake ignores **both** clauses and returns both rows; `verifyCode` then matches the older row and the assertion passes. **Trap (a) is satisfied literally** — the fixture really does assert two rows — **and is still not sufficient**, because the fake destroys the discrimination the two-row fixture exists to provide.
+- **A canonical S-1 shape also slips through.** Adding `codeHash: submittedHash` to the `findMany` where — the literal S-1 defect — changes nothing, because the fake filters on `email`/`consumedAt`/`expiresAt` only.
+- **V-1a's "fresh read" is the same object.** `seedRow` pushes `row` into the backing array and returns *that reference*; `rows.find(...)` returns it again, so `expect(freshRead.attempts)` is byte-equivalent to `expect(row.attempts)`. And the fake exposes **no `$transaction` and no undo**, so a rollback is *unrepresentable* — the read cannot observe one because none can occur. **This is trap (b) wearing a disguise**, and the in-file comment claimed the opposite in terms: *"a real post-rollback-shaped check rather than a same-object illusion of durability."*
+- **V-6's logging test is vacuous** — the service emits nothing, so `emittedText` is `''` and both `not.toContain` assertions pass on an empty string. The **A5 shape verbatim**, in the same spec that named A5.
+- **5 attempts and 3 sends/hour are asserted against themselves.** Set `OTP_MAX_ATTEMPTS = 0` and the suite stays green.
+
+##### FAIL 2 — security: the send cap is a check-then-act race
+
+`count(...)` then `create(...)`, two statements with nothing making the pair atomic. C concurrent requests read the same stale count and all insert, yielding C live codes instead of 3. Budget rises from 15 to **5C comparisons/hour**: at C=30 expected time-to-compromise falls from **7.6 years to ~9 months**; at C=300, to **~28 days**. The per-container throttler cannot compensate — that is exactly why §4.4's table names this cap the *only* shared control on `POST /verify`. Second harm, and not brute force at all: §4.3's stated purpose is *"Stops mail-bombing"*, and a burst delivers C messages to an unconsenting third party from a verified CGIAR sending domain.
+
+The sharpest observation in the report: **the file argues the read-then-write danger at length for `consumeCode` (V-4, lines 44-50) and the identical hazard sits unremarked in `issueCode`** — where the second observer is not a duplicate success but an unbounded one.
+
+##### Leader adjudication — why the security finding counts as conformance, not advisory
+
+The lens fairly noted that **V-1…V-6 never state an atomicity constraint for issuance**, so the Implementer built what was specified, and offered to route it as a design amendment instead. I ruled it in scope for rework:
+
+- §4.4's DC-19 table designates this cap the **only** shared control on `POST /verify`;
+- **this spec's own C-4 standard** is that a control which does not hold across containers **is not a shared control**;
+- §4.3 asserts the cap *"holds across containers where the throttler does not"* and *"stops mail-bombing"* — the implementation delivers neither under concurrency.
+
+So the code contradicts a design claim the task traces to, which is conformance. **Recorded as a genuine spec gap all the same:** §4.3's constraint table covers the attempt counter (V-1, V-1a) and the consume (V-4) but never issuance. If a future revision of this design is written, issuance atomicity belongs in that table as a numbered constraint. **Not amended mid-execution** — unlike T-3's contradiction and T-4's impossible primitive, this is a *missing* constraint rather than a wrong one, and adding constraints to an approved decomposition mid-run is a scope change, not a correction.
+
+##### Effort deliberately NOT bumped to `max`
+
+The rework rule says bump one level per retry; the tier↔effort rule forbids `max` on a T2 tier and says escalate the tier instead. Here the two rules point the same way anyway: **the failure was not under-thinking about the service** — the service passed its lens — **it was a permissive test harness with a precisely named remedy.** Attempt 2 got precision in the brief instead of more effort.
+
+##### Carried out of T-7 deliberately
+
+- **`EmailVerificationService` is not registered as a provider**, and `registrations.module.ts` imports no `PrismaModule` (`providers: [RegistrationsThrottleGuard]` only). T-7's `Files:` names the service + spec; T-8's names the controller/service. **No task owns the module wiring** — the same unowned-gap class as L-ERR-2. **Assigned to T-8 explicitly**, so it lands deliberately rather than as a DI resolution error.
+- **`OTP_HMAC_SECRET` joins the T3-A1 escalation** — third env var that throws at first use and appears in no SAM template.
+- Advisories deferred: minimum-entropy validation on the secret; HMAC domain separation (`email + ':' + code`) to make S-1's rejection structural rather than conventional; row retention/purge; key rotation with a dual-key read path.
+
+##### Verified-correct properties the rework brief protects explicitly
+
+Listed in the brief so attempt 2 cannot destroy passing work: `verifyCode` takes **no `tx`** and writes through `this.prisma` (load-bearing — `PrismaService` is a bare `extends PrismaClient` with no `$extends`, no extension, no AsyncLocalStorage, so there is no ambient transaction propagation); the mismatch `updateMany` touching **every** live row, which is what holds the budget at 15; `consumeCode`'s single conditional write; no `orderBy`/`take`/recency term in the lookup; `safeEqualHex`'s length guard before `timingSafeEqual`; no fallback for the secret, with a falsiness test so `""` also throws.
+
+
+#### ⚠️ Leader error — L-ERR-4: my remediation instruction would have shipped the defect a fourth time
+
+**What I did.** In the attempt-3 brief I instructed the Implementer to *"remove the `$transaction` wrapper around `issueCode`"* and to *"not leave a vestigial lock"* — treating the wrapper as part of attempt 2's failed advisory-lock apparatus. I also handed it the mechanism, citing MySQL's documented affected-rows contract (1 insert / 2 changed / **0 unchanged**) as the cap signal.
+
+**Both halves of that instruction were wrong, in the same direction: silently disabling the cap.**
+
+| My instruction | What it would have shipped |
+|---|---|
+| Decide from `affectedRows === 0` | **The cap never fires.** The Implementer tested against live dev RDS before writing service code: `affectedRows` for a known-unchanged update returns **1**, not 0 — documented `CLIENT_FOUND_ROWS` behaviour. `0` never occurs on this connector, so the cap-hit branch is unreachable and every call succeeds forever |
+| Remove the `$transaction` wrapper | **The cap never fires.** MySQL user variables are **connection-scoped**. Without the wrapper, `$executeRaw` and `$queryRaw` are two independent checkouts from Prisma's pool (`connection_limit` defaults to `num_cpus * 2 + 1`, so >1 in every realistic runtime). `SELECT @newSends` frequently lands on a connection where the variable was never assigned → MySQL returns `NULL` → `Number(null)` is **`0`** → `0 > 3` is false → every call accepted |
+
+The concurrency lens's verdict on the second one is worth quoting exactly: *"Removing the wrapper is not a simplification; it is the same bug a third time."*
+
+**Why it did not ship.** The Implementer tested my documented-contract citation empirically instead of trusting it, and **told me directly that it was defying my instruction on the wrapper rather than complying quietly** — asking me to check its reasoning. I ruled in its favour before the lens saw it, on the asymmetry that `GET_LOCK` is released *by an explicit statement* Prisma emits before `COMMIT`, whereas an InnoDB row lock is released *by* `COMMIT`. The lens upheld that and corrected my ruling as **understated**: I called the wrapper harmless-and-incidental; it is **load-bearing**, because the connection pinning *is* the mechanism.
+
+**The pattern, now three for three.** L-ERR-2 (a scope guard that created the gap it was meant to prevent), L-ERR-3 (a flake signature quoted from memory for the third time), and now L-ERR-4 — **every one caught by an Implementer declining to let a Leader instruction pass unexamined, and none by a gate.** In this case the Implementer was carrying an instruction from the party who adjudicates its FAILs, on its final attempt before a HALT, with every incentive to comply. It pushed back anyway and was right. That asymmetry is worth naming: the process's error-correction did not come from the reviewer tier, it came from the worker refusing deference.
+
+**Standing correction for the remaining tasks.** When I hand an Implementer a *mechanism* rather than a *constraint*, I am doing the design work the task explicitly assigns to them (`design.md` §4.3: *"The Implementer chooses the mechanism and records it in `execution.md` with evidence"*). Both halves of this error came from that overreach. **For T-6, T-8, T-10, T-11 and T-13, brief the constraint and the evidence bar; leave the mechanism to the worker who will test it.**
+
+
+#### Attempt 3 — split verdict: concurrency `STATUS: PASS` · test adequacy `STATUS: FAIL` → **HALT, rework ceiling reached**
+
+**Mechanism shipped.** `GET_LOCK` deleted entirely (grep-confirmed: only doc-comment narrative remains, no executable vestige). Replaced by a new `EmailSendBudget` table (composite PK `(email, windowStart)`) driven by one atomic statement — `INSERT … VALUES (…, (@newSends := 1)) ON DUPLICATE KEY UPDATE sends = (@newSends := sends + 1)` — then `SELECT @newSends` on the same pinned connection, deciding in application code.
+
+**Migration verified by the Leader from disk, not from the report:** one `CREATE TABLE` with its composite PK, `utf8mb4_unicode_ci`; **zero** matches for `DROP`/`MODIFY`/`ALTER TABLE`/`UPDATE`. Additive-only per `backend/CLAUDE.md`. No drift or reset prompt occurred.
+
+**Leader's quiet-window measurement (taken with the tree idle, per the concurrency protocol):** backend **49 suites / 567 tests** — reconciling exactly against the 48/549 baseline (+1 suite, +18 tests) · eslint `--quiet` exit 0 · `npm run build` exit 0. `admin-actor-import.e2e.spec.ts` passed in 10.3 s, confirming the earlier timeout was contention from the Leader's own parallelisation and not a product flake.
+
+##### Concurrency / security lens — `PASS`
+
+Traced the duplicate-key path and found no over-accepting route: `INSERT … ON DUPLICATE KEY UPDATE` takes an **exclusive** lock (not shared) on the clustered PK record, so the second caller blocks and then performs a **current read** under the X lock — not a snapshot read — seeing the committed value regardless of isolation level. Attempt 2's window is structurally closed because **there is no release statement to mistime**: an InnoDB row lock is released *by* `COMMIT`, whereas `GET_LOCK` was released *by a statement Prisma emitted before* it. Prisma's default 5000 ms budget is now safe because no deliberate wait exists; a contended waiter costs one round trip plus a commit, and Prisma's expiry fires before `innodb_lock_wait_timeout`, giving a clean rollback. R-1 connection pressure is materially reduced versus attempt 2. All four verified-correct properties of `verifyCode`/`consumeCode` confirmed untouched.
+
+##### Test-adequacy lens — `FAIL`, one issue, one-line remedy
+
+**All three attempt-2 findings verified closed, not taken on assertion:** the self-referential lock-name test is gone (`realHash()` is a legitimate independent oracle, not a re-typed copy); the twelve spies are declared **and** all folded into `allCalls`, with all twelve restored in a `finally`; and **the mutation arithmetic holds for the first time** — 10/18 and 3/18 both re-derived independently from source, with no fourth failing test. The `createdAt`-tie account was confirmed coherent, and the sweep I asked for came back clean: **nothing previously passing depended on the old tie-ordering**, because the service issues no `orderBy`, the fake's allow-list has no `createdAt` key, and `verifyCode` disambiguates by hash, so row order is unobservable on the unmutated path.
+
+**The blocking finding.** The fake's `$queryRaw` resolves **without a `tick()`** while `$executeRaw` has one. That collapses the INSERT→SELECT round trip to zero, so each caller runs its increment, its read **and its cap decision** inside the microtask drain following its own `setImmediate` — there is never an interleaving point between capture and read. Consequences:
+
+- **The per-invocation closure is never exercised.** The file's header and the `$transaction` doc comment both assert that a naive shared variable *"would let one concurrent caller's capture leak into another's read"* and that per-invocation scoping *"is what makes it a faithful model."* **Both are false under the fake's own timing** — a module-level shared variable produces the identical 1,2,3,4,5 sequence and the test stays green. The file's central faithfulness claim has zero test consequence.
+- **Round 2's mechanism — the one measured against live RDS at 1 accepted out of 8 — also passes.** The only thing preventing a port of it is a `$queryRaw` guard requiring the literal substring `@newSends`: **a spelling check on the implementation, not a behavioural one.**
+- Two things do genuinely discriminate: attempt 1's bare `count`-then-`create` fails (5 ≠ 3), and **the Leader's `affectedRows === 0` recommendation fails** (the fake returns `1` unconditionally, faithfully encoding the measured connector behaviour). So the model is *convenient*, not *fair* — **generous in precisely the direction where reality bit.**
+
+*Violated:* `judgment.md` C4 (*"Gates blind to their defect class"*); `general-setup/task.md` § Testing & Verification (*"a property the harness structurally cannot evaluate is not covered"*); the same principle as T-7's own disqualifying trap (a).
+
+**Minimum change, with all three outcomes traced by the Reviewer:** add `await tick();` as the first statement of the fake's `$queryRaw`. The shipped implementation stays green (each caller's captured closure value survives arbitrary interleaving); a shared module variable goes red (every caller reads 5 → 0 accepted); round 2's read-the-row-back goes red the same way, reproducing the observed 8→1 collapse. One line converts two header assertions into load-bearing test properties.
+
+##### Advisories carried, non-blocking
+
+- The fake's `$executeRaw` `return 1;` silently encodes the empirical *"this connector never returns 0"* finding. Unmarked, so a future maintainer could "correct" it to 0 and let an `affectedRows === 0` implementation pass. One comment.
+- `seedRow` does not use the monotonic `createdAtTick`, so two seeded rows can still tie — harmless today (V-3 sets both explicitly), but it is the same trap one function away.
+- 12 of ~17 log surfaces spied; static `Logger.{error,warn,debug,verbose,fatal}` and `process.stdout.write` remain. Not blocking — the service imports no `Logger` at all.
+- **ADVISORY (concurrency lens) — `EmailSendBudget` must be named in the deferred retention item.** The existing deferral names only `EmailVerification`. The new table's population is **strictly broader**: it increments even for **rejected** attempts, so it persists addresses to which nothing was ever sent, including ones an attacker merely probed. No TTL, no `createdAt`. With `email` as the leading PK column, pruning by `windowStart` is a full scan.
+- **ADVISORY — the class doc forward-references records that did not exist when written** (`design.md`/`execution.md` citations for the fixed-window trade). Discharged by this entry; noted because it is the **A30** defect this spec named against itself.
+
+##### Recorded deviations from the design
+
+1. **Fixed hourly bucket, not a rolling window.** Up to `2 × 3 = 6` sends can straddle a boundary, versus `design.md:282`'s *"3 per hour"*. Deliberate: a rolling window cannot be folded into one conditional statement, so it reintroduces the read-then-decide step that is the entire defect being fixed. The concurrency lens ruled it acceptable — fixed-window counting is a standard limiter and its 2× boundary burst is the textbook known weakness; for a control whose purpose is *"stops mail-bombing"*, 3 versus a worst-case 6 messages per hour is not material to the threat.
+2. **Mechanism substitution against `design.md:329`**, which names the shared `POST /verify` control as *"per-email send cap on `EmailVerification` rows"*. A dedicated counter table satisfies the property §4.4 actually requires — shared and cross-container — and satisfies it strictly better. Recorded per §4.3's standing requirement that the Implementer's chosen mechanism be documented here with evidence.
+3. **Fail-closed on partial failure:** if the budget increments but `EmailVerification.create` fails, the budget is consumed with no code issued, and no compensating decrement is attempted. The ordering is load-bearing — create-then-increment would make the cap bypassable by inducing failures — and a decrement is itself a write that can fail.
+
+##### HALT
+
+**3 Implementer attempts, 7 Reviewer lens reports, 3 rework rounds consumed — the hard ceiling. T-7 is marked `[~]`, not `[x]`.**
+
+Attempt 3's FAIL is **genuine and independent of L-ERR-4**: the Implementer caught both halves of my wrong instruction before they shipped, so my errors did not cause this failure. The remaining defect is its own, is narrow, and has a one-line remedy with three traced outcomes.
+
+**Not carried to `[x]` on the strength of one PASS.** The lens that failed here is the same lens that failed attempts 1 and 2; closing the task on the concurrency PASS alone would leave open precisely the gap that lens exists to cover. **Escalated to the user** with a recommendation to authorise one bounded further attempt scoped to the single line, per the Pivot Protocol.
+
