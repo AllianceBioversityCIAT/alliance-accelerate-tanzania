@@ -10,6 +10,7 @@
  * kept out of the awaited path (the timing mitigation the Leader's brief
  * demands be proven, not asserted).
  */
+import { createHmac } from 'node:crypto';
 import {
   BadRequestException,
   Logger,
@@ -36,6 +37,19 @@ import { RegistrationCreateDto } from './dto/registration-create.dto';
 function tick(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+// T11-A1 — `lookupRegistration` now pseudonymises the caller IP with an HMAC
+// under `OTP_HMAC_SECRET` before it reaches the attempt counter, so this path
+// requires the secret where it previously did not. Set here at module scope
+// rather than per-`describe`: the coupling is easy for a future block to
+// forget, and forgetting it surfaces as an opaque 500, not a clear failure.
+beforeAll(() => {
+  process.env.OTP_HMAC_SECRET = 'test-only-hmac-secret-not-a-real-key-0123456789';
+});
+
+afterAll(() => {
+  delete process.env.OTP_HMAC_SECRET;
+});
 
 describe('RegistrationsService.requestVerificationCode', () => {
   let emailVerificationService: { issueCode: jest.Mock };
@@ -735,8 +749,30 @@ describe('RegistrationsService.lookupRegistration', () => {
   let service: RegistrationsService;
 
   /** Look up this test's own recorded counter row — never ambiguous, since every seeded row carries both `ip` AND `reference`. */
+  /**
+   * T11-A1 — rows are keyed on an HMAC of the caller IP, never the address
+   * itself, so a test looking up by the plaintext IP finds nothing.
+   *
+   * This recomputes the digest **independently**, with its own `createHmac`
+   * call, rather than importing the service's `pseudonymiseCallerIp`. That is
+   * deliberate: importing the implementation would make every assertion below
+   * tautological — the test would agree with the code by construction and
+   * would keep passing if the code stopped hashing at all. An independent
+   * oracle is the same discipline T-7's V-6 test used for the OTP hash.
+   *
+   * Consequence worth knowing: if the service ever changed its domain-
+   * separation prefix, these lookups would return `undefined` and every
+   * counter assertion would fail loudly — which is the correct direction.
+   */
+  function callerKeyFor(ip: string): string {
+    return createHmac('sha256', process.env.OTP_HMAC_SECRET as string)
+      .update(`lookup-ip:${ip}`)
+      .digest('hex');
+  }
+
   function attemptsFor(ip: string, reference: string): number | undefined {
-    return attemptRows.find((r) => r.ip === ip && r.reference === reference)?.attempts;
+    const key = callerKeyFor(ip);
+    return attemptRows.find((r) => r.ip === key && r.reference === reference)?.attempts;
   }
 
   /**

@@ -101,12 +101,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 import { Prisma, Registration, RegistrationStatus } from '@prisma/client';
 import {
   EmailVerificationSendLimitExceededError,
   EmailVerificationService,
   normalizeEmail,
 } from './email-verification.service';
+import { getOtpHmacSecret } from './email-verification.config';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
@@ -323,6 +325,35 @@ export const LOOKUP_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
  * never reads any exception or lookup state — the same discipline
  * `buildCodeRejectedError` already established for T-10's `400`.
  */
+/**
+ * T11-A1 — keyed digest of the caller's IP, stored in place of the address
+ * itself in `RegistrationLookupAttempt.ip`.
+ *
+ * **Why keyed and not a bare hash.** A plain `sha256(ip)` is NOT
+ * pseudonymisation: the IPv4 space is 2^32 and enumerates in seconds, so an
+ * attacker holding the table recovers every address. HMAC under a server
+ * secret makes the digest unusable without that secret — the same reasoning
+ * `design.md` §4.3 gives for hashing OTP codes.
+ *
+ * **Why this reuses `OTP_HMAC_SECRET` rather than introducing a fourth.**
+ * The `"lookup-ip:"` prefix is **domain separation**: the two constructions
+ * operate over disjoint, differently-prefixed message spaces, so a digest
+ * from one can never be mistaken for or correlated with a digest from the
+ * other. This is one root secret distinguished by a context tag, not key
+ * reuse in the unsafe sense — and unlike the OTP hash, this one is a
+ * rate-limit bucket key, not an authenticator over untrusted input. A fourth
+ * secret would mean a fourth thing to provision, and T3-A1 is the standing
+ * evidence of what an unprovisioned env var costs.
+ *
+ * **What this does NOT fix.** Rows still accumulate one per caller per hour
+ * with no TTL, and pruning still full-scans (`ip` leads the composite PK).
+ * Pseudonymisation shrinks the blast radius of a table leak; it is not a
+ * retention policy. §6.4's accepted "no purge is designed" risk stands.
+ */
+function pseudonymiseCallerIp(callerIp: string): string {
+  return createHmac('sha256', getOtpHmacSecret()).update(`lookup-ip:${callerIp}`).digest('hex');
+}
+
 function buildLookupNotFoundError(): NotFoundException {
   return new NotFoundException({
     statusCode: 404,
@@ -659,7 +690,21 @@ export class RegistrationsService {
   ): Promise<PublicRegistrationLookup> {
     const now = new Date();
 
-    const newAttempts = await this.incrementLookupAttempts(callerIp, reference, now);
+    // T11-A1 — the caller key is PSEUDONYMISED before it reaches either DB
+    // helper, so `RegistrationLookupAttempt.ip` never stores a plaintext
+    // address. An IP is personal data (GDPR Art. 4(1); CJEU C-582/14 Breyer),
+    // and this table's population is broader than the other PII-bearing ones:
+    // it writes a row for EVERY caller, BEFORE any content check, one row per
+    // caller per hour, with no TTL. Nothing needs the address back — the
+    // column is only ever compared for equality as part of the composite key
+    // — so a keyed digest preserves every property the mechanism uses.
+    //
+    // Transformed HERE, once, rather than in each helper: both the increment
+    // and the L-4 reset must derive the SAME bucket, and a second call site
+    // is a second chance to forget.
+    const callerKey = pseudonymiseCallerIp(callerIp);
+
+    const newAttempts = await this.incrementLookupAttempts(callerKey, reference, now);
     if (newAttempts > LOOKUP_MAX_ATTEMPTS_PER_WINDOW) {
       throw buildLookupNotFoundError();
     }
@@ -673,7 +718,7 @@ export class RegistrationsService {
     // correct pair does not leave them any closer to a lockout against the
     // SAME reference. It has no effect on any OTHER reference's budget for
     // this caller (the composite key's whole point — see the class doc).
-    await this.resetLookupAttempts(callerIp, reference, now);
+    await this.resetLookupAttempts(callerKey, reference, now);
 
     return toPublicRegistrationLookup(registration);
   }
