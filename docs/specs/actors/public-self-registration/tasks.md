@@ -130,7 +130,7 @@
       **Disqualifying:** this is a prerequisite, not an improvement — until it lands, the release gate cannot render the `details` envelope whose leak DC-2 exists to catch, so **T-13's green result would be meaningless**. If correcting the bootstrap breaks existing assertions, that is a real finding about the current gate: report it, do not loosen the assertions.
       Skills: `nestjs-expert`, `systematic-debugging`
 
-- [ ] **T-13** Extend `pii-boundary.spec.ts` to the module — **release gate**  (deps: T-8, T-11, T-12)
+- [x] **T-13** Extend `pii-boundary.spec.ts` to the module — **release gate**  (deps: T-8, T-11, T-12)
       Scope: Registration-specific forbidden key **and value** sets (payload keys, `submitterEmail`, `id`, `reviewedBySub`, `reviewedByEmail`). Iteration set **derived from the runtime route table**, not compared to a list (C-9). **The fixture map must be total and a missing fixture must fail the suite** (RA7). Cover all four public paths plus the `400` and `429` bodies, with an approved and a rejected fixture present. `429` assertions in an isolated describe with a dedicated app and reset limiter (B28).
       Traces: FR-8 (all 3 scenarios), NFR-1, DC-1, DC-2, `design.md` §6.2, DD-2
       Files: `backend/src/test/pii-boundary.spec.ts`
@@ -219,7 +219,7 @@
 - [ ] **T-22** a11y suites for the three public screens  (deps: T-17, T-18, T-19, T-20, T-21)
       Scope: `*-a11y.test.tsx` per the project's per-file convention (there is no central setup). Keyboard operability, labelled controls, `aria-describedby` errors, live-region announcement.
       Traces: NFR-5, QA-11, DC-16
-      Files: `frontend/app/(public)/register/*-a11y.test.tsx`
+      Files: `frontend/app/(public)/register/**/*-a11y.test.tsx` *(glob corrected 2026-08-06 during execution — the single-star form matches only direct children and could not reach `submitted/` or `status/`. The three suites are co-located with each screen's `page.tsx`, per the project convention this task's own Scope defers to — `about-a11y.test.tsx` and `map-a11y.test.tsx` set that precedent.)*
       Verify: `cd frontend && npm test -- a11y`
       Done when: `jest-axe` clean on all three screens for the rules jsdom can evaluate, **and the suite records in a comment which properties it cannot prove**.
       **Disqualifying:** `color-contrast` returns *incomplete* under jsdom and `toHaveNoViolations` does **not** fail on incomplete — chunk 1 accepted exactly this as its NFR-5 WARN. Recording contrast, focus order or focus visibility as covered here is a KZ-002 recurrence. They go to the HITL human check. Per KZ-003 these components take plain props: the check must **not** be deferred on "needs an authenticated session".

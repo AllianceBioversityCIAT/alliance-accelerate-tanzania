@@ -1584,3 +1584,61 @@ Header and `describe` saying "two" failure modes where three exist; the layering
 
 **Final result: PASS on attempt 1.** 1 Implementer attempt (three dispatches), 1 Reviewer, **0 rework rounds consumed.**
 
+
+### T-13 — `pii-boundary.spec.ts` extended to the module — **release gate**
+
+**Dispatched** effort `xhigh`. **Attempt 1 `FAIL` (4 issues), attempt 2 `PASS`.** The Implementer's session died from a usage limit **mid-rework and before reporting** — an environment failure, **no rework attempt consumed** — so attempt 2 was audited from the code on disk rather than from a report.
+
+#### FAIL 1 — the derivation was controller-scoped, and the rejected alternative would have caught it
+
+`getRegisteredRoutes(RegistrationsController, …)` read metadata off **one named class**, so a public route on a **second** controller in `RegistrationsModule` was invisible: the totality test passes, the route has zero coverage. **C-9 restored through a different door.** Not hypothetical — **`design.md` §4's file tree already schedules `admin-registrations.controller.ts` into this same module for 3b**, so it is planned work, and the day it lands nothing would have turned red.
+
+**The irony fixed the severity:** the **rejected** router-stack approach, filtered on the path prefix, was **app-wide** and *would* have caught it. The Implementer had rejected it on a real empirical finding — every route appears twice on Express 5's stack, with a trailing-slash companion — but **overstated the conclusion**: a normalize-then-dedupe resolves that artifact deterministically. The switch traded a solvable rendering artifact for a real scope regression, and the file recorded neither the trade nor the bound.
+
+**Fixed** with `Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, RegistrationsModule)` + a per-controller `flatMap`. The Reviewer verified the mechanism from `node_modules/@nestjs/common/constants.js:7` rather than by assertion. **A prose caveat was explicitly ruled insufficient — *"a comment cannot fail a suite."***
+
+#### FAIL 2 — the DC-2 half was vacuous against its own regression
+
+None of the three `400` tests asserted `details` was present, **while two test names explicitly claimed "400s with a `details` array."** A revert to a bare `new ValidationPipe({...})` — **the C-8 defect T-12 exists to have fixed** — would have left them green while the envelope DC-2 inspects stopped rendering. The gate would again be blind to its own primary defect class.
+
+**And the Reviewer found the two tests do not pin the same layer**, which the file then claimed they did. The malformed-email `400` goes through the **global pipe** and genuinely catches a C-8 revert. The unknown-policy-version `400` is resolved **service-side** by `assertConsentAccepted`, which builds its own `details` — **it would stay green under that revert.** Corrected, so nobody deletes the malformed-email test believing it redundant.
+
+#### FAIL 3 and 4
+B28's second `it` had **the T-8 shape** — 20 priming requests asserting **no status**, so an early `429` would pass silently. Now `.expect(404)` on each. And T12-A2's note claimed *"every task id below is spec-qualified"* while four bare colliding ids remained — now bound.
+
+**Also folded in:** the totality assertion is now **bidirectional**, so a **stale** fixture matching no route is flagged too — which strictly subsumes the missing-only form.
+
+#### The two throwaway proofs, verbatim — and why the second is the one that counts
+
+**The first proof ran against the controller-scoped derivation, which no longer exists in that form** — its conclusion held by coincidence, but the run was stale provenance. Both were re-run against the shipped code.
+
+**Proof 1 — a route on the same controller:**
+```
+● … › FIXTURE_MAP has EXACTLY one entry per route …
+    - "GET /api/v1/registrations/t13-throwaway-probe"
+● … › every discovered route's fixture response is PII-clean …
+    RA7: no FIXTURE_MAP entry for GET /api/v1/registrations/t13-throwaway-probe
+Tests: 2 failed, 18 passed, 20 total
+```
+
+**Proof 2 — the actual FAIL 1 gap: a second controller registered in `RegistrationsModule.controllers`:**
+```
+● … › FIXTURE_MAP has EXACTLY one entry per route …
+    - "GET /api/v1/registrations/t13-throwaway-second-controller-probe"
+● … › every discovered route's fixture response is PII-clean …
+    RA7: no FIXTURE_MAP entry for GET /api/v1/registrations/t13-throwaway-second-controller-probe
+Tests: 2 failed, 18 passed, 20 total
+```
+Both reverted; `git diff --stat` on `registrations.module.ts` and `registrations.controller.ts` **empty**, verified independently by the Leader; suite back to 20/20.
+
+#### ⚠️ A citation to a document that never existed
+
+Line 580 read *"All four runs are quoted in the completion report."* **There was no completion report** — the session died first. Committing it would have put an **uncheckable claim in the repo**, the exact shape *"checkbox-without-evidence is an unfalsifiable completion"* forbids. Now cites **`execution.md`**, a durable artifact — which is why the two proofs above are recorded here verbatim rather than summarised.
+
+**Leader's measurement:** **57 suites / 675 tests** (+10 — `pii-boundary` went 10 → 20) · eslint clean.
+
+#### ADVISORY — two residual bounds that matter when 3b lands
+The derivation reads **static** `@Module` metadata, so controllers contributed by a **`DynamicModule`** (`forRoot()` returning `controllers`) are invisible; and `getControllerRoutes` uses `Object.getOwnPropertyNames(prototype)`, so routes **inherited from a base controller** are invisible. Neither applies today. **`admin-registrations.controller.ts` will be covered as long as it goes in the static array the way `RegistrationsController` does.** A registration route landing in a *different module* also remains invisible — the honest residual of the metadata approach, now recorded in the file.
+
+**Final result: PASS on attempt 2.** 2 Implementer attempts (three dispatches, one interrupted by a usage limit), 2 Reviewer reports, **1 rework round consumed.**
+
