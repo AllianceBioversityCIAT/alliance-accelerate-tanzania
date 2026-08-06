@@ -15,7 +15,28 @@ keep it at 10 rows or fewer.
 | KZ-004 | A correction is not applied when its cited site is fixed — grep the superseded value across every document, and mark as resolved everything that *quotes* the corrected figure, in the same change | import-export/partner-profile-onboarding | High | Product + Methodology | `.agents/leader.md` § Applying a correction | Applied |
 | KZ-005 | Every numeric claim must be cross-checked against narrative prose in the same spec before publication; a count that contradicts a sentence in a sibling document is a defect detectable without re-measuring | import-export/partner-profile-onboarding | Medium | Product + Methodology | `docs/specs/general-setup/requirements.md` § Writing Standards | Applied |
 
+| KZ-006 | A **constraints-not-mechanism** section answered with a new schema object must sweep the design's own object list **in the same change** — migration-only is the C-10 disclosure failure | actors/public-self-registration | High | Product + Methodology | *pending* | Recorded |
+| KZ-007 | **Constraint sets are conjunctive.** Satisfying each member individually can still break the set; review must reason about **interaction**, since no test covers a defect that lives between two correct constraints | actors/public-self-registration | High | Product | *pending* | Recorded |
+| KZ-008 | **A comment asserting a property the code lacks is a defect of the same class as a missing test** — and it recurs at every level of its own correction | actors/public-self-registration | High | Methodology | *pending* | Recorded |
+
 ## Entries
+
+### 2026-08-06 — `actors/public-self-registration` (chunk 3a)
+
+**Measure.** 23 tasks · **11 rework rounds** · ~50 Reviewer lens reports · **1 HALT** (T-7, 3-attempt ceiling, resolved by a user-authorised bounded 4th attempt) · 0 FATAL_FAIL · 0 Pivots · 2 environment failures (classifier outage, usage limits) · **4 recorded Leader errors** · review budget raised 37 → 60 by explicit user decision.
+
+**Learn — three lessons.**
+
+**KZ-006 (High, Product+Methodology, recurrence ×3).** A section that states **constraints rather than a mechanism** gets answered with a new schema object, the migration is updated, and the design's own object list is not — three times in one spec (`EmailSendBudget` undeclared for three tasks, `RegistrationSequence`, `RegistrationLookupAttempt`). This is the **C-10 disclosure failure `A-4` names, recurring inside the spec that names it**, and every correction was a separate Leader action prompted by a Reviewer. *Evidence: `execution.md` → T-10 Leader doc sweep, T-11 third recurrence.*
+
+**KZ-007 (High, Product).** **Constraint sets are conjunctive, and satisfying each member individually does not satisfy the set.** T-11's L-1 (a bound surviving cold starts) and L-4 (reset on success) were both implemented correctly; because the reset keyed on the caller rather than the reference, an attacker holding any valid pair zeroed the counter every ninth guess and 10/hour became ~1,080/hour. **No test could have found it — there was no defect in any single constraint.** Only a reviewer reasoning about interaction did. *Evidence: `execution.md` → T-11 attempt 1.*
+
+**KZ-008 (High, Methodology).** **A comment asserting a property the code does not have is a defect of the same class as a missing test, and it recurs at every level of correction.** T-20 failed three times on this alone: regexes declared "semantic" citing a paraphrase matching none of them; then a pin claiming to cover "any phrasing" while reading only the first `<p>`; then a sanity check whose `.some()` let either fix be reverted green. Also T-8's *"measured"* timing claim, T-13's citation to a completion report that never existed, and six inaccurate comments in T-22 — **the task whose subject is honest coverage accounting**. *Evidence: `execution.md` → T-20 attempts 1-3, T-8 FAIL 3, T-13 attempt 2, T-22.*
+
+**Standardize.** Deferred — presented to the user at archive; no edits applied outside this log.
+
+**Notable, not a lesson.** Three of four Leader errors were caught by an **Implementer declining to let an instruction pass unexamined**, never by a gate — including one where both halves of a Leader's remediation would have silently disabled a security control, on the worker's final attempt before a HALT, with every incentive to comply.
+
 
 ### 2026-08-05 — import-export/partner-profile-onboarding
 
