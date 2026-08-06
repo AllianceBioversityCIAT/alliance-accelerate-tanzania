@@ -6,6 +6,7 @@ import type { Handler } from 'aws-lambda';
 import { AppModule } from './app.module';
 import { createValidationPipe } from './common/validation-pipe';
 import { configureBodyParser } from './common/body-parser.config';
+import { configurePayloadCap } from './common/payload-cap.config';
 
 /**
  * Serverless entrypoint — one Lambda wrapping the whole NestJS app behind
@@ -23,6 +24,7 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
   );
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(createValidationPipe());
+  configurePayloadCap(app);
   configureBodyParser(app);
   await app.init();
   return serverlessExpress(expressApp);

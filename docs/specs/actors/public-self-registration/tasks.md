@@ -57,7 +57,7 @@
       **Disqualifying:** a `429` test that does not assert the envelope shape leaves DC-26 uncovered; one that does not assert zero DB calls leaves FR-7's "must NOT open a database connection" unproven. Both clauses, or the task is incomplete.
       Skills: `nestjs-expert`, `error-handling-patterns`
 
-- [ ] **T-6** Payload cap through a shared `common/` helper, both entrypoints  (deps: none)
+- [x] **T-6** Payload cap through a shared `common/` helper, both entrypoints  (deps: none)
       Scope: Constraints **P-1…P-3** (`design.md` §4.4). Registered via a `configure*` helper in `common/` called from `main.ts` and `lambda.ts` **before** `configureBodyParser(app)` — not two hand-written `app.use` lines (RA9). Path matching must account for the `api/v1` global prefix (P-2). A request declaring no length must not bypass it (P-3).
       Traces: FR-7, NFR-4, `design.md` §4.4, §9
       Files: `backend/src/common/payload-cap.config.ts`, `backend/src/main.ts`, `backend/src/lambda.ts`

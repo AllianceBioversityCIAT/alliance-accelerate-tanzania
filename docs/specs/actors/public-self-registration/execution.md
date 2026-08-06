@@ -1167,3 +1167,73 @@ The extra tick lengthens **every** `issueCode`, not only concurrent ones. The on
 
 **Final verification result:** **PASS on attempt 4.** 4 Implementer attempts, **8 Reviewer lens reports** across 4 rounds, **3 rework rounds consumed plus one user-authorised bounded attempt.** The most expensive task of the run, and the only one to reach its ceiling.
 
+
+#### ⚠️ Record corrected — T5-A5's "no lingering-timer hazard" premise no longer holds
+
+Under T-5 I recorded, on that lens's finding: *"No lingering-timer hazard: `ThrottlerStorageService.onApplicationShutdown` clears all timeouts and **both suites call `app.close()`**."* That was true of the two suites T-5 shipped. **It is no longer true of `lambda-handler.e2e.spec.ts`**, which T-6 extended with the T5-A1 obligation.
+
+`@nestjs/throttler`'s `ThrottlerStorageService.setExpirationTime` (`dist/throttler.service.js:25-33`) creates a plain `setTimeout(ttl)` per hit and **does not `unref()`** it; the timers are cleared only by `onApplicationShutdown`, which requires `app.close()`. `lambda.ts:17` caches the handler in module scope and never exposes the app, and that spec file has no `afterAll` — so the T5-A1 test's ~22 hits at a 60 s TTL leave ~22 live timers after the last assertion. `package.json`'s jest config sets no `forceExit`.
+
+**Attribution, in two parts.** The *open-handle warning* is pre-existing — the file's two original tests already bootstrapped an app it never closed, and the Implementer reported that honestly. The *lingering-timer* half is **new, and the Implementer did not report it**; the evidence lens found it. Not a defect in T-6's deliverable — the timers are an artefact of the harness, not of the payload cap — and the honest fix (an `afterAll` closing the cached Lambda app) addresses a gap that predates this task.
+
+**Deliberately kept out of T-6's rework scope** so a narrow security fix stays narrow. Recorded here instead, because the T-5 note will otherwise be read as current. **Carry to T-13**, which owns the next substantial work in the e2e harnesses and will be driving `429`s of its own under B28 discipline.
+
+**Also worth recording as a positive:** T-6 **discharged the T-12 carry-forward**. `pii-boundary.spec.ts:13,285` now calls `configurePayloadCap(app)` in the correct pre-parser position, and the comment names all three helpers. The one-line addition T-12 was structured to enable was actually made — the release gate still mirrors production. The evidence lens confirmed the suite issues **no** `POST`/`PUT`/`PATCH` at all, so every request lands in the bodyless carve-out and the addition changes no behaviour in the gate while keeping it faithful.
+
+
+### T-6 — Payload cap through a shared `common/` helper, both entrypoints
+
+**Dispatched** with effort `high`, skills `aws-serverless` + `nestjs-expert`, run **alone** — it is the only task that edits both shared bootstraps and runs the build. **Review mode: two parallel lenses** (mechanism/security, evidence adequacy).
+
+**Brief written to constraints, not mechanism** — the first application of L-ERR-4's standing correction. I told the Implementer explicitly why: twice in this spec I handed over a mechanism and both times it was wrong in a way that would have silently disabled the control.
+
+#### Attempt 1 — mechanism `FAIL`, evidence `PASS`
+
+##### The FAIL: P-2's matcher was case-sensitive; Express's router is not
+
+`isRegistrationsPath` compared `req.path` with `===`/`startsWith` against a lowercase literal. `express/lib/application.js:69-81` builds the router with `caseSensitive: this.enabled('case sensitive routing')`, Express does not set that flag by default, and **nothing in `backend/src` sets it**. So `POST /API/V1/REGISTRATIONS` **routes to `RegistrationsController`** while the matcher returned `false`, the middleware called bare `next()`, and the request fell through to the global 8 MB limit — the exact fall-through P-3's docblock names as the thing to prevent. **The same short-circuit skipped the `chunked` rejection, so P-3 was bypassed by the same trick.**
+
+A **bypass, not an over-match**: RA8's failure mode in a narrower form — not *"disabled everywhere"* but *"disabled for any caller who shifts one character to uppercase"*, which is zero effort for the hostile client FR-7 says the guarantee must hold against. On the deployed path nothing normalises it; API Gateway forwards `rawPath` verbatim.
+
+**Where the blind spot was, and it is not carelessness.** The Implementer's suite tested both axes the spec names — the un-prefixed RA8 trap (**inverted, deliberately**, so a matcher with that bug would fail) and the `/api/v1/registrationsX` false positive. **The case axis appears in no document in this repository.** It was found by a lens that went and read `express/lib/application.js` rather than reasoning about the matcher in the abstract. A gap in the spec's own trap list, not in the reading of it.
+
+#### Attempt 2 — `STATUS: PASS`
+
+The fix lower-cases `req.path` before comparing. **The Reviewer did not accept that as obviously sufficient** — I had asked it to probe Unicode case folding, and the answer is favourable for a non-obvious reason worth preserving:
+
+> `path-to-regexp@8.4.2` `dist/index.js:279` — `new RegExp(pattern, sensitive ? "" : "i")`. **The `i` flag without `u`.** In non-Unicode mode, ECMA-262 `Canonicalize` returns the character unchanged when `ch ≥ 128` and its uppercase is ASCII — so `/k/i` does **not** match `K` (U+212A) and `/s/i` does not match `ſ` (U+017F). The router's "case-insensitive" is effectively **ASCII-only**. *Had `path-to-regexp` passed `u`, simple case folding would apply and `/api/v1/regiſtrations` would route while `toLowerCase()` left `ſ` alone — a genuine bypass. It does not pass `u`.*
+
+The two criteria therefore agree exactly, in both directions, because the prefix contains **no `k`** (U+212A is the only non-ASCII character that lower-cases into ASCII and could align). **No residual bypass, and not even a reachable over-match today.**
+
+**All three new case-variant tests go red against the pre-fix matcher for the right reason** — the short-circuit leaves `mock.calls[0][0]` undefined, and the handler test would 404 rather than 413 because `POST /registrations` has no route yet.
+
+##### Two claims corrected because they were false, not merely imprecise
+
+1. **The P-3 harness-substitution justification was over-broad.** The Implementer had found — and the evidence lens verified against `serverless-http/lib/request.js:16-18` — that the synthetic request auto-injects `Content-Length` from the materialised body, so a length-less request cannot reach the deployed handler. True, and it justified writing `payload-cap.e2e.spec.ts` with raw `http.request` over real TCP (supertest and superagent both auto-compute the header and **structurally cannot construct the case**). **But `declaresNoLength` tests `transfer-encoding` *before* `content-length`, and `create-request.js:34-37` forwards event headers verbatim** — so a declared `chunked`, or a malformed `content-length: 'abc'`, **does** reach the middleware intact through the real handler. Only the **absent**-`Content-Length` sub-case is unreachable there. Two real-handler P-3 tests added, and the in-file claim narrowed to its true form.
+2. **The "at exactly the cap" test was 6 bytes under the cap** and could not catch an off-by-one. Now `CAP - 14` with an explicit `expect(Buffer.byteLength(...)).toBe(CAP)`, and a `>` → `>=` flip would fail in **two** places.
+
+**Also tightened:** `/^\d+$/` replaces `Number()` for the length parse. The Reviewer checked the direction that matters — **it rejects nothing legitimate**: RFC 7230 is `1*DIGIT`, llhttp admits only digits, leading zeros still pass, and values above `MAX_SAFE_INTEGER` pass the regex then fail the size check, which is the safe order.
+
+##### T5-A1 discharged — the last carried obligation that could reach production alone
+
+20 GETs from one `sourceIp` (all 200), the 21st → `429` in the documented envelope, then one from a **different** `sourceIp` → 200. The evidence lens confirmed that last assertion is what falsifies the failure mode: under a lost `req.ip` every caller hashes to one key, so the second caller is hit 22 against an already-blocked bucket → 429 → red. The mechanism checks out too — `create-request.js:14-19` reads `event.requestContext.http.sourceIp`, and `request.js:20-21` assigns it as an **own** property shadowing Express's prototype accessor. **`sourceIp` resolves per-caller under Lambda; 20 req/min is not a global self-DoS.**
+
+##### The ordering proof, upheld under adversarial checking
+
+An oversized **non-JSON** body returning `413` proves the cap runs upstream, because the counterfactual is traceable: body-parser skips on `complete: true`, 32,769 bytes is far under the 8 MiB limit so its own 413 cannot fire, no truncation path exists, no 500 path exists — so `JSON.parse` would throw and yield **400**. *"413 is uniquely attributable to the cap running upstream of the parser."* That single test also pins the `configurePayloadCap` → `configureBodyParser` ordering in `lambda.ts`.
+
+**Leader's quiet-window measurement:** **51 suites / 595 tests** — reconciling exactly (+2 suites, +28 tests over 49/567: 21 in the two new payload-cap files, 7 added to `lambda-handler.e2e.spec.ts`) · eslint `--quiet` exit 0 · `npm run build` exit 0.
+
+**⚠️ But the full run now emits: *"A worker process has failed to exit gracefully and has been force exited."*** This is the lingering-timer consequence recorded above, and it is **worse than I recorded it** — I described a warning local to one file; it now degrades the **whole-suite** run. Nothing fails and the counts are clean, but a force-exited worker is a real signal and the next person to see it deserves to find it written down rather than discover it. Cause unchanged: `ThrottlerStorageService` creates a non-`unref()`'d `setTimeout` per hit, cleared only by `onApplicationShutdown`, and `lambda-handler.e2e.spec.ts` never closes the cached Lambda app. **Carried to T-13.**
+
+#### ADVISORY findings
+
+- **T6-A1 — the Lambda path delivers `content-length` as a `number`, not a string.** `serverless-http/lib/request.js:17` assigns `Buffer.byteLength(body)`, so for every Lambda request without a client-supplied CL — including the T5-A1 throttle requests and the at-cap test — `VALID_CONTENT_LENGTH.test(...)` passes only via implicit `ToString` coercion, while the declared TypeScript type says `string`. **Correct today, but anyone who later "hardens" this to `typeof contentLength === 'string' && …` would 413 essentially every deployed registration request.** One comment is cheap insurance.
+- **T6-A2 — `Content-Length: ''` changed outcome** from "treated as 0, passes" to 413. Unreachable through llhttp and the safer direction, but a behaviour change beyond the six enumerated shapes.
+- **T6-A3 — a latent over-match.** If a registrations sub-route ever contains a `k` — `/api/v1/registrations/kyc` is the obvious candidate — then `…/KYC` written with U+212A would be capped while the router 404s it. Over-match, harmless, worth knowing it exists.
+- **T6-A4 → carry to T-10.** Two assertions depend on `POST /api/v1/registrations` **not existing**: the at-cap test's `toBe(404)` and, by counterfactual, `payload-cap.e2e.spec.ts`'s chunked test. **T-10 creates that route.** When it lands those go red, and the tempting fix is to weaken them to a bare `not.toBe(413)`, which is vacuous. **T-10's brief must re-pin them against the new route's real status, not hollow them out.**
+- **T6-A5 — `main.ts`'s registration site is proven by nothing.** Deleting `configurePayloadCap(app)` from `main.ts` leaves the suite green: `payload-cap.e2e.spec.ts` hand-copies the bootstrap rather than importing it, and no spec imports `../main`. **Pre-existing repo-wide** — `configureBodyParser` and `createValidationPipe` have the identical gap — so not a T-6 regression, and the honest fix (extract a shared `bootstrapApp()`) is outside this task. Recorded in the file's docblock, and here.
+- **T6-A6 — the ordering is discipline, not structure.** Nothing enforces cap-before-parser; it is two adjacent call sites plus comments in three files. The Lambda site is guarded by accident (the 413-vs-400 test); `main.ts`'s is not. Making `configureBodyParser` call `configurePayloadCap` as its first statement would make it structural, but that edits a shared helper T-6 does not own.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 3 Reviewer lens reports, **1 rework round consumed.**
+

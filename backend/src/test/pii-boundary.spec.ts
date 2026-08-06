@@ -10,6 +10,7 @@ import {
 } from '../common/pii-consent.policy';
 import { createValidationPipe } from '../common/validation-pipe';
 import { configureBodyParser } from '../common/body-parser.config';
+import { configurePayloadCap } from '../common/payload-cap.config';
 
 /**
  * T-9 — End-to-end PII-boundary + consent integration tests (NFR-1, NFR-7).
@@ -276,11 +277,12 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
 
     app = moduleRef.createNestApplication<NestExpressApplication>();
     // Bootstrap through the SAME shared helpers main.ts/lambda.ts call
-    // (createValidationPipe() + configureBodyParser()), so the `details`
-    // array DC-2 inspects is actually rendered here — a bare
+    // (createValidationPipe() + configurePayloadCap() + configureBodyParser()),
+    // so the `details` array DC-2 inspects is actually rendered here — a bare
     // `new ValidationPipe({...})` does not attach it.
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(createValidationPipe());
+    configurePayloadCap(app);
     configureBodyParser(app);
     await app.init();
   });
