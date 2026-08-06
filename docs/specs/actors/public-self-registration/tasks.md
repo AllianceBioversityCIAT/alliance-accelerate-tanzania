@@ -70,8 +70,8 @@
 
 ## Phase B — Public backend
 
-- [~] **T-7** OTP service under constraints V-1…V-6  (deps: T-1, T-3)
-      *(HALT 2026-08-05 — 3 rework attempts consumed, the hard ceiling. Concurrency/security lens PASS; test-adequacy lens FAIL on one issue with a one-line remedy. Service and migration are shipped and green; the gap is in the test harness's fidelity. See `execution.md` → T-7 attempt 3.)*
+- [x] **T-7** OTP service under constraints V-1…V-6  (deps: T-1, T-3)
+      *(Closed on attempt 4 after a HALT at the 3-attempt ceiling and one user-authorised bounded attempt. 8 Reviewer lens reports across 4 rounds. Mechanism substituted: an `EmailSendBudget` counter table replaces §4.3's `EmailVerification`-row count for the send cap, with a fixed hourly bucket rather than a rolling window — both deviations recorded in `execution.md` → T-7.)*
       Scope: Issue, verify, consume. **The Implementer chooses the mechanism** and records it in `execution.md` with evidence against each constraint (`design.md` §4.3). Rejected options are listed there — do not re-derive them. Parameters: 6 digits CSPRNG, 15 min, 5 attempts, 3 sends/email/hour, HMAC-SHA-256 under an SSM secret.
       Traces: FR-4 (all 3 scenarios), DC-20, `design.md` §4.3, DD-11
       Files: `backend/src/registrations/email-verification.service.ts` (+ spec)

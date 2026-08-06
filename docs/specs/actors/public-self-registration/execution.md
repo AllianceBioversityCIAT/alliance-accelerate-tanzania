@@ -1128,3 +1128,42 @@ Attempt 3's FAIL is **genuine and independent of L-ERR-4**: the Implementer caug
 
 **Not carried to `[x]` on the strength of one PASS.** The lens that failed here is the same lens that failed attempts 1 and 2; closing the task on the concurrency PASS alone would leave open precisely the gap that lens exists to cover. **Escalated to the user** with a recommendation to authorise one bounded further attempt scoped to the single line, per the Pivot Protocol.
 
+
+#### Attempt 4 — `STATUS: PASS` (user-authorised beyond the ceiling)
+
+The user authorised **one bounded attempt** past the 3-attempt ceiling, scoped to the single test-adequacy finding. Four closed items: `await tick()` as the first statement of the fake's `$queryRaw`; a load-bearing comment on `$executeRaw`'s `return 1;`; `seedRow` drawing from the same monotonic `createdAtTick` as `create()`; and a re-check of the two doc comments the previous lens had shown to be false. **Only `email-verification.service.spec.ts` changed** — 53 insertions / 13 deletions, with the service, config, schema and migration frozen and confirmed untouched.
+
+**The finding is closed by construction, not by assertion.** The Reviewer hand-traced Node's event loop rather than accepting the fix: five callers register immediates #1–#5 before the loop turns; in **check phase 1** each resumes inside `$executeRaw`, increments the shared row, writes `sessionNewSends` into **its own** `$transaction` closure, then hits `$queryRaw`'s new `await tick()` — and an immediate scheduled *during* the check phase is deferred to the next iteration, so every caller suspends before reading. Captures land as 1,2,3,4,5 and the row ends at 5. In **check phase 2** each reads back its own value; three accept, two throw. **Every increment now completes before any read** — the legal worst-case MySQL interleaving, pinned deterministically.
+
+**The two previously-false claims are now true and load-bearing.** Hoisting `sessionNewSends` to `buildFakePrisma` scope leaves it at 5 after phase 1, so all five readers see 5 and **zero** accept against an assertion of exactly 3. The Reviewer independently counted the file's 18 tests and confirmed M1's 18/18 and M2/M3's 1-of-18 are the numbers the code **must** produce.
+
+##### The three mutations were run, not predicted — and one deviated
+
+I asked the Implementer to execute the three outcomes the previous lens had traced by reading, on the grounds that this task's own history is of documented contracts and plausible models failing under measurement. It did, and **M3 came back 0 accepted, not the predicted 1** — and it reported the discrepancy rather than rounding to the prediction.
+
+**The Reviewer ruled the explanation correct, not a rationalisation.** Real RDS produced 1 accepted because network jitter let exactly one `SELECT` beat the other commits; the fake's two-tick schedule is a **hard barrier**, so no read can precede any write and the defect manifests at its theoretical maximum. Same defect class, deterministic worst case. **The asymmetry favours safety:** passing this fake requires a mechanism to carry each caller's own position through a point where the shared row already holds the final tally — strictly harder than production. Masking would need a defect that manifests only under *partial* overlap, which the Reviewer could not construct, since any mechanism needing a read to win a race is by definition the round-2 defect. And round 2 is not a mechanism that "would work in production" — it was **measured** broken at 1-of-8.
+
+##### The substring guard — the previous lens's complaint is now false on both axes
+
+A **real** round-2 service would send `SELECT sends FROM EmailSendBudget WHERE …`, fail the `@newSends` guard, throw, and drive `succeeded` to 0. **So a real read-back implementation is caught, and catching it no longer depends on hand-building a mutation.** The Reviewer's precise distinction, worth keeping: it is caught by the *guard* (which pins the service) while M3's fake-side mutation proves the *fake's fidelity* is load-bearing. Both axes hold; the complaint that "round 2 also passes" is false on each.
+
+##### A gap in its own evidence, volunteered unprompted — for the third time in this task
+
+The Implementer recorded, without being asked, that **the 4-distinct-email test cannot catch the shared-variable mutation**: with four different emails every writer's own value is `1`, so even a shared variable holds `1` for every reader regardless of order. That test isolates per-**email** keying, never per-**invocation** session scoping. The Reviewer confirmed the reasoning and swept for further gaps of that class — `>` → `>=` (red twice), rows created before the budget check (red), non-per-email keying (red on the distinct-email test) — and found none beyond the advisories below.
+
+##### Regression sweep on the change itself
+
+The extra tick lengthens **every** `issueCode`, not only concurrent ones. The only timing-sensitive assertion is the 15-minute expiry test, and it is immune: `expiresAt` derives from a `now` captured **before** the transaction, so the added tick cannot inflate the delta. No test inspects mid-`issueCode` state, no fake timers are in use, nothing became order-dependent. `createdAtTick` is a describe-scope binding and the injected closure captures the *binding*, so the `beforeEach` reset order is irrelevant; monotonicity across both producers holds because a later call has non-decreasing `Date.now()` **and** a strictly larger tick.
+
+**Leader's quiet-window measurement:** backend **49 suites / 567 tests** · eslint `--quiet` exit 0 · `npm run build` exit 0. `admin-actor-import.e2e.spec.ts` green again at 10.9 s, a third clean sequential run.
+
+##### ADVISORY findings
+
+- **T7-A7 — diagnostic quality of the round-2 catch.** A real read-back implementation goes red via the `@newSends` substring guard (*"unrecognized SQL"*), not via the cap assertion. Still red, but the message points at the fake rather than the semantics. One sentence in the guard's `throw`, naming why a non-`@newSends` read **is** the round-2 defect and not a fake limitation, would make the failure self-explaining.
+- **T7-A8 — a type-fidelity gap the fake structurally cannot see.** The fake returns a JS `number` and always exactly one row; the service declares `Array<{ newSends: bigint | number }>` and wraps in `Number(rows[0]?.newSends)`. Deleting `Number()` (real connector `bigint` → `bigint > number` TypeError) or an empty result (`Number(undefined)` → `NaN > 3` is `false` → **always accept**) are both invisible here. Covered in practice only by the 6-trial real-RDS runs. **This is the fourth distinct place in this task where an unchecked decode would silently disable the cap** — the pattern is now the task's defining hazard and belongs in any future hardening.
+- **T7-A9 — the fixed-window deviation is untested.** `sendBudgetWindowStart` has no test and no test exercises rollover. Given it is a **recorded deliberate deviation** from §4.3's rolling window, it is the single behaviour a future reader is most likely to "fix" unknowingly.
+- **T7-A10 — wording nit.** The `$queryRaw` comment says that without the tick *"N concurrent calls would finish end-to-end one at a time"*; they would still suspend on `create()`'s tick. The load-bearing half — *"no interleaving point between a caller's capture and its read"* — is exactly right; only "end-to-end" overstates.
+- **Carried forward, unchanged:** `EmailSendBudget` must be named by name in the deferred retention item (it persists addresses for **rejected** attempts, so its population is strictly broader than `EmailVerification`'s, with no TTL and no `createdAt`); HMAC domain separation; minimum-entropy validation on `OTP_HMAC_SECRET`; key rotation; the five remaining static log surfaces; and **`EmailVerificationService` is still not registered as a provider — assigned to T-8.**
+
+**Final verification result:** **PASS on attempt 4.** 4 Implementer attempts, **8 Reviewer lens reports** across 4 rounds, **3 rework rounds consumed plus one user-authorised bounded attempt.** The most expensive task of the run, and the only one to reach its ceiling.
+

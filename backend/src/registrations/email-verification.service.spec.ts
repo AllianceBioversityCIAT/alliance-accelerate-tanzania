@@ -115,18 +115,22 @@ const UPDATE_MANY_ALLOWED_WHERE_KEYS = ['id', 'consumedAt'];
  * `EmailSendBudget`, modelling the session-variable mechanism — see the
  * header comment on why a fake this permissive had to become this strict,
  * and on why the session variable is per-transaction-invocation, not shared).
+ *
+ * `nextCreatedAtTick` supplies a strictly-monotonic offset added to
+ * `Date.now()` for every fake-produced row's `createdAt` — both `create()`
+ * below AND the describe block's `seedRow()` share ONE counter (passed in),
+ * because two rows created in quick succession (via `issueCode`, or via two
+ * `seedRow()` calls) can tie at millisecond resolution otherwise, which
+ * would make a `desc` sort a no-op (JS's stable sort preserves original
+ * order on a tie) and silently defeat any test relying on genuine
+ * `createdAt` ordering. Rework attempt 4 found this gap still open in
+ * `seedRow` itself — harmless today only because V-3 sets both rows'
+ * `createdAt` explicitly, but it is the same trap already closed once here,
+ * one function away.
  */
-function buildFakePrisma(rows: FakeRow[]) {
+function buildFakePrisma(rows: FakeRow[], nextCreatedAtTick: () => number) {
   let nextId = 1;
   const budgetRows: BudgetRow[] = [];
-  // A per-call tick added to `Date.now()` for `create()`'s `createdAt` —
-  // two rows created in quick succession (e.g. two back-to-back
-  // `issueCode` calls) can tie at millisecond resolution, which would make
-  // a `desc` sort a no-op (JS's stable sort preserves original order on a
-  // tie) and silently defeat any test relying on genuine createdAt
-  // ordering between fake-`create()`-produced rows. Strictly monotonic
-  // instead, so ordering is always meaningful.
-  let createdAtTick = 0;
 
   function assertKnownWhereKeys(where: Record<string, unknown>, allowed: string[], caller: string): void {
     for (const key of Object.keys(where)) {
@@ -150,7 +154,7 @@ function buildFakePrisma(rows: FakeRow[]) {
         attempts: 0,
         expiresAt: data.expiresAt,
         consumedAt: null,
-        createdAt: new Date(Date.now() + createdAtTick++),
+        createdAt: new Date(Date.now() + nextCreatedAtTick()),
       };
       rows.push(row);
       return { ...row };
@@ -299,9 +303,32 @@ function buildFakePrisma(rows: FakeRow[]) {
             row.sends += 1;
           }
           sessionNewSends = row.sends;
+          // LOAD-BEARING, not a placeholder: `email-verification.service.ts`'s
+          // class doc records that this connector was MEASURED, against the
+          // real dev RDS, to never return the MySQL-documented `0` for a
+          // no-op `INSERT ... ON DUPLICATE KEY UPDATE` (it returns `1`,
+          // matching MySQL's own documented `CLIENT_FOUND_ROWS` behaviour).
+          // `1` here is that measured value, not a stand-in — do NOT
+          // "correct" this to `0` on a no-op path; doing so would let an
+          // `affectedRows === 0` cap-hit implementation pass this fake while
+          // failing against the real connector (the exact class of gap
+          // rework attempt 3 found and this suite must not reopen). The
+          // service does not use this return value at all (by design — see
+          // its class doc); it exists so the fake's response shape matches
+          // what `$executeRaw` genuinely returns.
           return 1;
         },
         $queryRaw: async (strings) => {
+          // Second real round trip: this is where round 2's mechanism (a
+          // plain follow-up read on a SEPARATE connection, no session
+          // variable) diverges from the shipped one (a session variable set
+          // during the SAME statement as the increment) — see the header
+          // comment and the three-mutation results in this task's report.
+          // Without this tick, both `$executeRaw` and `$queryRaw` would
+          // resolve inside the same macrotask, so N concurrent calls would
+          // finish end-to-end one at a time with no interleaving point ever
+          // exercised — a fidelity gap rework attempt 4 found and closed.
+          await tick();
           const sql = strings.join('?');
           if (!sql.includes('@newSends')) {
             throw new Error(`Fake tx.$queryRaw: unrecognized SQL: ${sql}`);
@@ -321,11 +348,15 @@ describe('EmailVerificationService (mocked Prisma) — FR-4, DC-20, design.md §
   let rows: FakeRow[];
   let prisma: ReturnType<typeof buildFakePrisma>;
   let service: EmailVerificationService;
+  // Shared with `buildFakePrisma`'s `create()` — see its doc comment. Reset
+  // per test so tick values stay small and readable in failures.
+  let createdAtTick: number;
 
   beforeEach(() => {
     process.env.OTP_HMAC_SECRET = OTP_SECRET;
     rows = [];
-    prisma = buildFakePrisma(rows);
+    createdAtTick = 0;
+    prisma = buildFakePrisma(rows, () => createdAtTick++);
     service = new EmailVerificationService(prisma as never);
   });
 
@@ -335,7 +366,16 @@ describe('EmailVerificationService (mocked Prisma) — FR-4, DC-20, design.md §
     delete process.env.OTP_HMAC_SECRET;
   });
 
-  /** Directly seed a live row, bypassing `issueCode`, for tests that need exact control over attempts/expiry/age. Returns an independent COPY — see this file's header on why identity matters. */
+  /**
+   * Directly seed a live row, bypassing `issueCode`, for tests that need
+   * exact control over attempts/expiry/age. Returns an independent COPY —
+   * see this file's header on why identity matters. Uses the SAME monotonic
+   * `createdAtTick` counter `buildFakePrisma`'s `create()` uses (attempt 4:
+   * this function did not before, so two `seedRow()` calls without an
+   * explicit `createdAt` could still tie at millisecond resolution — the
+   * same trap already closed once for `create()`, one function away, per
+   * the Reviewer's finding).
+   */
   function seedRow(overrides: Partial<FakeRow> & { code: string }): FakeRow {
     const now = Date.now();
     const row: FakeRow = {
@@ -345,7 +385,7 @@ describe('EmailVerificationService (mocked Prisma) — FR-4, DC-20, design.md §
       attempts: overrides.attempts ?? 0,
       expiresAt: overrides.expiresAt ?? new Date(now + 15 * 60 * 1000),
       consumedAt: overrides.consumedAt ?? null,
-      createdAt: overrides.createdAt ?? new Date(now),
+      createdAt: overrides.createdAt ?? new Date(now + createdAtTick++),
     };
     rows.push(row);
     return { ...row };
