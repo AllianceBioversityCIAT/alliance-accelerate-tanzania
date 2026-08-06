@@ -1303,3 +1303,70 @@ Two comments. The Implementer **recounted by grep itself** rather than copying m
 
 **Final verification result:** **PASS on attempt 3.** 3 Implementer attempts, 3 Reviewer lens reports plus one remediation confirmation, **2 rework rounds consumed.**
 
+
+### Budget decision — review-round tripwire raised from 37 to 60 (user-approved 2026-08-06)
+
+The spec's Execution Conventions halt-and-escalate at **>37 review rounds**. At T-8's close the run stood at **~38 with 8 tasks remaining**, so I halted and put three options to the user rather than exceeding it silently: raise the tripwire and keep the current review intensity; hold 37 and drop to one lens per task; or stop at 15/23 and archive.
+
+**Approved: raise it, keep the intensity.** The reasoning I gave, recorded because a budget overrun deserves a justification a later reader can weigh:
+
+The 38 rounds bought **four defects no automated gate detected**, each of which would have shipped green — T-6's case-insensitivity bypass (`POST /API/V1/REGISTRATIONS` skipped the payload cap while still routing), T-7's send-cap check-then-act race, T-8's PII leak into CloudWatch on the expected SES error, and T-8's throttler silently voiding six requests inside its own timing evidence. **Two of those were found only by a second lens on the same diff.** The remaining work is where the risk concentrates rather than thins: **T-10** writes the first public row and evaluates consent; **T-11** is the lookup under L-1…L-4 with T5-A2's `429`-versus-byte-identity collision still unresolved; **T-13** is the release gate whose Done-when requires that adding a public route **break the suite** until a fixture exists. Cutting review depth now would be economising precisely where PII and consent are decided.
+
+**New ceiling: 60.** If the run approaches it, the same halt-and-escalate applies — the point of the tripwire is that the Leader cannot quietly redefine "enough", and raising it once by explicit decision preserves that property rather than eroding it.
+
+
+### T-19 — `OtpVerificationStep`
+
+**Dispatched** with effort `high`, skills `frontend-design` + `react-doctor`, paired with T-10 on the disjoint-tree pattern. Single Reviewer, lens checklist.
+
+#### Attempt 1 — `STATUS: PASS`, with five in-file corrections applied before commit
+
+##### The `429` question — my framing was right but under-grounded, and the Reviewer found the real authority
+
+I asked whether rendering a distinct message for a `429` violates the Disqualifying clause's *"assert the message is invariant across failure modes."* My reasoning was that the per-email cap is silent while the `429` keys on the caller. **The Reviewer confirmed it and found that `design.md:188` says so explicitly**, in the same paragraph that establishes the silent cap:
+
+> *"**Resolution: the cap is enforced silently** … A `429` from the *throttler* remains visible, because it keys on the caller, not on the submitted address."*
+
+So the Implementer did not carve out an exception — **it implemented the carve-out the design already wrote.** The Reviewer verified the mechanism rather than accepting T-5's review: `RegistrationsThrottleGuard` is an **empty** subclass with no `getTracker`/`generateKey` override, so the request body cannot enter the throttle key, and the per-email cap lives *downstream of the guard* inside the handler with a `202` outcome — **it cannot raise a `429` at all.** Reading the clause to cover the throttler would put `tasks.md` in direct contradiction with the document it traces to.
+
+##### ⚠️ A correction to my own brief
+
+I told the Reviewer that four failure modes render one message. **Only three do.** A capped resend renders `RESEND_NOTICE` — the same notice as an *uncapped* resend — because a capped resend is not a code failure, it is a `202`. **There are two separate invariants**, and the implementation gets both right: `INVALID_CODE_MESSAGE` across wrong/expired/consumed, and `RESEND_NOTICE` across capped/uncapped.
+
+##### The T17-A4 remedy and the blank-form back path — acceptable, on the counterfactual
+
+The Implementer flagged, unprompted, that its "back" path resets `RegistrationForm` to blank. I put it to the Reviewer as a possible data-loss regression on the exact path the obligation was raised to fix. **Ruled acceptable, and the argument that settles it is the counterfactual:** without the remedy, an applicant whose address passes the client regex but fails the server's `@IsEmail()` has **no path to completion at all** — no code will ever arrive, resend fails identically, and their only recovery is a page reload **that loses the same fields with no explanation.** The remedy costs the same re-entry and adds the reason: a strict information gain, not a new loss.
+
+§5.3's *"entered form state must survive"* was also ruled to govern the **forward** path, which holds — `page.tsx` keeps `pending` in its own state and the step never re-derives it. The section contemplates no error-recovery back path.
+
+**Scope was explicitly not the reason.** I told the Reviewer that `Files:` lines have proven indicative in this spec, so it ruled on merit and reached the same place — noting additionally that an initial-values seam is not the cheap fix it appears: `page.tsx` holds `RegistrationPayloadInput` (numbers, optionals omitted) while the form wants all-strings, so restoring needs a lossy reverse mapping on a path that only fires for the narrow set of addresses passing the client regex and failing `@IsEmail()`.
+
+##### Five corrections applied — three were false statements written into the code
+
+Required before commit, all in-file, no re-review round:
+
+1. **The button label stated something false.** *"Back to your details"* — but `page.tsx:89-92` nulls `pending`, so the details are gone. **On the one screen whose purpose is telling the applicant the truth about a failure.** Now *"Go back and re-enter your details"* plus body copy disclosing the re-entry, making the loss an informed choice.
+2. **Nothing here is verified against the live API, and the file did not say so.** `POST /registrations` and `POST /verify` were unexercised live, so **the `details: [{field, message}]` envelope the whole T17-A4 branch depends on is assumed, not proven.** `frontend/CLAUDE.md` names this hazard by name — *"mock-vs-live drift has shipped bugs (the `details` envelope, W-1)"* — so **this is W-1's own failure mode.** Now recorded in the test header with the obligation to re-verify once T-10 lands.
+3. **A comment asserting the opposite of how the harness works.** It claimed *"roles survive `display:none`"*; RTL's `*ByRole` defaults to `hidden: false` and **excludes** inaccessible elements. **The Implementer's rewrite is better than the correction I relayed:** in a real browser RTL *would* exclude a `display:none` element, so "not found" would not distinguish hidden from unmounted there — the assertion works **specifically because jsdom applies no CSS engine**, so a Tailwind class-based `hidden` is still found and only true removal passes. That nuance is load-bearing for dismissing A-3 and A-4.
+4. **An invariance header that oversold three byte-identical inputs.** The three code-failure tests all feed `new ApiError(400, 'Bad Request', undefined)`, so they prove one client-side fact three times, not that three server causes are mutually indistinguishable — **that property is proven server-side.** Header corrected.
+5. **A heading that could misstate the cause.** `classifySubmitError` fell back to `details[0]?.message` for *any* rejected field under a hardcoded *"We couldn't verify your email address"*. Now a `BlockingIssue {field, message}` type drives both the heading and the re-entry phrasing, with a `phone`-rejection test asserting the email-specific copy does **not** appear.
+
+##### Structural findings worth keeping
+
+- **The unmount is real**, verified from source rather than the test: `page.tsx` is a plain conditional render with no `hidden` prop, no `display:none`, no hiding wrapper. **A-3 and A-4 are genuinely inapplicable, and not wiring `submitting` was correct rather than an omission.**
+- **The `policyVersion` guard is dead in production and that is fine.** `''` can only reach the step if consent is accepted without a loaded policy, and the disclosure's checkbox is `disabled` until `reachedEnd`, which the geometry effect early-returns on when `policy` is null. **A wiring break fails closed upstream, loudly, before the guard is reachable.**
+- The `policyVersion` assertion proves **prop → submit**, not fetched → submitted. The chain is covered link-by-link across files; **no test exercises it end to end.**
+
+**Leader's measurement — and an error of mine in taking it.** Runs 2 and 3: **78 suites / 1088 tests**, clean; lint clean but for the three pre-existing `<img>` warnings; build **21 static pages**. **Run 1 had one failing test, and I lost its identity by truncating the output** — a measurement mistake, not a code one. Two subsequent full runs are green. **I am deliberately not recording it as the known `(admin)/admin/actors/**` flake**, because I cannot confirm it was: attributing an unidentified red to a known flake is exactly the reasoning my own standing rule forbids. Recorded as an unidentified single-run failure, not reproduced in two attempts.
+
+#### ADVISORY findings
+
+- **T19-A1 — the "no `details`" indistinguishability is enforced by comment, not by test.** `classifySubmitError`'s no-`details` branch has no sub-branch to split; nothing asserts it stays that way.
+- **T19-A2 — the anti-oracle keyword assertions are a canary, not a gate.** They catch *"hit the limit"* and *"too many codes"*; a regression rendering *"That address has reached its limit"* sails through.
+- **T19-A3 → carry to any live smoke test.** React StrictMode double-invokes the mount effect in **dev only**, sending two codes per mount and **burning the T-7 per-email cap**. Harmless in production; it will confuse the first person to verify T-7/T-8 against a running stack.
+- **T19-A4 → T-22.** `axe` runs only on the ready state; the blocking-issue screen's markup is unchecked, and focus is not moved to it when it replaces the subtree (the focused button unmounts, dropping focus to `<body>`). `role="alert"` covers announcement, not keyboard position.
+- **T19-A5 — `handleBackToForm` has no dedicated test.** Exercised indirectly via `onBack` assertions. Left deliberately.
+- **T19-A6 — a pre-existing harness artefact, not T-19's.** In jsdom `fireEvent.click` toggles the consent checkbox even while `disabled`, so `RegistrationForm.test.tsx` reaches `onValidated` with a never-resolving `getConsentPolicy` — **the tests exercise a state a browser cannot reach.** This is the mechanism by which `policyVersion: ''` reaches the OTP step in `page.test.tsx`. Same finding as T-18's A-1, now with a second consequence.
+
+**Final verification result:** **PASS on attempt 1**, plus five in-file corrections. 1 Implementer attempt (two dispatches), 1 Reviewer, **0 rework rounds consumed.**
+

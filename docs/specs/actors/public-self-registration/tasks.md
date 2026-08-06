@@ -188,7 +188,8 @@
       **Disqualifying:** **jsdom does not lay out or scroll**, so a DOM-level test of the gate asserts against zeroes and would pass on a control that enables instantly or never (DC-17). The predicate test is the covered half; that the gate *actually gates in a browser* is a **human check** and must be recorded as such, not folded into the green result.
       Skills: `frontend-design`, `react-doctor`
 
-- [ ] **T-19** `OtpVerificationStep`  (deps: T-8, T-17)
+- [x] **T-19** `OtpVerificationStep`  (deps: T-8, T-17)
+      *(The distinct `429` message is **not** a C-3 regression — `design.md:188` explicitly grants it, because the throttler keys on the caller and not on the submitted address. Two invariants, not one: `INVALID_CODE_MESSAGE` across wrong/expired/consumed, `RESEND_NOTICE` across capped/uncapped. See `execution.md` → T-19.)*
       Scope: A step within `/register`, not a route — form state must survive verification and a route change under static export would lose it. Resend affordance that **never reports a server refusal**: the per-email cap is silent, so the UI states up front that codes are limited and to wait (C-3).
       Traces: FR-4 (s2, s3), `design.md` §5.3
       Files: `frontend/components/register/OtpVerificationStep.tsx` (+ test)
