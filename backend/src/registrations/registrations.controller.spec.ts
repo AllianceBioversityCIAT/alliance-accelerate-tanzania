@@ -1,4 +1,5 @@
 import { RegistrationsController } from './registrations.controller';
+import { RegistrationsService } from './registrations.service';
 import {
   CONSENT_POLICY_VERSION,
   isKnownConsentPolicyVersion,
@@ -6,16 +7,21 @@ import {
 
 /**
  * T-2 — RegistrationsController unit tests (FR-3).
- *
- * No TestingModule bootstrap needed — the controller has no injected
- * dependencies (`metrics.controller.spec.ts` is the project's precedent for
- * a plain `new Controller()` unit test).
+ * T-8 adds `RegistrationsService` as a constructor dependency (`POST
+ * /registrations/verify`) — a plain jest mock stands in for it here; the
+ * mock's OWN behaviour (byte-identity across known/unknown/over-cap, the
+ * timing mitigation) is proven at the HTTP level in
+ * `registrations-verify.e2e.spec.ts`, not at this unit level. This suite's
+ * job is only: does the controller call the service with the right
+ * argument, and does it add no branching of its own.
  */
 describe('RegistrationsController', () => {
   let controller: RegistrationsController;
+  let service: { requestVerificationCode: jest.Mock };
 
   beforeEach(() => {
-    controller = new RegistrationsController();
+    service = { requestVerificationCode: jest.fn().mockResolvedValue(undefined) };
+    controller = new RegistrationsController(service as unknown as RegistrationsService);
   });
 
   describe('GET /registrations/consent-policy', () => {
@@ -79,5 +85,33 @@ describe('RegistrationsController', () => {
     it('accepts the version currently served', () => {
       expect(isKnownConsentPolicyVersion(CONSENT_POLICY_VERSION)).toBe(true);
     });
+  });
+
+  describe('POST /registrations/verify (T-8)', () => {
+    it('delegates to RegistrationsService.requestVerificationCode with the DTO email, once', async () => {
+      await controller.requestVerificationCode({ email: 'applicant@example.com' });
+
+      expect(service.requestVerificationCode).toHaveBeenCalledTimes(1);
+      expect(service.requestVerificationCode).toHaveBeenCalledWith('applicant@example.com');
+    });
+
+    it('returns undefined regardless of what the service does internally — no branching lives here', async () => {
+      const result = await controller.requestVerificationCode({ email: 'anyone@example.com' });
+
+      expect(result).toBeUndefined();
+    });
+
+    it(
+      'propagates only if the service itself throws (it never does for the cap — see ' +
+        'RegistrationsService — so this handler adds no catch of its own)',
+      async () => {
+        const boom = new Error('unexpected failure');
+        service.requestVerificationCode.mockRejectedValueOnce(boom);
+
+        await expect(
+          controller.requestVerificationCode({ email: 'anyone@example.com' }),
+        ).rejects.toThrow(boom);
+      },
+    );
   });
 });

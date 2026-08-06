@@ -1237,3 +1237,69 @@ An oversized **non-JSON** body returning `413` proves the cap runs upstream, bec
 
 **Final verification result:** **PASS on attempt 2.** 2 Implementer attempts, 3 Reviewer lens reports, **1 rework round consumed.**
 
+
+### T-8 — `POST /registrations/verify`
+
+**Dispatched** with effort `high`, skills `nestjs-expert` + `api-design-principles`. **Review mode: two parallel lenses** (oracle/PII, evidence adequacy). Brief written to constraints, not mechanism.
+
+#### Attempt 1 — both lenses `FAIL`
+
+**Held on both lenses and never disturbed afterwards:** the cap swallow is correct and is *not* the failure mode I most expected — it tests `instanceof EmailVerificationSendLimitExceededError` and **rethrows everything else**, so a Prisma error, transaction timeout or RDS failure propagates as a `500`. *"The endpoint does not lie about a broken system."* Module wiring resolves T-7's DI gap with no cycle. Oracle behaviour is invariant on every channel examined — status, body, `content-length`, `Date`, throttler key (keyed on `req.ip`, never the submitted address), and the structured log line (operator-side, and carrying no address since `/verify` takes no path or query parameter).
+
+##### FAIL 1 (oracle lens) — the mail-failure log line could write the applicant's address to CloudWatch
+
+The `.catch()` interpolated `err.message`, and `MailService.dispatch` rethrows the transport error **unchanged** (DD-9). The decisive point was not that SES *might* carry the address but that **in this repository's documented configuration it is the expected error**: `backend/CLAUDE.md` records the SES sandbox constraint and `ses-mail.transport.ts:29-35` (DEP-6) records that **no verified sending identity exists under default infra parameters** — so `MessageRejected` (*"Email address is not verified. The following identities failed the check… `<applicant@example.com>`"*) is the branch that fires.
+
+The durable form of the argument: **you cannot bound what a third-party SDK puts in `err.message`, and the only inputs on this path are an email address and an OTP.**
+
+A regression against a deliberate local pattern — the lens grepped all five `logger.*` calls in `backend/src` and found this was **the only one interpolating an unbounded value**. `MailService.dispatch` logs `kind=` + `reference=` and *pointedly omits the error*; `RequestContextMiddleware` emits a fixed six-field object. **T-3 and T-4 both solved this exact problem correctly.** It was also redundant: `dispatch` had already logged the failure outcome, so *"its only novel content was the leaking part."*
+
+*Violated:* `design.md` §4.10 and §6.3; `requirements.md` NFR-8; root `CLAUDE.md`; `backend/CLAUDE.md` §PII & RBAC — **CloudWatch is not an Admin-gated surface.**
+
+##### FAIL 2 (oracle lens) — a disclosure, not a code change
+
+Under Lambda the runtime freezes on response `finish`, so **the in-flight SES request is frozen with it** and a container reaped before re-invocation loses the send **with `.catch()` never running**. That matters here more than anywhere: `requirements.md:225` states FR-4's gate is *"the one place email is load-bearing"* with *"no in-band fallback"*, and the accepted-cost mitigation is precisely *"send attempts/failures logged"* — **so the failure is exactly the case that goes unlogged.**
+
+The lens explicitly did **not** ask for a code change, and I did not either: `requirements.md:245` is a hard `AND IT MUST` on timing, awaiting SES would reintroduce a real oracle, and no requirement mandates synchronous delivery. **What was unacceptable was recording the trade as purely-timing.** It also credited a detection channel the Implementer had not claimed: `MailService.dispatch` logs its attempt line **synchronously before its first `await`**, so **attempt-lines-without-outcome-lines is a countable, alarmable signal** for a systemic outage.
+
+##### FAIL 3-6 (evidence lens)
+
+- **The timing test measured its own mock.** `issueCode` was mocked with an **identical** injected delay on both branches, while the genuine asymmetry lives *inside* the mocked-out method (both paths run the budget `$transaction`; only the uncapped one reaches `create`). **The test constructed the equality it reported as a measurement** — and `registrations.service.ts:44-49` stated the e2e *"measures this directly"*, **a false evidentiary claim written into the implementation's own doc.** Everything it legitimately proved was already proven **deterministically** by the never-resolving-mail test.
+- **⚠️ T-5's throttler was silently voiding six requests in the primary evidence file.** One app in `beforeAll`, no storage reset, class-level guard at `limit: 20 / ttl: 60_000` keyed class+handler+tracker — so **every `POST /verify` in the file shared one counter under one supertest IP**. 3+3+1+1+1+1+16 = **26 requests; 21-26 were `429`s, and all six fell inside the timing loop**, so **three of eight paired samples measured throttler-rejection latency** with the injected delay never applied. **Invisible, because the timing helpers asserted no status.** The sample composition was also an accident of file order.
+- **Zero-rows had no liveness anchor** — three requests, no status asserted, so it passed unchanged if all three had 500'd.
+- **`sendMock` was asserted only negatively** — a silently-failed `MailService` override would have passed.
+
+**This is B28 emerging *between* two green tasks.** T-5 shipped the guard; T-8 wrote the suite; neither could see it alone.
+
+##### The record correction — "two branches, three inputs"
+
+The Done-when names three cases. The lens ruled **two branches**: over-cap is genuinely distinct and genuinely exercised (delete the `catch` and it 500s), so **the Disqualifying clause's operative demand is satisfied** — but known-vs-unknown take identical code. **The Implementer disclosed this unprompted** and had already written it into the test file's own header, which is the right place. Recorded here as two branches, three inputs, with the known/unknown pair kept as a forward guard against a future membership check.
+
+#### Attempt 2 — one FAIL, comment-only
+
+Five of six closed and the gates confirmed real: the PII fix is gated by a `Logger.prototype.error` spy that captures the emitted message (reinstating `${err.message}` goes red); the freeze disclosure's detection channel **was verified to exist** (`mail.service.ts:56` emits before the `await` at `:59`, reached synchronously from the `void` call); no false evidentiary claim survives; both retained never-resolving tests **hang to timeout** rather than merely running slow; the zero-rows anchor and the `sendMock` positive both landed, with `mockClear()` correctly placed.
+
+**A contradiction I raised, resolved in the Implementer's favour.** I put its empirical `content-length: '0'` probe against attempt 1's source reading that Express sets no `Content-Length` for an undefined chunk. **Both were right about different layers:** Express 5.2.1 guards `this.set('Content-Length', len)` behind `if (chunk !== undefined)` so Express sets nothing — but `res.end(undefined)` reaches Node's `OutgoingMessage.end`, which with unsent headers sets `_contentLength = 0` and emits the header (202 has `_hasBody === true`, so the 204/304 strip does not apply). **The probe beat the source reading.**
+
+**The FAIL:** the request-budget comment added *for* F4 stated a total the file contradicted — 10 claimed, **12 actual**, and **two of that same attempt's own fixes were unaccounted for** (F6 made the mail test 2 requests; the new length test added one the breakdown omitted). The underlying defect was closed, but the comment exists so a future addition can be checked against the budget. Same class as F3: **a file asserting something about itself that is not so**, appearing inside the fix for that very defect.
+
+#### Attempt 3 — `STATUS: PASS`
+
+Two comments. The Implementer **recounted by grep itself** rather than copying my arithmetic, got 12, and **added a line telling the next reader to recount rather than trust the number, since it was the second time that comment had been wrong** — the correct lesson drawn from the defect, not merely the defect fixed.
+
+##### ⚠️ A citation error that was mine as much as the Implementer's
+
+`registrations.service.ts` cited *"R-1"* for the risk the freeze compounds. The Implementer took it from `requirements.md` FR-4:225's own pointer (*"See R-1 in §12"*) — **which is dangling: §12 is *Dependencies & Assumptions* and holds only `DEP-1…DEP-11` and `A-1…A-6`. No R-register exists in this spec at all.** I propagated the same error, telling the Implementer it compounds *"R-4"*, which I took from the oracle lens, which took it from the same dangling pointer. **Three of us cited a register that does not exist where cited, and none checked.** In the epic proposal's register the risk actually compounded is **R-3** (SES deliverability). Fixed by dropping the numeric ID and citing the substance; **`requirements.md`'s dangling pointer is a spec defect outside T-8 and is left in place, recorded here.**
+
+**Leader's quiet-window measurement:** **53 suites / 613 tests** — reconciling exactly (+2 suites, +18 tests over 51/595) · eslint `--quiet` exit 0 · `npm run build` exit 0. The full run still force-exits a worker on the known lingering throttler timers — unchanged, carried to T-13.
+
+#### ADVISORY findings
+
+- **T8-A1 — `@MaxLength(191)` closed a `500` on a public path.** `@IsEmail()` admits 254 characters; `EmailVerification.email` and `EmailSendBudget.email` are `VARCHAR(191)`, so a **well-formed** 200-character address reached the insert and MySQL raised 1406 — a `500` where `design.md` §3.1 promises only `400`/`429`. **The sibling gap in `registration-create.dto.ts:215` is unfixed and belongs to T-10.**
+- **T8-A2 — the timing residue is reasoned, not measured**, and now says so in the file. One awaited `EmailVerification.create` on the uncapped path only; closing it would require either changing `issueCode`'s own await discipline (T-7's correctness trade) or padding every response to a fixed floor (rejected — taxes the common case to hide a residue two orders of magnitude below what it replaced).
+- **T8-A3 — FR-8's membership-oracle property holds *by omission of a check*, not by symmetric handling.** Nothing on this path queries registry membership, so there is no branch to time. Structurally closed, which is stronger than tested-closed — but it means a future membership check would silently reopen it, and only the forward-guard test pair would notice.
+- **T8-A4 — the over-191 test takes format-validity from a comment.** The Reviewer confirmed it independently (local part 4 ≤ 64, domain 247 ≤ 254, labels 60 ≤ 63), but an explicit `expect(isEmail(overLongEmail)).toBe(true)` would make it self-proving. Deliberately not folded into attempt 3.
+- **T8-A5 — a spec defect, recorded not fixed.** `requirements.md:225`'s *"See R-1 in §12 and DC-22 in §8"* is a dangling pointer; §12 contains no R-register. Worth correcting in a future spec pass.
+
+**Final verification result:** **PASS on attempt 3.** 3 Implementer attempts, 3 Reviewer lens reports plus one remediation confirmation, **2 rework rounds consumed.**
+

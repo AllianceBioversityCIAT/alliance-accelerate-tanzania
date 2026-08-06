@@ -83,7 +83,8 @@
       (c) Submitting N wrong codes inside one request does not prove a cross-request bound; use N separate requests.
       Skills: `nestjs-expert`, `tdd` (Leader-assigned: this is correctness-critical auth-adjacent logic), `systematic-debugging`
 
-- [ ] **T-8** `POST /registrations/verify`  (deps: T-2, T-5, T-7)
+- [x] **T-8** `POST /registrations/verify`  (deps: T-2, T-5, T-7)
+      *(Closed on attempt 3. The Done-when's "three cases" is **two branches, three inputs** — over-cap is a genuinely distinct path and is exercised, so the Disqualifying clause is satisfied; known-vs-unknown take identical code and are kept as a forward guard against a future membership check. See `execution.md` → T-8.)*
       Scope: Request a code. **`202`, empty body, always** — including over the per-email cap, which is enforced silently (`design.md` §3.1 decision 1). No `Registration` row written.
       Traces: FR-4, FR-8, `design.md` §3.1
       Files: `backend/src/registrations/registrations.controller.ts`, `registrations.service.ts`

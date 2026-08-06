@@ -1,9 +1,20 @@
-import { Controller, Get, UseFilters, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseFilters,
+  UseGuards,
+} from '@nestjs/common';
 import {
   CONSENT_POLICY_SECTIONS,
   CONSENT_POLICY_VERSION,
   ConsentPolicySection,
 } from './consent-policy';
+import { RegistrationVerifyDto } from './dto/registration-verify.dto';
+import { RegistrationsService } from './registrations.service';
 import { RegistrationsThrottleGuard } from './registrations-throttle.guard';
 import { ThrottlerExceptionFilter } from './throttler-exception.filter';
 
@@ -16,13 +27,23 @@ export interface ConsentPolicyResponse {
 /**
  * T-2 — Public registrations controller (FR-3).
  *
- * `GET /registrations/consent-policy` is the only route this task adds.
+ * `GET /registrations/consent-policy` is the only route T-2 added.
  * Unauthenticated by design — `app.module.ts` registers no global guard, so
  * no `@UseGuards` here is itself the intended behaviour, not an omission.
  *
- * `POST /registrations/verify` (T-8), `POST /registrations` (T-10), and
- * `POST /registrations/lookup` (T-11) land in later tasks — do not add stub
- * handlers for them here.
+ * T-8 — `POST /registrations/verify` (FR-4, FR-8, design.md §3.1). Returns
+ * `202` with an empty body for EVERY accepted (well-formed) email — a
+ * deliverable address, an undeliverable one, and one already over the
+ * per-email send cap all take this exact same path through the handler.
+ * `RegistrationsService.requestVerificationCode` is where the cap is
+ * silently enforced and where the mail-send latency is kept out of the
+ * response (see that class's doc comment) — this handler does nothing
+ * beyond validating shape and awaiting the one call, on purpose: any
+ * branching here would be a second place the byte-identity guarantee could
+ * drift.
+ *
+ * `POST /registrations` (T-10) and `POST /registrations/lookup` (T-11) land
+ * in later tasks — do not add stub handlers for them here.
  *
  * T-4 — structured request logging for this controller's routes is emitted
  * by `RequestContextMiddleware` (design.md §4.10), applied in
@@ -45,11 +66,25 @@ export interface ConsentPolicyResponse {
 @UseGuards(RegistrationsThrottleGuard)
 @UseFilters(ThrottlerExceptionFilter)
 export class RegistrationsController {
+  constructor(private readonly registrationsService: RegistrationsService) {}
+
   @Get('consent-policy')
   getConsentPolicy(): ConsentPolicyResponse {
     return {
       version: CONSENT_POLICY_VERSION,
       sections: CONSENT_POLICY_SECTIONS,
     };
+  }
+
+  /**
+   * T-8 — FR-4, FR-8. `202`, empty body, for every well-formed email —
+   * deliverable, undeliverable, or already over the per-email cap. See the
+   * class doc above and `RegistrationsService`'s doc comment for why no
+   * branch of this handler's own can leak which case occurred.
+   */
+  @Post('verify')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestVerificationCode(@Body() dto: RegistrationVerifyDto): Promise<void> {
+    await this.registrationsService.requestVerificationCode(dto.email);
   }
 }
