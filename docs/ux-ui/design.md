@@ -18,6 +18,10 @@
 /directory                Searchable, paginated actor directory (list/table)
 /directory/[id]           Actor profile page (public-safe by default)
 /map                      Seed Maps — interactive geospatial view + filters
+/register                 Public self-registration form (Identity · Location · Crops & capacity ·
+                           Contact · Data protection & consent) + in-flow OTP verification step
+/register/submitted       Receipt — reference code (?ref=), save-and-lookup instructions
+/register/status          Status lookup by reference + email — status and reviewer note only
 /admin                    Admin/Staff console (auth-gated)
   /admin/actors           Actor management table (CRUD)
   /admin/actors/new       Create actor (validated form)
@@ -44,6 +48,9 @@
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
 | Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; PII block gated by role. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
+| Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |
+| Registration Receipt | Public | The reference code as selectable text (never an image), a copy action, a save-this instruction, a link to status lookup — nothing else, since the submit response carries only the reference. |
+| Registration Status | Public | Lookup by reference + email; renders status and the reviewer's note only. Byte-identical result for an unknown reference, a mismatched email, or a lockout. |
 | Admin Actors | Staff / Admin | Dense data table with row actions (edit; delete = Admin). |
 | Actor Form | Staff / Admin | Sectioned, validated create/edit form incl. GPS + PII fields. |
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
@@ -53,7 +60,7 @@
 
 ## 5. Navigation Model
 
-- **Public top nav:** Logo · Home · Directory · Map · (Sign in). Sticky, condenses to a hamburger on mobile.
+- **Public top nav:** Logo · Home · Directory · Map · Register your organisation · (Sign in). Sticky, condenses to a hamburger on mobile. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`.
 - **Admin shell:** left sidebar (Actors · Import · Export · Users) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile.
 - **Cross-links:** Directory rows link to profiles; profiles link to the map; map popups link to profiles. One consistent breadcrumb pattern in Admin.
 

@@ -229,7 +229,7 @@
 
 ## Phase D — Constitutional amendments
 
-- [ ] **T-23** Amend PRD, TRD and the UX blueprint  (deps: T-13, T-21)
+- [x] **T-23** Amend PRD, TRD and the UX blueprint  (deps: T-13, T-21)
       Scope: **PRD §5** — move self-onboarding from Out-of-Scope to In-Scope, add a user story and an acceptance criterion. **TRD** §2 (`RegistrationsModule`), §3 (`Registration`, `EmailVerification`, `RegistrationStatus`, plus the note that `PII_ALLOWLIST`/`NEVER_PUBLIC_FIELDS` describe `Actor` and do not cover these tables), §4 (**the four public endpoints only** — 3b amends §4 again for its five), §8 (unapproved-PII boundary), §12.5 (ADR for the public write path), §13 (a QA scenario for unapproved-submission confidentiality). **`docs/ux-ui/design.md`** §2/§4 — the three public screens.
       Traces: `requirements.md` §14
       Files: `docs/prd.md`, `docs/trd/trd.md`, `docs/ux-ui/design.md`

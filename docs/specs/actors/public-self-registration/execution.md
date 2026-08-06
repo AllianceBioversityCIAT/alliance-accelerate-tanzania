@@ -1684,3 +1684,41 @@ The Reviewer noted that reading current files **cannot detect a *deleted* assert
 
 **Final result: PASS on attempt 1.** 1 Implementer attempt (two dispatches), 1 Reviewer, **0 rework rounds consumed.**
 
+
+### T-23 — Amend PRD, TRD and the UX blueprint  ·  **final task**
+
+**Dispatched** effort `high`, skills `software-architect` + `product-manager-toolkit` + `cognitive-doc-design`. **Attempt 1 `FAIL` (2 issues), attempt 2 `PASS`.**
+
+#### A Leader hypothesis, tested and rejected
+
+I flagged the change's size — **34 insertions across eleven sections in three documents** — as a signal the amendments might be one-line gestures. **The Reviewer tested it and rejected it**: seven of the rows are *single table rows*, and in this TRD a table row is a paragraph. The `Registration` row alone names eleven columns **with semantics**, including that `consentAcceptedAt` is *"an upper bound on the applicant's true acceptance moment, not a client-attested one"* — the S-6/FR-3 reasoning, matching `schema.prisma` in substance. **ADR-010 carries the exact ADR-001–009 form; QA-12 carries the full six-part form and is more specific than QA-1.** *"No row is a one-line gesture."* Worth recording as an instance of a Reviewer refusing to find the defect its Leader suggested.
+
+#### FAIL 1 — the TRD contradicted itself about which statuses are reachable
+
+§3.1 read *"`PENDING_REVIEW · AWAITING_APPLICANT · APPROVED · REJECTED · WITHDRAWN`. **The last two are unreachable until a later chunk.**"* The last two of that ordering are `REJECTED` and `WITHDRAWN`; **the unreachable pair is `AWAITING_APPLICANT` and `WITHDRAWN`** — confirmed against D-7, FR-9 and `schema.prisma:113-114`.
+
+**And it contradicted QA-12 in the same commit**, which names *"every reachable status (`PENDING_REVIEW`, `APPROVED`, `REJECTED`)"* — asserting `REJECTED` **is** reachable, 200 lines below.
+
+**Not tidiness:** FR-8's *"Approved and rejected registrations stay non-public"* scenario and QA-12's own fixture set both depend on `REJECTED` being a status **the release gate must cover.** A future agent reading §3.1 would conclude it need not be. **KZ-004's shape — one site corrected, a sibling left asserting the opposite — for the third time in this spec.**
+
+#### FAIL 2 and fix 3
+A dangling cross-reference sent the three counter tables to §13 (the QA table, which carries no abuse-resistance content) instead of **§12.5, ADR-010**. And `docs/ux-ui/design.md` §5's public top nav was **a false closed enumeration** — it omitted the `Register your organisation` entry `Header.tsx:28` has shipped since T-15, so it was *wrong*, not merely incomplete.
+
+**On that third one, the Reviewer applied my own test against me and I accepted it.** I told it to judge against §14's table rather than the work order's section list — the criterion whose absence produced L-ERR-2. It ruled §14 does **not** require the nav amendment (*"I will not invent a row that isn't there"*), so it was not a FAIL. I asked for the fix anyway, because the blueprint contradicted shipped, reviewed code and a rework round was already open.
+
+#### What the amendments got right, including the fact most likely to have been softened
+§8 states the **strong** claim, not the weak one: *"both enumerate `Actor` columns for the `Actor` serializer, and neither one sees a `Registration` row. Protection here is **structural, not filtered**."* All **six** schema objects are named, so the omission that recurred three times in `design.md` is not repeated. The four-tables-no-retention fact is stated **twice** by name, including `RegistrationLookupAttempt.ip` with its GDPR/*Breyer* justification. And the **Disqualifying clause was not triggered** — no admin endpoint, route, shape or screen appears anywhere; the only two 3b references name the spec path. **3b's amendment task still has all five endpoints and both screens to do.**
+
+**Verified by the Leader after the rework:** §3.1 now agrees with QA-12; the stale `§13` pointer is gone and the `§12.5` one resolves; the nav entry matches `Header.tsx`.
+
+#### ADVISORY — carried out of the spec
+- **T23-A1 — `requirements.md` §10 still says *"Three new schema objects"*** against the six now correctly named in the TRD. **Spec-side staleness in 3a's own document**, outside T-23's three files. **For the archive sweep.**
+- **T23-A2** — `trd.md` §12.2's container diagram still labels the RDS box *"Actor, Crop, consent"*, five tables short. Pre-existing and illustrative.
+- **T23-A3** — PRD §3 has no `Applicant` persona row, so US-9 is the only story whose label has no matching persona. Ruled outside §14's row, which asks only for a story and a criterion.
+
+**Final result: PASS on attempt 2.** 2 Implementer attempts, 2 Reviewer reports, **1 rework round consumed.**
+
+---
+
+## Spec complete — 23 of 23 tasks
+

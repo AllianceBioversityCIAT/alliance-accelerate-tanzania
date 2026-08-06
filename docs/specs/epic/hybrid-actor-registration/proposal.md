@@ -74,10 +74,17 @@ Scored with RICE (`product-manager-toolkit`). *Reach* = records or actors touche
 |---|---|---|---:|:-:|:-:|:-:|---:|---|:-:|
 | **1** | Registration source & consent provenance | `actors/registration-source-and-consent` | 1318 | 3 | 1.0 | 0.5 | **7908** | none | n/a (first) |
 | **2** | Partner Profile workbook onboarding | `import-export/partner-profile-onboarding` | 1318 | 3 | 0.7 | 1.5 | **1845** | Chunk 1 | **yes** (vs. 3) |
-| **3** | Public self-registration + review queue | `actors/public-self-registration` | ~150 | 3 | 0.8 | 3.0 | **120** | Chunk 1 | **yes** (vs. 2) |
-| **4** | Registration information requests | `admin/registration-info-requests` | ~40 | 2 | 0.8 | 1.0 | **64** | Chunk 3 | no |
+| **3a** | Public self-registration (applicant flow) | `actors/public-self-registration` | ~150 | 3 | 0.8 | 1.7 | **212** | Chunk 1 | **yes** (vs. 2) |
+| **3b** | Registration review queue + approve-to-publish | `admin/registration-review-queue` | ~150 | 3 | 0.8 | 1.3 | **277** | Chunk **3a** | no |
+| **4** | Registration information requests | `admin/registration-info-requests` | ~40 | 2 | 0.8 | 1.0 | **64** | Chunk 3b | no |
 
-**Build order: 1 → (2 ∥ 3) → 4.**
+**Build order: 1 → (2 ∥ 3a) → 3b → 4.**
+
+> **Chunk 3 was split into 3a and 3b on 2026-08-05 (user-approved).** Its `/akili-specify` run produced one spec whose re-derived budget came to **31 tasks / ~9,300 LOC** — roughly 7× chunk 1, which agrees with this table's own `E = 3.0` sizing and revealed that the first estimate (~4,700 LOC) had under-read the chunk by half. Full record: `docs/specs/actors/public-self-registration/judgment.md` §5.
+>
+> The split boundary is **risk-based, not arithmetic**: 3a owns the system's first unauthenticated write path and unapproved PII at rest, gated by the `pii-boundary` release gate; 3b owns the irreversible publication of another party's personal data, gated by transactional-integrity and projection-correctness. One spec had to serve two unrelated failure modes with one gate table.
+>
+> The second reason was procedural: chunk 3's Judgment Day lineage reached terminal state `escalated` with one fix round left, and each successor is eligible for a **fresh lineage with its own two fix rounds** — which the open mechanism questions need. `E` is re-split 1.7 / 1.3 (3a carries the mail, logging, throttling and payload-cap capabilities, all built from zero); the RICE totals rise because the same reach and impact now divide a smaller effort each. **3a creates the full `Registration` model including the adjudication columns**, so 3b needs no schema migration beyond widening `ActorAuditAction` — the same courtesy chunk 1 paid chunk 3 by declaring `PORTAL_CHECKBOX` early.
 
 Chunk 1 is a hard prerequisite for everything: chunk 2 needs the template columns and the extended taxonomy; chunk 3's approve-and-publish step writes exactly the fields chunk 1 introduces. Chunks 2 and 3 touch disjoint modules (`import` + template asset vs. a new `registrations` module + public/admin UI) and can run concurrently in separate worktrees per the fleet pattern.
 
