@@ -207,7 +207,7 @@
       **Disqualifying:** copy promising *"we may email you for more information… a link back to this form"* describes chunk 4 and would be a false promise — assert its absence, not merely the presence of correct copy.
       Skills: `frontend-design`, `ui-ux-pro-max`
 
-- [ ] **T-21** `StatusLookupForm` + `/register/status`  (deps: T-11, T-20)
+- [x] **T-21** `StatusLookupForm` + `/register/status`  (deps: T-11, T-20)
       Scope: POSTs reference + email in a **body**. Renders status and `reviewNote`. Nothing else is available to render.
       Traces: FR-6 (s1), FR-13's applicant-facing note path, NFR-10
       Files: `frontend/app/(public)/register/status/page.tsx`, `components/register/StatusLookupForm.tsx` (+ tests)

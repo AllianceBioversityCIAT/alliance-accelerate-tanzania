@@ -1541,3 +1541,46 @@ Attempt 1's migration had already been applied. To avoid leaving a stray `ALTER`
 
 **Final verification result:** **PASS on attempt 2.** 2 Implementer attempts (three dispatches), 3 Reviewer lens reports, **1 rework round consumed.**
 
+
+### T-21 — `StatusLookupForm` + `/register/status`
+
+**Dispatched** effort `high`, paired with T-13. Single Reviewer. **PASS on attempt 1**, plus three in-file corrections.
+
+#### The Implementer corrected my brief, and the correction widened its own coverage
+
+I described the failure modes as *"reference absent and email mismatch"*. It read T-11's shipped code and found a **third**: the **L-2 lockout is also folded into the same byte-identical `404`**. The Reviewer verified this against the backend — the lockout throws at `:664`, no-match at `:669`, and `findMatchingRegistrationForLookup` returns `null` for **both** absent and mismatch. **Three underlying causes, one `404`; plus a caller-keyed `429`. Two client-distinguishable outcomes.**
+
+One precision the Reviewer added that applies to the service's own doc comment too: there are **two `throw` statements**, not one — **the invariance comes from the single argument-free factory, not a single throw site.** The Implementer swept that wording in its own file when told.
+
+#### Its evidence is stronger than the pattern I warned it about
+
+I briefed T-19's overclaim — three byte-identical inputs prove one client-side fact three times, not that three server causes are indistinguishable. **T-21 had already avoided it:** its three `it` blocks feed **three different input pairs**, so they genuinely prove input-independence. The warning was apt and the implementation had outrun it.
+
+#### The Disqualifying clause — guarded at the layer that can see it
+
+The clause says C-11 can regress *"regardless of what the tests assert"*, because a rendered-output test structurally cannot see a `GET` with query parameters. The evidence mocks **`global.fetch` directly** and asserts method `POST`, the exact URL, `not.toContain('?' / 'reference=' / 'email=' / 'neema')`, and a deep-equal body. The Reviewer confirmed against `client.ts` that `apiFetch` puts `body` through `JSON.stringify` and **never touches the URL**, so no branch could URL-embed.
+
+**On the layering, the residual was narrower than I framed it.** A bypass *would* be caught — a direct `fetch` or a navigation leaves the mocked `lookupRegistration` uncalled and fails `toHaveBeenCalledTimes(1)`. The real gap was an edit that keeps calling it **and additionally** puts the email in a URL. **Closed** with `global.fetch = jest.fn()` in `beforeEach` plus a dedicated `expect(global.fetch).not.toHaveBeenCalled()`.
+
+#### The `400` ruling, worth keeping
+
+A shape violation (an over-length reference) is rejected by the pipe **before the service is entered**, identically for any malformed body. **FR-6 forbids a response that differs between *"does not exist"* and *"exists but email mismatch"* — a shape failure is in neither set.** A distinguishable `400` is not an oracle; it is the honest thing to show someone who typed 200 characters into the reference box.
+
+#### ⚠️ A third defective `Verify` line, and this one mattered most
+
+`tasks.md`'s T-21 `Verify` is `npm test -- status`, which matches exactly two files and **not `lib/api/registrations.test.ts` — where *all* the Disqualifying-clause evidence lives.** The Reviewer made confirming its execution a precondition for the checkbox. The Implementer had run it separately; **I re-ran it myself: 15/15 green.** The evidence is written **and executed** — but anyone following the task's own command would never have run the assertion the task most depends on.
+
+**Third defective `Verify` line in three consecutive frontend tasks:** T-20's `submitted` missed `ReferenceCard.test.tsx`; `register` turned out to be a **no-op filter** because the repo root is named `…-actor-register` and jest matches the absolute path; and now this. Recorded against `tasks.md`, not against any Implementer.
+
+#### Corrections applied
+Header and `describe` saying "two" failure modes where three exist; the layering residual; and a **copy mismatch inherited from T-20** — its button read *"Check status with this reference"* and now lands on an empty form, since T-21 deliberately took no `?ref=` prefill. **Fixed at the source rather than patched around**: the label is now *"Check the status of your submission"*, with a comment recording that reverting to a reference-specific label would be the deliberate signal that a prefill had been added. The Implementer also swept two stale references it found unprompted.
+
+**Leader's measurement:** **82 suites / 1123 tests** (+2 suites, +22 tests) · build **23/23 static pages**. The `(admin)/admin/actors` flake recurred on the first full run (2 failures), was clean on the second, and is **32/32 green in 2.2 s isolated** — unchanged signature, unchanged cause.
+
+#### ADVISORY
+- **T21-A1 → T-22.** On success the form unmounts and is replaced by the result panel with **no focus move and no live region**: errors announce via `role="alert"`, **results do not**.
+- **T21-A2** — raw-enum-literal absence is asserted for `APPROVED` only, not all five members.
+- **T21-A3** — the `never`-checked exhaustive switch is genuinely load-bearing (`default` returns no string), but **Jest runs through SWC with no type checking**, so that guard bites only under `npm run build`.
+
+**Final result: PASS on attempt 1.** 1 Implementer attempt (three dispatches), 1 Reviewer, **0 rework rounds consumed.**
+

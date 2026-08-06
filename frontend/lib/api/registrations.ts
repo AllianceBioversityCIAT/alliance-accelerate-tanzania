@@ -17,18 +17,31 @@
  * caller needs the real `ApiError` (`status`, `details`), not a resilient
  * null.
  *
- * All three are public, unauthenticated endpoints — there is no Cognito
+ * `lookupRegistration()` (T-21) is `POST /registrations/lookup` (FR-6,
+ * design.md §3.1 decision 3–4 / §5.4). Like the two writes above, it does
+ * NOT swallow errors — `StatusLookupForm` renders a distinct message for a
+ * `404` (byte-identical for "reference absent", "email mismatch", AND the
+ * L-2 lockout exit — see `registrations.service.ts`'s `buildLookupNotFoundError`
+ * doc — so no case here can or should try to tell those apart), a `429`
+ * (the per-container throttler, caller-keyed and legitimately visible —
+ * `design.md:192`, the same carve-out T-19 already relies on for
+ * `requestVerificationCode`), and a `400` (malformed shape, e.g. an
+ * over-length reference — content-independent, so distinguishing it from
+ * the `404` is not an oracle: `registration-lookup.dto.ts`'s own doc
+ * comment makes the same point about this DTO's validation).
+ *
+ * All four are public, unauthenticated endpoints — there is no Cognito
  * session before OTP verification even exists, so every call here uses
  * `apiFetch` with `token` omitted rather than `apiGet`/`apiGetAuthed`, per the
  * Leader's brief (T18-A6: the `apiGet` comment at `client.ts:167` is stale
  * for this module).
  *
- * Returns null on ANY failure (network error, non-OK status, unparseable
- * body) rather than throwing — the same DD-6/NFR-5 "resilient null-on-
- * failure" contract `getActors()` (`lib/api/actors.ts`) establishes for
- * public reads. The component layer renders a "couldn't load" state and
- * keeps the acceptance checkbox disabled: FR-3's gate must not silently pass
- * just because the policy itself failed to render.
+ * `getConsentPolicy()` returns null on ANY failure (network error, non-OK
+ * status, unparseable body) rather than throwing — the same DD-6/NFR-5
+ * "resilient null-on-failure" contract `getActors()` (`lib/api/actors.ts`)
+ * establishes for public reads. The component layer renders a "couldn't
+ * load" state and keeps the acceptance checkbox disabled: FR-3's gate must
+ * not silently pass just because the policy itself failed to render.
  */
 
 import { apiFetch } from './client';
@@ -129,5 +142,73 @@ export async function submitRegistration(
   return apiFetch<RegistrationSubmitResponse>('/api/v1/registrations', {
     method: 'POST',
     body: input,
+  });
+}
+
+/**
+ * Mirrors `backend/prisma/schema.prisma`'s `RegistrationStatus` enum EXACTLY
+ * (`frontend/CLAUDE.md`: "exact string-literal unions"). All five members
+ * are declared even though — as of this chunk and its 3b sibling — only
+ * `PENDING_REVIEW`, `APPROVED`, and `REJECTED` are ever actually produced;
+ * `AWAITING_APPLICANT` and `WITHDRAWN` are chunk 4's (design.md §2.1). The
+ * type stays the FULL enum rather than a narrowed one so a future chunk that
+ * starts emitting one of the other two members is a compile-time-safe
+ * addition here, not a silent runtime mismatch against a union this file
+ * quietly narrowed.
+ */
+export type RegistrationStatus =
+  | 'PENDING_REVIEW'
+  | 'AWAITING_APPLICANT'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'WITHDRAWN';
+
+/**
+ * Mirrors `PublicRegistrationLookup`
+ * (`backend/src/registrations/serializers/public-registration.serializer.ts`)
+ * EXACTLY. `reviewNote` is present only when the stored value is non-null —
+ * the server never emits an explicit `null` key for it (that serializer's
+ * own doc comment). FR-6 forbids returning anything else: no payload field,
+ * no internal `id`, no reviewer identity — so this interface is, by
+ * construction, everything `StatusLookupForm` can ever have to render.
+ */
+export interface RegistrationLookupResponse {
+  status: RegistrationStatus;
+  reviewNote?: string;
+}
+
+/**
+ * `POST /registrations/lookup` (design.md §3.1 decision 3, FR-6). Takes its
+ * two inputs in a JSON BODY, never a query string or any other part of the
+ * URL — an email in a URL reaches request lines, `Referer` headers, browser
+ * history, and any access log later enabled (C-11), which is exactly what
+ * this decision exists to avoid. `apiFetch`'s `body` option is ALWAYS
+ * JSON-serialised onto the request body (`client.ts`), never appended to the
+ * URL, so this function cannot regress into a `GET` with query parameters
+ * without an edit to `apiFetch` itself — there is no branch here that could
+ * choose the URL-embedding path by mistake.
+ *
+ * Throws `ApiError` on:
+ *   - `404` — byte-identical for "reference does not exist", "reference
+ *     exists but the email does not match", AND the L-2 lockout exit
+ *     (`registrations.service.ts`'s single `buildLookupNotFoundError` throw
+ *     site). This function does not and must not attempt to distinguish
+ *     them — there is nothing in the response to distinguish them WITH.
+ *   - `429` — the per-container throttler, keyed on the caller's IP, never
+ *     on the submitted reference or email (T5-A2). Legitimately visible per
+ *     `design.md:192`'s carve-out, the same one `requestVerificationCode`
+ *     already relies on.
+ *   - `400` — malformed shape (e.g. an over-length `reference`), rejected by
+ *     `RegistrationLookupDto`'s validators entirely before any lookup runs.
+ *     Content-independent, so distinguishing it from the `404` above is not
+ *     an oracle.
+ */
+export async function lookupRegistration(
+  reference: string,
+  email: string,
+): Promise<RegistrationLookupResponse> {
+  return apiFetch<RegistrationLookupResponse>('/api/v1/registrations/lookup', {
+    method: 'POST',
+    body: { reference, email },
   });
 }

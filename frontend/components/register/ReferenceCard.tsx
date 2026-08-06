@@ -121,8 +121,20 @@ export default function ReferenceCard({ reference }: ReferenceCardProps) {
         you verified, to check your submission&apos;s status.
       </p>
 
+      {/*
+        Reviewer follow-up (T-21): `/register/status` (T-21) does NOT accept
+        a `?ref=` prefill — its own doc comment records that as a deliberate
+        choice, since the email must be typed regardless and a partially
+        prefilled form is not simpler than an empty one. This label was
+        originally "Check status with this reference", which promised a
+        destination that would carry the reference forward; it does not, so
+        the label was reworded to stop implying that. If `/register/status`
+        ever gains a `?ref=` prefill, this label can revert to naming "this
+        reference" specifically — that would be the deliberate signal to do
+        so, not an oversight to fix independently.
+      */}
       <Button href="/register/status" variant="secondary" className="self-start">
-        Check status with this reference
+        Check the status of your submission
       </Button>
     </div>
   );

@@ -72,7 +72,10 @@ describe('ReferenceCard', () => {
 
   it('links to /register/status', () => {
     render(<ReferenceCard reference={REFERENCE} />);
-    const link = screen.getByRole('link', { name: /check status with this reference/i });
+    // Reworded per T-21 Reviewer follow-up: /register/status takes no
+    // `?ref=` prefill, so a label promising "with this reference" would
+    // misstate what the destination does — see ReferenceCard's comment.
+    const link = screen.getByRole('link', { name: /check the status of your submission/i });
     expect(link).toHaveAttribute('href', '/register/status');
   });
 
