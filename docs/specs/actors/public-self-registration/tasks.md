@@ -102,7 +102,7 @@
       **Disqualifying:** if a test asserts crops are optional, it is asserting the admin DTO's behaviour and contradicts FR-2's scenario. And if `consent.accepted` reads `undefined` in any test, `@ValidateNested` is missing — the symptom is every submission `400`-ing, which a happy-path test would surface but a validation-only test would not.
       Skills: `nestjs-expert`, `api-design-principles`
 
-- [ ] **T-10** `POST /registrations` — submission, consent check, reference allocation  (deps: T-7, T-9)
+- [x] **T-10** `POST /registrations` — submission, consent check, reference allocation  (deps: T-7, T-9)
       Scope: Order of operations per `design.md` §4.1: cap → throttle → pipe → **consent check (accepted `true` AND known version)** → **verify the code, rejecting outside any transaction** (V-1a) → **one `$transaction`**, entered only on a match, containing the *consume* plus the row write (A23 — consuming outside it burns a single-use code on any downstream failure). Reference allocation under constraints **A-1…A-5**; the Implementer chooses and records the mechanism, **declaring any object it needs in the migration** (A-4 — RA1's actual defect). Response is `{ reference }` and nothing else.
       **Note the two-obligation split.** A23 wants the consume *inside* the transaction; V-1a wants the mismatch increment to *survive* a rejection. One transaction boundary cannot serve both — putting the whole verification inside it rolls the counter back (RB1). If the chosen arrangement differs from §4.1's, both properties must still hold and both must be evidenced.
       Traces: FR-2 (s1), FR-3 (s1, s3), FR-4 (s1, s2), FR-5 (s1), `design.md` §4.1, §4.5

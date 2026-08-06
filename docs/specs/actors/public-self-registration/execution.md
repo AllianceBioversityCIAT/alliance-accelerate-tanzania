@@ -1370,3 +1370,75 @@ Required before commit, all in-file, no re-review round:
 
 **Final verification result:** **PASS on attempt 1**, plus five in-file corrections. 1 Implementer attempt (two dispatches), 1 Reviewer, **0 rework rounds consumed.**
 
+
+### T-10 — `POST /registrations` — attempt 1: both lenses `FAIL`
+
+**Dispatched** effort `xhigh`, skills `nestjs-expert` + `api-design-principles` + `tdd` (Leader-assigned — consent gating is the legal basis for publication) + `error-handling-patterns`. **Two parallel lenses** (constraints/ordering, consent/PII/evidence).
+
+#### Verified sound, from source rather than from the tests
+
+- **V-1a and A23 both hold under the Implementer's deviation**, which §4.1 line 267 expressly authorises. `verifyCode` runs before the first `$transaction` token appears anywhere in the method, so neither the rollback hazard nor the deadlock hazard arises. **Even on the exhaustion path the final rollback restores `consumedAt: null`** — the single-use code is not burned.
+- **A-2 satisfied.** The reference is allocated in its own committed transaction *before* consume+create, so a later failure leaves a gap. A-2's own parenthetical **presupposes gaps as a tolerated reality** and names the defect as *reissuing a value already handed out*; an abandoned allocation hands its value to nobody.
+- **A-1's evidence is not decorative — it inherits T-7's *fixed* harness.** The lens checked for exactly the defect that FAILed T-7 twice: both fake methods carry an `await tick()`, so all five writes land before any read, and the test passes **only** because the session variable is a per-invocation closure. Promote it to module scope and the set collapses to one.
+- **RA11 satisfied structurally rather than operationally** — the counter self-seeds; the first allocation of a new year takes the `INSERT` branch and lands `seq = 1`. No seeding job.
+- **PII in logs clean** — grepped module-wide, not just the diff: the only two `logger.*` calls interpolate `err.name` and a server-generated `reference`. No `err.message`, no `JSON.stringify`, nothing stringifying a Prisma exception.
+- **T6-A4 discharged and T8-A1's sibling gap closed.** The assertions that depended on the route not existing were **re-pinned to its real status, not hollowed out**, and `@MaxLength(191)` landed on `RegistrationCreateDto.email`.
+
+#### FAIL 1 — A-3's exhausted retry surfaces a raw `500`
+
+The Implementer flagged this itself and argued that three consecutive collisions mean corruption and should alert loudly. **Ruled against, and not on pedantry.** A-3 is a conjunction — bounded retry **and** never a `500` — and the failure is on *exactly the path A-3 exists to govern*; under a "never a 500 while retries remain" reading the constraint is near-vacuous, since a within-budget collision produces no response at all. **The spec settles this class itself eleven lines below the constraint table:** §4.5 line 367 has approval catch the identical Prisma violation and **return a `409` naming the colliding key** rather than let it surface as a `500`.
+
+**And the engineering argument rests on a false dichotomy: catching it makes the failure *louder*.** Today it is a generic Nest error with no domain discriminator — nothing greppable, nothing alarmable. A caught exhaustion can emit a bounded, PII-free alarm hook the current code does not provide. Secondary: the unhandled `500` serialises with **no `error` key**, the exact envelope defect §4.4 required T-5's filter to fix.
+
+Remediation set to **`503`** over `409`, for a reason specific to this path: the third attempt's transaction rolled back, so **the code is not burned and a retry is genuinely actionable**. A `500` with a distinct internal code is not sufficient — **A-3 prohibits the status, not the opacity.**
+
+#### FAIL 2 — the Disqualifying clause discharged for 3 of 7 payload fields
+
+`traderType`, `region`, `crops` and `capacityTons` are unscanned, and **`PAYLOAD_FIXTURE` carries no GPS at all**, so FR-5's explicit *"not the coordinates"* clause is structurally undetectable. **The file's own header claims `crops` is scanned.** Remediated with a total `Object.entries` sweep rather than four more hand-written lines — the same derive-don't-enumerate reasoning §6.2 applies to the route list (C-9).
+
+#### FAIL 3 — the receipt-mail path ships with zero failure evidence
+
+A **second** fire-and-forget mail path with a **second** `logger.error`, and **no `sendReceipt.mockRejectedValue` exists anywhere in the repo.** The T-8 FAIL-1 hazard is therefore unguarded here: `MailService.dispatch` rethrows unchanged (DD-9) and SES `MessageRejected` embeds the destination address. **The code is currently correct; the guard that keeps it correct does not exist.** FR-14's 3a half — assigned to T-10 by the Coverage table — is likewise unevidenced.
+
+#### `consentAcceptedAt` — ruled (a): the code is right, the documentation was wrong
+
+The Implementer surfaced the contradiction unprompted, which is the only reason it could be ruled on. `design.md` §2.2 and `schema.prisma` both said *"the applicant's acceptance time, not the write time"* — **which no implementation could satisfy**, because §3.1's request shape carries no such field.
+
+**A client-supplied `acceptedAt` was rejected as strictly worse:** FR-3 already states acceptance *"MUST be validated server-side as a field, **never trusted as a client assertion**"*, and a timestamp the consenting party can set to anything is less evidential than an instant the server witnessed — in the one artifact whose purpose is an auditable trail.
+
+**S-4's precedent points here, not the other way.** S-4 removed a *fabricated* timestamp; this one is genuinely witnessed. **A fabricated value must be deleted; a mislabelled true value must be relabelled** — and deletion is unavailable anyway, since the column is `NOT NULL` and 3b reads it. The real downstream cost is concrete: FR-3 scenario 4 requires the reviewer's consent block to show *"the acceptance timestamp"* from **stored values**, so a 3b reviewer would present a submission time to a human under an acceptance-time label, skewed by however long the OTP round trip took.
+
+#### ⚠️ Leader doc sweep — §2's schema-object count was wrong by two tables, and it is the failure A-4 names by name
+
+`design.md:27` said *"three additive Prisma schema objects"* and §2.6 said *"Two `CREATE TABLE`"*. **`EmailSendBudget` (T-7) was never swept in and had been absent for three tasks**; `RegistrationSequence` (T-10) made it two. Both arose the same way: a section that states **constraints rather than a mechanism** was answered with a new schema object, and only the migration was updated.
+
+**This is the C-10-class disclosure failure A-4 exists to prevent, recurring inside the spec that names it.** A-4's must-hold column is *"it appears in **§2** and in the migration's done-criteria"* — the migration limb was satisfied both times, the §2 limb neither time.
+
+Applied (KZ-004, all sites): **§1's count → five, naming all five objects**; **§2.6 → four `CREATE TABLE`**, listing the three migrations that landed; **§2.2's `consentAcceptedAt` description** replaced per the ruling above. **§4.5's line 353 narrative was deliberately left** — it is a frozen account of revision 2's defect, like `judgment.md` C-5. `schema.prisma`'s two comments (the field description and the counter's inaccurate *"gap-free"*) are in the Implementer's rework, since they are code.
+
+**Standing rule for the rest of the run:** when an Implementer answers a constraints-not-mechanism section with a new schema object, **§2 and §2.6 are swept in the same change.** T-11 is the next task that can do this — its L-1…L-4 explicitly permit new columns.
+
+
+#### Attempt 2 — `STATUS: PASS`
+
+All three FAILs closed, verified by reading rather than by claim.
+
+- **A-3:** the `503` is reachable **only** on exhaustion — the `catch` continues while attempts remain, and both halves are pinned (a within-budget collision retries transparently to `…-0002` and resolves; exhaustion throws `ServiceUnavailableException` with **`error: 'Service Unavailable'` genuinely asserted**, closing the secondary envelope defect). The log line interpolates two numbers. **Over-conversion checked and absent:** only `P2002` is caught, so the lost-consume-race `BadRequestException` still returns **byte-identical to a `REJECTED` verify**, and connection/timeout faults propagate untouched. No residual `P2002` pin survives module-wide.
+- **FAIL 2:** a derived `Object.entries` sweep over raw `res.text`, with **no residual hand-written field list**. The Reviewer checked the way this could still be vacuous — whether GPS survives the pipe — and it does: both coordinates carry `@IsNumber()` + range + the paired decorator, so `whitelist: true` does not strip them and an echo would render `"gpsLatitude":-8.910777`, which the sweep matches exactly.
+- **FAIL 3:** the spy captures the **formatted emitted string**, so reinstating `err.message` turns the first test red on the address assertion. It also asserts FR-14's 3a half directly — the submission resolves with a well-formed reference *while the send fails*.
+
+**The tautology fix discriminates**, which was its whole point: under a hardcoded inline equality the spy would be bypassed, the submission would `400`, and the awaited call would reject. The original single-version fixture could not tell those implementations apart.
+
+**Two interaction hazards I asked about, both resolved favourably.** The mixed-case fixture did **not** hollow the leak sweep — it scans **both** `SUBMITTER_EMAIL` and its lowercase, and the lowercase form is exactly what a leak of the stored value would look like, so the change strengthened the assertion rather than weakening it. And the *"gap-free"* inversion was ruled **better than deletion**: deleting it would leave a future reader who sees `REG-2026-0001 → 0003` in the data with no explanation and a live suspicion the allocator is broken.
+
+**Leader's quiet-window measurement:** **56 suites / 645 tests** (+3 suites, +32 tests over 53/613) · eslint exit 0 · build exit 0. **The lingering-timer force-exit did not appear on this run** — recorded as an observation only; the underlying cause is unchanged and still carried to T-13.
+
+#### ADVISORY findings
+
+- **T10-A1 — `capacityTons: 733` is a bare 3-digit substring in the leak sweep.** A run where the fake counter reached seq 733 would emit `REG-YYYY-0733` and trip the assertion. **Fails in the safe direction** (spurious red, never a false green) and is unreachable today since the success test is the file's first request. Flagged so nobody reordering these tests is baffled.
+- **T10-A2 — nothing proves an optional field is persisted when it *is* supplied.** The positive `toEqual` runs against the omitted-optional fixture, so a `buildStoredPayload` hardcoding `gpsLatitude: null` would pass it *and* the leak sweep. Not a regression — it is the shape the sweep already had — but one fully-populated unit case would close it.
+- **T10-A3 — the wrapper→helper delegation is itself untested, and structurally cannot be.** The submit test spies the module export out, so rewriting `isKnownConsentPolicyVersion` as a direct equality would leave every test green with `isVersionKnown` dead. **With a one-element known-version set no test can distinguish those implementations behaviourally** — which is exactly the constraint the extraction was designed around. The two-layer decomposition is the correct answer to it; the residual link is recorded rather than left to be rediscovered.
+- **T10-A4 — a pre-existing, repo-wide PII surface now reachable on a public path.** An unhandled `PrismaClientValidationError` would be logged by Nest's default handler with its argument object, which on this route is the applicant's payload. Not introduced by T-10 and outside its file list; worth an epic-level note if 3b adds a global exception filter.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts (three dispatches), 3 Reviewer lens reports, **1 rework round consumed.**
+

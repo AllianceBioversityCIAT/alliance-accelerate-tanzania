@@ -71,7 +71,26 @@ export const KNOWN_CONSENT_POLICY_VERSIONS: readonly string[] = [
   // revised — never removed, never reordered out of issuance order.
 ];
 
+/**
+ * T-10 rework (T2-A2) — the parameterized, independently-testable half of
+ * the acceptance check. Extracted because `isKnownConsentPolicyVersion`
+ * closing over the module-level `KNOWN_CONSENT_POLICY_VERSIONS` — which
+ * carries exactly ONE entry today — made every test of the wrapper
+ * indistinguishable from a hardcoded
+ * `version === CONSENT_POLICY_VERSION` check: with a one-element known set,
+ * "is in the known set" and "equals the current version" agree on every
+ * input, so a test built against the wrapper alone cannot tell a real
+ * known-SET check apart from that narrower, wrong one. Taking `versions` as
+ * a parameter lets a test construct a synthetic multi-entry array and prove
+ * the SET semantics — which is what DD-7/§4.2's "superseded versions stay
+ * accepted" promise actually depends on — independent of how many versions
+ * production has shipped so far.
+ */
+export function isVersionKnown(versions: readonly string[], version: string): boolean {
+  return versions.includes(version);
+}
+
 /** T-10's acceptance check (design.md §4.1 step 4). */
 export function isKnownConsentPolicyVersion(version: string): boolean {
-  return KNOWN_CONSENT_POLICY_VERSIONS.includes(version);
+  return isVersionKnown(KNOWN_CONSENT_POLICY_VERSIONS, version);
 }

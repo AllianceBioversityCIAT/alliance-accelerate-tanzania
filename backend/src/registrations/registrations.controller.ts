@@ -13,8 +13,9 @@ import {
   CONSENT_POLICY_VERSION,
   ConsentPolicySection,
 } from './consent-policy';
+import { RegistrationCreateDto } from './dto/registration-create.dto';
 import { RegistrationVerifyDto } from './dto/registration-verify.dto';
-import { RegistrationsService } from './registrations.service';
+import { RegistrationCreateResponse, RegistrationsService } from './registrations.service';
 import { RegistrationsThrottleGuard } from './registrations-throttle.guard';
 import { ThrottlerExceptionFilter } from './throttler-exception.filter';
 
@@ -42,8 +43,16 @@ export interface ConsentPolicyResponse {
  * branching here would be a second place the byte-identity guarantee could
  * drift.
  *
- * `POST /registrations` (T-10) and `POST /registrations/lookup` (T-11) land
- * in later tasks — do not add stub handlers for them here.
+ * T-10 — `POST /registrations` (FR-2, FR-3, FR-4, FR-5, FR-8, design.md
+ * §4.1). The handler itself does nothing beyond validating shape (the
+ * global pipe) and awaiting the one call — every ordering decision (consent
+ * check → verify-outside-any-transaction → one `$transaction`) and the
+ * `{ reference }`-only response shape live in `RegistrationsService.submitRegistration`,
+ * for the same "one place, not two" reason `requestVerificationCode`'s
+ * handler above does nothing beyond the one call.
+ *
+ * `POST /registrations/lookup` (T-11) lands in a later task — do not add a
+ * stub handler for it here.
  *
  * T-4 — structured request logging for this controller's routes is emitted
  * by `RequestContextMiddleware` (design.md §4.10), applied in
@@ -86,5 +95,18 @@ export class RegistrationsController {
   @HttpCode(HttpStatus.ACCEPTED)
   async requestVerificationCode(@Body() dto: RegistrationVerifyDto): Promise<void> {
     await this.registrationsService.requestVerificationCode(dto.email);
+  }
+
+  /**
+   * T-10 — FR-2, FR-3, FR-4, FR-5, FR-8. `201 { reference }` (Nest's default
+   * status for `@Post`, left implicit rather than re-decorated) and nothing
+   * else — see `RegistrationsService.submitRegistration`'s doc for why the
+   * response can only ever be that literal shape.
+   */
+  @Post()
+  async submitRegistration(
+    @Body() dto: RegistrationCreateDto,
+  ): Promise<RegistrationCreateResponse> {
+    return this.registrationsService.submitRegistration(dto);
   }
 }

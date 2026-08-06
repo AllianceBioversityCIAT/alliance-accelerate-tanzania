@@ -136,7 +136,13 @@ model Registration {
   submitterEmail       String
   // Non-nullable by design: a row cannot exist unverified.
   emailVerifiedAt      DateTime
-  // The applicant's acceptance time, not the write time.
+  // The server-witnessed instant the submission carrying an accepted
+  // consent was received. The contract collects no client acceptance
+  // timestamp (§3.1), deliberately: FR-3 forbids trusting the client on
+  // acceptance, and the same reasoning governs its time. This value is
+  // therefore an upper bound on the applicant's true acceptance moment, not
+  // an independently attested one. 3b's review UI must label it as
+  // recorded-at-submission, not as an attested acceptance moment.
   consentAcceptedAt    DateTime
   // The version the applicant was shown, echoed by the client, validated
   // server-side (FR-3).
@@ -218,4 +224,26 @@ model EmailSendBudget {
   sends       Int      @default(0)
 
   @@id([email, windowStart])
+}
+
+// T-10 — the declared object A-4 requires (design.md §4.5). Reference
+// allocation (`REG-<year>-<4-digit sequence>`) needs a race-safe, per-year
+// counter that never REUSES a value (A-1, A-2) — deliberately NOT gap-free:
+// an attempt abandoned after allocating (a lost consume-race, an unrelated
+// downstream failure, an A-3 collision retry) leaves a gap, which A-2's own
+// wording tolerates (it prohibits reissuing an already-used value, not
+// skipping one) — see registration-reference.util.ts's class doc. Revision
+// 2's "a dedicated counter row per year" answer named no schema object at
+// all (RA1), which is the defect this table exists to close. `seq` is
+// incremented ONLY via the same `INSERT ... ON DUPLICATE KEY UPDATE` +
+// session-variable technique `EmailSendBudget` already uses
+// (`email-verification.service.ts`'s `issueCode`, proven under real
+// concurrent load against dev RDS in T-7) — see
+// `registration-reference.util.ts`. It never decrements and is never reset
+// for an existing year, so a value is never reused even after a rejection
+// or withdrawal (A-2). The `@unique` constraint on `Registration.reference`
+// remains the backstop, not the strategy (A-3).
+model RegistrationSequence {
+  year Int @id
+  seq  Int @default(0)
 }

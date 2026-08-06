@@ -331,7 +331,15 @@ export class EmailVerificationService {
   }
 }
 
-function normalizeEmail(email: string): string {
+/**
+ * Exported (T-10): `RegistrationsService.submitRegistration` persists
+ * `Registration.submitterEmail` "lowercased" (`schema.prisma`) and must use
+ * the SAME trim+lowercase rule this service already applies to
+ * `EmailVerification.email`/`EmailSendBudget.email` — reusing this function
+ * rather than re-deriving an equivalent one is what keeps the two in
+ * agreement by construction instead of by convention.
+ */
+export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 

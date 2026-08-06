@@ -212,7 +212,18 @@ export class RegistrationPayloadDto {
  * `@Type()` for the B33 whitelist reason documented on `ConsentInputDto`.
  */
 export class RegistrationCreateDto {
+  /**
+   * `@MaxLength(191)` (T-10 sibling fix to T-8's `RegistrationVerifyDto`):
+   * `@IsEmail()` alone admits addresses up to 254 characters (RFC 5321), but
+   * this value is persisted as `Registration.submitterEmail` — a bare Prisma
+   * `String` column, `VARCHAR(191)` on MySQL. Without this bound, a
+   * WELL-FORMED 200-character address would pass `@IsEmail()`, reach
+   * `submitRegistration`'s insert, and MySQL would raise error 1406 (data
+   * too long) — a `500` on a public path where `design.md` §3.1 promises
+   * only `400`/`429`. 191 matches the column width exactly.
+   */
   @IsEmail()
+  @MaxLength(191)
   email!: string;
 
   /** 6-digit CSPRNG OTP (design.md §4.3). Match/expiry/consumption is T-7/T-10. */

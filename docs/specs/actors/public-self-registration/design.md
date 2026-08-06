@@ -24,7 +24,9 @@
 
 ## 1. Approach Overview
 
-One new NestJS module (`registrations`), two supporting modules (`mail`, `logging`), five new frontend routes, and three additive Prisma schema objects.
+One new NestJS module (`registrations`), two supporting modules (`mail`, `logging`), five new frontend routes, and **five** additive Prisma schema objects: the `RegistrationStatus` enum, `Registration`, `EmailVerification`, **`EmailSendBudget`** and **`RegistrationSequence`**.
+
+> *Corrected 2026-08-06 during execution — the count read "three" and omitted the last two. Both were chosen by Implementers under constraints this design states rather than mechanisms it prescribes: `EmailSendBudget` (T-7) is the atomic per-email send cap §4.3 requires but does not specify, and `RegistrationSequence` (T-10) is the allocator §4.5's **A-4** requires be declared. **This is the C-10-class disclosure failure A-4 names by name, and it recurred here** — `EmailSendBudget` was absent from §2 for three tasks before a Reviewer found the count wrong by two. When a constraint-not-mechanism section is answered with a new schema object, §2 and §2.6 must be swept in the same change (KZ-004).*
 
 The organising principle is **structural containment rather than filtered access**. The registry's existing PII guarantee filters `Actor` rows and allowlists `Actor` fields (ADR-003, ADR-004); neither can protect a `Registration`, because both enumerate `Actor` — `PII_ALLOWLIST` and `NEVER_PUBLIC_FIELDS` are `Actor` column lists (`backend/src/common/pii-consent.policy.ts:31-38`, `:60-68`). So this design does not extend them. Submissions live in a table whose **public surface returns two or three scalars and never reads the payload column**, and §6.2 makes that checkable rather than conventional.
 
@@ -109,7 +111,7 @@ All five declared now so chunk 4 needs no enum migration — the courtesy chunk 
 | `payload` | `Json` | The submission. **PII-bearing, admin-only in its entirety** |
 | `submitterEmail` | `String` | **PII.** The OTP-verified address. Lowercased. **This is the address published as `Actor.email`** (§4.1, S-6) |
 | `emailVerifiedAt` | `DateTime` | Non-nullable **by design** — a row cannot exist unverified |
-| `consentAcceptedAt` | `DateTime` | The applicant's acceptance time, not the write time |
+| `consentAcceptedAt` | `DateTime` | The **server-witnessed instant the submission carrying an accepted consent was received**. The contract collects no client acceptance timestamp (§3.1), deliberately: FR-3 forbids trusting the client on acceptance, and the same reasoning governs its time. This value is therefore an **upper bound** on the applicant's true acceptance moment, not an independently attested one — the applicant may tick consent, complete the OTP round trip, then submit. **3b's review UI must label it as recorded-at-submission, not as an attested acceptance moment.** *(Corrected 2026-08-06 during execution — previously read "the applicant's acceptance time, not the write time", which no implementation could satisfy because §3.1's request shape carries no such field. T-10's Implementer surfaced the contradiction unprompted; ruled that the value is right and the label was wrong. **S-4's precedent points here, not the other way:** S-4 removed a *fabricated* timestamp, and this one is genuinely witnessed — a fabricated value must be deleted, a mislabelled true value must be relabelled. A client-supplied `acceptedAt` was rejected as strictly less evidential, being settable by the consenting party.)* |
 | `consentPolicyVersion` | `String` | The version the applicant was *shown*, echoed by the client, validated server-side |
 | `publishedActorId` | `String?` | Set on approve. Plain string, no FK — mirrors `ActorAuditLog.actorId`, which is deliberately FK-less (`schema.prisma:97-98`) |
 | `reviewedBySub` / `reviewedByEmail` / `reviewedAt` | `String?` / `String?` / `DateTime?` | Resolved server-side; admin surface only |
@@ -158,7 +160,9 @@ Because both are additions, this is not a reversion (§9). It **is** a change to
 
 ### 2.6 Migration — what the SQL will actually contain
 
-Two `CREATE TABLE` plus indexes, one new enum-typed column, and — **for the audit enum on MySQL** — `ALTER TABLE \`ActorAuditLog\` MODIFY \`action\` ENUM(...)`. The in-repo precedent is `backend/prisma/migrations/20260710132750_add_import_audit_action/migration.sql`.
+**Four** `CREATE TABLE` plus indexes, one new enum-typed column, and — **for the audit enum on MySQL** — `ALTER TABLE \`ActorAuditLog\` MODIFY \`action\` ENUM(...)`. The in-repo precedent is `backend/prisma/migrations/20260710132750_add_import_audit_action/migration.sql`.
+
+> *Corrected 2026-08-06 during execution — read "Two", counting only `Registration` and `EmailVerification`. Three migrations landed in 3a: `20260805142929_add_registration_and_email_verification` (two tables), `20260805212505_add_email_send_budget` (T-7's atomic send cap), and `20260806132727_add_registration_sequence` (T-10's allocator, per A-4). All additive; each was Leader-verified from disk as a single `CREATE TABLE` with zero `DROP`/`MODIFY`/`ALTER`/`UPDATE`. See §1's correction note on why the omission recurred.*
 
 Revision 1 claimed "No `DROP`, no `MODIFY`" and used Postgres vocabulary (`CREATE TYPE` / `ALTER TYPE`) for a MySQL datasource (`schema.prisma:14`). Both were wrong (C-10). The change is **additive in semantics** — it widens an enum's accepted values, destroys no data, rewrites no rows — which is what `backend/CLAUDE.md`'s additive-only rule protects. **Disclosed here so the migration task's done-criteria match the generated SQL**; a criterion demanding "no `MODIFY`" would FAIL a correct migration or invite hand-editing it. No `DROP`, no data `UPDATE`, no column narrowed or retyped. Rehearsed on local MySQL before RDS apply.
 

@@ -231,7 +231,9 @@ describe('Registrations payload cap (real serverless-http handler, FR-7/NFR-4)',
 
   it(
     'a request AT exactly the cap on a registrations path is not rejected by the cap itself ' +
-      '(reaches routing and 404s on the not-yet-built POST /registrations route, never 413)',
+      "(re-pinned T-10: POST /registrations now exists, so this shape — no email/code/consent/" +
+      'payload — reaches routing and 400s on DTO validation, never 413 and never the ' +
+      '404 this test asserted before the route was built)',
     async () => {
       // `{"padding":"` (12 bytes) + padding + `"}` (2 bytes) = CAP bytes exactly
       // — pin the boundary precisely rather than merely "comfortably under".
@@ -244,7 +246,7 @@ describe('Registrations payload cap (real serverless-http handler, FR-7/NFR-4)',
       const res = await invoke(event);
 
       expect(res.statusCode).not.toBe(413);
-      expect(res.statusCode).toBe(404);
+      expect(res.statusCode).toBe(400);
     },
   );
 

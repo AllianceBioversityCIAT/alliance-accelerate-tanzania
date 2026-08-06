@@ -17,10 +17,13 @@ import {
  */
 describe('RegistrationsController', () => {
   let controller: RegistrationsController;
-  let service: { requestVerificationCode: jest.Mock };
+  let service: { requestVerificationCode: jest.Mock; submitRegistration: jest.Mock };
 
   beforeEach(() => {
-    service = { requestVerificationCode: jest.fn().mockResolvedValue(undefined) };
+    service = {
+      requestVerificationCode: jest.fn().mockResolvedValue(undefined),
+      submitRegistration: jest.fn().mockResolvedValue({ reference: 'REG-2026-0001' }),
+    };
     controller = new RegistrationsController(service as unknown as RegistrationsService);
   });
 
@@ -113,5 +116,37 @@ describe('RegistrationsController', () => {
         ).rejects.toThrow(boom);
       },
     );
+  });
+
+  describe('POST /registrations (T-10)', () => {
+    const dto = {
+      email: 'neema@khsc.co.tz',
+      code: '123456',
+      consent: { accepted: true, policyVersion: 'v1.0-placeholder' },
+      payload: { traderName: 'Mbeya Seed Traders Ltd' },
+    } as unknown as Parameters<RegistrationsController['submitRegistration']>[0];
+
+    it('delegates to RegistrationsService.submitRegistration with the DTO, once', async () => {
+      await controller.submitRegistration(dto);
+
+      expect(service.submitRegistration).toHaveBeenCalledTimes(1);
+      expect(service.submitRegistration).toHaveBeenCalledWith(dto);
+    });
+
+    it('returns EXACTLY what the service returns — no spread, no added or dropped keys (FR-5, DC-2)', async () => {
+      service.submitRegistration.mockResolvedValueOnce({ reference: 'REG-2026-0184' });
+
+      const result = await controller.submitRegistration(dto);
+
+      expect(result).toEqual({ reference: 'REG-2026-0184' });
+      expect(Object.keys(result)).toEqual(['reference']);
+    });
+
+    it('propagates only if the service itself throws — this handler adds no branching of its own', async () => {
+      const boom = new Error('unexpected failure');
+      service.submitRegistration.mockRejectedValueOnce(boom);
+
+      await expect(controller.submitRegistration(dto)).rejects.toThrow(boom);
+    });
   });
 });
