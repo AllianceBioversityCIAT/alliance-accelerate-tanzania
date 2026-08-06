@@ -198,7 +198,7 @@
       **Disqualifying:** if the UI surfaces a distinct message for a capped resend, it reconstructs the oracle C-3 removed on the server — assert the message is invariant across failure modes.
       Skills: `frontend-design`, `react-doctor`
 
-- [ ] **T-20** Receipt screen + `ReferenceCard`  (deps: T-10, T-19)
+- [x] **T-20** Receipt screen + `ReferenceCard`  (deps: T-10, T-19)
       Scope: `/register/submitted?ref=` (query-param routing per static export). Reference as **selectable text**, never an image or canvas. Copy action. Save-this instruction. Link to `/register/status`. "What happens next" describes **only 3a + 3b behaviour** — not chunk 4's round-trip (D-10), and frames the lookup as the reliable channel with email as a convenience (B32).
       Traces: FR-5 (s2), FR-14, `design.md` §5.4
       Files: `frontend/app/(public)/register/submitted/page.tsx`, `components/register/ReferenceCard.tsx` (+ tests)

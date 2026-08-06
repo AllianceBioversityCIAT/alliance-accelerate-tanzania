@@ -1442,3 +1442,42 @@ All three FAILs closed, verified by reading rather than by claim.
 
 **Final verification result:** **PASS on attempt 2.** 2 Implementer attempts (three dispatches), 3 Reviewer lens reports, **1 rework round consumed.**
 
+
+### T-20 — Receipt screen + `ReferenceCard`
+
+**Dispatched** effort `high`, skills `frontend-design` + `ui-ux-pro-max`, paired with T-11. Single Reviewer.
+
+#### Attempts 1–3 — the same defect at three levels
+
+**The shipped copy was right from attempt 1 and never changed.** The Reviewer confirmed the **B32 framing** is genuinely correct rather than correct-on-paper — *"the clause I expected to be missed and it is the strongest part of the change"*: lookup is named the reliable channel, email is explicitly best-effort (*"delivery is not guaranteed, so please do not rely on it"*), and the sentence closes by routing the applicant back to the reference. That discharges §5.4 against `requirements.md:225`'s no-in-band-fallback reality. Selectability is **structurally** proven and survives both a `<canvas>` and a background-image swap; the clipboard KZ-002 boundary is recorded in both source files; `<Suspense>` is correctly placed with the hook in the **child**; `NoReferenceState` was ruled **correct, not scope creep** (the route is a real S3 object reachable directly, and without it an empty code block renders under a "save this reference" instruction).
+
+**What failed three times was the mechanism meant to *keep* the copy right — and each time, a comment claimed a property the code did not have.**
+
+1. **Four regexes, and the header cited a paraphrase as proof they were semantic.** That paraphrase matched **zero of four**: *"by email for additional details"* is not the literal *"email you"*; *"link back to **the registration** form"* missed because the optional `(registration )?` group **was written into pattern 2 and omitted from pattern 1**. All four realistic rewordings escaped. Remedied with an **equality pin** on the copy — for a fixed block of prose that is the only semantically complete oracle available in Jest, since a regex can only enumerate what someone thought to forbid.
+2. **The pin read the first `<p>`, and the sanity test used `.some()`.** Both failed **open**: a second `<p>` **appended** to the section left the pin reading the original and passing — *"the natural way a chunk-4 promise returns"*, by adding a line about email rather than editing the pinned sentence — and reverting pattern 1's group left the sanity check green because pattern 4 satisfied `.some()` independently. **Neither correction was separately guarded.**
+3. **Closed.** Per-clause assertions on explicit pattern indices, and a region-wide pin (`region.textContent`, which walks all descendants, so an append **before or after** changes it).
+
+**Both final fixes were verified by mutation, not asserted.** The Implementer reverted pattern 1 and watched exactly that line fail with the email clause untouched; then added a second `<p>` **deliberately worded to escape every regex**, watched the pin fail, and noted *"the old `querySelector('p')`-only pin would have stayed green here."* It also corrected an empirical assumption mid-fix — it expected a space between heading and paragraph, the assertion failed for the right reason, and it established that JSX drops the pure-whitespace child.
+
+**The Reviewer confirmed the shipped copy is byte-identical to what it originally cleared** — em dash and line-break positions included — so two mutation cycles reverted clean.
+
+#### ⚠️ The `(admin)/admin/actors/**` flake is degrading, and the mechanism is now measured
+
+Confirmed **by identity** this time, not inferred: `app/(admin)/admin/actors/page.test.tsx › ActorsPage — lock flow › opens ConfirmDialog and calls bulkSetConsent with consentStatus:DENIED`.
+
+**The signal is the clock, not the red.** In isolation: **32/32 green in 2.3 s.** Under full parallel load: **29.3 s** for the same file — a **13× slowdown**. These tests are not failing on logic; they are timing out because the worker is CPU-starved.
+
+**And it is worse than when recorded.** At T-19 one full run failed and two consecutive re-runs were clean. Here **two consecutive full runs both failed** (2 tests, then 1). The suite grew 78 → 80 in the same period, so contention rose with it. `admin/actors` is untouched by T-20, whose change lives entirely in `register/`.
+
+**Consequence for what remains: T-22 adds a11y suites to the frontend**, which will push contention further in exactly this direction. The honest statement is that the frontend full-suite signal is now *unreliable rather than merely ambiguous*, and the underlying suites belong to the admin actors feature this spec does not own. Recommend the follow-up spec recorded at L-ERR-3 be treated as blocking for the next frontend-heavy chunk, not optional.
+
+**Leader's measurement:** **80 suites / 1101 tests**, with the above flake on full runs and green in isolation · build **22/22 static pages**, `/register/submitted` present.
+
+#### ADVISORY findings
+
+- **T20-A1 — the scope word in both headers is load-bearing.** A chunk-4 promise inserted **outside** the pinned section (the thank-you paragraph is the only realistic spot) is covered by the secondary regexes only. **If either header is edited later, keep the "inside this section" qualifier** — dropping it re-creates the overclaim this task failed on three times.
+- **T20-A2 — a `tasks.md` defect, not the Implementer's.** T-20's `Verify` line is `npm test -- submitted`, a path regex that matches the page test but **not** `components/register/ReferenceCard.test.tsx` — so the clipboard and selectability suite **never ran** under the stated command. The Implementer then found that `npm test -- register` matches **all 80 suites**, because the repo root is named `…-actor-register` and jest matches the full absolute path. The Reviewer ruled that a **strict superset is the better recommendation**: any pattern containing `register` is a no-op filter in this checkout, while `submitted` genuinely misses coverage.
+- **T20-A3 — an SVG `<text>`-rendered reference** would keep a text node and add no `img`/`canvas`, passing the structural check while arguably still being "an image" under FR-5 s2. Vanishingly unlikely; recorded.
+
+**Final verification result:** **PASS on attempt 3.** 3 Implementer attempts, 3 Reviewer reports, **2 rework rounds consumed.**
+
