@@ -172,6 +172,19 @@ const EXPECTED_NOT_FOUND_BODY = {
   message: 'No registration was found matching that reference and email.',
 };
 
+// T11-A1 — `lookupRegistration` now pseudonymises the caller IP with an HMAC
+// under `OTP_HMAC_SECRET` before it reaches the attempt counter, so this path
+// requires the secret where it previously did not. Set here at module scope
+// rather than per-`describe`: the coupling is easy for a future block to
+// forget, and forgetting it surfaces as an opaque 500, not a clear failure.
+beforeAll(() => {
+  process.env.OTP_HMAC_SECRET = 'test-only-hmac-secret-not-a-real-key-0123456789';
+});
+
+afterAll(() => {
+  delete process.env.OTP_HMAC_SECRET;
+});
+
 describe('POST /registrations/lookup (T-11) — byte-identity across ALL THREE exits, including the locked one', () => {
   let app: INestApplication;
   let attemptRows: AttemptRow[];

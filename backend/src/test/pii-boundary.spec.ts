@@ -316,6 +316,19 @@ const LEAKABLE_PII_VALUES = [
   'CONSENT-REF-SIGNED-9931', // consentReference — non-default
 ];
 
+// T11-A1 — the lookup route pseudonymises the caller IP with an HMAC under
+// `OTP_HMAC_SECRET` before writing its attempt counter, so this gate now needs
+// the secret to exercise `POST /registrations/lookup` at all. Module scope,
+// not per-`describe`: a missing value surfaces as an opaque 500 rather than a
+// clear failure, and this file is a release blocker.
+beforeAll(() => {
+  process.env.OTP_HMAC_SECRET = 'test-only-hmac-secret-not-a-real-key-0123456789';
+});
+
+afterAll(() => {
+  delete process.env.OTP_HMAC_SECRET;
+});
+
 describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
   let app: NestExpressApplication;
 
