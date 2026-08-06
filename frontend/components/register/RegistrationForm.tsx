@@ -642,7 +642,13 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
             true,
           )}
           {renderInput('district', 'District')}
-          {renderInput('marketLocation', 'Market location')}
+          {renderInput(
+            'marketLocation',
+            'Market location',
+            'text',
+            false,
+            'Name of the market or trading point where you operate — e.g. Kibaigwa Grain Market',
+          )}
         </div>
         {/* GPS-optional copy (A25, FR-2 scenario 3) — stated, not just a placeholder hint on one field. */}
         <p className="mt-4 text-xs text-muted">
