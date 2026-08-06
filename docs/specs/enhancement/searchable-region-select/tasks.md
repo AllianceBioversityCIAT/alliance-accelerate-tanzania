@@ -17,7 +17,7 @@
 
 ---
 
-- [ ] **T-1  Pure region matcher + unit tests**  (deps: none)
+- [x] **T-1  Pure region matcher + unit tests**  (deps: none)
       **Size:** S · ~70 LOC (helper ~25, tests ~45)
       **Traces:** FR-1 (both scenarios' matching clauses) · `design.md` §5.4
       **Skills:** `tdd` — Leader-assigned here specifically: this is a pure function with exact expected values available from FR-1's scenarios, which is where red-green earns its cost. Not assigned to any other task in this spec.
