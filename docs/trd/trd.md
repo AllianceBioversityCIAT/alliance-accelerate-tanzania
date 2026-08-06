@@ -58,6 +58,7 @@ A decoupled, fully serverless architecture deployed to the **`IBD-DEV`** AWS acc
 | `MetricsModule` | Aggregate counts for the landing page (total actors, crops tracked, regions covered). |
 | `PrismaModule` | Prisma client provider, connection lifecycle tuned for Lambda. |
 | `HealthModule` | Liveness/readiness endpoint. |
+| `RegistrationsModule` | Public self-registration intake — versioned consent-policy serving, OTP-gated email verification, and `Registration` storage with **no public read path for any submitted field** (§8). Four public endpoints (§4); chunk 3b (`docs/specs/admin/registration-review-queue/`) adds the admin adjudication surface to the same module. |
 
 Frontend mirrors these as route groups: `(public)` directory/map/profile, `(admin)` management, plus a shared `lib/api` client and `lib/auth` Cognito helper.
 
@@ -87,6 +88,8 @@ Canonical **Actor** entity derived from the existing field dataset. CSV header �
 | (derived) | `crops` | `Crop[]` (M:N) | Sorghum / common bean / groundnut. See PRD OQ-1. |
 | — | `id` | `String @id @default(cuid())` | Internal PK. |
 | — | `createdAt` / `updatedAt` | `DateTime` | Audit timestamps. |
+
+**Canonical template vs. source workbooks.** The table above is authoritative for the **canonical import template** — the CSV headers the import service accepts — not for any particular client-supplied workbook. A source workbook with its own column spellings (e.g. `gpslatitude` variants) or sheet structure is mapped onto this template by a per-source mapping specification before import; it is never read against this table directly. A worked example of that mapping step is produced per onboarding as the `mapping.md` of the relevant import-export spec.
 
 ```prisma
 // schema.prisma (reference — authoritative shape, finalized during general-setup spec)
@@ -142,6 +145,20 @@ model CropsOnActors {
 
 **PII set (single source of truth):** `phone`, `email`, `sex`, `position`, `marketLocation`, `technicalSupport`. The runtime source of truth is the `PII_ALLOWLIST` constant in `src/common/pii-consent.policy.ts` — any new PII field must be added there (and only there); the role-aware serializer builds public output by explicit allowlist of *public* fields, so the implemented set is the one declared in that policy module. Exact GPS (`gpsLatitude`/`gpsLongitude`) is additionally **consent-gated**: it is surfaced only for `GRANTED` actors and withheld (`gps: null`) for non-`GRANTED`; `gpsAltitude`/`gpsAccuracy` and `traderId` are never public.
 
+### 3.1 Registration & EmailVerification (public self-registration)
+
+Two entities and three supporting counter tables behind the public self-registration intake, all distinct from `Actor` and outside the guarantees above. **`PII_ALLOWLIST` and `NEVER_PUBLIC_FIELDS` are `Actor` column lists** consumed by the `Actor` serializer — they do not, and structurally cannot, cover a table that is not `Actor`. `Registration`'s PII is instead contained **structurally**: its public surface returns at most two or three scalars and never reads the `payload` column (§8).
+
+| Model | Purpose | PII |
+|---|---|---|
+| `RegistrationStatus` (enum) | `PENDING_REVIEW · AWAITING_APPLICANT · APPROVED · REJECTED · WITHDRAWN`. `AWAITING_APPLICANT` and `WITHDRAWN` are declared now but unreachable until chunk 4, so that chunk needs no enum migration; `APPROVED` and `REJECTED` become reachable with chunk 3b's adjudication (`docs/specs/admin/registration-review-queue/`). | — |
+| `Registration` | One row per submission: `reference` (the applicant-facing key), `status`, `payload` (the submission, JSON, admin-only in its entirety), `submitterEmail` (the OTP-verified address — the one later published as `Actor.email` on approval), `emailVerifiedAt`, `consentAcceptedAt` (the server-witnessed instant the submission arrived — an **upper bound** on the applicant's true acceptance moment, not a client-attested one), `consentPolicyVersion`. Also declares the adjudication columns (`publishedActorId`, `reviewedBySub`/`reviewedByEmail`/`reviewedAt`, `rejectionReason`, `reviewNote`, `duplicateDismissals`) that only `docs/specs/admin/registration-review-queue/` writes, so that spec needs no migration of its own. | `payload`, `submitterEmail` |
+| `EmailVerification` | The pre-verification store: `email`, an HMAC-SHA-256-hashed OTP code (plaintext never stored, never logged), an attempt counter, expiry, single-use marker. Not a `Registration` — no row here is ever readable by any caller. | `email` |
+
+Three further tables exist as concurrency-safe counters behind the abuse-resistance posture in **§12.5, ADR-010**: `EmailSendBudget` (the atomic per-email OTP send cap), `RegistrationSequence` (the race-safe reference allocator), and `RegistrationLookupAttempt` (the persistent, per-caller-and-reference bound behind the public status lookup — its `ip` column is personal data under GDPR Art. 4(1) / CJEU *Breyer*).
+
+**Four tables now hold personal data with no retention or deletion policy** — `Registration.submitterEmail`, `EmailVerification.email`, `EmailSendBudget.email`, `RegistrationLookupAttempt.ip`. This is a recorded, accepted risk (PRD OQ-4), not an oversight: stating it here keeps the public surface honestly sized rather than implied smaller than it is.
+
 ## 4. API Surface & Contracts
 
 REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?pageSize`) and filterable. Field projection is role-aware: PII included only for `staff`/`admin`.
@@ -158,8 +175,14 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 | `POST /api/v1/import` | Admin | Multipart CSV upload → per-row result report. |
 | `GET /api/v1/export` | Staff/Admin | Filtered CSV stream; PII per role. |
 | `GET /api/v1/crops` | Public | Crop reference list. |
+| `GET /api/v1/registrations/consent-policy` | Public | Versioned consent-policy text — one source for the API and the form UI. |
+| `POST /api/v1/registrations/verify` | Public | Sends an OTP to the supplied email. **Always `202`, empty body** — deliverable, undeliverable, already-known, and over-cap addresses all get the identical response, so the endpoint cannot be used to test whether an address exists. |
+| `POST /api/v1/registrations` | Public | Creates a `Registration` once the OTP is verified. Returns **only** `{ reference }` — no payload echo, no internal `id`. |
+| `POST /api/v1/registrations/lookup` | Public | Status by `{ reference, email }` in the request **body**, never a query string (keeps an email address out of request lines, `Referer`, and history). `404` is byte-identical for an absent reference, an email mismatch, and the endpoint's own rate-limit lockout — none is distinguishable from another. |
 | `GET /api/v1/users`, role mgmt | Admin | Cognito-backed user/role administration. |
 | `GET /api/v1/health` | Public | Health check. |
+
+The four `registrations*` paths are the API's first unauthenticated **write** path (`POST /registrations`) and its first unauthenticated read of anything beyond public directory data (`POST /registrations/lookup`, gated to two scalars). Field projection for them is not role-aware filtering — see §8's structural-containment note.
 
 **Conventions:** DTO validation via `class-validator`; consistent error envelope `{ statusCode, message, error, details? }`; pagination envelope `{ data, page, pageSize, total }`. See skills `api-design-principles`, `error-handling-patterns`.
 
@@ -192,6 +215,7 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 - **Roles:** `Public` (anonymous, read-only non-PII), `Staff` (read incl. PII, create/edit), `Admin` (full incl. delete, import, user mgmt).
 - **Enforcement:** NestJS `JwtAuthGuard` (validates Cognito JWT signature/claims) + `RolesGuard` (`@Roles('admin')` etc.). PII projection enforced in the serialization layer independent of route guards (defense in depth).
 - **PII set (implemented):** the `Public`-hidden allowlist is `{ phone, email, sex, position, marketLocation, technicalSupport }`, declared once as `PII_ALLOWLIST` in `src/common/pii-consent.policy.ts` — the single runtime source of truth consulted by the role-aware serializer and every public read path. `traderId`, `gpsAltitude`, and `gpsAccuracy` are likewise never public. **Exact GPS is consent-gated:** `gpsLatitude`/`gpsLongitude` are surfaced only for `GRANTED` actors (withheld as `gps: null` for `UNKNOWN`/`DENIED`), and non-`GRANTED` actors are excluded from every public read and from `/metrics` counts. Consent is pinned in the Prisma `WHERE` (not serializer-only) and the boundary is proven end-to-end over HTTP in `src/test/pii-boundary.spec.ts` (NFR-1, NFR-7).
+- **Unapproved-PII boundary (public self-registration).** `Registration.payload` and `Registration.submitterEmail` (§3.1) are PII for an organisation that has not been approved for publication and may never be. **`PII_ALLOWLIST` and `NEVER_PUBLIC_FIELDS` cannot protect this table** — both enumerate `Actor` columns for the `Actor` serializer, and neither one sees a `Registration` row. Protection here is **structural, not filtered**: the public surface (`GET /registrations/consent-policy`, `POST /registrations/verify`, `POST /registrations`, `POST /registrations/lookup`) returns at most two or three scalars (`reference`, `status`, `reviewNote`) and never reads the `payload` column or the internal `id`, before or after adjudication. Proven end-to-end over HTTP by extending `src/test/pii-boundary.spec.ts` to this module's paths — release gate, alongside QA-1's existing coverage (see QA-12, §13).
 - **Transport:** HTTPS everywhere (CloudFront + API Gateway). CORS locked to the CloudFront origin.
 - **Secrets:** DB credentials and Cognito config from AWS SSM Parameter Store / Secrets Manager — never committed.
 - **Input safety:** all writes go through validated DTOs; Prisma parameterizes queries (no raw SQL on user input).
@@ -313,6 +337,7 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 | **ADR-007** | **Leaflet** (not a proprietary map SDK), loaded via a dynamically imported client component. | Accepted | No vendor key or per-view billing; keeps the map out of the static-export server pass. |
 | **ADR-008** | **AWS SAM** as the only IaC; three ordered stacks. | Accepted | One provisioning tool matching the serverless target. Console-created resources are drift by definition. |
 | **ADR-009** | Docs renamed to the AKILI baseline (`docs/ux-ui/design.md`, `docs/trd/trd.md`); existing TRD section numbers **not** renumbered. | Accepted | Archived specs and code comments keep valid `§n` citations; the cost is the structure map at the top of this file. |
+| **ADR-010** | Public self-registration's write path is secured by **structural containment**, not the `Actor` allowlist/consent filters: a dedicated `Registration` table whose public surface returns at most `{reference}` or `{status, reviewNote}` and never the payload. Abuse is bounded by a per-container `@nestjs/throttler` plus persistent counters (`EmailSendBudget`, `RegistrationLookupAttempt`) for the controls a per-container limiter cannot make durable across cold starts. | Accepted | The registry's first unauthenticated write path. `PII_ALLOWLIST`/`NEVER_PUBLIC_FIELDS` cannot protect it, so confinement is structural and independently gated (`src/test/pii-boundary.spec.ts` extension, release gate — QA-12). Four tables now hold personal data with no retention policy (accepted risk, PRD OQ-4). Publication of an approved submission as a public `Actor` is a separate, later, admin-gated act (`docs/specs/admin/registration-review-queue/`) — this ADR covers intake only. |
 
 ## 13. Quality Attribute Scenarios (Non-Functional Requirements)
 
@@ -331,5 +356,6 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 | **QA-9** | **Correctness (bulk import)** | An **admin** uploads a **CSV containing invalid rows** in the **deployed environment**. | Valid rows commit; **a bad row never corrupts a committed row**. Response reports `{ inserted, updated, failed: [{ row, errors }] }` per row. Tactic: per-row validation + transactional upsert by `traderId`. |
 | **QA-10** | **Observability** | An **operator** investigates a failed request **after the fact**. | Structured JSON logs in CloudWatch carrying request id, route, role, and latency; import/export jobs log summary counts. Client-facing errors carry a consistent envelope and **never** a stack trace. |
 | **QA-11** | **Accessibility** | A **keyboard or screen-reader user** browses the public site. | WCAG 2.1 AA per `docs/ux-ui/design.md` §10; the **directory list is the accessible equivalent of the map**, so no information is map-only. Enforced in frontend tests via `jest-axe`. |
+| **QA-12** | **Security (unapproved PII)** | An **anonymous visitor** issues a request to **any of the four public self-registration paths** (`consent-policy`, `verify`, `registrations`, `registrations/lookup`), against the **deployed API**, where a `Registration` exists in every reachable status (`PENDING_REVIEW`, `APPROVED`, `REJECTED`). | **Zero** occurrences of any `payload` field value, `submitterEmail`, the internal `id`, or reviewer identity in any response body — asserted against fixture **values**, not key names, over HTTP, on every public path this module adds, for a Registration in every reachable status. Tactic: structural containment, not filtered access (ADR-010). Verified by the extended `src/test/pii-boundary.spec.ts`. **Release gate.** |
 
 **Open question OQ-TRD-1:** QA-5 has no agreed numeric latency budget. "Fast enough to feel interactive" is not a testable response measure — a p95 target (e.g. filtered list p95 < 500 ms at 1,000 actors) should be set and measured before it can be asserted in a test. Recorded honestly rather than invented here.

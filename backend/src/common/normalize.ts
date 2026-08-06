@@ -130,9 +130,79 @@ export function normalizeRegion(
 }
 
 /**
+ * District → CanonicalRegion lookup (FR-3, design.md §4.2, NFR-4). Closed and
+ * exhaustive over the 28 real district values measured — by re-reading the
+ * client's `Partner Profile 14.4.2026.xlsx` workbook in place, never copied
+ * into this repository (NFR-9) — as appearing in the "district position" of
+ * rows whose region is blank across `Offtaker_Sorghum`, `Offtaker_Groundnuts`,
+ * and `Bulk buyers_beans`. This is a fixture of ONE workbook, not a general
+ * Tanzania gazetteer — it grows only when the next workbook measurement adds
+ * to it (`design.md` DD-1).
+ *
+ * **Not consumed by `normalizeRegion` or the importer** (`design.md` DD-1):
+ * it exists to be tested and to source the published table in `mapping.md`.
+ * `normalizeRegion`'s existing ambiguous/unknown quarantine behavior is
+ * completely untouched by this constant.
+ *
+ * **A district is present here only when its region is unambiguous.** Ten
+ * other values measured in the same district-position columns are
+ * contaminated cells holding a company or person name, not a district — see
+ * `mapping.md`'s contaminated-row register (physical row number only, per
+ * DD-5); they are deliberately excluded from this constant and never appear
+ * in this file. Per the quarantine philosophy above, a district whose region
+ * was uncertain is likewise omitted so its rows quarantine on `region` rather
+ * than import under a guess — see the `Mbozi`/`Momba` comments below for the
+ * two closest calls this measurement had to make.
+ */
+export const DISTRICT_TO_REGION = new Map<string, CanonicalRegion>([
+  ['bariadi', 'Simiyu'],
+  ['dodoma', 'Dodoma'],
+  ['kahama', 'Shinyanga'],
+  ['kahama town', 'Shinyanga'],
+  ['kakonko', 'Kigoma'],
+  ['kasulu', 'Kigoma'],
+  ['kibondo', 'Kigoma'],
+  ['kigoma', 'Kigoma'],
+  ['kishapu', 'Shinyanga'],
+  ['kongwa', 'Dodoma'],
+  ['masasi', 'Mtwara'],
+  ['masasi town', 'Mtwara'],
+  ['mbeya', 'Mbeya'],
+  ['mbeya city', 'Mbeya'],
+  // Mbozi moved from Mbeya to the newly-created Songwe region in the 2016
+  // split — the exact trap this constant exists to avoid (requirements.md
+  // §9 D-1b's worked example). NOT "Mbeya".
+  ['mbozi', 'Songwe'],
+  ['misungwi', 'Mwanza'],
+  ['mlele', 'Katavi'],
+  // Momba District (carved from Mbozi) sits in Songwe region alongside
+  // Mbozi, Ileje, and Songwe/Tunduma — the same 2016 split as above, not
+  // Mbeya. The district's establishment year is deliberately not asserted
+  // here: two reviews disagreed on it and neither could substantiate a
+  // source. The pairing does not depend on it.
+  ['momba', 'Songwe'],
+  ['mpanda', 'Katavi'],
+  ['mpanda town', 'Katavi'],
+  ['mtwara', 'Mtwara'],
+  ['nanyumbu', 'Mtwara'],
+  ['nyamagana', 'Mwanza'],
+  ['sengerema', 'Mwanza'],
+  ['singida', 'Singida'],
+  ['tabora', 'Tabora'],
+  ['temeke', 'Dar es Salaam'],
+  ['uvinza', 'Kigoma'],
+]);
+
+/**
  * Canonical trader-type taxonomy (OQ-2). Declared as a named constant per DD-5
  * so legal/business can revise it in one place. Exported for DTO enum
  * validation (`actor-create.dto.ts`).
+ *
+ * The last four codes were added per FR-4 / design.md §4.4 / DD-7 to cover
+ * categories present in the client's `Partner Profile 14.4.2026.xlsx` that
+ * previously had no canonical code and would quarantine. Appended after the
+ * original six so existing ordinal/positional assumptions are undisturbed
+ * (additive only — the original six are untouched).
  */
 export const TRADER_TYPES = [
   'seed_company',
@@ -141,6 +211,10 @@ export const TRADER_TYPES = [
   'offtaker',
   'research_institute',
   'informal_trader',
+  'humanitarian',
+  'digital_service_provider',
+  'qds_producer',
+  'bulk_buyer',
 ] as const;
 
 export type TraderType = (typeof TRADER_TYPES)[number];
@@ -153,6 +227,18 @@ const TRADER_TYPE_BY_LOWER = new Map<string, TraderType>(
 /**
  * Source-value aliases for trader types (lower-cased keys) → canonical taxonomy.
  * Maps the free-text labels seen in the source spreadsheet onto OQ-2 codes.
+ *
+ * FR-4 / design.md §4.4 / DD-7 additions (client workbook spellings for the
+ * four new categories): `INGO`, `NGO/INGO`, and `cbo` are unambiguous,
+ * unambiguous-to-*this*-taxonomy synonyms for the new `humanitarian` bucket
+ * — an INGO, an "NGO/INGO"-labelled org, and a community-based organization
+ * are all humanitarian/development actors, distinct from the formally
+ * registered local NGOs already covered by the pre-existing `ngo` alias.
+ * `Digital Service Provider`, `QDS`, and `Bulk buyer` are direct spellings of
+ * their new canonical codes. A value whose mapping would be a guess rather
+ * than a fact (e.g. a bare "Offtaker name"-style variant with no clear target,
+ * or any value not listed here) is deliberately left OUT so it quarantines —
+ * see the file's quarantine philosophy above and requirements.md FR-4.
  */
 const TRADER_TYPE_ALIASES = new Map<string, TraderType>([
   ['informal trader/retailer', 'informal_trader'],
@@ -167,6 +253,12 @@ const TRADER_TYPE_ALIASES = new Map<string, TraderType>([
   ['ngo', 'ngo'],
   ['research institute', 'research_institute'],
   ['research institution', 'research_institute'],
+  ['ingo', 'humanitarian'],
+  ['ngo/ingo', 'humanitarian'],
+  ['cbo', 'humanitarian'],
+  ['digital service provider', 'digital_service_provider'],
+  ['qds', 'qds_producer'],
+  ['bulk buyer', 'bulk_buyer'],
 ]);
 
 /**
@@ -240,6 +332,109 @@ export function parseCapacityTons(
   if (n < 0) return null;
 
   return n;
+}
+
+/**
+ * Tanzania E.164 country calling code (FR-5). Named per DD-5/NFR-4 so a
+ * future country-code change (unlikely, but the point of a constant) is a
+ * one-line edit rather than a scattered literal.
+ */
+const TZ_COUNTRY_CODE = '255';
+
+/** Result of {@link normalizePhone}: a canonical `+255…` number or `null`. */
+export interface PhoneNormalizationResult {
+  phone: string | null;
+  additionalCount: number;
+}
+
+/**
+ * Normalize a raw `phone` cell to Tanzanian E.164 (`+255…`), or `null` (FR-5).
+ *
+ * Quarantine philosophy (matching `normalizeRegion` / `normalizeTraderType`
+ * above): a value is normalized only when the mapping is unambiguous — a
+ * bare 9-digit local number, a leading-zero national number, a
+ * country-prefixed number (with or without internal spaces or a
+ * parenthesized country code), or a landline with internal spaces. Anything
+ * else — wrong length, non-numeric, or empty — returns `null` rather than a
+ * partially-mangled string; the caller decides what a `null` means (import
+ * quarantine vs. DTO validation), per the file's existing convention.
+ *
+ * **Multi-number cells (`/`-separated) are never silently truncated.** The
+ * first number is the one normalized into `phone`; every number after it is
+ * *discarded from the return value entirely* and only counted, never
+ * surfaced — a count of `n` means the discarded values sat at positions
+ * `2…n+1` of the source cell (design.md §4.1). This is what lets a caller
+ * warn "a second number was present" without this function — or anything
+ * downstream — ever holding, logging, or persisting the discarded digits
+ * (PII — FR-5, NFR-9).
+ */
+export function normalizePhone(
+  raw: string | null | undefined,
+): PhoneNormalizationResult {
+  if (raw == null) return { phone: null, additionalCount: 0 };
+
+  const trimmed = raw.trim();
+  if (trimmed === '') return { phone: null, additionalCount: 0 };
+
+  const parts = trimmed
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  if (parts.length === 0) return { phone: null, additionalCount: 0 };
+
+  return {
+    phone: normalizeSinglePhone(parts[0]),
+    additionalCount: parts.length - 1,
+  };
+}
+
+/**
+ * Normalize one phone candidate (already trimmed, no `/` splitting). Strips
+ * parentheses and internal whitespace, then matches the resulting digit
+ * string against the four length/prefix shapes that unambiguously resolve
+ * to a Tanzanian E.164 number. No other punctuation is stripped — a value
+ * with a dash or other separator is not a measured format, so it falls
+ * through to `null` rather than being guessed at.
+ */
+function normalizeSinglePhone(candidate: string): string | null {
+  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '');
+  if (cleaned === '') return null;
+
+  // Already `+255` + 9 digits. The subscriber part may not begin with `0`
+  // (user-approved amendment A2, T-1): a trunk prefix and a country code are
+  // mutually exclusive, so `+2550…` is malformed under any reading — it is a
+  // national number that had `255` pasted in front of it without the trunk
+  // `0` being dropped. Normalizing it would silently produce a number one
+  // digit off from the intended subscriber. Unlike the mobile-vs-landline
+  // question (left open on purpose — real data should settle that, not a
+  // guess), this branch has no defensible interpretation, so it falls
+  // through to the never-guess `null` branch.
+  if (new RegExp(`^\\+${TZ_COUNTRY_CODE}[1-9]\\d{8}$`).test(cleaned)) {
+    return cleaned;
+  }
+  // Country-prefixed without the leading `+` (incl. de-parenthesized). Same
+  // A2 constraint as above.
+  if (new RegExp(`^${TZ_COUNTRY_CODE}[1-9]\\d{8}$`).test(cleaned)) {
+    return `+${cleaned}`;
+  }
+  // Leading-zero national (mobile or landline) — 0 + 9 digits.
+  if (/^0\d{9}$/.test(cleaned)) {
+    return `+${TZ_COUNTRY_CODE}${cleaned.slice(1)}`;
+  }
+  // Bare 9-digit local number — no leading zero, no country code. Constrained
+  // to the real Tanzanian mobile prefixes (6/7) per user-approved amendment
+  // A1 (T-1): a bare 9-digit value with no leading zero and no country code
+  // can only be a Tanzanian MOBILE number, which begins 6 or 7. Accepting any
+  // 9 digits let a column-shifted numeric (an ID, a capacity figure) coerce
+  // into a syntactically valid `+255…` — a wrong value every downstream gate
+  // then accepts (requirements.md §9 D-6; FR-4 measures 4 such rows in
+  // `Offtaker_Groundnuts`). A non-6/7 leading digit now falls through to the
+  // never-guess `null` branch (quarantine + warning) instead.
+  if (/^[67]\d{8}$/.test(cleaned)) {
+    return `+${TZ_COUNTRY_CODE}${cleaned}`;
+  }
+
+  return null;
 }
 
 /** GPS latitude guard: finite and within [−90, 90]. */

@@ -55,6 +55,25 @@ export interface ImportReportTotals {
   warnings: number;
 }
 
+/**
+ * T-4 — one entry of the per-reason breakdown of rows that did not import
+ * (FR-7).
+ *
+ * `reason` is drawn from a **closed vocabulary of three sources**, none of
+ * which can carry a value — which is what makes the breakdown structurally
+ * incapable of leaking PII (NFR-9, `design.md` §7 PII row):
+ *
+ * 1. a **column name** — the `field` of the failing template column;
+ * 2. a **`skipped-*` outcome** — `skipped-exists`, `skipped-duplicate-in-file`;
+ * 3. the literal **`batch-rolled-back`** — how the internal `_row`
+ *    pseudo-field surfaces. `_row` itself is never emitted; it is not a
+ *    column and would read as one.
+ */
+export interface ImportFailureReason {
+  reason: string;
+  count: number;
+}
+
 /** Full import report for a preview or commit run (FR-3, FR-7). */
 export interface ImportReport {
   mode: 'preview' | 'commit';
@@ -62,4 +81,14 @@ export interface ImportReport {
   templateVersionDetected?: string;
   totals: ImportReportTotals;
   rows: ImportRowResult[];
+  /**
+   * T-4 (FR-7) — why rows did not import, **one reason per row**, so the
+   * counts sum to `totals.failed + totals.skipped` exactly. Ordered by count
+   * descending, then reason ascending, so two runs over identical input
+   * produce byte-identical output (NFR-6).
+   *
+   * Optional and **omitted entirely when no row failed or was skipped** — a
+   * clean import carries no breakdown rather than an empty array.
+   */
+  failureBreakdown?: ImportFailureReason[];
 }

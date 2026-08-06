@@ -27,6 +27,7 @@ jest.mock('aws-amplify/auth', () => ({
 
 import {
   adminGetActor,
+  adminListActors,
   createActor,
   updateActor,
   deleteActor,
@@ -73,6 +74,10 @@ const ADMIN_ACTOR: AdminActor = {
   gpsAltitude: null,
   gpsAccuracy: null,
   consentStatus: 'GRANTED',
+  registrationSource: 'TEAM_MANAGED',
+  consentMethod: 'SIGNED_FORM',
+  consentObtainedAt: '2024-01-01T00:00:00.000Z',
+  consentReference: 'Form #001',
   crops: ['sorghum', 'common_bean'],
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-06-01T00:00:00.000Z',
@@ -209,6 +214,101 @@ beforeEach(() => {
 
 afterAll(() => {
   process.env = ORIGINAL_ENV;
+});
+
+// ---------------------------------------------------------------------------
+// adminListActors — T-8 (registration-source-and-consent)
+// ---------------------------------------------------------------------------
+
+describe('adminListActors()', () => {
+  const LIST_RESPONSE = { data: [ADMIN_ACTOR], page: 1, pageSize: 25, total: 1 };
+
+  it('hits GET /api/v1/admin/actors with no querystring when no query is supplied', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors(undefined, TOKEN);
+
+    expect(callUrl()).toBe(`${BASE_URL}/api/v1/admin/actors`);
+    expect(callInit().method).toBe('GET');
+  });
+
+  it('builds a querystring from region, traderType, and consentStatus', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors(
+      { region: 'Mbeya', traderType: 'seed_company', consentStatus: 'GRANTED' },
+      TOKEN,
+    );
+
+    const url = new URL(callUrl());
+    expect(url.searchParams.get('region')).toBe('Mbeya');
+    expect(url.searchParams.get('traderType')).toBe('seed_company');
+    expect(url.searchParams.get('consentStatus')).toBe('GRANTED');
+  });
+
+  it('sends registrationSource and consentMethod as query params (FR-6)', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors(
+      { registrationSource: 'TEAM_MANAGED', consentMethod: 'NOT_RECORDED' },
+      TOKEN,
+    );
+
+    const url = new URL(callUrl());
+    expect(url.searchParams.get('registrationSource')).toBe('TEAM_MANAGED');
+    expect(url.searchParams.get('consentMethod')).toBe('NOT_RECORDED');
+  });
+
+  it('combines consentStatus=GRANTED and consentMethod=NOT_RECORDED as an AND (FR-9 enumeration)', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors(
+      { consentStatus: 'GRANTED', consentMethod: 'NOT_RECORDED' },
+      TOKEN,
+    );
+
+    const url = new URL(callUrl());
+    // Both params present on the SAME request — this is what makes the
+    // combination an AND once the backend's `where` clause filters on them
+    // (see the {@link AdminActorListQuery} doc comment).
+    expect(url.searchParams.get('consentStatus')).toBe('GRANTED');
+    expect(url.searchParams.get('consentMethod')).toBe('NOT_RECORDED');
+  });
+
+  it('omits registrationSource/consentMethod from the querystring when not supplied', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors({ region: 'Mbeya' }, TOKEN);
+
+    const url = new URL(callUrl());
+    expect(url.searchParams.has('registrationSource')).toBe(false);
+    expect(url.searchParams.has('consentMethod')).toBe(false);
+  });
+
+  it('attaches Authorization: Bearer <token>', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    await adminListActors({}, TOKEN);
+
+    const headers = callInit().headers as Record<string, string>;
+    expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('returns the parsed AdminActorList, including the four provenance fields', async () => {
+    global.fetch = makeFetchOk(LIST_RESPONSE);
+
+    const result = await adminListActors({}, TOKEN);
+
+    expect(result).toEqual(LIST_RESPONSE);
+    expect(result.data[0].registrationSource).toBe('TEAM_MANAGED');
+    expect(result.data[0].consentMethod).toBe('SIGNED_FORM');
+  });
+
+  it('throws AuthFailureError on 401', async () => {
+    global.fetch = make401();
+
+    await expect(adminListActors({}, TOKEN)).rejects.toThrow(AuthFailureError);
+  });
 });
 
 // ---------------------------------------------------------------------------

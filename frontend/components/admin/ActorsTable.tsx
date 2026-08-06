@@ -5,9 +5,29 @@
  * ActorsTable — selectable admin actor list.
  *
  * Layout:
- *   - md+: <table> with columns: Trader, Region, Type, Consent, Phone, Email,
- *     Market, Actions.
- *   - mobile (<md): stacked cards, one per actor.
+ *   - lg+: <table> with columns: Trader, Region, Type, Source, Consent,
+ *     Phone, Email, Market, Actions. All columns render — none are
+ *     dropped — wrapped in `overflow-x-auto` so the full row scrolls
+ *     horizontally at this breakpoint and up when it overflows the
+ *     viewport (design.md §9, `registration-source-and-consent` FR-6).
+ *     The checkbox and Trader columns are `sticky left-*` within that
+ *     scroll container (FR-6's small-screen scenario, T-8 scope
+ *     correction 2026-08-04) — together they are what lets an admin
+ *     select *and* identify a row after scrolling right to read Consent
+ *     on the nine-column, sidebar-narrowed `lg` layout.
+ *
+ *     **The breakpoint is `lg`, not `md`** (T-8 scope correction
+ *     2026-08-04, second pass) — a live D-h visual check measured the
+ *     scroll container at `md` (768px viewport) at only ~494px once the
+ *     persistent sidebar and content padding are subtracted, leaving ~94px
+ *     to scroll eight non-frozen columns through even with the Trader
+ *     clamp in place; Consent rendered as unreadable fragments
+ *     ("lished", "ecorded — no ev"). At `lg` (1024px) the container is
+ *     ~718px and the sticky columns do their job.
+ *   - below lg: the table is `hidden` and stacked cards render instead, one
+ *     per actor, carrying the same Source badge and consent-method caption
+ *     as the table's Consent column — including at `md`, which now gets
+ *     the card treatment rather than a cramped table.
  *
  * Selection:
  *   - Row checkboxes let an Admin select individual actors.
@@ -24,6 +44,17 @@
  *   - GRANTED  → published/green
  *   - DENIED   → hidden/red
  *   - UNKNOWN  → neutral/gray
+ *
+ * Source + Consent-method (registration-source-and-consent T-8, FR-1/FR-2/FR-9):
+ *   - Source chip: TEAM_MANAGED (neutral) vs SELF_REGISTERED (primary-toned).
+ *   - Consent column pairs the existing status chip with a method caption
+ *     ("Signed form", "Portal checkbox", "Not recorded", ...). A `GRANTED`
+ *     actor whose method is still `NOT_RECORDED` is the legacy,
+ *     unevidenced-consent case FR-9 exists to surface — its caption renders
+ *     in the warning token instead of muted AND carries an explicit text
+ *     qualifier ("Not recorded — no evidence") so the flag is not
+ *     color-only (WCAG 1.4.1); it is also enumerable via the
+ *     consentStatus+consentMethod filter.
  *
  * Accessibility (WCAG 2.1 AA / system-design §10):
  *   - <table> with <th scope="col">, <caption> for screen readers.
@@ -69,6 +100,101 @@ export interface ActorsTableProps {
 }
 
 // ---------------------------------------------------------------------------
+// Sticky first column (FR-6 small-screen scenario, T-8 scope correction)
+// ---------------------------------------------------------------------------
+
+/**
+ * The checkbox column's width and the Trader column's left offset must be
+ * the same physical distance (3rem/48px) for the two sticky columns to sit
+ * flush against each other with no gap or overlap. Centralized here as
+ * `CHECKBOX_COL_WIDTH_CLASS` / `TRADER_COL_LEFT_CLASS` rather than left as
+ * four independent literals, so a reviewer changing one sees the other.
+ *
+ * These stay separate string constants rather than one computed value:
+ * Tailwind's compiler extracts classes by scanning source for complete,
+ * literal class-name strings. A template literal like `` `left-${n}` ``
+ * would not be found by that scan, so the class would render in the DOM
+ * with **no matching CSS rule** — a silent failure strictly worse than the
+ * prose-only coupling this fixes. Both are standard Tailwind scale values
+ * (no arbitrary `[…]` geometry, NFR-8). `ActorsTable.test.tsx` asserts
+ * both classes together on the checkbox cells as the enforcement backstop
+ * dynamic derivation can't safely provide here.
+ *
+ * Sticky cells need their own opaque background: a transparent `td`/`th`
+ * lets non-sticky columns show through underneath as they scroll past.
+ * The header row's ambient background is `bg-surface-alt` (on `<thead>`),
+ * the body row's is `bg-surface` (on `<tbody>`) with `hover:bg-surface-alt`
+ * currently applied to the `<tr>` itself — a transparent `td` inherits
+ * that through the row, but an opaque sticky `td` cannot, so the hover
+ * state is re-declared here via the `group`/`group-hover` pattern (the
+ * `<tr>` carries `group`). There is no separate "selected row" background
+ * in this table today (checkbox-checked is the only selection cue), so
+ * there is no third state to replicate. `transition-colors` is repeated
+ * on the sticky cells (rather than relying solely on the `<tr>`'s copy) so
+ * their `group-hover` repaint fades in step with the rest of the row
+ * instead of snapping instantly.
+ *
+ * No z-index is added: `position: sticky` makes these `td`/`th` elements
+ * "positioned", and per the CSS painting order, in-flow non-positioned
+ * siblings (the scrolling columns) always paint *before* — i.e. underneath
+ * — positioned siblings at the default stack level, regardless of DOM
+ * order. That already puts the sticky columns visually on top. There is
+ * no sticky header here to create a second, vertical stacking need.
+ *
+ * The sticky/scrollable boundary is marked with `shadow-sticky-edge` (an
+ * inset box-shadow, `tailwind.config.ts`), **not** `border-r`. A live
+ * D-h visual check (2026-08-04) confirmed the border regression: under
+ * `border-collapse`, a cell border belongs to the table's border grid, not
+ * the cell's own paint — so it stays put at its original table position
+ * while the sticky cell scrolls past it, and the boundary visibly detaches
+ * once the table scrolls. An inset shadow is painted by the cell itself, so
+ * it travels with the sticky offset instead.
+ */
+const CHECKBOX_COL_WIDTH_CLASS = 'w-12';
+const TRADER_COL_LEFT_CLASS = 'left-12';
+
+const STICKY_CHECKBOX_TH = 'sticky left-0 bg-surface-alt';
+const STICKY_TRADER_TH = `sticky ${TRADER_COL_LEFT_CLASS} bg-surface-alt shadow-sticky-edge`;
+const STICKY_CHECKBOX_TD = 'sticky left-0 bg-surface group-hover:bg-surface-alt transition-colors';
+const STICKY_TRADER_TD = [
+  'sticky',
+  TRADER_COL_LEFT_CLASS,
+  'bg-surface group-hover:bg-surface-alt transition-colors',
+  'shadow-sticky-edge',
+].join(' ');
+
+/**
+ * Width clamp for the rendered Trader name — deliberately on an inner
+ * `<span>`, never on the `<td>` itself.
+ *
+ * `max-w-xs` on a table cell is a no-op once the cell is `whitespace-nowrap`
+ * (which `truncate` itself sets): under `nowrap`, a cell's min-content width
+ * equals its max-content width — the full unwrapped string — and
+ * css-tables-3's column measure only applies `max-width` inside
+ * `min(max-width, max-content)`, a term that's floored by min-content.
+ * `max(FULL, 320px)` = `FULL`. The column resolves to the full name's width
+ * regardless of the clamp, nothing overflows, `overflow:hidden` never clips,
+ * and no ellipsis renders — a clamp that looks correct and does nothing.
+ *
+ * A block-level child obeys a different rule: CSS sizing clamps a
+ * **non-table** block box's min-content *contribution* by its own
+ * `max-width`, so the `<span>` contributes `min(320px, FULL)` = 320px, the
+ * `<td>`'s min-content becomes `320px + padding`, the column resolves to
+ * that, and the nowrap text genuinely overflows the 320px span — real
+ * ellipsis. Same pattern the mobile card already uses successfully
+ * (`<p className="truncate">` inside `<div className="min-w-0 flex-1">`,
+ * below). Trader is a pre-existing column, not one of FR-6's "new columns",
+ * so its MUST-NOT-truncate clause doesn't cover it — worst case this caps
+ * the frozen (checkbox + Trader) pair at ~400px instead of an unbounded
+ * cooperative legal name eating the scroll container's budget. The table
+ * only renders at `lg`+ (measured ~718px container at `lg 1024`; a live
+ * D-h check found `md` left too little room even with this clamp, which is
+ * why the breakpoint moved — see the layout doc comment at the top of this
+ * file).
+ */
+const TRADER_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -106,9 +232,85 @@ function formatMarket(location: string | null): string {
   return location ?? '—';
 }
 
+/** Source chip label (registration-source-and-consent FR-1). */
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'SELF_REGISTERED':
+      return 'Self-registered';
+    default:
+      return 'Team-managed';
+  }
+}
+
+/** Source chip tokens — neutral for the curated track, primary for self-registration. */
+function sourceBadgeClasses(source: string): string {
+  switch (source) {
+    case 'SELF_REGISTERED':
+      return 'bg-primary-soft text-primary';
+    default:
+      return 'bg-border text-muted';
+  }
+}
+
+/** Consent-method caption text (registration-source-and-consent FR-2). */
+function consentMethodLabel(method: string): string {
+  switch (method) {
+    case 'PORTAL_CHECKBOX':
+      return 'Portal checkbox';
+    case 'SIGNED_FORM':
+      return 'Signed form';
+    case 'EMAIL':
+      return 'Email';
+    case 'VERBAL_FIELD':
+      return 'Verbal (field)';
+    default:
+      return 'Not recorded';
+  }
+}
+
+/**
+ * FR-9 — a `GRANTED` actor whose consent method is still `NOT_RECORDED` is
+ * the legacy, unevidenced-grant case this spec exists to surface (the
+ * migration deliberately never backfills it). Flagged with the warning
+ * token rather than the neutral muted caption.
+ */
+function isUnevidencedGrant(consentStatus: string, consentMethod: string): boolean {
+  return consentStatus === 'GRANTED' && consentMethod === 'NOT_RECORDED';
+}
+
+function consentMethodClasses(consentStatus: string, consentMethod: string): string {
+  return isUnevidencedGrant(consentStatus, consentMethod) ? 'text-warning' : 'text-muted';
+}
+
+/**
+ * Caption text for the consent-method cell. The warning *color* alone
+ * (`consentMethodClasses` above) is not perceivable to color-blind users or
+ * screen-reader users — WCAG 1.4.1 requires the flag not depend on color as
+ * the only visual/textual cue. The unevidenced-grant case therefore carries
+ * an explicit qualifier in the text itself, not just a different token
+ * (T-8 rework, "FR-9 flag is emphasis-only" fold-in).
+ */
+function consentMethodCaptionText(consentStatus: string, consentMethod: string): string {
+  const label = consentMethodLabel(consentMethod);
+  return isUnevidencedGrant(consentStatus, consentMethod) ? `${label} — no evidence` : label;
+}
+
 // ---------------------------------------------------------------------------
-// Consent badge
+// Source / Consent badges
 // ---------------------------------------------------------------------------
+
+function SourceBadge({ source }: { source: string }) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        sourceBadgeClasses(source),
+      ].join(' ')}
+    >
+      {sourceLabel(source)}
+    </span>
+  );
+}
 
 function ConsentBadge({ status }: { status: string }) {
   return (
@@ -120,6 +322,24 @@ function ConsentBadge({ status }: { status: string }) {
     >
       {consentLabel(status)}
     </span>
+  );
+}
+
+/** Status chip + method caption, stacked (design.md §5 — "status chip + method caption"). */
+function ConsentCell({
+  consentStatus,
+  consentMethod,
+}: {
+  consentStatus: string;
+  consentMethod: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <ConsentBadge status={consentStatus} />
+      <span className={['text-xs', consentMethodClasses(consentStatus, consentMethod)].join(' ')}>
+        {consentMethodCaptionText(consentStatus, consentMethod)}
+      </span>
+    </div>
   );
 }
 
@@ -210,7 +430,20 @@ function ActorCard({
           <p className="truncate text-sm font-medium text-fg">{actor.traderName}</p>
           <p className="text-xs text-muted mt-0.5">{roleLabel(actor.traderType as TraderType)}</p>
         </div>
-        <ConsentBadge status={actor.consentStatus} />
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            <SourceBadge source={actor.registrationSource} />
+            <ConsentBadge status={actor.consentStatus} />
+          </div>
+          <span
+            className={[
+              'text-xs',
+              consentMethodClasses(actor.consentStatus, actor.consentMethod),
+            ].join(' ')}
+          >
+            {consentMethodCaptionText(actor.consentStatus, actor.consentMethod)}
+          </span>
+        </div>
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -330,18 +563,21 @@ export function ActorsTable({
           : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`}
       </div>
 
-      {/* ── Desktop table (md+) ───────────────────────────────────────────── */}
-      <div className="hidden md:block overflow-x-auto rounded-md border border-border">
+      {/* ── Desktop table (lg+) ───────────────────────────────────────────── */}
+      <div className="hidden lg:block overflow-x-auto rounded-md border border-border">
         <table
           className="min-w-full divide-y divide-border text-sm"
           aria-label="Actors"
         >
           <caption className="sr-only">
-            List of registry actors with consent status and contact details.
+            List of registry actors with registration source, consent status, and contact details.
           </caption>
           <thead className="bg-surface-alt">
             <tr>
-              <th scope="col" className="px-4 py-3 w-12">
+              <th
+                scope="col"
+                className={['px-4 py-3', CHECKBOX_COL_WIDTH_CLASS, STICKY_CHECKBOX_TH].join(' ')}
+              >
                 <input
                   type="checkbox"
                   id="select-all-actors"
@@ -361,6 +597,7 @@ export function ActorsTable({
                 'Trader',
                 'Region',
                 'Type',
+                'Source',
                 'Consent',
                 'Phone',
                 'Email',
@@ -370,7 +607,10 @@ export function ActorsTable({
                 <th
                   key={col}
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted whitespace-nowrap"
+                  className={[
+                    'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted whitespace-nowrap',
+                    col === 'Trader' ? STICKY_TRADER_TH : '',
+                  ].join(' ')}
                 >
                   {col}
                 </th>
@@ -384,12 +624,15 @@ export function ActorsTable({
                 <tr
                   key={actor.id}
                   className={[
-                    'hover:bg-surface-alt transition-colors',
+                    'group hover:bg-surface-alt transition-colors',
                     onRowClick ? 'cursor-pointer' : '',
                   ].join(' ')}
                   onClick={onRowClick ? () => onRowClick(actor) : undefined}
                 >
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className={['px-4 py-3', CHECKBOX_COL_WIDTH_CLASS, STICKY_CHECKBOX_TD].join(' ')}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       id={`select-actor-${actor.id}`}
@@ -402,15 +645,29 @@ export function ActorsTable({
                       ].join(' ')}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-fg whitespace-nowrap">
-                    {actor.traderName}
+                  <td
+                    className={['px-4 py-3 font-medium text-fg', STICKY_TRADER_TD].join(' ')}
+                    // Visual affordance only — not an accessibility measure.
+                    // `title` is not keyboard-reachable and is inconsistently
+                    // exposed to assistive tech; screen readers already read
+                    // the full name below regardless of visual truncation,
+                    // since the text content itself is never shortened.
+                    title={actor.traderName}
+                  >
+                    <span className={TRADER_NAME_CLAMP_CLASS}>{actor.traderName}</span>
                   </td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">{actor.region}</td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">
                     {roleLabel(actor.traderType as TraderType)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <ConsentBadge status={actor.consentStatus} />
+                    <SourceBadge source={actor.registrationSource} />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <ConsentCell
+                      consentStatus={actor.consentStatus}
+                      consentMethod={actor.consentMethod}
+                    />
                   </td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">
                     {formatPhone(actor.phone)}
@@ -435,9 +692,9 @@ export function ActorsTable({
         </table>
       </div>
 
-      {/* ── Mobile cards (<md) ─────────────────────────────────────────────── */}
+      {/* ── Mobile/tablet cards (<lg) ──────────────────────────────────────── */}
       <div
-        className="flex flex-col gap-3 md:hidden"
+        className="flex flex-col gap-3 lg:hidden"
         role="list"
         aria-label="Actors"
       >

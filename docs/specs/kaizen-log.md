@@ -1,0 +1,136 @@
+# Kaizen Log
+
+Continuous-improvement record for this project, updated automatically by
+`/akili-archive` (Kaizen Retrospective, powered by the `kaizen` skill).
+Other AKILI commands read only the `## Active Lessons` table below —
+keep it at 10 rows or fewer.
+
+## Active Lessons
+
+| ID | Lesson | Source Spec | Severity | Target | Standardized In | Status |
+|---|---|---|---|---|---|---|
+| KZ-001 | Decomposition must close coverage at **scenario and clause** granularity, not requirement ID; a gap may never be discharged by citing a different requirement that is satisfied | actors/registration-source-and-consent | High | Product + Methodology | `docs/specs/general-setup/task.md` § Coverage closure | Applied |
+| KZ-002 | A presence-assertion (class/config/attribute exists) is not a behavioral proof — it must record what it cannot prove, and a property the harness cannot evaluate is **not covered**. **Recurrence ×2 (2026-08-05): now extended to documents** — a procedure carrying every required clause can still be unexecutable | actors/registration-source-and-consent · import-export/partner-profile-onboarding | High | Product + Methodology | `docs/specs/general-setup/task.md` § Testing & Verification | Applied |
+| KZ-003 | Before deferring a check because it "needs the stack/login/seed data", test that assumption — a component taking plain props renders in a throwaway harness | actors/registration-source-and-consent | Medium | Product + Methodology | `.agents/leader.md` § Deferring a check | Applied |
+| KZ-004 | A correction is not applied when its cited site is fixed — grep the superseded value across every document, and mark as resolved everything that *quotes* the corrected figure, in the same change | import-export/partner-profile-onboarding | High | Product + Methodology | `.agents/leader.md` § Applying a correction | Applied |
+| KZ-005 | Every numeric claim must be cross-checked against narrative prose in the same spec before publication; a count that contradicts a sentence in a sibling document is a defect detectable without re-measuring | import-export/partner-profile-onboarding | Medium | Product + Methodology | `docs/specs/general-setup/requirements.md` § Writing Standards | Applied |
+
+| KZ-006 | A **constraints-not-mechanism** section answered with a new schema object must sweep the design's own object list **in the same change** — migration-only is the C-10 disclosure failure | actors/public-self-registration | High | Product + Methodology | *pending* | Recorded |
+| KZ-007 | **Constraint sets are conjunctive.** Satisfying each member individually can still break the set; review must reason about **interaction**, since no test covers a defect that lives between two correct constraints | actors/public-self-registration | High | Product | *pending* | Recorded |
+| KZ-008 | **A comment asserting a property the code lacks is a defect of the same class as a missing test** — and it recurs at every level of its own correction | actors/public-self-registration | High | Methodology | *pending* | Recorded |
+
+## Entries
+
+### 2026-08-06 — `actors/public-self-registration` (chunk 3a)
+
+**Measure.** 23 tasks · **11 rework rounds** · ~50 Reviewer lens reports · **1 HALT** (T-7, 3-attempt ceiling, resolved by a user-authorised bounded 4th attempt) · 0 FATAL_FAIL · 0 Pivots · 2 environment failures (classifier outage, usage limits) · **4 recorded Leader errors** · review budget raised 37 → 60 by explicit user decision.
+
+**Learn — three lessons.**
+
+**KZ-006 (High, Product+Methodology, recurrence ×3).** A section that states **constraints rather than a mechanism** gets answered with a new schema object, the migration is updated, and the design's own object list is not — three times in one spec (`EmailSendBudget` undeclared for three tasks, `RegistrationSequence`, `RegistrationLookupAttempt`). This is the **C-10 disclosure failure `A-4` names, recurring inside the spec that names it**, and every correction was a separate Leader action prompted by a Reviewer. *Evidence: `execution.md` → T-10 Leader doc sweep, T-11 third recurrence.*
+
+**KZ-007 (High, Product).** **Constraint sets are conjunctive, and satisfying each member individually does not satisfy the set.** T-11's L-1 (a bound surviving cold starts) and L-4 (reset on success) were both implemented correctly; because the reset keyed on the caller rather than the reference, an attacker holding any valid pair zeroed the counter every ninth guess and 10/hour became ~1,080/hour. **No test could have found it — there was no defect in any single constraint.** Only a reviewer reasoning about interaction did. *Evidence: `execution.md` → T-11 attempt 1.*
+
+**KZ-008 (High, Methodology).** **A comment asserting a property the code does not have is a defect of the same class as a missing test, and it recurs at every level of correction.** T-20 failed three times on this alone: regexes declared "semantic" citing a paraphrase matching none of them; then a pin claiming to cover "any phrasing" while reading only the first `<p>`; then a sanity check whose `.some()` let either fix be reverted green. Also T-8's *"measured"* timing claim, T-13's citation to a completion report that never existed, and six inaccurate comments in T-22 — **the task whose subject is honest coverage accounting**. *Evidence: `execution.md` → T-20 attempts 1-3, T-8 FAIL 3, T-13 attempt 2, T-22.*
+
+**Standardize.** Deferred — presented to the user at archive; no edits applied outside this log.
+
+**Notable, not a lesson.** Three of four Leader errors were caught by an **Implementer declining to let an instruction pass unexamined**, never by a gate — including one where both halves of a Leader's remediation would have silently disabled a security control, on the worker's final attempt before a HALT, with every incentive to comply.
+
+
+### 2026-08-05 — import-export/partner-profile-onboarding
+
+**Metrics**
+
+| Signal | Value | Source |
+|---|---|---|
+| Tasks executed | 12 / 12 — **budget exact** | `tasks.md` |
+| Reviewer FAIL rework rounds | 6 (T-7 ×2, T-8, T-9, T-10, pivot amendment) | `execution.md` |
+| HALTs / FATAL_FAILs / PRODUCT_BUGs | **0 / 0 / 0** | `execution.md` |
+| Pivots | **2** formal `## Pivot Record` blocks, both user-approved | `execution.md` |
+| Measurement corrections | **15** (C-1…C-15) | `execution.md` |
+| Advisories recorded | 27 (A-1…A-27), none converted to tasks | `execution.md` |
+| Documentation lines | 1,124 vs ~1,250 planned — **under budget** | `mapping.md` · `reconciliation.md` · `runbook.md` |
+| Runtime worker failures | 4 Reviewers lost to `ENOTFOUND` / mid-response disconnects; **0 rework attempts consumed** | `execution.md` |
+| Validation FAIL / WARN | — (`/akili-validate` not run; absence accepted at archive) | `archive-summary.md` §6 |
+| NFR-9 near-misses | **1** — a real workbook phone written into a draft, self-caught before reporting | `execution.md` T-8 |
+
+**Lessons**
+
+- **KZ-004 — A correction is not applied when its cited site is fixed.** (Product + Methodology, High)
+  - Root cause: amendments were driven by the site list the **finding** supplied rather than by grepping the superseded value across every spec document. It failed in **both directions**. *Forward:* C-9, C-10 and C-11 each had a live second site the finding did not name, and the Leader's own first pass at C-15 corrected `design.md` while leaving two live `requirements.md` sites. *Reverse:* correcting `design.md` falsified everything **quoting** it — `mapping.md` and `reconciliation.md` went on describing resolved discrepancies as open.
+  - Evidence: `execution.md` → "Pivot amendment C-6…C-13" (Reviewer FAIL: one orphaned §4.1 site) · "C-15 propagation correction, same day" · T-7 attempt 1 FAIL 2 (*"asserts a false statement about its sibling documents"*).
+  - Cost: one extra review round on the C-6…C-13 pivot, and a Leader-committed defect that only the post-commit sweep caught. The reverse direction was anticipated in the brief for C-14 and closed on attempt 1 — evidence the rule works once stated.
+  - Standardization: append-only rule in `.agents/leader.md`. → **Applied 2026-08-05 (user-approved)**
+  - Upstream: propose as a Leader-persona rule — nothing in it is project-specific.
+
+- **KZ-005 — Numeric estimates were never reconciled against the spec's own prose.** (Product + Methodology, Medium)
+  - Root cause: specify-time figures entered `design.md` §9/§9.1 and `requirements.md` §3.1 and were never cross-checked against narrative statements elsewhere in the same spec. `design.md`'s *"8 cross-sheet duplicate groups, 18 records"* sat beside `mapping.md` §4.5's *"Rows 301–312 repeat all **11** `Seed Company` organisations verbatim"* — mutually contradictory, detectable **without opening the workbook**, and it survived two documents and a Judgment Day.
+  - Evidence: `execution.md` → T-10 finding F-2 and correction C-14; `design.md` §9 vs `mapping.md` §4.5.
+  - A corroboration worth keeping: 18 records over 8 groups requires exactly two 3-sheet groups, and direct measurement found exactly two. **The estimate's shape was right; only its pair count was short** — which is why nobody questioned it.
+  - Standardization: writing-standards line in `docs/specs/general-setup/requirements.md`. → **Applied 2026-08-05 (user-approved)**
+  - Upstream: generalizable — any spec that carries both figures and narrative can contradict itself this way.
+
+- **KZ-002 — recurrence ×2, now in documents rather than tests.** (Product + Methodology, High)
+  - Not a new lesson: the same root cause KZ-002 already names — *a presence-assertion is not a behavioral proof*. T-9 attempt 1 carried **all five** `design.md` §4.6 MUST clauses, every figure correct, every disqualifier clear — and described an import UI **that does not exist**. It told the operator to upload twice and "choose commit"; the shipped page previews automatically on selection and commits via an *"Import N actors"* button the runbook never named.
+  - The sharpest instance: the public-detail check asked for *"the id of one record you just committed"* without saying that is the **internal** id, not the `traderId` the operator builds. The post-commit table renders `traderId` only — so an operator would have used `OFB-1036`, received a 404 for the wrong reason, and **recorded a false pass on the check whose only purpose is catching a PII leak.**
+  - Evidence: `execution.md` → T-9 attempt 1, Reviewer FAIL issues 1–3 (verified against `frontend/app/(admin)/admin/actors/import/page.tsx`).
+  - Standardization: one-line scope extension where KZ-002 already lives (`docs/specs/general-setup/task.md` § Testing & Verification) — operator-facing documents are verified against the **running product**, not the spec. → **Applied 2026-08-05 (user-approved)**
+
+**The single sentence worth carrying forward**
+
+> Clause-completeness and executability are different properties, and only one of them can be checked without leaving the spec.
+
+T-9's first attempt satisfied every clause the design required and would have failed the first operator who tried to follow it. The previous spec's lesson was that *cross-document consistency is not evidence of correctness*; this one is its sibling — **conformance to a specification is not evidence that the thing works**. Both were caught only by a Reviewer that went and looked at the real artifact.
+
+**A design property discovered, not designed:** the shipped Admin import UI **structurally enforces preview-before-commit** — the commit reuses the exact previewed `File`, with no path to commit an unpreviewed one. Stronger than `design.md` §4.6 item 1 requires, and worth knowing before anyone "improves" that flow.
+
+### 2026-08-04 — actors/registration-source-and-consent
+
+**Metrics**
+
+| Signal | Value | Source |
+|---|---|---|
+| Tasks executed | 10 | `tasks.md` |
+| Reviewer FAIL rework rounds | 2 (T-9 conformance; T-8 sticky clamp) | `execution.md` |
+| Leader-escalated advisories → gating | 2 (T-10 A-1 false hint copy; T-8 S-1 unbounded sticky column) | `execution.md` |
+| HALTs / FATAL_FAILs | 0 | `execution.md` |
+| Pivots | 0 formal `## Pivot Record` blocks | `execution.md` |
+| **Requirements owned by no task** | **3** | `execution.md` → T-8, T-9, T-8 (reopened) |
+| PRODUCT_BUGs | 0 recorded (`/akili-test` never ran) | — |
+| Product bugs found by validation | 2 High (R-1, R-2), fixed pre-archive | `validation-report.md` §11 |
+| Validation FAIL / WARN | 0 / 1 (NFR-5) | `validation-report.md` |
+| Doc defects corrected during validation | 4 corrected, 3 accepted | `validation-report.md` §8 |
+| Budget tripwire | **exceeded** on review rounds (~12 planned); task count held at 10 | `tasks.md` § Budget |
+| Scope corrections mid-execution | 5 across 3 documents | `requirements.md`, `design.md`, `tasks.md` |
+
+**Lessons**
+
+- **KZ-001 — Requirement scenarios reached execution owned by no task, three times.** (Product + Methodology, High)
+  - Root cause: decomposition was validated against requirement **IDs** through §14's traceability table, never against each requirement's *scenarios and clauses*. All three gaps were scenario-level. Worse, the ID-keyed table was itself incomplete, so it read as confirmation. In two of the three, the Leader cleared the apparent gap by reading a **different** requirement that *was* satisfied — FR-1's payload-level scenario in place of FR-6's form-control obligation — and had to retract the clearance when a Reviewer pressed.
+  - Evidence: `execution.md` → T-8 (`design.md` §3 specified two list filters `tasks.md` assigned to nobody) · T-9 (*"second gap of identical shape"* — FR-6 requires the form capture all four fields; the scope line dropped `registrationSource`) · T-8 reopened (FR-6's small-screen scenario required a sticky first column; `ActorsTable.tsx` contained zero `sticky` after nine tasks).
+  - **All three were caught only because a Reviewer read the requirement text rather than the task's scope line.** No gate caught any of them.
+  - Standardization: coverage closure at scenario/clause granularity in `docs/specs/general-setup/task.md`. → **Applied 2026-08-04 (user-approved)**
+  - Upstream: propose to the AKILI methodology repo — the `task.md` template's completeness contract is ID-keyed everywhere, which is the defect, not this project's use of it.
+
+- **KZ-002 — A green test certified a feature that did nothing.** (Product + Methodology, High)
+  - Root cause: the T-8 Trader-cell clamp asserted that `max-w-xs truncate` classes were **present**. They were — and the clamp was a **no-op**, because `truncate` supplies `white-space: nowrap`, which raises a table cell's min-content width to the full string and floors `max-width` out entirely. The cell sat at full content width, so nothing overflowed, `overflow: hidden` never clipped, and **no ellipsis rendered either** — while the test stayed green through all of it. Caught only because the Leader sent the *justification* back to be tested instead of accepting it.
+  - Same shape, second instance: `jest-axe`'s `color-contrast` returns *incomplete* under jsdom and `toHaveNoViolations` does not fail on incomplete, so NFR-5's contrast clause was recorded as covered by a gate that structurally cannot evaluate it (A-10 / J-7, recorded three times across three surfaces before validation named it a WARN).
+  - Evidence: `execution.md` → T-8 (reopened), the clamp FAIL round and the D-h visual check that measured the real behavior.
+  - Standardization: presence-assertions must record what they cannot prove in `docs/specs/general-setup/task.md`. → **Applied 2026-08-04 (user-approved)**
+  - Upstream: generalizable to any harness with a rendering gap (jsdom, snapshot tests, config linting) — not specific to this stack.
+
+- **KZ-003 — A gate sat blocked for a day on an assumption nobody tested.** (Product + Methodology, Medium)
+  - Root cause: T-8 was held at `[~]` with the D-h visual check recorded as *"blocked on an authenticated admin session the Leader does not hold."* That was false. `ActorsTable` takes plain props and its `token` is used only for row deletes, so a throwaway harness page rendered it with **no stack, no database, and no login**. The check then produced **two real fixes within the hour** — a sticky boundary border that visibly detached on scroll, and an `md` viewport that froze 81% of the container.
+  - Evidence: `execution.md` → D-h visual check section (*"the earlier 'blocked on auth' framing was wrong"*).
+  - Cost of the wrong assumption: the two defects were real, shipped-code defects that a one-hour check would have caught a day earlier — and one of them (the `md` freeze) had already survived a Leader-escalated gate that "fixed" it without making it usable.
+  - Standardization: append-only rule in `.agents/leader.md`. → **Applied 2026-08-04 (user-approved)**
+  - Upstream: propose as a Leader-persona rule — nothing in it is project-specific.
+
+**The single sentence worth carrying forward**
+
+> Cross-document consistency is not evidence of correctness. It is often one wrong idea copied forward.
+
+FR-6's sticky-column premise was false in **four** places that all agreed with each other — `requirements.md` FR-6, `design.md` §5, `tasks.md` T-8, and `docs/ux-ui/design.md` §9 — and that mutual agreement is precisely why nine tasks executed against it without anyone noticing. The same shape produced `design.md` §4.6's claim that four fields flow through the audit machinery "unchanged" when `AUDITABLE_FIELDS` is a hardcoded list, which would have shipped NFR-6 unmet with a fully green suite.
+
+**Deferred to `/akili-audit`** (root causes outside this spec's scope, both now load-bearing): `docs/ux-ui/design.md` §9 specifies the admin sidebar as off-canvas below `lg` while `layout.tsx` makes it persistent from `md` — under the blueprint, the `md` table may well have fit, so the `md`→`lg` retreat treats a symptom. And the TRD documents `/actors/geo` across five sections as though implemented; it does not exist.

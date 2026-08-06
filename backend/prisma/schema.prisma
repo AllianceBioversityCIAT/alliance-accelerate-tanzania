@@ -21,33 +21,51 @@ enum ConsentStatus {
   UNKNOWN
 }
 
+enum RegistrationSource {
+  TEAM_MANAGED
+  SELF_REGISTERED
+}
+
+enum ConsentMethod {
+  NOT_RECORDED
+  PORTAL_CHECKBOX
+  SIGNED_FORM
+  EMAIL
+  VERBAL_FIELD
+}
+
 model Actor {
-  id               String          @id @default(cuid())
-  traderId         String          @unique
-  traderName       String
-  region           String
-  district         String?
-  traderType       String
-  sex              String?
-  position         String?
-  marketLocation   String?
-  capacityTons     Decimal?        @db.Decimal(10, 2)
-  technicalSupport String?         @db.Text
-  phone            String? // PII
-  email            String? // PII
-  gpsLatitude      Decimal?        @db.Decimal(10, 7)
-  gpsLongitude     Decimal?        @db.Decimal(10, 7)
-  gpsAltitude      Decimal?        @db.Decimal(10, 2)
-  gpsAccuracy      Decimal?        @db.Decimal(10, 2)
-  consentStatus    ConsentStatus   @default(UNKNOWN)
-  crops            CropsOnActors[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                 String             @id @default(cuid())
+  traderId           String             @unique
+  traderName         String
+  region             String
+  district           String?
+  traderType         String
+  sex                String?
+  position           String?
+  marketLocation     String?
+  capacityTons       Decimal?           @db.Decimal(10, 2)
+  technicalSupport   String?            @db.Text
+  phone              String? // PII
+  email              String? // PII
+  gpsLatitude        Decimal?           @db.Decimal(10, 7)
+  gpsLongitude       Decimal?           @db.Decimal(10, 7)
+  gpsAltitude        Decimal?           @db.Decimal(10, 2)
+  gpsAccuracy        Decimal?           @db.Decimal(10, 2)
+  consentStatus      ConsentStatus      @default(UNKNOWN)
+  registrationSource RegistrationSource @default(TEAM_MANAGED)
+  consentMethod      ConsentMethod      @default(NOT_RECORDED)
+  consentObtainedAt  DateTime?
+  consentReference   String?            @db.VarChar(255)
+  crops              CropsOnActors[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([region])
   @@index([traderType])
   @@index([consentStatus])
   @@index([traderName])
+  @@index([registrationSource])
 }
 
 model Crop {
@@ -89,4 +107,211 @@ model ActorAuditLog {
   createdAt    DateTime         @default(now())
 
   @@index([actorId, createdAt])
+}
+
+// Public self-registration (docs/specs/actors/public-self-registration, T-1).
+// PENDING_REVIEW / APPROVED / REJECTED are reachable by chunk 3a+3b; AWAITING_APPLICANT
+// and WITHDRAWN are declared now so chunk 4 needs no enum migration (design.md §2.1).
+enum RegistrationStatus {
+  PENDING_REVIEW
+  AWAITING_APPLICANT
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+// The full model, including adjudication columns 3a never writes, so chunk 3b
+// (docs/specs/admin/registration-review-queue) needs no migration of its own
+// (design.md §2.2, requirements.md §10).
+model Registration {
+  id                   String             @id @default(cuid())
+  // Applicant-facing: REG-<year>-<4-digit sequence>. Never the internal id.
+  reference            String             @unique
+  status               RegistrationStatus @default(PENDING_REVIEW)
+  // The submission. PII-bearing, admin-only in its entirety — never spread
+  // into a public response.
+  payload              Json
+  // PII. The OTP-verified address — this is the address published as
+  // Actor.email on approval (design.md §4.1, S-6).
+  submitterEmail       String
+  // Non-nullable by design: a row cannot exist unverified.
+  emailVerifiedAt      DateTime
+  // The server-witnessed instant the submission carrying an accepted
+  // consent was received. The contract collects no client acceptance
+  // timestamp (§3.1), deliberately: FR-3 forbids trusting the client on
+  // acceptance, and the same reasoning governs its time. This value is
+  // therefore an upper bound on the applicant's true acceptance moment, not
+  // an independently attested one. 3b's review UI must label it as
+  // recorded-at-submission, not as an attested acceptance moment.
+  consentAcceptedAt    DateTime
+  // The version the applicant was shown, echoed by the client, validated
+  // server-side (FR-3).
+  consentPolicyVersion String
+
+  // --- Adjudication (chunk 3b writes these; 3a declares them) ---
+  // Plain string, no FK — mirrors ActorAuditLog.actorId, deliberately FK-less.
+  publishedActorId    String?
+  reviewedBySub       String?
+  reviewedByEmail     String?
+  reviewedAt          DateTime?
+  rejectionReason     String?
+  // Applicant-facing — the one field the public lookup may return.
+  reviewNote          String?   @db.Text
+  // Per-candidate, not row-level: the set of candidate actor ids a reviewer
+  // has cleared, each with who and when (design.md §2.2).
+  duplicateDismissals Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The queue's only access pattern: status segment, oldest-first (design.md
+  // §2.2). No index on submitterEmail — the lookup keys on `reference`.
+  @@index([status, createdAt])
+}
+
+// Pre-Registration OTP store. No row exists until an applicant requests a
+// code; a Registration row exists only once the code has been verified
+// (design.md §2.3).
+model EmailVerification {
+  id String @id @default(cuid())
+
+  // PII. Lowercased. The lookup key (design.md §4.3) — not unique: up to
+  // three live codes per address are permitted by design.
+  email      String
+  // HMAC-SHA-256 under a server secret. Plaintext never stored, never logged.
+  codeHash   String
+  // Incremented on a MISMATCHED verification attempt only (a correct guess
+  // consumes the code instead of incrementing this — it never burns the
+  // applicant's own attempt on success; see EmailVerificationService.verifyCode,
+  // design.md §4.3 V-1/V-1a). Comment corrected 2026-08-05, T-7 rework attempt 2
+  // — the prior wording ("on every … attempt, right or wrong") described
+  // behaviour the implementation never had; no migration needed, comment-only.
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  // Single-use.
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, createdAt])
+}
+
+// Atomic per-email, per-hour-bucket send counter for the OTP send-rate cap
+// (design.md §4.3/§4.4's shared, cross-container control). Added in T-7
+// rework attempt 3, replacing an EmailVerification.createdAt-based rolling
+// count (the comment above used to say "Also the per-email send-rate
+// window" — that was never atomic, see EmailVerificationService's class doc
+// for the full history) and a per-email MySQL advisory lock considered and
+// abandoned in attempt 2 for a pre-commit-visibility race.
+//
+// `sends` is incremented ONLY via a single `INSERT ... ON DUPLICATE KEY
+// UPDATE` statement (never read-then-written from application code) — see
+// EmailVerificationService.issueCode. It increments UNCONDITIONALLY on every
+// attempt in the bucket, including rejected ones (so it is a raw attempt
+// count, not clamped at the cap) — the cap decision is made in application
+// code from the per-call position captured via a MySQL session variable at
+// write time, not from this column's stored value. `windowStart` is a
+// FIXED, epoch-aligned bucket start, not a rolling "last 60 minutes" — a
+// deliberate, recorded deviation from a strictly rolling window (see the
+// service's class doc, which also records why an unconditional increment
+// read back via a session variable is the shape that is actually correct
+// under concurrency, not the two "obvious" alternatives tried first).
+model EmailSendBudget {
+  // PII. Lowercased, matching EmailVerification.email.
+  email       String
+  // The bucket's start instant — part of the primary key, so a new hour
+  // starts a fresh row rather than requiring an in-place reset.
+  windowStart DateTime
+  sends       Int      @default(0)
+
+  @@id([email, windowStart])
+}
+
+// T-10 — the declared object A-4 requires (design.md §4.5). Reference
+// allocation (`REG-<year>-<4-digit sequence>`) needs a race-safe, per-year
+// counter that never REUSES a value (A-1, A-2) — deliberately NOT gap-free:
+// an attempt abandoned after allocating (a lost consume-race, an unrelated
+// downstream failure, an A-3 collision retry) leaves a gap, which A-2's own
+// wording tolerates (it prohibits reissuing an already-used value, not
+// skipping one) — see registration-reference.util.ts's class doc. Revision
+// 2's "a dedicated counter row per year" answer named no schema object at
+// all (RA1), which is the defect this table exists to close. `seq` is
+// incremented ONLY via the same `INSERT ... ON DUPLICATE KEY UPDATE` +
+// session-variable technique `EmailSendBudget` already uses
+// (`email-verification.service.ts`'s `issueCode`, proven under real
+// concurrent load against dev RDS in T-7) — see
+// `registration-reference.util.ts`. It never decrements and is never reset
+// for an existing year, so a value is never reused even after a rejection
+// or withdrawal (A-2). The `@unique` constraint on `Registration.reference`
+// remains the backstop, not the strategy (A-3).
+model RegistrationSequence {
+  year Int @id
+  seq  Int @default(0)
+}
+
+// T-11 (rework attempt 2) — the shared, persistent control constraints
+// L-1…L-4 require for `POST /registrations/lookup` (design.md §4.4). Keyed
+// on the COMPOSITE `(ip, reference, windowStart)` — deliberately NOT `(ip,
+// windowStart)` alone, and NOT `reference` alone.
+//
+// A bare per-reference counter was rejected (RA3) because it lets an
+// attacker lock out every applicant checking that one reference; a
+// per-reference lockout returning a distinct status/message was separately
+// rejected (RA2) because a lockout is only reachable for a reference that
+// EXISTS, reintroducing the membership oracle §3.1 decision 4 exists to
+// eliminate.
+//
+// **A per-caller-ONLY key (attempt 1's shape) was ALSO found unsound at
+// review, not merely a weaker option among several compliant ones.** §4.4
+// states "a per-caller dimension, OR a per-caller-and-reference composite,
+// satisfies L-3" — true for L-3 in isolation, but L-4's reset requirement
+// interacts with L-3's choice: a per-caller-only counter resets on ANY
+// match, including a match on a reference the caller obtained legitimately
+// (their OWN completed self-registration, `POST /registrations`'s own
+// `{ reference }` response). That lets an attacker interleave 9 wrong
+// guesses against a VICTIM's reference with 1 lookup of their OWN reference
+// every 10 requests, resetting their shared counter indefinitely — L-4 is
+// satisfied and L-1 is defeated in effect (the persistent bound never
+// actually binds), leaving only the per-container throttler as the
+// surviving control, the exact insufficiency L-1 names. The composite key
+// closes this: a success on the attacker's OWN reference resets ONLY
+// `(ip, ownReference, windowStart)`, never `(ip, victimReference, windowStart)` —
+// the two budgets are disjoint, so self-resetting one cannot touch the
+// other. See `registrations.service.ts`'s class doc on `lookupRegistration`
+// for the full account.
+//
+// Same atomic `INSERT ... ON DUPLICATE KEY UPDATE` + session-variable
+// technique as `EmailSendBudget`/`RegistrationSequence`, proven under real
+// concurrent load against dev RDS in T-7/T-10 — this table is DB-persisted
+// and shared across every container, which is what makes it survive cold
+// starts and span containers (L-1); the per-container in-memory throttler
+// alone cannot (design.md §4.4/C-4). `windowStart` is a FIXED, epoch-aligned
+// bucket start — the same recorded fixed-vs-rolling deviation as
+// `EmailSendBudget` — not a rolling window.
+//
+// `attempts` is reset to 0 for the matched `(ip, reference, windowStart)`
+// triple on a SUCCESSFUL lookup against THAT reference (L-4), and
+// incremented unconditionally on every call otherwise (including a call
+// that turns out to be over the cap already — mirrors `EmailSendBudget.sends`'
+// own "raw attempt count, decision made off the per-call session-variable
+// position" shape).
+model RegistrationLookupAttempt {
+  // The caller's IP (`req.ip` — resolves from API Gateway's `sourceIp` under
+  // serverless-http; see `lambda-handler.e2e.spec.ts`'s T5-A1 proof for the
+  // sibling per-container guard's identical tracker). §2.7 does NOT
+  // enumerate this column — it governs `Registration`/`EmailVerification`
+  // PII, not this table — but an IP address is nonetheless personal data
+  // (GDPR Art. 4(1); CJEU C-582/14 *Breyer*). It is stored in plaintext, not
+  // pseudonymised, and carries no retention policy of its own — an
+  // extension of §6.4's already-accepted "no purge is designed" risk, not a
+  // new one; it leaks nowhere (bound Prisma parameter, no query logging,
+  // never read by `RequestContextMiddleware`).
+  ip          String
+  // The reference this attempt was made against — see the class comment
+  // above for why this must be part of the KEY, not merely a stored column,
+  // for L-4's reset to stay scoped to the right budget.
+  reference   String
+  windowStart DateTime
+  attempts    Int      @default(0)
+
+  @@id([ip, reference, windowStart])
 }

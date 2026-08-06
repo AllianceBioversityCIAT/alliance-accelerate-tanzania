@@ -49,9 +49,9 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 4. **Data Management & Admin Backend** — protected Next.js Admin UI + secured NestJS routes for CRUD on Actor Profiles, with form validation.
 5. **Access Control & Data Protection** — RBAC (`Public` / `Staff` / `Admin`) with PII field-level protection.
 6. **Data Import/Export** — CSV bulk import service for initial seeding; filtered CSV export that enforces data-protection rules.
+7. **Public Self-Registration** — an anonymous applicant submits an organisation's own details through a public form, verifies their email address, and accepts a versioned consent policy; the submission is stored with no public read path for any field until an Admin approves or rejects it. Runs alongside the team-managed intake in item 4, not in place of it.
 
 ### Out of Scope (v1)
-- Self-service public registration / actor self-onboarding.
 - Multi-country support (Tanzania only).
 - Crops beyond sorghum, common bean, and groundnut.
 - Mobile native apps (responsive web only).
@@ -68,6 +68,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **US-6 (Admin):** As an administrator, I can bulk-import a CSV of actors matching the canonical schema, so that I can seed and update the registry efficiently.
 - **US-7 (Admin/Staff):** As an authorized user, I can export a filtered dataset as CSV, and the export respects my role's PII permissions, so that data sharing stays compliant.
 - **US-8 (Admin):** As an administrator, I can manage users and their roles, so that access stays governed.
+- **US-9 (Applicant):** As a prospective actor with no AT team contact, I can submit my organisation's details through a public form, verify my email address, and accept the consent policy, so that I can join the registry on my own — and I can check my submission's status by reference code afterward, whether or not the confirmation email arrives.
 
 ## 7. Acceptance Criteria
 
@@ -78,6 +79,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **AC-5:** CSV import maps every column in the canonical schema, reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
 - **AC-6:** CSV export for a `Public`-equivalent share omits PII columns; export for `Admin` includes them.
 - **AC-7:** All AWS CLI / IaC / deployment commands use the `IBD-DEV` profile.
+- **AC-8:** A public self-registration submission is stored with no public read path for any submitted field until an Admin approves it; no response on the public registration paths echoes a payload field, the submitter's email, or the submission's internal id. (Testable: PII-boundary test over HTTP — release gate.)
 
 ## 8. Assumptions, Dependencies, & Constraints
 

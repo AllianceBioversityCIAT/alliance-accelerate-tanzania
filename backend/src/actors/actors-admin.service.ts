@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConsentStatus, Prisma } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
@@ -13,7 +13,13 @@ import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
 import { AdminActor, toAdminActor } from './admin-actor.serializer';
 import { AuditEntry, toAuditEntry } from './audit-entry.serializer';
 import { ActingAdminResolver } from './acting-admin.resolver';
-import { ActorAuditService, ActingAdmin } from './actor-audit.service';
+import {
+  ActorAuditService,
+  ActingAdmin,
+  ConsentFillPatch,
+} from './actor-audit.service';
+import { FieldErrorDetail } from '../common/validation-pipe';
+import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -32,6 +38,16 @@ export interface BulkResult {
   requested: number;
   applied: number;
   notFound: string[];
+}
+
+/**
+ * T-4 — `bulkSetConsent`'s result envelope (design.md §4.2, DD-4, R-8).
+ * `preserved` counts actors left untouched because they already carried
+ * their own provenance — legible evidence that the partitioned write did not
+ * silently overwrite anyone's evidence.
+ */
+export interface BulkConsentResult extends BulkResult {
+  preserved: number;
 }
 
 /** Admin paginated list envelope (FR-1). */
@@ -74,6 +90,10 @@ const SCALAR_FIELDS = [
   'gpsAltitude',
   'gpsAccuracy',
   'consentStatus',
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
 ] as const;
 
 @Injectable()
@@ -101,6 +121,13 @@ export class ActorsAdminService {
       ...(q.consentStatus
         ? { consentStatus: q.consentStatus as ConsentStatus }
         : {}),
+      // T-8 — AND-composed with the filters above; this is FR-9's enumeration
+      // mechanism (`consentStatus=GRANTED&consentMethod=NOT_RECORDED` finds
+      // the legacy unevidenced set).
+      ...(q.registrationSource
+        ? { registrationSource: q.registrationSource }
+        : {}),
+      ...(q.consentMethod ? { consentMethod: q.consentMethod } : {}),
     };
 
     const [rows, total] = await Promise.all([
@@ -138,6 +165,13 @@ export class ActorsAdminService {
       throw new BadRequestException(
         'Consent acknowledgement is required to set status to GRANTED',
       );
+    }
+
+    // FR-3/NFR-7 — the shared provenance invariant, a gate INDEPENDENT of
+    // `acknowledged` (DD-2): a create has no stored actor, so `stored` is
+    // `null` and the predicate evaluates the payload on its own.
+    if (!isConsentProvenanceSatisfied(null, dto)) {
+      throw this.buildProvenanceError(dto.consentMethod, dto.consentObtainedAt ?? null);
     }
 
     const acting = await this.resolveActing(actingSub);
@@ -226,6 +260,19 @@ export class ActorsAdminService {
           throw new BadRequestException(
             'Consent acknowledgement is required to set status to GRANTED',
           );
+        }
+
+        // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
+        // STORED row loaded above (design.md §4.1's concurrency assumption:
+        // read-then-decide inside this same transaction). Independent of the
+        // `acknowledged` check above (DD-2) — both must pass.
+        if (!isConsentProvenanceSatisfied(before, dto)) {
+          const effectiveMethod = dto.consentMethod ?? before.consentMethod;
+          const effectiveObtainedAt =
+            dto.consentObtainedAt !== undefined
+              ? dto.consentObtainedAt
+              : (before.consentObtainedAt ?? null);
+          throw this.buildProvenanceError(effectiveMethod, effectiveObtainedAt);
         }
 
         const updateData = this.buildScalarData(dto);
@@ -330,23 +377,77 @@ export class ActorsAdminService {
   }
 
   /**
-   * Bulk set `consentStatus` to `GRANTED` (unlock) or `DENIED` (lock) (FR-3).
+   * Bulk set `consentStatus` to `GRANTED` (unlock) or `DENIED` (lock)
+   * (FR-3, FR-4).
    *
    * Unlocking publishes PII + GPS, so the server enforces an explicit
-   * `acknowledged` flag in addition to any UI acknowledgement (FR-4). The
-   * operation is transactional: existing ids are updated atomically while
-   * missing ids are reported separately.
+   * `acknowledged` flag in addition to any UI acknowledgement (FR-4) —
+   * independent of the FR-3 provenance gate below (design.md DD-2).
+   *
+   * T-4 — When unlocking, the batch's `consentMethod`/`consentObtainedAt`/
+   * `consentReference` are validated through the SAME shared invariant as
+   * create/update (`isConsentProvenanceSatisfied`, NFR-7) before the
+   * transaction opens, with `stored = null` — mirroring `create()`'s call,
+   * since a batch-level value has no single stored row to merge against.
+   * A failing batch is rejected before any read or write happens, so **zero**
+   * rows are ever touched (FR-3's bulk scenario).
+   *
+   * The write itself is PARTITIONED (design.md DD-4, corrected from a naive
+   * uniform `updateMany` after Judgment Day J-3, then corrected AGAIN after
+   * two independent Reviewer FAILs on the attempt-1 partition below).
+   *
+   * **Attempt-1 defect (fixed here):** the fill/preserved split keyed on
+   * `consentMethod === NOT_RECORDED` alone. An actor with a recorded method
+   * but a `null` consentObtainedAt (reachable via create/import with a
+   * method column filled and no date, or via un-publish-then-strip) landed
+   * in "preserved", got a status-only write, and ended `GRANTED` with
+   * `consentObtainedAt = null` — the exact FR-3 invariant violation this
+   * spec exists to close.
+   *
+   * **Corrected partition:** a row joins the fill set when its OWN
+   * `consentMethod` is `NOT_RECORDED` **or** its OWN `consentObtainedAt` is
+   * `null` — not only the former. Only the field(s) a given row is actually
+   * missing are filled from the batch's values; a field the row already
+   * carries (including `consentReference`) is NEVER overwritten (R-8,
+   * ADVISORY-1). A row fully evidenced on both method and date stays
+   * status-only regardless of its `consentReference`. Rows are grouped by
+   * which fields they need filled so the write stays a handful of
+   * `updateMany` calls — bounded and independent of batch size — rather than
+   * a per-row loop. `preserved` in the result envelope counts only the
+   * fully-evidenced, untouched rows. Both the fill writes and the status-only
+   * write happen inside the same transaction as the existence check and the
+   * audit entries, and the audit diff is built from the SAME per-actor patch
+   * map that drives the write (`ConsentFillPatch`, NFR-6) — see
+   * `ActorAuditService.logBulkConsent`.
    */
   async bulkSetConsent(
     ids: string[],
     status: string,
     actingSub: string,
     acknowledged?: boolean,
-  ): Promise<BulkResult> {
-    if (status === 'GRANTED' && !acknowledged) {
+    consentMethod?: ConsentMethod,
+    consentObtainedAt?: string,
+    consentReference?: string | null,
+  ): Promise<BulkConsentResult> {
+    if (status === ConsentStatus.GRANTED && !acknowledged) {
       throw new BadRequestException(
         'Consent acknowledgement is required to unlock actors',
       );
+    }
+
+    const isUnlock = status === ConsentStatus.GRANTED;
+
+    if (isUnlock) {
+      if (
+        !isConsentProvenanceSatisfied(null, {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod,
+          consentObtainedAt,
+          consentReference,
+        })
+      ) {
+        throw this.buildProvenanceError(consentMethod, consentObtainedAt ?? null);
+      }
     }
 
     const acting = await this.resolveActing(actingSub);
@@ -360,23 +461,105 @@ export class ActorsAdminService {
       const foundSet = new Set(foundIds);
       const notFound = ids.filter((id) => !foundSet.has(id));
 
+      let preserved = 0;
+
       if (foundIds.length > 0) {
         const beforeRows = existing.map((row) => toAdminActor(row));
+
+        // Corrected DD-4 partition (T-4 rework, attempt 2): a row needs a
+        // fill when EITHER its own method or its own date is missing — not
+        // only when the method is NOT_RECORDED (attempt 1's defect). Only
+        // the fields actually missing on THIS row are patched; a value the
+        // row already carries is never overwritten. Rows are grouped by
+        // which fields they need so the write is a handful of `updateMany`
+        // calls, bounded and independent of batch size.
+        const patches = new Map<string, ConsentFillPatch>();
+        const fillGroups = new Map<
+          string,
+          { ids: string[]; patch: ConsentFillPatch }
+        >();
+        const preservedIds: string[] = [];
+
+        if (isUnlock) {
+          for (const row of existing) {
+            const missingMethod =
+              row.consentMethod === ConsentMethod.NOT_RECORDED;
+            const missingDate = row.consentObtainedAt === null;
+
+            if (!missingMethod && !missingDate) {
+              preservedIds.push(row.id);
+              continue;
+            }
+
+            const patch: ConsentFillPatch = {};
+            if (missingMethod) {
+              patch.consentMethod = consentMethod as ConsentMethod;
+            }
+            if (missingDate) {
+              patch.consentObtainedAt = consentObtainedAt as string;
+            }
+            if (
+              consentReference !== undefined &&
+              (row.consentReference === null ||
+                row.consentReference === undefined)
+            ) {
+              patch.consentReference = consentReference;
+            }
+
+            patches.set(row.id, patch);
+
+            const key = Object.keys(patch).sort().join(',');
+            const group = fillGroups.get(key);
+            if (group) {
+              group.ids.push(row.id);
+            } else {
+              fillGroups.set(key, { ids: [row.id], patch });
+            }
+          }
+        }
+        preserved = isUnlock ? preservedIds.length : 0;
+
         await this.actorAuditService.logBulkConsent(
           tx,
           beforeRows,
           status,
           acting,
           acknowledged ?? false,
+          isUnlock ? patches : undefined,
         );
 
-        await tx.actor.updateMany({
-          where: { id: { in: foundIds } },
-          data: { consentStatus: status as ConsentStatus },
-        });
+        if (isUnlock) {
+          if (preservedIds.length > 0) {
+            await tx.actor.updateMany({
+              where: { id: { in: preservedIds } },
+              data: { consentStatus: status as ConsentStatus },
+            });
+          }
+          for (const { ids, patch } of fillGroups.values()) {
+            await tx.actor.updateMany({
+              where: { id: { in: ids } },
+              data: {
+                consentStatus: status as ConsentStatus,
+                ...patch,
+              } as Prisma.ActorUpdateManyMutationInput,
+            });
+          }
+        } else {
+          // Lock (DENIED) — no provenance concept applies; uniform
+          // status-only write, unchanged from before this spec.
+          await tx.actor.updateMany({
+            where: { id: { in: foundIds } },
+            data: { consentStatus: status as ConsentStatus },
+          });
+        }
       }
 
-      return { requested: ids.length, applied: foundIds.length, notFound };
+      return {
+        requested: ids.length,
+        applied: foundIds.length,
+        notFound,
+        preserved,
+      };
     });
 
     console.info(
@@ -385,6 +568,7 @@ export class ActorsAdminService {
         status,
         actingSub,
         count: result.applied,
+        preserved: result.preserved,
         acknowledged,
         notFoundCount: result.notFound.length,
       }),
@@ -434,6 +618,41 @@ export class ActorsAdminService {
     );
 
     return result;
+  }
+
+  /**
+   * Build the field-level 400 for a write that fails the FR-3 provenance
+   * invariant (`isConsentProvenanceSatisfied` returned `false`). Matches the
+   * project's standard error envelope (`createValidationPipe()`'s
+   * `{ statusCode, error, message, details: [{ field, message }] }`) so the
+   * admin form's existing inline field-error mapping applies unchanged
+   * (design.md §3) — this is a hand-built instance of that same envelope
+   * rather than a differently-shaped ad hoc error.
+   */
+  private buildProvenanceError(
+    effectiveMethod: string | undefined,
+    effectiveObtainedAt: Date | string | null | undefined,
+  ): BadRequestException {
+    const details: FieldErrorDetail[] = [];
+    if (!effectiveMethod || effectiveMethod === ConsentMethod.NOT_RECORDED) {
+      details.push({
+        field: 'consentMethod',
+        message:
+          'consentMethod must be recorded (not NOT_RECORDED) when consentStatus is GRANTED',
+      });
+    }
+    if (effectiveObtainedAt === null || effectiveObtainedAt === undefined) {
+      details.push({
+        field: 'consentObtainedAt',
+        message: 'consentObtainedAt is required when consentStatus is GRANTED',
+      });
+    }
+    return new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: 'Consent provenance is required to set status to GRANTED',
+      details,
+    });
   }
 
   /** Resolve the acting Admin email and package it with the verified sub. */

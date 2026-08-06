@@ -17,12 +17,15 @@
  * This module is DB- and Nest-independent (pure data), matching `normalize.ts`.
  */
 
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
 
 /** Bump on ANY column change (order, headers, allowed values). Stamped on the
- * Instructions sheet and used for best-effort stale-template detection. */
-export const TEMPLATE_VERSION = 'v1';
+ * Instructions sheet and used for best-effort stale-template detection.
+ *
+ * T-6 — bumped v1 → v2: four columns added (Registration Source, Consent
+ * Method, Consent Obtained At, Consent Reference), FR-1/FR-2/FR-5. */
+export const TEMPLATE_VERSION = 'v2';
 
 /**
  * Canonical Actor `sex` values. Mirrors the private `SEX_VALUES` in
@@ -36,6 +39,25 @@ export const CROP_YES_NO = ['YES', 'NO'] as const;
 
 /** Prisma `ConsentStatus` values (GRANTED | DENIED | UNKNOWN) as a plain array. */
 export const CONSENT_VALUES = Object.values(ConsentStatus) as ConsentStatus[];
+
+/**
+ * T-6 — Prisma `RegistrationSource` values (TEAM_MANAGED | SELF_REGISTERED),
+ * derived from the Prisma-generated enum rather than re-typed (NFR-3),
+ * matching how `ActorCreateDto` derives `REGISTRATION_SOURCE_VALUES`.
+ */
+export const REGISTRATION_SOURCE_VALUES = Object.values(
+  RegistrationSource,
+) as RegistrationSource[];
+
+/**
+ * T-6 — Prisma `ConsentMethod` values (NOT_RECORDED | PORTAL_CHECKBOX |
+ * SIGNED_FORM | EMAIL | VERBAL_FIELD), derived from the Prisma-generated enum
+ * (NFR-3). `PORTAL_CHECKBOX` is included for completeness even though this
+ * spec never writes it (design.md §2) — the dropdown lists every valid value.
+ */
+export const CONSENT_METHOD_VALUES = Object.values(
+  ConsentMethod,
+) as ConsentMethod[];
 
 /**
  * Column field → canonical crop name (`Crop.name`), consumed by the parser to
@@ -69,6 +91,10 @@ export interface TemplateColumn {
  * location, classification, contact/PII, GPS, the three crop toggles, and
  * consent last. Required flags match `ActorCreateDto`'s required fields
  * (traderId, traderName, traderType, region); everything else is optional.
+ *
+ * T-6 — appended after Consent Status (additive only, existing column
+ * positions unchanged): Registration Source and the three consent-provenance
+ * columns (Method, Obtained At, Reference), FR-1/FR-2/FR-5.
  */
 export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
   { header: 'Trader ID', field: 'traderId', required: true },
@@ -160,6 +186,30 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     field: 'consentStatus',
     required: false,
     allowedValues: CONSENT_VALUES,
+  },
+  {
+    header: 'Registration Source',
+    field: 'registrationSource',
+    required: false,
+    allowedValues: REGISTRATION_SOURCE_VALUES,
+  },
+  {
+    header: 'Consent Method',
+    field: 'consentMethod',
+    required: false,
+    allowedValues: CONSENT_METHOD_VALUES,
+  },
+  {
+    header: 'Consent Obtained At',
+    field: 'consentObtainedAt',
+    required: false,
+    format: 'Date consent was obtained, e.g. 2026-01-15',
+  },
+  {
+    header: 'Consent Reference',
+    field: 'consentReference',
+    required: false,
+    format: 'Free text pointer to the evidence, e.g. document ID or email thread (max 255 chars)',
   },
 ] as const;
 

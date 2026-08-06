@@ -241,6 +241,24 @@ describe('ActorImportPage — acknowledgement gate', () => {
       expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined),
     );
   });
+
+  // T-10 (registration-source-and-consent, design.md §5) — the import commit
+  // call site structurally cannot supply per-row provenance (it comes from
+  // the per-row template columns, DD-5), so it omits AcknowledgeDialog's
+  // opt-in `provenance` prop and must render no method/date inputs.
+  it('T-10: renders no consent-method or consent-date inputs on the acknowledge dialog', async () => {
+    resolveByMode(PREVIEW_REPORT_GRANTED, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByLabelText(/consent method/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/consent obtained on/i)).not.toBeInTheDocument();
+  });
 });
 
 // ── Client-side rejection (non-.xlsx) ────────────────────────────────────────
@@ -345,6 +363,116 @@ describe('ActorImportPage — empty template', () => {
     // No preview table and no dead confirm button.
     expect(screen.queryByRole('table', { name: /import rows/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /import 0 actor/i })).not.toBeInTheDocument();
+  });
+});
+
+// ── Failure breakdown (FR-7, T-5) ────────────────────────────────────────────
+
+describe('ActorImportPage — failure breakdown', () => {
+  const BREAKDOWN_REPORT: ImportReport = {
+    mode: 'preview',
+    totals: { rows: 4, toCreate: 1, created: 0, skipped: 1, failed: 2, warnings: 0 },
+    rows: [
+      { rowNumber: 2, traderId: 'TZ-001', traderName: 'Meru Agro', outcome: 'create' },
+      { rowNumber: 3, traderId: 'TZ-002', traderName: 'Dup', outcome: 'skipped-exists' },
+      {
+        rowNumber: 4,
+        traderId: 'TZ-003',
+        traderName: 'Bad Type',
+        outcome: 'failed',
+        errors: [{ field: 'traderType', message: 'Trader Type is not in the allowed taxonomy.' }],
+      },
+      {
+        rowNumber: 5,
+        traderId: 'TZ-004',
+        traderName: 'Bad Type Two',
+        outcome: 'failed',
+        errors: [{ field: 'traderType', message: 'Trader Type is not in the allowed taxonomy.' }],
+      },
+    ],
+    failureBreakdown: [
+      { reason: 'traderType', count: 2 },
+      { reason: 'skipped-exists', count: 1 },
+    ],
+  };
+
+  it('renders every reason with its count after a preview', async () => {
+    mockImportActors.mockResolvedValue(BREAKDOWN_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    const heading = await screen.findByText(/why rows will not import/i);
+    const panel = heading.closest('div') as HTMLElement;
+
+    const items = within(panel).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('traderType');
+    expect(items[0]).toHaveTextContent('2');
+    expect(items[1]).toHaveTextContent('skipped-exists');
+    expect(items[1]).toHaveTextContent('1');
+  });
+
+  it('preserves the backend ordering rather than re-sorting client-side', async () => {
+    // Ordering is a backend invariant (count desc, then reason asc — NFR-6).
+    // Feeding an order the client would NOT produce on its own proves the
+    // component renders what it is given instead of imposing its own sort.
+    mockImportActors.mockResolvedValue({
+      ...BREAKDOWN_REPORT,
+      failureBreakdown: [
+        { reason: 'zzz-last-alphabetically', count: 9 },
+        { reason: 'aaa-first-alphabetically', count: 1 },
+      ],
+    });
+
+    await renderReady();
+    await selectFile();
+
+    const heading = await screen.findByText(/why rows will not import/i);
+    const items = within(heading.closest('div') as HTMLElement).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
+      'zzz-last-alphabetically9',
+      'aaa-first-alphabetically1',
+    ]);
+  });
+
+  it('sits inside a polite live region', async () => {
+    mockImportActors.mockResolvedValue(BREAKDOWN_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    const heading = await screen.findByText(/why rows will not import/i);
+    const liveRegion = heading.closest('[aria-live]');
+
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+    expect(liveRegion).toHaveAttribute('role', 'status');
+    // LIMIT OF THIS ASSERTION: it proves the markup is correct, NOT that a
+    // screen reader announces the update. jsdom runs no accessibility tree and
+    // jest-axe cannot evaluate announcement behavior either. Whether this
+    // actually announces is a human/AT check, not covered here (KZ-002).
+  });
+
+  it('renders nothing when the report carries no breakdown', async () => {
+    // The backend OMITS the key on a clean import — it does not send `[]`.
+    mockImportActors.mockResolvedValue(PREVIEW_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByRole('table', { name: /import rows/i })).toBeInTheDocument();
+    expect(screen.queryByText(/why rows will not import/i)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing when the breakdown is present but empty', async () => {
+    mockImportActors.mockResolvedValue({ ...PREVIEW_REPORT, failureBreakdown: [] });
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByRole('table', { name: /import rows/i })).toBeInTheDocument();
+    expect(screen.queryByText(/why rows will not import/i)).not.toBeInTheDocument();
   });
 });
 

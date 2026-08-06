@@ -40,6 +40,36 @@ export const PII_ALLOWLIST = [
 export type PiiField = (typeof PII_ALLOWLIST)[number];
 
 /**
+ * T-7 — Fields that must NEVER appear in a `Public`-role response, but are NOT
+ * PII (DD-6). Distinct from {@link PII_ALLOWLIST} on purpose: that constant's
+ * documented meaning is *personally identifiable information on the Actor*, and
+ * overloading it here would make it lie about what it contains (a future reader
+ * could reasonably "fix" `registrationSource` out of it as miscategorised).
+ *
+ * `traderId`, `gpsAltitude`, and `gpsAccuracy` were already never-public by
+ * convention (design.md §5 / the serializer's explicit allowlist) but only
+ * documented in prose before this — this constant gives them a real home.
+ * `registrationSource`, `consentMethod`, `consentObtainedAt`, and
+ * `consentReference` (FR-7/FR-8/NFR-1) join them: admin-only operational
+ * metadata about a record, not PII about the actor it describes.
+ *
+ * `pii-boundary.spec.ts` iterates the UNION of this set and
+ * {@link PII_ALLOWLIST} across every public path, so a field can be exempted
+ * from `Public` exposure without being mischaracterised as PII.
+ */
+export const NEVER_PUBLIC_FIELDS = [
+  'traderId',
+  'gpsAltitude',
+  'gpsAccuracy',
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
+] as const;
+
+export type NeverPublicField = (typeof NEVER_PUBLIC_FIELDS)[number];
+
+/**
  * Minimal shape this policy reads off an Actor. Accepts the Prisma entity (and
  * any superset) without coupling to the full generated type, so it is callable
  * from pure unit tests with a plain object.

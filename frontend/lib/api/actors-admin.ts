@@ -27,6 +27,27 @@ import { apiFetch } from './client';
 // ── Types — design.md §3 (backend contract) ────────────────────────────────
 
 /**
+ * T-8 (`actors/registration-source-and-consent`) — which track produced an
+ * Actor record (FR-1). Mirrors the backend `RegistrationSource` Prisma enum
+ * exactly — never re-typed as a loose `string` (frontend/CLAUDE.md type
+ * fidelity rule).
+ */
+export type RegistrationSource = 'TEAM_MANAGED' | 'SELF_REGISTERED';
+
+/**
+ * T-8 — how consent was obtained for an Actor (FR-2). Mirrors the backend
+ * `ConsentMethod` Prisma enum exactly. `NOT_RECORDED` is the default for
+ * every actor whose provenance has never been set, including legacy `GRANTED`
+ * rows the migration deliberately left unevidenced (FR-9).
+ */
+export type ConsentMethod =
+  | 'NOT_RECORDED'
+  | 'PORTAL_CHECKBOX'
+  | 'SIGNED_FORM'
+  | 'EMAIL'
+  | 'VERBAL_FIELD';
+
+/**
  * Full Admin actor response shape returned by `GET /api/v1/admin/actors`.
  *
  * Includes every Actor column including PII (`phone`, `email`, `sex`,
@@ -34,6 +55,11 @@ import { apiFetch } from './client';
  * `consentStatus`, and flattened crop names. This is the ONLY client-side
  * shape that carries non-consented actor PII; it is produced exclusively by
  * Admin-gated routes (FR-1, FR-7, NFR-1).
+ *
+ * `registrationSource`, `consentMethod`, `consentObtainedAt`, and
+ * `consentReference` (T-8, FR-1/FR-2) are admin-only operational metadata —
+ * they are declared in `NEVER_PUBLIC_FIELDS` server-side and MUST NOT be
+ * added to any public-facing type (`PublicActor` in `lib/api/actors.ts`).
  */
 export interface AdminActor {
   id: string;
@@ -54,6 +80,12 @@ export interface AdminActor {
   gpsAltitude: number | null;
   gpsAccuracy: number | null;
   consentStatus: string;
+  registrationSource: RegistrationSource;
+  consentMethod: ConsentMethod;
+  /** ISO date string; `null` when consent provenance has never been recorded. */
+  consentObtainedAt: string | null;
+  /** Free-text pointer to the consent evidence; `null` when not supplied. */
+  consentReference: string | null;
   crops: string[];
   createdAt: string;
   updatedAt: string;
@@ -74,16 +106,44 @@ export interface BulkResult {
   notFound: string[];
 }
 
-/** Query parameters for `adminListActors` (mirrors AdminActorListQueryDto). */
+/**
+ * Query parameters for `adminListActors` (mirrors AdminActorListQueryDto).
+ *
+ * `registrationSource` and `consentMethod` (T-8, FR-6) are sent to the API
+ * exactly like the other filters. Both are validated server-side via `@IsIn`
+ * over the Prisma-generated `RegistrationSource`/`ConsentMethod` enums
+ * (`backend/src/actors/dto/admin-actor-list-query.dto.ts`) and AND-composed
+ * into the `where` clause built by `ActorsAdminService.adminList`
+ * (`actors-admin.service.ts`) — see `design.md` §3, `GET /api/v1/admin/actors`.
+ */
 export interface AdminActorListQuery {
   page?: number;
   pageSize?: number;
   region?: string;
   traderType?: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
+  /** FR-6/FR-9 — filter by which track produced the record. */
+  registrationSource?: RegistrationSource;
+  /**
+   * FR-6/FR-9 — filter by consent method. Combined with
+   * `consentStatus: 'GRANTED'`, `consentMethod: 'NOT_RECORDED'` is FR-9's
+   * enumeration mechanism for legacy `GRANTED` actors that carry no
+   * provenance.
+   */
+  consentMethod?: ConsentMethod;
 }
 
-/** Body for `PATCH /api/v1/admin/actors/bulk/consent` (FR-3, FR-4). */
+/**
+ * Body for `PATCH /api/v1/admin/actors/bulk/consent` (FR-3, FR-4).
+ *
+ * T-10 (`actors/registration-source-and-consent`, DD-4) — `consentMethod` +
+ * `consentObtainedAt` carry the BATCH-level provenance the admin console
+ * collects when unlocking. Mirrors `BulkConsentDto` on the backend exactly:
+ * shape-optional here, but the service rejects an unlock (`GRANTED`) that
+ * omits them (`isConsentProvenanceSatisfied`, FR-3). The backend applies
+ * each value only to the provenance fields a row actually lacks — an actor
+ * that already carries its own method/date keeps it untouched.
+ */
 export interface BulkConsentInput {
   ids: string[];
   consentStatus: 'GRANTED' | 'DENIED';
@@ -93,6 +153,34 @@ export interface BulkConsentInput {
    * consent is on file before the request is accepted.
    */
   acknowledged?: boolean;
+  /** T-10 — batch consent method; required by the server when unlocking. */
+  consentMethod?: ConsentMethod;
+  /**
+   * T-10 — batch consent date. Full RFC-3339 instant, never a bare
+   * `YYYY-MM-DD` — see {@link dateOnlyToInstant}. Required by the server
+   * when unlocking.
+   */
+  consentObtainedAt?: string;
+  /**
+   * T-10 — batch free-text evidence pointer; optional even when unlocking.
+   * `string | null` mirrors the backend `BulkConsentDto.consentReference`
+   * exactly (delta-round item 4, `frontend/CLAUDE.md` type-fidelity rule) —
+   * the backend now trims and normalizes an empty/whitespace-only value to
+   * `null` before validation (R-2/E-2), so `null` is a real value on the
+   * wire, not just an absent key.
+   */
+  consentReference?: string | null;
+}
+
+/**
+ * Result envelope for `bulkSetConsent` (T-10, DD-4). `preserved` counts
+ * actors in the batch that already carried both a method and a date and so
+ * received no provenance write at all — the legible half of DD-4's
+ * fill-only-what's-missing rule. Mirrors the backend's `BulkConsentResult`
+ * (`backend/src/actors/actors-admin.service.ts`).
+ */
+export interface BulkConsentResult extends BulkResult {
+  preserved: number;
 }
 
 /** Body for `POST /api/v1/admin/actors/bulk/delete` (FR-5). */
@@ -134,6 +222,12 @@ export interface ActorHistoryList {
  * Matches `AdminActorCreateDto`: required identity fields + optional scalar
  * fields + crop names + the explicit consent acknowledgement required when
  * `consentStatus` is `GRANTED`.
+ *
+ * `consentMethod`/`consentObtainedAt`/`consentReference` (T-9, FR-2/FR-3) mirror
+ * `ActorCreateDto`'s optional provenance fields exactly. `registrationSource`
+ * (T-9 FR-6 closure) mirrors `ActorCreateDto`'s optional `registrationSource`
+ * field the same way — `ActorForm`'s Consent & provenance fieldset now
+ * surfaces it alongside the three consent fields.
  */
 export interface AdminActorCreateInput {
   traderId: string;
@@ -141,6 +235,11 @@ export interface AdminActorCreateInput {
   region: string;
   traderType: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
+  registrationSource?: RegistrationSource;
+  consentMethod?: ConsentMethod;
+  /** Full RFC-3339 instant, or `null`. NEVER a bare `YYYY-MM-DD` — see `ActorForm.tsx`'s `dateOnlyToInstant`. */
+  consentObtainedAt?: string | null;
+  consentReference?: string | null;
   district?: string | null;
   sex?: string | null;
   position?: string | null;
@@ -180,16 +279,50 @@ export interface ActorDeleteResult {
 
 const BASE = '/api/v1/admin/actors';
 
+/**
+ * Tanzania is East Africa Time, UTC+3 year-round (no DST). T-10 duplicates
+ * this fixed offset from `ActorForm.tsx`'s own `TANZANIA_UTC_OFFSET_HOURS` /
+ * `dateOnlyToInstant` rather than importing it — that copy is a private,
+ * unexported helper local to the form, and T-10's scope excludes editing
+ * `ActorForm.tsx`. This is a **second copy of the same convention**; flagged
+ * here (and in T-10's completion report) as a drift surface a future task
+ * should resolve by extracting one shared helper both files import.
+ */
+export const TANZANIA_UTC_OFFSET_HOURS = 3;
+const TANZANIA_UTC_OFFSET = `+${String(TANZANIA_UTC_OFFSET_HOURS).padStart(2, '0')}:00`;
+
+/**
+ * Converts a `YYYY-MM-DD` date-only string — the native shape of
+ * `<input type="date">` — into a full RFC-3339 instant anchored at Tanzania
+ * midnight, or `null` when empty.
+ *
+ * Prisma's `DateTime` column rejects a bare date-only string with an
+ * unhandled 500 rather than a clean 400 (no `@Type(() => Date)` on the DTOs;
+ * see `ActorForm.tsx`'s `dateOnlyToInstant` for the full rationale this
+ * mirrors) — building the full instant client-side avoids ever sending one.
+ * Anchoring at Tanzania midnight rather than UTC midnight avoids a spurious
+ * `IsNotFutureDate` rejection for an admin recording "today" between
+ * 00:00–03:00 EAT.
+ */
+export function dateOnlyToInstant(dateOnly: string): string | null {
+  const trimmed = dateOnly.trim();
+  return trimmed ? `${trimmed}T00:00:00${TANZANIA_UTC_OFFSET}` : null;
+}
+
 // ── API functions — design.md §3 ───────────────────────────────────────────
 
 /**
- * GET /api/v1/admin/actors?page=&pageSize=&region=&traderType=&consentStatus=
+ * GET /api/v1/admin/actors?page=&pageSize=&region=&traderType=&consentStatus=&registrationSource=&consentMethod=
  *
  * Returns a paginated list of ALL actors regardless of `consentStatus`, with
  * PII fields included (FR-1). Throws AuthFailureError on 401; throws Error on
  * other non-OK responses.
  *
- * @param query  Optional page, pageSize, region, traderType, consentStatus.
+ * `registrationSource`/`consentMethod` are sent whenever supplied (FR-6) and
+ * validated/filtered server-side — see {@link AdminActorListQuery}.
+ *
+ * @param query  Optional page, pageSize, region, traderType, consentStatus,
+ *               registrationSource, consentMethod.
  * @param token  Cognito access token from the caller's session.
  */
 export async function adminListActors(
@@ -202,6 +335,10 @@ export async function adminListActors(
   if (query?.region != null) params.set('region', query.region);
   if (query?.traderType != null) params.set('traderType', query.traderType);
   if (query?.consentStatus != null) params.set('consentStatus', query.consentStatus);
+  if (query?.registrationSource != null) {
+    params.set('registrationSource', query.registrationSource);
+  }
+  if (query?.consentMethod != null) params.set('consentMethod', query.consentMethod);
 
   const qs = params.toString();
   const path = qs ? `${BASE}?${qs}` : BASE;
@@ -214,17 +351,20 @@ export async function adminListActors(
  *
  * Sets `consentStatus` to `GRANTED` (unlock) or `DENIED` (lock) for the
  * supplied actor ids in one transactional request (FR-3). Unlocking requires
- * `acknowledged: true` because it publishes PII + GPS (FR-4). Returns a
- * per-id result envelope.
+ * `acknowledged: true` because it publishes PII + GPS (FR-4), and — as of
+ * T-10 — `consentMethod` + `consentObtainedAt` (FR-3, DD-4); the server
+ * rejects an unlock missing either with a `400`. Returns a per-id result
+ * envelope that also reports how many actors were `preserved` (already
+ * evidenced, so left untouched).
  *
- * @param input  { ids, consentStatus, acknowledged? }
+ * @param input  { ids, consentStatus, acknowledged?, consentMethod?, consentObtainedAt?, consentReference? }
  * @param token  Cognito access token from the caller's session.
  */
 export async function bulkSetConsent(
   input: BulkConsentInput,
   token: string,
-): Promise<BulkResult> {
-  return apiFetch<BulkResult>(`${BASE}/bulk/consent`, {
+): Promise<BulkConsentResult> {
+  return apiFetch<BulkConsentResult>(`${BASE}/bulk/consent`, {
     method: 'PATCH',
     token,
     body: input,
@@ -421,12 +561,40 @@ export interface ImportReportTotals {
  * `toCreate` counts prospective creates and `created` is 0; on commit `created`
  * reflects reality.
  */
+/**
+ * T-4/T-5 — one entry of the per-reason breakdown of rows that did not import
+ * (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
+ *
+ * `reason` is `string` here because it is `string` on the backend, **not**
+ * because a narrower type was loosened to make something compile. The
+ * vocabulary is closed in behavior (a template column's `field`, a
+ * `skipped-*` outcome, or the literal `batch-rolled-back`) but not in the
+ * type system: `TEMPLATE_COLUMNS` is annotated `readonly TemplateColumn[]`,
+ * whose `field` is `string`, so the column half of the vocabulary has no
+ * literal union to mirror. Narrowing this side alone would make the frontend
+ * type claim something the wire does not guarantee.
+ */
+export interface ImportFailureReason {
+  reason: string;
+  count: number;
+}
+
 export interface ImportReport {
   mode: 'preview' | 'commit';
   /** Template version read from the Instructions sheet, if present (best effort, NFR-8). */
   templateVersionDetected?: string;
   totals: ImportReportTotals;
   rows: ImportRowResult[];
+  /**
+   * T-4 (FR-7) — why rows did not import, one reason per row, so the counts
+   * sum to `totals.failed + totals.skipped` exactly. Ordered by count
+   * descending, then reason ascending (NFR-6).
+   *
+   * **Optional, and absent — not empty — when nothing failed or was skipped.**
+   * The backend omits the key entirely on a clean import, so a consumer must
+   * handle `undefined` rather than assume `[]`.
+   */
+  failureBreakdown?: ImportFailureReason[];
 }
 
 /**

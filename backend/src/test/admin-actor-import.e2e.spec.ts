@@ -43,7 +43,17 @@ import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
  * Distinctive PII values seeded INTO uploaded rows. FR-11: they must never
  * appear anywhere in an import report body (which echoes only non-PII identity).
  */
-const IMPORT_PII_PHONE = '+255-000-IMPORTLEAK';
+/**
+ * Must be a **valid, canonical** TZ number, not a greppable non-phone
+ * sentinel. Since T-3 wired `normalizePhone()` into the row pipeline (FR-5),
+ * an unnormalizable Phone cell is cleared to `null` — and a phone that is
+ * never stored cannot leak, which would make the `not.toContain` assertion
+ * below pass trivially while testing nothing (KZ-002). Keeping it valid keeps
+ * the canary pointed at a phone that really is persisted and really is PII.
+ * Distinctive digits (unused elsewhere in `src/`) preserve greppability;
+ * already canonical, so it round-trips unchanged.
+ */
+const IMPORT_PII_PHONE = '+255700123456';
 const IMPORT_PII_EMAIL = 'import-leak-detector@example.test';
 const IMPORT_BAD_EMAIL = 'super-secret-leak@bad';
 
@@ -776,9 +786,17 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
   });
 
   describe('Consent gate (FR-6)', () => {
+    // T-6 — these rows carry VALID row-level provenance so the test isolates
+    // the pre-existing file-level `acknowledged` gate; the new per-row
+    // provenance gate has its own describe block below (FR-3, NFR-7, DD-5).
     it('fails GRANTED rows on commit without acknowledgement', async () => {
       const fileBase64 = await buildWorkbook([
-        validRow({ traderId: 'TZ-GR-1', consentStatus: 'GRANTED' }),
+        validRow({
+          traderId: 'TZ-GR-1',
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01',
+        }),
       ]);
 
       const res = await request(app.getHttpServer())
@@ -794,7 +812,12 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
 
     it('imports GRANTED rows and records acknowledged on the audit when acknowledged', async () => {
       const fileBase64 = await buildWorkbook([
-        validRow({ traderId: 'TZ-GR-2', consentStatus: 'GRANTED' }),
+        validRow({
+          traderId: 'TZ-GR-2',
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01',
+        }),
       ]);
 
       const res = await request(app.getHttpServer())
@@ -817,6 +840,188 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
       expect(history.body.data[0].action).toBe('IMPORT');
       expect(history.body.data[0].acknowledged).toBe(true);
+    });
+  });
+
+  describe('Per-row consent provenance (T-6, FR-3, FR-5, NFR-7, DD-5)', () => {
+    it('fails a GRANTED row missing provenance, leaving its neighbours to import normally (QA-9)', async () => {
+      const fileBase64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-PROV-BEFORE', traderName: 'Before' }),
+        validRow({
+          traderId: 'TZ-PROV-MISSING',
+          traderName: 'No Provenance',
+          consentStatus: 'GRANTED',
+        }),
+        validRow({ traderId: 'TZ-PROV-AFTER', traderName: 'After' }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({
+          fileName: 'actors.xlsx',
+          fileBase64,
+          mode: 'commit',
+          acknowledged: true,
+        })
+        .expect(200);
+
+      expect(res.body.totals).toMatchObject({ created: 2, failed: 1 });
+      expect(rowByNumber(res.body, 2).outcome).toBe('created');
+      const failedRow = rowByNumber(res.body, 3);
+      expect(failedRow.outcome).toBe('failed');
+      const fields = failedRow.errors
+        .map((e: { field: string }) => e.field)
+        .sort();
+      expect(fields).toEqual(['consentMethod', 'consentObtainedAt']);
+      expect(rowByNumber(res.body, 4).outcome).toBe('created');
+    });
+
+    it('persists registrationSource and all three provenance fields on the created actor (round-trip)', async () => {
+      const fileBase64 = await buildWorkbook([
+        validRow({
+          traderId: 'TZ-PROV-FULL',
+          consentStatus: 'GRANTED',
+          registrationSource: 'SELF_REGISTERED',
+          consentMethod: 'EMAIL',
+          consentObtainedAt: '2026-01-15',
+          consentReference: 'thread-abc',
+        }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({
+          fileName: 'actors.xlsx',
+          fileBase64,
+          mode: 'commit',
+          acknowledged: true,
+        })
+        .expect(200);
+
+      expect(res.body.totals).toMatchObject({ created: 1, failed: 0 });
+      const actorId = res.body.rows[0].actorId as string;
+
+      const detail = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${actorId}`)
+        .set(admin)
+        .expect(200);
+      expect(detail.body.registrationSource).toBe('SELF_REGISTERED');
+      expect(detail.body.consentMethod).toBe('EMAIL');
+      expect(detail.body.consentObtainedAt).toBe('2026-01-15T00:00:00.000Z');
+      expect(detail.body.consentReference).toBe('thread-abc');
+    });
+
+    it('fails a future-dated Consent Obtained At, leaving its neighbour to import normally (QA-9)', async () => {
+      // R-9 re-entering through the import door: a future consentObtainedAt
+      // would satisfy the provenance gate on import, then block every later
+      // edit through ActorForm's @IsNotFutureDate check (T-6 rework attempt 2).
+      const fileBase64 = await buildWorkbook([
+        validRow({
+          traderId: 'TZ-PROV-FUTURE',
+          traderName: 'Future Date',
+          consentStatus: 'GRANTED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2030-01-01',
+        }),
+        validRow({ traderId: 'TZ-PROV-FUTURE-NEIGHBOUR', traderName: 'Neighbour' }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({
+          fileName: 'actors.xlsx',
+          fileBase64,
+          mode: 'commit',
+          acknowledged: true,
+        })
+        .expect(200);
+
+      expect(res.body.totals).toMatchObject({ created: 1, failed: 1 });
+      const failedRow = rowByNumber(res.body, 2);
+      expect(failedRow.outcome).toBe('failed');
+      const fields = failedRow.errors.map((e: { field: string }) => e.field);
+      expect(fields).toContain('consentObtainedAt');
+      expect(rowByNumber(res.body, 3).outcome).toBe('created');
+    });
+
+    it('defaults registrationSource/consentMethod on round-trip when the columns are blank', async () => {
+      const fileBase64 = await buildWorkbook([
+        validRow({ traderId: 'TZ-PROV-DEFAULT' }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({ fileName: 'actors.xlsx', fileBase64, mode: 'commit' })
+        .expect(200);
+
+      const actorId = res.body.rows[0].actorId as string;
+      const detail = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${actorId}`)
+        .set(admin)
+        .expect(200);
+      expect(detail.body.registrationSource).toBe('TEAM_MANAGED');
+      expect(detail.body.consentMethod).toBe('NOT_RECORDED');
+      expect(detail.body.consentObtainedAt).toBeNull();
+      expect(detail.body.consentReference).toBeNull();
+    });
+  });
+
+  describe('Stale template version (T-6, FR-5)', () => {
+    it('rejects a workbook stamped with an older template version, telling the admin to re-download', async () => {
+      // The header row deliberately uses the OLD (pre-T-6, 20-column) header
+      // set, not the current TEMPLATE_HEADERS — a real v1 workbook's headers
+      // won't match the current template (it's missing the newer columns).
+      // If the version check ran AFTER locateDataSheet instead of before, this
+      // mismatch would surface as the generic "no Data sheet matching" 400
+      // instead of the specific "out of date" message, so this fixture is
+      // what actually locks the ordering (T-6 rework attempt 2, Reviewer
+      // Issue 5 — both stale-template tests previously built from the
+      // CURRENT headers, so they passed regardless of check order).
+      const oldHeaders = TEMPLATE_HEADERS.slice(0, 20);
+      const wb = new ExcelJS.Workbook();
+      const ins = wb.addWorksheet('Instructions');
+      ins.getCell('A1').value = 'Template version: v1';
+      const ws = wb.addWorksheet('Data');
+      ws.addRow([...oldHeaders]);
+      ws.addRow(TEMPLATE_COLUMNS.map((col) => validRow()[col.field] ?? ''));
+      const buf = await wb.xlsx.writeBuffer();
+      const fileBase64 = Buffer.from(buf).toString('base64');
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' })
+        .expect(400);
+
+      expect(res.body.message).toMatch(/out of date/i);
+      expect(res.body.message).toMatch(/re-download/i);
+    });
+
+    // T-6 (FR-11) — the download location is a new element on top of the two
+    // pre-existing assertions above; asserted separately so it fails against
+    // the pre-T-6 message and isn't satisfied by "names both versions" alone.
+    it('points the admin to where to download the current template', async () => {
+      const oldHeaders = TEMPLATE_HEADERS.slice(0, 20);
+      const wb = new ExcelJS.Workbook();
+      const ins = wb.addWorksheet('Instructions');
+      ins.getCell('A1').value = 'Template version: v1';
+      const ws = wb.addWorksheet('Data');
+      ws.addRow([...oldHeaders]);
+      ws.addRow(TEMPLATE_COLUMNS.map((col) => validRow()[col.field] ?? ''));
+      const buf = await wb.xlsx.writeBuffer();
+      const fileBase64 = Buffer.from(buf).toString('base64');
+
+      const res = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' })
+        .expect(400);
+
+      expect(res.body.message).toMatch(/link on this page/i);
     });
   });
 

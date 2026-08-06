@@ -62,6 +62,13 @@ function fixtureActor(
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: ConsentStatus.GRANTED,
+    // T-4 — registration source & consent provenance (FR-1, FR-2) defaults,
+    // matching a legacy row (design.md FR-9): NOT_RECORDED/null until a
+    // write path fills them.
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -93,6 +100,62 @@ const ACTORS: Record<string, unknown>[] = [
     traderType: 'offtaker',
     consentStatus: ConsentStatus.UNKNOWN,
     crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  // T-4 — mixed-batch bulk-consent fixtures (design.md DD-4, R-8). One
+  // legacy/unevidenced actor and one already carrying ITS OWN evidence with
+  // values DIFFERENT from any batch used in tests below, so an overwrite bug
+  // would be detectable rather than accidentally masked by equal values.
+  fixtureActor({
+    id: 'actor-mixed-unevidenced-1',
+    traderId: 'TZ-MIX-0004',
+    traderName: 'Unevidenced Legacy Actor',
+    region: 'Mbeya',
+    traderType: 'seed_company',
+    consentStatus: ConsentStatus.UNKNOWN,
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
+    crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  fixtureActor({
+    id: 'actor-mixed-evidenced-1',
+    traderId: 'TZ-MIX-0005',
+    traderName: 'Evidenced Legacy Actor',
+    region: 'Mbeya',
+    traderType: 'seed_company',
+    consentStatus: ConsentStatus.UNKNOWN,
+    consentMethod: 'SIGNED_FORM',
+    consentObtainedAt: new Date('2025-06-01T00:00:00Z'),
+    consentReference: 'DOC-100',
+    crops: [{ crop: { name: 'groundnut' } }],
+  }),
+  // T-8 — GRANTED-with-evidence, so the FR-9 enumeration filter
+  // (consentStatus=GRANTED&consentMethod=NOT_RECORDED) has something to
+  // correctly EXCLUDE, proving the two filters AND-compose rather than
+  // either one alone deciding the result.
+  fixtureActor({
+    id: 'actor-granted-evidenced-1',
+    traderId: 'TZ-EVD-0006',
+    traderName: 'Evidenced Published Actor',
+    region: 'Morogoro',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.GRANTED,
+    consentMethod: 'SIGNED_FORM',
+    consentObtainedAt: new Date('2026-02-01T00:00:00Z'),
+    consentReference: 'DOC-200',
+    crops: [{ crop: { name: 'sorghum' } }],
+  }),
+  // T-8 — a SELF_REGISTERED actor to exercise the registrationSource filter
+  // on its own (FR-1).
+  fixtureActor({
+    id: 'actor-self-registered-1',
+    traderId: 'TZ-SELF-0007',
+    traderName: 'Self-Registered Actor',
+    region: 'Singida',
+    traderType: 'cooperative',
+    consentStatus: ConsentStatus.UNKNOWN,
+    registrationSource: 'SELF_REGISTERED',
+    crops: [],
   }),
 ];
 
@@ -165,6 +228,17 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }
     if (where.region && actor.region !== where.region) return false;
     if (where.traderType && actor.traderType !== where.traderType) return false;
+    // T-8 — registrationSource + consentMethod filters (FR-9's enumeration
+    // mechanism), AND-composed with the checks above.
+    if (
+      where.registrationSource &&
+      actor.registrationSource !== where.registrationSource
+    ) {
+      return false;
+    }
+    if (where.consentMethod && actor.consentMethod !== where.consentMethod) {
+      return false;
+    }
 
     if (where.id?.in && Array.isArray(where.id.in)) {
       if (!where.id.in.includes(actor.id)) return false;
@@ -444,6 +518,51 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe('actor-granted-1');
     });
+
+    // T-8 (FR-9) — `consentStatus=GRANTED&consentMethod=NOT_RECORDED` is the
+    // enumeration mechanism staff use to find the legacy unevidenced set.
+    // `actor-granted-evidenced-1` is GRANTED but has recorded provenance, so
+    // this proves the two filters AND-compose rather than either deciding
+    // the result alone.
+    it('filters by consentStatus=GRANTED AND consentMethod=NOT_RECORDED to find the legacy unevidenced set', async () => {
+      const res = await request(app.getHttpServer())
+        .get(
+          '/api/v1/admin/actors?consentStatus=GRANTED&consentMethod=NOT_RECORDED',
+        )
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe('actor-granted-1');
+    });
+
+    it('filters by registrationSource for Admin', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?registrationSource=SELF_REGISTERED')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.data[0].id).toBe('actor-self-registered-1');
+    });
+
+    it('returns 400 with a field-level error for an invalid consentMethod', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?consentMethod=NOT_A_METHOD')
+        .set(admin)
+        .expect(400);
+
+      expect(JSON.stringify(res.body)).toContain('consentMethod');
+    });
+
+    it('returns 400 with a field-level error for an invalid registrationSource', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?registrationSource=NOT_A_SOURCE')
+        .set(admin)
+        .expect(400);
+
+      expect(JSON.stringify(res.body)).toContain('registrationSource');
+    });
   });
 
   describe('PATCH /api/v1/admin/actors/bulk/consent', () => {
@@ -478,7 +597,73 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         .expect(400);
     });
 
-    it('unlocks with acknowledged: true and reports notFound ids', async () => {
+    // T-4 — FR-3's bulk scenario: the DTO carries acknowledged but no
+    // provenance. Rejected before any read/write happens, so zero rows move.
+    it('returns 400 when unlocking without consentMethod/consentObtainedAt, and modifies zero rows', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-denied-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+        })
+        .expect(400);
+
+      // Zero partial writes — the actor's consentStatus is unchanged.
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentStatus).toBe('DENIED');
+    });
+
+    /**
+     * Delta-round item 1 (R-2/E-1 symmetry) — `bulkSetConsent` has NO
+     * try/catch at all (unlike the single-actor create/update path, which at
+     * least reaches `mapPrismaError`), so a date-only `consentObtainedAt`
+     * used to reach Prisma untransformed and raise an UNHANDLED 500 on this
+     * path — worse than the one already fixed in `actor-create.dto.ts`.
+     * `@IsFullInstant()` (now shared via `common/consent-date-validators.ts`)
+     * rejects it at the DTO layer before the request ever reaches Prisma.
+     */
+    it('rejects a date-only consentObtainedAt on bulk unlock — field-level 400, not a 500 (R-2/E-1 symmetry)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-denied-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01',
+        })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(Array.isArray(res.body.details)).toBe(true);
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+
+      // Zero partial writes — the actor's consentStatus is unchanged.
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentStatus).toBe('DENIED');
+    });
+
+    it('unlocks with acknowledged: true + provenance and reports notFound ids', async () => {
       const res = await request(app.getHttpServer())
         .patch('/api/v1/admin/actors/bulk/consent')
         .set(admin)
@@ -486,6 +671,8 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
           ids: ['actor-denied-1', 'missing-1'],
           consentStatus: 'GRANTED',
           acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01T00:00:00.000Z',
         })
         .expect(200);
 
@@ -493,6 +680,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         requested: 2,
         applied: 1,
         notFound: ['missing-1'],
+        preserved: 0,
       });
 
       // The unlocked actor now appears in public reads.
@@ -501,6 +689,70 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
       const ids = pubRes.body.data.map((a: { id: string }) => a.id);
       expect(ids).toContain('actor-denied-1');
+
+      // And it carries the batch's provenance (FR-3).
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const denied = adminRes.body.data.find(
+        (a: { id: string }) => a.id === 'actor-denied-1',
+      );
+      expect(denied.consentMethod).toBe('PORTAL_CHECKBOX');
+    });
+
+    // T-4 — the "not done if" case: a batch mixing an actor that already
+    // carries its own evidence with one that has none. Proves the write is
+    // PARTITIONED (design.md DD-4) rather than a uniform updateMany that
+    // would silently overwrite the evidenced actor's provenance (R-8).
+    it('mixed batch: fills the unevidenced actor and leaves the evidenced actor byte-identical (R-8, FR-3)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/bulk/consent')
+        .set(admin)
+        .send({
+          ids: ['actor-mixed-unevidenced-1', 'actor-mixed-evidenced-1'],
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'PORTAL_CHECKBOX',
+          consentObtainedAt: '2026-07-01T00:00:00.000Z',
+          consentReference: 'BATCH-2026-07',
+        })
+        .expect(200);
+
+      expect(res.body).toEqual({
+        requested: 2,
+        applied: 2,
+        notFound: [],
+        preserved: 1,
+      });
+
+      const adminRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      const byId = Object.fromEntries(
+        adminRes.body.data.map((a: { id: string }) => [a.id, a]),
+      );
+
+      // Filled actor gets the batch's provenance.
+      const filled = byId['actor-mixed-unevidenced-1'];
+      expect(filled.consentStatus).toBe('GRANTED');
+      expect(filled.consentMethod).toBe('PORTAL_CHECKBOX');
+      expect(filled.consentReference).toBe('BATCH-2026-07');
+      expect(new Date(filled.consentObtainedAt).toISOString()).toBe(
+        '2026-07-01T00:00:00.000Z',
+      );
+
+      // Already-evidenced actor is unlocked (status changes) but its OWN
+      // method, date, and reference are byte-identical to before — NOT the
+      // batch's values, which are all deliberately different above.
+      const evidenced = byId['actor-mixed-evidenced-1'];
+      expect(evidenced.consentStatus).toBe('GRANTED');
+      expect(evidenced.consentMethod).toBe('SIGNED_FORM');
+      expect(evidenced.consentReference).toBe('DOC-100');
+      expect(new Date(evidenced.consentObtainedAt).toISOString()).toBe(
+        new Date('2025-06-01T00:00:00Z').toISOString(),
+      );
     });
 
     it('locks actors and they disappear from public reads', async () => {
@@ -517,6 +769,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
         requested: 1,
         applied: 1,
         notFound: [],
+        preserved: 0,
       });
 
       const pubRes = await request(app.getHttpServer())

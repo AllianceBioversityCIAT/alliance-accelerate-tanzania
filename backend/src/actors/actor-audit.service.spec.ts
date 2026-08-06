@@ -44,6 +44,13 @@ function fixtureActor(overrides: Partial<AdminActor> = {}): AdminActor {
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: 'UNKNOWN',
+    // T-3 — registration source & consent provenance (FR-1, FR-2); defaults
+    // mirror the Prisma column defaults so a plain fixtureActor() looks like
+    // a legacy row (design.md FR-9).
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: ['sorghum', 'common_bean'],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -378,6 +385,59 @@ describe('ActorAuditService', () => {
 
       expect(result).toEqual({ count: 0 });
       expect(tx.actorAuditLog.createMany).not.toHaveBeenCalled();
+    });
+
+    it('T-4 (rework, attempt 2): diffs strictly off the per-actor patch map — a row present in `patches` with only consentObtainedAt set produces a diff naming ONLY that field, never a phantom consentMethod change', async () => {
+      const tx = mockTx();
+      const rows = [
+        // Own method already recorded (EMAIL); only the date was missing.
+        fixtureActor({
+          id: 'a1',
+          consentStatus: 'DENIED',
+          consentMethod: 'EMAIL',
+          consentObtainedAt: null,
+          consentReference: null,
+        }),
+        // Not in `patches` at all — fully evidenced, status-only.
+        fixtureActor({
+          id: 'a2',
+          consentStatus: 'DENIED',
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: new Date('2025-01-01T00:00:00Z'),
+        }),
+      ];
+      tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 2 });
+
+      const patches = new Map([
+        ['a1', { consentObtainedAt: '2026-07-01T00:00:00.000Z' }],
+      ]);
+
+      const result = await service.logBulkConsent(
+        tx,
+        rows,
+        'GRANTED',
+        acting,
+        true,
+        patches,
+      );
+
+      expect(result).toEqual({ count: 2 });
+      const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+        .data as Array<{ actorId: string; changes: { fields: unknown } }>;
+      const byId = Object.fromEntries(
+        data.map((row) => [row.actorId, row.changes.fields]),
+      );
+
+      expect(byId.a1).toEqual({
+        consentStatus: { from: 'DENIED', to: 'GRANTED' },
+        consentObtainedAt: {
+          from: null,
+          to: '2026-07-01T00:00:00.000Z',
+        },
+      });
+      expect(byId.a2).toEqual({
+        consentStatus: { from: 'DENIED', to: 'GRANTED' },
+      });
     });
   });
 

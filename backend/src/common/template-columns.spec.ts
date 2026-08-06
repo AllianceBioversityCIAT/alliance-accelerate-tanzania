@@ -1,8 +1,10 @@
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
 import {
+  CONSENT_METHOD_VALUES,
   CROP_COLUMN_CATALOG,
   CROP_YES_NO,
+  REGISTRATION_SOURCE_VALUES,
   SEX_VALUES,
   TEMPLATE_COLUMNS,
   TEMPLATE_HEADERS,
@@ -22,7 +24,7 @@ describe('template-columns', () => {
   };
 
   it('exports the template version stamp', () => {
-    expect(TEMPLATE_VERSION).toBe('v1');
+    expect(TEMPLATE_VERSION).toBe('v2');
   });
 
   it('lists columns in the exact field-staff order', () => {
@@ -47,6 +49,10 @@ describe('template-columns', () => {
       'cropCommonBean',
       'cropGroundnut',
       'consentStatus',
+      'registrationSource',
+      'consentMethod',
+      'consentObtainedAt',
+      'consentReference',
     ]);
   });
 
@@ -56,6 +62,10 @@ describe('template-columns', () => {
     expect(byField('traderId').header).toBe('Trader ID');
     expect(byField('cropCommonBean').header).toBe('Crop: Common bean');
     expect(byField('consentStatus').header).toBe('Consent Status');
+    expect(byField('registrationSource').header).toBe('Registration Source');
+    expect(byField('consentMethod').header).toBe('Consent Method');
+    expect(byField('consentObtainedAt').header).toBe('Consent Obtained At');
+    expect(byField('consentReference').header).toBe('Consent Reference');
   });
 
   it('marks exactly the ActorCreateDto-required fields as required', () => {
@@ -123,5 +133,31 @@ describe('template-columns', () => {
     ]) {
       expect(byField(field).format).toBeTruthy();
     }
+  });
+
+  // T-6 — the four new columns (FR-1, FR-2, FR-5, NFR-3).
+
+  it('enforces registration-source allowed values equal to the Prisma RegistrationSource enum', () => {
+    expect(REGISTRATION_SOURCE_VALUES).toEqual(Object.values(RegistrationSource));
+    expect(byField('registrationSource').allowedValues).toEqual(
+      REGISTRATION_SOURCE_VALUES,
+    );
+    expect(byField('registrationSource').required).toBe(false);
+  });
+
+  it('enforces consent-method allowed values equal to the Prisma ConsentMethod enum', () => {
+    expect(CONSENT_METHOD_VALUES).toEqual(Object.values(ConsentMethod));
+    expect(byField('consentMethod').allowedValues).toEqual(CONSENT_METHOD_VALUES);
+    expect(byField('consentMethod').required).toBe(false);
+    // PORTAL_CHECKBOX is listed even though this spec never writes it (design.md §2).
+    expect(CONSENT_METHOD_VALUES).toContain('PORTAL_CHECKBOX');
+  });
+
+  it('provides format hints for the free-text/date provenance columns', () => {
+    expect(byField('consentObtainedAt').format).toBeTruthy();
+    expect(byField('consentObtainedAt').allowedValues).toBeUndefined();
+    expect(byField('consentReference').format).toBeTruthy();
+    expect(byField('consentReference').allowedValues).toBeUndefined();
+    expect(byField('consentReference').required).toBe(false);
   });
 });

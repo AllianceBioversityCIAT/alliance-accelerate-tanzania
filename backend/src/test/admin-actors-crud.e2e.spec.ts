@@ -63,6 +63,14 @@ function fixtureActor(
     gpsAltitude: 1400,
     gpsAccuracy: 5,
     consentStatus: ConsentStatus.GRANTED,
+    // T-3 — registration source & consent provenance (FR-1, FR-2). Defaults
+    // mirror the Prisma column defaults, so a plain fixtureActor() is a
+    // LEGACY row exactly like the 436/436 live actors that are
+    // GRANTED + NOT_RECORDED today (design.md FR-9, R-9).
+    registrationSource: 'TEAM_MANAGED',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -989,6 +997,389 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(historyRes2.body.data[0].traderName).toBe('New Seed Actor');
       expect(historyRes2.body.data[0].changes.kind).toBe('snapshot');
     });
+  });
+
+  /**
+   * T-3 — Registration source & consent provenance wired into admin create
+   * and update (FR-1, FR-2, FR-3, NFR-6). `isConsentProvenanceSatisfied`
+   * itself (the full §4.1 truth table) is unit-tested in
+   * `consent-provenance.policy.spec.ts` (T-2); these are the per-path,
+   * over-HTTP integration tests design.md §12 calls for.
+   */
+  describe('Registration source & consent provenance (FR-1, FR-2, FR-3, NFR-6)', () => {
+    it('round-trips all four fields on create — write then read back (R-1)', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        consentStatus: 'GRANTED',
+        acknowledged: true,
+        registrationSource: 'SELF_REGISTERED',
+        consentMethod: 'SIGNED_FORM',
+        consentObtainedAt: '2026-01-01T00:00:00.000Z',
+        consentReference: 'DOC-CREATE-1',
+      };
+
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(createRes.body.registrationSource).toBe('SELF_REGISTERED');
+      expect(createRes.body.consentMethod).toBe('SIGNED_FORM');
+      expect(createRes.body.consentObtainedAt).toBe('2026-01-01T00:00:00.000Z');
+      expect(createRes.body.consentReference).toBe('DOC-CREATE-1');
+
+      // The read-back, not the 201, is what proves SCALAR_FIELDS was updated (R-1).
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${createRes.body.id}`)
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.registrationSource).toBe('SELF_REGISTERED');
+      expect(getRes.body.consentMethod).toBe('SIGNED_FORM');
+      expect(getRes.body.consentObtainedAt).toBe('2026-01-01T00:00:00.000Z');
+      expect(getRes.body.consentReference).toBe('DOC-CREATE-1');
+    });
+
+    it('round-trips all four fields on update — write then read back (R-1)', async () => {
+      const patchRes = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          registrationSource: 'SELF_REGISTERED',
+          consentMethod: 'EMAIL',
+          consentObtainedAt: '2026-02-01T00:00:00.000Z',
+          consentReference: 'EMAIL-THREAD-99',
+        })
+        .expect(200);
+
+      expect(patchRes.body.registrationSource).toBe('SELF_REGISTERED');
+      expect(patchRes.body.consentMethod).toBe('EMAIL');
+      expect(patchRes.body.consentObtainedAt).toBe('2026-02-01T00:00:00.000Z');
+      expect(patchRes.body.consentReference).toBe('EMAIL-THREAD-99');
+
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.registrationSource).toBe('SELF_REGISTERED');
+      expect(getRes.body.consentMethod).toBe('EMAIL');
+      expect(getRes.body.consentObtainedAt).toBe('2026-02-01T00:00:00.000Z');
+      expect(getRes.body.consentReference).toBe('EMAIL-THREAD-99');
+    });
+
+    it('defaults registrationSource=TEAM_MANAGED, consentMethod=NOT_RECORDED, consentObtainedAt/consentReference=null when never set (FR-1, FR-2)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.registrationSource).toBe('TEAM_MANAGED');
+      expect(res.body.consentMethod).toBe('NOT_RECORDED');
+      expect(res.body.consentObtainedAt).toBeNull();
+      expect(res.body.consentReference).toBeNull();
+    });
+
+    it('rejects create with GRANTED but no provenance — field-level 400 (FR-3)', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        consentStatus: 'GRANTED',
+        acknowledged: true,
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toEqual(
+        expect.arrayContaining(['consentMethod', 'consentObtainedAt']),
+      );
+    });
+
+    it('rejects an update transitioning into GRANTED without provenance — field-level 400 (FR-3)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({ consentStatus: 'GRANTED', acknowledged: true })
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toEqual(
+        expect.arrayContaining(['consentMethod', 'consentObtainedAt']),
+      );
+
+      // acknowledged alone must not have moved the status (DD-2 — independent gates).
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .expect(200);
+      expect(getRes.body.consentStatus).toBe('UNKNOWN');
+    });
+
+    it(
+      'allows editing district on a legacy GRANTED + NOT_RECORDED actor when the ' +
+        'request body is the FULL object ActorForm.buildDto() actually sends (R-9, DD-3 — ' +
+        'the highest-value test in this spec)',
+      async () => {
+        // Mirrors frontend/components/admin/ActorForm.tsx buildDto() (~L186-207)
+        // exactly: a full-object PATCH that always resends consentStatus,
+        // built from actor-granted-1's OWN current values with only
+        // `district` changed — NOT a sparse `{ district: ... }` body, which
+        // would pass vacuously and prove nothing about R-9.
+        const fullBodyLikeActorForm = {
+          traderId: 'TZ-SEED-0001',
+          traderName: 'Meru Agro-Processing & Seeds',
+          region: 'Arusha',
+          traderType: 'seed_company',
+          consentStatus: 'GRANTED',
+          district: 'Mbeya Rural', // <- the only field the Admin actually changed
+          sex: 'M',
+          position: 'Director',
+          marketLocation: 'Arusha Central Market',
+          capacityTons: 1850,
+          technicalSupport: 'Needs cold storage',
+          phone: '+255700000000',
+          email: 'director@example.com',
+          gpsLatitude: -3.3869,
+          gpsLongitude: 36.683,
+          gpsAltitude: 1400,
+          gpsAccuracy: 5,
+          crops: ['sorghum', 'common_bean'],
+        };
+
+        const res = await request(app.getHttpServer())
+          .patch('/api/v1/admin/actors/actor-granted-1')
+          .set(admin)
+          .send(fullBodyLikeActorForm)
+          .expect(200);
+
+        expect(res.body.district).toBe('Mbeya Rural');
+        expect(res.body.consentStatus).toBe('GRANTED');
+        // Unchanged BECAUSE no value changed, not because it was skipped.
+        expect(res.body.consentMethod).toBe('NOT_RECORDED');
+        expect(res.body.consentObtainedAt).toBeNull();
+      },
+    );
+
+    it('rejects stripping consent evidence from a GRANTED actor while it remains GRANTED (FR-3)', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({
+          ...validCreatePayload(),
+          traderId: 'TZ-EVIDENCED-1',
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01T00:00:00.000Z',
+          consentReference: 'DOC-EVIDENCED-1',
+        })
+        .expect(201);
+
+      const id = createRes.body.id as string;
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ consentMethod: 'NOT_RECORDED' })
+        .expect(400);
+
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .expect(200);
+      // Stored evidence is unchanged after the rejected write.
+      expect(getRes.body.consentMethod).toBe('SIGNED_FORM');
+    });
+
+    it('allows un-publish-then-strip: moving consentStatus off GRANTED while clearing provenance (FR-3)', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({
+          ...validCreatePayload(),
+          traderId: 'TZ-EVIDENCED-2',
+          consentStatus: 'GRANTED',
+          acknowledged: true,
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01T00:00:00.000Z',
+          consentReference: 'DOC-EVIDENCED-2',
+        })
+        .expect(201);
+
+      const id = createRes.body.id as string;
+
+      const patchRes = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({
+          consentStatus: 'DENIED',
+          consentMethod: 'NOT_RECORDED',
+          consentObtainedAt: null,
+          consentReference: null,
+        })
+        .expect(200);
+
+      expect(patchRes.body.consentStatus).toBe('DENIED');
+      expect(patchRes.body.consentMethod).toBe('NOT_RECORDED');
+      expect(patchRes.body.consentObtainedAt).toBeNull();
+    });
+
+    it('produces an ActorAuditLog diff row for an update touching only provenance fields (NFR-6)', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({
+          consentMethod: 'SIGNED_FORM',
+          consentObtainedAt: '2026-01-01T00:00:00.000Z',
+          consentReference: 'DOC-AUDIT-1',
+        })
+        .expect(200);
+
+      const historyRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1/history')
+        .set(admin)
+        .expect(200);
+
+      const updateEntry = historyRes.body.data.find(
+        (e: { action: string }) => e.action === 'UPDATE',
+      );
+      expect(updateEntry).toBeDefined();
+      expect(updateEntry.changes.fields.consentMethod).toEqual({
+        from: 'NOT_RECORDED',
+        to: 'SIGNED_FORM',
+      });
+      expect(updateEntry.changes.fields.consentObtainedAt).toEqual({
+        from: null,
+        to: '2026-01-01T00:00:00.000Z',
+      });
+      expect(updateEntry.changes.fields.consentReference).toEqual({
+        from: null,
+        to: 'DOC-AUDIT-1',
+      });
+    });
+
+    it('rejects a registrationSource value outside the enum — 400 (FR-1)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), registrationSource: 'NOT_A_SOURCE' })
+        .expect(400);
+    });
+
+    it('rejects a consentMethod value outside the enum — 400 (FR-2)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), consentMethod: 'CARRIER_PIGEON' })
+        .expect(400);
+    });
+
+    it('rejects a consentObtainedAt in the future — 400 (FR-2)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), consentObtainedAt: '2099-01-01T00:00:00.000Z' })
+        .expect(400);
+    });
+
+    it('rejects a consentReference longer than 255 characters — 400 (NFR-3)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), consentReference: 'x'.repeat(256) })
+        .expect(400);
+    });
+
+    /**
+     * validation-report.md R-2/E-1 — `@IsDateString()` alone accepts a bare
+     * `YYYY-MM-DD` date-only string, which reaches Prisma untransformed and
+     * raises an unhandled 500 (`PrismaClientValidationError` is not a
+     * `PrismaClientKnownRequestError`, so `mapPrismaError` rethrows it). Both
+     * frontend callers already build a full instant before sending
+     * (`ActorForm.tsx`'s `dateOnlyToInstant`), so this is unreachable through
+     * the UI — but reachable by any direct Admin API call. These two tests
+     * assert the DTO rejects it with a clean, field-level 400 BEFORE the
+     * request ever reaches Prisma, on both write paths.
+     */
+    it('rejects a date-only consentObtainedAt on create — field-level 400, not a 500 (R-2/E-1)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), consentObtainedAt: '2026-01-15' })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      expect(Array.isArray(res.body.details)).toBe(true);
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      // Names the actual problem (a full instant is required) rather than a
+      // generic "must be a valid date" (R-10 — one message per fault).
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+    });
+
+    it('rejects a date-only consentObtainedAt on update — field-level 400, not a 500 (R-2/E-1)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({ consentObtainedAt: '2026-01-15' })
+        .expect(400);
+
+      expect(res.body.message).toBe('Validation failed');
+      const detail = (res.body.details as { field: string; message: string }[]).find(
+        (d) => d.field === 'consentObtainedAt',
+      );
+      expect(detail).toBeDefined();
+      expect(detail!.message).toMatch(/full RFC-3339 instant/i);
+      expect(detail!.message).toMatch(/date-only/i);
+    });
+
+    /**
+     * validation-report.md R-2/E-2 — `consentReference: ''` used to read as
+     * *changed* against a stored `null` in `isConsentProvenanceSatisfied`'s
+     * comparison, wrongly firing the FR-3 guard and rejecting an edit that
+     * changed nothing relevant. `actor-granted-1` is exactly the legacy shape
+     * FR-9 describes: GRANTED + NOT_RECORDED + null date + null reference,
+     * live on 436/436 actors today — this is the reachable, user-facing half
+     * of R-2, unlike E-1 above.
+     *
+     * Delta-round item 2 — the original fix (`value === '' ? null : value`)
+     * did not trim, so `'   '` (whitespace-only) would still read as
+     * *changed* against stored `null` and re-fire the same guard, one space
+     * away from the bug just closed. Covering both `''` and `'   '` proves
+     * the fix actually trims first, matching the doc comment's claimed
+     * `trim() || null` parity with `ActorForm.tsx`.
+     */
+    it.each([
+      ['an empty string', ''],
+      ['a whitespace-only string', '   '],
+    ])(
+      'allows %s consentReference on a legacy GRANTED + NOT_RECORDED actor ' +
+        'without re-triggering the FR-3 guard (R-2/E-2)',
+      async (_label, submitted) => {
+        const res = await request(app.getHttpServer())
+          .patch('/api/v1/admin/actors/actor-granted-1')
+          .set(admin)
+          .send({ consentReference: submitted })
+          .expect(200);
+
+        expect(res.body.consentStatus).toBe('GRANTED');
+        expect(res.body.consentMethod).toBe('NOT_RECORDED');
+        expect(res.body.consentObtainedAt).toBeNull();
+        // Both '' and '   ' are trimmed and normalized to null, not stored
+        // as a literal empty/whitespace string.
+        expect(res.body.consentReference).toBeNull();
+      },
+    );
   });
 
   describe('Public read + PII boundary regression', () => {

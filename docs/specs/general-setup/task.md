@@ -22,6 +22,9 @@ Each task is a single checklist item with an ID, status box, dependencies, and a
 ### Status transitions (managed by the Leader)
 `[ ]` → `[~]` on start → `[x]` on Reviewer PASS. A task that fails review 3× stays `[~]` and is escalated.
 
+### Coverage closure (KZ-001)
+Decomposition is complete only when **every scenario and every MUST/`BUT it must NOT` clause** — not merely every requirement *ID* — maps to a named task. A traceability table keyed on IDs hides scenario-level gaps. **A gap may never be discharged by citing a different requirement that happens to be satisfied**; each clause is owned or it is unowned.
+
 ## Dependency Graph
 List edges so the Leader can pick the next eligible task (all deps `[x]`):
 ```
@@ -31,10 +34,15 @@ T-1 → T-3 → T-4
 A task is **eligible** when its status is `[ ]`/`[~]` and every dependency is `[x]`. Order ties broken by document order.
 
 ## Testing & Verification Expectations
+
+**Presence is not behaviour — and this applies to documents, not only tests (KZ-002, recurrence).** A procedure
+carrying every required clause can still be unexecutable. Operator-facing documents are verified against the
+**running product**, not against the spec that specified them.
 - Every task MUST carry a runnable `Verify` command; the Implementer runs it before reporting completion.
 - Prefer the smallest verifying command (targeted test) over full-suite runs.
 - Backend: `npm run test` / `npm run build` / `npm run lint`. Frontend: `npm run build` / `npm run lint` / component tests.
 - Infra tasks: validation/plan/dry-run commands, always with `--profile IBD-DEV`.
+- **A presence-assertion is not a behavioral proof (KZ-002).** A test asserting that a class, config entry, or attribute *exists* must record what it **cannot** prove — it will pass while the feature does nothing. A property the harness structurally cannot evaluate (layout, contrast, focus order, whether a style actually applies) is **not covered**: route it to a human/T6 check instead of counting it as verified.
 
 ## Execution Conventions
 - Commits use the JCSPECS standard: `[SPEC:<spec-path>] <message>`.

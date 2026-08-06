@@ -154,6 +154,49 @@ function TotalsChips({ report }: { report: ImportReport }) {
   );
 }
 
+/**
+ * T-5 (FR-7) — per-reason breakdown of rows that did not import.
+ *
+ * Rendered in the PREVIEW branch beside `TotalsChips`, which is where both the
+ * `report` object and the page's live-region pattern already are.
+ * `ImportPreviewTable` is deliberately not the home: its whole prop surface is
+ * `{ rows }` and it contains no live region (`design.md` §5, judgment C-14).
+ *
+ * Reason slugs are rendered verbatim, matching `ImportPreviewTable`'s existing
+ * `{err.field}:` precedent. A prettifying label map would be a second source
+ * of truth for column names, free to drift from the backend's vocabulary — the
+ * exact failure mode `TEMPLATE_COLUMNS` exists to prevent.
+ */
+function FailureBreakdown({ report }: { report: ImportReport }) {
+  const breakdown = report.failureBreakdown;
+  // Absent, not empty, when nothing failed or was skipped — the backend omits
+  // the key entirely, so this must not assume `[]`.
+  if (!breakdown || breakdown.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
+        Why rows will not import
+      </h3>
+      <ul className="flex flex-col gap-1">
+        {breakdown.map((entry) => (
+          <li
+            key={entry.reason}
+            className="flex items-baseline justify-between gap-4 text-sm text-fg"
+          >
+            <span className="font-medium">{entry.reason}</span>
+            <span className="tabular-nums text-muted">{entry.count}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted">
+        One reason per row, so these add up to the skipped and invalid counts above. A row with
+        more than one problem is counted once, under its first column in template order.
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
@@ -545,6 +588,15 @@ export default function ActorImportPage() {
           ) : (
             <>
               <TotalsChips report={report} />
+
+              {/* T-5 (FR-7): the breakdown changes after each preview, so it
+                  announces politely rather than interrupting. The region wraps
+                  the component (not the list inside it) so it stays in the DOM
+                  across previews — a live region added at the same moment as
+                  its content is not reliably announced. */}
+              <div role="status" aria-live="polite">
+                <FailureBreakdown report={report} />
+              </div>
 
               <ImportPreviewTable rows={report.rows} />
 

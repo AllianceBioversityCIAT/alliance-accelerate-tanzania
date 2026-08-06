@@ -47,6 +47,13 @@ const AUDITABLE_FIELDS = [
   'gpsAltitude',
   'gpsAccuracy',
   'consentStatus',
+  // T-3 — registration source & consent provenance (FR-1, FR-2, NFR-6):
+  // flow through this existing diff/snapshot machinery unchanged
+  // (design.md §4.6) rather than a parallel audit path.
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
 ] as const;
 
 type AuditableField = (typeof AUDITABLE_FIELDS)[number];
@@ -63,11 +70,41 @@ const DECIMAL_FIELDS: readonly AuditableField[] = [
   'gpsAccuracy',
 ] as const;
 
+/**
+ * T-3 — Date fields serialized to ISO strings in the `changes` JSON. Without
+ * this, two `Date` instances representing the same instant (e.g. an
+ * unrelated update's before/after `consentObtainedAt`, refetched from Prisma
+ * on both sides) would fail `valuesEqual`'s reference/array checks and
+ * produce a spurious diff entry on every update to an actor that has this
+ * field set — mirrors why `DECIMAL_FIELDS` is compared as strings.
+ */
+const DATE_FIELDS: readonly AuditableField[] = ['consentObtainedAt'] as const;
+
 /** Full-snapshot envelope. */
 interface SnapshotEnvelope {
   kind: 'snapshot';
   values: Record<string, unknown>;
 }
+
+/**
+ * T-4 (rework, attempt 2) — the provenance fields `bulkSetConsent` fills on
+ * ONE actor during an unlock, computed by the caller from what that actor's
+ * row was actually missing (`design.md` DD-4, corrected after two Reviewer
+ * FAILs on attempt 1's `consentMethod === NOT_RECORDED`-only partition).
+ *
+ * Replaces the earlier batch-uniform `fill: { ids, consentMethod, ... }`
+ * shape, which could only express "these ids get the full batch value" and
+ * therefore claimed a `consentMethod` change in the audit for a row that
+ * only had its `consentObtainedAt` filled. A key **absent** here means that
+ * field was left untouched on this actor — present-but-unchanged is not
+ * possible by construction, since the caller only sets a key when the row's
+ * own value was missing.
+ */
+export type ConsentFillPatch = Partial<{
+  consentMethod: string;
+  consentObtainedAt: string | Date;
+  consentReference: string | null;
+}>;
 
 @Injectable()
 export class ActorAuditService {
@@ -156,11 +193,24 @@ export class ActorAuditService {
   }
 
   /**
-   * Record `BULK_CONSENT` audit entries for actors whose status really changes.
+   * Record `BULK_CONSENT` audit entries for actors whose status and/or
+   * provenance really changes.
    *
-   * Rows already at the target `status` are skipped (empty-diff skip per row).
-   * All remaining rows are inserted with a single `createMany` (NFR-6), and the
-   * typed `acknowledged` flag is persisted on every row.
+   * Rows with no field change at all are skipped (empty-diff skip per row,
+   * same convention as {@link logUpdate}). All remaining rows are inserted
+   * with a single `createMany` (NFR-6), and the typed `acknowledged` flag is
+   * persisted on every row.
+   *
+   * T-4 (rework, attempt 2) — `patches` is a per-actor {@link ConsentFillPatch}
+   * map, computed ONCE by the caller from the same per-row missing-field
+   * partition that drives the write (`design.md` DD-4). Diffing directly off
+   * that map — rather than off a single batch-uniform value — means the
+   * audit entry can only ever claim a field change the write actually made:
+   * a row present in `patches` with only `consentObtainedAt` set produces a
+   * diff naming `consentObtainedAt` alone, never a phantom `consentMethod`
+   * change. A row absent from `patches` (not in the fill set at all) is
+   * diffed on `consentStatus` alone, so an already-evidenced actor's audit
+   * entry correctly shows no provenance change (R-8).
    */
   async logBulkConsent(
     tx: Prisma.TransactionClient,
@@ -168,17 +218,66 @@ export class ActorAuditService {
     status: string,
     acting: ActingAdmin,
     acknowledged: boolean,
+    patches?: ReadonlyMap<string, ConsentFillPatch>,
   ): Promise<{ count: number }> {
-    const changedRows = beforeRows.filter(
-      (row) => row.consentStatus !== status,
-    );
+    const entries = beforeRows
+      .map((row) => {
+        const fields: Record<string, { from: unknown; to: unknown }> = {};
 
-    if (changedRows.length === 0) {
+        if (row.consentStatus !== status) {
+          fields.consentStatus = { from: row.consentStatus, to: status };
+        }
+
+        const patch = patches?.get(row.id);
+        if (patch) {
+          if (
+            patch.consentMethod !== undefined &&
+            !this.valuesEqual(row.consentMethod, patch.consentMethod)
+          ) {
+            fields.consentMethod = {
+              from: row.consentMethod,
+              to: patch.consentMethod,
+            };
+          }
+
+          if (patch.consentObtainedAt !== undefined) {
+            const fromObtainedAt = this.serializeValue(
+              'consentObtainedAt',
+              row.consentObtainedAt,
+            );
+            const toObtainedAt = this.serializeValue(
+              'consentObtainedAt',
+              patch.consentObtainedAt,
+            );
+            if (!this.valuesEqual(fromObtainedAt, toObtainedAt)) {
+              fields.consentObtainedAt = {
+                from: fromObtainedAt,
+                to: toObtainedAt,
+              };
+            }
+          }
+
+          if (patch.consentReference !== undefined) {
+            const toReference = patch.consentReference ?? null;
+            if (!this.valuesEqual(row.consentReference ?? null, toReference)) {
+              fields.consentReference = {
+                from: row.consentReference ?? null,
+                to: toReference,
+              };
+            }
+          }
+        }
+
+        return { row, fields };
+      })
+      .filter(({ fields }) => Object.keys(fields).length > 0);
+
+    if (entries.length === 0) {
       return { count: 0 };
     }
 
     return tx.actorAuditLog.createMany({
-      data: changedRows.map((row) => ({
+      data: entries.map(({ row, fields }) => ({
         actorId: row.id,
         traderId: row.traderId,
         traderName: row.traderName,
@@ -187,9 +286,7 @@ export class ActorAuditService {
         actingEmail: acting.email ?? null,
         changes: {
           kind: 'diff',
-          fields: {
-            consentStatus: { from: row.consentStatus, to: status },
-          },
+          fields,
         } as unknown as Prisma.InputJsonValue,
         acknowledged,
       })),
@@ -297,6 +394,10 @@ export class ActorAuditService {
   private serializeValue(field: AuditableField, value: unknown): unknown {
     if (DECIMAL_FIELDS.includes(field)) {
       return value === null || value === undefined ? null : String(value);
+    }
+    if (DATE_FIELDS.includes(field)) {
+      if (value === null || value === undefined) return null;
+      return value instanceof Date ? value.toISOString() : value;
     }
     return value;
   }

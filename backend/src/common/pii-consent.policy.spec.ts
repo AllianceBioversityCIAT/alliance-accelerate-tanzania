@@ -1,5 +1,10 @@
 import { ConsentStatus, Prisma } from '@prisma/client';
-import { PII_ALLOWLIST, isPublic, publicGps } from './pii-consent.policy';
+import {
+  NEVER_PUBLIC_FIELDS,
+  PII_ALLOWLIST,
+  isPublic,
+  publicGps,
+} from './pii-consent.policy';
 
 /**
  * T-4 — Unit tests for the single PII/consent policy (DD-1). Pure, no DB/Nest.
@@ -16,6 +21,27 @@ describe('PII_ALLOWLIST', () => {
       'marketLocation',
       'technicalSupport',
     ]);
+  });
+});
+
+describe('NEVER_PUBLIC_FIELDS', () => {
+  it('is exactly the never-public-but-not-PII field set (DD-6/FR-7/FR-8)', () => {
+    expect([...NEVER_PUBLIC_FIELDS]).toEqual([
+      'traderId',
+      'gpsAltitude',
+      'gpsAccuracy',
+      'registrationSource',
+      'consentMethod',
+      'consentObtainedAt',
+      'consentReference',
+    ]);
+  });
+
+  it('shares no member with PII_ALLOWLIST (DD-6 — the two constants stay disjoint)', () => {
+    const overlap = NEVER_PUBLIC_FIELDS.filter((f) =>
+      (PII_ALLOWLIST as readonly string[]).includes(f),
+    );
+    expect(overlap).toEqual([]);
   });
 });
 

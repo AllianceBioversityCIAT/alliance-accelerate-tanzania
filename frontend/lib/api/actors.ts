@@ -21,7 +21,11 @@ export interface PublicActor {
     | 'ngo'
     | 'offtaker'
     | 'research_institute'
-    | 'informal_trader';
+    | 'informal_trader'
+    | 'humanitarian'
+    | 'digital_service_provider'
+    | 'qds_producer'
+    | 'bulk_buyer';
   capacityTons?: number | null;
   crops: ('sorghum' | 'common_bean' | 'groundnut')[];
   gps?: { lat: number; long: number } | null;
