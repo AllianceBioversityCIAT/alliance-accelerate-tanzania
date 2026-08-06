@@ -10,7 +10,12 @@
  * kept out of the awaited path (the timing mitigation the Leader's brief
  * demands be proven, not asserted).
  */
-import { BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   EmailVerificationSendLimitExceededError,
@@ -18,7 +23,7 @@ import {
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegistrationsService } from './registrations.service';
+import { LOOKUP_MAX_ATTEMPTS_PER_WINDOW, RegistrationsService } from './registrations.service';
 import { CONSENT_POLICY_VERSION } from './consent-policy';
 import * as ConsentPolicy from './consent-policy';
 import {
@@ -681,6 +686,590 @@ describe('RegistrationsService.submitRegistration', () => {
         } finally {
           errorSpy.mockRestore();
         }
+      },
+    );
+  });
+});
+
+// @sdd-spec actors/public-self-registration (T-11)
+/**
+ * `RegistrationsService.lookupRegistration` unit tests (FR-6, FR-8,
+ * design.md §3.1 decision 3–4, §4.4 L-1…L-4).
+ *
+ * Each constraint (L-1…L-4) gets its OWN named describe block and its OWN
+ * evidence, per KZ-001 — a scenario-and-clause granularity, not a single
+ * green test standing in for all four. `RegistrationLookupAttempt`'s atomic
+ * counter is modelled by the SAME fake `$transaction`/session-variable
+ * shape `email-verification.service.spec.ts` and
+ * `registration-reference.util.spec.ts` already establish for the sibling
+ * `EmailSendBudget`/`RegistrationSequence` mechanisms — reused here because
+ * `incrementLookupAttempts` makes the exact same `$executeRaw`/`$queryRaw`
+ * call shape.
+ */
+describe('RegistrationsService.lookupRegistration', () => {
+  interface AttemptRow {
+    ip: string;
+    reference: string;
+    windowStartIso: string;
+    attempts: number;
+  }
+
+  interface RegistrationRow {
+    reference: string;
+    status: string;
+    reviewNote: string | null;
+    submitterEmail: string;
+    // Present so a leak of ANY of these would be visible in a test that
+    // asserts the full response object, never just its key set.
+    id: string;
+    payload: Record<string, unknown>;
+    reviewedBySub: string | null;
+    reviewedByEmail: string | null;
+  }
+
+  let attemptRows: AttemptRow[];
+  let registrationRows: RegistrationRow[];
+  let findUniqueSpy: jest.Mock;
+  let updateSpy: jest.Mock;
+  let transactionSpy: jest.Mock;
+  let service: RegistrationsService;
+
+  /** Look up this test's own recorded counter row — never ambiguous, since every seeded row carries both `ip` AND `reference`. */
+  function attemptsFor(ip: string, reference: string): number | undefined {
+    return attemptRows.find((r) => r.ip === ip && r.reference === reference)?.attempts;
+  }
+
+  /**
+   * Mirrors `registrations.service.spec.ts`'s existing `buildFakePrisma` for
+   * `RegistrationSequence` exactly, for the sibling `RegistrationLookupAttempt`
+   * mechanism: a fresh fake `tx` per `$transaction` call, each with its OWN
+   * `sessionNewAttempts` closure (connection-scoped session-variable
+   * fidelity), backed by a SHARED `attemptRows` array standing in for the
+   * persisted table survives-cold-starts property L-1 depends on. Keyed on
+   * the COMPOSITE `(ip, reference, windowStart)` (rework attempt 2) — see
+   * `registrations.service.ts`'s class doc on `lookupRegistration` for why a
+   * per-caller-ONLY key was rejected.
+   */
+  function buildFakePrisma(): PrismaService {
+    transactionSpy = jest.fn(async (callback: (tx: unknown) => Promise<number>) => {
+      let sessionNewAttempts: number | null = null;
+      const tx = {
+        $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (!sql.includes('RegistrationLookupAttempt')) {
+            throw new Error(`Fake tx.$executeRaw: unrecognized SQL: ${sql}`);
+          }
+          const [ip, reference, windowStart] = values as [string, string, Date];
+          const windowStartIso = windowStart.toISOString();
+          let row = attemptRows.find(
+            (r) => r.ip === ip && r.reference === reference && r.windowStartIso === windowStartIso,
+          );
+          if (!row) {
+            row = { ip, reference, windowStartIso, attempts: 1 };
+            attemptRows.push(row);
+          } else {
+            row.attempts += 1;
+          }
+          sessionNewAttempts = row.attempts;
+          return 1;
+        },
+        $queryRaw: async (strings: TemplateStringsArray) => {
+          const sql = strings.join('?');
+          if (!sql.includes('@newLookupAttempts')) {
+            throw new Error(`Fake tx.$queryRaw: unrecognized SQL: ${sql}`);
+          }
+          return [{ newLookupAttempts: sessionNewAttempts as number }];
+        },
+      };
+      return callback(tx);
+    });
+
+    findUniqueSpy = jest.fn(async ({ where }: { where: { reference: string } }) => {
+      return registrationRows.find((r) => r.reference === where.reference) ?? null;
+    });
+
+    updateSpy = jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: {
+          ip_reference_windowStart: { ip: string; reference: string; windowStart: Date };
+        };
+        data: { attempts: number };
+      }) => {
+        const key = where.ip_reference_windowStart;
+        const windowStartIso = key.windowStart.toISOString();
+        const row = attemptRows.find(
+          (r) => r.ip === key.ip && r.reference === key.reference && r.windowStartIso === windowStartIso,
+        );
+        if (!row) {
+          throw new Error('Fake registrationLookupAttempt.update: no row for this key');
+        }
+        row.attempts = data.attempts;
+        return row;
+      },
+    );
+
+    return {
+      $transaction: transactionSpy,
+      registration: { findUnique: findUniqueSpy },
+      registrationLookupAttempt: { update: updateSpy },
+    } as unknown as PrismaService;
+  }
+
+  function seedRegistration(overrides: Partial<RegistrationRow> = {}): RegistrationRow {
+    const row: RegistrationRow = {
+      reference: 'REG-2026-0184',
+      status: 'PENDING_REVIEW',
+      reviewNote: null,
+      submitterEmail: 'neema@khsc.co.tz',
+      id: 'internal-cuid-should-never-leak',
+      payload: { traderName: 'Mbeya Seed Traders Ltd' },
+      reviewedBySub: 'admin-sub-should-never-leak',
+      reviewedByEmail: 'admin@example.com',
+      ...overrides,
+    };
+    registrationRows.push(row);
+    return row;
+  }
+
+  beforeEach(() => {
+    attemptRows = [];
+    registrationRows = [];
+    service = new RegistrationsService(
+      {} as unknown as EmailVerificationService,
+      {} as unknown as MailService,
+      buildFakePrisma(),
+    );
+  });
+
+  describe('L-1 — the bound survives cold starts and spans containers', () => {
+    it(
+      'a BRAND NEW service instance still sees the SAME accumulated attempt count for the SAME ' +
+        '(caller, reference) pair, off the SAME backing store — this rules out PER-INSTANCE state ' +
+        '(e.g. a field on `RegistrationsService` itself); it does NOT, on its own, rule out a ' +
+        'module-level in-memory singleton, which would still be per-container and still the C-4 ' +
+        'shape L-1 exists to close. The actual cross-container evidence is structural, not this ' +
+        'test alone: `incrementLookupAttempts` writes through `tx.$executeRaw` against a real, ' +
+        'named SQL table (`RegistrationLookupAttempt`, guarded by the "unrecognized SQL" throw ' +
+        'above, so this fake cannot silently degrade into an in-memory stand-in), that table is ' +
+        'declared in a committed migration, and the identical technique was proven under genuine ' +
+        'concurrent load against dev RDS for the sibling `EmailSendBudget`/`RegistrationSequence` ' +
+        'mechanisms in T-7/T-10.',
+      async () => {
+        seedRegistration();
+        const wrongEmailAttempts = LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1;
+        for (let i = 0; i < wrongEmailAttempts; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0184', 'wrong@example.com', '203.0.113.5'),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+
+        // A fresh instance, but the SAME underlying (fake-persisted) Prisma
+        // — this is the point: nothing about `RegistrationsService`'s own
+        // construction resets the counter, because the counter lives in the
+        // DB-backed table, not in this class's memory.
+        const freshContainerService = new RegistrationsService(
+          {} as unknown as EmailVerificationService,
+          {} as unknown as MailService,
+          {
+            $transaction: transactionSpy,
+            registration: { findUnique: findUniqueSpy },
+            registrationLookupAttempt: { update: updateSpy },
+          } as unknown as PrismaService,
+        );
+
+        // One more wrong attempt from the SAME caller pushes them to EXACTLY
+        // the cap-th attempt (still allowed to run the lookup) — proving the
+        // count truly carried over from the "old container".
+        await expect(
+          freshContainerService.lookupRegistration(
+            'REG-2026-0184',
+            'wrong@example.com',
+            '203.0.113.5',
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(attemptsFor('203.0.113.5', 'REG-2026-0184')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+        // And the VERY NEXT call — the (cap+1)-th — is the locked exit.
+        await expect(
+          freshContainerService.lookupRegistration(
+            'REG-2026-0184',
+            'wrong@example.com',
+            '203.0.113.5',
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(attemptsFor('203.0.113.5', 'REG-2026-0184')).toBe(
+          LOOKUP_MAX_ATTEMPTS_PER_WINDOW + 1,
+        );
+      },
+    );
+
+    it(
+      'the ATOMIC INCREMENT STATEMENT is not a check-then-act read+write — of N truly concurrent ' +
+        'calls from the SAME caller against the SAME reference, the counter advances by exactly N, ' +
+        "never fewer. This proves the FAKE's single-statement shape is not read-then-write (the " +
+        "exact defect that defeated EmailSendBudget's first two attempts, per " +
+        'email-verification.service.ts) — it does NOT, on its own, prove MySQL-level atomicity of ' +
+        'the real `INSERT … ON DUPLICATE KEY UPDATE` under contention; that is inherited from the ' +
+        "IDENTICAL technique's dev-RDS load runs in T-7 (EmailSendBudget) and T-10 " +
+        '(RegistrationSequence), not re-measured here.',
+      async () => {
+        seedRegistration();
+        const concurrentCalls = 5;
+
+        const results = await Promise.allSettled(
+          Array.from({ length: concurrentCalls }, () =>
+            service.lookupRegistration('REG-2026-0184', 'wrong@example.com', '198.51.100.9'),
+          ),
+        );
+
+        // All 5 are wrong-email guesses — every one rejects.
+        expect(results.every((r) => r.status === 'rejected')).toBe(true);
+        expect(attemptsFor('198.51.100.9', 'REG-2026-0184')).toBe(concurrentCalls);
+      },
+    );
+  });
+
+  describe('L-2 — byte-identity across all three exits, including the locked one', () => {
+    it('reference-absent, email-mismatch, and caller-over-cap (against ONE reference) all throw the IDENTICAL 404 body', async () => {
+      seedRegistration({ reference: 'REG-2026-0200', submitterEmail: 'known@example.com' });
+
+      // Exit 1: reference does not exist at all. A distinct IP, and a
+      // reference this test never targets again — its OWN counter row is
+      // irrelevant to the lock driven below (rework attempt 2: keying now
+      // includes `reference`, so a counter on `REG-2026-9999` cannot
+      // contribute to a lock on `REG-2026-0200`).
+      let absentResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-9999', 'known@example.com', '203.0.113.10');
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        absentResponse = (err as NotFoundException).getResponse();
+      }
+
+      // Exit 2: reference exists, email does not match.
+      let mismatchResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-0200', 'wrong@example.com', '203.0.113.11');
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        mismatchResponse = (err as NotFoundException).getResponse();
+      }
+
+      // Exit 3: this caller is over the lookup-attempt cap for the ONE
+      // reference this sub-test cares about — every guess below targets
+      // `REG-2026-0200` specifically, since the counter is now per
+      // (ip, reference): guessing against a DIFFERENT reference would not
+      // advance this one at all.
+      const lockedCallerIp = '203.0.113.12';
+      for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+        try {
+          await service.lookupRegistration('REG-2026-0200', 'guess@example.com', lockedCallerIp);
+        } catch {
+          // expected on every call in this loop.
+        }
+      }
+      expect(attemptsFor(lockedCallerIp, 'REG-2026-0200')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+      // The (cap + 1)-th request against THIS reference — submitting the
+      // genuinely CORRECT email this time — is the locked exit.
+      let lockedResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-0200', 'known@example.com', lockedCallerIp);
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        lockedResponse = (err as NotFoundException).getResponse();
+      }
+
+      const expectedBody = {
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'No registration was found matching that reference and email.',
+      };
+      expect(absentResponse).toEqual(expectedBody);
+      expect(mismatchResponse).toEqual(expectedBody);
+      expect(lockedResponse).toEqual(expectedBody);
+      // Cross-equality alone would pass if all three were identically WRONG
+      // in some other way; pinning to the literal expected body rules that
+      // out for each individually too.
+    });
+
+    it(
+      'a LOCKED caller submitting the CORRECT reference+email still gets the 404 — the lock check ' +
+        'runs before correctness is ever evaluated, so "locked" and "was right" are not a second, ' +
+        'subtler distinguishable outcome',
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0300', submitterEmail: 'known@example.com' });
+        const lockedCallerIp = '203.0.113.20';
+
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+          try {
+            await service.lookupRegistration(
+              'REG-2026-0300',
+              'guess@example.com',
+              lockedCallerIp,
+            );
+          } catch {
+            // expected — driving this caller over the cap for THIS reference.
+          }
+        }
+        findUniqueSpy.mockClear();
+
+        await expect(
+          service.lookupRegistration('REG-2026-0300', 'known@example.com', lockedCallerIp),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        // The correctness check never ran at all once locked — not merely
+        // "ran and was overridden".
+        expect(findUniqueSpy).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('L-3 — an attacker cannot deny a legitimate applicant access to their OWN status', () => {
+    it(
+      "an attacker's caller IP locking itself out against a real applicant's reference does NOT " +
+        "lock out the real applicant's own (DIFFERENT) caller IP looking up the SAME reference",
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0400', submitterEmail: 'applicant@example.com' });
+        const attackerIp = '198.51.100.50';
+        const applicantIp = '198.51.100.51';
+
+        // The attacker guesses wrong emails against the applicant's
+        // reference until THEY are locked.
+        for (let i = 0; i <= LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+          try {
+            await service.lookupRegistration('REG-2026-0400', 'guess@example.com', attackerIp);
+          } catch {
+            // expected on every one of these.
+          }
+        }
+        expect(attemptsFor(attackerIp, 'REG-2026-0400')).toBeGreaterThan(
+          LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
+        );
+
+        // The genuine applicant, from THEIR OWN IP, still succeeds — a
+        // reference-keyed (or shared) bound would have failed this.
+        const result = await service.lookupRegistration(
+          'REG-2026-0400',
+          'applicant@example.com',
+          applicantIp,
+        );
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      },
+    );
+  });
+
+  describe('L-4 — a successful lookup does not leave the caller closer to a lockout against THAT reference', () => {
+    it(
+      'after (cap - 1) failed guesses followed by ONE success, the attempt counter for that ' +
+        "(caller, reference) pair is reset to 0 — not merely 'not incremented further', an actual " +
+        'reset — proven both on the stored value and behaviourally (the caller can make cap MORE ' +
+        'failed guesses against the SAME reference afterward before being locked again)',
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0500', submitterEmail: 'applicant@example.com' });
+        const callerIp = '198.51.100.60';
+
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0500', 'wrong@example.com', callerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1);
+
+        await service.lookupRegistration('REG-2026-0500', 'applicant@example.com', callerIp);
+
+        // The direct, internal proof: the stored counter is genuinely 0,
+        // not merely unchanged from its pre-success value.
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(0);
+
+        // The behavioural proof: this caller can now absorb
+        // LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1 MORE failed guesses against the
+        // SAME reference (a fresh full budget) without being locked —
+        // impossible if the earlier failed attempts had survived the success.
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0500', 'wrong-again@example.com', callerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+        // Still not locked — the NEXT one (the cap-th SINCE the reset) is
+        // still a content-based rejection, not yet the lock.
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1);
+      },
+    );
+  });
+
+  describe(
+    'L-1 × L-4 interaction (rework attempt 2 — the FAIL this rework fixes) — a reset earned by a ' +
+      "match on the attacker's OWN reference must never reset a DIFFERENT reference's budget",
+    () => {
+      it(
+        'REGRESSION: ONE genuinely successful lookup of the attacker\'s OWN (unrelated) reference, ' +
+          'interleaved partway through a run of wrong-email guesses against a VICTIM reference, ' +
+          "does NOT reset — or otherwise affect — the victim reference's attempt counter; the " +
+          'victim reference still locks at exactly the cap, counting every guess actually made ' +
+          "against it (including the guesses made both BEFORE and AFTER the interleaved success). " +
+          "One interleave is sufficient to distinguish the two mechanisms — under attempt 1's " +
+          'per-caller-ONLY key, this exact sequence would have reset the SHARED counter back to 0 ' +
+          'partway through, so the victim reference would never have reached the cap at all.',
+        async () => {
+          seedRegistration({ reference: 'REG-2026-0900', submitterEmail: 'victim@example.com' });
+          seedRegistration({ reference: 'REG-2026-0901', submitterEmail: 'attacker@example.com' });
+          const attackerIp = '198.51.100.77';
+
+          // 9 wrong guesses against the victim's reference — one short of
+          // the cap.
+          for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+            await expect(
+              service.lookupRegistration('REG-2026-0900', `guess-${i}@example.com`, attackerIp),
+            ).rejects.toBeInstanceOf(NotFoundException);
+          }
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(
+            LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1,
+          );
+
+          // THE INTERLEAVE: one genuinely successful lookup of the
+          // attacker's OWN reference — this is the exact call that used to
+          // reset the (attempt-1) SHARED counter.
+          const own = await service.lookupRegistration(
+            'REG-2026-0901',
+            'attacker@example.com',
+            attackerIp,
+          );
+          expect(own).toEqual({ status: 'PENDING_REVIEW' });
+          // The attacker's own reference's counter is 0 — freshly reset by
+          // its own success, exactly as L-4 requires for THAT reference —
+          // and, critically, the victim reference's counter (asserted next)
+          // is UNAFFECTED by this reset.
+          expect(attemptsFor(attackerIp, 'REG-2026-0901')).toBe(0);
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(
+            LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1,
+          );
+
+          // The 10th guess against the victim's reference — bringing it to
+          // EXACTLY the cap.
+          await expect(
+            service.lookupRegistration('REG-2026-0900', 'guess-final@example.com', attackerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+          // The victim reference is now genuinely locked — even the
+          // CORRECT pair is refused.
+          await expect(
+            service.lookupRegistration('REG-2026-0900', 'victim@example.com', attackerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        },
+      );
+    },
+  );
+
+  describe(
+    'case-insensitive email comparison is THIS METHOD\'S OWN behaviour, not the MySQL ' +
+      "utf8mb4_unicode_ci collation's (R2-A3) — `findUnique` here is a plain in-memory mock that " +
+      'never touches a real database or its collation, so a match below can ONLY be produced by ' +
+      'this method\'s own `normalizeEmail()` call',
+    () => {
+      it('matches an email submitted in a DIFFERENT case than the stored (already-lowercased) value', async () => {
+        seedRegistration({ reference: 'REG-2026-0600', submitterEmail: 'neema@khsc.co.tz' });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0600',
+          'NEEMA@KHSC.CO.TZ',
+          '203.0.113.30',
+        );
+
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      });
+
+      it('trims surrounding whitespace the same way normalizeEmail does for storage', async () => {
+        seedRegistration({ reference: 'REG-2026-0601', submitterEmail: 'neema@khsc.co.tz' });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0601',
+          '  Neema@KHSC.co.tz  ',
+          '203.0.113.31',
+        );
+
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      });
+    },
+  );
+
+  describe('the success response — status and reviewNote ONLY, from FIXTURE values (not a key list)', () => {
+    it('returns { status } alone when reviewNote is null — no stray reviewNote key at all', async () => {
+      seedRegistration({
+        reference: 'REG-2026-0700',
+        submitterEmail: 'applicant@example.com',
+        status: 'AWAITING_APPLICANT',
+        reviewNote: null,
+      });
+
+      const result = await service.lookupRegistration(
+        'REG-2026-0700',
+        'applicant@example.com',
+        '203.0.113.40',
+      );
+
+      expect(result).toEqual({ status: 'AWAITING_APPLICANT' });
+      expect(Object.keys(result)).toEqual(['status']);
+    });
+
+    it('returns { status, reviewNote } when a note exists — pinned to the fixture VALUES', async () => {
+      seedRegistration({
+        reference: 'REG-2026-0701',
+        submitterEmail: 'applicant@example.com',
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+
+      const result = await service.lookupRegistration(
+        'REG-2026-0701',
+        'applicant@example.com',
+        '203.0.113.41',
+      );
+
+      expect(result).toEqual({
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+      expect(Object.keys(result).sort()).toEqual(['reviewNote', 'status']);
+    });
+
+    it(
+      'never carries payload, id, submitterEmail, reviewedBySub, or reviewedByEmail — asserted ' +
+        'against the fixture object as a whole, not a key subtraction, so a renamed leaked key would ' +
+        'still be caught',
+      async () => {
+        seedRegistration({
+          reference: 'REG-2026-0702',
+          submitterEmail: 'applicant@example.com',
+          status: 'APPROVED',
+          reviewNote: 'Welcome to the registry.',
+          id: 'internal-cuid-should-never-leak',
+          payload: { traderName: 'Should Never Leak Ltd', phone: '+255700000099' },
+          reviewedBySub: 'admin-sub-should-never-leak',
+          reviewedByEmail: 'admin-should-never-leak@example.com',
+        });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0702',
+          'applicant@example.com',
+          '203.0.113.42',
+        );
+
+        expect(result).toEqual({
+          status: 'APPROVED',
+          reviewNote: 'Welcome to the registry.',
+        });
+        const serialized = JSON.stringify(result);
+        expect(serialized).not.toContain('internal-cuid-should-never-leak');
+        expect(serialized).not.toContain('Should Never Leak Ltd');
+        expect(serialized).not.toContain('admin-sub-should-never-leak');
+        expect(serialized).not.toContain('admin-should-never-leak@example.com');
       },
     );
   });

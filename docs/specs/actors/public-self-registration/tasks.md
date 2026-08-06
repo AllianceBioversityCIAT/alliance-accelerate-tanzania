@@ -112,7 +112,7 @@
       **Disqualifying:** the response-body assertion must be made against **fixture values** of every payload field and the internal `id`, not against a key list — a renamed key would pass a key-list check while leaking (this is the DC-2 lesson). If the chosen allocation mechanism needs a table and the migration does not declare it, the task is not done regardless of green tests (A-4).
       Skills: `nestjs-expert`, `api-design-principles`, `tdd` (Leader-assigned: consent gating is the legal basis for publication), `error-handling-patterns`
 
-- [ ] **T-11** `POST /registrations/lookup` under constraints L-1…L-4  (deps: T-10)
+- [x] **T-11** `POST /registrations/lookup` under constraints L-1…L-4  (deps: T-10)
       Scope: Body, not query string (C-11 — PII must not reach URLs, `Referer` or access logs). Byte-identical `404` for reference-absent and email-mismatch. Case-insensitive email compare. Brute-force bounding satisfying **L-1…L-4**; the Implementer chooses and records the mechanism, **declaring any columns it needs**. Returns status and `reviewNote` only.
       Traces: FR-6 (both scenarios), FR-8, `design.md` §3.1 decision 3–4, §4.4
       Files: `backend/src/registrations/registrations.service.ts`, `serializers/public-registration.serializer.ts`, migration if L-* requires columns

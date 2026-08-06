@@ -98,9 +98,10 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma, RegistrationStatus } from '@prisma/client';
+import { Prisma, Registration, RegistrationStatus } from '@prisma/client';
 import {
   EmailVerificationSendLimitExceededError,
   EmailVerificationService,
@@ -120,6 +121,10 @@ import {
   allocateRegistrationReference,
   isReferenceCollisionError,
 } from './registration-reference.util';
+import {
+  PublicRegistrationLookup,
+  toPublicRegistrationLookup,
+} from './serializers/public-registration.serializer';
 
 /**
  * T-10 rework (R2-A4) — a schema-version marker INSIDE the `payload` JSON
@@ -190,6 +195,153 @@ function buildCodeRejectedError(): BadRequestException {
     message: 'The verification code could not be confirmed. Request a new code and try again.',
     details: [],
   });
+}
+
+/**
+ * T-11 — `POST /registrations/lookup` (FR-6, FR-8, `design.md` §3.1 decision
+ * 3–4, §4.4 L-1…L-4).
+ *
+ * **Mechanism chosen, and why it is not one of the three rejected in
+ * `design.md` §4.4.** A bare per-reference counter fails L-3 — references
+ * are sequential and enumerable (§4.5), so an attacker guessing ONE
+ * reference against many emails would lock out every genuine applicant
+ * checking that same reference (RA3). A per-reference lockout returning a
+ * distinct status or message fails L-2 AND reintroduces the exact
+ * membership oracle §3.1 decision 4 exists to eliminate — a lockout is only
+ * reachable for a reference that actually EXISTS (RA2). Relying on
+ * `RegistrationsThrottleGuard` alone fails L-1: its in-memory counter bounds
+ * a single container and resets on cold start (C-4).
+ *
+ * **The accepted mechanism (rework attempt 2): {@link RegistrationLookupAttempt},
+ * a DB-persisted counter keyed on the COMPOSITE `(ip, reference, windowStart)`.**
+ * Being DB-persisted and shared across every container satisfies L-1. Keying
+ * on the caller's `ip` at all — rather than `reference` alone — is what
+ * makes L-3 hold: only the abusive caller's OWN budget is ever spent, so an
+ * attacker guessing against a real applicant's reference can only lock out
+ * THEMSELVES, never the applicant. The SAME atomic `INSERT … ON DUPLICATE
+ * KEY UPDATE` + session-variable technique `EmailSendBudget`/
+ * `RegistrationSequence` already use and have proven under real concurrent
+ * load (T-7, T-10) is reused here rather than a check-then-act read+write,
+ * which is exactly the race that defeated `EmailSendBudget`'s first two
+ * attempts (see `email-verification.service.ts`'s class doc) — a handful of
+ * genuinely concurrent requests from one caller could otherwise all read the
+ * same pre-write count and all pass, bypassing the cap by concurrency alone.
+ *
+ * **Attempt 1 keyed on `(ip)` alone and was FAILED at review for an
+ * interaction between L-3 and L-4, not a defect in either constraint read in
+ * isolation.** `design.md` §4.4 states "a per-caller dimension, OR a
+ * per-caller-and-reference composite, satisfies L-3" — true on its own — but
+ * a per-caller-ONLY key makes L-4's reset (below) fire on ANY match, and
+ * this endpoint's own sibling capability, `submitRegistration`, hands every
+ * applicant a `{ reference }` they can legitimately look up at will. An
+ * attacker can therefore interleave `LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1`
+ * wrong-email guesses against a VICTIM's reference with one genuine lookup
+ * of their OWN reference every `LOOKUP_MAX_ATTEMPTS_PER_WINDOW` requests,
+ * resetting their SHARED counter indefinitely — L-4 held and L-1 was
+ * defeated in effect, leaving only the per-container throttler as the
+ * surviving bound (≈1,080 guesses/hour from one IP, more across containers
+ * — a ~100× amplification over the intended cap, and the exact insufficiency
+ * L-1 exists to close). The composite key closes this structurally: a
+ * success on the attacker's OWN reference resets ONLY
+ * `(ip, ownReference, windowStart)`, which shares no row with
+ * `(ip, victimReference, windowStart)` — the two budgets cannot interact,
+ * so self-resetting one can never touch the other.
+ *
+ * **L-2 — byte-identity, including the locked exit.** {@link
+ * buildLookupNotFoundError} is a single constant-body helper, and this
+ * class's `lookupRegistration` has exactly ONE throw site that calls it —
+ * for the locked exit AND for "reference absent" AND for "email mismatch".
+ * All three are therefore structurally the same object, not three call
+ * sites that happen to agree today (the same "one lookup-and-compare with a
+ * single exit" discipline `design.md` §3.1 decision 4 asks for, extended to
+ * the lockout exit).
+ *
+ * **L-4 — a successful lookup does not leave the applicant closer to a
+ * lockout against THAT reference.** The counter is incremented
+ * UNCONDITIONALLY on every call (mirroring `EmailSendBudget.sends`' own "raw
+ * attempt count" shape — the cap decision is made off the per-call
+ * session-variable position, not off the stored value), but reset to `0`
+ * for the MATCHED `(callerIp, reference, windowStart)` triple immediately
+ * after a match against that exact reference. A failed guess against a
+ * DIFFERENT reference from the same caller is never erased by this reset —
+ * that guarantee is now structural (disjoint rows), not merely a "benign
+ * race in the applicant's favour" as attempt 1 claimed; see the paragraph
+ * above for why that framing understated a real, deliberately exploitable
+ * path rather than an accidental one.
+ *
+ * **T5-A2 — resolved: the class-level `RegistrationsThrottleGuard`'s `429`
+ * stays in place on this route and is NOT suppressed with `@SkipThrottle()`.**
+ * `design.md`'s §3.1 contract table for THIS route (§3.1's endpoint table,
+ * the `POST /registrations/lookup` row) already lists `429` as a possible
+ * response ALONGSIDE the `404`, and FR-6's own scenario names "both failure
+ * modes" as the two that must be identical (reference-absent,
+ * email-mismatch) — the contract does not read `429` into that set, so a
+ * visible `429` does not, on its own wording, violate L-2. Independently,
+ * `design.md:192` (§3.1 decision 1) grants that "a `429` from the throttler
+ * remains visible, because it keys on the caller, not on the submitted
+ * address" for `POST /verify` — reasoning that generalises here because the
+ * guard's key, `sha256(class + handler + ip)` (`registrations-throttle.guard.ts`),
+ * **never reads the request body at all** (a property of what the guard's
+ * `generateKey` touches, not of pipeline ORDERING — Express's body-parser
+ * middleware does run before Nest's guards, so `req.body` is in fact
+ * populated by the time this guard runs; the guard simply never looks at
+ * it), so its `429` trigger is identical whether the submitted reference
+ * exists or not, and whether the submitted email matches or not. It
+ * discloses nothing about any particular reference, so it is not part of
+ * the oracle L-2 exists to close. `@SkipThrottle()` was considered and
+ * rejected: removing the per-container guard here would force EVERY flood
+ * request through this method's own DB-backed counter before being
+ * rejected, regressing FR-7's "must NOT open a database connection … to
+ * reach that decision" for the common flood case that guard exists to
+ * reject cheaply. The two controls stay layered exactly as `design.md`
+ * §4.4's table already prescribes for every other public path: the
+ * per-container guard as the cheap first line, `RegistrationLookupAttempt`
+ * as the second, persistent, cross-container bound L-1 requires.
+ *
+ * **What this unit tier proves and what it structurally cannot.** The unit
+ * tests below (L-1's fresh-instance and concurrent-increment tests, L-4's
+ * cap-th-success test) are where the persistence and reset properties are
+ * actually pinned — a real MySQL round trip, proven once already for the
+ * identical technique under T-7/T-10's dev-RDS load runs. The HTTP e2e
+ * suite (`registrations-lookup.e2e.spec.ts`) proves the three exits are
+ * byte-identical, which is a genuinely different claim: a lock and a
+ * mismatch are DESIGNED to be unobservable apart at the HTTP layer, so the
+ * e2e's "the locked exit fires" is inferred from request COUNT (built by
+ * construction, asserted via `callsSoFar`), never observed as a distinct
+ * signal — there is no HTTP-visible way to observe it directly, and there
+ * should not be.
+ */
+
+/** L-1…L-4: attempts allowed per CALLER **and REFERENCE** (rework attempt 2's composite key — a caller gets this many attempts against EACH reference, not a single shared budget across all of them) within {@link LOOKUP_ATTEMPT_WINDOW_MS}. */
+export const LOOKUP_MAX_ATTEMPTS_PER_WINDOW = 10;
+/** Fixed-bucket width for the lookup-attempt cap — same recorded fixed-vs-rolling deviation as {@link OTP_SEND_WINDOW_MS}. */
+export const LOOKUP_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * L-2: the ONE byte-identical `404` for "reference absent", "email
+ * mismatch", and "caller over the lookup-attempt cap". A plain constant that
+ * never reads any exception or lookup state — the same discipline
+ * `buildCodeRejectedError` already established for T-10's `400`.
+ */
+function buildLookupNotFoundError(): NotFoundException {
+  return new NotFoundException({
+    statusCode: 404,
+    error: 'Not Found',
+    message: 'No registration was found matching that reference and email.',
+  });
+}
+
+/**
+ * The fixed bucket {@link RegistrationLookupAttempt} keys on — mirrors
+ * `email-verification.service.ts`'s `sendBudgetWindowStart` exactly (`now`
+ * truncated to the start of its epoch-aligned {@link LOOKUP_ATTEMPT_WINDOW_MS}
+ * interval), re-derived locally rather than imported so this module's own
+ * lookup-attempt mechanism has no compile-time dependency on
+ * `EmailVerificationService`'s internals beyond the already-exported
+ * {@link normalizeEmail}.
+ */
+function lookupAttemptWindowStart(now: Date): Date {
+  return new Date(Math.floor(now.getTime() / LOOKUP_ATTEMPT_WINDOW_MS) * LOOKUP_ATTEMPT_WINDOW_MS);
 }
 
 @Injectable()
@@ -483,6 +635,145 @@ export class RegistrationsService {
       this.logger.error(
         `registration receipt send failed: errorType=${errorType} reference=${reference}`,
       );
+    });
+  }
+
+  /**
+   * T-11 — FR-6, FR-8, `design.md` §3.1 decision 3–4 / §4.4 L-1…L-4. See this
+   * file's class-spanning doc comment above (immediately before
+   * {@link LOOKUP_MAX_ATTEMPTS_PER_WINDOW}) for the full mechanism rationale
+   * and the T5-A2 resolution.
+   *
+   * Order, deliberately: the cap is checked BEFORE the reference/email
+   * lookup ever runs. A locked caller therefore gets the identical `404`
+   * regardless of whether the reference+email they submitted was actually
+   * correct — anything else would make "am I locked" and "was I right"
+   * observably different outcomes, which is itself a second, subtler oracle
+   * L-2 does not name explicitly but the Disqualifying clause's "cannot make
+   * its refusal indistinguishable" test would still catch.
+   */
+  async lookupRegistration(
+    reference: string,
+    rawEmail: string,
+    callerIp: string,
+  ): Promise<PublicRegistrationLookup> {
+    const now = new Date();
+
+    const newAttempts = await this.incrementLookupAttempts(callerIp, reference, now);
+    if (newAttempts > LOOKUP_MAX_ATTEMPTS_PER_WINDOW) {
+      throw buildLookupNotFoundError();
+    }
+
+    const registration = await this.findMatchingRegistrationForLookup(reference, rawEmail);
+    if (!registration) {
+      throw buildLookupNotFoundError();
+    }
+
+    // L-4: this caller's budget for THIS reference is reset on a match — a
+    // correct pair does not leave them any closer to a lockout against the
+    // SAME reference. It has no effect on any OTHER reference's budget for
+    // this caller (the composite key's whole point — see the class doc).
+    await this.resetLookupAttempts(callerIp, reference, now);
+
+    return toPublicRegistrationLookup(registration);
+  }
+
+  /**
+   * design.md §3.1 decision 4: "implemented as one lookup-and-compare with a
+   * single exit so they cannot drift apart." `reference` is looked up via
+   * the `@unique` column (never a WHERE filter on email, so the EMAIL
+   * comparison cannot be satisfied by MySQL's `utf8mb4_unicode_ci` table
+   * collation silently doing the case-folding); the case-insensitive match
+   * FR-6 requires is then performed explicitly in application code via
+   * {@link normalizeEmail} — the SAME normalisation
+   * `RegistrationsService.submitRegistration` already applies before
+   * persisting `submitterEmail`, reused rather than re-derived so the two
+   * stay in agreement by construction.
+   *
+   * **The `reference` WHERE clause itself is NOT immune to the same
+   * collation** — unlike the email comparison above, this method makes no
+   * attempt to normalise `reference`, and real MySQL under
+   * `utf8mb4_unicode_ci` WOULD match `reg-2026-0184` against a stored
+   * `REG-2026-0184` at the database level. `registrations.service.spec.ts`'s
+   * fake `findUnique` does a strict `===` on `reference` and is therefore
+   * STRICTER than production here, never looser — the safe direction for a
+   * test double to diverge in, but recorded so nobody mistakes the fake's
+   * behaviour for a case-sensitivity guarantee this method does not
+   * actually provide or need to (no requirement asks for case-sensitive
+   * reference matching; applicants are given the exact casing to quote back).
+   *
+   * Returns `null` for BOTH "no such reference" and "reference exists,
+   * email does not match" — the caller (`lookupRegistration`) throws the
+   * identical `404` for either, so this
+   * method's return type carries no distinction between them at all.
+   */
+  private async findMatchingRegistrationForLookup(
+    reference: string,
+    rawEmail: string,
+  ): Promise<Registration | null> {
+    const registration = await this.prisma.registration.findUnique({ where: { reference } });
+    if (!registration) return null;
+
+    if (normalizeEmail(rawEmail) !== registration.submitterEmail) return null;
+
+    return registration;
+  }
+
+  /**
+   * L-1/L-3/L-4: atomically increments {@link RegistrationLookupAttempt} for
+   * the COMPOSITE `(callerIp, reference, windowStart)` and returns THIS
+   * call's own post-increment position — the identical technique
+   * `EmailVerificationService.issueCode` uses for `EmailSendBudget` and
+   * `allocateRegistrationReference` uses for `RegistrationSequence` (see
+   * either's class doc for the three empirical rounds that ruled out an
+   * affected-rows check and a bare-read-after-increment race). Both
+   * statements are pinned to ONE connection via `$transaction`, since the
+   * MySQL session variable `@newLookupAttempts` is connection-scoped.
+   * Keying on `reference` too (rework attempt 2) is what keeps this
+   * caller's budget against ONE reference from being resettable by a match
+   * against a DIFFERENT one — see this file's class doc on
+   * `lookupRegistration` for the attack this closes.
+   */
+  private async incrementLookupAttempts(
+    callerIp: string,
+    reference: string,
+    now: Date,
+  ): Promise<number> {
+    const windowStart = lookupAttemptWindowStart(now);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        INSERT INTO RegistrationLookupAttempt (ip, reference, windowStart, attempts)
+        VALUES (${callerIp}, ${reference}, ${windowStart}, (@newLookupAttempts := 1))
+        ON DUPLICATE KEY UPDATE attempts = (@newLookupAttempts := attempts + 1)
+      `;
+      const rows = await tx.$queryRaw<Array<{ newLookupAttempts: bigint | number }>>`
+        SELECT @newLookupAttempts AS newLookupAttempts
+      `;
+      return Number(rows[0]?.newLookupAttempts);
+    });
+  }
+
+  /**
+   * L-4: zeroes the caller's budget for THIS `reference`'s CURRENT window,
+   * after a successful lookup MATCHED against that exact reference — never
+   * any other reference's row for the same caller (rework attempt 2's fix;
+   * see the class doc). Safe as a plain `update` (never an `upsert`) because
+   * the row is guaranteed to already exist — `incrementLookupAttempts`
+   * above unconditionally wrote it for this exact
+   * `(callerIp, reference, windowStart)` triple earlier in the same
+   * request, and nothing in this class ever deletes a
+   * `RegistrationLookupAttempt` row.
+   */
+  private async resetLookupAttempts(
+    callerIp: string,
+    reference: string,
+    now: Date,
+  ): Promise<void> {
+    const windowStart = lookupAttemptWindowStart(now);
+    await this.prisma.registrationLookupAttempt.update({
+      where: { ip_reference_windowStart: { ip: callerIp, reference, windowStart } },
+      data: { attempts: 0 },
     });
   }
 }

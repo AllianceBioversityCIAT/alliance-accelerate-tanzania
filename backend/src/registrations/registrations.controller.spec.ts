@@ -17,12 +17,17 @@ import {
  */
 describe('RegistrationsController', () => {
   let controller: RegistrationsController;
-  let service: { requestVerificationCode: jest.Mock; submitRegistration: jest.Mock };
+  let service: {
+    requestVerificationCode: jest.Mock;
+    submitRegistration: jest.Mock;
+    lookupRegistration: jest.Mock;
+  };
 
   beforeEach(() => {
     service = {
       requestVerificationCode: jest.fn().mockResolvedValue(undefined),
       submitRegistration: jest.fn().mockResolvedValue({ reference: 'REG-2026-0001' }),
+      lookupRegistration: jest.fn().mockResolvedValue({ status: 'PENDING_REVIEW' }),
     };
     controller = new RegistrationsController(service as unknown as RegistrationsService);
   });
@@ -147,6 +152,65 @@ describe('RegistrationsController', () => {
       service.submitRegistration.mockRejectedValueOnce(boom);
 
       await expect(controller.submitRegistration(dto)).rejects.toThrow(boom);
+    });
+  });
+
+  describe('POST /registrations/lookup (T-11)', () => {
+    const dto = { reference: 'REG-2026-0184', email: 'neema@khsc.co.tz' };
+
+    function fakeRequest(ip: string | undefined): Parameters<
+      RegistrationsController['lookupRegistration']
+    >[1] {
+      return { ip } as unknown as Parameters<RegistrationsController['lookupRegistration']>[1];
+    }
+
+    it('delegates to RegistrationsService.lookupRegistration with reference, email, and req.ip', async () => {
+      await controller.lookupRegistration(dto, fakeRequest('203.0.113.99'));
+
+      expect(service.lookupRegistration).toHaveBeenCalledTimes(1);
+      expect(service.lookupRegistration).toHaveBeenCalledWith(
+        'REG-2026-0184',
+        'neema@khsc.co.tz',
+        '203.0.113.99',
+      );
+    });
+
+    it(
+      "falls back to a bounded 'unknown' caller identity when req.ip is undefined, rather than " +
+        'throwing — this endpoint must never 500 over a missing rate-limiting tracker',
+      async () => {
+        await controller.lookupRegistration(dto, fakeRequest(undefined));
+
+        expect(service.lookupRegistration).toHaveBeenCalledWith(
+          'REG-2026-0184',
+          'neema@khsc.co.tz',
+          'unknown',
+        );
+      },
+    );
+
+    it('returns EXACTLY what the service returns — no spread, no added or dropped keys (FR-6, DC-2)', async () => {
+      service.lookupRegistration.mockResolvedValueOnce({
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+
+      const result = await controller.lookupRegistration(dto, fakeRequest('203.0.113.99'));
+
+      expect(result).toEqual({
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+      expect(Object.keys(result).sort()).toEqual(['reviewNote', 'status']);
+    });
+
+    it('propagates only if the service itself throws (the byte-identical 404 lives in the service, not here)', async () => {
+      const notFound = new Error('Not Found');
+      service.lookupRegistration.mockRejectedValueOnce(notFound);
+
+      await expect(
+        controller.lookupRegistration(dto, fakeRequest('203.0.113.99')),
+      ).rejects.toThrow(notFound);
     });
   });
 });

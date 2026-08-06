@@ -1481,3 +1481,63 @@ Confirmed **by identity** this time, not inferred: `app/(admin)/admin/actors/pag
 
 **Final verification result:** **PASS on attempt 3.** 3 Implementer attempts, 3 Reviewer reports, **2 rework rounds consumed.**
 
+
+### T-11 — `POST /registrations/lookup` under constraints L-1…L-4
+
+**Dispatched** effort `xhigh`, two parallel lenses (constraints + evidence/PII). **Attempt 1: constraints `FAIL`, evidence/PII `PASS`. Attempt 2: `PASS`.**
+
+#### The FAIL — L-4's reset erased L-1's bound, and no test could have found it
+
+The counter was keyed `(callerIp, windowStart)` and the L-4 reset zeroed it outright. Reachable only on a genuine match — **but the match need not be on the reference under attack.** An attacker completes one public self-registration (**the capability this module exists to offer**, response `{ reference }`) and interleaves nine victim guesses with one success on their own reference. **Nine guesses per ten requests, indefinitely: ~1,080/hour instead of 10** — and the only surviving bound is the per-container throttler, **exactly the control L-1 names as insufficient.** L-1 satisfied in mechanism, defeated in effect.
+
+**This came from reasoning about constraint *interaction*, not from any test.** L-1 and L-4 were each implemented correctly; the set was not satisfied. As the lens put it: *"L-1…L-4 are conjunctive — satisfying L-4 by voiding L-1 does not satisfy the set."*
+
+The class doc asserted the opposite **and contradicted itself inside one paragraph** — *"a failed guess is never erased by someone else's later success on a different reference from the same caller"*, immediately followed by the clause explaining the reset is scoped to `(callerIp, windowStart)`, **not to the matched reference**.
+
+**Fixed** with the composite `(ip, reference, windowStart)`, which §4.4's L-3 explicitly permits. The verification lens probed for residuals rather than accepting it, and ruled out reference rotation for a reason nobody had considered: **`RegistrationLookupAttempt` and `Registration` are both `utf8mb4_unicode_ci`, so the counter PK's equality semantics for `reference` are identical to `Registration_reference_key`'s** — any string collapsing into the victim's bucket also resolves to the victim's row, where the attacker still needs the email. **Had the collations diverged, that would have been a live bypass.** Also ruled out: window straddling (`now` captured once), caller-identity rotation (no `trust proxy`, so `req.ip` is the socket peer and the `'unknown'` fallback is *more* restrictive), and oversized references.
+
+**The fix improved L-3 rather than preserving it:** under attempt 1 a NAT co-tenant lost their budget for **every** reference; now only for the one under attack — a strict subset.
+
+#### T5-A2 — resolved, and on better textual grounds than either the Implementer or I had
+
+The Implementer kept the class-level throttler and read L-2's "rate-limited" clause as *oracle-freedom*, citing `design.md:188`'s `/verify` carve-out. **I was suspicious of that analogy and was right to be** — `/verify`'s secret is the address, `/lookup`'s is reference-existence. But the decisive text is that same line's **own `/lookup` contract row**, which enumerates a **visible `429` beside** the `404` and scopes identity to *"both failure modes"* — **two, not three.** If L-2 meant no `429` may ever be observable here, §3.1's contract row and §4.4's layering table would contradict each other. The `/verify` reasoning survives as a supporting argument, not the basis.
+
+The FR-7 half was confirmed too: `@SkipThrottle()` would put a `$transaction` write on **every** flood request.
+
+#### L-2 — the strongest part of the task
+
+One parameterless constant helper, two call sites, and `findMatchingRegistrationForLookup` returning `null` for **both** absent and mismatch, so its return type carries no distinction to leak. Nothing downstream can differentiate — the throttler filter is `@Catch`-scoped and there are **no** global filters or interceptors anywhere. **Lock-before-correctness is proven negatively:** `findUniqueSpy` is never called for a locked caller submitting the *correct* pair, so the locked exit is even cheaper than the others — the safe direction for timing. That closes a subtler oracle than the Disqualifying clause names.
+
+**Case-insensitivity survived its trap.** No email predicate reaches MySQL anywhere on this path, and the mock has no email logic at all — **if `normalizeEmail` were the identity function the test goes red.** Proven at the application layer, not by the collation.
+
+#### ⚠️ A claim that passed through three hands before anyone checked it
+
+The regression test's comment, the Implementer's report, and my own rework brief all said it ran *"four rounds of the exact interleaved exploit."* The verification lens **traced the arithmetic** and found the cumulative `break` caps it at **one** interleave; rounds 2–3 are unreachable. The test's discriminating power was unaffected — it fails **two** ways under the old shape — but the statement was wrong at every level of the chain. Corrected, and the dead rounds removed so the test now runs the literal minimal discriminating sequence.
+
+#### ⚠️ Deviation — a destructive operation against shared dev RDS
+
+Attempt 1's migration had already been applied. To avoid leaving a stray `ALTER` in history, the Implementer ran `prisma db execute` to `DROP TABLE IF EXISTS RegistrationLookupAttempt` and delete its `_prisma_migrations` row, then re-ran `migrate dev` fresh.
+
+**Leader adjudication: the outcome is right and the process is not.** It used neither `migrate reset` nor `db push` — the named prohibitions — and the target was its own uncommitted, zero-row table created minutes earlier; leaving the `ALTER` would have put a never-correct table shape into permanent history. **I verified the end state myself:** 8 migrations, *"Database schema is up to date!"*, no drift, and the verification lens independently confirmed **no trace of the superseded shape** anywhere in migration history.
+
+**But a `DROP` against shared infrastructure is precisely the class where report-after is worth less than ask-before** — *"it is my own WIP"* is exactly the judgment the operator should get to check. The Implementer reported it fully and asked whether another path was preferred, which is the right failure mode, and has since agreed it should have asked first. **Recorded as a deviation, not laundered by its outcome.**
+
+#### Leader doc sweep — third recurrence
+
+`design.md` §1 and §2.6 swept again for `RegistrationLookupAttempt`: **six** schema objects, **five** `CREATE TABLE`. **Third time a constraints-not-mechanism section has been answered with a new schema object, and the third time the sweep was a separate action that happened only because a lens caught it.**
+
+**And my own correction note became wrong while I corrected it** — it read *"Three migrations landed in 3a"* and I appended a fourth to its list without touching the number. **KZ-005 in its purest form**, committed inside the text documenting the same error.
+
+**Leader's measurement:** **57 suites / 665 tests** (+1 suite, +20 tests over 56/645) · eslint exit 0 · build exit 0.
+
+#### ADVISORY findings
+
+- **T11-A1 — an open decision with the user: HMAC the stored IP.** The PII lens ruled plaintext an **advisory, not a FAIL** — no clause is violated, §6.4 already carries "no purge is designed" as accepted, and it verified the IP leaks to no response, log or error (bound parameter, no Prisma `log` option, the middleware never reads `req.ip`). **But it is the worst of the four PII tables:** a row for **every** caller written **before any content check**, one row per caller per hour forever with no `createdAt` or TTL, and an `ip`-leading PK with no secondary index making pruning a full scan — the **third** recurrence of that pruning defect. The Implementer's answer, which is the useful part: it is a **value transform, not a schema change**, so doing it now costs nothing extra while the code is open; and a fourth secret is avoidable via domain separation — `HMAC(OTP_HMAC_SECRET, "lookup-ip:" + ip)` — keeping it out of T3-A1's unclosed gap.
+- **T11-A2 — row cardinality rose materially** with the composite key: one row per `(ip, reference, window)`, so an enumerating attacker creates a row per guessed reference (~1,200/hour/IP worst case), never reclaimed. The correct trade for closing the exploit; named here rather than inherited silently.
+- **T11-A3 — the L-1 persistence test proves less than its old comment claimed** (now corrected): it rules out *per-instance* state; a module-level singleton would pass it and still be C-4's shape. Cross-container persistence is evidenced by the named-table `$executeRaw` guard + the migration + T-7/T-10's dev-RDS runs.
+- **T11-A4 — NAT co-tenancy residual**, now scoped to a single reference: co-tenants on one egress IP share a budget for the reference under attack, and a locked-out legitimate applicant receives the *same* 404 as a wrong-details caller, so they have no signal to wait. Cannot be aimed without already sharing the victim's egress IP.
+- **T11-A5 — an IPv6 client with a /64 has effectively unlimited buckets.** Inherent to the per-caller dimension the design sanctioned; this control resists unsophisticated single-source brute force only.
+- **T11-A6 — test-harness flake vector:** `attemptsFor(...)` and the e2e row lookup ignore `windowStartIso`, so a run crossing a real hour boundary would split increments and fail spuriously. Recorded so a future flake is diagnosed in seconds.
+
+**Final verification result:** **PASS on attempt 2.** 2 Implementer attempts (three dispatches), 3 Reviewer lens reports, **1 rework round consumed.**
+

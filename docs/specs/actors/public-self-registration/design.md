@@ -24,7 +24,7 @@
 
 ## 1. Approach Overview
 
-One new NestJS module (`registrations`), two supporting modules (`mail`, `logging`), five new frontend routes, and **five** additive Prisma schema objects: the `RegistrationStatus` enum, `Registration`, `EmailVerification`, **`EmailSendBudget`** and **`RegistrationSequence`**.
+One new NestJS module (`registrations`), two supporting modules (`mail`, `logging`), five new frontend routes, and **six** additive Prisma schema objects: the `RegistrationStatus` enum, `Registration`, `EmailVerification`, **`EmailSendBudget`**, **`RegistrationSequence`** and **`RegistrationLookupAttempt`**.
 
 > *Corrected 2026-08-06 during execution — the count read "three" and omitted the last two. Both were chosen by Implementers under constraints this design states rather than mechanisms it prescribes: `EmailSendBudget` (T-7) is the atomic per-email send cap §4.3 requires but does not specify, and `RegistrationSequence` (T-10) is the allocator §4.5's **A-4** requires be declared. **This is the C-10-class disclosure failure A-4 names by name, and it recurred here** — `EmailSendBudget` was absent from §2 for three tasks before a Reviewer found the count wrong by two. When a constraint-not-mechanism section is answered with a new schema object, §2 and §2.6 must be swept in the same change (KZ-004).*
 
@@ -160,9 +160,9 @@ Because both are additions, this is not a reversion (§9). It **is** a change to
 
 ### 2.6 Migration — what the SQL will actually contain
 
-**Four** `CREATE TABLE` plus indexes, one new enum-typed column, and — **for the audit enum on MySQL** — `ALTER TABLE \`ActorAuditLog\` MODIFY \`action\` ENUM(...)`. The in-repo precedent is `backend/prisma/migrations/20260710132750_add_import_audit_action/migration.sql`.
+**Five** `CREATE TABLE` plus indexes, one new enum-typed column, and — **for the audit enum on MySQL** — `ALTER TABLE \`ActorAuditLog\` MODIFY \`action\` ENUM(...)`. The in-repo precedent is `backend/prisma/migrations/20260710132750_add_import_audit_action/migration.sql`.
 
-> *Corrected 2026-08-06 during execution — read "Two", counting only `Registration` and `EmailVerification`. Three migrations landed in 3a: `20260805142929_add_registration_and_email_verification` (two tables), `20260805212505_add_email_send_budget` (T-7's atomic send cap), and `20260806132727_add_registration_sequence` (T-10's allocator, per A-4). All additive; each was Leader-verified from disk as a single `CREATE TABLE` with zero `DROP`/`MODIFY`/`ALTER`/`UPDATE`. See §1's correction note on why the omission recurred.*
+> *Corrected 2026-08-06 during execution — read "Two", counting only `Registration` and `EmailVerification`. **Four** migrations landed in 3a: `20260805142929_add_registration_and_email_verification` (two tables), `20260805212505_add_email_send_budget` (T-7's atomic send cap), and `20260806132727_add_registration_sequence` (T-10's allocator, per A-4), and `20260806155208_add_registration_lookup_attempt` (T-11's per-caller-and-reference lookup bound, per L-1/L-3). All additive; each was Leader-verified from disk as a single `CREATE TABLE` with zero `DROP`/`MODIFY`/`ALTER`/`UPDATE`. See §1's correction note on why the omission recurred.*
 
 Revision 1 claimed "No `DROP`, no `MODIFY`" and used Postgres vocabulary (`CREATE TYPE` / `ALTER TYPE`) for a MySQL datasource (`schema.prisma:14`). Both were wrong (C-10). The change is **additive in semantics** — it widens an enum's accepted values, destroys no data, rewrites no rows — which is what `backend/CLAUDE.md`'s additive-only rule protects. **Disclosed here so the migration task's done-criteria match the generated SQL**; a criterion demanding "no `MODIFY`" would FAIL a correct migration or invite hand-editing it. No `DROP`, no data `UPDATE`, no column narrowed or retyped. Rehearsed on local MySQL before RDS apply.
 

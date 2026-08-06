@@ -5,19 +5,23 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   CONSENT_POLICY_SECTIONS,
   CONSENT_POLICY_VERSION,
   ConsentPolicySection,
 } from './consent-policy';
 import { RegistrationCreateDto } from './dto/registration-create.dto';
+import { RegistrationLookupDto } from './dto/registration-lookup.dto';
 import { RegistrationVerifyDto } from './dto/registration-verify.dto';
 import { RegistrationCreateResponse, RegistrationsService } from './registrations.service';
 import { RegistrationsThrottleGuard } from './registrations-throttle.guard';
 import { ThrottlerExceptionFilter } from './throttler-exception.filter';
+import { PublicRegistrationLookup } from './serializers/public-registration.serializer';
 
 /** `GET /registrations/consent-policy` response (design.md §3.1). */
 export interface ConsentPolicyResponse {
@@ -51,8 +55,22 @@ export interface ConsentPolicyResponse {
  * for the same "one place, not two" reason `requestVerificationCode`'s
  * handler above does nothing beyond the one call.
  *
- * `POST /registrations/lookup` (T-11) lands in a later task — do not add a
- * stub handler for it here.
+ * T-11 — `POST /registrations/lookup` (FR-6, FR-8, design.md §3.1 decision
+ * 3–4, §4.4 L-1…L-4). The handler validates shape (the global pipe), reads
+ * the caller's IP off the request (the identity `RegistrationsService`'s
+ * L-1…L-4 mechanism is keyed on — see that class's doc comment on
+ * `lookupRegistration`), and awaits the one call — no branching of its own,
+ * for the same "one place, not two" reason every other handler in this
+ * controller does nothing beyond the one call. The return type is the
+ * serializer's own output type (`PublicRegistrationLookup`), not
+ * `Registration` — `design.md` §6.2's "typed boundary" layer, so returning
+ * a raw row here would not type-check.
+ *
+ * T5-A2 (carried from T-5, resolved in `RegistrationsService`'s doc
+ * comment): this handler is NOT decorated with `@SkipThrottle()`. The
+ * class-level `RegistrationsThrottleGuard`/`ThrottlerExceptionFilter` below
+ * still apply to this route exactly like every other one in this
+ * controller.
  *
  * T-4 — structured request logging for this controller's routes is emitted
  * by `RequestContextMiddleware` (design.md §4.10), applied in
@@ -108,5 +126,36 @@ export class RegistrationsController {
     @Body() dto: RegistrationCreateDto,
   ): Promise<RegistrationCreateResponse> {
     return this.registrationsService.submitRegistration(dto);
+  }
+
+  /**
+   * T-11 — FR-6, FR-8. `200 { status, reviewNote? }` for a matching pair —
+   * `@HttpCode(HttpStatus.OK)` is required here, UNLIKE `submitRegistration`
+   * above: Nest's implicit default for `@Post()` is `201`, correct for a
+   * creation, but `design.md` §3.1's contract table specifies `200` for
+   * this route (it is a read, expressed as a `POST` only to keep PII out of
+   * the URL per C-11 — see `RegistrationLookupDto`'s doc). The identical
+   * `404` for a reference that does not exist, a reference whose email does
+   * not match, and a caller over the lookup-attempt cap (L-2) — see
+   * `RegistrationsService.lookupRegistration`'s doc for the full mechanism
+   * and the single throw site that keeps those three exits byte-identical
+   * by construction.
+   */
+  @Post('lookup')
+  @HttpCode(HttpStatus.OK)
+  async lookupRegistration(
+    @Body() dto: RegistrationLookupDto,
+    @Req() req: Request,
+  ): Promise<PublicRegistrationLookup> {
+    // `req.ip` is typed `string | undefined` (Express can fail to resolve
+    // it in principle); falling back to a single shared bucket is the
+    // conservative direction for a rate-limiting identity — it can only
+    // make the cap MORE restrictive for callers with no resolvable IP,
+    // never less, and this endpoint must never throw over a missing tracker.
+    return this.registrationsService.lookupRegistration(
+      dto.reference,
+      dto.email,
+      req.ip ?? 'unknown',
+    );
   }
 }

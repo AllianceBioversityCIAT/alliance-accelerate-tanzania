@@ -247,3 +247,71 @@ model RegistrationSequence {
   year Int @id
   seq  Int @default(0)
 }
+
+// T-11 (rework attempt 2) — the shared, persistent control constraints
+// L-1…L-4 require for `POST /registrations/lookup` (design.md §4.4). Keyed
+// on the COMPOSITE `(ip, reference, windowStart)` — deliberately NOT `(ip,
+// windowStart)` alone, and NOT `reference` alone.
+//
+// A bare per-reference counter was rejected (RA3) because it lets an
+// attacker lock out every applicant checking that one reference; a
+// per-reference lockout returning a distinct status/message was separately
+// rejected (RA2) because a lockout is only reachable for a reference that
+// EXISTS, reintroducing the membership oracle §3.1 decision 4 exists to
+// eliminate.
+//
+// **A per-caller-ONLY key (attempt 1's shape) was ALSO found unsound at
+// review, not merely a weaker option among several compliant ones.** §4.4
+// states "a per-caller dimension, OR a per-caller-and-reference composite,
+// satisfies L-3" — true for L-3 in isolation, but L-4's reset requirement
+// interacts with L-3's choice: a per-caller-only counter resets on ANY
+// match, including a match on a reference the caller obtained legitimately
+// (their OWN completed self-registration, `POST /registrations`'s own
+// `{ reference }` response). That lets an attacker interleave 9 wrong
+// guesses against a VICTIM's reference with 1 lookup of their OWN reference
+// every 10 requests, resetting their shared counter indefinitely — L-4 is
+// satisfied and L-1 is defeated in effect (the persistent bound never
+// actually binds), leaving only the per-container throttler as the
+// surviving control, the exact insufficiency L-1 names. The composite key
+// closes this: a success on the attacker's OWN reference resets ONLY
+// `(ip, ownReference, windowStart)`, never `(ip, victimReference, windowStart)` —
+// the two budgets are disjoint, so self-resetting one cannot touch the
+// other. See `registrations.service.ts`'s class doc on `lookupRegistration`
+// for the full account.
+//
+// Same atomic `INSERT ... ON DUPLICATE KEY UPDATE` + session-variable
+// technique as `EmailSendBudget`/`RegistrationSequence`, proven under real
+// concurrent load against dev RDS in T-7/T-10 — this table is DB-persisted
+// and shared across every container, which is what makes it survive cold
+// starts and span containers (L-1); the per-container in-memory throttler
+// alone cannot (design.md §4.4/C-4). `windowStart` is a FIXED, epoch-aligned
+// bucket start — the same recorded fixed-vs-rolling deviation as
+// `EmailSendBudget` — not a rolling window.
+//
+// `attempts` is reset to 0 for the matched `(ip, reference, windowStart)`
+// triple on a SUCCESSFUL lookup against THAT reference (L-4), and
+// incremented unconditionally on every call otherwise (including a call
+// that turns out to be over the cap already — mirrors `EmailSendBudget.sends`'
+// own "raw attempt count, decision made off the per-call session-variable
+// position" shape).
+model RegistrationLookupAttempt {
+  // The caller's IP (`req.ip` — resolves from API Gateway's `sourceIp` under
+  // serverless-http; see `lambda-handler.e2e.spec.ts`'s T5-A1 proof for the
+  // sibling per-container guard's identical tracker). §2.7 does NOT
+  // enumerate this column — it governs `Registration`/`EmailVerification`
+  // PII, not this table — but an IP address is nonetheless personal data
+  // (GDPR Art. 4(1); CJEU C-582/14 *Breyer*). It is stored in plaintext, not
+  // pseudonymised, and carries no retention policy of its own — an
+  // extension of §6.4's already-accepted "no purge is designed" risk, not a
+  // new one; it leaks nowhere (bound Prisma parameter, no query logging,
+  // never read by `RequestContextMiddleware`).
+  ip          String
+  // The reference this attempt was made against — see the class comment
+  // above for why this must be part of the KEY, not merely a stored column,
+  // for L-4's reset to stay scoped to the right budget.
+  reference   String
+  windowStart DateTime
+  attempts    Int      @default(0)
+
+  @@id([ip, reference, windowStart])
+}
