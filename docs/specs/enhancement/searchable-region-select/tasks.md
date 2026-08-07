@@ -33,7 +33,7 @@
       **Done when:** every FR-1 matching clause has a named test; the helper has no import from `react`, `next`, or `@/components`.
       **Evidence is DISQUALIFIED if:** the substring case is tested only with a prefix example (`Kus` → `Kusini …` passes under a prefix-only implementation and proves nothing about FR-1's actual requirement). At least one assertion must use a query that matches **mid-string**.
 
-- [ ] **T-2  `SearchableSelect` primitive — state, keyboard, ARIA, live region**  (deps: T-1)
+- [x] **T-2  `SearchableSelect` primitive — state, keyboard, ARIA, live region**  (deps: T-1)
       **Size:** L · ~420 LOC (component ~250, tests ~170) — the largest task; the budget allots it **2 review rounds**
       **Traces:** FR-1 (no-match scenario), FR-2 (both scenarios), FR-3 (all clauses), FR-6 · NFR-1, NFR-2, NFR-3, NFR-4, NFR-5 · `design.md` §5.1, §5.2, §5.3, §5.7 · DD-2, DD-3, DD-4 · JD-2, JD-8, JD-10, JD-11
       **Skills:** `frontend-design`, `tailwind-design-system`, `vercel-react-best-practices`, then `react-doctor` before reporting completion.

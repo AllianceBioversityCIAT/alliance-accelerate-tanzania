@@ -277,8 +277,35 @@ Estimated from the finished design. `/akili-execute` compares actuals against th
 | Measure | Expected |
 |---|---|
 | **Tasks** | **6** |
-| **LOC** | **~820** total (~375 primitive + helper, ~255 its tests, ~190 across the 3 adoptions and their test updates) |
+| **LOC** | ~~**~820**~~ → **~1,500** — see *Re-baseline 2* below |
 | **Review rounds** | **7** (2 on the primitive — it is the fiddly one; 1 each on the remaining 5) |
+
+#### Re-baseline 2 — after T-2 (2026-08-06), authorised by the user at the tripwire
+
+The original ~820 was **exceeded by T-2 alone**. Actuals: T-1 **107** (budgeted 70), T-2 **944** (budgeted 420) — 1,051 against a total budgeted for all six tasks. The tripwire fired, the run stopped, and the user chose to review first and re-baseline with the panel's input rather than accept or cut on the estimate alone.
+
+**The cause, established by the review panel rather than assumed:** the estimate measured the wrong thing.
+
+- Of T-2's 431 component lines, **~124 are comment or divider lines and the doc header alone is 82**. Executable code plus JSX is **≈280 — essentially on the original ~250 estimate.** The overage is documentation *this spec's own clauses compel*: the JD-11 APG deviation and the D5 axe caveat are both mandated by T-2's "Done when", plus the DD-2 state-model argument, the JD-8 interaction rationale, and the KZ-008 justification for the no-match row. **§11 estimated the code; it did not estimate the prose the clauses require the code to carry.**
+- Of 39 tests, the evidence lens could name **exactly one** duplicating another's discriminating power. The six axe `it`s are mandated as six states; the five FR-3 tests as five exit paths. **~170 test lines were budgeted for a task whose own "Done when" enumerates ~25 required named assertions.**
+
+**The implementation was not fat; the estimate was low.** This is the second re-baseline of this figure — the first, during Judgment Day round 2, corrected for the DD-5 mechanism growth and still under-called it, because it corrected the *mechanism* term while leaving the *mandated-prose* and *clause-count* terms unmodelled.
+
+**Revised projection.** Remaining tasks carry a lighter documentation mandate than T-2 (they are deltas and adoptions, not a new primitive with five required doc blocks), so the T-2 factor is not applied wholesale:
+
+| Task | Original | Revised | Actual |
+|---|---|---|---|
+| T-1 | 70 | — | **107** ✅ |
+| T-2 | 420 | — | **944** ✅ |
+| T-3 (portal + reflow) | 140 | **~220** | — |
+| T-4 (registration form) | 80 | **~110** | — |
+| T-5 (two filter surfaces) | 110 | **~150** | — |
+| T-6 (manual pass) | 0 | 0 | — |
+| **Total** | **~820** | **~1,530** | 1,051 so far |
+
+**PR strategy is unchanged in shape but sharpened by the number.** §11's original split — PR 1 the primitive (T-1, T-2), PR 2 the adoptions (T-3…T-6) — now means PR 1 is ~1,050 lines on its own, well past the ~400 threshold that motivated splitting at all. It remains reviewable in isolation with no product behavior change, which is the property that matters, but the reviewer of PR 1 should be pointed at `execution.md`'s T-2 entry rather than asked to re-derive the five-lens audit from the diff.
+
+**Methodology note for `/akili-archive`:** the lesson is not "budget more". It is that a clause-level decomposition **mandates prose and assertions that a LOC estimate drawn from the mechanism cannot see** — so a spec whose tasks carry "Done when" clauses requiring documented deviations and disclosed harness blind spots must estimate those terms explicitly, or its tripwire will fire on correct work.
 
 **Re-baselined after the DD-5 amendment** (Judgment Day round 2, raised by both judges). The original ~260/~700 figures were estimated against close-on-scroll — a single branch. Reposition-on-reflow is materially more mechanism: three listener registrations (capture-phase `document` scroll, `window` resize, `visualViewport` resize/scroll), an rAF throttle, the `contains(event.target)` origin exclusion, direct `scrollTop` management replacing `scrollIntoView`, and the pointer-commit `preventDefault` path — plus one more test row. **+70 primitive / +20 tests.** A budget estimated against a design that has since grown is a tripwire that no longer trips where it should.
 
