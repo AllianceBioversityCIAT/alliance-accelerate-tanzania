@@ -231,7 +231,7 @@ Two decisions touch already-delivered behaviour. Each was challenged with *"what
 
 The contrast test ships **before** the token fix and stays green in both states, so the red→green transition is auditable without ever leaving the suite red.
 
-At T-1 the test carries a `KNOWN_FAILURES` ledger naming the three FR-2 pairs, and asserts **two** things: every pair *outside* the ledger meets its threshold, **and** every pair *inside* it still fails. The second assertion is what stops the ledger from rotting — a pair that gets fixed by accident breaks the test until it is removed from the ledger. At T-3 the ledger empties and both assertions collapse into one.
+At T-1 the test carries a `KNOWN_FAILURES` ledger with **5** entries — the **4** FR-2 shipped failing pairs, plus `warning`/`bg`, gated defensively because T-3's scope line names `bg` as a ground `warning` must clear even though no component renders that pair today — and asserts **two** things: every pair *outside* the ledger meets its threshold, **and** every pair *inside* it still fails. The second assertion is what stops the ledger from rotting — a pair that gets fixed by accident breaks the test until it is removed from the ledger. At T-3 the ledger empties and both assertions collapse into one.
 
 *Why this shape:* a plain "assert everything passes" test cannot be committed before the fix without a red suite, and a test written after the fix never proves it could have caught the defect.
 
@@ -242,9 +242,11 @@ At T-1 the test carries a `KNOWN_FAILURES` ledger naming the three FR-2 pairs, a
 | Metric | Expected |
 |---|---|
 | **Tasks** | **6** |
-| **LOC** | **~200** (≈120 test harness · ~40 `globals.css` · ~20 `tailwind.config.ts` · 3 comment lines · ~30 docs) |
+| **LOC** | **~760** — *re-baselined 2026-08-07 after T-1; originally ~200* (≈676 test harness **actual** · ~40 `globals.css` · ~20 `tailwind.config.ts` · 3 comment lines · ~30 docs) |
 | **Review rounds** | **7** (1 per task, +1 expected on T-1 — a contrast matrix is the likeliest place for an off-by-one in threshold selection) |
 
-**Sizing check against depth:** 6 tasks / ~200 LOC / cross-cutting visual surface sits correctly in **Standard**. It is above `Lite` (which would be a single task and no test harness) and below `Full` (no API, data, auth, migration, or rollout — and rollback is a single-commit revert). **Depth confirmed after the design, not assumed before it.**
+**Sizing check against depth:** 6 tasks / cross-cutting visual surface sits correctly in **Standard**. It is above `Lite` (which would be a single task and no test harness) and below `Full` (no API, data, auth, migration, or rollout — and rollback is a single-commit revert). **Depth confirmed after the design, not assumed before it.**
 
-If execution exceeds ~8 tasks or ~300 LOC, the Leader **stops and escalates** rather than continuing — that overrun would mean the change stopped being token-only and started touching components, which is NFR-7 failing.
+If execution exceeds **~8 tasks**, or **any task edits a component file**, the Leader **stops and escalates** rather than continuing — that overrun would mean the change stopped being token-only and started touching components, which is NFR-7 failing.
+
+> **Re-baseline note (2026-08-07, approved by the user at the T-1 budget gate).** T-1 landed at **676 LOC** against ~120 budgeted, tripping the original ~300 LOC spec-wide tripwire. It was accepted, and the tripwire re-authored, because the LOC threshold was firing for a reason **orthogonal to what it was defending**: it exists to detect the change becoming component-level, and all 676 lines are in **two new files** with **zero component edits** — the very condition the tripwire was built to catch is measurably absent. A test harness that enumerates a 63-pair matrix with per-pair `file:line` reachability citations is simply larger than a line estimate made before the reachability question was adjudicated. The trigger is therefore now **component edits**, which measures NFR-7 directly, instead of **LOC**, which only proxied for it. Contributing causes, recorded for honesty: the Leader's ADJ-1 reachability ruling expanded the evidence each pair must carry, and the `UNREACHABLE` inventory + promotion rule is net-new scope the original estimate did not contemplate.

@@ -11,17 +11,17 @@
 
 ## Tasks
 
-- [ ] **T-1** Build the contrast harness with a known-failure ledger  (deps: none)
+- [x] **T-1** Build the contrast harness with a known-failure ledger  (deps: none)
       **Size:** M (~120 LOC) · **Skills:** `ui-ux-pro-max`, `tdd`
       **Scope:** A pure `contrastRatio(fg, bg)` + `compositeOver(fg, bg, alpha)` utility and a matrix test over the token palette. Ships **before** any token changes and is green in both states.
       The test asserts **two** things: every pair outside `KNOWN_FAILURES` meets its threshold, **and** every pair inside it still fails. The second assertion is what stops the ledger rotting — a pair fixed by accident breaks the build until it is delisted.
-      `KNOWN_FAILURES` seeds with exactly the three FR-2 pairs and cites this spec.
+      `KNOWN_FAILURES` seeds with the **4** FR-2 shipped failing pairs plus `warning`/`bg` (defensive — T-3 names it as a required ground with no current render site) = **5 entries**, each cited to this spec.
       Matrix: 7 inks (`fg`, `muted`, `primary`, `primary-hover`, `success`, `warning`, `danger`) × 9 grounds (`bg`, `surface`, `surface-alt`, `restricted`, `highlight-tint`, `highlight/20`, `warning/10`, `danger-soft`, `primary-soft`). Large-text/UI-only tokens (`accent`, `highlight`, `crop-*`) asserted at 3:1 and labelled as such.
       Also asserts FR-6 frozen-token equality (Group F) so brand drift is caught from this point forward.
       **Traces:** NFR-1, FR-2 (ledger), FR-6 (*"BUT it MUST NOT be claimed on the basis of the diff alone; an explicit equality assertion is required"*), design.md DD-7, §10
       **Files:** `frontend/lib/contrast.ts`, `frontend/lib/contrast.test.ts`
       **Verify:** `cd frontend && npm test -- contrast --silent`
-      **Done when:** suite green, and the ledger's three pairs are each asserted-failing against the *current* (unchanged) tokens.
+      **Done when:** suite green, and each ledger entry is asserted-failing against the *current* (unchanged) tokens.
       **Evidence is disqualified if:** the matrix omits any ink×ground combination that a component can actually produce. A green run over an incomplete matrix is not evidence — report the omissions instead of passing. Ratios are deterministic; if two runs disagree, the utility is wrong, not flaky.
 
 - [ ] **T-2** Re-author surface and ink tokens, including the derived backdrop  (deps: T-1)
