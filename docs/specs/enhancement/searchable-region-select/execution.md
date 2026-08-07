@@ -754,3 +754,38 @@ The review brief lived in a scratchpad that does not survive the restart. Its sc
 **Requirements covered:** FR-2, FR-4 (§5.1, §5.5, §5.6, §12 — DD-5 as amended by JD-6, JD-1, JD-8), NFR-1 (WCAG 2.1 AA — axe re-target), NFR-4 (reflow cost model — zero setState on the non-close path).
 
 **Budget position:** review rounds now **3 actual vs 7 budgeted** (spec total) — within budget at the spec level despite T-3 alone running 2 of 1 rounds budgeted at the task level, already disclosed and accepted by the user in Session 2.
+
+### T-5 — Adopt in the two public filter surfaces · **PASS** (attempt 1 of 3, 2 review rounds)
+
+- **Date:** 2026-08-07
+- **Implementer:** `akili-implementer` wrapper (sonnet). Interrupted mid-task by the session usage limit (environment failure, consumed no attempt); resumed from transcript after the limit reset and completed in the same attempt.
+- **Skills:** `tailwind-design-system`, then `react-doctor`. **Effort:** `medium`.
+- **Files changed:** `DirectoryFilters.tsx`, `map/FilterControls.tsx`, their test suites, plus 3 collateral test fixes (`DirectoryView.test.tsx`, `DiscoverRail.test.tsx`, `directory-a11y.test.tsx` — region-label regex updates forced by OQ-1's removal, flagged by the Implementer itself as outside the originally-listed files).
+
+#### Round 1 — **FAIL** (evidence gap, not a code defect)
+
+Both region selects converted correctly to `SearchableSelect` with `clearOptionLabel="All regions"`; `region: undefined` (never `''`) on clear, `page: 1` reset, dynamic-subset/fallback, `role="group"`, and OQ-1 at both sites all verified correct and asserted against the emitted `onChange` object rather than internal state. Root-cause fix for 3 initially-failing tests: `getAllByRole('option')` was unscoped and picked up native `<select>` `<option>`s from the crop/role fields (implicit ARIA role collision) — fixed by scoping to `within(screen.getByRole('listbox'))`.
+
+**FAIL issue:** `directory-a11y.test.tsx` was edited (region-label regex, forced by OQ-1) but the reported verify command's `--testPathPatterns` never matched that file — an edited gate carried zero execution evidence. `map-a11y.test.tsx`, the only other automated NFR-1 gate touching the adopted `FilterControls` composition, was neither updated nor run either. Violated `requirements.md` NFR-1 / §4.1 D4, `tasks.md` T-5's "both suites updated," and root `CLAUDE.md`'s Evidence-before-checkbox rule.
+
+#### Round 2 — **PASS**
+
+No code changed. The Leader ran the two flagged suites directly (a punctual verification, not an implementation — per the Delegation Thresholds and the same "Leader-verified inline" precedent used in T-3):
+
+```
+$ npm test -- --silent --testPathPatterns "directory-a11y|map-a11y"
+Test Suites: 2 passed, 2 total
+Tests:       18 passed, 18 total
+```
+
+Checked both for false-pass risk before treating the green run as evidence: `directory-a11y.test.tsx:224`'s `getByLabelText(/^region$/i)` correctly targets the new visible-label accessible name (would fail if the label association broke — genuine coverage). `map-a11y.test.tsx` contains no region-control label assertion at all and was never coupled to the removed `aria-label` — it passes unmodified because OQ-1's removal never touched what it checks, not because it stopped checking something. The Reviewer independently re-verified both claims and confirmed. NFR-1's `jest-axe` gate is now genuinely exercised at both adopted surfaces.
+
+**ADVISORY (non-blocking):**
+1. The region control no longer uses `SELECT_CLASS` (`px-3 py-2`, no `shadow-sm`) beside crop/role's `px-2.5 py-1.5 shadow-sm` — a visible height/weight mismatch inside `DirectoryFilters`' `sm:flex-row sm:items-end` row. All semantic tokens (NFR-2 clean); `SearchableSelect` exposes no `className` by design. Belongs to T-6's manual pass, not a token violation.
+2. `DirectoryFilters.test.tsx` case (i) now proves canonical value fidelity transitively (via rendered labels, since the `<li>` exposes no value attribute) rather than directly — acceptable here since `REGION_OPTIONS` maps `value === label`, but should not be mistaken for direct value coverage later.
+
+**Correction applied at source:** T-5's own `tasks.md` Verify line under-specified its blast radius (missing the two a11y suites) — corrected in the same change so the next adoption task doesn't repeat the gap.
+
+**Verification (final):** `npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail|directory-a11y|map-a11y"` — 79/79 passing. `npx next lint --file components/directory/DirectoryFilters.tsx --file components/map/FilterControls.tsx` — clean. `npm run build` — static export clean, 23/23 pages.
+
+**Requirements covered:** FR-5 (both scenarios), `design.md` §5.6, OQ-1, JD-4, NFR-1 (axe at both adopted sites), NFR-3 (labeled controls, live region).

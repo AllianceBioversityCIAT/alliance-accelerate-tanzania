@@ -211,14 +211,17 @@ describe('DirectoryView — keyboard, focus, and ARIA', () => {
     expect(searchInput).not.toHaveAttribute('tabindex', '-1');
   });
 
-  it('renders labeled crop, role, and region filter selects', () => {
+  it('renders labeled crop, role, and region filter controls', () => {
     useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
     renderDirectory();
 
-    // DirectoryFilters: three selects with aria-label attributes (NFR-3)
+    // DirectoryFilters: crop/role are native selects with aria-label
+    // attributes; region is the SearchableSelect primitive (T-5), whose
+    // accessible name is its visible "Region" label — the redundant
+    // aria-label="Filter by region" was removed (OQ-1) (NFR-3).
     expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/filter by region/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 
   it('exposes ResultCount in an aria-live="polite" region (NFR-3)', () => {

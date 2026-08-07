@@ -6,15 +6,25 @@
 // "All …" clears that filter (sets the field to `undefined`) and resets
 // `page` to 1 so the server re-queries from the beginning (DD-3).
 //
-// NFR-3: Every <select> has an associated <label> via htmlFor/id so it is a
-// real labeled control (screen-reader and keyboard accessible).
+// T-5 (enhancement/searchable-region-select, design.md §5.6): the region
+// select is the searchable `SearchableSelect` primitive rather than a native
+// `<select>`. Crop and role keep native `<select>`s (3 and ~8 options — a
+// searcher adds cost with no benefit, requirements.md §6). The `<label
+// htmlFor>` below is what gives the control its accessible name now that the
+// redundant `aria-label="Filter by region"` is gone (OQ-1, JD-4 — this is the
+// second of the two adopted sites the fix must land at).
+//
+// NFR-3: Every select/control has an associated <label> via htmlFor/id so it
+// is a real labeled control (screen-reader and keyboard accessible).
 // NFR-4: Token-driven classes only — no raw hex, text-white, bg-white, etc.
 
+import { useMemo } from 'react';
 import type { ActorsQuery } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
 import { ROLES } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -56,8 +66,18 @@ const SELECT_CLASS = [
  * Changes call `onChange` with a new merged ActorsQuery (page reset to 1).
  */
 export default function FilterControls({ filters, onChange, regions }: FilterControlsProps) {
-  // Only show regions that have actors when provided; otherwise the full list.
-  const regionOptions = regions && regions.length > 0 ? regions : REGIONS;
+  // Only show regions that have actors when provided; otherwise the full
+  // list (FR-5's "Dynamic option subset" scenario, both clauses). Memoized
+  // so a stable `regions` prop doesn't hand SearchableSelect a new `options`
+  // array identity every render.
+  const regionOptions = useMemo(
+    () =>
+      (regions && regions.length > 0 ? regions : REGIONS).map((region) => ({
+        value: region,
+        label: region,
+      })),
+    [regions],
+  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -79,8 +99,13 @@ export default function FilterControls({ filters, onChange, regions }: FilterCon
     });
   }
 
-  function handleRegion(e: React.ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value;
+  // SearchableSelect's onChange hands back the committed option's value
+  // directly (never the typed search text — FR-3) rather than a change
+  // event, so this takes a string, not a ChangeEvent. The clear entry
+  // (`clearOptionLabel`) commits `''` via that same path, which this then
+  // maps to `undefined` — FR-5's `BUT it must NOT` send `region=` as an
+  // empty parameter — while still resetting `page` to 1 (DD-3).
+  function handleRegion(value: string) {
     onChange({
       ...filters,
       region: value !== '' ? value : undefined,
@@ -142,20 +167,14 @@ export default function FilterControls({ filters, onChange, regions }: FilterCon
         <label htmlFor="filter-region" className={LABEL_CLASS}>
           Region
         </label>
-        <select
+        <SearchableSelect
           id="filter-region"
           value={filters.region ?? ''}
           onChange={handleRegion}
-          className={SELECT_CLASS}
-          aria-label="Filter by region"
-        >
-          <option value="">All regions</option>
-          {regionOptions.map((region) => (
-            <option key={region} value={region}>
-              {region}
-            </option>
-          ))}
-        </select>
+          options={regionOptions}
+          clearOptionLabel="All regions"
+          placeholder="All regions"
+        />
       </div>
 
     </div>

@@ -107,7 +107,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Done when:** every clause above has a named assertion; the emitted payload is byte-identical to before the swap for the same inputs.
       **Evidence is DISQUALIFIED if:** the rewritten suite has **fewer** assertions than the one it replaced, or drops a case the old suite covered. The Reviewer diffs deletions specifically (`design.md` §10 risk row 3) — a suite that got shorter while the feature got more complex is a weakened gate, not a passing one.
 
-- [ ] **T-5  Adopt in the two public filter surfaces**  (deps: T-3)
+- [x] **T-5  Adopt in the two public filter surfaces**  (deps: T-3)
       **Size:** M · ~110 LOC (components ~50, test updates ~60)
       **Traces:** FR-5 (both scenarios) · `design.md` §5.6 · OQ-1 · JD-4
       **Skills:** `tailwind-design-system`, then `react-doctor`.
@@ -119,7 +119,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
         · `FilterControls` lists exactly the dynamic `regions` subset when non-empty, and **falls back to all 31** when undefined/empty (FR-5's `AND IT MUST`)
         · `role="group"` around `FilterControls` preserved
         · **OQ-1 fixed at BOTH sites** — remove the redundant `aria-label="Filter by region"` that overrides the visible label, at `DirectoryFilters.tsx:141-149` **and** `FilterControls.tsx:150`. JD-4 exists because the design first credited this at one site only
-      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail"` · `cd frontend && npx next lint --file components/directory/DirectoryFilters.tsx --file components/map/FilterControls.tsx` · `cd frontend && npm run build`
+      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail|directory-a11y|map-a11y"` · `cd frontend && npx next lint --file components/directory/DirectoryFilters.tsx --file components/map/FilterControls.tsx` · `cd frontend && npm run build`
       **Done when:** both sites converted, both suites updated, the accessible name of each region control is its visible label, and no `region=` empty parameter can be produced.
       **Evidence is DISQUALIFIED if:** the `undefined`-not-`''` clause is asserted by inspecting component state rather than the value handed to `onChange`. The defect FR-5 guards against is what reaches the API, so the assertion must be on the emitted query object.
 
