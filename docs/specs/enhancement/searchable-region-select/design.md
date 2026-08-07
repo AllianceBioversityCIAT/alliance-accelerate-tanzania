@@ -245,7 +245,7 @@ The original decision was **close-on-scroll**, chosen to "avoid a scroll-trackin
 
 | # | What the native `<select>` gives today | Real cost of removing it | Resolution |
 |---|---|---|---|
-| 1 | **OS-native mobile picker** (full-screen wheel/list, large hit targets, no keyboard collision) | **Genuine loss.** The custom popup must not be worse on the primary user's phone | Options get ≥44px touch targets (WCAG 2.5.8); popup max-height + internal scroll; **the mobile leg of T-6's manual pass is mandatory, not optional** |
+| 1 | **OS-native mobile picker** (full-screen wheel/list, large hit targets, no keyboard collision) | **Genuine loss.** The custom popup must not be worse on the primary user's phone | Options get ≥44px touch targets — a **platform-HIG** target (iOS HIG 44pt, Material 48dp), **not** a WCAG 2.1 AA requirement; popup max-height + internal scroll; **the mobile leg of T-6's manual pass is mandatory, not optional** |
 | 2 | Native form submission semantics (`name`, native validation) | **None.** `RegistrationForm` is fully controlled and already sets `noValidate` (`RegistrationForm.tsx:590`); the two filters are controlled and submit nothing | No action |
 | 3 | Browser autofill of an address-level field | **None.** `AUTOCOMPLETE_HINTS` in `RegistrationForm.tsx` has no `region` entry — `address-level1` is not set today, so no autofill behavior exists to lose | No action. Worth noting the new control *could* later expose an autocomplete token, which the native select was not configured to use anyway |
 | 4 | Native **first-letter typeahead** (press `k` → jump to first `K…`) | Removed, but replaced by something strictly stronger — full substring filtering (FR-1) | Net gain |

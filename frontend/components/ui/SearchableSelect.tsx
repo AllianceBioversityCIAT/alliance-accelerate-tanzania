@@ -404,7 +404,7 @@ export function SearchableSelect({
                   onMouseEnter={() => setActiveIndex(idx)}
                   onClick={() => commitOption(option)}
                   className={[
-                    'flex min-h-11 cursor-pointer items-center px-3 text-sm', // min-h-11 = 44px touch target (WCAG 2.5.8, design.md §9)
+                    'flex min-h-11 cursor-pointer items-center px-3 text-sm', // min-h-11 = 44px touch target — platform-HIG (iOS 44pt / Material 48dp), NOT a WCAG 2.1 AA requirement (design.md §9 row 1, JD-13)
                     idx === activeIndex ? 'bg-primary-soft text-fg' : 'text-fg',
                   ].join(' ')}
                 >

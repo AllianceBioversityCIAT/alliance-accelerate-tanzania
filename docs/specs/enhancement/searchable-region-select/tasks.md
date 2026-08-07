@@ -9,7 +9,23 @@
 
 ## Standing rules for every task in this spec
 
-**The verification asymmetry.** Suppress passing noise; **paste failures complete and verbatim** — that output is the Reviewer's evidence. Use `npx eslint … --quiet`, never `npm run lint` in `backend/` (it runs `--fix` and mutates the diff under review).
+**The verification asymmetry.** Suppress passing noise; **paste failures complete and verbatim** — that output is the Reviewer's evidence.
+
+**Lint command — corrected 2026-08-06, after the original form failed in T-1 *and* T-2.** This spec's verify blocks originally specified `npx eslint "<path>" --quiet`. **That command does not execute in this repo at all:**
+
+```
+ESLint: 9.39.4
+ESLint couldn't find an eslint.config.(js|mjs|cjs) file.
+From ESLint v9.0.0, the default configuration file is now eslint.config.js.
+```
+
+The repo ships only a legacy `.eslintrc.json` while ESLint 9 defaults to flat config. Both T-1 and T-2 hit it and each independently substituted a working equivalent — **a procedure carrying every required clause can still be unexecutable, which is KZ-002's recurrence extended to documents.** Every remaining verify block below now specifies the working form:
+
+```
+cd frontend && npx next lint --file <path> [--file <path>]
+```
+
+This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps` violation that the Implementer then fixed. `ESLINT_USE_FLAT_CONFIG=false npx eslint "<path>" --quiet` also works if the flat-config migration ever lands. **Never run `npm run lint` in `backend/`** — it runs `eslint --fix` and mutates the diff under review.
 
 **Three defect classes have no automated gate in this repo** (`requirements.md` §4.1): **D5** contrast, **D6** popup geometry, **D7** real focus order. `jest-axe`'s `color-contrast` rule returns `incomplete` under jsdom and `toHaveNoViolations` does **not** fail on `incomplete`; `getBoundingClientRect` returns zeros. **A green `npm test` is necessary and not sufficient for this spec.** T-6 is the gate for all three, and it is a gate, not a courtesy.
 
@@ -87,7 +103,7 @@
         · `disabled` while `submitting`
         · the error-summary anchor `#<baseId>-region` resolving to a **focusable** element — the same dead-anchor defect already fixed for the crops group and the consent block
         · `Select a region.` appearing inline **and** in the summary, from the one `errors` record — FR-4's `BUT it must NOT` change the payload shape, field name, or `RegistrationPayloadInput`
-      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "RegistrationForm|register-a11y"` · `cd frontend && npx eslint "components/register/RegistrationForm.tsx" --quiet`
+      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "RegistrationForm|register-a11y"` · `cd frontend && npx next lint --file components/register/RegistrationForm.tsx`
       **Done when:** every clause above has a named assertion; the emitted payload is byte-identical to before the swap for the same inputs.
       **Evidence is DISQUALIFIED if:** the rewritten suite has **fewer** assertions than the one it replaced, or drops a case the old suite covered. The Reviewer diffs deletions specifically (`design.md` §10 risk row 3) — a suite that got shorter while the feature got more complex is a weakened gate, not a passing one.
 
@@ -103,7 +119,7 @@
         · `FilterControls` lists exactly the dynamic `regions` subset when non-empty, and **falls back to all 31** when undefined/empty (FR-5's `AND IT MUST`)
         · `role="group"` around `FilterControls` preserved
         · **OQ-1 fixed at BOTH sites** — remove the redundant `aria-label="Filter by region"` that overrides the visible label, at `DirectoryFilters.tsx:141-149` **and** `FilterControls.tsx:150`. JD-4 exists because the design first credited this at one site only
-      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail"` · `cd frontend && npx eslint "components/directory/DirectoryFilters.tsx" "components/map/FilterControls.tsx" --quiet` · `cd frontend && npm run build`
+      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail"` · `cd frontend && npx next lint --file components/directory/DirectoryFilters.tsx --file components/map/FilterControls.tsx` · `cd frontend && npm run build`
       **Done when:** both sites converted, both suites updated, the accessible name of each region control is its visible label, and no `region=` empty parameter can be produced.
       **Evidence is DISQUALIFIED if:** the `undefined`-not-`''` clause is asserted by inspecting component state rather than the value handed to `onChange`. The defect FR-5 guards against is what reaches the API, so the assertion must be on the emitted query object.
 
@@ -118,7 +134,7 @@
         · **D5** — is the active/hover option's `bg-primary-soft` behind `text-fg` actually legible? **Measure it** with browser devtools or a contrast checker; do not inherit `design.md` §5.7's reasoning, which JD-16 showed misquotes its own source
         · **D7** — tab into and out of each control: is the focus ring visible, and is the order sane through the composed page?
         · **Momentum scroll** — scroll the map rail hard on a low-end-profile mobile with the popup open; does it lag or judder?
-        · **Touch targets** — options ≥44px tall on mobile (`design.md` §9 row 1's mitigation; note the WCAG citation there is being tracked as JD-13 and the 44px figure is a platform-HIG target, not a WCAG 2.1 AA requirement)
+        · **Touch targets** — options ≥44px tall on mobile (`design.md` §9 row 1's mitigation. **JD-13 resolved 2026-08-06:** the miscitation of WCAG 2.5.8 was corrected at source; 44px is a platform-HIG target — iOS HIG 44pt, Material 48dp — and **not** a WCAG 2.1 AA requirement. Do not re-cite a WCAG SC for it)
       **Verify:** manual. Record in `execution.md`: **each of the 6 site×viewport combinations by name**, the measured contrast ratio, and a pass/fail per defect class.
       **Done when:** all six combinations are recorded with an explicit verdict. A failure here is a **normal outcome** and blocks the spec until fixed — it is not a formality.
       **Evidence is DISQUALIFIED if:** the report says "looks fine" without naming the six combinations, or reports contrast without a measured ratio. **"I could not check mobile" is a legitimate, reportable outcome and must be escalated — it must NOT be recorded as a pass.** This task exists because the automated suite is blind here; a hand-waved T-6 removes the only gate these three classes have.
