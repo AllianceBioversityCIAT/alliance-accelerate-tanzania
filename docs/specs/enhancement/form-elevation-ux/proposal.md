@@ -63,6 +63,55 @@ Not an oversight — an explicit adjudication, recorded at the T-6 gate:
    - **`--shadow-lg`** → *"dialogs, popovers, map rail"*.
    Wiring `shadow-lg` reaches beyond forms, so specify time must decide whether it belongs here or in a separate overlay/dialog pass — but it MUST NOT be left unassigned, or two tokens stay dead code indefinitely and FR-4 never closes. **Closing FR-4's rendered-evidence clause is an acceptance criterion of this spec**, and the evidence must be a real rendered surface, not a probe file.
 
+## 5b. Design review (skill `frontend-design`, 2026-08-07)
+
+Run at the user's request against three rendered surfaces on Dev: public `/register`, admin `/admin/actors` (table), admin `/admin/actors/new` (`ActorForm`). Findings are code-verified, not eyeballed.
+
+**Skill-fit caveat, stated up front.** `frontend-design` is written for greenfield *distinctive* work: it forbids Inter and system fonts, demands grid-breaking and a "differentiation anchor". Applied literally here it would **violate FR-6**, which freezes `--font-sans` (Inter) and the CGIAR/Alliance identity. A registry consulted by government partners optimises trust and legibility, not 24-hour recall. Only the skill's *design-thinking phase* and *DFII* were used; its aesthetic bias was deliberately not.
+
+### DR-1 — The dominant defect is collapsed hierarchy, not missing depth
+
+```
+<legend className="px-2 text-sm font-semibold text-fg">   ← section title
+<label  className="text-sm font-medium text-fg">          ← field label
+```
+
+Same size (`text-sm`), same colour (`text-fg`), **one font-weight step apart**. A section heading and a field label are near-indistinguishable, so "Identity" reads as a slightly bolder field label rather than a heading. **No shadow change fixes this**, and it is the largest of the three findings. It must be addressed or the elevation work will decorate a hierarchy that is still flat.
+
+### DR-2 — The card treatment already exists; forms are the only container not using it
+
+```
+ActorCard.tsx:73   rounded-md border border-border bg-surface p-4 shadow-sm  hover:shadow-md
+<fieldset>         rounded-md border border-border           p-4 sm:p-6
+```
+
+The fieldset **is the card class minus `bg-surface` and minus `shadow-sm`**. Nothing new needs designing — the app already has a proven container treatment that demonstrably reads on the warm canvas (34 `shadow-sm` sites, including the directory cards nobody has reported as flat). The recommendation is **consistency, not invention**.
+
+### DR-3 — Inputs carry no shadow, which is where `--shadow-xs` belongs
+
+`Input`/`Select`/`FormField` have **no** `shadow-*` class. `design.md` Group D assigns `--shadow-xs` to *"chips, inputs at rest"*. Wiring it there yields a semantically correct two-step ladder: **input (`xs`, 4%) nested inside section (`sm`, 7%)** — the smaller element less raised than its container. This closes VF-2's missing `xs` consumer as a by-product of doing the right thing, rather than as a token hunt.
+
+### DFII — the framework argues against the skill's own bias here
+
+| Direction | Impact | Fit | Feasibility | Perf. | Consistency risk | **DFII** |
+|---|---|---|---|---|---|---|
+| Reuse the existing card treatment | 2 | **5** | 5 | 5 | 1 | **15** |
+| Bespoke "editorial" form aesthetic | **5** | 2 | 3 | 4 | 4 | **10** |
+
+The restrained direction wins on *Context Fit* and *Consistency Risk*. Recorded because it is a non-obvious outcome: the honest application of a distinctiveness-oriented framework selects the conservative option for this product.
+
+### DR-4 — An open decision this spec must make, not inherit
+
+The `<legend>` currently **notches the fieldset border** (`px-2` over the border line). That reads as intentional on a transparent outline. On a *filled* card, a notch in the border reads as a rendering bug. Choose explicitly: a header row inside the card, or a committed notch treatment. Leaving it unexamined is how the current state arose.
+
+### DR-5 — Observations to verify at specify time (not confirmed defects)
+
+- **Density.** The `Identity` fieldset holds two fields inside `p-4 sm:p-6` plus legend spacing; at 1440 px the forms read very loose, with substantial dead space. `ActorForm` stacks **six** such sections.
+- **Help-text association.** On `/register`, *"GPS coordinates are optional…"* renders **above** the GPS fields and visually attaches to `Market location`. The association is ambiguous.
+- **Consent pill width.** In `ActorsTable`, the `Published` badge appears to stretch its cell rather than hug its text. Observed in the capture; **not** code-confirmed — verify before treating as a defect.
+
+---
+
 ## 6. Accessibility — a real constraint, not boilerplate
 
 Two of these are non-negotiable and one is easy to get wrong:
