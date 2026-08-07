@@ -354,3 +354,77 @@ The Pre-Execution Baseline above calls the `actors/import/page.test.tsx` failure
 **Consequence:** T-6's gate as previously restated ("no new failures vs. a baseline of 1 failed") was **unusable**, because the baseline is not a fixed number. Replaced in `tasks.md` with a per-suite isolation gate. The flakiness itself is **pre-existing repo health and out of scope here** — it warrants its own `bugfix/` spec rather than being absorbed silently.
 
 **Not done / carried forward:** `frontend/lib/dashboard/chart-tokens.ts:27-34` (LF-1, the third stale `#C9821B` comment site) is untouched and belongs to **T-5**'s per-value sweep — the Implementer correctly declined to claim it.
+
+---
+
+### T-4 — Elevation ladder and gradient tokens, with Tailwind mappings — **PASS** (1 attempt)
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-08-07 |
+| **Base** | `73ebe9b` |
+| **Implementer** | Claude Code `akili-implementer` wrapper (T2 / `sonnet`), skill `tailwind-design-system` |
+| **Reviewer** | **Antigravity `agy`**, `claude-opus-4-6-thinking` (T3) — cross-host |
+| **Attempts** | 1 |
+| **Files** | `frontend/app/globals.css` (+15/−2) · `frontend/tailwind.config.ts` (+6/−0) — 2 files, **no component edits** |
+
+**The elevation ladder (Group D):**
+
+| Token | Value | Blur | Alpha |
+|---|---|---|---|
+| `--shadow-xs` | `0 1px 2px rgba(61,47,32,.04)` | 2px | .04 |
+| `--shadow-sm` | `0 2px 4px rgba(61,47,32,.07)` | 4px | .07 |
+| `--shadow-md` | `0 6px 16px rgba(61,47,32,.10)` | 16px | .10 |
+| `--shadow-lg` | `0 16px 40px rgba(61,47,32,.14)` | 40px | .14 |
+
+Monotonic in offset, blur and alpha — four genuinely distinct authored steps, not two duplicated. `--shadow-sticky-edge` **byte-identical** (DD-4 holds; only its line number shifted). `tailwind.config.ts` gains `boxShadow.xs`, `boxShadow.lg`, and a new `backgroundImage` family.
+
+#### D-4 discharged by two independent methods
+
+The D-4 trap is a token in `:root` with **no** Tailwind mapping: no utility class is generated, yet `npm run build` succeeds and a presence assertion passes while the class does nothing. Tailwind's purging also makes grepping built CSS useless — absence proves nothing when no component uses the class yet.
+
+1. **Implementer** — compiled the utilities with the Tailwind v3.4.19 CLI against the *real* config (throwaway config spreading it, `content` pointed at a scratchpad probe; probe files never entered the repo). All six classes emitted real rules referencing the correct custom properties.
+2. **Leader, independently** — `resolveConfig` confirmed `boxShadow` = `{sm, md, lg, xl, 2xl, inner, none, xs, sticky-edge}` and `backgroundImage` containing `gradient-hero` + `gradient-band`.
+
+The Reviewer assessed this as a genuine discharge, not a presence check one level up, because it proves the config entry exists, the class name resolves to a real rule, and the rule contains the expected `var()` reference. **The rendered half is explicitly not claimed and remains T-6's.**
+
+#### Value provenance — audited, not assumed
+
+design.md §5.1 Group D specifies only *"warm base, N% alpha"* with **no concrete RGB**. The Implementer sourced `rgba(61,47,32,…)` and the hero stops from `mockup/index.html:46-50` — the approved visual reference, whose header states these are the numbers meant to land. **Leader-verified exact.** It then rewrote the hero gradient's three hex stops as `var(--color-surface-alt)` / `var(--color-bg)` / `var(--color-surface)`, byte-equal to T-2's landed `#F4F0EA` / `#FBF9F6` / `#FFFFFF`, so the gradient is token-driven per NFR-4 rather than a second hardcoded copy.
+
+#### FR-5's contrast clause is provably satisfied — an unclaimed benefit of that rewrite
+
+FR-5 forbids a gradient dropping any ink below NFR-1. Because the stops are now **token references to already-gated Group A grounds**, and every ink (max L = **0.139**) is darker than every stop (min L = **0.875**), contrast is **monotonic in ground luminance** — so the worst case necessarily falls at an *endpoint*, which the T-1 harness already gates. Verified over 21 sampled stops per segment:
+
+| Ink | Worst ratio on either gradient |
+|---|---|
+| `fg` | 13.081 |
+| `danger` | 5.758 |
+| `success` | 5.495 |
+| `muted` | 5.150 |
+| `warning` | **4.898** |
+
+All ≥ 4.5. **No new gate required.** The Reviewer audited the monotonicity argument and confirmed it, adding the correct caveat: a future *light* ink used as text on a gradient would break the premise — structurally mitigated because T-1's harness gates every ink/ground pair independently, so such a token could not pass unnoticed.
+
+#### Reviewer verdict (agy / `claude-opus-4-6-thinking`)
+
+```
+STATUS: PASS
+SUMMARY: The diff adds exactly four monotonically-stepped warm-tinted shadow tokens and two
+gradient tokens in globals.css, each with a corresponding tailwind.config.ts mapping. Values
+are byte-identical to the approved mockup; the sticky-edge shadow is untouched; the
+compiled-CSS evidence and independent resolveConfig verification jointly discharge D-4 for
+the mapping half, with rendered evidence correctly deferred to T-6.
+```
+
+Leader-run gates: `npm run build` ✓ (23/23 static, 2/2 export) · `npm test -- contrast --silent` **129/129** (tokens moved; suite must still pass) · `npx next lint --quiet` exit 0 · NFR-3 route sizes unchanged. Read-only contract verified by tree fingerprint.
+
+#### ADVISORY
+
+1. **design.md Group E prose contradicts the approved mockup** — Group E calls `--gradient-hero` a *"Diagonal canvas→**surface** wash"* (implying two stops, `bg`→`surface`), but the approved mockup and the implementation use **three** stops (`surface-alt`→`bg`→`surface`). The prose is an incomplete summary. **Added to T-5's scope** — the Implementer correctly followed the approved mockup over incomplete prose, so this is a documentation defect, not a T-4 defect.
+2. `tailwind.config.ts:59` cites *"FR-6"* for the sticky-edge shadow, referring to a **different spec's** numbering, not this spec's frozen-token FR-6. Flagged by the Implementer, left alone; the Reviewer agreed it is out of scope. Recorded for a future housekeeping pass — fixing it satisfies no requirement here.
+3. The FR-5 monotonicity bound depends on ink/ground luminance separation — see the caveat above.
+
+#### Open judgment call carried to T-6's HITL gate
+
+**`--gradient-band` is the only value in this task with no cited source.** design.md Group E gives only *"Vertical canvas→alt wash for section transitions"*, and the mockup has **no `--gradient-band` at all**. The Implementer derived `linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-alt) 100%)` and **disclosed it as a judgment call rather than presenting it as a lookup**. Accepted as a minimal faithful reading of those words — literally vertical, literally canvas→alt, no invented angle or stop split — and it is provably contrast-safe per the bound above. But it carries no design authority, so **the user decides its appearance at T-6's AR-1 gate**, and T-5 records whatever value survives into `design.md` §7.
