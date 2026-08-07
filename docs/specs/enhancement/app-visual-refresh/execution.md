@@ -692,3 +692,52 @@ While answering a user question about the Partners section, the Leader measured 
 | (the two `bg-fg` bands) | 13.08 / 14.85 | strong |
 
 Sections 4–7 therefore read as **one continuous light mass** between the two dark bands. Switching `PartnersStrip` to `bg-surface-alt` would move 1.051 → 1.080 — still imperceptible, so the token choice is not the defect. **Same root cause as VF-1:** structure in this palette must come from borders, shadows or dark bands, never from background alone. Awaiting user direction; not actioned.
+
+---
+
+### T-6 — status at hand-off: **`[~]` HELD, not complete**
+
+Marked `[~]` rather than `[x]` deliberately. Several done-conditions **are** met and independently evidenced; one is **not**. Declaring it complete would be precisely the unfalsifiable completion this spec spent seven tasks eliminating — and the Leader has no standing to claim it after logging three instances of the same defect in others' work and one in its own.
+
+#### What IS proven
+
+| Condition | Evidence |
+|---|---|
+| Disqualifier (a) — no stale CSS | **Machine-verified.** Origin serves `1f0a123924cc8161.css`; 5 new tokens present, 3 old absent; `.shadow-xs{` emitted. Pre-deploy baseline recorded for comparison. |
+| Diff containment | **9 files from base `7aeb358`, all inside the amended-NFR-7 allowed set.** `app/(public)/layout.tsx` appears only in `main..HEAD` because it is the OQ-3 cherry-pick, i.e. branch *base*, not spec work. |
+| Build / lint / contrast | 23/23 static, 2/2 export · `next lint --quiet` clean · contrast **129/129** |
+| NFR-3 | `/` 164 kB, `/directory` 157 kB, `/map` 110 kB — byte-identical to baseline |
+| **FR-2 rendered evidence** | The user's own admin capture shows `text-warning` ("Not recorded — no evidence") legible on a white row — the pair that was **2.93:1** and is now **5.561:1**. This was the surface the Leader could not reach without credentials. |
+| Disqualifier (c) — "the user has not actually looked" | **Demonstrably satisfied.** The user reviewed the deployed result across several rounds, sent five captures, identified a real defect (VF-1), and directed a change (T-7). |
+
+#### What is NOT met — stated plainly
+
+**The 8-surface × 3-width capture set does not exist.** `resize_window` reported success twice while the rendered viewport stayed at 1568 px, so no 375 px or 768 px capture was obtained. Per the anti-rabbit-hole rule the Leader stopped after two attempts rather than continuing to fight the tool. **Consequence:** responsive behaviour at 375/768 is **unverified**, including the Reviewer's advisory about a `<legend>` wrapping to two lines at 375 px.
+
+**Formal aesthetic sign-off was never given as such.** The user looked, criticised, directed a fix, and then said *"continua como te parezca mejor"*. That is direction to proceed — **not** a statement that the visual result is approved. Recorded as what it was.
+
+#### VF-4 — the `<legend>` fill protrudes above the card edge
+
+Found by zooming the rendered page (the capture work T-6 exists to do). A native `<legend>` straddles the border — half above, half below. Once filled with `bg-surface`, the upper half renders **white against the warm canvas**, reading as a small white tab attached to the card's top-left rather than a clean notch. Subtle (the edge is 1.05:1) and strictly better than the pre-T-7 state, but the silhouette is wrong.
+
+**Root cause, and why it is not a quick fix:** no single background is correct for both halves of an element that crosses the border. Fill it like the card and it protrudes into the canvas; fill it like the canvas and it intrudes onto the card. The real fix is to stop it straddling — which means a header row, **carefully**, per the incident below. Routed to `enhancement/form-elevation-ux`.
+
+#### INCIDENT — the Leader shipped a broken layout to Dev
+
+The user asked for VF-4 fixed "rápidamente". The Leader applied `float-left w-full` to the 11 legends, ran contrast + lint + build (**all three green**), and deployed **without rendering the page first**.
+
+**It broke the layout.** `float-left` removes the legend from normal flow; the fieldsets use a grid for their two-column field layout, and the grid collapsed — overlapping labels, inputs crushed against the right edge. Reverted to `14a56f9` and redeployed; the live site was verified back to the reviewed state (5 legends / 5 fieldsets / 14 inputs with the correct classes). Nothing was lost from the repository.
+
+**Dev served a broken registration form for several minutes.** Recorded because it happened, not because it was noticed.
+
+**The lesson, and it is the spec's own lesson turned on its author.** All three automated gates passed because **none of them evaluates layout**. That is the same defect class the spec has now catalogued four times — T-1's presence assertion, T-3's accidentally-satisfiable grep, the review wrapper accepting a verdict-less transcript, and now this. The operative rule:
+
+> **A change that alters flow or positioning cannot be validated by the build.** It requires rendered evidence, and that evidence must come *before* the deploy, not after. Pure colour/shadow changes are covered by the pipeline; layout changes are not.
+
+"Quickly" was treated as licence to skip verification. It was not, and the Leader owned the failure rather than the Implementer, who never saw this change.
+
+#### Remaining work to close T-6
+
+1. Capture 8 surfaces × 375/768/1440 with a viewport that actually resizes.
+2. Confirm the 375 px `<legend>` wrap (Reviewer advisory, still open).
+3. Obtain explicit aesthetic sign-off, or record a decision to close without it.

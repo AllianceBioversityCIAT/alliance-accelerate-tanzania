@@ -135,3 +135,23 @@ Two of these are non-negotiable and one is easy to get wrong:
 | A shadow is used *instead of* the border, dropping the boundary below 3:1 | §6 makes the border load-bearing and states the 1.05:1 surface-vs-canvas figure explicitly |
 | `contrast.test.ts`'s `REACHABLE` citations silently go stale | §6 requires updating them in the same change — a stale `file:line` is the KZ-008 defect class |
 | Scope creeps from "section containers" into a full form redesign | §5.6 forces an explicit include/exclude decision at specify time |
+
+---
+
+## 9. Findings inherited from `app-visual-refresh` T-6/T-7
+
+### VF-4 — the `<legend>` fill protrudes above the card edge
+
+T-7 gave the `<legend>` `bg-surface` so its notch would stop showing the warm canvas through a filled card. It works, but a native legend **straddles** the border: the upper half now renders white against the warm canvas, reading as a small white tab on the card's top-left instead of a clean notch. Subtle (1.05:1 edge) and better than before, but the silhouette is wrong.
+
+**No background value can fix this.** Fill it like the card → it protrudes into the canvas. Fill it like the canvas → it intrudes onto the card. The element crosses the boundary, so the fix must stop it straddling.
+
+### The failed attempt — do not repeat it
+
+`float-left w-full` on the legend was tried and **broke the layout**: it removes the legend from normal flow, and the fieldsets use a grid for their two-column field arrangement, which collapsed — overlapping labels, inputs crushed to the right edge. **Contrast, lint and build all passed green**, because none of them evaluates layout. It reached Dev before the failure was seen.
+
+**Binding constraint for this spec:** any change to the legend's flow or positioning MUST be verified by rendering **before** deployment. A green build is not evidence for a layout change. Whatever approach is chosen — header row inside the card, absolute positioning, or removing the legend from the visual flow while preserving it for assistive technology — it must be rendered and inspected at **375 / 768 / 1440** before it ships, and it must preserve native `<fieldset>`/`<legend>` semantics.
+
+### Still unverified from T-6
+
+Responsive behaviour at **375 px and 768 px** was never captured (the tooling would not resize the viewport). In particular, a `<legend>` that **wraps to two lines at 375 px** interacts with the notch in a way no one has yet seen. Treat it as unknown, not as working.
