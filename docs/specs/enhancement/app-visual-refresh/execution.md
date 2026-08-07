@@ -533,3 +533,63 @@ The first two dispatches produced **no verdict**. The cause was an `agy` account
 3. `frontend/lib/content/crops.ts:70` cites *"System Design §7"* — the **pre-migration** doc path (`docs/system-design/design.md` → `docs/ux-ui/design.md`, per root `CLAUDE.md`). A stale **path**, not a stale value, so outside FR-7's per-value sweep. Recorded, not fixed.
 
 **Not done / carried forward:** if T-6's HITL gate changes `--gradient-band`, **both** `docs/ux-ui/design.md` §7 and the spec-local `design.md` Group E need a follow-up touch — both currently record the pre-gate value, clearly labelled as such.
+
+---
+
+### T-6 — Rendered evidence and the human visual gate — **IN PROGRESS `[~]`**
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-08-07 |
+| **Base** | `686a999` |
+| **Environment** | **Dev on AWS** (user decision) — `https://d3idqvvg0xa1r7.cloudfront.net`, not localhost |
+
+#### Why Dev and not localhost (user decision, 2026-08-07)
+
+Three reasons, in order of weight:
+
+1. **`npm run dev` is not the production CSS pipeline.** Tailwind purges and minifies differently in dev, so dev-mode output is *weaker* evidence for a token change than the production build. The deployed artifact **is** the production build.
+2. **CORS makes the data-bearing surfaces unreachable from any other origin.** `AllowedOrigin` is locked to the CloudFront origin (`infra/20-backend/template.yaml:200`), so the admin table, import preview and dashboard cannot render real data from `localhost` without standing up a full local backend + MySQL. Dev already carries seeded data.
+3. Port `3000` was held by another session's dev server; capturing against it would have screenshotted the **old** tokens — T-6's own disqualifier (a).
+
+**The deploy was operator-authorized.** `deploy-frontend.sh:31-32` marks it "NOT run by the SDD agent loop"; the Leader raised that, and the user explicitly authorized the Leader to run it with permission prompts. Run as `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`.
+
+**A profile defect surfaced en route.** The first invocation resolved to profile `MELIA-DEV` — the operator's *personal* account — because `deploy-frontend.sh:44` reads `PROFILE="${AWS_PROFILE:-IBD-DEV}"` and an ambient `AWS_PROFILE` wins over the mandated floor. It failed safe only because that account lacked a `20-backend` stack. **The same mechanism had already succeeded on 2026-07-09**, leaving a full `10-data-auth` stack (RDS + Cognito + Secrets) running ~30 days in the wrong account; removed on user instruction, with a CFN-generated final snapshot also deleted (RDS's default `DeletionPolicy` is `Snapshot`, not `Delete`, so a "complete" stack deletion silently leaves a billable artifact). Recorded as **`docs/specs/bugfix/deploy-profile-override/`** — out of scope here.
+
+#### Disqualifier (a) discharged by machine, not by assertion
+
+T-6 disqualifies captures taken "without a hard reload, so stale CSS is in the frame". On a CDN that claim is unfalsifiable as stated, so it was replaced with a check on what the origin actually serves:
+
+| | Pre-deploy | Post-deploy |
+|---|---|---|
+| CSS served | `6fe7c0ace4c6903d.css` | **`dfc9f3630fb07d93.css`** |
+| `#FBF9F6` `#F4F0EA` `#2A2724` `#8F5E10` `#2A6E2D` | all **absent** | all **present** ✅ |
+| `#F7F7F7` `#333333` `#2F7D32` | all **present** | all **absent** ✅ |
+
+CloudFront invalidation `I3LQJ4R9YP0DDEYGF8B24UOHVF` (`/*`). Captures taken while this check fails are inadmissible; it passes.
+
+#### VF-1 — the gate's first real finding: form fieldsets do not participate in the elevation inversion
+
+Raised by the **user** at the AR-1 gate, looking at `/register`: the form sections read flat.
+
+**Measured cause — not an aesthetic opinion:**
+
+```
+0 of 12  <fieldset> elements in frontend/ carry `bg-surface`
+11 of 12 use the identical string: `rounded-md border border-border p-4 sm:p-6`
+```
+*(`RegistrationForm.tsx` ×5, `ActorForm.tsx` ×6; the 12th, `DirectoryFilters.tsx:90`, is deliberately `border-0`.)*
+
+Every form section is a **transparent** 1px outline, so what shows inside it is the canvas itself.
+
+**This spec did not break it — it revealed it.** `design.md` §1 states the structural move as *"the canvas warm and the card white, so elevation reads from the card being lighter and warmer-lifted than its ground."* That holds for the 137 `bg-surface` consumers, but fieldsets were never among them. Previously `--color-bg` was `#FFFFFF`, so a transparent fieldset on a white canvas **looked** like a white card by accident. Warming the canvas removed the camouflage. The flatness pre-dates this spec; only its visibility is new.
+
+**Consequence for the spec's own claims:** §1 over-states its reach. The elevation inversion does not apply to form pages at all, and no requirement in FR-1…FR-8 covers them — the token change cannot fix this, because a fieldset with no background class has nothing for a token to colour.
+
+**Adjudication — out of scope, deliberately.** The fix (`bg-surface` + `shadow-sm` on 11 fieldsets) is a **class change to components**, which violates **NFR-7** verbatim (*"both changes are comment-only … No component's markup, classes, props or behaviour changes"*) and trips `design.md` §11's tripwire. Breaking the scope-containment tripwire in the final gate of the spec that authored it would be self-defeating, and T-6's gate *is* a diff-containment check. Routed to a new spec per user decision: **`docs/specs/enhancement/form-elevation-ux/`**.
+
+#### Still outstanding
+
+- **User's aesthetic approval** — AR-1 is not machine-decidable; disqualifier (c) requires that the user actually looked.
+- **Admin login for two surfaces** — admin actors table and import preview, which carry the two 12px `warning` pairs FR-2 exists to fix. Cognito-gated; needs credentials or an operator-authenticated session.
+- Capture set (8 surfaces × 375/768/1440) for the audit record.
