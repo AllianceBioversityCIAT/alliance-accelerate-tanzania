@@ -1,3 +1,4 @@
+// @sdd-spec enhancement/searchable-region-select (T-4)
 /**
  * Unit tests for RegistrationForm (T-17, FR-2 scenarios 2-4).
  *
@@ -24,6 +25,12 @@
  *     order and focus visibility are explicitly NOT asserted here (DC-16)
  *   - (T-18 wiring) the real `consent.policyVersion` `ConsentPolicyDisclosure`
  *     fetches flows through to `onValidated`, never a hardcoded placeholder
+ *   - (T-4, FR-4) the Region field is the `SearchableSelect` primitive:
+ *     `aria-invalid` present-when-errored/absent-when-clean, `aria-describedby`
+ *     → `#<id>-error`, the required asterisk, `disabled` while `submitting`,
+ *     the error-summary anchor resolving to a focusable element, and
+ *     `Select a region.` inline + in the summary from the one `errors`
+ *     record — every clause FR-4 owns for this field, named individually
  *
  * `@/lib/api/registrations` is mocked (per `frontend/CLAUDE.md`: "Page tests
  * mock the `lib/api/*` module") because `RegistrationForm` now embeds
@@ -35,10 +42,22 @@
  * none of the tests below need to await one to avoid an act() warning. The
  * one test that DOES care about the fetched version overrides this default
  * and awaits the load explicitly (see "flows the real policyVersion...").
+ *
+ * Region selection (T-4): `SearchableSelect` never commits from typing
+ * (FR-3) — `fireEvent.change` on its input only edits the in-progress
+ * search text, never `values.region`. Every place this file used to select
+ * a region via `fireEvent.change(..., { target: { value: 'Arusha' } })` (the
+ * native-`<select>` shape) now drives the real commit path with
+ * `@testing-library/user-event`: open the control, then click the option —
+ * the same pattern `SearchableSelect.test.tsx`'s own pointer-commit tests
+ * use. `selectRegion` centralizes it so this rewrite does not silently drop
+ * assertion count against the suite it replaces (`tasks.md` T-4's
+ * disqualification clause).
  */
 
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 import RegistrationForm, {
@@ -65,17 +84,27 @@ beforeEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Commits a region on the `SearchableSelect` combobox (T-4) via the real
+ * pointer-commit path — open, then click the option — never
+ * `fireEvent.change`, which only edits the in-progress search text and
+ * never reaches `onChange` (FR-3). Mirrors `SearchableSelect.test.tsx`'s own
+ * JD-8 pointer-commit tests.
+ */
+async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^region/i));
+  await user.click(screen.getByRole('option', { name: label }));
+}
+
 /** Fills every REQUIRED field with a valid value, leaving optionals blank. */
-function fillMinimalValidForm() {
+async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
   fireEvent.change(screen.getByLabelText(/^trader type/i), {
     target: { value: 'seed_company' },
   });
-  fireEvent.change(screen.getByLabelText(/^region/i), {
-    target: { value: 'Arusha' },
-  });
+  await selectRegion(user, 'Arusha');
   fireEvent.click(screen.getByLabelText(/^sorghum/i));
   fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), {
     target: { value: '10' },
@@ -155,7 +184,8 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
    * exercised the scenario the requirement actually names (Reviewer FAIL,
    * attempt 2) — email format validation did not exist yet for it to fail.
    */
-  it('the FR-2 scenario 2 trio (negative capacity, malformed email, no crop) shows a count plus one inline message each, in agreement', () => {
+  it('the FR-2 scenario 2 trio (negative capacity, malformed email, no crop) shows a count plus one inline message each, in agreement', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
 
     // Everything valid EXCEPT: capacity negative, malformed email, no crop selected.
@@ -163,7 +193,7 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
     fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
-    fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } });
+    await selectRegion(user, 'Arusha');
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '-5' } });
     fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
     fireEvent.change(screen.getByLabelText(/^phone/i), { target: { value: '+255700000000' } });
@@ -189,13 +219,14 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
     expect(summary).toHaveTextContent('Email');
   });
 
-  it('fixing one field clears it from the summary AND the inline message simultaneously — proof of one shared object', () => {
+  it('fixing one field clears it from the summary AND the inline message simultaneously — proof of one shared object', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
     fireEvent.change(screen.getByLabelText(/organisation name/i), {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
     fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
-    fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } });
+    await selectRegion(user, 'Arusha');
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '-5' } });
     fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
     fireEvent.change(screen.getByLabelText(/^phone/i), { target: { value: '+255700000000' } });
@@ -273,9 +304,10 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
 // ---------------------------------------------------------------------------
 
 describe('RegistrationForm — GPS pairing and payload construction', () => {
-  it('rejects exactly one of two coordinates', () => {
+  it('rejects exactly one of two coordinates', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '-3.5' } });
     // Longitude left blank.
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
@@ -283,10 +315,11 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(screen.getByText('Enter both coordinates, or leave both blank.')).toBeInTheDocument();
   });
 
-  it('accepts both GPS fields blank and emits NO gpsLatitude/gpsLongitude — never as \'\'', () => {
+  it('accepts both GPS fields blank and emits NO gpsLatitude/gpsLongitude — never as \'\'', async () => {
+    const user = userEvent.setup();
     const onValidated = jest.fn();
     render(<RegistrationForm onValidated={onValidated} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     // GPS left blank on both.
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
@@ -306,10 +339,11 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect('gpsLongitude' in wireShape).toBe(false);
   });
 
-  it('preserves a legitimate 0 latitude/longitude — 0 is not falsy-dropped (Tanzania is near the equator)', () => {
+  it('preserves a legitimate 0 latitude/longitude — 0 is not falsy-dropped (Tanzania is near the equator)', async () => {
+    const user = userEvent.setup();
     const onValidated = jest.fn();
     render(<RegistrationForm onValidated={onValidated} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '0' } });
     fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
@@ -324,9 +358,10 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(wireShape.gpsLongitude).toBe(0);
   });
 
-  it('rejects out-of-range coordinates', () => {
+  it('rejects out-of-range coordinates', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
     fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-200' } });
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
@@ -335,7 +370,8 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(screen.getByText('Longitude must be between -180 and 180.')).toBeInTheDocument();
   });
 
-  it('does not call onValidated when the consent checkbox is unticked', () => {
+  it('does not call onValidated when the consent checkbox is unticked', async () => {
+    const user = userEvent.setup();
     const onValidated = jest.fn();
     render(<RegistrationForm onValidated={onValidated} />);
     // Fill every field EXCEPT consent.
@@ -343,7 +379,7 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
     fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
-    fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } });
+    await selectRegion(user, 'Arusha');
     fireEvent.click(screen.getByLabelText(/^sorghum/i));
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
@@ -356,10 +392,11 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(screen.getByText('You must accept the policy before continuing.')).toBeInTheDocument();
   });
 
-  it('a fully valid submission calls onValidated with the built payload, consent, and email — no network call', () => {
+  it('a fully valid submission calls onValidated with the built payload, consent, and email — no network call', async () => {
+    const user = userEvent.setup();
     const onValidated = jest.fn();
     render(<RegistrationForm onValidated={onValidated} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(onValidated).toHaveBeenCalledTimes(1);
@@ -388,6 +425,7 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
   });
 
   it('flows the real policyVersion ConsentPolicyDisclosure fetched through to onValidated, never a placeholder', async () => {
+    const user = userEvent.setup();
     mockGetConsentPolicy.mockResolvedValueOnce({
       version: 'v9.9-test-fixture',
       sections: [{ heading: 'A section', body: 'Body text.' }],
@@ -400,7 +438,7 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     // hands upward is the one the disclosure actually fetched.
     await screen.findByText('v9.9-test-fixture', { exact: false });
 
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(onValidated).toHaveBeenCalledTimes(1);
@@ -413,16 +451,120 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(consent.policyVersion).toBe('v9.9-test-fixture');
   });
 
-  it('rejects a malformed email and requires one before calling onValidated', () => {
+  it('rejects a malformed email and requires one before calling onValidated', async () => {
+    const user = userEvent.setup();
     const onValidated = jest.fn();
     render(<RegistrationForm onValidated={onValidated} />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: 'not-an-email' } });
 
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(onValidated).not.toHaveBeenCalled();
     expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Region field — SearchableSelect adoption (T-4, FR-4, design.md §5.6, JD-2)
+//
+// Every clause `tasks.md` T-4 owns for this one field, named individually so
+// none can be discharged by an adjacent green check (KZ-001): aria-invalid
+// present/absent, aria-describedby, the required asterisk, disabled while
+// submitting, the summary anchor resolving to a FOCUSABLE element (not just
+// a live one — see the dedicated test below), and "Select a region." in
+// both the inline message and the summary from the one `errors` record.
+// ---------------------------------------------------------------------------
+
+describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', () => {
+  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    expect(screen.getByLabelText(/^region/i)).not.toHaveAttribute('aria-invalid');
+
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+    expect(screen.getByLabelText(/^region/i)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    const region = screen.getByLabelText(/^region/i);
+    const describedBy = region.getAttribute('aria-describedby');
+    expect(describedBy).toBe(`${region.id}-error`);
+    expect(document.getElementById(describedBy!)).toHaveTextContent('Select a region.');
+  });
+
+  it('the Region label carries the required asterisk', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    const region = screen.getByLabelText(/^region/i);
+    const label = document.querySelector(`label[for="${region.id}"]`);
+    expect(label).not.toBeNull();
+    // Field renders `{label}{required && <span aria-hidden>*</span>}` with no
+    // separating whitespace — the exact text every other required field's
+    // label carries.
+    expect(label).toHaveTextContent('Region*');
+  });
+
+  it('the region combobox is disabled while submitting', () => {
+    render(<RegistrationForm onValidated={jest.fn()} submitting />);
+    expect(screen.getByLabelText(/^region/i)).toBeDisabled();
+  });
+
+  it('"Select a region." appears both inline and in the error summary, from the one errors record', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(screen.getByText('Select a region.')).toBeInTheDocument();
+    const summary = screen.getByTestId('error-summary');
+    expect(summary).toHaveTextContent('Region');
+    expect(summary).toHaveTextContent('Select a region.');
+  });
+
+  it('the error-summary anchor #<baseId>-region resolves to a genuinely FOCUSABLE element, not merely a live one', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    const summary = screen.getByTestId('error-summary');
+    const regionLink = within(summary)
+      .getAllByRole('link')
+      .find((link) => link.getAttribute('href')?.endsWith('-region'));
+    expect(regionLink).toBeDefined();
+
+    const region = screen.getByLabelText(/^region/i);
+    const targetId = regionLink!.getAttribute('href')!.slice(1);
+    expect(targetId).toBe(region.id);
+    const target = document.getElementById(targetId);
+    expect(target).not.toBeNull();
+    // The dead-anchor defect class T-4's brief names (already fixed for the
+    // crops group and consent block) is a target that RESOLVES but cannot
+    // take focus. Unlike the crops group's tabIndex={-1} wrapper div, this
+    // target is `SearchableSelect`'s own native <input>, so no extra
+    // plumbing was required — but that must be demonstrated, not assumed.
+    target!.focus();
+    expect(target).toHaveFocus();
+    expect(target).toBe(region);
+  });
+
+  it('typed, uncommitted region text is never emitted to onValidated — FR-3 preserved through the adoption', async () => {
+    const user = userEvent.setup();
+    const onValidated = jest.fn();
+    render(<RegistrationForm onValidated={onValidated} />);
+    await fillMinimalValidForm(user);
+
+    // Reopen the already-committed control, type a fragment that matches no
+    // region, then abandon it without committing (FR-2's "abandoning a
+    // partial search" — blur reverts, never emits).
+    const region = screen.getByLabelText(/^region/i);
+    await user.click(region);
+    await user.keyboard('Zzz');
+    await user.tab();
+
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(onValidated).toHaveBeenCalledTimes(1);
+    const payload = onValidated.mock.calls[0][0] as RegistrationPayloadInput;
+    expect(payload.region).toBe('Arusha');
   });
 });
 

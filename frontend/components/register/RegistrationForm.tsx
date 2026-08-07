@@ -1,3 +1,4 @@
+// @sdd-spec enhancement/searchable-region-select (T-4)
 'use client';
 
 /**
@@ -65,6 +66,7 @@ import { useCallback, useId, useState } from 'react';
 
 import { ROLES } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +85,14 @@ const SEX_OPTIONS = [
   { value: 'F', label: 'Female' },
   { value: 'Other', label: 'Other' },
 ] as const;
+
+/**
+ * `SearchableSelect`'s `options` prop (T-4, design.md §5.6) — computed once
+ * at module scope, not per render, so its identity is stable and the
+ * control's internal `useMemo`-based filter (design.md §5.4/NFR-4) never
+ * re-scans on a `RegistrationForm` re-render unrelated to `region`.
+ */
+const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
 
 /** `@MaxLength` bounds, transcribed field-for-field from `registration-create.dto.ts`. */
 const MAX_LENGTHS = {
@@ -553,6 +563,37 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
     );
   };
 
+  /**
+   * The Region field (T-4, FR-4, design.md §5.6, JD-2) — `SearchableSelect`
+   * swapped in for the native `<select>` `renderSelect` still renders for
+   * `traderType`/`sex`, inside the SAME `Field` wrapper so the label, the
+   * required asterisk, and the inline error message are unchanged. The
+   * control receives `invalid` (never a message — DD-3) and `describedBy`
+   * exactly as `renderSelect`/`renderInput` already compute them for every
+   * other field, so `aria-invalid` and `aria-describedby` follow the one
+   * `errors` record with no second path. No `clearOptionLabel` — this is
+   * the required field design.md §5.1 says omits the clear affordance.
+   */
+  const renderRegionField = () => {
+    const field: keyof FormValues = 'region';
+    const id = fieldId(field);
+    const error = errors[field];
+    return (
+      <Field id={id} label="Region" error={error} required>
+        <SearchableSelect
+          id={id}
+          value={values.region}
+          onChange={(next) => setField('region', next)}
+          options={REGION_OPTIONS}
+          placeholder="Select…"
+          disabled={submitting}
+          invalid={!!error}
+          describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
   const renderInput = (
     field: keyof FormValues,
     label: string,
@@ -635,12 +676,7 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       <fieldset className="rounded-md border border-border p-4 sm:p-6">
         <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderSelect(
-            'region',
-            'Region',
-            REGIONS.map((r) => ({ value: r, label: r })),
-            true,
-          )}
+          {renderRegionField()}
           {renderInput('district', 'District')}
           {renderInput(
             'marketLocation',

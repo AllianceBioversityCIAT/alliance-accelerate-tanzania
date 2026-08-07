@@ -1,3 +1,4 @@
+// @sdd-spec enhancement/searchable-region-select (T-4)
 /**
  * Whole-page accessibility suite for `/register` (T-22, NFR-5, QA-11, DC-16).
  *
@@ -60,6 +61,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -107,13 +109,25 @@ beforeEach(() => {
   mockRequestVerificationCode.mockResolvedValue(undefined);
 });
 
+/**
+ * Commits a region on the `SearchableSelect` combobox (T-4) via the real
+ * pointer-commit path — `fireEvent.change` only edits the in-progress
+ * search text and never reaches `onChange` (FR-3), so this file's prior
+ * `fireEvent.change(region, { target: { value: 'Arusha' } })` no longer
+ * commits anything once the field is the new control.
+ */
+async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^region/i));
+  await user.click(screen.getByRole('option', { name: label }));
+}
+
 /** Fills every REQUIRED field with a valid value — mirrors page.test.tsx's helper. */
-function fillMinimalValidForm() {
+async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
   fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
-  fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } });
+  await selectRegion(user, 'Arusha');
   fireEvent.click(screen.getByLabelText(/^sorghum/i));
   fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
   fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
@@ -154,8 +168,8 @@ async function acceptConsent() {
   fireEvent.click(checkbox);
 }
 
-async function advanceToOtpStep() {
-  fillMinimalValidForm();
+async function advanceToOtpStep(user: ReturnType<typeof userEvent.setup>) {
+  await fillMinimalValidForm(user);
   await acceptConsent();
   fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
   await screen.findByLabelText(/verification code/i);
@@ -348,18 +362,20 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
 
 describe('/register — otp step (ready), whole-page axe', () => {
   it('has no jest-axe violations once the code UI is ready', async () => {
+    const user = userEvent.setup();
     const { container } = render(<RegisterPage />);
     await waitForPolicyLoaded();
-    await advanceToOtpStep();
+    await advanceToOtpStep(user);
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
 
   it('the code input is labelled, keyboard-focusable, and its resend/submit actions are reachable', async () => {
+    const user = userEvent.setup();
     render(<RegisterPage />);
     await waitForPolicyLoaded();
-    await advanceToOtpStep();
+    await advanceToOtpStep(user);
 
     const codeInput = screen.getByLabelText(/verification code/i);
     codeInput.focus();
@@ -378,9 +394,10 @@ describe('/register — otp step, blocking-issue screen (T19-A4, new coverage)',
     mockSubmitRegistration.mockRejectedValue(
       new ApiError(400, 'Bad Request', [{ field: 'email', message: 'email must be an email' }]),
     );
+    const user = userEvent.setup();
     const { container } = render(<RegisterPage />);
     await waitForPolicyLoaded();
-    await advanceToOtpStep();
+    await advanceToOtpStep(user);
 
     fireEvent.change(screen.getByLabelText(/verification code/i), { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /verify and submit/i }));
@@ -395,9 +412,10 @@ describe('/register — otp step, blocking-issue screen (T19-A4, new coverage)',
     mockSubmitRegistration.mockRejectedValue(
       new ApiError(400, 'Bad Request', [{ field: 'email', message: 'email must be an email' }]),
     );
+    const user = userEvent.setup();
     render(<RegisterPage />);
     await waitForPolicyLoaded();
-    await advanceToOtpStep();
+    await advanceToOtpStep(user);
 
     // The element about to unmount (the submit button) starts focused —
     // this is the concrete "the focused button unmounts" scenario T19-A4

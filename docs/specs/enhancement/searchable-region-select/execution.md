@@ -789,3 +789,38 @@ Checked both for false-pass risk before treating the green run as evidence: `dir
 **Verification (final):** `npm test -- --silent --testPathPatterns "DirectoryFilters|FilterControls|DirectoryView|DiscoverRail|directory-a11y|map-a11y"` — 79/79 passing. `npx next lint --file components/directory/DirectoryFilters.tsx --file components/map/FilterControls.tsx` — clean. `npm run build` — static export clean, 23/23 pages.
 
 **Requirements covered:** FR-5 (both scenarios), `design.md` §5.6, OQ-1, JD-4, NFR-1 (axe at both adopted sites), NFR-3 (labeled controls, live region).
+
+### T-4 — Adopt in the public registration form · **IN REWORK (attempt 1 of 3)**
+
+- **Implementer:** `akili-implementer` wrapper (sonnet). Interrupted mid-task by the session usage limit (environment failure, consumed no attempt); resumed from transcript after reset and completed in the same attempt.
+- **Skills:** `tailwind-design-system`, then `react-doctor`. **Effort:** `medium`.
+
+#### Attempt 1 — **FAIL**
+
+Every clause claim in the Implementer's self-report verified true against the diff (not just the table): `aria-invalid` present/absent (JD-2) at `RegistrationForm.tsx:590` / `SearchableSelect.tsx:569`; `aria-describedby` at `:591` resolving to `Field`'s own `errorId`; required asterisk unchanged; `disabled={submitting}` at `:589`; the summary anchor proven **focusable** (`:524-547`, real `focus()` + `toHaveFocus()`, not mere non-nullity — the clause most often faked); payload byte-identical (`validate()` and `buildPayload` untouched); zero `it(`/`expect(` deletions in either suite (18 preserved + 7 new = 25, plus 12 unchanged in `register-a11y.test.tsx`); `REGION_OPTIONS` hoisting safe (`REGIONS` is a static, never-mutated module array); scope exactly the 3 listed files.
+
+**FAIL issue — real regression, not an evidence gap:** `app/(public)/register/page.test.tsx` (a **third** suite, outside T-4's `tasks.md` Files list and outside the verify pattern) still commits the region field via `fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } })` inside its own `fillMinimalValidForm`. Against `SearchableSelect` this only sets `searchText`/opens the popup — `handleChange` never calls `onChange` (`SearchableSelect.tsx:275`) — so `values.region` stays `''`, `validate()` blocks submission, and two tests break (`:75` asserting the OTP-step transition, `:101` asserting the email passes through). **Leader independently reproduced: 2 of 4 tests failing** in `npm test -- --silent --testPathPatterns "register/page"`. Violates `design.md` §9 row 5 (every adoption task owns its own suite, never deferred) and T-4's own disqualification clause (drops a case the old suite covered) — the reported 37/37 green never covered this file, the same evidence-shape T-5 hit, but this time the code path is genuinely broken, not merely unverified.
+
+**Spec gap noted:** `tasks.md` T-4's Files list omits `app/(public)/register/page.test.tsx` — same shape as the T-1/T-2 lint-command defect already on record in this spec.
+
+**ADVISORY (non-blocking):**
+1. **Budget tripwire, escalated and accepted by the user.** T-4's re-baselined allowance (`design.md` §11) is ~110 LOC; diff already ~215 (component +37, `RegistrationForm.test.tsx` +150, `register-a11y.test.tsx` +28), attempt 2's fix adds more. Same cause `design.md` §11 already diagnosed for T-2 (mandated clause-level assertions and prose, not implementation bloat) — user accepted continuing without re-scoping.
+2. One behavior genuinely removed but spec-sanctioned: the native `<select>`'s empty `<option>` let a user un-set a chosen region; without `clearOptionLabel` (correctly omitted per `design.md` §5.1 for this required field), region can be changed but not cleared. Conforms to §5.1; flagged only because FR-4's "preserve every current behavior" framing doesn't carve this out explicitly.
+
+**Attempt 2 brief (for the next Implementer, effort bumped medium → high per the rework rule):** migrate `page.test.tsx`'s `fillMinimalValidForm` to the same pointer-commit path already used in `RegistrationForm.test.tsx` and `register-a11y.test.tsx` — add the `userEvent` import, make the helper `async (user)`, replace the region `fireEvent.change` with open-then-click-option, `await` it at both call sites (`:77`, `:103`). Re-run with a pattern that actually reaches it: `cd frontend && npm test -- --silent --testPathPatterns "RegistrationForm|register-a11y|register/page"`. Also add `app/(public)/register/page.test.tsx` to T-4's `tasks.md` Files list as part of closing this gap at source (same correction shape as T-5's Verify-line fix). Do not touch anything else — attempt 1's clause coverage all stands, confirmed independently by the Reviewer.
+
+#### Attempt 2 — **PASS** (fresh Reviewer instance, round 2)
+
+**Fix:** `page.test.tsx` gained a `selectRegion(user, label)` helper (open combobox, click option), `fillMinimalValidForm` made `async`, both call sites updated to `userEvent.setup()` + `await`. Only this file touched.
+
+Round-2 Reviewer verified the fix drives the real commit path, not a dead end: `selectRegion` → `handleClick` opens the popup → clicking the `<li role="option">` → `commitOption` → `onChange(option.value)` (`SearchableSelect.tsx:306-311, 606-613, 267-273`), surviving because the popup's `onMouseDown`/`onPointerDown` `preventDefault` (the JD-8 path) stops blur from destroying the option before the click registers. Confirmed not vacuous: `getByRole('option', ...)` would throw, not silently pass, if the control failed to open or the option were missing. All 4 `it` blocks in the file intact, every original assertion preserved on the two migrated tests.
+
+**Attempt-1 work independently confirmed unchanged, not just claimed:** post-image blob SHAs for the three round-1 files are identical between the attempt-1 diff and the attempt-2 diff (`register-a11y.test.tsx` `e26e9ea`, `RegistrationForm.test.tsx` `be6b4eb`, `RegistrationForm.tsx` `c81ee88`) — `page.test.tsx`'s blob is the only one that changed, proving attempt 2 was scoped exactly as briefed.
+
+**ADVISORY (non-blocking):** the three round-1 files each carry a `// @sdd-spec enhancement/searchable-region-select (T-4)` header marker; `page.test.tsx` doesn't have one despite now being in scope. Cosmetic traceability only (the repo convention supports stacking markers) — not worth a third attempt, fold in on a later touch.
+
+**Verification (final):** `npm test -- --silent --testPathPatterns "RegistrationForm|register-a11y|register/page"` — 41/41 passing (Leader independently reproduced). `npx next lint --file components/register/RegistrationForm.tsx` — clean. `npm run build` — static export clean, 23/23 pages.
+
+**Requirements covered:** FR-4 (every AND-IT-MUST / BUT-IT-MUST-NOT clause), `design.md` §5.6, JD-2.
+
+**Budget position (accepted by user):** ~110 LOC re-baselined, actual ~215+ before the fix, more after — same cause `design.md` §11 already diagnosed for T-2 (mandated clause-level assertions, not implementation bloat). User explicitly approved continuing without re-scoping.

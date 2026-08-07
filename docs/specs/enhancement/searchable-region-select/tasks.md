@@ -90,11 +90,11 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Done when:** the popup renders under `document.body`; a dispatched scroll whose target is inside the popup provably does **not** trigger a reposition; `scrollIntoView` appears nowhere in the file.
       **Evidence is DISQUALIFIED if:** any test claims the popup is *correctly positioned*. **jsdom returns zeros from `getBoundingClientRect`** — placement is structurally unverifiable here (D6). This task can prove the **listener wiring and the exclusion logic**; it cannot prove geometry, and reporting otherwise is a false pass. Geometry belongs to T-6.
 
-- [ ] **T-4  Adopt in the public registration form**  (deps: T-3)
+- [x] **T-4  Adopt in the public registration form**  (deps: T-3)
       **Size:** S · ~80 LOC (component ~20, test updates ~60)
       **Traces:** FR-4 (all clauses) · `design.md` §5.6 · JD-2
       **Skills:** `tailwind-design-system`, then `react-doctor`.
-      **Files:** `frontend/components/register/RegistrationForm.tsx`, `frontend/components/register/RegistrationForm.test.tsx`, `frontend/app/(public)/register/register-a11y.test.tsx`
+      **Files:** `frontend/components/register/RegistrationForm.tsx`, `frontend/components/register/RegistrationForm.test.tsx`, `frontend/app/(public)/register/register-a11y.test.tsx`, `frontend/app/(public)/register/page.test.tsx`
       **Scope:** Swap `renderSelect('region', …)` for the new control inside the existing `Field` wrapper. **Update this file's own suites in the same task** — never deferred (`design.md` §9 row 5: the existing tests select via `selectOptions` and will break, and during the rewrite they stop guarding what they guarded).
       **Clause-level preservation — FR-4's `AND IT MUST` list, each owned here:**
         · `aria-invalid` present when errored, absent when clean (JD-2)
