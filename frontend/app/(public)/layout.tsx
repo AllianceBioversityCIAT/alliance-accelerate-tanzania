@@ -12,11 +12,19 @@ export default function PublicLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Sticky footer: the shell is a full-height column and <main> takes the
+  // slack, so the footer sits at the bottom of the viewport on SHORT pages
+  // instead of riding up under the content. Without this it only looked
+  // right on pages tall enough to overflow — the registration flow's OTP and
+  // receipt steps are deliberately short, which is where it showed.
+  // `flex-1` on <main> (not a min-height on the footer) keeps <main> the
+  // full-bleed region this shell already promises, so pages that manage
+  // their own containers are unaffected.
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <Header />
-      <main>{children}</main>
+      <main className="flex-1">{children}</main>
       <Footer />
-    </>
+    </div>
   );
 }
