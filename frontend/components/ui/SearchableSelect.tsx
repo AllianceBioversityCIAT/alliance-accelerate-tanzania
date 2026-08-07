@@ -1,4 +1,5 @@
 // @sdd-spec enhancement/searchable-region-select (T-2)
+// @sdd-spec enhancement/searchable-region-select (T-3)
 'use client';
 
 /**
@@ -9,9 +10,47 @@
  * exists in this repo (DD-1), so this is built directly against the WAI-ARIA
  * 1.2 combobox-with-listbox-popup pattern.
  *
- * **This task renders the popup inline** (plainly `absolute`-positioned).
- * T-3 replaces it with a `createPortal` + fixed-position + reflow-on-scroll
- * mechanism (design.md §5.5, DD-5) — everything else here is final.
+ * ---------------------------------------------------------------------------
+ * Popup placement (T-3, design.md §5.5, DD-5): the popup is a React portal
+ * into `document.body`, `position: fixed`, anchored to the input's
+ * `getBoundingClientRect()`. It flips above the input when there isn't room
+ * below. Because it is portaled, `aria-controls` (not DOM adjacency) is what
+ * binds the input to the listbox — see the ARIA contract note below.
+ *
+ * **Reflow handling is reposition, never close, with one exception**
+ * (DD-5's Judgment Day amendment, JD-1/JD-6):
+ *   - a capture-phase `scroll` listener on `document` repositions on any
+ *     ancestor's scroll, but IGNORES the event when its target is inside the
+ *     popup (`popupRef.current.contains(event.target)`) — otherwise the
+ *     popup's own list-scroll (`scroll` does not bubble, so catching an
+ *     ancestor's scroll requires this capture-phase listener, which also
+ *     sees the popup's internal scroll) would reposition or fight itself
+ *     while a 31-option list is being navigated past its own fold (JD-1).
+ *   - `resize` on `window`, and `resize`/`scroll` on `visualViewport`,
+ *     reposition — `visualViewport` is what the mobile virtual keyboard
+ *     moves, so this is the path that keeps the popup usable rather than
+ *     closing the instant it opens on Android (JD-6).
+ *   - the anchor scrolled entirely out of the viewport is the ONLY
+ *     remaining close-on-reflow case.
+ * All recomputation is throttled to one `requestAnimationFrame` per frame
+ * and writes the popup's inline style directly via a ref (not React state)
+ * — design.md §5.5 sizes the cost at "one rect read and two style writes per
+ * frame", which a state-driven re-render on every scroll tick would not be.
+ * Listeners are attached only while the popup is open.
+ *
+ * **jsdom returns the zero rect from every `getBoundingClientRect()` call**
+ * (no layout engine — D6). Reading a zero-size rect as "the anchor is
+ * off-screen" would close the popup on every open in this test harness, so
+ * an unmeasured (zero width AND zero height) rect is treated as "assume
+ * visible" rather than "out of viewport" — see `recomputePosition` below.
+ * This means the close-on-out-of-viewport branch is only exercised in tests
+ * that mock a non-zero rect; **no test in this file claims the popup is
+ * correctly positioned in a real browser** — that is T-6's manual pass.
+ *
+ * The active option is kept in view by writing the popup's own `scrollTop`
+ * directly, never `scrollIntoView` — `scrollIntoView` can scroll ancestor
+ * containers too, which would both fight the fixed-position anchor math and
+ * re-enter the scroll handler above.
  *
  * The component is generic: it has no knowledge of "region" or any other
  * domain, with **three** region-word literals as the exceptions, not one.
@@ -91,9 +130,17 @@
  * §4.1). That is T-6's manual browser pass, not this component's tests.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { matchesQuery } from '@/lib/text/fold-search';
+
+// T-3 (design.md §5.5) — the popup's max-height (`max-h-60` = 15rem) and the
+// gap left between it and the anchor, in px. Used by `recomputePosition`
+// below to decide whether there's room below the input and where to place
+// the flipped-above popup's bottom edge.
+const POPUP_MAX_HEIGHT_PX = 240;
+const POPUP_GAP_PX = 4;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -148,6 +195,26 @@ export function SearchableSelect({
   const [searchText, setSearchText] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+
+  // T-3 — the anchor (for `getBoundingClientRect`) and the portaled popup
+  // (both as the reflow-scroll-exclusion target and the direct `style`
+  // write target, and as the scrollable container for the active-option
+  // scrollTop management below).
+  const inputRef = useRef<HTMLInputElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+  // The throttle *gate* is this flag, deliberately separate from `rafRef`
+  // (which exists only so cleanup can `cancelAnimationFrame` a pending frame
+  // on close/unmount). Gating on `rafRef.current !== null` instead would
+  // race: `rafRef.current = requestAnimationFrame(cb)` calls
+  // `requestAnimationFrame` — and therefore may run `cb` — BEFORE its own
+  // assignment completes. A synchronous `requestAnimationFrame` (real
+  // browsers never do this, but a test throttle-proving mock legitimately
+  // does, and so could a polyfill) would run `cb`, which sets `rafRef.current
+  // = null`, and then the still-pending outer assignment immediately
+  // clobbers that back to a non-null id — leaving the gate permanently
+  // "scheduled" and every subsequent reflow event silently dropped.
+  const schedulingRef = useRef(false);
 
   const listboxId = `${id}-listbox`;
 
@@ -324,6 +391,137 @@ export function SearchableSelect({
     event.preventDefault();
   }, []);
 
+  // T-3 (design.md §5.5) — reads the anchor's rect and writes the popup's
+  // inline style directly (a ref write, not React state) so a burst of
+  // scroll/resize events during momentum scroll costs rect reads and style
+  // writes, never a re-render. Closes on the one remaining close-on-reflow
+  // case: the anchor scrolled entirely out of the viewport.
+  const recomputePosition = useCallback(() => {
+    const anchor = inputRef.current;
+    const popup = popupRef.current;
+    if (!anchor || !popup) return;
+
+    const rect = anchor.getBoundingClientRect();
+    const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+
+    // jsdom's getBoundingClientRect always returns the zero rect (D6, no
+    // layout engine) — an unmeasured rect (zero width AND height) is read
+    // as "assume visible", not "off-screen", so this branch does not fire
+    // on every open in the automated suite. A real anchor with an actual
+    // layout always has non-zero width or height.
+    const hasMeasuredLayout = rect.width > 0 || rect.height > 0;
+    const outOfViewport =
+      rect.bottom <= viewportTop ||
+      rect.top >= viewportTop + viewportHeight ||
+      rect.right <= viewportLeft ||
+      rect.left >= viewportLeft + viewportWidth;
+    if (hasMeasuredLayout && outOfViewport) {
+      closeAndReset();
+      return;
+    }
+
+    const spaceBelow = viewportTop + viewportHeight - rect.bottom;
+    const spaceAbove = rect.top - viewportTop;
+    const placeAbove = spaceBelow < POPUP_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
+
+    popup.style.left = `${rect.left}px`;
+    popup.style.width = `${rect.width}px`;
+    if (placeAbove) {
+      // The flip *decision* above deliberately reads the visual viewport
+      // (what the user can actually see, incl. a mobile keyboard shrinking
+      // it) — that is the right frame for "is there room". This write does
+      // not: `rect` is layout-viewport coordinates (getBoundingClientRect is
+      // relative to the initial containing block), and a `position: fixed`
+      // element's `bottom` is resolved against the layout viewport too, so
+      // the offset must be taken from that same frame or the two disagree.
+      // Mixing in the visual viewport here (as the below-branch's `top` does
+      // not) is zero-error on desktop, where the two frames coincide, but
+      // equals the on-screen keyboard height on mobile — placing the popup
+      // behind the keyboard the instant it opens. Do not "fix" this back to
+      // `viewportTop + viewportHeight`; that reintroduces the bug.
+      popup.style.top = 'auto';
+      popup.style.bottom = `${document.documentElement.clientHeight - rect.top + POPUP_GAP_PX}px`;
+    } else {
+      popup.style.bottom = 'auto';
+      popup.style.top = `${rect.bottom + POPUP_GAP_PX}px`;
+    }
+  }, [closeAndReset]);
+
+  // rAF-throttles every reflow-driven recompute to at most one rect read +
+  // two style writes per frame (design.md §5.5) — multiple scroll/resize
+  // events arriving within the same frame collapse into one call.
+  const scheduleRecompute = useCallback(() => {
+    if (schedulingRef.current) return;
+    schedulingRef.current = true;
+    rafRef.current = requestAnimationFrame(() => {
+      schedulingRef.current = false;
+      rafRef.current = null;
+      recomputePosition();
+    });
+  }, [recomputePosition]);
+
+  // Wires the reflow listeners for exactly as long as the popup is open,
+  // and computes the initial position synchronously (via useLayoutEffect,
+  // before paint) so there's no visible jump on open.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+
+    recomputePosition();
+
+    const handleDocumentScroll = (event: Event) => {
+      // JD-1 — the popup's own list scroll fires this same capture-phase
+      // listener (scroll does not bubble, so catching an ancestor's scroll
+      // needs a capture-phase listener on `document`, which also sees the
+      // popup's internal scroll). Excluding it is what stops the popup from
+      // repositioning against — or closing on — its own scroll.
+      if (popupRef.current?.contains(event.target as Node)) return;
+      scheduleRecompute();
+    };
+    const handleReflow = () => scheduleRecompute();
+
+    document.addEventListener('scroll', handleDocumentScroll, true);
+    window.addEventListener('resize', handleReflow);
+    // JD-6 — visualViewport is what the mobile virtual keyboard moves; jsdom
+    // does not implement it, so `?.` keeps this a no-op there.
+    window.visualViewport?.addEventListener('resize', handleReflow);
+    window.visualViewport?.addEventListener('scroll', handleReflow);
+
+    return () => {
+      document.removeEventListener('scroll', handleDocumentScroll, true);
+      window.removeEventListener('resize', handleReflow);
+      window.visualViewport?.removeEventListener('resize', handleReflow);
+      window.visualViewport?.removeEventListener('scroll', handleReflow);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      schedulingRef.current = false;
+    };
+  }, [isOpen, recomputePosition, scheduleRecompute]);
+
+  // Keeps the active option in view by adjusting the popup's own scrollTop
+  // directly — scrollIntoView is forbidden (§5.5): it can scroll ancestor
+  // containers too, which would fight the fixed-position anchor math and
+  // re-enter the scroll handler above.
+  useLayoutEffect(() => {
+    if (!isOpen || isNoMatch || activeIndex < 0) return;
+    const scrollContainer = popupRef.current;
+    const item = scrollContainer?.querySelector<HTMLElement>(`#${id}-option-${activeIndex}`);
+    if (!scrollContainer || !item) return;
+
+    const itemTop = item.offsetTop;
+    const itemBottom = itemTop + item.offsetHeight;
+    if (itemTop < scrollContainer.scrollTop) {
+      scrollContainer.scrollTop = itemTop;
+    } else if (itemBottom > scrollContainer.scrollTop + scrollContainer.clientHeight) {
+      scrollContainer.scrollTop = itemBottom - scrollContainer.clientHeight;
+    }
+  }, [isOpen, isNoMatch, activeIndex, id]);
+
   const inputClasses = [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
     'placeholder:text-muted',
@@ -335,10 +533,17 @@ export function SearchableSelect({
   // NFR-5 — the transition + motion-reduce tokens are present on every
   // mount (design.md §5.7). Proving the interpolation is actually
   // suppressed for reduced-motion users needs a real layout engine and is
-  // out of jsdom's reach; this class is the gated hook T-3's portal (which
-  // owns the popup's actual mount/unmount lifecycle) transitions against.
+  // out of jsdom's reach.
+  // T-3 — `fixed` replaces `absolute`/`mt-1`/`w-full`: the popup is now
+  // portaled to `document.body`, so its position, width, and vertical
+  // offset are no longer relative to this wrapper and are written directly
+  // onto the element by `recomputePosition` instead.
+  // `z-50` is a page-level z-index now, not a wrapper-local one: inline the
+  // popup only had to beat its own siblings, but portaled to `document.body`
+  // it competes in the root stacking context against every sticky header
+  // (`z-40`) and floating overlay in this repo, which uniformly use `z-50`.
   const popupClasses = [
-    'absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-border bg-surface shadow-md',
+    'fixed z-50 max-h-60 overflow-y-auto rounded-md border border-border bg-surface shadow-md',
     'transition-opacity duration-fast ease-out motion-reduce:transition-none',
   ].join(' ');
 
@@ -347,6 +552,7 @@ export function SearchableSelect({
   return (
     <div className="relative">
       <input
+        ref={inputRef}
         id={id}
         type="text"
         role="combobox"
@@ -370,57 +576,59 @@ export function SearchableSelect({
         className={inputClasses}
       />
 
-      {isOpen && (
-        <div
-          onMouseDown={preventPointerBlur}
-          onPointerDown={preventPointerBlur}
-          className={popupClasses}
-        >
-          <ul id={listboxId} role="listbox" className="py-1">
-            {isNoMatch ? (
-              // A listbox must own at least one option child (axe
-              // aria-required-children) — an empty listbox here would be
-              // its own ARIA violation, not merely an empty state. This row
-              // is non-interactive (aria-disabled, no onClick) and excluded
-              // from `renderedOptions`, so it can never become the active
-              // descendant or a commit target; it exists purely so the
-              // "no match" state stays structurally valid while replacing
-              // every real option (FR-1's "message replaces the option list").
-              <li
-                role="option"
-                aria-disabled="true"
-                aria-selected="false"
-                className="px-3 py-2 text-sm text-muted"
-              >
-                {noMatchLabel}
-              </li>
-            ) : (
-              renderedOptions.map((option, idx) => (
+      {isOpen &&
+        createPortal(
+          <div
+            ref={popupRef}
+            onMouseDown={preventPointerBlur}
+            onPointerDown={preventPointerBlur}
+            className={popupClasses}
+          >
+            <ul id={listboxId} role="listbox" className="py-1">
+              {isNoMatch ? (
+                // A listbox must own at least one option child (axe
+                // aria-required-children) — an empty listbox here would be
+                // its own ARIA violation, not merely an empty state. This row
+                // is non-interactive (aria-disabled, no onClick) and excluded
+                // from `renderedOptions`, so it can never become the active
+                // descendant or a commit target; it exists purely so the
+                // "no match" state stays structurally valid while replacing
+                // every real option (FR-1's "message replaces the option list").
                 <li
-                  key={option.value}
-                  id={`${id}-option-${idx}`}
                   role="option"
-                  aria-selected={option.value === value}
-                  onMouseEnter={() => setActiveIndex(idx)}
-                  onClick={() => commitOption(option)}
-                  className={[
-                    'flex min-h-11 cursor-pointer items-center px-3 text-sm', // min-h-11 = 44px touch target — platform-HIG (iOS 44pt / Material 48dp), NOT a WCAG 2.1 AA requirement (design.md §9 row 1, JD-13)
-                    idx === activeIndex ? 'bg-primary-soft text-fg' : 'text-fg',
-                  ].join(' ')}
+                  aria-disabled="true"
+                  aria-selected="false"
+                  className="px-3 py-2 text-sm text-muted"
                 >
-                  {option.value === value && (
-                    <span aria-hidden="true" className="mr-2 text-primary">
-                      ✓
-                    </span>
-                  )}
-                  {option.label}
+                  {noMatchLabel}
                 </li>
-              ))
-            )}
-          </ul>
-
-        </div>
-      )}
+              ) : (
+                renderedOptions.map((option, idx) => (
+                  <li
+                    key={option.value}
+                    id={`${id}-option-${idx}`}
+                    role="option"
+                    aria-selected={option.value === value}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    onClick={() => commitOption(option)}
+                    className={[
+                      'flex min-h-11 cursor-pointer items-center px-3 text-sm', // min-h-11 = 44px touch target — platform-HIG (iOS 44pt / Material 48dp), NOT a WCAG 2.1 AA requirement (design.md §9 row 1, JD-13)
+                      idx === activeIndex ? 'bg-primary-soft text-fg' : 'text-fg',
+                    ].join(' ')}
+                  >
+                    {option.value === value && (
+                      <span aria-hidden="true" className="mr-2 text-primary">
+                        ✓
+                      </span>
+                    )}
+                    {option.label}
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>,
+          document.body,
+        )}
 
       {/* FR-6 — separate from the visible no-match paragraph above (design.md §5.3). */}
       <span aria-live="polite" className="sr-only">

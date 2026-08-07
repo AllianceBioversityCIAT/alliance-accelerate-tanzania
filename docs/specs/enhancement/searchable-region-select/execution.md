@@ -483,3 +483,192 @@ Requirements covered: FR-1 (no-match scenario), FR-2 (both scenarios), FR-3 (all
 Two, both external to the spec's content: a session-quota blocker that killed the first Implementer dispatch before any work (recorded above, consumed no attempt), and the repo-wide ESLint 9 / `.eslintrc.json` mismatch that makes T-2's literal lint command unexecutable — **which has now recurred across two consecutive tasks** and is a defect in the remaining tasks' verify blocks, not a one-off. It is the KZ-002 recurrence shape extended to documents: *a procedure carrying every required clause can still be unexecutable*. Correcting T-3/T-4/T-5's verify commands is a spec edit and is flagged to the user rather than performed silently here.
 
 One methodological note worth carrying to Kaizen: **the Leader's own hypothesis was wrong and the Reviewer refuted it with better evidence.** That is the panel working as designed — a Leader-raised suspicion is an instruction to *investigate*, never a finding, and the brief said so explicitly ("a hypothesis the Leader wants tested, not assumed"). Had it been transported as a finding, attempt 3 would have been spent "fixing" correct code.
+
+---
+
+## Interlude — JD-13 closed and the lint command corrected (commit `95bb89d`)
+
+Between T-2 and T-3, at the user's explicit direction, two items held out of T-2's scope were closed as spec edits.
+
+**JD-13 — the WCAG miscitation.** `design.md` §9 row 1 cited WCAG 2.5.8 for a 44px touch target. SC 2.5.8 *Target Size (Minimum)* is **WCAG 2.2 AA at 24×24 CSS px**; 44×44 is SC 2.5.5, **AAA**. This project targets WCAG 2.1 AA, which contains neither at AA. Two round-1 lens Reviewers re-raised it independently during T-2 and one proposed folding the fix into the rework; the Leader declined, because an advisory may not widen an approved task. The user then decided it.
+
+Corrected **in both directions per KZ-004**, not only at the site the finding named — four sites in one change: `design.md` §9 row 1 (the origin), `SearchableSelect.tsx`'s option-row comment (the code that had begun quoting it), `tasks.md` T-6's touch-target bullet (which described JD-13 as pending), and `judgment.md`'s JD-13 row plus its "deliberately unfixed" list. 44px is now stated as a platform-HIG target (iOS HIG 44pt, Material 48dp) with **no WCAG SC cited anywhere.**
+
+The reason it stopped being tolerable as a "deliberately unfixed" documentation item is worth recording: **the code had started quoting it.** A documentation defect is contained while it stays in documentation; it stops being contained the moment an Implementer faithfully copies it into a source comment, which is exactly what happened in T-2.
+
+**The unexecutable lint command.** This spec's verify blocks specified `npx eslint "<path>" --quiet`, which **does not run in this repo at all** — ESLint 9.39.4 defaults to flat config and only a legacy `.eslintrc.json` is present. T-1 and T-2 each hit it and each independently substituted a working form. T-4 and T-5 now specify `npx next lint --file <path>`, and the Standing Rules section records the failure verbatim along with why the substitute is not a weaker gate (in T-2 it caught a real `react-hooks/exhaustive-deps` violation).
+
+**Verified rather than assumed: the root `CLAUDE.md` verification table is NOT affected.** `backend/`'s `npx eslint` runs clean and `frontend/`'s `npm run lint` works. The broken form was local to this spec's own task files — a narrower defect than first suspected, and the check cost one command.
+
+This is **KZ-002's recurrence shape extended to documents**: a procedure carrying every required clause can still be unexecutable.
+
+---
+
+### T-3 — Portal + reflow positioning · **IN REWORK (attempt 2 of 3)**
+
+**Skills:** `vercel-react-best-practices`, then `react-doctor`. **Effort:** `xhigh` — T-3 is the other half of the correctness-critical pair (`tasks.md` line 199), and the reflow mechanism is concurrency-shaped.
+
+#### Dispatch 1 — killed by a second session-quota blocker, partial work left in the tree
+
+```
+You've hit your session limit · resets 12:50am (America/Bogota)
+```
+
+Unlike the T-2 blocker, this one died **mid-task with work on disk** (component 608 lines, test 753). Per the runtime-failure rule this consumed **no rework attempt**. The Leader assessed the tree rather than rolling back — Step 4's automatic rollback binds a HALT after three failed attempts, not an environment blocker, and the partial work was coherent:
+
+- `createPortal`, `visualViewport`, `requestAnimationFrame` and the `contains()` exclusion all present
+- **`scrollIntoView` present only in two comments, never in code** — §5.5's prohibition held
+- **Suite RED: 4 failed, 44 passed, 48 total**
+
+#### The four failures, diagnosed by the Leader before respawning
+
+Three were **the axe hazard firing exactly as briefed.** The dispatch had correctly re-targeted the `open`/`filtered`/`no-match` runs from RTL's `container` to `baseElement` so they actually cover the portalled popup — and that re-target immediately surfaced:
+
+```
+"All page content should be contained by landmarks (region)"
+```
+
+**Diagnosed as a test-harness artifact, not a component defect.** Auditing `document.body` in a component test trips axe's `region` rule because the render sits in no landmark. The Leader checked the repo precedent rather than guessing: **all 45 axe call sites in the frontend suite use `axe(container)`** — `register-a11y.test.tsx:173,183,355,390`, `directory-a11y.test.tsx:145-189`, `AcknowledgeDialog.test.tsx:316` — so `region` had never fired here and **no precedent existed for auditing `document.body`.**
+
+The relief brief named the trap explicitly: **do not "fix" this by reverting to `container`.** That would restore the exact silent-coverage-loss hazard T-3 exists to prevent — runs going green while covering nothing, which is worse than a red run.
+
+The fourth failure was substantive: the reposition was not firing on `visualViewport` events — **the JD-6 path**, the reason DD-5's close-on-reflow rule was reversed.
+
+#### Dispatch 2 (the relief) — attempt 1 complete
+
+| File | Lines | Δ vs T-2 close (`95bb89d`) |
+|---|---|---|
+| `SearchableSelect.tsx` | 623 | +192 |
+| `SearchableSelect.test.tsx` | 782 | +269 |
+| **Total delta** | | **+461** vs ~220 re-baselined (**2.1×**) |
+
+Tests 39 → **48**. Leader re-measured; figures match.
+
+**The visualViewport failure had a real root cause, not a bad stub.** The rAF throttle used `rafRef` as both the gate and the id store:
+
+```js
+if (rafRef.current !== null) return;
+rafRef.current = requestAnimationFrame(() => { rafRef.current = null; recomputePosition(); });
+```
+
+Under the suite's synchronous rAF mock the callback nulls the ref **first**, then the pending outer assignment clobbers it back to non-null — so the gate is permanently "scheduled" and every later reflow event no-ops. Fixed by decoupling the gate (`schedulingRef`, a boolean set before the rAF call and cleared inside the callback) from the id bookkeeping (`rafRef`, retained only for `cancelAnimationFrame`), with the cleanup resetting both. The Implementer documented the race at the new ref so it is not reintroduced.
+
+**Axe resolution:** kept `axe(baseElement)` on the three popup-open states with `{ rules: { region: { enabled: false } } }`, and — a narrowing the Leader noted and the evidence lens later confirmed as deliberate — left `closed`/`invalid`/`disabled` on `container`, where no portal exists and the rule need not be suppressed at all.
+
+#### Review round 1 — 2 lenses. **Evidence `PASS`, Mechanism `FAIL`.**
+
+##### Evidence lens · `PASS`
+
+Verified the `region` disable **against axe-core's own source** rather than accepting the comment's reasoning: the rule (`axe.js:32906-32917`) is tagged `cat.keyboard`, `best-practice`, `RGAAv4` — **no `wcag2a`/`wcag2aa` tag** — so disabling it removes **zero WCAG 2.1 AA coverage** and NFR-1's measure is not eroded. It also confirmed the check id `region` is referenced by exactly one rule, so the hole masks nothing else: `aria-required-children`, `aria-valid-attr-value`, `aria-allowed-attr` and listbox structure all still run on the portalled popup. Narrower alternatives were shown not to exist (scoping to the portal subtree still trips `region`; a `wrapper` render option cannot enclose a portal targeting `document.body`).
+
+**The re-target's necessity is proven, not asserted** — a test asserts `container.contains(listbox) === false`, which is the discriminator establishing that a `container`-scoped run would cover nothing.
+
+Suite strength: the lens counted the non-T-3 tests one by one and reconciled to **exactly 39**, T-2's close count, with an independent property-by-property sweep finding every named T-2 assertion still present. Nothing deleted, nothing weakened. It judged the three modified axe runs a **net strengthening** — a strict coverage gain at the cost of one non-WCAG best-practice rule.
+
+It singled out the zero-rect D6 guard test as "the quietly valuable one": it drives jsdom's real zero rect and would fail if `hasMeasuredLayout` were removed — **it is what proves every other test in the file is not silently closing the popup on its first reflow tick.**
+
+It also adjudicated the `ActorForm.test.tsx` full-suite flake the Implementer reported, and found the investigation adequate *and* structurally supported: `SearchableSelect` is imported by exactly two files (itself and its test) and has **no adoption sites yet**, so cross-file interference is confined to worker CPU, not shared DOM. It noted approvingly that nobody had raised `testTimeout` to hide it.
+
+##### Mechanism lens · `FAIL` — 2 issues
+
+**The rAF fix was attacked across every interleaving and survived.** Sync rAF, async rAF, close-between-schedule-and-callback, unmount-between-schedule-and-callback, two-events-in-one-frame: *"The ordering dependency was removed, not relocated."* The key pairing is that the `isOpen` effect cleanup resets `schedulingRef` **unconditionally** rather than leaving it to a callback that may never run. The lens added a correction to the Implementer's own account: the pre-fix bug was **not** cosmetic in the suite — the two-dispatch visualViewport test would have failed on the stuck gate, which is why that test is now the de-facto regression guard.
+
+**Both portal-survival questions the Leader flagged were re-derived at source level and cleared.** JD-8's `preventDefault` guard still holds because React 19's `completeWork` `case 4` (HostPortal) calls `listenToAllSupportedEvents(containerInfo)`, so `document.body` receives the delegated `mousedown`/`pointerdown` listeners and the guard fires through the React tree despite the DOM break. The no-click-outside-listener argument survives because **the portal changes DOM ancestry, not focus ownership, and `onBlur` was never scoped by ancestry.**
+
+Every reflow clause verified correct: the JD-1 exclusion (including that the programmatic `scrollTop` writes fire a `scroll` whose target is the popup itself, so the loop is provably broken), all three JD-6 registrations with symmetric cleanup, close-only-on-out-of-viewport as the sole close path, no `scrollIntoView` in code, NFR-4 untouched, and **zero setState on the non-close reflow path** so a scroll tick causes no re-render — §5.5's cost model holds.
+
+**Issue 1 — coordinate-frame inconsistency in the flip-above branch.** `recomputePosition` correctly uses the *visual* viewport for the flip **decision** and the out-of-viewport test, but the flip **placement** writes `bottom = viewportTop + viewportHeight − rect.top + gap` — a visual-viewport offset for a property CSS resolves against the **layout** viewport. `left` and `top` use pure `rect` (layout). Error = `innerHeight − (vv.offsetTop + vv.height)`: **zero on desktop, equal to the keyboard height on mobile.** Worked example at Chrome Android defaults puts the popup ~300px below the anchor it should sit above — **JD-6's outcome reached through the placement math instead of a close rule.** Violates `design.md` §5.5 and DD-5's amendment (JD-6). *Leader confirmed independently by reading the four style writes together: three in the layout frame, one in the visual frame.*
+
+The lens **gated rather than routed to T-6, and justified it**: T-6's mobile leg is the only remaining gate for this class, and `tasks.md` T-6 explicitly contemplates "I could not check mobile" as a legitimate escalatable outcome — **a defect a reviewer has already located should not be handed to a gate that may not execute.**
+
+**Issue 2 — `z-10` survived the port into the root stacking context.** Correct while the popup was a local sibling; wrong the moment it moved to `document.body`, where it competes with `sticky top-0 z-40` headers at two of the three adoption sites and Leaflet's `z-[1000]` legend at the third. Violates DD-5 option (c) ("correct at all three sites") and §10's clipping risk row. *Leader verified the precedent by census: `z-50` appears 9× across `components/`, `z-40` once (the sticky header), `z-[1000]` once (the Leaflet legend) — `z-50` is unambiguously this repo's floating-overlay convention.* Remediation is `z-50`, with `MapLegend`'s `z-[1000]` explicitly left out of scope pending T-6 evidence.
+
+##### Round 1 ADVISORY (recorded, **not** actioned)
+
+From the mechanism lens: (1) the rAF gate has no test that can observe frame *coalescing*, because the suite's rAF mock is synchronous — a queue-based mock would lock §5.5's cost; (2) the out-of-viewport close test uses the visual viewport, making the keyboard a theoretical closing agent — belongs on T-6's mobile leg; (3) touch-drag scrolling of the option list is newly interesting under the portal and unobserved on a device — belongs on T-6's checklist; (4) a mild KZ-008 shape — the doc header says "two style writes per frame" where the code performs four property writes.
+
+From the evidence lens: (1) the axe coverage guards use `screen.getByRole` rather than `within(baseElement)`, so guard and axe context coincide by convention rather than structurally; (2) the `placeAbove` flip branch has no wiring test; (3) the disclosure comment omits its own strongest argument (that `region` carries no WCAG tag); (4) the `ActorForm` flake should be recorded here — **done, above**; (5) a request that the Leader confirm the verbatim verification runs are recorded before flipping the checkbox — **honored below.**
+
+**Advisory 4 from the mechanism lens is the tempting one** — the Implementer is editing that exact function for Issue 1. It was named in the rework brief as explicitly off-limits. *Advisory Never Becomes A Task* holds hardest precisely when the file is already open, because that is when every scope leak is cheapest to justify.
+
+#### Leader's verification of dispatch 2's state (measured with the tree quiet)
+
+```
+$ npm test -- --silent --testPathPatterns SearchableSelect
+Test Suites: 1 passed, 1 total
+Tests:       48 passed, 48 total
+
+$ npm run build
+○  (Static)  prerendered as static content
+
+$ grep -n "scrollIntoView" components/ui/SearchableSelect.tsx
+51: * directly, never `scrollIntoView` — ...     (comment)
+495:  // directly — scrollIntoView is forbidden (§5.5): ...  (comment)
+```
+
+Recorded per the evidence lens's advisory 5. **These runs describe the state the Mechanism lens then FAILed** — a green suite and a successful static export were necessary and, once again, not sufficient: both of its findings are invisible to jsdom by construction.
+
+**Attempts: 2 of 3 in flight. Review rounds: 2 of 1 budgeted — exceeded.** The budget position is escalated to the user at the task gate.
+
+#### Attempt 2 (rework) — implemented, **REVIEW BLOCKED BY HARNESS LIMIT**
+
+| File | Lines | Δ |
+|---|---|---|
+| `SearchableSelect.tsx` | 639 | +16 |
+| `SearchableSelect.test.tsx` | 854 | +72 |
+
+Tests 48 → **50**. Both FAILed issues addressed; nothing on the DO-NOT-TOUCH list altered.
+
+**Issue 1 fix, at `:447`:**
+```ts
+popup.style.bottom = `${document.documentElement.clientHeight - rect.top + POPUP_GAP_PX}px`;
+```
+`rect` and a fixed element's `bottom` both resolve against the layout viewport, and `document.documentElement.clientHeight` is that same frame — so the whole expression is now in one coordinate system, consistent with the below-branch and with the `left`/`width` writes.
+
+**Issue 2 fix, at `:546`:** `z-10` → `z-50`, with a comment recording that it is a page-level z-index now rather than a wrapper-local one.
+
+**Leader-verified inline** (tree quiet, measurement taken after the worker reported):
+
+```
+$ npm test -- --silent --testPathPatterns SearchableSelect
+Tests:       50 passed, 50 total
+
+$ npm run build
+✓ Generating static pages (23/23)   ✓ Exporting (2/2)
+```
+
+Confirmed by reading: line 447 carries the layout-frame expression; line 546 carries `z-50` with no `z-10` residue; and — the property most at risk of being "fixed" along with the bug — **the flip decision (`spaceBelow`/`spaceAbove`) and the out-of-viewport test still read the *visual* viewport**, which was correct and had to survive.
+
+The new flip test asserts `bottom === '404px'` given `clientHeight` 800 and `vv.height` 500, where the pre-fix expression yields `'104px'` — **it reproduces the Mechanism lens's own worked example as its discriminator**, which is the strongest available form for a fix whose real-world effect jsdom cannot see.
+
+#### BLOCKER — `author ≠ auditor` cannot be satisfied; T-3 held at `[~]`
+
+Spawning the verification Reviewer failed:
+
+```
+Subagent spawn limit reached (200 of 200 agents spawned).
+```
+
+This is a **harness runtime failure, not a work outcome**, and it consumes no attempt. Per `/akili-execute`'s runtime-failure table the Reviewer role has exactly one prohibition and no inline path: *"**Never inline** — the Leader reviewing work it supervised breaks `author ≠ auditor`, and a runtime failure does not suspend a correctness constraint."*
+
+**The Leader therefore did not review this diff and T-3 is not marked `[x]`.** The verifications above are *measurements*, which are the Leader's own work; they are not an audit, and recording them as one would be precisely the substitution the rule forbids. The temptation is real and worth naming: the fixes are two lines, the remediations were prescribed in detail by the lens that found the defects, and both landed where prescribed. That is an argument for expecting a PASS — not for skipping the agent that would issue it.
+
+**What is and is not established:** round 1's Evidence lens PASSed the axe re-target and the full T-2 regression sweep, and round 1's Mechanism lens verified the rAF scheme, every reflow clause, JD-8's survival of the portal, and the no-click-outside-listener argument — **all of that stands.** What has never been audited is this 88-line rework and whether it regressed any of it.
+
+Escalated to the user with the options the runtime-failure table allows: raise `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`; a fresh session (which resets the counter — the audit trail supports `/akili-resume`); cross-host dispatch per the Model Routing registry (T3 Auditor → `opencode/gpt-5.5-pro` or Antigravity `claude-opus-4-6-thinking`); or an **explicit, recorded waiver**. A waiver is the user's to grant and must be written here as a waiver, never as a PASS.
+
+**Leader work completed while blocked** (neither requires a subagent nor an audit): T-6's D6 checklist now carries both T-3 defects by name, with what to look at and the explicit note that the flip-decision/flip-write viewport asymmetry is *correct* so the manual pass does not report it as a defect. This was owed — the Implementer deferred it to the Leader by instruction, since `tasks.md` is the Leader's file. Only the two **confirmed FAIL findings** were added, sharpening checks T-6 already owned; the round-1 **advisories** were not, including the two a Reviewer suggested for that checklist. Mechanism-lens advisory 2 (keyboard as a theoretical closing agent) turned out to be **already covered** by T-6's existing JD-6 bullet, so it needed nothing; advisory 3 (touch-drag scrolling of the option list) would have been a genuinely new check and was therefore **declined** — an advisory may not mint work, and T-6 is as much an approved task as any other.
+
+---
+
+## Kaizen candidates from this spec (for `/akili-archive` — deliberately NOT written into `kaizen-log.md`'s Active Lessons table here, which is the archive phase's to write)
+
+**C-1 · KZ-002 recurrence ×3, documents variant — raise severity.** A verify command carrying every required clause can still be **unexecutable**. This spec's task files specified `npx eslint "<path>" --quiet`, which fails repo-wide; T-1 and T-2 each hit it independently and each substituted a working form before anyone noticed the pattern. **Candidate standardization:** a task's verify command must be *executed once* during `/akili-specify`, not merely written — an unexecuted command is an unverified claim about the environment, which is exactly what KZ-002 says a presence-assertion is about code.
+
+**C-2 · A LOC budget drawn from the mechanism cannot see what clause-level decomposition mandates (NEW).** `design.md` §11 was re-baselined **twice** and exceeded **both** times — first at Judgment Day (for DD-5's mechanism growth), then after T-2 (for mandated prose), and T-3 still came in at **2.1×** the corrected figure. The evidence lens established the cause precisely: of T-2's 431 component lines, ~124 were comment and the doc header alone was 82, leaving executable code *essentially on the original estimate* — while ~170 test lines had been budgeted for a task whose own "Done when" enumerated ~25 required named assertions. **The estimator was measuring the wrong quantity, so correcting the number could not converge.** Candidate: when a task's "Done when" mandates documented deviations, disclosed harness blind spots, or a per-clause assertion count, those terms must be estimated explicitly — or the tripwire will fire repeatedly on correct work and stop discriminating, which is what happened here.
+
+**C-3 · Advisory pressure peaks exactly when the file is already open (NEW).** Three separate times a Reviewer proposed folding a cheap, correct fix into a task already being reworked — JD-13's miscitation, the "two style writes" doc-header undercount, the touch-drag T-6 check — each argued from *"the file is being edited anyway."* Every one was declined, and JD-13 was later closed properly as a user-decided spec edit affecting **four** sites, which the in-task fix would have caught at one. Candidate: record that cheapness is the argument *Advisory Never Becomes A Task* exists to refuse, and that an advisory actioned in-task also skips the two-direction sweep KZ-004 requires.
+
+**C-4 · A correction can reproduce its own defect one file over (sharpens KZ-008).** T-2's Issue 3 was a doc comment that miscounted the domain literals it disclosed. Its remediation added a third presence-only assertion group to the **test** file — whose own header still said "two groups." The enumeration-drift defect **reproduced itself into the sibling artifact while being fixed**, and was caught only because a later lens re-counted. Candidate: a fix to an enumeration must re-count every enumeration the change touches, not only the one that was wrong.
+
+**C-5 · Evidence about the method, not a defect: `requirements.md` §4.1 predicted exactly where this spec would fail, and it did — twice.** §4.1 declared D5/D6/D7 as classes with **no automated gate** before any code existed. T-2 shipped 36 green tests over a bug that showed *"No regions match"* against 31 valid regions; T-3 shipped 48 green tests over a popup displaced by the keyboard's height on mobile. **Both defects were found by a Reviewer reading code, neither by a run**, and both sat in the declared-blind classes. This is the gate-coverage rule earning its cost and is worth recording as a positive control, not only lessons drawn from failures.

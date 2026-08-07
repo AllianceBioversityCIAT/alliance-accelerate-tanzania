@@ -74,7 +74,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
         · FR-3 is tested only via the blur path. Paste and `Escape` are separate clauses and need their own assertions
         · any keyboard test uses `fireEvent.keyDown` instead of `user-event` — the devDependency exists precisely so the real event sequence is replayed
 
-- [ ] **T-3  Portal + reflow positioning**  (deps: T-2)
+- [~] **T-3  Portal + reflow positioning**  (deps: T-2)
       **Size:** M · ~140 LOC (component delta ~100, tests ~40)
       **Traces:** `design.md` §5.5, DD-5 **including its Judgment Day amendment** · JD-1, JD-6 · risk row "popup lag during momentum scroll"
       **Skills:** `vercel-react-best-practices`, then `react-doctor`.
@@ -131,6 +131,9 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Scope:** Run the three converted controls in a real browser at **two viewports each** — one desktop, one mobile (or a real phone). Six checks minimum.
       **What to look at, mapped to the class no test can see:**
         · **D6** — does the popup escape `#discover-rail-body`'s `overflow-y-auto` on `/map` without being clipped? Does it flip up near the viewport bottom? Does the **mobile virtual keyboard** leave it usable rather than closing or covering it (JD-6's path — the mechanism was designed for this and has never been observed working)?
+        · **D6 — two defects T-3's review found and fixed *blind*, whose real-world effect only this pass can confirm.** Both were located by a Reviewer reading code, both are invisible to jsdom by construction, and the fixes are therefore unverified in a browser. Check each deliberately rather than assuming the fix worked:
+          — **flip-above placement with the keyboard open.** T-3 shipped a flip-above branch that wrote its `bottom` offset in the *visual*-viewport frame while CSS resolves it in the *layout* frame — error zero on desktop, **equal to the keyboard height on mobile**, which put the popup roughly a keyboard's height below the anchor it should sit above. Fixed to `document.documentElement.clientHeight - rect.top + gap`. **Open the popup near the bottom of a mobile viewport with the keyboard up and confirm it sits immediately above the input**, not adrift. Note the flip *decision* and the out-of-viewport test deliberately still use the visual viewport — that asymmetry is correct and documented at the write site; do not report it as a defect.
+          — **stacking order at every adoption site.** T-3 carried `z-10` across the port into `document.body`'s root stacking context, where two of the three adoption sites sit under a `sticky top-0 z-40` header and `/map` carries Leaflet's `z-[1000]` legend. Raised to `z-50`, this repo's floating-overlay convention. **A class assertion cannot prove paint order (KZ-002)** — confirm visually at all three sites that the open popup paints *above* the header, and on `/map` above or acceptably against the legend. If the popup loses to `MapLegend`'s `z-[1000]`, that is a separate, then-evidenced change and must be escalated, not fixed in place during this pass.
         · **D5** — is the active/hover option's `bg-primary-soft` behind `text-fg` actually legible? **Measure it** with browser devtools or a contrast checker; do not inherit `design.md` §5.7's reasoning, which JD-16 showed misquotes its own source
         · **D7** — tab into and out of each control: is the focus ring visible, and is the order sane through the composed page?
         · **Momentum scroll** — scroll the map rail hard on a low-end-profile mobile with the popup open; does it lag or judder?
