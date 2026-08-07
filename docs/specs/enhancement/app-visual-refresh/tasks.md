@@ -97,6 +97,20 @@
       > **Pre-deploy baseline, measured 2026-08-07 before any deploy:** all five old values **present**, all five new values **absent** in `6fe7c0ace4c6903d.css`. So a post-deploy run of the same check that still shows old values proves stale cache — no screenshot judgement required. A capture taken while this check fails is inadmissible.
       **Evidence is disqualified if:** (a) captures were taken without a hard reload, so stale CSS is in the frame; (b) `shadow-xs` and `shadow-lg` are visually indistinguishable in the capture — that means the ladder did not apply and the capture is *inconclusive*, which must be reported as inconclusive, never collapsed into a pass because the command exited `0`; (c) the user has not actually looked. **AR-1 is not machine-decidable — no automated result substitutes for the human gate here.**
 
+- [x] **T-7** Form-section elevation and hierarchy  (deps: T-4)  ·  **added 2026-08-07, user-authorized; amends NFR-7**
+      **Size:** S (~24 LOC) · **Skills:** `tailwind-design-system`, `react-doctor`
+      **Scope:** Three changes, all class-only — no markup restructuring, no props, no behaviour.
+      1. The **11** `<fieldset>` elements in `RegistrationForm.tsx` (×5) and `ActorForm.tsx` (×6) adopt the card treatment that already exists at `ActorCard.tsx:73` — `bg-surface` + `shadow-sm` — **without** its `hover:shadow-md` (a form section is not interactive).
+      2. **`<legend>` must outrank `<label>`** (DR-1). They were one font-weight step apart, so section titles read as slightly bolder field labels.
+      3. **`shadow-xs` on inputs at rest** (DR-3), the consumer `design.md` §5.1 Group D always named. **This closes VF-2's `xs` half.**
+      **Do NOT touch** `DirectoryFilters.tsx:90` (deliberately `border-0`), any token value, or DR-5's unconfirmed observations.
+      **Traces:** VF-1, VF-2 (`xs` half), DR-1/DR-2/DR-3/DR-4 in `../form-elevation-ux/proposal.md` §5b · amended NFR-7
+      **Files:** `frontend/components/register/RegistrationForm.tsx`, `frontend/components/admin/ActorForm.tsx`
+      **Verify:** `cd frontend && npm test -- contrast --silent && npm run build && npx next lint --quiet`
+      **Done when:** all 11 fieldsets carry `bg-surface` + `shadow-sm`; `border border-border` survives on every one of them; the legend/label hierarchy separates by more than one step; inputs carry `shadow-xs`; contrast suite green.
+      **Evidence is disqualified if:** the border was removed or weakened on any fieldset. `--color-surface` vs `--color-bg` is **1.05:1**, so the border is what carries the section boundary under WCAG **1.4.11**'s 3:1 floor — a shadow **adds** to it and never substitutes for it. "It has a shadow now, so it doesn't need a border" is the exact regression this clause exists to catch.
+      **Also:** moving fields from the canvas onto `bg-surface` changes ink/ground pairs inside the fieldset. If any pair becomes newly reachable, `REACHABLE` in `contrast.test.ts` MUST be updated in the same change — a stale `file:line` citation is the KZ-008 defect class.
+
 ---
 
 ## Dependency Graph

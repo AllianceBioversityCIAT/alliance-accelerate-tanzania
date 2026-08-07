@@ -449,6 +449,7 @@ function Field({ id, label, error, hint, required, children }: FieldProps) {
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
+    'shadow-xs',
     'placeholder:text-muted',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
     'disabled:cursor-not-allowed disabled:opacity-50',
@@ -618,8 +619,8 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       )}
 
       {/* Identity */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Identity</legend>
+      <fieldset className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <legend className="bg-surface px-2 text-base font-semibold text-fg">Identity</legend>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {renderInput('traderName', 'Organisation name', 'text', true)}
           {renderSelect(
@@ -632,8 +633,8 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       </fieldset>
 
       {/* Location */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
+      <fieldset className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <legend className="bg-surface px-2 text-base font-semibold text-fg">Location</legend>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {renderSelect(
             'region',
@@ -656,8 +657,8 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       </fieldset>
 
       {/* Crops & capacity */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Crops & capacity</legend>
+      <fieldset className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <legend className="bg-surface px-2 text-base font-semibold text-fg">Crops & capacity</legend>
         <div className="flex flex-col gap-1.5">
           <span id={`${baseId}-crops-label`} className="text-sm font-medium text-fg">
             Crops <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
@@ -729,8 +730,8 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       </fieldset>
 
       {/* Contact */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Contact</legend>
+      <fieldset className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <legend className="bg-surface px-2 text-base font-semibold text-fg">Contact</legend>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {renderInput('contactPerson', 'Contact person', 'text', true, 'Review context — not published to the public directory')}
           {renderInput('position', 'Position')}
@@ -761,8 +762,8 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
         `handleConsentPolicyLoaded`) so `handleSubmit` sends the version the
         applicant was actually shown, never a placeholder.
       */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Data protection & consent</legend>
+      <fieldset className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <legend className="bg-surface px-2 text-base font-semibold text-fg">Data protection & consent</legend>
         {/*
           The error summary's anchor targets `fieldId('consentAccepted')`
           (`#${baseId}-consentAccepted`) via `FIELD_LABELS`, the same as

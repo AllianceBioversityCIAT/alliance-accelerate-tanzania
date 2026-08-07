@@ -224,7 +224,15 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 | **NFR-4** | **Dark-mode readiness preserved** | `design.md` §11 requires tokens authored so a `.dark` scope can override them later. All new tokens MUST be declared as CSS variables inside `:root`; no colour literal may appear outside that block. |
 | **NFR-5** | **Static-export safe** | `next build` static export succeeds; no SSR, route handler, or dynamic segment introduced. |
 | **NFR-6** | **Motion and reduced-motion untouched** | All `--dur-*` / `--ease-*` tokens and the `prefers-reduced-motion` gating are byte-identical. |
-| **NFR-7** | **Scope containment** | Exactly **two** component files change, and both changes are **comment-only**: `Footer.tsx`, `DashboardMapPanel.tsx`. No component's markup, classes, props or behaviour changes. Verified by `git diff`. |
+| **NFR-7** | **Scope containment** | ~~Exactly **two** component files change, and both changes are **comment-only**: `Footer.tsx`, `DashboardMapPanel.tsx`. No component's markup, classes, props or behaviour changes.~~ **AMENDED 2026-08-07 — see below.** Verified by `git diff`. |
+
+> **NFR-7 amendment (2026-08-07, user-authorized at the T-6 visual gate).** The original clause forbade *any* component class change. It is amended to admit **T-7** — form-section elevation and hierarchy in `RegistrationForm.tsx` and `ActorForm.tsx`.
+>
+> **Why, and what it costs.** At the AR-1 gate the user judged the form sections illegible and asked three times for the fix. The Leader had adjudicated it out of scope (VF-1) and routed it to `enhancement/form-elevation-ux`; the user's repeated request supersedes that adjudication. **This is a real loss, stated plainly:** the spec is no longer token-only, and T-6's diff-containment check no longer proves what it originally proved. The amendment is recorded rather than absorbed silently so the weakening is visible to anyone auditing this spec later.
+>
+> **Amended scope containment:** exactly **four** component files change — `Footer.tsx` and `DashboardMapPanel.tsx` (comment-only, unchanged from the original clause), plus `RegistrationForm.tsx` and `ActorForm.tsx` (**class-only**: no markup restructuring, no props, no behaviour, no new components). `frontend/lib/dashboard/chart-tokens.ts` remains a comment-only lib edit (LF-1). Anything beyond this set still escalates.
+>
+> **What T-7 must not do:** `--color-surface` (`#FFFFFF`) against `--color-bg` (`#FBF9F6`) is only **1.05:1**, so the *border* — not the background or the shadow — carries the section boundary under WCAG 1.4.11's 3:1 floor for non-text UI. `border border-border` MUST survive on every fieldset. A shadow **adds** to the boundary; it never substitutes for it.
 
 ---
 

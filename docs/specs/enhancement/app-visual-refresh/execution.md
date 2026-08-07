@@ -620,3 +620,75 @@ Found while establishing what T-6 could actually capture — **before** taking s
 **Adjudication (user decision, 2026-08-07): report partial, do not expand scope.** The wiring is routed to **`enhancement/form-elevation-ux`**, whose proposal already specifies `shadow-xs`/`sm` for form sections; `shadow-lg` is added there for dialogs/popovers per Group D's named consumers. Until that spec lands, `--shadow-xs` and `--shadow-lg` ship as **mapped-but-unconsumed affordances** — dead code in the app, honestly labelled as such rather than counted as delivered depth.
 
 **`design.md` §5.4 carries a false row, discovered here.** It lists *"Home / Hero | **Only consumer of a gradient**"*, but `bg-gradient-hero` has zero consumers and DD-6 explicitly keeps the inline scrim instead. The Hero consumes *a* gradient (its scrim), not *the token*. T-5's sweep did not catch this because that sweep is per **value**, not per **claim** — a genuine limit of KZ-004's mechanism worth noting: a false assertion containing no stale literal is invisible to a value sweep.
+
+---
+
+### T-7 — Form-section elevation and hierarchy — **PASS** (1 attempt) · *amends NFR-7*
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-08-07 |
+| **Base** | `c59f353` |
+| **Implementer** | Claude Code `akili-implementer` (T2 / `sonnet`), skills `tailwind-design-system` + `react-doctor` |
+| **Reviewer** | **Antigravity `agy`**, `claude-opus-4-6-thinking` (T3) — cross-host |
+| **Files** | `RegistrationForm.tsx`, `ActorForm.tsx` — 2 files, **+24/−22**, class-only |
+
+**Why this task exists, and what it cost.** At the AR-1 gate the user judged the form sections illegible and asked three times. The Leader had adjudicated it out of scope (VF-1) and routed it to a future spec; **the user's repeated request superseded that adjudication**. NFR-7 was amended explicitly rather than quietly — the spec is no longer token-only, and T-6's diff-containment check no longer proves what it originally proved. That loss is recorded in `requirements.md` beside the amendment so it stays visible to a later auditor.
+
+**The change, per the design review's DR-1/DR-2/DR-3:**
+
+| Element | Before | After |
+|---|---|---|
+| `<fieldset>` ×11 | `rounded-md border border-border p-4 sm:p-6` | `… bg-surface … shadow-sm` |
+| `<legend>` | `px-2 text-sm font-semibold text-fg` | `bg-surface px-2 **text-base** font-semibold text-fg` |
+| `inputClasses()` | *(no shadow)* | `+ shadow-xs` |
+
+**DR-2 — reuse, not invention.** The fieldset now equals `ActorCard.tsx:73`'s proven pattern **minus `hover:shadow-md`** (a form section is not interactive). No new container idiom was designed.
+
+**DR-1 — hierarchy separated on two axes.** `legend` (`text-base` + `semibold`) vs `label` (`text-sm` + `medium`) — previously one weight step apart, now size **and** weight. Only existing `--text-*` steps were used; FR-6 freezes their values.
+
+**DR-4 — the legend notch, decided not inherited.** The Implementer gave the `<legend>` itself `bg-surface` rather than restructuring into a header row: minimal fix for exactly this bug, native `fieldset`/`legend` semantics untouched, no `sr-only` tricks or DOM restructuring. The notch still interrupts the border, but is now filled with the card's own white, so there is no colour jump to the warm canvas behind.
+
+**DR-3 / VF-2 — `shadow-xs` now has a real consumer.** Wired to `<input>`/`<select>`/`<textarea>` via `inputClasses()`, correctly **excluding** the crop checkboxes (native controls, not text boxes). This is the consumer `design.md` §5.1 Group D always named, and it produces a semantically correct ladder: input (`xs`, 4%) nested inside section (`sm`, 7%). **VF-2's `xs` half moves from INCONCLUSIVE to demonstrable.** `shadow-lg` remains unconsumed and was **disclosed** rather than glossed — FR-4 stays partially open pending a dialog/overlay pass.
+
+#### The accessibility constraint held
+
+`--color-surface` (`#FFFFFF`) vs `--color-bg` (`#FBF9F6`) is **1.05:1**, so the **border** carries the section boundary under WCAG 1.4.11's 3:1 floor — not the background, not the shadow. The obvious reflex once a card gains fill and shadow is to drop the border; that would have been an accessibility regression. **`border border-border` verified present on all 11 fieldsets** by both Leader and Reviewer.
+
+#### `REACHABLE` deliberately not updated — and that call was audited
+
+The Implementer left `contrast.test.ts` untouched, arguing that moving fields onto `bg-surface` adds new **sites** of pairs (`fg`/`surface`, `muted`/`surface`, `danger`/`surface`) that were **already gated**, so no pair went unreachable→reachable and no `file:line` citation became false. **Leader confirmed** all three inks already list `'surface'` in `grounds[]`. **Reviewer independently confirmed** and added the convention check: the block comment states citations are *representative* sweep results, not exhaustive site lists, so omitting the new sites is consistent rather than a KZ-008 omission.
+
+#### Reviewer verdict (agy / `claude-opus-4-6-thinking`)
+
+```
+STATUS: PASS
+SUMMARY: The diff correctly applies the ActorCard card treatment (minus interactive states) to all
+11 fieldsets across both forms, preserves `border border-border` on every one (WCAG 1.4.11 boundary
+intact), separates legend/label hierarchy by two axes (size + weight) using only frozen text-scale
+tokens, wires `shadow-xs` to all text-entry inputs while correctly excluding checkboxes, and
+omitting the REACHABLE update is independently verified as sound because all ink/ground pairs
+inside fieldsets were already gated. Scope is exactly two files, class-only, with no markup, prop,
+or behaviour change.
+```
+
+Leader-run gates: contrast **129/129** · `next lint --quiet` clean · build 23/23 static, 2/2 export. NFR-3's three named routes (`/` 164, `/directory` 157, `/map` 110 kB) **byte-identical**; `/register` moved 7.55→7.56 kB from longer class strings. `react-doctor` scored 89/100 with no issues.
+
+#### ADVISORY (non-gating)
+
+1. `shadow-lg` still unconsumed — FR-4 partially open, routed onward. Not T-7's responsibility.
+2. **Carried to T-6's capture:** the `bg-surface` legend is CSS-correct, but a legend that **wraps to two lines at 375 px** interacts with the border notch in a way only rendered evidence can settle. A D-5 class observation — confirm at the 375 px capture.
+3. `citedAt` does not list the new fieldset sites. Consistent with the file's stated convention (representative, not exhaustive), so not a KZ-008 omission.
+
+#### VF-3 — recorded, not actioned
+
+While answering a user question about the Partners section, the Leader measured every home-page section transition. All three light tokens sit within **1.14:1** of each other, so **background alone cannot create structure anywhere in this design**:
+
+| Transition | Ratio | Reads as |
+|---|---|---|
+| AboutStrip → HowItWorks | 1.080 | imperceptible |
+| HowItWorks → CropCoverage | **1.000** | **no boundary — identical token** |
+| CropCoverage → PartnersStrip | 1.051 | imperceptible |
+| (the two `bg-fg` bands) | 13.08 / 14.85 | strong |
+
+Sections 4–7 therefore read as **one continuous light mass** between the two dark bands. Switching `PartnersStrip` to `bg-surface-alt` would move 1.051 → 1.080 — still imperceptible, so the token choice is not the defect. **Same root cause as VF-1:** structure in this palette must come from borders, shadows or dark bands, never from background alone. Awaiting user direction; not actioned.
