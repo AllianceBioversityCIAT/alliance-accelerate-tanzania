@@ -724,3 +724,33 @@ The review brief lived in a scratchpad that does not survive the restart. Its sc
 ### Additional Kaizen candidate
 
 **C-6 · The cross-host fallback in the routing table is currently non-functional, and only a real dispatch discovers that (NEW, sharpens C-1).** `CLAUDE.md` names cross-host dispatch as the remedy when a tier is unavailable locally. Exercised for the first time under real need, one host had no balance and the other's `-p` mode returned a preamble and exited 0 on **both** invocations — a silent failure that looks like success to any caller checking only the exit code. This is **C-1's lesson at the level of the routing table**: an unexecuted fallback is an unverified claim about the environment, exactly as an unexecuted verify command is. Candidate: a documented fallback route must be exercised once on a trivial prompt before it is relied on, and a host whose print mode cannot complete a tool-using run should be marked in the registry as interactive-only.
+
+---
+
+## Session 3 — T-3 round-2 verification review, dispatched from an isolated worktree
+
+**Resolution used:** neither raising `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`, nor a waiver, nor cross-host dispatch (agy was proposed and declined by the user — session 2 already showed it non-functional as a fallback). A genuinely fresh session reset the in-harness subagent counter, exactly as predicted.
+
+**Isolation note:** the checkout this session inherited was on `enhancement/app-visual-refresh-v2` (a rebuilt branch missing the `searchable-region-select` commits entirely — `SearchableSelect.tsx` does not exist there) with unrelated uncommitted work in flight (`frontend/lib/contrast.ts`/`contrast.test.ts`, app-visual-refresh T-1). Per `CLAUDE.md`'s Concurrency Protocol, the Leader did not touch that checkout. A `git worktree` was created at `.claude/worktrees/searchable-region-select-review` on the existing `enhancement/app-visual-refresh` branch (HEAD `d900c84`, which already contains `2c96e07`), and the session worked there instead.
+
+### T-3 — Portal + reflow positioning · **PASS (round 2 of 2 budgeted, attempt 2 of 3)**
+
+- **Date:** 2026-08-07
+- **Reviewer:** `akili-reviewer` wrapper (opus), in-harness, dispatched against the worktree — `author ≠ auditor` satisfied (Implementer ran `sonnet` per the T-2 Coder tier).
+- **Scope:** verification-only, per the brief preserved in Session 2 above. Not a re-run of round 1 — round 1's Evidence-lens PASS and Mechanism-lens verification of the rAF scheme, every reflow clause, JD-8's portal survival, and the no-click-outside-listener argument all stood, unaudited only for the two FAIL fixes and regression risk from the rework.
+
+**Findings:**
+
+- **Issue 1 (coordinate frame, `:447`) — fixed correctly and completely.** Every term in the `bottom` expression is now layout-frame (`documentElement.clientHeight`, `rect.top`), matching the sibling `left`/`top`/`width` writes. The flip *decision* (`:427-429`) and the out-of-viewport test (`:417-421`) still correctly read the visual viewport — the deliberate asymmetry survived. The new flip test (`:749-808`) is a genuine two-sided discriminator: fails against the pre-fix expression (`104px` vs asserted `404px`) **and** against an over-corrected flip decision (would flip `bottom`↔`top`/`auto` entirely) — stronger than the "does it fail against the old code" bar alone.
+- **Issue 2 (stacking order, `:546`) — fixed, no `z-10` residue.** Repo census independently re-derived and matches the claim exactly: `z-50` 9× in `components/` (dialogs/menus), `z-40` the sticky header, `z-[1000]` `MapLegend` (out of scope, pending T-6). Incidental strengthening noted: the header's own `z-50` menu is `absolute` inside a `sticky z-40` stacking context, so it effectively paints at `z-40` — the portaled `z-50` at the document-body root beats both. No test overclaims; the stacking-order test is explicitly titled as presence-only, not a paint-order proof.
+- **Regression surface — clean.** `schedulingRef`/`rafRef` decoupling traced correct under the synchronous-rAF mock (the unconditional `schedulingRef.current = false` cleanup closes the cancel-a-pending-frame path). Listener symmetry (4 registrations, matching removal, stable effect deps) confirmed. JD-1 exclusion, sole close path, zero setState on the non-close reflow path, `hasMeasuredLayout` jsdom guard, no `scrollIntoView` in code, and the axe re-target (`baseElement` + region-disabled on 3 open states, `container` elsewhere, the `contains()` discriminator) all intact. Diff deletions contain no T-2 assertion removals.
+
+**ADVISORY (non-blocking, recorded per Advisory Never Becomes A Task):**
+1. T-3 is the repo's first `useLayoutEffect` use (`:470`, `:510`) — correct tool for before-paint positioning, but will emit React's "does nothing on the server" console warning once a page actually mounts the control under static export (T-4/T-5), since no page does yet.
+2. The `:543-544` comment says overlays "uniformly use `z-50`" — exact for the dialog/menu family (9/9) but `MapLegend`'s `z-[1000]` (already out of scope pending T-6) makes "uniformly" slightly broader than the census supports.
+
+**Verification:** `npm test -- --silent --testPathPatterns SearchableSelect` — 50/50 passing (Leader-reverified in the worktree, tree quiet). `npm run build` — static export clean, 23/23 pages.
+
+**Requirements covered:** FR-2, FR-4 (§5.1, §5.5, §5.6, §12 — DD-5 as amended by JD-6, JD-1, JD-8), NFR-1 (WCAG 2.1 AA — axe re-target), NFR-4 (reflow cost model — zero setState on the non-close path).
+
+**Budget position:** review rounds now **3 actual vs 7 budgeted** (spec total) — within budget at the spec level despite T-3 alone running 2 of 1 rounds budgeted at the task level, already disclosed and accepted by the user in Session 2.

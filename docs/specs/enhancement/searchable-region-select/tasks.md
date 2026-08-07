@@ -74,7 +74,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
         · FR-3 is tested only via the blur path. Paste and `Escape` are separate clauses and need their own assertions
         · any keyboard test uses `fireEvent.keyDown` instead of `user-event` — the devDependency exists precisely so the real event sequence is replayed
 
-- [~] **T-3  Portal + reflow positioning**  (deps: T-2)
+- [x] **T-3  Portal + reflow positioning**  (deps: T-2)
       **Size:** M · ~140 LOC (component delta ~100, tests ~40)
       **Traces:** `design.md` §5.5, DD-5 **including its Judgment Day amendment** · JD-1, JD-6 · risk row "popup lag during momentum scroll"
       **Skills:** `vercel-react-best-practices`, then `react-doctor`.
