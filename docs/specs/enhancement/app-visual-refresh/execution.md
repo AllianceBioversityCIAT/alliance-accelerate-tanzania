@@ -593,3 +593,30 @@ Every form section is a **transparent** 1px outline, so what shows inside it is 
 - **User's aesthetic approval** — AR-1 is not machine-decidable; disqualifier (c) requires that the user actually looked.
 - **Admin login for two surfaces** — admin actors table and import preview, which carry the two 12px `warning` pairs FR-2 exists to fix. Cognito-gated; needs credentials or an operator-authenticated session.
 - Capture set (8 surfaces × 375/768/1440) for the audit record.
+
+#### VF-2 — FR-4's rendered-evidence clause and NFR-7 are jointly unsatisfiable for two of the four shadow steps
+
+Found while establishing what T-6 could actually capture — **before** taking screenshots, so it is a finding rather than a retroactive excuse for a missing capture.
+
+**Measured consumer counts** (`app/` + `components/`, excluding tests):
+
+| Utility | Consumers | Rendered evidence obtainable? |
+|---|---|---|
+| `shadow-sm` | **34** | ✅ value changed `rgba(28,31,26,.06)` → `rgba(61,47,32,.07)` |
+| `shadow-md` | **24** | ✅ value changed `rgba(28,31,26,.08)` → `rgba(61,47,32,.10)` |
+| `shadow-xs` | **0** | ❌ **impossible — nothing renders it** |
+| `shadow-lg` | **0** | ❌ **impossible — nothing renders it** |
+| `bg-gradient-hero` | **0** | n/a — see FR-5 below |
+| `bg-gradient-band` | **0** | n/a — see FR-5 below |
+
+**FR-5 is SATISFIED, and its zero consumers are correct.** Its scenario is explicitly an *availability* requirement — *"GIVEN a hero band or section transition **needs** an atmospheric surface · WHEN the implementer styles it · THEN a `--gradient-*` token MUST be **available and mapped**"* — and **DD-6 deliberately declines** to replace the Hero scrim, which remains `bg-gradient-to-t from-fg/70 to-transparent` at `Hero.tsx:117` (Tailwind's native utility over the `fg` token, not the new token). Its one substantive constraint — no gradient dropping an ink below NFR-1 — is provably satisfied (T-4 entry, monotonicity bound, worst case 4.898).
+
+**FR-4 is PARTIALLY satisfied.** Its scenario demands *"AND IT MUST be proven by rendered evidence, not by asserting the CSS variable exists."* Existence and mapping are proven (T-4, two independent methods). The **warm tint and the recalibration are proven on 58 real render sites** via `sm`/`md`. But `xs` and `lg` render nowhere, so T-6's disqualifier (b) applies: it anticipates judging whether *"`shadow-xs` and `shadow-lg` are visually indistinguishable in the capture"* and requires reporting **inconclusive**, *"never collapsed into a pass."* They are not indistinguishable — they are **unrenderable**. Reported as **INCONCLUSIVE**, not as a pass.
+
+**Why it cannot be fixed here.** Wiring consumers means adding classes to components, which **NFR-7** forbids verbatim. So FR-4's rendered-evidence clause and NFR-7 are *each* satisfiable alone and **contradictory as a set** — a live instance of **KZ-007** (*constraint sets are conjunctive; satisfying each member individually can still break the set*), and the third KZ-007 instance in this spec after ADJ-4's Group A/C coupling.
+
+**The root cause is an asymmetry `/akili-specify` should have caught.** `design.md` §5.1 Group D **names the intended consumers** — `--shadow-xs` → *"chips, inputs at rest"*, `--shadow-lg` → *"dialogs, popovers, map rail"* — so the wiring intent existed. But no task carries it and NFR-7 vetoes it. FR-5 was written as a pure affordance; FR-4 conflated two different claims: *"the ladder exists and is warm"* (provable today) and *"depth is perceptible in the app"* (requires consumers). Had FR-4 been written symmetrically with FR-5, there would be no contradiction.
+
+**Adjudication (user decision, 2026-08-07): report partial, do not expand scope.** The wiring is routed to **`enhancement/form-elevation-ux`**, whose proposal already specifies `shadow-xs`/`sm` for form sections; `shadow-lg` is added there for dialogs/popovers per Group D's named consumers. Until that spec lands, `--shadow-xs` and `--shadow-lg` ship as **mapped-but-unconsumed affordances** — dead code in the app, honestly labelled as such rather than counted as delivered depth.
+
+**`design.md` §5.4 carries a false row, discovered here.** It lists *"Home / Hero | **Only consumer of a gradient**"*, but `bg-gradient-hero` has zero consumers and DD-6 explicitly keeps the inline scrim instead. The Hero consumes *a* gradient (its scrim), not *the token*. T-5's sweep did not catch this because that sweep is per **value**, not per **claim** — a genuine limit of KZ-004's mechanism worth noting: a false assertion containing no stale literal is invisible to a value sweep.

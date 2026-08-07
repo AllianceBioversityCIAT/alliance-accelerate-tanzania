@@ -58,6 +58,10 @@ Not an oversight — an explicit adjudication, recorded at the T-6 gate:
 4. **The `<legend>` treatment must be resolved, not inherited.** A legend visually notches the border; once the section has a background, the current overlap needs an explicit decision rather than whatever falls out.
 5. **Elevation must not become noise.** `ActorForm` shows **6** stacked sections; six equally-raised panels can read busier than six outlines. Section elevation SHOULD be the lightest step that reads (`shadow-xs`/`sm`), not the heaviest.
 6. Scope is section *containers*. Broader form UX — field grouping, density, focus/error states, required-field affordance — is in scope for **discussion** at specify time but MUST be explicitly included or excluded there, never absorbed silently.
+7. **This spec inherits FR-4's unfinished half from `app-visual-refresh` (VF-2).** That spec created `--shadow-xs` and `--shadow-lg`, mapped them to Tailwind utilities, and proved the mapping — but **both ship with zero consumers**, because wiring them would have violated its NFR-7. Its FR-4 required *"proven by rendered evidence"*, which was therefore reported **INCONCLUSIVE** for those two steps rather than passed. This spec MUST wire them to the consumers `app-visual-refresh`'s `design.md` §5.1 Group D already names:
+   - **`--shadow-xs`** → *"chips, inputs at rest"* — aligns with §5.5 above (section elevation should be the lightest step that reads).
+   - **`--shadow-lg`** → *"dialogs, popovers, map rail"*.
+   Wiring `shadow-lg` reaches beyond forms, so specify time must decide whether it belongs here or in a separate overlay/dialog pass — but it MUST NOT be left unassigned, or two tokens stay dead code indefinitely and FR-4 never closes. **Closing FR-4's rendered-evidence clause is an acceptance criterion of this spec**, and the evidence must be a real rendered surface, not a probe file.
 
 ## 6. Accessibility — a real constraint, not boilerplate
 
