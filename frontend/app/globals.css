@@ -18,22 +18,22 @@
        Explicit token because the hex highlight var doesn't support /opacity. */
     --color-highlight-tint:#E4F5F2;
     --color-bean:          #7A3B2E;
-    --color-bg:            #FFFFFF;
+    --color-bg:            #FBF9F6;
     --color-surface:       #FFFFFF;
-    --color-surface-alt:   #F7F7F7;
-    --color-fg:            #333333;
+    --color-surface-alt:   #F4F0EA;
+    --color-fg:            #2A2724;
     /* Modal/backdrop wash (40% of fg). Explicit token because the hex fg var
        doesn't support Tailwind /opacity modifiers. */
-    --color-backdrop:      rgba(51, 51, 51, 0.40);
-    --color-muted:         #666666;
-    --color-border:        #E2E2E2;
-    --color-success:       #2F7D32;
-    --color-warning:       #C9821B;
+    --color-backdrop:      rgba(42, 39, 36, 0.40);
+    --color-muted:         #6B6459;
+    --color-border:        #E6DFD5;
+    --color-success:       #2A6E2D;
+    --color-warning:       #8F5E10;
     --color-danger:        #B3261E;
     /* Soft danger tint (~10% over white) for error banners / badge backgrounds.
        Hex CSS variables don't support Tailwind /opacity, so this is explicit. */
     --color-danger-soft:   #F5E3E2;
-    --color-restricted-bg: #F3F3F3;
+    --color-restricted-bg: #F0EBE4;
 
     /* Crop legend (map + chips) */
     --crop-sorghum:   #C9821B;

@@ -247,3 +247,110 @@ The Reviewer independently confirmed: the FR-6 equality assertion parses the **l
 - **`design.md` §11 budget re-baselined** — see the re-baseline note there. The LOC tripwire was replaced by a **component-edit** tripwire, which measures NFR-7 directly rather than proxying for it.
 
 **Not done / carried forward:** advisory #1 (the `Button.tsx:44` → `:49` citation fix) is owed by T-3.
+
+---
+
+### ADJ-4 — T-2 and T-3 land as one atomic token commit (Leader ruling, 2026-08-07)
+
+**Raised by:** the T-2 Implementer, which completed its `globals.css` edits correctly, found the mandated verify command red, and **stopped and reported rather than editing the test to force green** — the behaviour its brief's guardrail asked for. The finding is its analysis; this entry records the adjudication, not a rediscovery.
+
+**Symptom.** With Group A/B landed and Group C untouched, `npm test -- contrast --silent` fails 3 of 129:
+
+| Failing assertion | Live ratio | Expected | Nature |
+|---|---|---|---|
+| `success on restricted` | **4.319** | ≥ 4.5 | **Genuine new regression** |
+| `warning on bg` | 2.986 | ledger pin 3.14 ±0.05 | Stale pin, still correctly < 4.5 |
+| `warning on surface-alt` | 2.764 | ledger pin 2.93 ±0.05 | Stale pin, still correctly < 4.5 |
+
+**Leader verification.** All three reproduced to three decimals with a WCAG implementation independent of both the harness and the Implementer.
+
+**Root cause — the decomposition, not the edit.** `design.md` §5.1 states Group C's `success` figure as **"5.26:1 on restricted"**. That is `#2A6E2D` against the **new** `#F0EBE4`; the same value against the **old** `#F3F3F3` gives 5.62. So **design.md computed Group C against post-Group-A grounds all along** — the design documents always modelled the token change as a *single* state transition, and §10's "green in both states" means exactly two states. `tasks.md` split that transition into T-2 (grounds) and T-3 (inks), inventing a third, intermediate state that nothing in the design was built to survive.
+
+**Why a T-2-only commit was refused.** `success`/`restricted` measured **4.616:1** before this spec — a 0.116 margin over AA. Warming the ground alone drops it to 4.319, i.e. **below AA**. Landing T-2 by itself would ship a *new* accessibility regression in a spec whose stated purpose is removing accessibility regressions, and would leave that regression in the tree for as long as anything delayed T-3. Re-baselining the two stale pins to keep the suite green would have been worse: it would have made the harness ratify the regression.
+
+**Ruling.** T-2 and T-3 land in one commit. This is a **sequencing** decision, not a scope change — same two files, same total work, no requirement altered, no new task. T-4's dependency on T-2 is satisfied by the merged landing. Both tasks retain their own `execution.md` entry and both flip together; the Reviewer audits the combined diff against **both** task contracts, and that single review round is disclosed here rather than counted as two.
+
+**What this vindicates.** The failure was caught by a *test*, in the intermediate state, before anything shipped — which is precisely what T-1's ledger was built to do and the return on its 676 LOC. It is also a live instance of **KZ-007** (*constraint sets are conjunctive — satisfying each member individually can still break the set*): Group A is correct in isolation, Group C is correct in isolation, and the defect lived in the interaction between them.
+
+**Kaizen candidate KZ-009 (proposed, credited to the T-2 Implementer):** a known-failure ledger that pins a *measured ratio* couples the ledger to one token state, so any change to a **ground** stales the pin of every ink that lands on it — a false failure that looks like a regression. The pins here are disposed of when T-3 empties the ledger, so this spec needs no further action; the lesson is for the next spec that keeps a ledger across a ground change. Record after this spec closes, not before — an unproven lesson in the log is itself a KZ-002 defect.
+
+---
+
+### T-2 + T-3 — Re-author surface/ink tokens · Remediate the four AA failing pairs — **PASS** (1 review round, merged under ADJ-4)
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-08-07 |
+| **Branch / base** | `enhancement/app-visual-refresh-v2` @ `9621de3` |
+| **Implementer** | Claude Code `akili-implementer` wrapper (T2 / `sonnet`), effort `medium`, skill `tailwind-design-system` |
+| **Reviewer** | **Antigravity `agy`**, model `claude-opus-4-6-thinking` (T3) — cross-host |
+| **Attempts** | T-2: 1. T-3: 2 (first delivery went idle with the ledger un-emptied and no report; re-sent, completed) |
+| **Files** | `frontend/app/globals.css` (9 lines) · `frontend/lib/contrast.test.ts` (ledger emptied, comment rewritten, citation fixed) |
+| **Review rounds** | **1**, covering both task contracts — disclosed here, not counted as two |
+
+**Token change (`git diff -U0`, all inside `:root`):**
+
+| Token | Before | After | Group |
+|---|---|---|---|
+| `--color-bg` | `#FFFFFF` | `#FBF9F6` | A |
+| `--color-surface-alt` | `#F7F7F7` | `#F4F0EA` | A |
+| `--color-fg` | `#333333` | `#2A2724` | A |
+| `--color-muted` | `#666666` | `#6B6459` | A |
+| `--color-border` | `#E2E2E2` | `#E6DFD5` | A |
+| `--color-restricted-bg` | `#F3F3F3` | `#F0EBE4` | A |
+| `--color-backdrop` | `rgba(51,51,51,.40)` | `rgba(42,39,36,.40)` | B |
+| `--color-success` | `#2F7D32` | `#2A6E2D` | C |
+| `--color-warning` | `#C9821B` | `#8F5E10` | C |
+
+`--color-surface` unchanged at `#FFFFFF`. `--crop-sorghum` / `--crop-bean` / `--crop-groundnut` / `--crop-*-soft` byte-identical — FR-3's decoupling achieved by editing `--color-warning`'s line only, never a find-and-replace of `#C9821B`.
+
+**All four FR-2 pairs remediated, verified against composited grounds:**
+
+| Pair | Before | After |
+|---|---|---|
+| `warning` on `warning/10` chip (composited) | 2.83 | **4.854** |
+| `warning` on `surface-alt` | 2.93 | **4.898** |
+| `warning` on `surface` | 3.14 | **5.561** |
+| `success` on `highlight/20` | 4.35 | **5.311** |
+| `success` on `restricted` | 4.616 → 4.319 (mid-ADJ-4) | **5.260** |
+
+**Verification evidence (Leader-run, independent of the Implementer):**
+
+```
+cd frontend && npm test -- contrast --silent
+Tests: 129 passed, 129 total
+
+npm run build → ✓ Compiled successfully · ✓ Generating static pages (23/23) · ✓ Exporting (2/2)
+npx next lint --quiet → exit 0, "No ESLint warnings or errors"
+git diff -U0 -- frontend/app/globals.css | grep -c 'crop-' → 0
+```
+
+NFR-3 holds: `/` 164 kB, `/directory` 157 kB, `/map` 110 kB — unchanged from the pre-execution baseline. Ratios independently recomputed with a WCAG implementation separate from the harness; all reproduce.
+
+#### Reviewer verdict (agy / `claude-opus-4-6-thinking`)
+
+```
+STATUS: PASS
+SUMMARY: The combined T-2/T-3 diff satisfies both task contracts: Group A/B grounds and
+Group C inks land atomically (ADJ-4 reasoning independently verified as mathematically
+sound), all 7 FR-2 remediation pairs clear 4.5:1 against correct composited grounds, crop
+tokens are byte-identical, the KNOWN_FAILURES ledger empties without weakening any
+assertion, all declarations stay inside :root, and the diff is exactly two files with no
+component edits.
+```
+
+Independently confirmed by the Reviewer: DD-5's backdrop derivation (`#2A2724` → rgb(42,39,36), recomputed not eye-balled); FR-1's warm-hue clause (R > B for all six Group A values); **FR-1 scenario 2's footer inversion at 14.13:1**; and KZ-005 reconciliation of every ratio against design.md's stated figures (4.86 ↔ 4.8536, 5.26 ↔ 5.2599). Read-only contract verified by tree fingerprint — unchanged.
+
+#### ADVISORY (recorded; both acted on immediately)
+
+1. **T-3's verify command was unsound as written** — *Implementer finding, Reviewer-confirmed.* `git diff -- globals.css | grep -c 'crop-'` returns **1**, not 0: `--crop-sorghum` falls inside the default 3-line context radius and `grep -c` counts context lines regardless of prefix. **Fixed in `tasks.md`** to `git diff -U0`. A command satisfiable by accident is not a gate — same defect class as a presence assertion (KZ-002).
+2. **Four files in the tree, not two** — `execution.md` and `tasks.md` are Leader bookkeeping, correctly excluded from the audited diff. Not a scope violation.
+3. **Pre-existing full-suite flakiness** — see the correction below. **T-6's gate restated in `tasks.md`.**
+
+#### Correction to the recorded baseline
+
+The Pre-Execution Baseline above calls the `actors/import/page.test.tsx` failure **"deterministic across two runs."** That was drawn from too small a sample and is **wrong**. Four runs on an unchanged tree gave **1, 0, 3, 3** failures, with different suites failing each time. Every failing suite passes in isolation (65/65 in 12.5 s vs 45–56 s under load) — timeout-class contention. The Reviewer independently confirmed no mechanism connects this diff to those failures: the flaky suites contain **zero** references to any semantic colour token, and the only old-value references anywhere in tests are `parseColor`/`compositeOver` math fixtures and the FR-6 frozen `--crop-sorghum` assertion.
+
+**Consequence:** T-6's gate as previously restated ("no new failures vs. a baseline of 1 failed") was **unusable**, because the baseline is not a fixed number. Replaced in `tasks.md` with a per-suite isolation gate. The flakiness itself is **pre-existing repo health and out of scope here** — it warrants its own `bugfix/` spec rather than being absorbed silently.
+
+**Not done / carried forward:** `frontend/lib/dashboard/chart-tokens.ts:27-34` (LF-1, the third stale `#C9821B` comment site) is untouched and belongs to **T-5**'s per-value sweep — the Implementer correctly declined to claim it.

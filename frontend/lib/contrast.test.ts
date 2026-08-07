@@ -221,43 +221,19 @@ interface KnownFailure {
 }
 
 /**
- * The three FR-2 pairs, seeded against the *current, unchanged* tokens.
- * Each entry cites FR-2 (docs/specs/enhancement/app-visual-refresh) so it
- * is traceable to the requirement it discharges.
+ * Historically seeded (T-1) with the FR-2 shipped failing pairs plus two
+ * defensively-gated `warning` entries — see design.md §10, "The known-failure
+ * ledger". T-3 remediates `--color-warning` and `--color-success` (design.md
+ * §5.1 Group C) in the same change that empties this array, so the ledger's
+ * job — proving a red→green transition without ever leaving the suite red —
+ * is discharged here. Both assertions in the matrix loop below collapse into
+ * one, exactly as design.md §10 predicted: "At T-3 the ledger empties and
+ * both assertions collapse into one."
  *
- * This ledger is asserted in TWO directions in the matrix loop below:
- * every pair outside it must meet 4.5:1, and every pair inside it must
- * still FAIL 4.5:1. The second direction is what stops the ledger rotting
- * — a pair fixed by accident (e.g. a later change happens to move
- * `--color-warning` far enough) breaks this suite until the entry is
- * removed, rather than the ledger silently going stale (design.md §10).
- *
- * TWO ADDITIONAL entries beyond FR-2's three, both `warning`. Neither is
- * a phantom: they are a MECHANICAL consequence of gating T-3's minimum
- * ground list for `warning` (`surface`, `bg`, `surface-alt`, own 10%
- * chip) as the Leader's ruling required — gating a ground and leaving it
- * off the ledger while it fails is not an option (the suite could not be
- * green), so failing gated pairs must be ledgered, exactly like FR-2's
- * three. Flagged prominently in this task's report rather than folded in
- * silently:
- *   - `warning` on `bg`: gated defensively (T-3 minimum, no current
- *     render site) — fails today regardless of whether any component
- *     ever reaches it.
- *   - `warning` on `surface-alt`: gated by T-3's minimum AND has a REAL
- *     render site the FR-2 table did not enumerate —
- *     `ActorHistoryPanel.tsx:87`, the `BULK_CONSENT` audit-action badge
- *     (`'bg-surface-alt text-warning'`). This is a fourth genuine,
- *     currently-shipped WCAG AA failure, not a false positive.
+ * Left as a typed, empty array (not deleted) so a future regression has
+ * somewhere to go without re-deriving this scaffolding.
  */
-const KNOWN_FAILURES: KnownFailure[] = [
-  { ink: 'warning', ground: 'surface', measuredRatio: 3.14 },
-  { ink: 'warning', ground: 'warning/10', measuredRatio: 2.83 },
-  { ink: 'success', ground: 'highlight/20', measuredRatio: 4.35 },
-  // Discovered during T-1 — not in FR-2's original table. See block
-  // comment above and this task's report.
-  { ink: 'warning', ground: 'bg', measuredRatio: 3.14 },
-  { ink: 'warning', ground: 'surface-alt', measuredRatio: 2.93 },
-];
+const KNOWN_FAILURES: KnownFailure[] = [];
 
 function findKnownFailure(ink: string, ground: string): KnownFailure | undefined {
   return KNOWN_FAILURES.find((f) => f.ink === ink && f.ground === ground);
@@ -296,9 +272,9 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
     grounds: ['bg', 'surface', 'surface-alt', 'restricted', 'warning/10'],
     citedAt:
       'globals.css:93-96 (body { background-color: var(--color-bg); color: var(--color-fg); } — sitewide default) · ' +
-      'ui/Button.tsx:44 (secondary variant: "bg-surface text-fg") · ' +
+      'ui/Button.tsx:49 (secondary variant: "bg-surface text-fg") · ' +
       'shell/Header.tsx:159 (text-fg, hover:bg-surface-alt) · ' +
-      'ui/Button.tsx:44,51 (secondary: text-fg, hover:bg-restricted) + profile/RestrictedContactPanel.tsx:61 (text-fg inside bg-restricted) · ' +
+      'ui/Button.tsx:49,51 (secondary: text-fg, hover:bg-restricted) + profile/RestrictedContactPanel.tsx:61 (text-fg inside bg-restricted) · ' +
       'admin/CredentialHandoff.tsx:106 ("bg-warning/10 ... text-fg")',
   },
   muted: {
