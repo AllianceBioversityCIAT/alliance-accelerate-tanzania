@@ -672,3 +672,55 @@ Escalated to the user with the options the runtime-failure table allows: raise `
 **C-4 · A correction can reproduce its own defect one file over (sharpens KZ-008).** T-2's Issue 3 was a doc comment that miscounted the domain literals it disclosed. Its remediation added a third presence-only assertion group to the **test** file — whose own header still said "two groups." The enumeration-drift defect **reproduced itself into the sibling artifact while being fixed**, and was caught only because a later lens re-counted. Candidate: a fix to an enumeration must re-count every enumeration the change touches, not only the one that was wrong.
 
 **C-5 · Evidence about the method, not a defect: `requirements.md` §4.1 predicted exactly where this spec would fail, and it did — twice.** §4.1 declared D5/D6/D7 as classes with **no automated gate** before any code existed. T-2 shipped 36 green tests over a bug that showed *"No regions match"* against 31 valid regions; T-3 shipped 48 green tests over a popup displaced by the keyboard's height on mobile. **Both defects were found by a Reviewer reading code, neither by a run**, and both sat in the declared-blind classes. This is the gate-coverage rule earning its cost and is worth recording as a positive control, not only lessons drawn from failures.
+
+---
+
+## Session 2 — the T-3 audit was attempted on four routes and none executed
+
+No code changed in this session. T-3 remains at `[~]`, unaudited, exactly as session 1 left it. What this session establishes is that the blocker is **not** specific to the in-harness spawn limit, which is what session 1 assumed when it listed the escape routes.
+
+The prior session's uncommitted work was committed first, split by concern: `2c96e07` (T-3), `a048fea` (two unrelated production fixes — the frozen SES call in `lambda.ts` and the sticky public footer), `5514fa6` (the new `app-visual-refresh` spec, documents only). Verification ran with the tree quiet before committing: backend `nest build` + 675 tests, frontend SearchableSelect 50 tests + static export 23/23. All green — and, as established twice on this task, **necessary and not sufficient**.
+
+### The four routes
+
+| Route | Outcome |
+|---|---|
+| In-harness `akili-reviewer` (`opus`) | `Subagent spawn limit reached (200 of 200)`. **`/clear` does not reset the counter** — it clears context, not the session. Session 1's "a fresh session resets the counter" is correct only for a genuinely new process. |
+| `opencode/gpt-5.5-pro` (registry T3 Auditor) | `Error: Insufficient balance` on the opencode workspace. Never started. |
+| Antigravity `claude-opus-4-6-thinking`, `--mode plan` | Exit 0, **81 bytes of output**: the single line *"I'll begin by reading all the required specification and code files in parallel."* Empty stderr. |
+| Antigravity, same model, isolated `git worktree` at `5514fa6`, no plan mode | Exit 0, **69 bytes**: the same preamble. Empty stderr. Worktree removed afterward and confirmed **unmodified** — the auditor never wrote anything because it never got past its opening line. |
+
+Two incidental findings, both cheap and both real:
+
+- **`--effort` is not accepted by `claude-opus-4-6-thinking`** (`--effort is not supported for model`). The root `CLAUDE.md` Model Routing section presents the effort dial as orthogonal to the tier across all hosts; on Antigravity it applies to the effort-suffixed Gemini identifiers only, and the Claude models there carry their own thinking budget. That is documentation drift, correctable at `/akili-archive`.
+- **The isolated-worktree pattern worked and is worth keeping.** Running a read-only auditor in a throwaway worktree at the commit under audit enforces "the reviewer may not edit what it reviews" structurally rather than by instruction, and lets the host run in its normal mode. `git status` on the worktree afterward is a *positive check that the reviewer stayed read-only* — a property no persona prompt can guarantee.
+
+### Why no verdict was recorded
+
+The obvious shortcut was available and was declined for the second consecutive session. This session's agent had **supervised the attempt-2 fix** and is therefore the same wrong reader session 1's Leader was. `author != auditor` is a correctness constraint, and a runtime failure does not suspend one. The argument for shortcutting is slightly stronger than last time and still not an argument: three independent hosts failing to produce an audit is evidence about the *infrastructure*, and infrastructure evidence says nothing whatsoever about the diff.
+
+### Resolution chosen by the user: restart into a fresh session
+
+Selected over raising `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION`, over topping up opencode, and over an explicit waiver. A new process resets the subagent counter and restores the in-harness `akili-reviewer` at `opus`.
+
+### FIRST ACTION FOR THE NEXT SESSION — dispatch this review before anything else
+
+Spec state: T-3 `[~]`, **attempts 2 of 3 used, review rounds 2 of 1 budgeted (already exceeded — the budget position is the user's to adjudicate at the task gate).** A FAIL here is attempt 3 of 3, the last before the HALT rule binds, so bring findings to the user before dispatching a fix.
+
+The review brief lived in a scratchpad that does not survive the restart. Its scope, reproduced here so it does:
+
+**This is a verification review, not a re-run of round 1.** Round 1's Evidence-lens PASS and its Mechanism-lens verification of the rAF scheme, every reflow clause, JD-8's survival of the portal, and the no-click-outside-listener argument **all stand**. Audit two things: (1) do the two Mechanism-lens FAIL fixes actually fix what was found, and (2) did the 88-line rework regress anything round 1 established?
+
+*Issue 1 — coordinate frame,* `SearchableSelect.tsx:447`. Confirm the whole `bottom` expression sits in the layout frame and matches the frame its sibling `left`/`top`/`width` writes use. **The flip decision (`spaceBelow`/`spaceAbove`, ~427-429) and the out-of-viewport test (~416-422) were correct reading the *visual* viewport and had to survive.** That asymmetry is deliberate — a reviewer reporting it as a defect has misread the task.
+
+*Issue 2 — stacking order,* ~541-546. `z-10` -> `z-50`; check for residue and verify the repo census independently (claimed: `z-50` 9x in `components/`, `z-40` the sticky header, `z-[1000]` the Leaflet legend). `MapLegend`'s `z-[1000]` is out of scope pending T-6 evidence — if the popup loses to it, that escalates, it does not become a T-3 defect. Per **KZ-002**, judge whether any test claims more than a class assertion can support: a class assertion cannot prove paint order.
+
+*Regression surface:* the `schedulingRef`/`rafRef` decoupling and its unconditional cleanup (~217, ~458-462, ~496-502) under every interleaving; all three JD-6 registrations with symmetric cleanup; the JD-1 exclusion; close-on-out-of-viewport as the sole reflow close path with `hasMeasuredLayout` (~416) still guarding jsdom's zero rect; no `scrollIntoView` in code (two comments are fine); **zero setState on the non-close reflow path**; and the axe re-target (`baseElement` + `region` disabled on the three open states, `container` elsewhere, `container.contains(listbox) === false` discriminator intact).
+
+*New tests (48 -> 50):* the flip test asserts `bottom === '404px'` given `clientHeight` 800 and `vv.height` 500, where the pre-fix expression yields `'104px'`. **Verify the discriminator is genuine** — that it would fail against the old expression, not merely pass against the new one. This matters more than usual because both round-1 defects were invisible to jsdom by construction, so a test that only confirms the new arithmetic is theatre.
+
+*Off-limits:* every round-1 advisory, including the doc header's "two style writes per frame" undercount where the code performs four property writes. It was named off-limits in the rework brief and stays that way. *Advisory Never Becomes A Task* — and per C-3 above, the pressure to fold it in peaks precisely because the file is open.
+
+### Additional Kaizen candidate
+
+**C-6 · The cross-host fallback in the routing table is currently non-functional, and only a real dispatch discovers that (NEW, sharpens C-1).** `CLAUDE.md` names cross-host dispatch as the remedy when a tier is unavailable locally. Exercised for the first time under real need, one host had no balance and the other's `-p` mode returned a preamble and exited 0 on **both** invocations — a silent failure that looks like success to any caller checking only the exit code. This is **C-1's lesson at the level of the routing table**: an unexecuted fallback is an unverified claim about the environment, exactly as an unexecuted verify command is. Candidate: a documented fallback route must be exercised once on a trivial prompt before it is relied on, and a host whose print mode cannot complete a tool-using run should be marked in the registry as interactive-only.
