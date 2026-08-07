@@ -48,7 +48,7 @@ export default function DashboardMapPanel({
     /*
       Panel card — token-driven surface:
         bg-surface        → --color-surface (#FFFFFF)
-        border border-border → --color-border (#E2E2E2), 1px
+        border border-border → --color-border (#E6DFD5), 1px
         rounded-lg        → --radius-lg (16px) — matches KpiBand card radius
         shadow-sm         → --shadow-sm
         overflow-hidden   → prevents Leaflet controls bleeding outside rounded corners

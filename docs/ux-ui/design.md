@@ -85,22 +85,28 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 --color-accent:         #008BDB;  /* blue — secondary CTA / links (large text & UI only) */
 --color-highlight:      #29C4A9;  /* teal-green highlight / tint backgrounds */
 --color-highlight-soft: #82C0C7;  /* muted teal, soft accent */
+--color-highlight-tint: #E4F5F2;  /* ~10% highlight over white — success/badge tint backgrounds */
 --color-bean:           #7A3B2E; /* common bean — crop accent 3 */
---color-bg:             #FFFFFF;  /* clean white page base */
---color-surface:        #FFFFFF;
---color-surface-alt:    #F7F7F7;  /* alternating section background */
---color-fg:             #333333;  /* primary body text */
---color-muted:          #666666;  /* secondary text */
---color-border:         #E2E2E2;
---color-success:        #2F7D32;  /* keep green — success semantics, not brand */
---color-warning:        #C9821B;
+--color-bg:             #FBF9F6;  /* warm sand page canvas — was pure white (DD-2, app-visual-refresh) */
+--color-surface:        #FFFFFF;  /* card/panel — unchanged; lifts off the warmer canvas */
+--color-surface-alt:    #F4F0EA;  /* alternating section background, warm */
+--color-fg:             #2A2724;  /* primary body text, warm ink — also the footer's dark surface */
+--color-backdrop:       rgba(42, 39, 36, 0.40);  /* modal/backdrop wash — 40% of --color-fg */
+--color-muted:          #6B6459;  /* secondary text, warm */
+--color-border:         #E6DFD5;  /* warm hairline */
+--color-success:        #2A6E2D;  /* keep green — success semantics, not brand; AA on its tints */
+--color-warning:        #8F5E10;  /* AA at 12px; intentionally decoupled from --crop-sorghum — see below */
 --color-danger:         #B3261E;
---color-restricted-bg:  #F3F3F3;  /* PII restricted chip background (neutral) */
+--color-danger-soft:    #F5E3E2;  /* ~10% danger over white — error banners / badge backgrounds */
+--color-restricted-bg:  #F0EBE4;  /* PII restricted chip background, warm neutral */
 
-/* Crop legend (used by map + chips) */
---crop-sorghum:  #C9821B;
---crop-bean:     #7A3B2E;
---crop-groundnut:#8A8D2B;
+/* Crop legend (used by map + chips) — unaffected by --color-warning's move, see below */
+--crop-sorghum:         #C9821B;
+--crop-bean:            #7A3B2E;
+--crop-groundnut:       #8A8D2B;
+--crop-sorghum-soft:    #F9F0E4;  /* ~12% over white — CropImage panel backgrounds */
+--crop-bean-soft:       #EFE7E6;
+--crop-groundnut-soft:  #F1F1E6;
 
 /* Typography */
 --font-sans: "Inter", system-ui, sans-serif;
@@ -111,8 +117,15 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 /* Geometry */
 --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:9999px;
---shadow-sm:0 1px 2px rgba(28,31,26,.06);
---shadow-md:0 4px 12px rgba(28,31,26,.08);
+--shadow-xs: 0 1px 2px   rgba(61,47,32,.04);  /* warm elevation ladder — chips, inputs at rest */
+--shadow-sm: 0 2px 4px   rgba(61,47,32,.07);  /* cards, stat tiles */
+--shadow-md: 0 6px 16px  rgba(61,47,32,.10);  /* raised cards, table containers */
+--shadow-lg: 0 16px 40px rgba(61,47,32,.14);  /* dialogs, popovers, map rail */
+
+/* Atmospheric gradients — canvas-rooted, token-driven so a future .dark scope
+   inherits them automatically. */
+--gradient-hero: linear-gradient(168deg, var(--color-surface-alt) 0%, var(--color-bg) 58%, var(--color-surface) 100%);
+--gradient-band: linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-alt) 100%);
 
 /* Spacing scale: Tailwind default (4px base). */
 
@@ -142,7 +155,13 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 **Reduced-motion rule:** All motion gated on `prefers-reduced-motion: no-preference` via `gsap.matchMedia()`. Users with the OS reduced-motion preference receive the final, static state immediately — no animation, no fades, no count-ups (WCAG 2.1 AA §2.3.3, §2.2.2).
 
-> **Accent usage (contrast):** `--color-primary` (Royal Blue `#1F4E8C`) passes WCAG AA on white for normal text/UI (~7:1; AAA for large text). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
+> **Accent usage (contrast):** `--color-primary` (Royal Blue `#1F4E8C`) passes WCAG AA on white for normal text/UI (~7:1; AAA for large text). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`. `--color-warning` (`#8F5E10`) **is** small-text-safe — it clears 4.5:1 on `surface`, `bg`, `surface-alt` and its own 10%-alpha chip.
+>
+> **Marker-vs-ink threshold split (`app-visual-refresh`):** `--color-warning` and `--crop-sorghum` used to share `#C9821B`, under two incompatible thresholds — small-text ink needs WCAG 1.4.3's 4.5:1, while a map marker/legend swatch is a non-text fill under WCAG 1.4.11's 3:1 floor. They are now **two independent tokens**, intentionally distinct despite the shared history — do not re-merge them in a future cleanup.
+>
+> **Hero scrim vs. `--gradient-hero` are different mechanisms.** `Hero.tsx`'s `from-fg/70` scrim sits over a photograph and exists purely for text legibility; `--gradient-hero`/`--gradient-band` are atmospheric canvas washes with no text over them. The app intentionally carries both — one is not a replacement for the other.
+>
+> **Dark-scope shadow alphas (open, OQ-4):** the elevation ladder's alpha steps (`.04`/`.07`/`.10`/`.14`) are calibrated against the current light, warm canvas. A future `.dark` scope will likely need higher alphas and/or a lighter shadow base — a translucent dark shadow barely registers against an already-dark background — so the ladder as authored here is not expected to carry over unchanged.
 
 ## 8. Component Inventory
 

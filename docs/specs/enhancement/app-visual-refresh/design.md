@@ -88,10 +88,10 @@ Warm shadow base is sampled from the clay canvas rather than the current cool `r
 
 #### Group E — New gradient tokens (FR-5)
 
-| Token | Purpose |
-|---|---|
-| `--gradient-hero` | Diagonal canvas→surface wash for hero and landing bands |
-| `--gradient-band` | Vertical canvas→alt wash for section transitions |
+| Token | Purpose | Landed value |
+|---|---|---|
+| `--gradient-hero` | Diagonal wash for hero and landing bands. **Three stops** (`surface-alt`→`bg`→`surface`), not the two the original purpose sentence implied — reconciled to match `mockup/index.html:50`'s approved `--hero-wash` and the T-4 implementation. | `linear-gradient(168deg, var(--color-surface-alt) 0%, var(--color-bg) 58%, var(--color-surface) 100%)` |
+| `--gradient-band` | Vertical canvas→alt wash for section transitions | `linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-alt) 100%)` — **no mockup token exists for this one**; this is a T-4 derivation from the purpose sentence alone, disclosed in that task's report. Subject to revision at the T-6 HITL gate. |
 
 #### Group F — Frozen (FR-6)
 
@@ -247,6 +247,8 @@ At T-1 the test carries a `KNOWN_FAILURES` ledger with **5** entries — the **4
 
 **Sizing check against depth:** 6 tasks / cross-cutting visual surface sits correctly in **Standard**. It is above `Lite` (which would be a single task and no test harness) and below `Full` (no API, data, auth, migration, or rollout — and rollback is a single-commit revert). **Depth confirmed after the design, not assumed before it.**
 
-If execution exceeds **~8 tasks**, or **any task edits a component file**, the Leader **stops and escalates** rather than continuing — that overrun would mean the change stopped being token-only and started touching components, which is NFR-7 failing.
+If execution exceeds **~8 tasks**, or **any task changes a component's markup, classes, props or behaviour**, the Leader **stops and escalates** rather than continuing — that overrun would mean the change stopped being token-only and started touching components, which is NFR-7 failing.
+
+> **Tripwire wording corrected 2026-08-07, before T-5.** As first written this said *"any task edits a component file"*, which is **wrong** — it would have fired on T-5, whose scope is exactly the **comment-only** component edits NFR-7 *pre-authorizes* (`Footer.tsx`, `DashboardMapPanel.tsx`). NFR-7's own text is the precise boundary: *"both changes are comment-only … No component's markup, classes, props or behaviour changes."* A tripwire that fires on work the requirements mandate is not a safeguard, it is noise that trains the next reader to ignore it — the same failure mode as a flaky test. The trigger now matches NFR-7 exactly. *(Recorded rather than silently edited: the Leader authored the imprecise version at the T-1 budget re-baseline, and a correction that hides its own cause is unauditable.)*
 
 > **Re-baseline note (2026-08-07, approved by the user at the T-1 budget gate).** T-1 landed at **676 LOC** against ~120 budgeted, tripping the original ~300 LOC spec-wide tripwire. It was accepted, and the tripwire re-authored, because the LOC threshold was firing for a reason **orthogonal to what it was defending**: it exists to detect the change becoming component-level, and all 676 lines are in **two new files** with **zero component edits** — the very condition the tripwire was built to catch is measurably absent. A test harness that enumerates a 63-pair matrix with per-pair `file:line` reachability citations is simply larger than a line estimate made before the reachability question was adjudicated. The trigger is therefore now **component edits**, which measures NFR-7 directly, instead of **LOC**, which only proxied for it. Contributing causes, recorded for honesty: the Leader's ADJ-1 reachability ruling expanded the evidence each pair must carry, and the `UNREACHABLE` inventory + promotion rule is net-new scope the original estimate did not contemplate.

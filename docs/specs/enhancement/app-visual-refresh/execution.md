@@ -4,8 +4,8 @@
 
 - **Spec path:** `docs/specs/enhancement/app-visual-refresh/`
 - **Approval Mode:** `gated` (from `requirements.md` Document Control)
-- **Budget (`design.md` §11):** 6 tasks · ~200 LOC · 7 review rounds
-- **Tripwire:** >8 tasks or >300 LOC → stop and escalate
+- **Budget (`design.md` §11):** 6 tasks · **~760 LOC** *(re-baselined 2026-08-07 at the T-1 gate; originally ~200)* · 7 review rounds
+- **Tripwire:** >8 tasks, or **any change to a component's markup, classes, props or behaviour** → stop and escalate. *(Was ">300 LOC". Replaced at the T-1 re-baseline because LOC only proxied for NFR-7; then reworded before T-5, because the first replacement read "any task edits a component file" and would have fired on T-5's NFR-7-**pre-authorized** comment-only edits. Full rationale in `design.md` §11.)*
 - **Branch:** `enhancement/app-visual-refresh-v2`
 - **Execution started:** 2026-08-07
 
@@ -22,9 +22,22 @@ Hybrid host split, approved by the user at the pre-execution gate.
 
 **Why the Reviewer is cross-host:** running the Reviewer on a different *host process* makes
 `author ≠ auditor` structural rather than conventional — the auditor cannot inherit any part of
-the Implementer's context, because it is a different CLI with a different provider. The Reviewer
-is dispatched with `--mode plan`, which denies writes at the harness level and enforces the
-read-only contract by configuration instead of by instruction.
+the Implementer's context, because it is a different CLI with a different provider.
+
+**Correction (2026-08-07) — how the read-only contract is actually enforced.** This block
+originally claimed the Reviewer *"is dispatched with `--mode plan`, which denies writes at the
+harness level."* **That is false and was never true in this run.** `--mode plan` is **incompatible
+with `--print`**: plan mode proposes a plan and waits for an approval a non-interactive session can
+never give, so it dies with *"Error: timeout waiting for response."* It is therefore unavailable as
+a capability-level guarantee. The contract is enforced by **detection instead of capability**:
+`agy-review.sh` fingerprints `git status --porcelain` + `git diff HEAD | shasum` before and after
+each dispatch and exits 99, voiding the verdict, if the tree changed. Every review in this run
+reported *"tree unchanged (read-only contract held)."* Left as a correction rather than a silent
+edit — a claim about how a safety property is enforced is exactly the kind of assertion KZ-008
+covers, and it appeared in the Leader's own document.
+
+The wrapper also greps for a `STATUS:` line and exits **98** when absent, because `agy` can
+terminate mid-flight and still exit 0 — see T-5's environment-failure note.
 
 **Why the T-6 visual gate is cross-host:** `requirements.md` §3 names this routing explicitly —
 *"Optionally routed to a T6 Multimodal review (registry: Antigravity / `gemini-3.1-pro-high`) for a
@@ -84,8 +97,11 @@ FAIL app/(admin)/admin/actors/import/page.test.tsx
 **Characterised as order-dependent suite pollution, pre-existing on `main`:**
 
 - The same file run **in isolation passes 19/19** (`npx jest "actors/import/page" --silent`).
-- The failure is **deterministic** across two consecutive full-suite runs — same single test, same
-  count both times. It is not a flake.
+- ~~The failure is **deterministic** across two consecutive full-suite runs — same single test, same
+  count both times. It is not a flake.~~ **SUPERSEDED 2026-08-07 — this was wrong.** Two runs was
+  too small a sample. Four runs on an unchanged tree gave **1, 0, 3, 3** failures with *different*
+  suites failing each time. It **is** a flake — timeout-class contention, every failing suite passing
+  in isolation. See the correction in the T-2+T-3 entry and the restated gate in `tasks.md` T-6.
 - Nothing in this branch's base can cause it: the only frontend delta from `main` is
   `(public)/layout.tsx` (the sticky-footer fix), and the failing assertion is an `aria-live`
   region lookup in the **admin import** page.
@@ -96,6 +112,12 @@ reasons this spec did not create**. T-6's test gate is therefore evaluated as **
 against this recorded baseline"** — 1 failed / 1150 passed / 85 suites, with
 `actors/import/page` green in isolation. Any second failure, or a change in that one, is a
 regression owned by this spec.
+
+> **This restatement was itself superseded on 2026-08-07.** It assumed the baseline was a *fixed
+> count*, which the four-run evidence above disproves — "no new failures vs. 1 failed" is not a
+> usable gate when the baseline ranges 0–3 with varying identity. The gate now in force is
+> **per-suite isolation**: every suite failing under full-suite load must pass in isolation, and no
+> failure may reference a token this spec changed. See `tasks.md` T-6.
 
 This restatement is recorded here **before** T-1 rather than discovered at T-6, so it cannot
 function as a retroactive excuse for a failure this spec does cause. It narrows nothing else:
@@ -428,3 +450,86 @@ Leader-run gates: `npm run build` ✓ (23/23 static, 2/2 export) · `npm test --
 #### Open judgment call carried to T-6's HITL gate
 
 **`--gradient-band` is the only value in this task with no cited source.** design.md Group E gives only *"Vertical canvas→alt wash for section transitions"*, and the mockup has **no `--gradient-band` at all**. The Implementer derived `linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-alt) 100%)` and **disclosed it as a judgment call rather than presenting it as a lookup**. Accepted as a minimal faithful reading of those words — literally vertical, literally canvas→alt, no invented angle or stop split — and it is provably contrast-safe per the bound above. But it carries no design authority, so **the user decides its appearance at T-6's AR-1 gate**, and T-5 records whatever value survives into `design.md` §7.
+
+---
+
+### T-5 — Sync the baseline docs, sweep stale values, correct QA-11 — **PASS** (1 attempt; 2 prior review runs lost to a quota wall)
+
+| Field | Value |
+|---|---|
+| **Date** | 2026-08-07 |
+| **Base** | `ead16b5` |
+| **Implementer** | Claude Code `akili-implementer` wrapper (T2 / `sonnet`), skill `cognitive-doc-design` |
+| **Reviewer** | **Antigravity `agy`**, `claude-opus-4-6-thinking` (T3) — cross-host |
+| **Attempts** | Implementation: **1**. Review dispatches: **3** — see the environment-failure note below. |
+| **Files** | `docs/ux-ui/design.md` · `docs/trd/trd.md` · `Footer.tsx` · `DashboardMapPanel.tsx` · `chart-tokens.ts` (+ 2 Leader bookkeeping files) — **no runtime code** |
+
+**Six scope items** (four original, two added mid-run): §7 token resync · accent-usage note extension (warning AA callout, marker-vs-ink split/DD-3, Hero-scrim-vs-gradient/DD-6, dark-scope shadow alphas/OQ-4) · three stale comments · QA-11 correction · **Group E prose reconciliation** (T-4 Reviewer advisory) · **LF-1 `chart-tokens.ts`**.
+
+#### ADJ-5 — Full §7 resync accepted (Reviewer concurred)
+
+The Implementer resynced **all** of `docs/ux-ui/design.md` §7, not only this spec's 7 tokens — pulling in `--color-highlight-tint`, `--color-danger-soft`, the three `--crop-*-soft` and `--color-backdrop`, which already existed in `globals.css` but were **missing from §7 before this spec began**. It disclosed this as a scope-width decision rather than doing it silently.
+
+**Ruling:** accepted. FR-7's clause is unconditional — §7 *"MUST match `globals.css` exactly"* — and does not say "match the tokens this spec changed." A partial resync leaves the requirement **unsatisfied** and §7 in a known-false state: **KZ-008** by omission, and **KZ-004** (*per-site fixes miss the sites nobody listed*) as the cause. Documentation-only, zero runtime risk, mechanically verifiable. The Reviewer independently reached the same conclusion: *"The wider scope is the only scope that satisfies the requirement as written."*
+
+#### Leader verification (mechanical, independent of the Implementer)
+
+Extracted every `--token: value` pair from §7 (lines 79–140) and from `globals.css`, normalized and compared. **Coverage complete** — every `globals.css` token name now appears in §7. Three apparent value mismatches, all investigated and dismissed:
+
+| Apparent mismatch | Finding |
+|---|---|
+| `--color-bg: #1C1F1A`, `--color-surface: #252825` | **False positive** — inside the commented-out `.dark` example at `globals.css:94-96`. Extraction artifact, not a doc defect. |
+| `--font-sans` / `--font-display` | `globals.css` carries the Next font-loader `var(--font-inter)`; §7 documents design intent. **Pre-existing**, and fonts are frozen by Group F/FR-6. |
+| `--shadow-*` | `rgba(61, 47, 32, 0.04)` vs `rgba(61,47,32,.04)` — identical CSS value, notation only. |
+
+Reviewer agreed both surviving cases are value-equality, not byte-equality, and non-gating.
+
+Also Leader-verified: `DashboardMapPanel.tsx:50` **byte-identical** (the trap held — it cites `#FFFFFF` for `--color-surface`, which T-2 deliberately left unchanged, so "correcting" it would have been the regression); `:51` corrected. `npx next lint --quiet` exit 0.
+
+**The Implementer caught something the brief did not specify:** `Footer.tsx:2` had **both** hexes stale, not just `fg`'s — `text-bg` is `--color-bg`, which T-2 also moved. It verified against the live JSX (`className="bg-fg text-bg"` at `:31`) rather than trusting the old comment.
+
+#### The per-value sweep (FR-7 / KZ-004)
+
+Repo-wide by value via `git grep`, filtered only for the frozen archive and this spec's folder. Leader spot-checked its "legitimate occurrence" claims, which is where the real work was:
+
+| Value | Disposition |
+|---|---|
+| `F7F7F7`, `#E2E2E2` | `infra/10-data-auth/template.yaml` — inline `style="background-color:#F7F7F7"` in an **SES email HTML template**. Email clients cannot use CSS custom properties, so this file was never in the token system. Correctly excluded. |
+| `#333333`, `#666666` | Backend hits are **OTP digit strings** passed to `verifyCode(...)` — coincidental numeric matches, not colours. Correctly excluded. |
+| `F3F3F3`, `2F7D32`, `rgba(28, 31, 26` | **Zero hits.** Clean. |
+| `C9821B` | All remaining occurrences are `--crop-sorghum`'s live, correct value or T-1's FR-6 frozen fixtures. **Zero** pair it with `--color-warning`. |
+
+#### LF-1 closed (KZ-008)
+
+`chart-tokens.ts` previously read `--color-warning #C9821B (amber — same hue as sorghum; **kept as semantic alias**)`. Both halves were false after T-3, and the second is **the exact belief DD-3 exists to reverse** — left in place it invited a future cleanup to re-merge `--color-warning` and `--crop-sorghum`, the precise regression FR-3/DD-3 prevent. Now corrected and reversed, citing DD-3.
+
+#### Reviewer verdict (agy / `claude-opus-4-6-thinking`)
+
+```
+STATUS: PASS
+SUMMARY: The diff correctly syncs docs/ux-ui/design.md §7 to match globals.css (full resync per
+FR-7's unconditional clause, ADJ-5 concurred), corrects all three stale comments (Footer.tsx,
+DashboardMapPanel.tsx, chart-tokens.ts) with verified-true hex values, amends QA-11 to disclaim
+jest-axe contrast coverage while preserving the accessibility scenario, and makes no
+markup/class/prop/behaviour change to any component. Repo-wide per-value sweep independently
+verified clean. All contrast ratio claims in the new accent-usage prose confirmed by independent
+WCAG computation.
+```
+
+The Reviewer independently recomputed the ratio claims in the new accent-usage prose (that `#8F5E10` clears 4.5:1 on `surface`/`bg`/`surface-alt`/its own 10% chip) and confirmed the WCAG 1.4.3-vs-1.4.11 threshold statement, the DD-6 scrim distinction, and both Leader bookkeeping hunks including the tripwire correction.
+
+#### ENVIRONMENT FAILURE — two review dispatches lost, and a hole in the Leader's own harness
+
+The first two dispatches produced **no verdict**. The cause was an `agy` account quota: `Error: Individual quota reached … Resets in 34s`. The first attempt hit it *mid-flight*, so it emitted two lines of opening narration and **still exited 0** — and the Leader's `agy-review.sh` reported success on a review that never ran.
+
+**This is the same defect class this spec keeps surfacing:** a gate reporting green for something it did not evaluate (KZ-002). Three instances now — T-1 replaced a presence assertion that could not fail, T-3's crop check could pass by accident, and the Leader's own review wrapper accepted a verdict-less transcript. **Fixed:** the wrapper now greps for a `STATUS:` line and exits 98 if absent, explicitly labelling the result as *neither PASS nor FAIL*.
+
+**Not charged to the rework ceiling.** The 3-attempt ceiling governs spec-conformance FAILs. A quota wall is an environment blocker with a published reset window; charging attempts to it would have forced a bogus HALT on work that was never reviewed. The same cross-host Reviewer was retried at full rigor after the window rather than degrading to a weaker model to dodge a transient limit.
+
+#### ADVISORY (recorded, non-gating, deliberately not acted on)
+
+1. §7 omits the Next font-loader `var(--font-inter)` wrapper — benign (frozen token group, plumbing vs. design intent), but a future reader of FR-7's "match exactly" may flag it. For the next spec that touches typography.
+2. Shadow notation differs between §7 and `globals.css` (identical values). Could trip a future *mechanical* diff. Future housekeeping.
+3. `frontend/lib/content/crops.ts:70` cites *"System Design §7"* — the **pre-migration** doc path (`docs/system-design/design.md` → `docs/ux-ui/design.md`, per root `CLAUDE.md`). A stale **path**, not a stale value, so outside FR-7's per-value sweep. Recorded, not fixed.
+
+**Not done / carried forward:** if T-6's HITL gate changes `--gradient-band`, **both** `docs/ux-ui/design.md` §7 and the spec-local `design.md` Group E need a follow-up touch — both currently record the pre-gate value, clearly labelled as such.
