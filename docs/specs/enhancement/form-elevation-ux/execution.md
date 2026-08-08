@@ -387,3 +387,174 @@ consumed.** Second occurrence — a harness delivery pattern, not a work failure
 baseline with no rule body · all four panels confirmed on `shadow-lg` in the tree · backdrops, focus
 trap, escape handling and `role` untouched · FR-3's `shadow-sm` comparison closed on the pixels by
 Leader inspection.
+
+**Commit:** `021dc09`
+
+---
+
+### T-2 — Resolve `--shadow-xs`: re-tune to a perceptible value, or remove the rung
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** (on attempt 2) |
+| **Date** | 2026-08-08 |
+| **Implementer attempts** | **2** |
+| **Reviewer verdicts** | attempt 1 → `STATUS: FAIL` · attempt 2 → `STATUS: PASS` |
+| **Requirements covered** | FR-2 (re-tune branch, all clauses) · NFR-2 · NFR-6 |
+| **Design** | DD-2 |
+| **Skills assigned** | `tailwind-design-system`, `frontend-design` (attempt 2: `tailwind-design-system` only — docs-only remediation) |
+| **Effort assigned** | attempt 1 `high` · attempt 2 **`xhigh`** (rework rule: bump one level) |
+| **Branch taken** | **Primary (re-tune).** Fallback not required — a value survived the window |
+| **Outcome** | `--shadow-xs`: `rgba(61,47,32,0.04)` → **`rgba(61,47,32,0.12)`**. Geometry frozen at 1px/2px |
+
+**Leader effort rationale.** `high` at attempt 1 rather than `medium`: the code is one CSS value, but
+the task's difficulty is entirely evidentiary and its predecessor discharged the same question on a
+presence assertion. Deliberately **not** `xhigh`, which would have triggered parallel lens reviewers —
+disproportionate for ~15 LOC, and `.agents/leader.md`'s Delegation Ceiling prefers one subagent.
+Attempt 2 went to `xhigh` per the rework rule.
+
+#### Attempt 1 — `STATUS: FAIL`
+
+**Files changed:** `frontend/app/globals.css:70` and `docs/ux-ui/design.md:120` — the token value only.
+Neither `inputClasses()` copy changed and `tailwind.config.ts` was untouched, which is **correct for
+the primary path**: only the custom property's value moves, and the class strings resolve through it.
+
+**Candidate sweep — the substance of this task.** The Implementer rejected eyeballing a compressed
+render and instead extracted **raw RGB via ImageMagick `txt:` dump** from the PNGs pre-compression,
+cross-checked against **4× nearest-neighbour (no-blur, no-interpolation)** magnified crops. Both
+methods agreed. All candidates rendered against the **real post-T-1 `/register`** at 1440,
+`deviceScaleFactor: 2`, **no downsampling** — the predecessor's capture set was downsampled 50% and
+its own README warns that is not authoritative for shadow judgements.
+
+| alpha | peak RGB | Δ from white | verdict |
+|---|---|---|---|
+| 0 (none) | 255,255,255 | 0 | reference |
+| **0.04 (shipped)** | 249,249,248 | ~6 | **imperceptible — reproduces T-7's exact non-result** |
+| 0.06 | ~250 | ~9 | still imperceptible |
+| 0.08 | 243,242,241 | ~13 | faint, **reported inconclusive** |
+| 0.10 | 240,239,237 | ~15 | **reported not confidently visible** |
+| **0.12 (chosen)** | 237,235,234 | ~18 | visible warm gradient in 4× zoom, clearly distinct from 0.04/none |
+| 0.14 | 234,232,231 | ~21 | visible |
+| 0.16 / 0.20 / 0.25 | 231…/225…/217… | ~24/~31/~40 | clearly visible |
+
+**Leader pixel adjudication.** At **native scale** the Leader could **not** distinguish `card-004.png`
+from `card-012.png` — recorded as a limitation of the Leader's own viewing path, which downsamples,
+not as evidence of absence. At **4× no-blur zoom** the difference is real: `0.04` is a crisp border
+line with white beneath; `0.12` shows a soft warm band below the border. `0.16` proved only
+marginally stronger than `0.12`, so the intensity cap cost little visibility. Recorded read:
+**`0.12` crosses from indistinguishable to distinguishable under magnified inspection of a 2× capture,
+but is marginal at native scale.** The Leader carried this to the Reviewer as an open question rather
+than resolving it, precisely because disqualifier (c) makes "inconclusive reported as a pass" the
+failure mode this task exists to prevent.
+
+**Reviewer FAIL — the dispositive finding.** `docs/ux-ui/design.md` **§7 spans lines 75–165**, and
+while line 120 was corrected to `.12`, **line 164 still read**:
+
+> **Dark-scope shadow alphas (open, OQ-4):** the elevation ladder's alpha steps (`.04`/`.07`/`.10`/`.14`) are calibrated against the current light, warm canvas.
+
+§7 therefore asserted **two contradictory values for the same token**, 44 lines apart, inside the file
+*and* the section T-2 was instructed to update. The report had claimed "exactly two live sites carried
+the old value, both fixed" — there were **three**. Root cause: the sweep's grep terms (`0.04`,
+`shadow-xs`, four-rung phrasing) **cannot match `` `.04` ``** inside a backticked list on a line that
+never contains `shadow-xs`. This is **KZ-004's reverse direction** and **KZ-008** — a document
+asserting a property the values lack. A second issue was raised alongside: §7's ladder block presents
+four ascending rungs whose alphas read `.12`/`.07`/`.10`/`.14` with no note that the ordering is
+geometric.
+
+#### Attempt 2 — `STATUS: PASS`
+
+Scoped by the Leader to **documentation only**, with an explicit instruction **not to re-render,
+re-measure or re-choose the value**: attempt 1's perceptual work was independently corroborated, and
+re-running a settled perceptual judgement risks a different answer to a closed question.
+
+**Two edits, both in `docs/ux-ui/design.md`:**
+
+1. **Line 164** — `` (`.04`/`.07`/`.10`/`.14`) `` → `` (`.12`/`.07`/`.10`/`.14`) ``. The OQ-4 note's
+   substance stands; a raised `xs` strengthens rather than weakens its point about dark-scope
+   recalibration.
+2. **Line 166, new note** in §7's trailing blockquote, matching the voice of the four cross-cutting
+   notes already collected there:
+   > **Ladder order is geometric, not by alpha:** the four rungs are ordered by offset/blur (`xs` 1px/2px → `sm` 2px/4px → `md` 6px/16px → `lg` 16px/40px); `--shadow-xs` deliberately carries a higher alpha (`.12`) than `--shadow-sm` (`.07`) because it must register across a much smaller 2px footprint, and it remains the geometrically lightest rung.
+
+**Corrected sweep, then independently re-run by the Reviewer with wider terms**, including the class
+grep could not catch:
+
+| Term class | Result |
+|---|---|
+| Numeric spellings (`0\.04`, `\.04\b`, `\b4 ?%`) | Only `Hero.tsx:12,134,165` (GSAP `scale: 1.04`), `accelerate-project-source-data.md:181` ("18.4%"), `seed-synthetic.ts:57-58` (seed weights). **No stale ladder value anywhere** |
+| **Shape claims** (`monotonic\|increasing\|ascend\|lightest\|heaviest\|four (steps\|rungs)\|progressiv`, plus `raised\|depth\|elevat\|subtle\|flat\|opacity\|alpha` scoped to the file) | The **only** ladder-shape assertion in the non-spec tree is the new line-166 note. **No surviving statement claims monotonic alpha, ascending opacity, or that `xs` is faintest** |
+| Raw values (`rgba(61, ?47, ?32`) | Only `globals.css:70-73`. `tailwind.config.ts:54-58` holds `var()` references with no literals |
+
+**Every factual claim in the new note verified** against `design.md:120-123` and `globals.css:70-73`:
+the offset/blur chain is exact and strictly monotonic in both offset and blur; `xs .12 > sm .07` is
+exact; "remains the geometrically lightest rung" is true (1px/2px is the smallest offset and blur of
+the four). **No new KZ-008 defect introduced by the note written to fix one.**
+
+**Verification:** `npm test -- contrast --silent` → **129/129 pass** · `npm run build` → compiled and
+statically exported, `/register` First Load JS **111 kB unchanged** · `npx next lint --quiet` → "No
+ESLint warnings or errors."
+
+Also confirmed by the Reviewer: NFR-2 (`sm`/`md`/`lg` byte-identical in both files; only `xs`'s alpha
+moved; no literal outside the sanctioned token definition; no component touched) · NFR-6 (value-only
+change of identical byte length) · `design.md` §3 (both files whitelisted; `tailwind.config.ts:55`
+still maps `xs`, and both `inputClasses()` copies still carry `'shadow-xs'` — correct, since the
+fallback was not taken and **no orphan token exists**) · disqualifiers (a) and (b) do not fire.
+
+#### Leader correction — a measurement that must not enter the record as stated
+
+Attempt 1's selection rule was reported as *"0.12 is the highest alpha at-or-under `--shadow-sm`'s own
+measured peak intensity (1.19 vs `sm` ≈ 1.20)"*. **That `sm` figure is arithmetically impossible.**
+`sm` at declared alpha 0.07 over the warm canvas `#FBF9F6` (251,249,246) with shadow ink (61,47,32)
+reaches, at **zero blur attenuation** — the absolute ceiling — RGB(238,235,231), CR vs white ≈ **1.18**;
+with realistic attenuation across a 4px blur its true peak is nearer **1.09–1.14**. The reported 1.20
+exceeds the mathematical ceiling, so that sample was not pure `sm` shadow — most likely a
+`--color-border` pixel (`#E6DFD5`, CR ≈ 1.32) or the card/canvas boundary. The two figures were also
+measured over **different grounds** (`xs`'s shadow falls on `--color-surface`, `sm`'s on
+`--color-bg`), so they were never a like-for-like comparison.
+
+**Consequence, recorded honestly:** on the corrected bound, `0.12` sits *above* `sm`'s peak per-pixel
+intensity, and the Implementer's own stated rule would have selected 0.08–0.10. **The chosen value
+still stands, but on a different and sounder basis than the one originally given.**
+
+FR-2's lighter-than-`sm` clause is therefore recorded here on the **geometric axis only** — DD-2's
+authorised basis, exact and background-independent: `xs` spreads ~2.5 CSS px against `sm`'s ~5, half
+the footprint, with geometry frozen at 1px/2px vs 2px/4px. DD-2 pre-authorises exactly this state in
+terms — *"stays **geometrically** lighter than `--shadow-sm` … **even at a higher opacity**"* — so the
+non-monotonic alpha is an approved design position, not a defect. The peak-CR comparison is
+**explicitly not load-bearing** and should not be cited.
+
+#### Leader correction — T-3's monotonicity claim is superseded
+
+T-3's entry above records *"the ladder is strictly monotonic on all three axes (`xs` 1px/2px/0.04 → …)"*,
+used as the stand-in for the missing `lg`-vs-`md` frame. After T-2 that global framing is **false at
+the `xs`→`sm` step**. **T-3's entry is deliberately left unedited — it was true when written** — and
+the supersession is recorded here instead.
+
+**T-3's inference survives on its own terms:** it needed only `md` 0.10 → `lg` 0.14, which T-2 did not
+touch, so `lg > md` remains deterministic on all three axes and T-3's conclusion is unaffected. Only
+the over-broad "all three axes" phrasing is retracted. The ladder remains strictly monotonic in
+**offset and blur** across all four rungs; it is no longer monotonic in **alpha**, by design.
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | risk | **T-2's evidence is not durable, and FR-2 needs it later.** The candidate PNGs and pixel dumps live only in the session scratchpad; no `captures/` directory exists under this spec. `requirements.md` §8 classes FR-2 as having **no automated check**, T-6 §3 must present FR-2 for explicit human approval, and T-6 disqualifier (a) requires captures. Regenerating at T-6 risks a non-reproducible comparison | **Carried into the T-6 brief.** T-6 already owns a durable capture set (`tasks.md` T-6 Files lists "+ captures"), so this is scope T-6 has, not new scope |
+| **2** | risk | **`design.md` §3 cites a section that does not exist.** Its whitelist row reads "`docs/ux-ui/design.md` \| §7 `--shadow-xs` value, **§5.1** ladder note", but that file's §5 is *Navigation Model* with no §5.1 — the §5.1 ladder note lives in `app-visual-refresh/design.md`. Independently flagged by the Implementer's `Not Done` field and by the Reviewer | **Carried into the T-6 brief** so T-6's §3 diff check is not run against a phantom target. Also relevant had the fallback been taken, since T-2's fallback clause cites the same phantom §5.1 |
+| **3** | readability | A one-clause pointer at line 120 would close the remaining discoverability gap: an agent editing `design.md:120-123` sees `.12` above `.07` with nothing on-screen explaining it, and a targeted `Read` with an offset would miss the note 46 lines below | **Recorded and closed here.** Not worth a third rework round; the Reviewer's own recommendation is to fold it into whatever next change touches §7 |
+| **4** | readability | "a much smaller 2px footprint" in the new note is loose — 2px is the blur radius; painted extent is offset 1px + blur 2px. Defensible shorthand; "a 1px/2px footprint" would be exact | **Recorded and closed here** |
+| **5** | risk | Edit B's placement (~46 lines below the token block) is "acceptable, not ideal" — mitigated by sitting in the blockquote where all four other cross-cutting token notes live, immediately adjacent to the dark-scope note listing the same four alphas, so the two read as a pair. No spec clause governs placement | **Recorded and closed here** |
+
+**Issues encountered.** One rework round consumed, on a genuine defect. Two process notes:
+
+1. **The failing sweep was a grep-pattern defect, not a diligence failure** — `0.04` cannot match
+   `` `.04` ``. Attempt 2's brief therefore supplied the pattern (`\.04\b`) and the section's true
+   line range (75–165) rather than repeating the instruction to "sweep carefully".
+2. Both Reviewers again went idle without emitting a verdict and were re-prompted; each resent its
+   completed audit rather than redoing it, so **no rework attempt was consumed** by either. Fourth and
+   fifth occurrences — a harness delivery pattern, not a work failure.
+
+**Final verification result:** 129/129 contrast pairs pass · build succeeds, `/register` 111 kB
+unchanged · lint clean · `--shadow-xs` moved across a real perceptual boundary (Δ6 → Δ18 peak),
+corroborated by two independent methods and a second observer · §7 self-consistent end to end, with
+the shape-claim term class swept and clear · no orphan token, fallback correctly not taken.

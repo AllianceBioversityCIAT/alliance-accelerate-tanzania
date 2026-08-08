@@ -117,7 +117,7 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 /* Geometry */
 --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:9999px;
---shadow-xs: 0 1px 2px   rgba(61,47,32,.04);  /* warm elevation ladder — chips, inputs at rest */
+--shadow-xs: 0 1px 2px   rgba(61,47,32,.12);  /* warm elevation ladder — chips, inputs at rest */
 --shadow-sm: 0 2px 4px   rgba(61,47,32,.07);  /* cards, stat tiles */
 --shadow-md: 0 6px 16px  rgba(61,47,32,.10);  /* raised cards, table containers */
 --shadow-lg: 0 16px 40px rgba(61,47,32,.14);  /* dialogs, popovers, map rail */
@@ -161,7 +161,9 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 >
 > **Hero scrim vs. `--gradient-hero` are different mechanisms.** `Hero.tsx`'s `from-fg/70` scrim sits over a photograph and exists purely for text legibility; `--gradient-hero`/`--gradient-band` are atmospheric canvas washes with no text over them. The app intentionally carries both — one is not a replacement for the other.
 >
-> **Dark-scope shadow alphas (open, OQ-4):** the elevation ladder's alpha steps (`.04`/`.07`/`.10`/`.14`) are calibrated against the current light, warm canvas. A future `.dark` scope will likely need higher alphas and/or a lighter shadow base — a translucent dark shadow barely registers against an already-dark background — so the ladder as authored here is not expected to carry over unchanged.
+> **Dark-scope shadow alphas (open, OQ-4):** the elevation ladder's alpha steps (`.12`/`.07`/`.10`/`.14`) are calibrated against the current light, warm canvas. A future `.dark` scope will likely need higher alphas and/or a lighter shadow base — a translucent dark shadow barely registers against an already-dark background — so the ladder as authored here is not expected to carry over unchanged.
+>
+> **Ladder order is geometric, not by alpha:** the four rungs are ordered by offset/blur (`xs` 1px/2px → `sm` 2px/4px → `md` 6px/16px → `lg` 16px/40px); `--shadow-xs` deliberately carries a higher alpha (`.12`) than `--shadow-sm` (`.07`) because it must register across a much smaller 2px footprint, and it remains the geometrically lightest rung.
 
 ## 8. Component Inventory
 
