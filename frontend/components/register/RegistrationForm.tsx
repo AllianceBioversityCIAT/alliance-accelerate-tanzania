@@ -560,6 +560,10 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
     type: 'text' | 'number' | 'email' = 'text',
     required = false,
     hint?: string,
+    // FR-5: an extra id to append to aria-describedby, ALONGSIDE the field's
+    // own hint id — never in place of it. Only the GPS pair uses this today
+    // (the standalone GPS-optional paragraph, see `gpsHintId` below).
+    extraDescribedBy?: string,
   ) => {
     const id = fieldId(field);
     const error = errors[field];
@@ -578,12 +582,20 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
           // forms), and this was the one place it was missing.
           autoComplete={AUTOCOMPLETE_HINTS[field]}
           aria-invalid={error ? 'true' : undefined}
-          aria-describedby={[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
+          aria-describedby={
+            [hint ? `${id}-hint` : '', extraDescribedBy ?? '', error ? `${id}-error` : '']
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           className={inputClasses(!!error)}
         />
       </Field>
     );
   };
+
+  // FR-5: id for the standalone GPS-optional paragraph, following the same
+  // `baseId`-derived pattern as the crops group's `${baseId}-crops-label`.
+  const gpsHintId = `${baseId}-gps-hint`;
 
   const errorCount = Object.keys(errors).length;
 
@@ -648,14 +660,26 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
             {renderInput('district', 'District')}
             {renderInput('marketLocation', 'Market location')}
           </div>
-          {/* GPS-optional copy (A25, FR-2 scenario 3) — stated, not just a placeholder hint on one field. */}
-          <p className="mt-4 text-xs text-muted">
+          {/*
+            GPS-optional copy (A25, FR-2 scenario 3) — stated, not just a placeholder hint on one
+            field. FR-5: also programmatically associated with both GPS inputs below via
+            `gpsHintId`, appended to their aria-describedby alongside each field's own hint id —
+            position and mt-4 spacing are unchanged (FR-5's negative clause).
+          */}
+          <p id={gpsHintId} className="mt-4 text-xs text-muted">
             GPS coordinates are optional. You may leave both fields blank — a reviewer will place your
             organisation on the map using the region and district above.
           </p>
           <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-            {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
+            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90', gpsHintId)}
+            {renderInput(
+              'gpsLongitude',
+              'GPS longitude',
+              'number',
+              false,
+              'Decimal between -180 and 180',
+              gpsHintId,
+            )}
           </div>
         </fieldset>
       </div>

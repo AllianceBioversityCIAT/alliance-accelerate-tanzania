@@ -43,7 +43,7 @@
       **Done when:** all four panels carry `shadow-lg`; `.shadow-lg` is present in the built CSS bundle (it is currently **absent** — 0 consumers); a rendered dialog capture shows the panel more raised than a `shadow-sm` fieldset; all four dialog test suites pass unmodified.
       **Evidence is disqualified if:** only some dialogs are changed — FR-3 requires all four so no two diverge; or if a backdrop class changed in the diff.
 
-- [ ] **T-4** Associate the GPS copy, and stop the badges stretching  (deps: none)
+- [x] **T-4** Associate the GPS copy, and stop the badges stretching  (deps: none)
       **Size:** S (~8 LOC) · **Skills:** `react-doctor`, `vercel-react-best-practices`
       **Scope:** Two small, independent correctness fixes, grouped because each is a few lines and neither shares a file with the other.
       1. **FR-5** — give the GPS-optional `<p>` (`RegistrationForm.tsx:649-652`) an `id`, and append that id to the `aria-describedby` of **both** GPS inputs, *alongside* each field's existing hint id (`Decimal between -90 and 90` / `-180 and 180`), never replacing it.

@@ -133,6 +133,30 @@ describe('RegistrationForm — structure', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * FR-5: the GPS-optional copy must be programmatically associated with
+   * BOTH GPS inputs, ALONGSIDE each field's own per-field hint — not by
+   * merely asserting the attribute is non-empty (a presence assertion,
+   * KZ-002), but by resolving the accessible description text itself.
+   */
+  it('associates the GPS-optional copy with both GPS inputs, alongside each field\'s own hint (FR-5)', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    const gpsCopy = /GPS coordinates are optional\. You may leave both fields blank/;
+
+    const latitude = screen.getByLabelText(/gps latitude/i);
+    const longitude = screen.getByLabelText(/gps longitude/i);
+
+    // `toHaveAccessibleDescription` resolves aria-describedby to its
+    // referenced elements' text, not the raw attribute — a RegExp is a
+    // substring test against that RESOLVED description, so both assertions
+    // per input prove the copy AND the field's own hint are both present,
+    // regardless of concatenation order.
+    expect(latitude).toHaveAccessibleDescription(gpsCopy);
+    expect(latitude).toHaveAccessibleDescription(/Decimal between -90 and 90/);
+    expect(longitude).toHaveAccessibleDescription(gpsCopy);
+    expect(longitude).toHaveAccessibleDescription(/Decimal between -180 and 180/);
+  });
+
   it('the consent checkbox is unticked at every initial render (T-18 seam)', () => {
     render(<RegistrationForm onValidated={jest.fn()} />);
     const checkbox = screen.getByLabelText(

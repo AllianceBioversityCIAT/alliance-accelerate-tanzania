@@ -558,3 +558,195 @@ the over-broad "all three axes" phrasing is retracted. The ladder remains strict
 unchanged · lint clean · `--shadow-xs` moved across a real perceptual boundary (Δ6 → Δ18 peak),
 corroborated by two independent methods and a second observer · §7 self-consistent end to end, with
 the shape-claim term class swept and clear · no orphan token, fallback correctly not taken.
+
+**Commit:** `35dd05a`
+
+---
+
+### T-4 — Associate the GPS copy, and stop the badges stretching
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** (on attempt 3 — the final attempt) |
+| **Date** | 2026-08-08 |
+| **Implementer attempts** | **3** (the 3-attempt ceiling, reached but not exceeded) |
+| **Reviewer verdicts** | 1 → `FAIL` · 2 → `FAIL` · 3 → `PASS` |
+| **Requirements covered** | FR-5 (all clauses) · FR-6 (all clauses) · NFR-3 |
+| **Design** | §7.3, §7.4 |
+| **Skills assigned** | `react-doctor`, `vercel-react-best-practices` (attempts 2–3: `react-doctor` only — comment-only remediations) |
+| **Effort assigned** | attempt 1 `high` · attempt 2 **`xhigh`** · attempt 3 **`xhigh`** |
+
+**Effort note.** Attempt 3 stayed at `xhigh` rather than escalating to `max`: the *Tier ↔ effort rule*
+forbids `max` on a cheaper tier (the Implementer is T2), and the remaining work was a subtractive
+edit where brief precision mattered more than reasoning depth.
+
+#### The code, settled at attempt 1 and unchanged thereafter
+
+**FR-5 — GPS copy programmatically associated.** `renderInput` gained a **6th** optional positional
+parameter `extraDescribedBy`, composed into the existing token list so the per-field hint is
+**appended alongside, never replaced**:
+
+```tsx
+aria-describedby={
+  [hint ? `${id}-hint` : '', extraDescribedBy ?? '', error ? `${id}-error` : '']
+    .filter(Boolean).join(' ') || undefined
+}
+```
+
+`gpsHintId = \`${baseId}-gps-hint\`` follows the existing `baseId` pattern (as `${baseId}-crops-label`
+does) rather than a hardcoded string; the GPS `<p>` carries `id={gpsHintId}`; both GPS calls pass it.
+
+| Input | Before | After |
+|---|---|---|
+| GPS latitude | `…-gpsLatitude-hint` | `…-gpsLatitude-hint …-gps-hint` |
+| GPS longitude | `…-gpsLongitude-hint` | `…-gpsLongitude-hint …-gps-hint` |
+
+**FR-6 — badges hug content.** `self-start` added to **both** `SourceBadge` and `ConsentBadge`, on the
+**badge itself** rather than the wrapper, per `design.md` §7.3 so it holds under any future
+re-parenting.
+
+#### Evidence — both halves cleared their disqualifiers
+
+**FR-5 (disqualifier: presence assertions).** A new RTL test asserts the **resolved accessible
+description** for both inputs via `toHaveAccessibleDescription`, four assertions covering the shared
+copy *and* each per-field hint. The Implementer read
+`node_modules/@testing-library/jest-dom/dist/matchers-98b869c1.js:468-508` first to confirm the
+matcher resolves `aria-describedby` to referenced elements' text via `dom-accessibility-api` rather
+than reading the attribute string — the difference between a behavioural proof and **KZ-002**.
+
+**FR-6 (disqualifier (a): only a measured width proves the fix).** jsdom cannot measure layout, so
+this was closed in a real browser: Playwright/Chromium at 1440×900 against a throwaway harness
+rendering the **real exported `ActorsTable`** (KZ-003 again — plain props, no Cognito), reproducing the
+production wrapper chain rather than approximating it. Harness deleted; absent from `git status` and
+from the build's 23-route list.
+
+| State | `Published` | longer-status badge | Reading |
+|---|---|---|---|
+| **Before** | **120.53 px** | **120.53 px** | **Identical despite different text** — the stretch defect established, not assumed. `cellWidth 152.53 = 120.53 + 32` (`px-4`×2) confirms the badge filled its cell's content box |
+| **After** | 72.547 px | 57.0625 px | Differ, and each equals text + padding exactly: 56.547+8+8 and 41.0625+8+8 |
+
+The Reviewer ruled the revert-and-remeasure baseline legitimate (the only layout-affecting delta in
+those class strings was `self-start`; the rest was comment) and the arithmetic exact (no border class,
+so border-box = content + padding).
+
+**NFR-4 — the highest-risk item in the diff.** A 6th *optional positional* parameter silently
+mis-binds if any existing call already passes six arguments. The Reviewer swept **all eleven**
+`renderInput(` call sites: argument counts 4, 2, 2, **6, 6**, 5, 4, 5, 2, 4, 4 — only the two GPS calls
+pass a 6th, and both pass `gpsHintId`. `ActorForm.tsx`'s `renderInput` is a separate function,
+untouched. `next.config.mjs` sets no `typescript.ignoreBuildErrors`, so the green build is a real
+type-check of the new signature.
+
+#### Attempt 1 — `FAIL`: a fresh KZ-008 defect
+
+The explanatory comment added to `ActorsTable.tsx` claimed the badge is *"dropped into more than one
+`flex flex-col` parent (ConsentCell, the ≥lg row actions, the <lg card list)"* with *"the default
+`align-items: stretch` on any of them"*. Grepped against the code, **two of three named sites were
+false**: the ≥lg site is a `<td>` (not a flex container at all, and `RowActions` contains **no badge**),
+and the `<lg` card site is `flex items-center` — a row, with centring, which does not stretch.
+
+A committed comment asserting a tree the code lacks, landed inside the spec whose FR-4 exists to
+remove that exact class from `contrast.test.ts`. The `self-start` code was correct throughout.
+
+#### Attempt 2 — `FAIL`: the fix reintroduced the defect in miniature
+
+The rewritten prose was verified **true clause by clause**. But inserting ~10 comment lines shifted
+every site the comment cited, leaving all three coordinates **stale by exactly 8**:
+
+| Cited | Resolves to | Real site |
+|---|---|---|
+| `:670` | the trader-name `<td>`, which renders **no badge** | `:677/:678` |
+| `:440` | inside the `<article>` whose class is **`flex flex-col gap-3`** — *inverting* the comment's own "a row, not a column" | `:448` |
+| `:343` | `function ConsentCell({` | `:351` |
+
+**Leader-predicted before the audit ran** and flagged in the Reviewer's brief as the most likely
+residual defect — the comment's own insertion moved the lines it cited.
+
+#### Attempt 3 — `PASS`: subtractive, not renumbered
+
+Remediation was **deletion of the coordinates, not correction of them.** Renumbering restores a defect
+that had already recurred once inside a single task and would recur on the next edit to the file;
+deletion ends it permanently, and the descriptive text ("`flex flex-col gap-1`") remains findable by
+search. Verified by the Leader against the saved file:
+`grep -nE ":[0-9]{2,}|\(:"` → **no matches**. Class strings byte-identical across all three attempts.
+
+`npm test -- RegistrationForm ActorsTable --silent` → **2 suites, 46 tests pass** · `npx next lint
+--quiet` → clean. `npm run build` skipped on attempts 2–3 by Leader authorisation (comment-only);
+run green on attempt 1, with `/register` 7.61 kB / 111 kB and `/admin/actors` 7.79 kB / 161 kB
+unchanged (NFR-6).
+
+#### Two Leader errors, recorded
+
+1. **An ambiguous citation in the attempt-2 brief.** It said to cite "`design.md` §7.3" without naming
+   *which* `design.md`. The Implementer checked `docs/ux-ui/design.md`, correctly found it has no
+   numbered subsections, and **declined to cite a section it could not resolve** — substituting an
+   accurate `requirements.md` FR-6 reference. §7.3 does exist, at line 86 of the **spec's** `design.md`.
+   The worker's method was right and its conclusion was wrong because the brief was ambiguous; the
+   Reviewer ruled the substitution accurate and the missing citation **not** a defect. Worth noting
+   the worker generalised "no numbered subsections" from one file to another without checking the
+   second — safe here, but the same shortcut on a load-bearing citation produces the very defect
+   under remediation.
+2. **A worked example that damaged the prose.** The attempt-3 brief supplied
+   *"…at ≥lg (:670, not a flex container)"* → *"…at ≥lg, not a flex container"*, which is correct for a
+   one-item parenthetical and wrong for a **two-item list** — the parentheses were carrying the
+   grouping. The Implementer followed it faithfully, producing prose whose claims are true under a
+   correct parse but whose negation can be mis-bound across both items. Carried as an advisory rather
+   than a fourth attempt (there was none available), on the Reviewer's ruling below.
+
+#### Reviewer's ruling on the residual ambiguity — advisory, not a violation
+
+The Leader put the rollback consequence in the brief explicitly: a FAIL here would HALT and
+`git restore .`, **discarding the conformant `self-start` fix, the FR-5 ARIA wiring and the new RTL
+test**, none of which had any defect. Not to lower the bar, but because a Reviewer weighing comma
+placement against that loss should know the real trade. The ruling:
+
+- **KZ-008 governs the truth value of an assertion** — that is what makes it falsifiable and therefore
+  the same class as a missing test. Every clause here is true; only the grouping punctuation is
+  damaged, and the mis-parse self-corrects on the following clause. Extending KZ-008 to recoverable
+  ambiguity would convert it into a prose-quality rule, which is neither what it says nor what it was
+  recorded for.
+- **Strictly better than what it replaced:** three definitively false coordinates, one inverting its
+  own claim, traded for claims true under a correct parse.
+- **The comment is entirely optional** — nothing in FR-6, T-4 or the design requires a comment at the
+  badge sites; deleting both blocks would be fully conformant. An optional true comment cannot be the
+  thing that HALTs a task and discards working code.
+
+#### Two spec defects found — the code is right and the documents are wrong
+
+1. **`requirements.md` FR-6 asserts `SourceBadge` shares "the identical class string and the identical
+   wrapper."** The class string claim is true; **the wrapper claim is false** — `SourceBadge` is never a
+   child of `ConsentCell`'s `flex flex-col` wrapper. Its parents are a `<td>` at ≥lg and a
+   `flex items-center` row in the `<lg` card, **neither of which stretches it**. §9's second structural
+   fact generalises the stretch to both badges on the same wrong premise.
+   **Consequence for the record: `SourceBadge`'s fix is DEFENSIVE, not verified-fixed.** It had no
+   width defect at its current call sites, so it is unmeasured and *unmeasurable* there. Only
+   `ConsentBadge` was measured — which is exactly what T-4's Done-when names, so this is a **complete
+   discharge, not a gap**. FR-6's obligation to apply it to `SourceBadge` is satisfied, and
+   disqualifier (b) does not trigger. Recorded in these words because **two attempts independently
+   re-derived this**, which is the cost of leaving it unwritten. The committed code comment is now
+   *more* accurate than FR-6's own rationale.
+2. **`design.md` §3's whitelist omits `frontend/components/register/RegistrationForm.test.tsx`**, while
+   T-4's Done-when *mandates* "assert in RTL, not by reading the source" — unsatisfiable without a test
+   file. §3 already lists `contrast.test.ts`, so the table was never production-only; the omission is
+   in the whitelist, not the diff. §11's budget line even allots "tests ~25" (the actual hunk is 24).
+   **Standing ruling: this is in scope, and T-6's Done-when check must expect ELEVEN files, not ten** —
+   the ten listed plus this test file. Surfaced to the user at the T-4 gate as a candidate §3
+   amendment, since amending an approved spec document is the user's call, not the Leader's.
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | readability | The attempt-3 deletion cost the two-item list its grouping: *"parents are a plain `<td>` at ≥lg, not a flex container and a `flex items-center` row in the <lg card, a row, not a column"* — a careless reader can bind the negation across both items. Reviewer supplied a rewrite that splits the list and **adds no `file:line` references** | **Recorded and closed here.** For whatever next change touches `ActorsTable.tsx`; not owed by T-4. Any rewrite must keep the two facts separable and must not reintroduce coordinates, which have gone stale **twice** inside this one task |
+| **2** | risk | `self-start` overrides the parent's `items-center` for both badges in the `<lg` card row, top-aligning instead of centring. **Inert today** — both badges are single-line and equal height, so start and centre coincide. A difference appears only if a label wraps at a narrow width. A consequence of §7.3 mandating the child-side fix, not a deviation, and it touches no FR-6 protected property | **Carried into the T-6 brief** — worth one glance in the 375 px card capture rather than a surprise |
+| **3** | readability | The attempt-1 report described `extraDescribedBy` as "a 9th param"; it is the **6th**. Code correct, report wrong. Transient, so not a FAIL — but it becomes a KZ-008 defect the moment it is copied into a persistent audit record | **Actioned:** recorded as "6th" above. Flagged by the Reviewer specifically to stop the propagation |
+
+**Issues encountered.** Two rework rounds consumed, both on comment accuracy rather than code — the
+`self-start` fix and FR-5 wiring were correct from attempt 1 and never changed. Reviewers again went
+idle without emitting verdicts and were re-prompted; each resent its completed audit rather than
+redoing it, so **no rework attempt was consumed** by the delivery pattern. Occurrences 6, 7 and 8.
+
+**Final verification result:** 46 tests pass across 2 suites · lint clean · build green (attempt 1)
+with both route bundles unchanged · FR-5 closed on a resolved-accessible-description assertion, not a
+presence check · FR-6 closed on a real-browser before/after measurement showing 120.53/120.53 px →
+72.547/57.0625 px, each exactly text + padding · zero `file:line` coordinates remaining in
+`ActorsTable.tsx`.
