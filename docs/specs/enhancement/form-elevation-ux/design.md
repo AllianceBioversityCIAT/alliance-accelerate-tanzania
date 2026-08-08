@@ -41,11 +41,29 @@ component class strings. The static-export shape, routing, data flow, and API cl
 | `frontend/components/admin/AcknowledgeDialog.tsx` | `shadow-md`→`shadow-lg` (FR-3) |
 | `frontend/components/admin/CreateUserDialog.tsx` | `shadow-md`→`shadow-lg` (FR-3) |
 | `frontend/components/admin/EditUserDialog.tsx` | `shadow-md`→`shadow-lg` (FR-3) |
+| `frontend/components/register/RegistrationForm.test.tsx` | FR-5 RTL assertion on the resolved accessible description |
 | `frontend/lib/contrast.test.ts` | `REACHABLE` citation sweep (FR-4) |
-| `docs/ux-ui/design.md` | §7 `--shadow-xs` value, §5.1 ladder note (FR-2, FR-3) |
+| `docs/ux-ui/design.md` | §7 `--shadow-xs` value **and** the §7 ladder-order note (FR-2, FR-3) |
 
 **No file outside this list may change.** `tailwind.config.ts` is *not* listed — the `xs` mapping
 already exists and only the CSS variable's value changes.
+
+> **Amendment, 2026-08-08 (execution-time, user-approved).** Two corrections, both factual; neither
+> widens scope.
+>
+> 1. **`RegistrationForm.test.tsx` added.** T-4's Done-when *mandates* "assert in RTL, not by reading
+>    the source", which no other file can carry — §3 could not simultaneously require an RTL
+>    assertion and forbid the only file able to hold one. The omission was in the whitelist, not in
+>    the diff: §3 already listed `contrast.test.ts`, so this table was never production-files-only,
+>    and §11's budget line already allotted "tests ~25" (the actual hunk is 24). **Consequence: this
+>    list now names 11 files, and T-6's Done-when diff-scope check must compare against 11.**
+> 2. **The phantom `§5.1` reference removed.** This row cited "§5.1 ladder note" in
+>    `docs/ux-ui/design.md`, but that file's §5 is *Navigation Model* and it has no §5.1 — the §5.1
+>    ladder note lives in `app-visual-refresh/design.md`. Flagged independently by a T-2 Implementer
+>    (which correctly declined to cite a section it could not resolve) and by two Reviewers. FR-2's
+>    fallback branch cites the same phantom section; had that branch been taken, it would have sent a
+>    worker hunting for a section that does not exist. The ladder-order note landed in **§7**, beside
+>    the tokens it explains.
 
 ## 4. Data Model
 

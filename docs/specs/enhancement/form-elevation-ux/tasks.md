@@ -69,7 +69,11 @@
       **outstanding and blocked on the user**: act 2 needs an operator-run deploy to Dev before the
       capture set can be taken against the origin `requirements.md` §7 names, and act 3 is the human
       visual gate for FR-1/FR-2/FR-7, which T-6 disqualifier (c) forbids inferring from direction to
-      proceed. See also the Done-when diff-scope check, which will show **11** files rather than 10.
+      proceed.
+      **Done-when amendment (2026-08-08, user-approved):** the diff-scope check reads "only the 10
+      files in `design.md` §3". `design.md` §3 has been amended to name **11** — it omitted
+      `RegistrationForm.test.tsx`, which T-4's own Done-when mandates. **Check against §3's list as
+      it now stands, not against the literal number 10.**
       **Size:** M · **Skills:** `ui-ux-pro-max`, `frontend-design`
       **Scope:** Three closing acts.
       1. **FR-4 closure** — re-resolve **every** `file:line` citation in `contrast.test.ts`'s `REACHABLE` map against the final tree, not only the two known-stale ones and not only what T-1 moved. Add any ink/ground pair inside a fieldset newly reachable on `--color-surface`.

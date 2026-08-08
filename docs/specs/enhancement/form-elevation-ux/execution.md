@@ -1046,7 +1046,40 @@ Both also sit outside `REACHABLE` proper, so sweeping them at all exceeded FR-4'
 |---|---|---|
 | **2 — deployed capture set** | `/register`, `/admin/actors/new`, the admin table and one open dialog at 375/768/1440, against the Dev CloudFront origin per `requirements.md` §7. **Requires an operator-run deploy** (`infra/scripts/deploy-frontend.sh --profile IBD-DEV`) — deploys are never agent-run. All evidence to date is local-tree | **User** deploys; agent captures |
 | **3 — human visual gate** | Explicit approval of **FR-1, FR-2 and FR-7**, the three requirements with no automated gate (`requirements.md` §8). T-6 disqualifier (c): *"continue", "do as you see fit", or silence are **not** aesthetic sign-off* — a conflation this project already had to correct once | **User only** |
-| **Diff-scope check** | T-6's Done-when requires `git diff --stat` show "only the 10 files in `design.md` §3". **It will show 11** — `RegistrationForm.test.tsx` is legitimately in the diff (see T-4's entry). §3 needs amending, or the exception must be recorded before the check is run | **User decision** |
+| **Diff-scope check** | ~~T-6's Done-when requires `git diff --stat` show "only the 10 files in `design.md` §3". **It will show 11**~~ — **RESOLVED, see below** | ~~User decision~~ **Done** |
+
+#### `design.md` §3 amended, and both machine-checkable gates now run green
+
+User-approved at the T-6 gate (2026-08-08). Two factual corrections to §3, neither widening scope:
+
+1. **`frontend/components/register/RegistrationForm.test.tsx` added to the whitelist.** T-4's
+   Done-when *mandates* "assert in RTL, not by reading the source", which no other file can carry —
+   §3 could not simultaneously require an RTL assertion and forbid the only file able to hold one.
+   §3 already listed `contrast.test.ts`, so the table was never production-files-only, and §11's
+   budget already allotted "tests ~25" (the actual hunk is 24). The omission was in the whitelist,
+   not in the diff.
+2. **The phantom `§5.1` reference removed.** The `docs/ux-ui/design.md` row cited a "§5.1 ladder
+   note" in a file whose §5 is *Navigation Model* with no §5.1 — that note lives in
+   `app-visual-refresh/design.md`. Flagged independently by the T-2 Implementer (which correctly
+   declined to cite a section it could not resolve) and by two Reviewers. **FR-2's fallback branch
+   cites the same phantom section**, so had that branch been taken it would have sent a worker
+   hunting for a section that does not exist.
+
+`tasks.md` T-6's Done-when is annotated to check against §3's list **as it now stands**, not against
+the literal number 10.
+
+**Gate 1 — diff scope (T-6 Done-when).** `git diff --name-only 02ce79d..HEAD`, excluding the spec's
+own folder: **exactly 11 files, matching §3's amended list one-for-one** — `docs/ux-ui/design.md`,
+`globals.css`, the four dialogs, `ActorForm.tsx`, `ActorsTable.tsx`, `RegistrationForm.tsx`,
+`RegistrationForm.test.tsx`, `contrast.test.ts`. **No file outside §3 changed. PASS.**
+
+**Gate 2 — LOC tripwire (`design.md` §11, >200).** Measured on the **`git diff -w`** basis per the
+standing ruling recorded in T-1's entry: **133 insertions / 47 deletions** against a ~120 estimate.
+**Within budget; tripwire not tripped.**
+
+The ruling earns itself here: the **raw** count over the same range is **334 insertions / 248
+deletions**, which would have tripped the 200-line tripwire and forced a spurious escalation. The
+excess is reindentation from T-1's 11 wrapper elements, not new logic.
 
 **Carried into act 2's brief when it runs** — the advisories accumulated from T-1, T-2, T-3, T-5:
 the `768`/`375` ActorForm harness frames are **not** representative of the real route (missing page
