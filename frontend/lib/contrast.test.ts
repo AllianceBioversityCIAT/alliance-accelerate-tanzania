@@ -194,9 +194,9 @@ const INKS: Record<string, string> = {
  * 9 grounds named by NFR-1. `highlight/20` and `warning/10` are Tailwind
  * alpha-modifier chips, not tokens — they are composited over
  * `--color-surface`, the ground both offending chips actually render on:
- * ImportPreviewTable's warning badge (`ImportPreviewTable.tsx:98`, a
+ * ImportPreviewTable's warning badge (`admin/ImportPreviewTable.tsx:98`, a
  * `bg-warning/10` chip inside a `bg-surface` table/card) and UsersTable's
- * enabled pill (`UsersTable.tsx:282`, `:377`, `bg-highlight/20` inside a
+ * enabled pill (`admin/UsersTable.tsx:282`, `:377`, `bg-highlight/20` inside a
  * `bg-surface` card/tbody). Compositing against a bare `#FFFFFF` literal
  * instead would understate exactly the failure FR-2 names (2.83:1 hides
  * behind a passing number if checked against the wrong ground).
@@ -271,7 +271,7 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
   fg: {
     grounds: ['bg', 'surface', 'surface-alt', 'restricted', 'warning/10'],
     citedAt:
-      'globals.css:93-96 (body { background-color: var(--color-bg); color: var(--color-fg); } — sitewide default) · ' +
+      'globals.css:102-106 (body { background-color: var(--color-bg); color: var(--color-fg); } — sitewide default) · ' +
       'ui/Button.tsx:49 (secondary variant: "bg-surface text-fg") · ' +
       'shell/Header.tsx:159 (text-fg, hover:bg-surface-alt) · ' +
       'ui/Button.tsx:49,51 (secondary: text-fg, hover:bg-restricted) + profile/RestrictedContactPanel.tsx:61 (text-fg inside bg-restricted) · ' +
@@ -280,9 +280,9 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
   muted: {
     grounds: ['bg', 'surface', 'surface-alt', 'restricted'],
     citedAt:
-      '(public)/about/page.tsx:322 (text-muted directly inside the bg-bg section opened at :58) · ' +
-      'shell/Header.tsx:41,48 (user-menu dropdown bg-surface, "Signed in ·" text-muted) · ' +
-      'admin/UsersTable.tsx:333,347 (thead bg-surface-alt, th text-muted) · ' +
+      '(public)/about/page.tsx:81 (text-muted directly inside the bg-bg section opened at :58) · ' +
+      'shell/Header.tsx:147 (user-menu dropdown bg-surface, "Signed in ·" text-muted) · ' +
+      'admin/UsersTable.tsx:334,347 (thead bg-surface-alt, th text-muted) · ' +
       'profile/RestrictedContactPanel.tsx:67,73 (text-muted inside bg-restricted)',
   },
   primary: {
@@ -295,7 +295,7 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
   'primary-hover': {
     grounds: ['surface'],
     citedAt:
-      '(public)/about/page.tsx:485 (text-primary, hover:text-primary-hover, inside a bg-surface case-study card) · ' +
+      'admin/ActorHistoryPanel.tsx:182 (text-primary, hover:text-primary-hover, inside the bg-surface history-entry article opened at :212) · ' +
       'auth/LoginForm.tsx:189,281 (bg-surface auth card, hover:text-primary-hover)',
   },
   success: {
@@ -321,9 +321,9 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
   danger: {
     grounds: ['surface', 'surface-alt', 'danger-soft'],
     citedAt:
-      'admin/ActorsTable.tsx:384 ("bg-surface ... text-danger") · ' +
+      'admin/ActorsTable.tsx:398 ("bg-surface ... text-danger") · ' +
       'shell/Header.tsx:181 (text-danger, hover:bg-surface-alt) · ' +
-      'admin/ActorForm.tsx:783, admin/ConfirmDialog.tsx:216, register/RegistrationForm.tsx:602 (bg-danger-soft text-danger, representative of 8 sites)',
+      'admin/ActorForm.tsx:784, admin/ConfirmDialog.tsx:216, register/RegistrationForm.tsx:615 (bg-danger-soft text-danger, representative of 8 sites)',
   },
 };
 
@@ -428,8 +428,8 @@ describe('contrast — large-text / UI-only tokens (NFR-1, 3.0:1 floor)', () => 
   //   - accent: `surface` — auth/LoginForm.tsx:189,281 (bg-surface card,
   //     "text-accent hover:text-primary-hover")
   //   - crop-sorghum/bean/groundnut: `surface` — every `text-crop-*` site
-  //     (directory/ActorCard.tsx:72,95; map/ActorPopup.tsx:66;
-  //     home/CropCard.tsx:59; (public)/about/page.tsx:227,239) renders
+  //     (directory/ActorCard.tsx:73,95; map/ActorPopup.tsx:66;
+  //     home/CropCard.tsx:59; (public)/about/page.tsx:231,239) renders
   //     inside a `bg-surface` card. `bg-crop-*` swatch/marker fills (e.g.
   //     map/RoleBadge.tsx) are a different WCAG criterion — 1.4.11
   //     non-text contrast against adjacent colours, not ink-on-ground text

@@ -894,3 +894,174 @@ resent the completed audit on re-prompt — no rework attempt consumed. Occurren
 post-T-1 baseline · grid-cell diagnosis verified field-by-field against the source · no spacing
 changed, no hit area touched, no grid arrangement altered · **FR-7 discharged by the no-change
 branch, as a recorded decision backed by a comparison.**
+
+**Commit:** `225a4e4`
+
+---
+
+### T-6 — Close FR-4's sweep, capture the full rendered set, and run the human gate
+
+| Field | Value |
+|---|---|
+| **Status** | **`[~]` — ACT 1 COMPLETE, ACTS 2 AND 3 OUTSTANDING** |
+| **Date** | 2026-08-08 |
+| **Act 1 (FR-4 closure)** | **PASS** — Implementer 1 attempt, Reviewer `STATUS: PASS` |
+| **Act 2 (deployed capture set)** | **NOT STARTED** — blocked on an operator-run deploy |
+| **Act 3 (human visual gate)** | **NOT STARTED** — requires the user's explicit approval |
+| **Requirements covered so far** | **FR-4 (all clauses) — closed.** FR-1 / FR-2 / FR-7 rendered closure, NFR-5, NFR-6 remain open |
+| **Design** | DD-4 |
+| **Skills assigned** | `tailwind-design-system` |
+| **Effort assigned** | `xhigh` |
+
+**This entry must not be read as T-6 complete.** The task is held at `[~]` deliberately. Act 1 was
+executed because it needs no deploy; the remaining two acts are gated on things no agent can supply.
+
+#### Act 1 — FR-4 closure: PASS
+
+**Scope of the sweep, measured rather than assumed.** The Leader's regex found 33 citations; the
+Implementer derived its own list from the file and found more, and the Reviewer — independently
+inventorying all 543 lines — found **34 distinct `file:line` citations** across four locations: the
+`GROUNDS` docblock (195–202), all seven `citedAt` strings, the `UNREACHABLE` prose block (383–398),
+and the large-text/UI-only comment (428–443).
+
+**The Leader's regex list was deliberately marked non-authoritative in the brief** — "a citation in a
+format my pattern missed would be invisible to it, and that is precisely how the last two sweeps
+failed." That proved correct: `globals.css:93-96` (a line *range*) and the entire large-text comment
+block were outside the regex, **and two of those were stale.**
+
+**Ten stale citations corrected — not the two the spec named.** FR-4's `AND IT MUST` clause requires
+sweeping every citation "not only the two named here", and the sweep found five times that number:
+
+| Citation | Disposition | Cause |
+|---|---|---|
+| `globals.css:93-96` | → **102-106** | Outside the Leader's regex; now exactly bounds the `body { … }` rule |
+| `(public)/about/page.tsx:322` | → **81** | **Wrong section**, not merely wrong line — `:322` is inside §3.6 (`bg-surface-alt`), while the citation claims the `bg-bg` section opened at `:58` |
+| `shell/Header.tsx:41,48` | → **147** | Old lines land in `AvatarCircle`'s body, unrelated |
+| `admin/UsersTable.tsx:333` | → **334** | Off by one |
+| `(public)/about/page.tsx:485` | → **`admin/ActorHistoryPanel.tsx:182`** | **Replaced, not renumbered** — see below |
+| `admin/ActorsTable.tsx:384` | → **398** | **T-4's** two comment blocks (10 + 4 lines) — exactly the +14 the Leader predicted |
+| `admin/ActorForm.tsx:783` | → **784** | The known off-by-one from `app-visual-refresh` T-7, confirmed |
+| `register/RegistrationForm.tsx:602` | → **615** | Already stale by one before this spec; **T-1**'s wrapper and **T-4**'s GPS additions shifted it further |
+| `directory/ActorCard.tsx:72` | → **73** | `:72` is the bare `<article` tag with no class |
+| `(public)/about/page.tsx:227` | → **231** | `:227` is the grid wrapper, not the `bg-surface` card |
+
+Two `GROUNDS` entries also gained a missing `admin/` prefix (`ImportPreviewTable.tsx:98`,
+`UsersTable.tsx:282`) — a consistency fix in a file already under edit.
+
+#### The one citation that was replaced rather than renumbered
+
+`(public)/about/page.tsx:485` → `admin/ActorHistoryPanel.tsx:182`. Every other edit renumbers; this
+one **swaps which site witnesses the claim** that `primary-hover` is reachable on `surface` — the
+closest thing in the diff to fitting evidence to a conclusion, and briefed to the Reviewer as
+priority 1.
+
+**The old citation was genuinely false.** `:485` carries `text-primary hover:text-primary-hover` but
+sits inside the §3.8 Credits `<section className="bg-surface-alt …">` opened at `:466` — it asserted
+`surface` reachability from a `surface-alt` site. The four case-study cards (`:332/:354/:376/:396`,
+all `bg-surface`) carry `text-primary` but **no `hover:` variant**; `:485` is the file's only
+`hover:text-primary-hover`.
+
+**The new citation is true, and its oddity resolves.** The Leader flagged an apparent contradiction —
+the cited line `:182` is *lexically before* the `bg-surface` article the citation says contains it
+(`:211`). The Reviewer confirmed the containment is **render-time, not lexical**: `:181-182` sit in
+`SnapshotDetails` (149–205), which `HistoryEntry` (207–232) renders at **`:225`, inside** its
+`<article className="… bg-surface …">`. Not a KZ-008 defect introduced by the fix — the failure mode
+that caught T-4 twice.
+
+The Reviewer also ruled on `:212` vs `:211`: **keep `:212`**, because `:211` is `<article` and `:212`
+is the `className` carrying `bg-surface`, and the file's stated method cites the line of the class
+literal. Every prior precedent had tag and class on one line, so this is the first case that
+distinguishes them.
+
+#### The "unchanged" claims were re-resolved, not accepted
+
+A sweep's characteristic failure is declaring a citation unmoved without reading it, so the Reviewer
+independently resolved a targeted sample plus ~25 more:
+
+| Citation | Verdict |
+|---|---|
+| `ActorsTable.tsx:204` | ✓ unmoved — it precedes T-4's insertions |
+| `ActorsTable.tsx:398` | ✓ +14 confirmed; old `:384` now holds the `text-fg` sibling |
+| `ConfirmDialog.tsx:216` | ✓ unmoved — **discharges the prior Reviewer's explicit "to be confirmed at T-6, not assumed" flag** on T-3's same-line swap |
+| `ActorForm.tsx:784`, `RegistrationForm.tsx:615` | ✓ both resolve to `bg-danger-soft … text-danger` |
+| `Header.tsx:147` | ✓ `text-muted` "Signed in ·" inside the `bg-surface` dropdown at `:140` |
+| `about/page.tsx:81` | ✓ `text-muted` inside the `bg-bg` section at `:58` |
+
+On collapsing `Header.tsx:41,48` into a single `:147`: **no coverage lost** — the gate is `grounds[]`,
+which is untouched, `muted` retains four witnesses across its four grounds, and a second uncited
+witness exists at `Header.tsx:218`.
+
+#### The newly-reachable-pairs clause: a reasoned negative, verified two ways
+
+**None added, and that is correct.** The Implementer's matrix argument — every ink whose `grounds[]`
+contains `'bg'` also contains `'surface'` — was verified true for all inks. The Reviewer did **not**
+rely on that framing alone and enumerated the inks actually rendered inside the 11 fieldsets:
+`text-fg` (legends, labels), `text-muted` (hints, placeholders), `text-danger` (required markers,
+errors), and `text-primary` on the checkbox accent — **the one ink the matrix framing could have
+missed**, since `primary` has no `'bg'` entry. It is already gated on `surface`. `ConsentPolicyDisclosure`,
+nested inside a `RegistrationForm` fieldset, adds nothing new.
+
+**Additionally over-determined:** per `requirements.md` §9 the fieldsets already carried `bg-surface`
+before this spec — `app-visual-refresh` T-7 put it there, and T-1 only moved the fill to a wrapper.
+**The ground never changed**, so FR-4's bg→surface clause had nothing to catch. This was flagged in
+the Leader's brief and is now confirmed.
+
+#### Ledger integrity — the absolute clause, verified by three routes
+
+FR-4: *"**BUT it MUST NOT** weaken, skip, or delete an existing failing-pair ledger entry to make the
+suite pass."*
+
+1. `KNOWN_FAILURES` is still `const KNOWN_FAILURES: KnownFailure[] = [];` (`:236`), interface and
+   `findKnownFailure` intact.
+2. No `grounds[]` array changed — all 11 changed lines accounted for as `citedAt` strings or comment
+   text (2 docblock + 1 `globals.css` + 3 `muted` + 1 `primary-hover` + 2 `danger` + 2 large-text).
+3. **Structural corroboration, the strongest of the three:** the current `grounds[]` produce
+   22 gated + 41 unreachable + 10 large-text + 39 frozen + 12 seam + 5 accounting = **exactly 129**.
+   Any `grounds[]` edit would shift the 22/41 split and move that total. **The identical 129/129
+   before and after is therefore evidence, not merely consistent with the claim.**
+
+**Verification:** `npm test -- contrast --silent` → **129/129 passed**, before and after.
+`git diff --stat` → only `frontend/lib/contrast.test.ts`, 11 insertions / 11 deletions.
+
+#### Two citations deliberately left alone — ruled acceptable
+
+`directory/ActorCard.tsx:95` and `(public)/about/page.tsx:239` cite a `CROP_TEXT[…]` **lookup** line
+rather than the static `Record` literal. The Implementer flagged them and declined to rewrite the
+citation convention unilaterally. The Reviewer ruled **leaving them correct, not merely acceptable**:
+the prose claims "every `text-crop-*` **site** … renders inside a `bg-surface` card", and for a
+*reachability* claim the site is where ink meets ground — the application line, not the lookup table.
+Both also sit outside `REACHABLE` proper, so sweeping them at all exceeded FR-4's literal clause.
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | risk | **`home/Hero.tsx:60` points at a comment, not the class.** `:60` is `// bg-surface with shadow-md …`; the applied class is `:61`. The pair is true and nothing is misasserted, but this is **the same off-by-one shape as the two citations FR-4 was written for**, and it survived because `grep -rn 'bg-surface'` legitimately matches a comment. Suggest `:60,66` → `:61,66` | **Recorded and closed.** A live-but-harmless citation defect; an advisory may not mint a task. Genuinely worth folding into the next change touching this file |
+| **2** | risk | **`primary` / `primary-hover` are demonstrably reachable on `surface-alt`** — `about/page.tsx:485` renders exactly that combination inside the `bg-surface-alt` section — yet both sit in `UNREACHABLE`, which the file's own PROMOTION RULE says to correct. **Outside FR-4's clauses** (scoped to fieldsets and the bg→surface migration) and it masks no failure: `#1F4E8C` on `#F4F0EA` computes to **≈7.3:1**, and `primary-hover` is darker still, so both would pass on promotion | **Recorded and closed.** Warrants a follow-up proposal, not a rework round. Notable that the Implementer had this evidence in hand when it moved the citation |
+| **3** | readability | A docblock claim at 264–268 ("Every site cited below uses a static, purge-safe class literal") is now slightly overstated — the crop citations resolve through a runtime `Record` lookup. Literals are static so purge-safety holds; the *application* is dynamic. Pre-existing, untouched by this diff | **Recorded and closed** |
+
+#### What remains before T-6 can close
+
+| Act | Blocker | Owner |
+|---|---|---|
+| **2 — deployed capture set** | `/register`, `/admin/actors/new`, the admin table and one open dialog at 375/768/1440, against the Dev CloudFront origin per `requirements.md` §7. **Requires an operator-run deploy** (`infra/scripts/deploy-frontend.sh --profile IBD-DEV`) — deploys are never agent-run. All evidence to date is local-tree | **User** deploys; agent captures |
+| **3 — human visual gate** | Explicit approval of **FR-1, FR-2 and FR-7**, the three requirements with no automated gate (`requirements.md` §8). T-6 disqualifier (c): *"continue", "do as you see fit", or silence are **not** aesthetic sign-off* — a conflation this project already had to correct once | **User only** |
+| **Diff-scope check** | T-6's Done-when requires `git diff --stat` show "only the 10 files in `design.md` §3". **It will show 11** — `RegistrationForm.test.tsx` is legitimately in the diff (see T-4's entry). §3 needs amending, or the exception must be recorded before the check is run | **User decision** |
+
+**Carried into act 2's brief when it runs** — the advisories accumulated from T-1, T-2, T-3, T-5:
+the `768`/`375` ActorForm harness frames are **not** representative of the real route (missing page
+padding and sidebar; ≈496 px real content at 768 vs ≈720 px captured) · the admin shell is
+`bg-surface` **white**, so card fill equals ground there and **NFR-1's border floor is load-bearing on
+admin surfaces in a way it is not on `/register`** · a dev-mode overlay paints over content in three
+T-5 frames and must not appear in act 2's set · authenticated surfaces need a Playwright `state.json`
+storage state, since `RequireRole` redirects before content renders · the known-stale
+`ConfirmDialog.tsx:216` question is now **discharged**, not outstanding.
+
+**Issues encountered.** The Implementer and the Reviewer both went idle without emitting reports and
+resent completed work on re-prompt — occurrences 10 and 11 of the harness delivery pattern; **no
+rework attempt consumed** by any of them.
+
+**Act 1 final verification result:** 34/34 citations resolve against the current tree · 10 stale
+citations corrected, including two the Leader's own regex could not see · one false citation replaced
+with a verified true one · no ledger entry weakened, skipped or deleted, corroborated structurally ·
+129/129 contrast pairs pass, unchanged. **FR-4 is closed.**

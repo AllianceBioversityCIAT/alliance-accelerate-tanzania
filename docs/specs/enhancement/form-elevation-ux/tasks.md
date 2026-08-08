@@ -63,7 +63,13 @@
       **Done when:** a before/after comparison exists at all three widths **and** a decision is recorded. **"Evaluated at three widths, no change warranted" fully satisfies FR-7** — this task is not required to produce a diff.
       **Evidence is disqualified if:** (a) spacing changed without a before/after comparison to justify it — FR-7 is a `SHOULD` gated on evidence, not a licence to tune. (b) Any interactive control's hit area drops below **44×44 CSS px**, or the `lg:grid-cols-2` field arrangement changed. (c) The change exceeds one step on the Tailwind spacing scale — that trips the `design.md` §11 tripwire and must escalate rather than land.
 
-- [ ] **T-6** Close FR-4's sweep, capture the full rendered set, and run the human gate  (deps: T-1, T-2, T-3, T-4, T-5)
+- [~] **T-6** Close FR-4's sweep, capture the full rendered set, and run the human gate  (deps: T-1, T-2, T-3, T-4, T-5)
+      **Progress:** act 1 (**FR-4 closure**) is **complete and PASSED** — 34/34 citations re-resolved,
+      10 stale ones corrected, ledger integrity verified (`execution.md` → T-6). Acts 2 and 3 are
+      **outstanding and blocked on the user**: act 2 needs an operator-run deploy to Dev before the
+      capture set can be taken against the origin `requirements.md` §7 names, and act 3 is the human
+      visual gate for FR-1/FR-2/FR-7, which T-6 disqualifier (c) forbids inferring from direction to
+      proceed. See also the Done-when diff-scope check, which will show **11** files rather than 10.
       **Size:** M · **Skills:** `ui-ux-pro-max`, `frontend-design`
       **Scope:** Three closing acts.
       1. **FR-4 closure** — re-resolve **every** `file:line` citation in `contrast.test.ts`'s `REACHABLE` map against the final tree, not only the two known-stale ones and not only what T-1 moved. Add any ink/ground pair inside a fieldset newly reachable on `--color-surface`.
