@@ -13,7 +13,7 @@
 
 ## Tasks
 
-- [ ] **T-1** Move the card treatment to a wrapping `<div>`; leave the fieldset semantic-only  (deps: none)
+- [x] **T-1** Move the card treatment to a wrapping `<div>`; leave the fieldset semantic-only  (deps: none)
       **Size:** M (~60 LOC) · **Skills:** `tailwind-design-system`, `frontend-design`, `react-doctor`
       **Scope:** For all **11** fieldsets (`RegistrationForm.tsx` ×5, `ActorForm.tsx` ×6): wrap each `<fieldset>` in a `<div>` that takes the card treatment (`rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm`), and reduce the `<fieldset>` to `border-0 p-0 m-0` with no background. The `<legend>` loses `bg-surface` — it no longer straddles anything and needs no fill. Field grids, `Field`/`renderInput` calls, and every other class string stay untouched.
       **In the same change (KZ-004/KZ-008):** update every `REACHABLE` citation in `frontend/lib/contrast.test.ts` that this restructure moves. **T-7 of `app-visual-refresh` skipped exactly this step and left two citations stale** — that is why FR-4 exists.
