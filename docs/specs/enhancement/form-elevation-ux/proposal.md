@@ -193,4 +193,12 @@ Raised by the user at T-6's AR-1 gate, 2026-08-08. Measured on the live page at 
 
 **The token is not the lever.** Switching to `bg-surface-alt` moves the boundary 1.051 → 1.080 — still imperceptible, which is the same finding `app-visual-refresh` recorded for every light-section transition on the home page. What reads as "white space" is **emptiness, not tone**: 240 px of logo ink in a 694 px section. The levers are logo scale, vertical rhythm, or a border — never the background token.
 
-`PartnersStrip.tsx` is **untouched by `app-visual-refresh`**, so this is pre-existing exposure, not a regression. Whether it belongs to this spec (form-focused) or its own is an open question for `/akili-specify`.
+`PartnersStrip.tsx` is **untouched by `app-visual-refresh`**, so this is pre-existing exposure, not a regression. ~~Whether it belongs to this spec (form-focused) or its own is an open question for `/akili-specify`.~~
+
+> **Answered 2026-08-08 at `/akili-specify` — routed out by user decision.** VF-5 is a home-page
+> marketing section with no relation to forms or the elevation ladder, and carrying it here would
+> make this spec two unrelated things. It now lives at
+> **`docs/specs/enhancement/partners-band-density/proposal.md`**, which preserves the measurements
+> above and the warning against a background-token fix. **It is explicitly out of scope for this
+> spec** (`requirements.md` §6). Left recorded here rather than deleted, so the trail from the
+> AR-1 gate to its destination stays readable.
