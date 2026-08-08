@@ -750,3 +750,147 @@ with both route bundles unchanged · FR-5 closed on a resolved-accessible-descri
 presence check · FR-6 closed on a real-browser before/after measurement showing 120.53/120.53 px →
 72.547/57.0625 px, each exactly text + padding · zero `file:line` coordinates remaining in
 `ActorsTable.tsx`.
+
+**Commit:** `27c7097`
+
+---
+
+### T-5 — Evaluate form density against a rendered baseline
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| **Date** | 2026-08-08 |
+| **Implementer attempts** | **1** |
+| **Reviewer verdict** | `STATUS: PASS` |
+| **Requirements covered** | FR-7 (all clauses, **including the no-change outcome**) |
+| **Design** | DD-5 |
+| **Skills assigned** | `ui-ux-pro-max`, `frontend-design` |
+| **Effort assigned** | `high` |
+| **Outcome** | **NO CHANGE ADOPTED.** `git diff --stat` empty. FR-7 discharged by its no-change branch |
+
+**This is a deliberate, evidenced decision — not an omission.** `tasks.md` sizes T-5 at "0–20 LOC —
+**may correctly be 0**"; its Done-when states *"Evaluated at three widths, no change warranted" fully
+satisfies FR-7*; `requirements.md` §11 Q3 confirms the no-change close "is a pass, not a failure".
+The Leader's brief said so explicitly and warned that hunting for something to tune so the task has
+an output is the failure mode disqualifier (a) exists to catch.
+
+#### Evidence
+
+Six captures at 375 / 768 / 1440 on both forms, `deviceScaleFactor: 2`, in-page `window.innerWidth`
+asserted per shot and matching target exactly on all six. Rendered against the **post-T-1 tree at
+`27c7097`**, which DD-5 requires as the baseline. The Reviewer independently corroborated the
+metadata from the files themselves: pixel widths are 2880 / 1536 / 750, exactly 375/768/1440 at
+`deviceScaleFactor: 2`.
+
+#### The finding — better than the premise it was given
+
+The spec's premise was *"at 1440 the forms read loose"*, inherited from DR-5. Checked against the
+actual render, that does not hold **as a section-density defect**. The salient whitespace is
+**underfilled grid cells**, which is a grid-arrangement property — and FR-7's disqualifier (b)
+explicitly forbids changing the field arrangement. No one-step padding or gap change touches it.
+
+The Reviewer verified the diagnosis field-by-field against `ActorForm.tsx` (container
+`flex flex-col gap-6` at :778; six cards `p-4 sm:p-6`; no `Field` carries a `col-span`, so field count
+maps 1:1 to grid cells):
+
+| Section | Grid | Fields | Empty cells at ≥1024 |
+|---|---|---|---|
+| Identity | `lg:grid-cols-3` | 5 | 1 |
+| Location | `lg:grid-cols-3` | 7 | 2 |
+| Capacity & support | `sm:grid-cols-2` | 2 | 0 |
+| Contact | `sm:grid-cols-2` | 2 | 0 |
+| Crops | `flex flex-wrap` (not a grid) | 3 checkboxes | full-width card, one short row |
+| **Consent & provenance** | `lg:grid-cols-4` | 5 | **3 adjacent** |
+
+**Two corrections to the record, neither verdict-changing** — and both mean the case was *understated*:
+
+1. **Row mis-attribution, made by both the Implementer and the Leader.** Location's row 2 (GPS
+   latitude / longitude / **altitude**) is **full**; both empty cells sit in the GPS-**accuracy** row.
+   The Leader asserted otherwise when adjudicating the pixels and is corrected here.
+2. **The largest contiguous empty block is `Consent & provenance`** — 5 fields in `lg:grid-cols-4`,
+   three adjacent empty cells — which **neither** the Implementer nor the Leader singled out. It is the
+   strongest support for the diagnosis, so the load-bearing conclusion was under-argued, not inflated.
+
+`RegistrationForm` (5 cards, `gap-6`, all grids `lg:grid-cols-2`) fills its grids more completely —
+Location's first grid and Contact each leave **one** empty cell, versus ActorForm's two-to-three
+adjacent. The Reviewer noted the report's stronger phrasing ("does not show ActorForm's empty-cell
+looseness") overstates slightly in kind while being right in degree.
+
+#### Why "no change" is reasoned rather than a shrug
+
+The Reviewer's assessment, which the Leader adopts: the report **locates** the actual source of the
+whitespace, **shows it is outside FR-7's permitted reach**, and **states a falsification condition** —
+a one-step tightened candidate (e.g. `gap-6`→`gap-5`) that visibly read calmer without shrinking a hit
+area or changing arrangement. Having established that the only permitted lever cannot move the
+observed effect, declining to build that candidate is coherent rather than evasive. It also declined
+to claim an improvement it could not point to, which is exactly what FR-7's `AND IT MUST` clause and
+`requirements.md` §10 ("inconclusive MUST be reportable as inconclusive") require.
+
+**Done-when satisfied without an "after" state.** The Leader briefed the Reviewer that this was the
+one place a defensible FAIL existed. It ruled the clause discharged, on three independent spec
+statements: the Done-when's own gloss ("not required to produce a diff"); FR-7's criterion being
+**conditional** ("GIVEN both forms captured before and after **any spacing change**" — with no change,
+the GIVEN never fires); and disqualifier (a) being **one-directional** ("**spacing changed** without a
+before/after comparison"), so the comparison burden attaches to *adopting*, not to *declining*.
+
+**T-1's `mb-4` correctly excluded.** All eleven legends verified carrying it (6 × 16 px = 96 px on
+`ActorForm`, 5 × 16 px = 80 px on `RegistrationForm`), matching the figure in the Leader's brief. DD-5
+makes that spacing part of the baseline rather than fat to trim, and it was treated so. **No spurious
+tightening** — the specific trap this task walked into naturally.
+
+**Disqualifier sweep:** (a) no spacing change, nothing to justify · (b) no diff, so no hit area and no
+grid arrangement changed · (c) no Tailwind scale step taken, so §11's tripwire is not near. Verify
+commands skipped by Leader authorisation — the tree is unchanged, so a green suite would prove nothing
+about FR-7.
+
+#### A correction to a KZ-003 assumption three tasks relied on
+
+The Implementer reports — and the Reviewer confirmed at `frontend/lib/auth/RequireRole.tsx:84-90` and
+`app/(admin)/layout.tsx:86` — that `RequireRole` returns `null` and `router.replace('/login')` for a
+`Public` session, wrapping the whole `(admin)` group. **So plain props alone do not render an admin
+route**; the harness had to be placed **outside** the guarded route group.
+
+KZ-003 still holds (the component genuinely takes plain props and needs no stack), but the shortcut is
+narrower than three prior tasks' success implied: it works because the harness escapes the guard, not
+because the guard tolerates fake props. The Reviewer's framing is the right one — this is a limitation
+of the throwaway shortcut, **not** a refutation of the documented method, which is a Playwright
+`state.json` storage state from a real admin session
+(`app-visual-refresh/captures/README.md:46-49`).
+
+#### Evidence preserved into the repository — Leader action
+
+Acting on the Reviewer's advisory 4 **during T-5's close-out rather than deferring**: the captures
+existed only in a session scratchpad subject to reclamation, and FR-7 has **no automated gate**
+(`requirements.md` §8), so T-5's sole evidence would have vanished. Thirteen PNGs (2.0 MB) copied to
+`docs/specs/enhancement/form-elevation-ux/captures/`, following the predecessor's precedent of
+committing PNG evidence:
+
+- **FR-7 (T-5):** `{actor,registration}-form-{375,768,1440}.png` — the six-capture set above.
+- **FR-2 (T-2):** `card-004.png` / `card-012.png` (the native-scale pair) and
+  `sweep-00-none-zoom.png` / `sweep-01-current-004-zoom.png` / `g-0.12-zoom.png` (the 4× no-blur
+  crops that actually settled it).
+- **FR-1 (T-1):** `register-form__1440__corner.png` / `actorform-harness__1440__corner.png`.
+
+These are the three requirements `requirements.md` §8 classes as having **no automated check**. T-6 §3
+must present them for explicit human approval, so they needed to outlive the session.
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+All five bear on T-6 and are **carried into its brief**; none blocks T-5.
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | risk | **The 768 and 375 ActorForm frames are not representative and must not be reused as T-6 evidence.** The harness renders cards edge-to-edge with no page padding and no sidebar; the real route adds `p-4 sm:p-6` on `<main>` plus a 224 px `md:w-56` aside — ≈496 px of content at 768 versus ≈720 px captured. The **1440** frame *is* faithful, since `mx-auto max-w-4xl` (896 px) binds under both the harness and the real 1120 px content region | Carried to T-6 |
+| **2** | risk | **The admin ground is white, not the warm canvas.** `app/(admin)/layout.tsx:87` sets `bg-surface` (`#FFFFFF`) while `body` is `--color-bg` `#FBF9F6`. On `/admin/actors/new` the card fill **equals** its ground, so separation rests on `border-border` + `shadow-sm` **alone** — making **NFR-1's border floor load-bearing there in a way it is not on `/register`**. Also means FR-1's description ("filled fieldsets on a warm canvas") is true for `/register` and **not** for the admin route | Carried to T-6. Materially sharpens why NFR-1 forbids trading the border for a shadow |
+| **3** | risk | A dev-mode overlay is painted over content in three T-5 captures (over "Capacity (tons)" at 768, over the latitude hint at 375, at the left edge of `registration-form-1440`). Tolerable in a density probe; **not** acceptable in T-6's evidence set | Carried to T-6 |
+| **4** | risk | The captures were transient and FR-7 has no automated gate | **Actioned this task** — see above |
+| **5** | risk | These are **local-tree** captures with the backend down, whereas `requirements.md` §7 points rendered verification at the Dev CloudFront origin. Correct for T-5 (the post-T-1 tree is undeployed), but **T-6 must not inherit them as deployed evidence**, and should use storage state against the real routes | Carried to T-6 |
+
+**Issues encountered:** none in the work. The Reviewer again went idle without emitting its verdict and
+resent the completed audit on re-prompt — no rework attempt consumed. Occurrence 9.
+
+**Final verification result:** six captures at asserted widths on both forms against the correct
+post-T-1 baseline · grid-cell diagnosis verified field-by-field against the source · no spacing
+changed, no hit area touched, no grid arrangement altered · **FR-7 discharged by the no-change
+branch, as a recorded decision backed by a comparison.**

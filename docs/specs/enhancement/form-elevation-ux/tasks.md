@@ -54,7 +54,7 @@
       **Done when:** both GPS inputs' `aria-describedby` resolves to the hint **and** the GPS copy (assert in RTL, not by reading the source); a `Published` badge and a longer-status badge measure at **different** widths, each equal to text + horizontal padding.
       **Evidence is disqualified if:** (a) FR-6 is claimed from the badge class string — the classes were **already correct**; the defect lives in the parent, so only a **measured width** proves the fix (RTL/jsdom cannot measure layout, so this needs a real-browser `getBoundingClientRect` or an equivalent rendered check, and the task must say which it used). (b) `SourceBadge` was left unfixed — it shares the identical class string and wrapper, so fixing one column leaves the same defect one column over. (c) The GPS copy was moved or its `mt-4`/`mt-2` spacing changed — the visual grouping is **already correct** (16 px above vs 8 px below) and FR-5 forbids touching it.
 
-- [ ] **T-5** Evaluate form density against a rendered baseline  (deps: T-1, T-2)
+- [x] **T-5** Evaluate form density against a rendered baseline  (deps: T-1, T-2)
       **Size:** S (0–20 LOC — **may correctly be 0**) · **Skills:** `ui-ux-pro-max`, `frontend-design`
       **Scope:** Capture both forms before/after at 375 / 768 / 1440 **against the post-T-1 render** (T-1 relocates padding, so today's spacing is not the baseline). Judge whether the six-section `ActorForm` reads calmer with tighter section spacing. Adopt a change only if the comparison supports it.
       **Traces:** FR-7 (all clauses, including the no-change outcome) · `design.md` DD-5
