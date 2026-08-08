@@ -63,6 +63,8 @@ Not an oversight — an explicit adjudication, recorded at the T-6 gate:
    - **`--shadow-lg`** → *"dialogs, popovers, map rail"*.
    Wiring `shadow-lg` reaches beyond forms, so specify time must decide whether it belongs here or in a separate overlay/dialog pass — but it MUST NOT be left unassigned, or two tokens stay dead code indefinitely and FR-4 never closes. **Closing FR-4's rendered-evidence clause is an acceptance criterion of this spec**, and the evidence must be a real rendered surface, not a probe file.
 
+   > **Amended 2026-08-08.** *"Both ship with zero consumers"* is now true only of `--shadow-lg`. T-7 wired `--shadow-xs` to inputs at rest, and it renders **indistinguishable from flat** — so the `xs` item below is **not** a wiring task and must not be specified as one. Wiring it again unchanged reproduces the same non-result. **The decision this spec inherits is the token's value: make `--shadow-xs` heavy enough to perceive at input scale, or drop the rung and state the ladder as three steps.** `--shadow-lg` is unchanged — still zero consumers, all four dialogs on `shadow-md`. Detail in §9.
+
 ## 5b. Design review (skill `frontend-design`, 2026-08-07)
 
 Run at the user's request against three rendered surfaces on Dev: public `/register`, admin `/admin/actors` (table), admin `/admin/actors/new` (`ActorForm`). Findings are code-verified, not eyeballed.
@@ -89,7 +91,9 @@ The fieldset **is the card class minus `bg-surface` and minus `shadow-sm`**. Not
 
 ### DR-3 — Inputs carry no shadow, which is where `--shadow-xs` belongs
 
-`Input`/`Select`/`FormField` have **no** `shadow-*` class. `design.md` Group D assigns `--shadow-xs` to *"chips, inputs at rest"*. Wiring it there yields a semantically correct two-step ladder: **input (`xs`, 4%) nested inside section (`sm`, 7%)** — the smaller element less raised than its container. This closes VF-2's missing `xs` consumer as a by-product of doing the right thing, rather than as a token hunt.
+`Input`/`Select`/`FormField` have **no** `shadow-*` class. `design.md` Group D assigns `--shadow-xs` to *"chips, inputs at rest"*. Wiring it there yields a semantically correct two-step ladder: **input (`xs`, 4%) nested inside section (`sm`, 7%)** — the smaller element less raised than its container. ~~This closes VF-2's missing `xs` consumer as a by-product of doing the right thing, rather than as a token hunt.~~
+
+> **Superseded 2026-08-08 — the wiring happened and did not close it.** T-7 applied `shadow-xs` to inputs at rest exactly as proposed here; rendered evidence shows the result is **indistinguishable from flat**. The reasoning above is still right about *where* `xs` belongs; it is wrong that placing it there discharges VF-2. See §9 → *VF-2's `xs` half is NOT closed*. **At 4 % alpha over 1 px there is no consumer at which this token becomes visible** — so the open item is the token's value, not its placement.
 
 ### DFII — the framework argues against the skill's own bias here
 
@@ -142,9 +146,13 @@ Two of these are non-negotiable and one is easy to get wrong:
 
 ### VF-4 — the `<legend>` fill protrudes above the card edge
 
-T-7 gave the `<legend>` `bg-surface` so its notch would stop showing the warm canvas through a filled card. It works, but a native legend **straddles** the border: the upper half now renders white against the warm canvas, reading as a small white tab on the card's top-left instead of a clean notch. Subtle (1.05:1 edge) and better than before, but the silhouette is wrong.
+T-7 gave the `<legend>` `bg-surface` so its notch would stop showing the warm canvas through a filled card. It works, but a native legend **straddles** the border: the upper half now renders white against the warm canvas, reading as a small white tab on the card's top-left instead of a clean notch. ~~Subtle (1.05:1 edge)~~ and better than before, but the silhouette is wrong.
 
 **No background value can fix this.** Fill it like the card → it protrudes into the canvas. Fill it like the canvas → it intrudes onto the card. The element crosses the boundary, so the fix must stop it straddling.
+
+> **Severity raised to *obvious* — 2026-08-08, from rendered evidence (`app-visual-refresh` T-6 round 2).** The "subtle" above was written without a capture and is **superseded**. The legend's `#FFFFFF` fill breaks the card's top-left **rounded corner** and reads as a white tab against the `#FBF9F6` canvas at all three widths. The 1.05:1 figure described the *edge* contrast and was the wrong measure — what makes it visible is the broken silhouette, not the tonal step.
+>
+> **Two automated vision passes described this defect incompatibly** (one: "white mask protrudes above the card"; the other: "the border strikes through the glyphs") and a Leader geometry probe reporting `straddles:false / aboveBy:0` appeared to refute both — that probe was **invalid**, because it compared the legend against the fieldset's border-*box* rather than where the border is painted when a legend interrupts it. A cropped element screenshot settled it. **For this spec: verify the fix by looking at it, and do not accept a geometry assertion as a substitute.**
 
 ### The failed attempt — do not repeat it
 
@@ -152,6 +160,37 @@ T-7 gave the `<legend>` `bg-surface` so its notch would stop showing the warm ca
 
 **Binding constraint for this spec:** any change to the legend's flow or positioning MUST be verified by rendering **before** deployment. A green build is not evidence for a layout change. Whatever approach is chosen — header row inside the card, absolute positioning, or removing the legend from the visual flow while preserving it for assistive technology — it must be rendered and inspected at **375 / 768 / 1440** before it ships, and it must preserve native `<fieldset>`/`<legend>` semantics.
 
-### Still unverified from T-6
+### ~~Still unverified from T-6~~ — resolved 2026-08-08
 
-Responsive behaviour at **375 px and 768 px** was never captured (the tooling would not resize the viewport). In particular, a `<legend>` that **wraps to two lines at 375 px** interacts with the notch in a way no one has yet seen. Treat it as unknown, not as working.
+~~Responsive behaviour at **375 px and 768 px** was never captured (the tooling would not resize the viewport).~~ **Now captured.** `app-visual-refresh` T-6 round 2 took the full surface set at 375 / 768 / 1440 with an in-page `window.innerWidth` assertion on every shot.
+
+**The 375 px two-line `<legend>` does not reproduce.** Measured across all five legends at all three widths: every one is `height = 24 px` against `line-height = 24 px` — exactly one line, including the longest string ("Data protection & consent") at 375 px. The interaction this section warned about **does not exist**, and this spec should not carry it as a constraint.
+
+The same probe **confirms DR-1's target state is already met by T-7**: `<legend>` computes `600 / 16px` against `<label>` at `500 / 14px` — separated on two dimensions, not one.
+
+### VF-2's `xs` half is NOT closed — the token is wired and perceptually inert
+
+**This falsifies DR-3's by-product claim below, and §5 point 7's premise.** T-7 wired `--shadow-xs` to inputs at rest exactly as DR-3 proposed. The class is applied, `.shadow-xs{…}` is emitted in the deployed bundle — and the T6 vision gate reports inputs at rest as **"functionally flat"**. At `0 1px 2px rgba(61,47,32,0.04)`, a 4 %-alpha 1 px shadow does not separate from flat in the render.
+
+So the wiring was necessary and **not sufficient**. `app-visual-refresh`'s FR-4 disqualifier fires and the `xs` rung is recorded **INCONCLUSIVE**, not passed. **This spec inherits a design decision, not a wiring task:** either `--shadow-xs` gets a value heavy enough to perceive at input scale, or the rung is dropped and the ladder is honestly three steps. Re-wiring it unchanged would reproduce the same non-result.
+
+**KZ-002, exactly.** T-7's done-condition read *"inputs carry `shadow-xs`"* and was discharged by confirming the class was present. A presence assertion is not a behavioural proof; the class was genuinely there and the rendered result was still nothing.
+
+`--shadow-lg` remains at **zero consumers** — all four dialogs use `shadow-md`, and `.shadow-lg` is absent from the deployed bundle. **Net: of the four-rung ladder, `sm` and `md` render; `xs` is inert and `lg` is unconsumed.**
+
+### VF-5 — `PartnersStrip` is the only pure-white full-bleed band, and nobody chose it against a warm canvas
+
+Raised by the user at T-6's AR-1 gate, 2026-08-08. Measured on the live page at 1440:
+
+| | |
+|---|---|
+| Section background | `#FFFFFF` (`bg-surface`) |
+| Section above / below | `#FBF9F6` (**1.051:1**) / `#2A2724` |
+| Section height | 694 px |
+| Logo ink | 6 logos capped at 40 px → 240 px total (**~35 %**) |
+
+**Same root cause as VF-1, and the same warning against a token fix.** `PartnersStrip.tsx:9` documents `bg-surface` as deliberate (FR-6 / §5.3) — but it was chosen when `--color-bg` was *also* `#FFFFFF`, so the choice had no visual consequence. It does now.
+
+**The token is not the lever.** Switching to `bg-surface-alt` moves the boundary 1.051 → 1.080 — still imperceptible, which is the same finding `app-visual-refresh` recorded for every light-section transition on the home page. What reads as "white space" is **emptiness, not tone**: 240 px of logo ink in a 694 px section. The levers are logo scale, vertical rhythm, or a border — never the background token.
+
+`PartnersStrip.tsx` is **untouched by `app-visual-refresh`**, so this is pre-existing exposure, not a regression. Whether it belongs to this spec (form-focused) or its own is an open question for `/akili-specify`.

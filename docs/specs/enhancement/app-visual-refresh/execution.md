@@ -741,3 +741,223 @@ The user asked for VF-4 fixed "rápidamente". The Leader applied `float-left w-f
 1. Capture 8 surfaces × 375/768/1440 with a viewport that actually resizes.
 2. Confirm the 375 px `<legend>` wrap (Reviewer advisory, still open).
 3. Obtain explicit aesthetic sign-off, or record a decision to close without it.
+
+---
+
+## T-6 — round 2 (2026-08-08): capture set completed, gate still open
+
+Resumed at `981ce5f`. **No repository change in this round** — `git status` clean throughout,
+HEAD unmoved. All artefacts are captures held outside the tree. The three items above are
+answered below: (1) done, (2) done — does not reproduce, (3) still owed.
+
+### The viewport blocker is gone
+
+Round 1 died because `resize_window` reported success while the rendered viewport stayed at
+1568 px. Replaced with Playwright driving a real `viewport` per context, installed **in the
+scratchpad only** — not vendored into the repo, per the root guide's `playwright-cli` note that
+teammates without it must still be able to run every command.
+
+The fix is not "a different tool worked". It is that **the harness now asserts the thing that
+failed silently before**: every capture evaluates `window.innerWidth` in-page and records it in
+the manifest, and a mismatch against the requested width is written into the capture's status.
+A capture cannot now claim a width it does not have. All 27 app captures returned
+`inner == requested`.
+
+### Capture set — complete
+
+| # | Surface | 375 / 768 / 1440 | Independently verified as |
+|---|---|---|---|
+| 1 | Home / hero | ✅ | viewport-only **and** full-page (see Q5 below) |
+| 2 | Directory cards | ✅ | — |
+| 3 | Admin actors table | ✅ | `h1 = "Actor management"`, **25 table rows** |
+| 4 | Import preview | ✅ | **3 preview rows, 6 warning-text matches** |
+| 5 | Map + filter rail | ✅ | — |
+| 6 | Footer | ✅ | scrolled to `document.body.scrollHeight` |
+| 7 | Dialog | ✅ | `[role="dialog"]` count = 1 |
+| 8 | `/dashboard` charts | ✅ | LF-1 surface |
+| 9 | Register form | ✅ | extra — the VF-4 / DR-1 surface |
+
+**Auth surfaces (3, 4, 7) were reached this round.** The user logged in to a headed Playwright
+browser which polled `localStorage` for the Cognito idToken and saved the session; credentials
+never entered the agent. Session carried `cognito:groups: ["admin"]`. This closes the gap round 1
+recorded as *"the surface the Leader could not reach without credentials."*
+
+**Surface 4 was not accepted in its idle state.** A first pass captured `/admin/actors/import`
+with `tableRows = 0` — the upload screen, not the preview. The task names *"import preview (the
+two 12px warning pairs)"*, so the idle screen is not the surface. A 3-row workbook was built
+against the live template (downloaded from the origin, headers read with `exceljs`) to trigger
+all three warning classes — `GPS_CLEARED_WARNING`, `CONSENT_ACK_WARNING`,
+`PHONE_UNNORMALIZABLE_WARNING` (`actor-import.service.ts:75,77,88`). **Preview only; commit was
+never clicked.** `importActors(file,'preview')` is a dry run and `'commit'` is a separate action
+(`import/page.tsx:306-385`), so nothing was written to Dev.
+
+### T6 visual gate — dispatched to Antigravity, and audited rather than relayed
+
+Two rounds on `agy` / `gemini-3.1-pro-high`, per the routing in Document Control. Both returned
+`FAIL`. **Neither verdict was adopted as written**; each contained a defect the Leader had to
+adjudicate, and the record below is the adjudication, not the transcript.
+
+**Round 1 silently renumbered its own answers** — it answered the VF-4 question under a "Q5"
+heading, invented a map-modal question in Q4's slot, and never answered the question actually
+asked as Q5 (home-page section structure). Round 2's brief pinned the numbering explicitly and
+forbade substitution; it then answered Q5 honestly as `CANNOT VERIFY`, which was **correct and
+was the Leader's fault** — the home captures were viewport-only, so sections 4–7 were never in
+frame. Re-captured full-page afterwards.
+
+| Finding | Verdict | Basis |
+|---|---|---|
+| Comp fidelity (Q1) | **holds** | warm canvas `#FBF9F6` vs white cards `#FFFFFF` reads as the comp intends at all three widths |
+| `shadow-sm` vs `shadow-md` (Q3) | **distinguishable** | dialog panel separates clearly from the dimmed backdrop |
+| Warning colour on data surfaces (Q7) | **legible, and distinct from danger/success** | supports FR-2 on the surfaces the Leader could not previously reach |
+| **`shadow-xs` vs flat (Q2)** | **INCONCLUSIVE — disqualifier (b) fires** | see below |
+| **VF-4 legend artefact (Q4)** | **CONFIRMED, obvious** | see below |
+| Nav clipping at 768 px | **real, but pre-existing and out of scope** | see below |
+
+### `shadow-xs` is present in the CSS and imperceptible on screen — VF-2's `xs` half is NOT closed
+
+The gate reports inputs at rest as "functionally flat": `shadow-xs` is
+`0 1px 2px rgba(61,47,32,0.04)`, and at 4 % alpha over 1 px it does not separate from flat in the
+render. **Disqualifier (b) fires**, and its instruction is explicit — this is reported as
+inconclusive and is *not* collapsed into a pass.
+
+This matters beyond one screenshot. T-7's done-condition read *"inputs carry `shadow-xs`"* and was
+discharged by confirming the class was applied. **That is a presence assertion, and KZ-002 says a
+presence assertion is not a behavioural proof.** The class is genuinely applied — `.shadow-xs{…}`
+is emitted in the deployed bundle and the inputs carry it — and the rendered result is still
+nothing. T-7's *"This closes VF-2's `xs` half"* is therefore **withdrawn**: the token is wired
+correctly and is perceptually inert. Whether the fix is a heavier `xs` or dropping the rung is a
+design decision, and it belongs to `enhancement/form-elevation-ux` alongside the rest of VF-2.
+
+Its sibling was already known: **`shadow-lg` has zero consumers.** All four dialogs use
+`shadow-md` (`ConfirmDialog.tsx:154`, `AcknowledgeDialog.tsx:216`, `CreateUserDialog.tsx:216`,
+`EditUserDialog.tsx:184`), and `.shadow-lg` is absent from the deployed bundle while `xs`/`sm`/`md`
+are present. The task's *"one dialog (backdrop + `shadow-lg`)"* describes a state the app has never
+had. Recorded as a gap and routed out by user decision (2026-08-08); T-6's allowed-files set is
+`execution.md` + captures, so applying it here would have been the scope breach the tripwire exists
+to catch. **Net: the four-rung ladder has two rungs that render — `sm` and `md`.**
+
+### VF-4 confirmed — and the Leader's own probe was wrong first
+
+Both gate rounds flagged the register-form legend, **with incompatible explanations**: round 1
+said a white mask protrudes *above* the card into the canvas; round 2 said there is *no* masking
+and the border strikes through the glyphs. They cannot both be true, so the Leader measured.
+
+The measurement said `straddles: false`, `legendTop == fieldsetTop == 208.5`, `aboveBy: 0` —
+apparently refuting both. **That probe was invalid and was nearly written into this log as fact.**
+It compared the legend against the fieldset's *border-box* rectangle, which is not where the
+border is painted when a `<legend>` interrupts it; the computation could not have detected the
+artefact it was asked about. A cropped element screenshot settled it in one look.
+
+**The artefact is real and obvious.** The legend's `#FFFFFF` fill breaks the card's top-left
+rounded corner and reads as a white tab against the `#FBF9F6` canvas. Round 1's description was
+right; round 2's "border strikes through the text" is wrong — the border is *interrupted*, not
+crossing the glyphs. VF-4 stands as routed to `form-elevation-ux`, and its severity is **raised
+from the "subtle" recorded at hand-off to obvious**.
+
+Worth stating plainly: on the single most important open defect, two automated rounds disagreed
+with each other and the Leader's first measurement agreed with neither. **What resolved it was
+looking at the pixels.** That is the same lesson as the reverted `float-left` incident, arriving
+from the opposite direction — there, a change was shipped because three green gates were mistaken
+for rendered evidence; here, three machine results were mistaken for it again.
+
+### The 375 px `<legend>` wrap advisory does not reproduce — closed
+
+Measured at all three widths across all five legends: every one is `height = 24 px` against
+`line-height = 24 px`, i.e. exactly one line, including the longest string
+("Data protection & consent") at 375 px. The Reviewer advisory is **closed as not-reproducing**.
+
+The same probe confirms **DR-1**: `<legend>` computes `600 / 16px` against `<label>` at
+`500 / 14px` — separated on **two** dimensions, satisfying T-7's *"more than one step"*.
+
+### Two defects found that are NOT this spec's — recorded, not absorbed
+
+Both were surfaced by the gate and both were checked against `git` before being attributed.
+
+1. **Nav clipping at 768 px.** Measured, not eyeballed: three items render past the viewport —
+   `Directory` (right edge 789), `About` (861), `Register your organisation` (1085) against a
+   768 px viewport. `Header.tsx:331` is `hidden md:flex`, so the desktop nav switches on at
+   exactly the width where its six items no longer fit. **`Header.tsx` is untouched by this
+   spec** (this spec's only `shell/` edit is `Footer.tsx`, comment-only); it was last changed
+   `2b9fa1f` (2026-08-05, `actors/public-self-registration` T-15) — the commit that **added the
+   199 px "Register your organisation" entry** that overflows the row.
+2. **Map legend at 375 px** overlaps the zoom controls. `MapLegend.tsx:46` is
+   `absolute bottom-6 left-3 z-[1000]` with no responsive variant — no token this spec changed is
+   involved. Untouched by this spec; last changed `50c4e4d` (2026-08-05).
+
+Neither is a regression from the token change; both pre-date it. They are recorded here and
+**deliberately not turned into tasks in this spec** — that is the advisory-never-becomes-a-task
+rule, and the same call already made for the flaky frontend suite. Each warrants its own
+`bugfix/` proposal.
+
+### Gates
+
+**Not re-run this round, deliberately.** The working tree is byte-identical to `981ce5f`, the
+state at which they were last run and recorded above: 23/23 static + 2/2 export,
+`next lint --quiet` clean, contrast **129/129**, bundle sizes unchanged from baseline. Re-running
+an unchanged tree would produce evidence about the same commit, and — per the suite-gate note —
+the full suite is nondeterministic, so a fresh run could only *weaken* the record by adding a
+flaky failure unrelated to this spec. Diff containment against base `7aeb358` re-checked: 18
+files, all inside the amended NFR-7 allowed set.
+
+Disqualifier (a) re-verified against the live origin: bundle `1f0a123924cc8161.css` carries all
+five new tokens and none of the old. The single `C9821B` hit is **`--crop-sorghum`, not
+`--color-warning`** (`--color-warning:#8F5E10`) — that is T-3's *decouple warning from crop
+identity* working as designed, not a stale value. Disqualifier (c) does not apply; the user has
+looked, repeatedly.
+
+### T-6 status: still `[~]`
+
+| Done-condition | State |
+|---|---|
+| Gates green | ✅ carried from `981ce5f`, tree unchanged |
+| `git diff --stat` within the allowed set | ✅ 18 files, all allowed |
+| Captures for all 8 surfaces × 3 widths | ✅ **met this round** |
+| Disqualifier (a) — no stale CSS | ✅ machine-verified |
+| Disqualifier (b) — ladder distinguishable | ❌ **fires** — `xs` imperceptible, `lg` unrenderable |
+| **User has approved the visual result (AR-1)** | ❌ **not given** |
+
+Two conditions are unmet, one of them a formal disqualifier. **AR-1 is not machine-decidable and
+no accumulation of automated results substitutes for it.** T-6 is held at `[~]` for the second
+time, on narrower and better-evidenced grounds than the first.
+
+### VF-5 — raised by the user at the AR-1 gate, 2026-08-08
+
+Looking at the home page's Partners section, the user asked whether its white space is
+intentional. Measured on the live page at 1440 px:
+
+| | |
+|---|---|
+| Section background | `#FFFFFF` (`bg-surface`) — the only pure-white full-bleed band on the home page |
+| Neighbour above / below | `#FBF9F6` (**1.051:1**) / `#2A2724` |
+| Section height | 694 px |
+| Logo ink | 6 logos capped at 40 px → 240 px total (**~35 %**) |
+| Side gutters | 80 px (`max-w-7xl` at 1440) |
+
+**The colour is deliberate; its visibility is not.** `PartnersStrip.tsx:9` documents
+`bg-surface` as the intended treatment (FR-6 / §5.3) — but that choice was made when
+`--color-bg` was also `#FFFFFF`, so it had no visual consequence. This is the **third** instance
+of the same pattern in this spec (VF-1 fieldsets, the home-section mass, now this): the refresh
+did not create these, it removed the white-on-white camouflage that hid them.
+
+**But the visible complaint is emptiness, not tone.** At 1.051:1 the band edge is below
+perception, and `bg-surface-alt` would move it only to 1.080 — the same dead end already
+recorded for every light-section transition here. 240 px of ink in a 694 px section is the
+actual finding. The levers are logo scale, vertical rhythm, or a border; **never the background
+token.**
+
+`PartnersStrip.tsx` is untouched by this spec. **Recorded and routed to
+`enhancement/form-elevation-ux` §9 by user direction; not actioned here** — no task was minted
+in this spec for it, per the advisory-never-becomes-a-task rule.
+
+### AR-1 remains ungiven — stated explicitly because the last close-out got this wrong
+
+The user's instruction at this point was **"YES and continue"**, directing that VF-5 be recorded
+and routed out and that execution proceed. **That is direction to proceed. It is not aesthetic
+approval, and it is not recorded as such.** The previous hand-off logged
+*"continua como te parezca mejor"* and had to note, correctly, that it was not sign-off; repeating
+that conflation now — with the user's words once again being about *what to do next* rather than
+*whether the result looks right* — would be the same error with a better audit trail.
+
+**AR-1 is unmet.** T-6 stays `[~]`. Note that this is not currently the binding constraint:
+**disqualifier (b) fires independently**, so T-6 could not reach `[x]` on this commit even with
+sign-off in hand.
