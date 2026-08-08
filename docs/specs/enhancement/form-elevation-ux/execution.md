@@ -227,3 +227,163 @@ failure.
 **Final verification result:** 180 tests pass · build succeeds · lint clean · 6/6 captures at
 asserted widths · FR-1 confirmed resolved by Leader inspection of the pixels at all three widths on
 both forms.
+
+**Commit:** `3d62cf0`
+
+---
+
+### T-3 — Give `--shadow-lg` its consumers: the four dialogs
+
+| Field | Value |
+|---|---|
+| **Status** | **PASS** |
+| **Date** | 2026-08-08 |
+| **Implementer attempts** | **1** |
+| **Reviewer verdict** | `STATUS: PASS` (attempt 1, lens-checklist mode) |
+| **Requirements covered** | FR-3 (all clauses) · NFR-2 · NFR-4 · NFR-6 |
+| **Design** | DD-3 |
+| **Skills assigned** | `tailwind-design-system` |
+| **Effort assigned** | `low` |
+
+**Leader effort rationale.** `low` rather than the `medium` default, deliberately: T-3 is four
+one-line class swaps, and its failure mode is **over-reach, not under-thinking** — the four dialogs
+carry a real backdrop inconsistency that `design.md` DD-3 forbids fixing here. Depth would not have
+helped; a hard scope fence would, so the brief spent its budget there. Task selected out of document
+order (ahead of T-2) by user decision at the T-1 gate, to bank the cheap machine-checkable work
+before spending user attention on T-2's perceptual judgement.
+
+#### Attempt 1
+
+**Files changed** (4 of the 10 whitelisted in `design.md` §3) — one line each, 4 insertions /
+4 deletions total:
+
+| File | Line | Change |
+|---|---|---|
+| `ConfirmDialog.tsx` | 154 | `shadow-md` → `shadow-lg` |
+| `AcknowledgeDialog.tsx` | 216 | `shadow-md` → `shadow-lg` |
+| `CreateUserDialog.tsx` | 216 | `shadow-md` → `shadow-lg` |
+| `EditUserDialog.tsx` | 184 | `shadow-md` → `shadow-lg` |
+
+All four panel strings were byte-identical before
+(`'rounded-md bg-surface p-6 shadow-md border border-border'`) and byte-identical after. Every line
+matched the spec's cited number — T-1 did not touch these files. **Exactly one class token changed
+per file, four total, matching the Scope line with no extras.**
+
+**Token wiring:** `tailwind.config.ts:58` — `lg: 'var(--shadow-lg)'`; `app/globals.css:73` —
+`--shadow-lg: 0 16px 40px rgba(61,47,32,0.14)`. `docs/ux-ui/design.md` §7 designates `--shadow-lg`
+for "dialogs, popovers, map rail", so dialogs are the correct consumer.
+
+**Verification:**
+
+| Command | Result |
+|---|---|
+| `npm test -- Dialog --silent` | 2 suites, **21 tests passed** |
+| `npm run build` | **Succeeded**, static export 23/23 pages (run twice — clean baseline + final) |
+| `npx jest "admin/actors/page.test.tsx" "admin/users/page.test.tsx" "ActorsTable.test.tsx"` (**Leader-run**, closing the gap below) | 3 suites, **72 tests passed** |
+
+#### The `grep -c` gate is defective — found by the Implementer, confirmed by the Reviewer
+
+`tasks.md` T-3's literal verify line is `grep -c 'shadow-lg' .next/static/css/*.css`, and
+**it cannot work**. Both agents established the mechanism independently: the production CSS is
+minified onto one physical line, and the `:root` `--shadow-lg:` custom-property declaration sits on
+that same line — so a count-mode grep returns `1` whether or not any consumer exists. Measured `1`
+before **and** `1` after.
+
+Had T-3 been discharged on the task's own command, it would have produced a number that looked like
+evidence and proved nothing — **KZ-002 exactly**, in the verification line of a task written to end
+a KZ-002 failure.
+
+The working evidence is a **rule-body** extraction, run on clean `rm -rf .next && npm run build`
+in both states:
+
+| State | `grep -o '\.shadow-lg[^}]*}'` |
+|---|---|
+| **Baseline** (pre-edit) | **no matches** — corroborates `requirements.md` §9's "`shadow-lg` consumers: **0**" |
+| **After** | `.shadow-lg{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}` and `.shadow-lg{--tw-shadow:var(--shadow-lg);--tw-shadow-colored:var(--shadow-lg)}` |
+
+The Reviewer reproduced both fragments itself from
+`.next/static/css/1be7598536ccb7c7.css` and judged the second **stronger** than FR-3's literal
+criterion required: a Tailwind stock value would emit hardcoded geometry
+(`--tw-shadow:0 10px 15px -3px rgb(0 0 0/.1)…`), whereas this emits the custom property, proving the
+utility resolves through the project token. And since Tailwind only emits a utility whose class
+appears in scanned content, **the rule's existence is itself the consumer proof** — set against a
+baseline with no `.shadow-lg` rule body at all.
+
+**Standing ruling recorded:** the working form is `grep -o '\.shadow-lg{[^}]*}'`, expecting two
+fragments one of which contains `var(--shadow-lg)`. Any later reader of T-3's verify line should use
+that instead.
+
+#### Leader adjudication on the pixels
+
+FR-3's Done-when includes "a rendered dialog capture shows the panel more raised than a `shadow-sm`
+fieldset" — a comparison, so a class check cannot close it. Captures taken via a throwaway harness
+(deleted before reporting; **KZ-003** confirmed again — the dialogs take plain props and need no
+Cognito session), scratchpad `t3-captures/`. The Leader opened
+`0-fieldset-shadow-sm.png` and `1-confirm-dialog-shadow-lg.png` directly:
+
+- The `shadow-sm` reference fieldset carries a barely-perceptible hairline edge.
+- The `shadow-lg` dialog panel sits on a large, soft, spread shadow that clearly lifts it off the
+  backdrop. **Visibly more raised. Closed on the pixels.**
+
+**Recorded honestly as partially unclosed:** FR-3's criterion also reads "more raised than a
+`shadow-md` **card**", and no side-by-side `lg`-vs-`md` frame was captured — the harness had no
+`shadow-md` reference. Two things stand in for it: the ladder is strictly monotonic on all three
+axes (`xs` 1px/2px/0.04 → `sm` 2px/4px/0.07 → `md` 6px/16px/0.10 → `lg` 16px/40px/0.14), so
+`lg > md` is deterministic rather than a judgement; and the capture proves `lg` is plainly
+perceptible. T-6 §2's durable set captures an open dialog regardless. Noted rather than waved
+through, per `requirements.md` §10.
+
+#### Leader correction — test coverage of the four dialogs
+
+The Implementer flagged that `npm test -- Dialog` selects only two suites, since `ConfirmDialog` and
+`EditUserDialog` have no dedicated test file. The Leader ran the three indirect suites to close that
+gap (72 tests, green) and **initially reported both dialogs as covered indirectly. The Reviewer
+checked and that was wrong:**
+
+- **`ConfirmDialog` is genuinely covered indirectly** — opened and driven at `ActorsTable.test.tsx:270`,
+  `actors/page.test.tsx:507,537,614`, `users/page.test.tsx:312`.
+- **`EditUserDialog` is covered by no test at all.** The string `EditUserDialog` appears in no test
+  file; `users/page.test.tsx`'s three `getByRole('dialog')` assertions are `ConfirmDialog` and an
+  inline reset-password panel. What covers it here is the successful build plus the rendered `4-edit`
+  capture — **not a test.**
+
+Adequate for a one-token class change on a file whose tests assert no shadow, but "exercised
+indirectly" overstated it and the record is corrected here. Related: the Done-when clause "all four
+dialog test suites pass unmodified" **presupposes four suites that do not exist** — a `tasks.md`
+defect, not an implementation gap. On substance the clause holds: no test file is in the diff, and
+no test in `components/admin` asserts any dialog shadow class (the only `shadow` assertions in the
+tree are `ActorsTable.test.tsx:547,551` for `shadow-sticky-edge`), so no test *could* have needed
+editing.
+
+#### Negative clauses — verified untouched
+
+The Reviewer confirmed by reading the files, not the diff: `role="dialog"`, `aria-modal`,
+`aria-labelledby`, `onKeyDown={handleKeyDown}`, `handleKeyDown` bodies and `dialogRef` wiring are
+present and unmodified in all four; only one `className` array line changed per file. The backdrop
+split DD-3 forbids fixing is **intact** — `ConfirmDialog.tsx:139` / `AcknowledgeDialog.tsx:201` on
+`bg-backdrop`, `CreateUserDialog.tsx:201` / `EditUserDialog.tsx:170` on `bg-fg/40`. No `shadow-md`
+remains anywhere in `components/admin`.
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | risk | `tasks.md` T-3's `grep -c` verify line is a broken gate (pinned at `1` in both states) | **Standing ruling recorded above.** T-6's own verify does not use it, so no live gate depends on it |
+| **2** | risk | **A fifth `role="dialog"` panel remains on `shadow-md`:** `frontend/app/(admin)/admin/users/page.tsx:488-495`, an inline reset-password handoff dialog carrying the byte-identical panel string. FR-3's rationale clause *"so no two dialogs diverge in elevation"* is therefore **not fully achieved at the requirement level**, and `requirements.md` §9's "Dialogs on `shadow-md`: **4**" counted named dialog *components* rather than `role="dialog"` *panels* | **Escalated to the user at the T-3 gate** — see below. T-3 could not have fixed it: the file is off `design.md` §3's whitelist and T-6's done-when requires `git diff --stat` show only those 10 files |
+| **3** | risk | `design.md` §7 also designates `--shadow-lg` for popovers and the map rail; `components/map/ActorPopup.tsx:66` and `components/map/MapLegend.tsx:47` are both still on `shadow-md`. Entirely outside this spec | Recorded so the ladder's remaining gaps are logged rather than rediscovered. **Closed here** |
+| **4** | reliability | NFR-6: first-load JS unchanged (class-string edit only). CSS grows by the two small `.shadow-lg` rules; nothing is dropped, since `shadow-md` retains ~20 consumers elsewhere. Net-neutral in NFR-6's sense, but a small increase rather than literally zero | Recorded. **Closed here** |
+
+**Advisory 2 is a spec-coverage finding, not new work.** Per `/akili-execute` §2.4 an advisory may
+neither mint a task nor widen one, so it is surfaced to the user as a decision rather than absorbed.
+FR-3's *enumerated* MUST names exactly four components and all four are done; it is the
+*rationale* clause that the fifth panel leaves open, on a file this spec is forbidden to touch.
+
+**Issues encountered:** none in the work. The Reviewer again went idle without emitting its verdict
+and was re-prompted; it resent the completed audit rather than redoing it, so **no rework attempt was
+consumed.** Second occurrence — a harness delivery pattern, not a work failure.
+
+**Final verification result:** 21 + 72 tests pass across 5 suites · build succeeds, 23/23 pages ·
+`.shadow-lg` present in the bundle and provably resolving through `var(--shadow-lg)`, against a
+baseline with no rule body · all four panels confirmed on `shadow-lg` in the tree · backdrops, focus
+trap, escape handling and `role` untouched · FR-3's `shadow-sm` comparison closed on the pixels by
+Leader inspection.

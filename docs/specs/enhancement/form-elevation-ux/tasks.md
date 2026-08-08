@@ -33,7 +33,7 @@
       **Done when:** a side-by-side capture at 1440 and `deviceScaleFactor: 2` shows an input at rest distinguishable from the same input with no shadow **and** less raised than its enclosing `shadow-sm` card — **or** the fallback is taken in full, with no orphan token left defined.
       **Evidence is disqualified if:** (a) the token is re-wired or re-reported at its **current** value — `0 1px 2px rgba(61,47,32,0.04)` was already applied by T-7 and rendered flat; repeating it reproduces a known non-result. (b) The pass is claimed from `.shadow-xs` appearing in the CSS bundle. **That is a presence assertion (KZ-002) and it was already true when the rung was invisible.** (c) The comparison is inconclusive and is reported as a pass — **inconclusive is a legitimate, reportable outcome here**; take the fallback or escalate, never round up.
 
-- [ ] **T-3** Give `--shadow-lg` its consumers: the four dialogs  (deps: none)
+- [x] **T-3** Give `--shadow-lg` its consumers: the four dialogs  (deps: none)
       **Size:** XS (~4 LOC) · **Skills:** `tailwind-design-system`
       **Scope:** Swap `shadow-md` → `shadow-lg` on the panel element of `ConfirmDialog.tsx:154`, `AcknowledgeDialog.tsx:216`, `CreateUserDialog.tsx:216`, `EditUserDialog.tsx:184`. Nothing else in these files changes.
       **Do NOT touch:** the backdrops. `ConfirmDialog`/`AcknowledgeDialog` use `bg-backdrop` while `CreateUserDialog`/`EditUserDialog` use `bg-fg/40` — a **real** inconsistency, deliberately out of scope (FR-3's negative clause, `design.md` DD-3). Also do not touch focus trap, escape handling, or `role="dialog"`.
