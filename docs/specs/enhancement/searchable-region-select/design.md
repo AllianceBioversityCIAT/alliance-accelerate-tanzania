@@ -301,7 +301,8 @@ The original ~820 was **exceeded by T-2 alone**. Actuals: T-1 **107** (budgeted 
 | T-4 (registration form) | 80 | **~110** | — |
 | T-5 (two filter surfaces) | 110 | **~150** | — |
 | T-6 (manual pass) | 0 | 0 | — |
-| **Total** | **~820** | **~1,530** | 1,051 so far |
+| T-7 (admin actor form, added post-hoc — user-authorized scope addition, not in the original budget) | — | **~90** | — |
+| **Total** | **~820** | **~1,620** | 1,051 so far |
 
 **PR strategy is unchanged in shape but sharpened by the number.** §11's original split — PR 1 the primitive (T-1, T-2), PR 2 the adoptions (T-3…T-6) — now means PR 1 is ~1,050 lines on its own, well past the ~400 threshold that motivated splitting at all. It remains reviewable in isolation with no product behavior change, which is the property that matters, but the reviewer of PR 1 should be pointed at `execution.md`'s T-2 entry rather than asked to re-derive the five-lens audit from the diff.
 

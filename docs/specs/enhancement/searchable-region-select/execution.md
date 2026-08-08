@@ -824,3 +824,15 @@ Round-2 Reviewer verified the fix drives the real commit path, not a dead end: `
 **Requirements covered:** FR-4 (every AND-IT-MUST / BUT-IT-MUST-NOT clause), `design.md` §5.6, JD-2.
 
 **Budget position (accepted by user):** ~110 LOC re-baselined, actual ~215+ before the fix, more after — same cause `design.md` §11 already diagnosed for T-2 (mandated clause-level assertions, not implementation bloat). User explicitly approved continuing without re-scoping.
+
+---
+
+## Session 3 (continued) — T-4/T-5 deployed for visual review; T-7 added by explicit user request
+
+After T-4 and T-5 closed, the frontend was deployed to the live Dev environment (`./infra/scripts/deploy-frontend.sh`, `AWS_PROFILE=IBD-DEV` — the shell's ambient `AWS_PROFILE=MELIA-DEV` was overridden explicitly, since the profile rule in `CLAUDE.md` is non-negotiable and the script's own default would otherwise have been silently shadowed by the environment). CloudFront invalidated; user reviewed `/register` live and confirmed the `SearchableSelect` region field renders and opens correctly.
+
+**Scope addition (user-directed, not a Reviewer advisory escalating itself — the legitimate path):** the user then compared the live public registration form against the admin module's `ActorForm` and asked why its region field still uses the native `<select>`. Investigated and confirmed: `ActorForm.tsx` was never in this spec's scope — T-1–T-6 cover the primitive plus the three *public* surfaces only (`design.md`'s scope section, `requirements.md` FR-4/FR-5). This is not a gap or a missed requirement; the admin form was simply never a target.
+
+The user was also asked to `git rebase` onto `main` on the assumption that `main` had newer changes explaining the discrepancy. Checked before acting: `git diff <merge-base> main` is **empty** — `main` has zero content differences from this branch's fork point despite 3 "ahead" merge commits (no-op merges). A rebase would have been a no-op; **not run**, and the user was told why rather than running a pointless history rewrite.
+
+Given the actual cause (scope, not staleness), the user explicitly chose to add the admin form as new work rather than defer it. **T-7 "Adopt in the admin actor form" added to `tasks.md`**, mirroring T-4's clause-preservation structure against `ActorForm.tsx`'s existing `renderSelect('region', ...)` (`:810-815`) and its own `aria-invalid`/`aria-describedby`/required-asterisk/`disabled`/error-message wiring. Dependency graph and `design.md` §11's budget table updated in the same change (T-7: ~90 LOC, no requirement clause invented — it extends FR-4's discipline to a second consumer). T-7 depends only on T-3, independent of T-4/T-5/T-6; does not gate or get gated by the manual browser pass.

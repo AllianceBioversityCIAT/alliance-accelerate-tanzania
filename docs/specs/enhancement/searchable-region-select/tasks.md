@@ -142,6 +142,24 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Done when:** all six combinations are recorded with an explicit verdict. A failure here is a **normal outcome** and blocks the spec until fixed — it is not a formality.
       **Evidence is DISQUALIFIED if:** the report says "looks fine" without naming the six combinations, or reports contrast without a measured ratio. **"I could not check mobile" is a legitimate, reportable outcome and must be escalated — it must NOT be recorded as a pass.** This task exists because the automated suite is blind here; a hand-waved T-6 removes the only gate these three classes have.
 
+- [ ] **T-7  Adopt in the admin actor form**  (deps: T-3)
+      **Added post-hoc, explicitly authorized by the user during T-6** — the admin `ActorForm` region field was never in this spec's original scope (T-1–T-6 cover the primitive plus the three *public* surfaces only); the user asked for it after visually comparing the deployed public form against the still-native admin one.
+      **Size:** S · ~90 LOC (component ~15, test updates ~75 — same shape as T-4, smaller test file already has less region-specific coverage to migrate)
+      **Traces:** same clause-preservation discipline as FR-4 (no admin-specific requirement clause exists for this field yet — this task extends FR-4's discipline to a second consumer, it does not invent a new FR) · NFR-1 (WCAG 2.1 AA)
+      **Skills:** `tailwind-design-system`, then `react-doctor`.
+      **Files:** `frontend/components/admin/ActorForm.tsx`, `frontend/components/admin/ActorForm.test.tsx`
+      **Scope:** Replace `renderSelect('region', 'Region', REGIONS.map(...), true)` (`ActorForm.tsx:810-815`) with `SearchableSelect` inside the same `Field` wrapper `renderSelect` already uses. Update this file's own suite in the same task — never deferred, same rule as T-4/T-5. No `clearOptionLabel` — `region` is required here too (`errors.region = 'Region is required.'` at `:354`), same reasoning as T-4/`design.md` §5.1.
+      **Clause-level preservation, each owned here (mirrors T-4's FR-4 list, applied to `ActorForm`'s existing behavior):**
+        · `aria-invalid` present when errored, absent when clean (`ActorForm.tsx:650` today)
+        · `aria-describedby` → `#<id>-error` (`:651` today)
+        · the required asterisk on the label (`Field`, `:492`)
+        · `disabled` while `loading` (admin's equivalent of `submitting`, `:649`)
+        · `Region is required.` (`:354`) still appears inline from the one `errors` record
+        · payload shape unchanged — `values.region` still flows to the same `ActorUpdateInput`/create payload (`:403`) untouched
+      **Verify:** `cd frontend && npm test -- --silent --testPathPatterns "ActorForm"` · `cd frontend && npx next lint --file components/admin/ActorForm.tsx`
+      **Done when:** every clause above has a named assertion; the emitted payload is byte-identical to before the swap for the same inputs.
+      **Evidence is DISQUALIFIED if:** the rewritten suite has fewer assertions than the one it replaced, or drops a case the old suite covered — same disqualification bar as T-4.
+
 ---
 
 ## Dependency Graph
@@ -150,9 +168,11 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
 T-1 → T-2 → T-3 → T-4 ┐
                   ↓    ├→ T-6
                   T-5 ─┘
+                  ↓
+                  T-7
 ```
 
-No cycles. T-4 and T-5 are independent of each other and may run in parallel once T-3 is `[x]`.
+No cycles. T-4 and T-5 are independent of each other and may run in parallel once T-3 is `[x]`. T-7 (added post-hoc) depends only on T-3 and is independent of T-4/T-5/T-6 — it does not gate, and is not gated by, the manual browser pass, since T-6's scope is the three original public surfaces.
 
 ---
 
