@@ -74,7 +74,7 @@
       **Done when:** every sweep returns clean, and `jest-axe` is not cited as contrast coverage anywhere in `docs/`.
       **Evidence is disqualified if:** the sweep was run only over the files this spec names. **KZ-004 exists because per-site fixes miss the sites nobody listed** — the sweep is per *value* across the whole repo, then filtered to exclude the frozen archive, never a walk of a predetermined file list.
 
-- [~] **T-6** Capture rendered evidence and run the human visual gate  (deps: T-2, T-3, T-4, T-5)
+- [x] **T-6** Capture rendered evidence and run the human visual gate  (deps: T-2, T-3, T-4, T-5)
       **Size:** M · **Skills:** `ui-ux-pro-max`, `frontend-design`
       **Scope:** Start the local stack per `docs/infrastructure.md` § Local Environment (do **not** guess start commands). Capture each surface in `design.md` §5.4 at **375 / 768 / 1440 px**: Home/Hero, directory cards, admin actors table, import preview (the two 12px warning pairs), map + filter rail, footer, one dialog (backdrop + `shadow-lg`).
       Compare against `mockup/index.html`. Attach captures to `execution.md`.

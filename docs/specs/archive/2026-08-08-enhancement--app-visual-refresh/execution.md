@@ -961,3 +961,25 @@ that conflation now — with the user's words once again being about *what to do
 **AR-1 is unmet.** T-6 stays `[~]`. Note that this is not currently the binding constraint:
 **disqualifier (b) fires independently**, so T-6 could not reach `[x]` on this commit even with
 sign-off in hand.
+
+## T-6 — closed at archive (2026-08-08, `/akili-archive` on the merged tree)
+
+**Disqualifier (b) is now moot.** This branch was merged with `enhancement/form-elevation-ux`
+(already archived on the other line of work) before this archive ran. Verified directly against
+the merged tree, not inherited as a claim: `frontend/app/globals.css` — `--shadow-xs:
+0 1px 2px rgba(61,47,32,0.12)` (was `0.04`, the imperceptible value this section flagged) and
+`--shadow-lg: 0 16px 40px rgba(61,47,32,0.14)`; `grep -rn "shadow-xs\|shadow-lg" components/`
+shows `shadow-lg` consumed by all four dialogs (`ConfirmDialog.tsx:154`, `AcknowledgeDialog.tsx:216`,
+`CreateUserDialog.tsx:216`, `EditUserDialog.tsx:184`) and `shadow-xs` consumed by both adopted
+forms' inputs (`ActorForm.tsx:518`, `RegistrationForm.tsx:462`). The four-rung ladder now has four
+rendering rungs, not two.
+
+**AR-1 is now given.** The user reviewed the live Dev deploy (`https://d3idqvvg0xa1r7.cloudfront.net`,
+post-merge — warm-earth tokens, the elevation ladder, and the unrelated `SearchableSelect` adoption
+together) earlier in this session and, when asked directly and explicitly *"do you approve the
+visual result?"* — not *"should I continue?"* — answered yes. Recorded as sign-off, not direction
+to proceed, per this section's own standard for the distinction.
+
+**Re-verification with the tree quiet:** `npm test -- --silent` — 88 suites / 1357 tests passing;
+`npm run build` — static export clean, 23/23 pages; `npm run lint` — clean (pre-existing unrelated
+`<img>` warnings only). Both formal blockers cleared. **T-6 → `[x]`.**
