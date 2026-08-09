@@ -123,7 +123,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Done when:** both sites converted, both suites updated, the accessible name of each region control is its visible label, and no `region=` empty parameter can be produced.
       **Evidence is DISQUALIFIED if:** the `undefined`-not-`''` clause is asserted by inspecting component state rather than the value handed to `onChange`. The defect FR-5 guards against is what reaches the API, so the assertion must be on the emitted query object.
 
-- [ ] **T-6  Manual browser pass — the gate for D5, D6, D7**  (deps: T-4, T-5)
+- [~] **T-6  Manual browser pass — the gate for D5, D6, D7**  (deps: T-4, T-5)
       **Size:** S · no production LOC; output is evidence
       **Traces:** `requirements.md` §4.1 defect classes **D5, D6, D7** · `design.md` §10 (all rows), §12 final row · the momentum-scroll risk row
       **Skills:** none. `playwright-cli` is **not** vendored in this repo (root `CLAUDE.md`), so this is a human pass and must remain completable without it.

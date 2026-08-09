@@ -868,3 +868,31 @@ The `docs/specs/enhancement/app-visual-refresh/{design,requirements,tasks}.md` a
 **Everything else merged clean** (`DirectoryFilters.tsx`, `FilterControls.tsx`, `globals.css`, `tailwind.config.ts`, `package.json`, etc.) — verified rather than assumed: `SearchableSelect` import count checked in all four adoption sites post-merge (`ActorForm.tsx` 4, `RegistrationForm.tsx` 4, `DirectoryFilters.tsx` 5, `FilterControls.tsx` 5), the primitive and `fold-search.ts` confirmed present, then a full verification pass with the tree quiet: `npm test -- --silent` — **88 suites / 1357 tests passing**; `npm run build` — static export clean, 23/23 pages; `npm run lint` — clean (only pre-existing unrelated `<img>` warnings).
 
 Frontend redeployed to Dev (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`) so the reconciled result — visual refresh tokens **and** `SearchableSelect` together — is what's now live at `https://d3idqvvg0xa1r7.cloudfront.net`.
+
+---
+
+## T-6 — Manual browser pass — the gate for D5, D6, D7 · **PARTIAL, escalated per this task's own rule**
+
+Driven via Orca's embedded browser (`orca-cli`) against the live Dev deploy at `https://d3idqvvg0xa1r7.cloudfront.net`, post-merge. `orca eval` (JS execution) is hard-blocked by this session's sandbox for unrelated reasons (any command containing the token `eval`, regardless of content), so measurement used real rendered screenshots (decoded from the CLI's base64 output) plus pixel-level sampling via ImageMagick — not devtools introspection, but not eyeballing either.
+
+### Desktop (3 of 3 sites) — verified
+
+| Site | D6 (positioning/portal/clip) | D5 (contrast) | D7 (focus/keyboard) |
+|---|---|---|---|
+| `/register` | Popup opens directly below the anchor, not clipped, paints over subsequent form fields (portal confirmed — not scoped by any ancestor overflow). | Measured (below). | Tab order Region→District matches DOM/visual order; visible focus ring; full keyboard operability. |
+| `/directory` | Same — opens below `REGION` filter, "All regions" pre-checked correctly, not clipped. | Not re-measured (same component/tokens as `/register`; one measurement, not three redundant ones — the disqualification bar is about naming combinations, not about re-deriving a shared constant). | Not separately re-tested (same primitive). |
+| `/map` | Escapes `#discover-rail-body`'s `overflow-y-auto` — popup paints fully over the `ActorList` cards below it, not cut off at the rail boundary. **New finding, not assumed:** at this desktop width, the rail (region filter's container) and `MapLegend` (`z-[1000]`) do not occupy overlapping horizontal space at all — the z-50-vs-z-1000 collision `design.md` §10 flags as a risk cannot arise here regardless of z-index, because the two elements never paint in the same screen region. This narrows, but does not close, that risk row — a narrower viewport could still bring them into the same column. | — | — |
+
+**D5, measured (not devtools-reported, not eyeballed):** captured a real screenshot of the open `/register` popup, decoded it, and sampled actual rendered pixels via ImageMagick at the active option ("Arusha," selected-by-default) — text pixel `srgb(42,39,36)` (matches the `--color-fg` token from the merged-in visual refresh, `#2A2724`), background pixel `srgb(233,238,245)`. WCAG relative-luminance contrast ratio computed from these measured values: **12.74:1** — passes AA (4.5:1) and AAA (7:1) with wide margin.
+
+**D7, keyboard-operability (not just visual):** opened the combobox, pressed `ArrowDown` ×2 then `Enter` — committed "Dodoma" (3rd item) correctly and closed the popup; `Escape` on a separate open closed it without committing; `Tab` after a commit moved focus to `District` with a visible focus ring, matching the field's position in the DOM.
+
+### Mobile — NOT verified; escalating per this task's own disqualification bar ("could not check mobile" must be reported, never recorded as a pass)
+
+Two independent, genuine environment limitations, neither fixable by retrying:
+
+1. **The mobile virtual-keyboard flip-position scenario — T-3's most critical, still never-observed-working fix — could not be tested.** This requires a real device or a working iOS Simulator (Chrome's devtools device emulation does not shrink `visualViewport` the way a real on-screen keyboard does, so testing through it would have produced false confidence, not evidence). `orca emulator attach` failed: `emulator_simctl_unavailable` — Xcode Simulator tools are not installed on this host.
+2. **General mobile-width layout, touch-target sizing (≥44px), and momentum-scroll behavior could not be verified either.** `orca set device --name "iPhone 12"` reported success (390×844, mobile:true) but the actual rendered screenshot stayed at desktop resolution (2702×1887) across two independent attempts — including after a full page reload — with the second attempt returning a byte-for-byte identical image to a prior desktop capture. Not trustworthy evidence in either direction; not reported as a pass.
+3. A third check — whether the flip-above popup collides with the sticky site header when a filter sits close under it while scrolled — was attempted (scrolled `/directory` to the sticky threshold) but a stale element reference caused a misclick to the "Register your organisation" nav link instead of the region combobox, navigating away. Not re-attempted after this and the two mobile tooling failures above (per the loop-avoidance guidance: stop and report after repeated tooling failures, don't keep retrying). Falls back to the code-level census the T-3 Reviewer already performed (`z-50` 9× in `components/`, `z-40` once at the sticky header, confirmed by direct repo grep) plus the normal-case stacking order this pass did confirm at all three sites.
+
+**Recorded per the task's evidence-disqualification rule: this is a partial pass on desktop and an escalated non-verification on mobile, not a completed T-6.** The two blocking gaps (mobile keyboard, mobile layout/touch) are infrastructure gaps (no Simulator, unreliable device emulation in this browser), not defects found in the code — nothing here indicates the T-3 fix is wrong, only that it remains unconfirmed in a real mobile context.
