@@ -181,7 +181,7 @@ export function EditUserDialog({
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
-          'rounded-md bg-surface p-6 shadow-md border border-border',
+          'rounded-md bg-surface p-6 shadow-lg border border-border',
         ].join(' ')}
       >
         <h2

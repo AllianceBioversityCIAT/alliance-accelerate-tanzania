@@ -18,7 +18,7 @@ Public, serverless web platform mapping Tanzania's seed system (sorghum, common 
 Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJS (TS) → Lambda + API Gateway · RDS **MySQL** via **Prisma** · **Leaflet** maps · **AWS Cognito** auth (`admin`/`staff` groups; anonymous = `Public`).
 
 ## Hard constraints
-1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV`.
+1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored.
 2. PII (`phone`, `email`) is never exposed to `Public`; enforce server-side.
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `docs/ux-ui/design.md §7`; no hardcoded colors/geometry.

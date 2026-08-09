@@ -27,7 +27,7 @@ These form the **constitutional baseline** for all AKILI-SPECS work. Module/feat
 - **Maps:** **Leaflet**. **Auth/RBAC:** **AWS Cognito** (groups `admin`, `staff`; anonymous = `Public`).
 
 ## Hard constraints
-- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV`.
+- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); passing it `--profile` is silently ignored and an ambient profile wins.
 - **PII protection:** `phone` and `email` are PII — never exposed to the `Public` role in any API response, page, or export. Enforce server-side in the role-aware serializer (defense in depth), not just in the client.
 - **Static export:** no Next.js SSR/ISR/route handlers — all server logic lives in the NestJS API.
 - **Design tokens:** use tokens from `docs/ux-ui/design.md §7` — no hardcoded colors/geometry.
@@ -48,6 +48,7 @@ Agents run these on every task, so the canonical form is the **failure-only** va
 Binds **every** session that opens this repo, including ones that load no persona. These failures are filesystem-level, so no diff review catches them.
 
 - **One AKILI session per checkout.** Additional concurrent sessions use `git worktree`. Two Leaders in one tree interleave commits and overwrite each other's `tasks.md` / `execution.md` transitions — the audit trail stops being an account of what happened.
+- **Before starting or resuming a task, check whether another local branch already touches the files it will change** (`git log --oneline --all -20 -- <paths>` or equivalent). This rule is otherwise advisory-only and unenforced — a multi-week, 13-commit divergence across two branches editing the same forms went undetected until a user compared two screenshots (KZ-010).
 - **Never run a measurement command while a delegated agent is active.** Builds, `next build`, Jest runs, and SAM validates are not read-only: they compete for `node_modules`, ports, lockfiles, `.next/`, and `dist/`. A measurement taken while an Implementer reinstalls dependencies is not a slow measurement, it is a **wrong** one — and it surfaces as an inexplicable error in the *other* worker.
 - **Measure after the worker reports, never beside it.** You already wait for the completion report; take the measurement in that window, when the tree is quiet.
 

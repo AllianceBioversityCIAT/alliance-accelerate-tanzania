@@ -268,11 +268,14 @@ describe('DirectoryView', () => {
     expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
   });
 
-  it('renders the region filter select', () => {
+  it('renders the region filter control', () => {
     useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
     render(<DirectoryView />);
 
-    expect(screen.getByLabelText(/filter by region/i)).toBeInTheDocument();
+    // T-5 (enhancement/searchable-region-select): the region control's
+    // accessible name is now its visible "Region" label — the redundant
+    // aria-label="Filter by region" was removed (OQ-1).
+    expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 
   // ── (i) DirectoryPagination renders when total > pageSize ─────────────────

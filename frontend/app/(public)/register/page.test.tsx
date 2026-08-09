@@ -25,6 +25,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 const mockRouterPush = jest.fn();
 
@@ -40,13 +41,24 @@ jest.mock('@/lib/api/registrations', () => ({
 
 import RegisterPage from './page';
 
+/**
+ * Commits a region on the `SearchableSelect` combobox (T-4) via the real
+ * pointer-commit path — open, then click the option — never
+ * `fireEvent.change`, which only edits the in-progress search text and
+ * never reaches `onChange`. Mirrors `RegistrationForm.test.tsx`'s own helper.
+ */
+async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^region/i));
+  await user.click(screen.getByRole('option', { name: label }));
+}
+
 /** Fills every REQUIRED field with a valid value — mirrors RegistrationForm.test.tsx's helper. */
-function fillMinimalValidForm() {
+async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
   fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
-  fireEvent.change(screen.getByLabelText(/^region/i), { target: { value: 'Arusha' } });
+  await selectRegion(user, 'Arusha');
   fireEvent.click(screen.getByLabelText(/^sorghum/i));
   fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
   fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
@@ -72,9 +84,10 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('group', { name: 'Data protection & consent' })).toBeInTheDocument();
   });
 
-  it('advances to OtpVerificationStep on a valid submission, UNMOUNTING RegistrationForm rather than hiding it', () => {
+  it('advances to OtpVerificationStep on a valid submission, UNMOUNTING RegistrationForm rather than hiding it', async () => {
+    const user = userEvent.setup();
     render(<RegisterPage />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     // The OTP step is now showing (its own initial "sending" state, since
@@ -98,9 +111,10 @@ describe('RegisterPage', () => {
     expect(screen.queryByRole('group', { name: 'Data protection & consent' })).not.toBeInTheDocument();
   });
 
-  it("passes the applicant's verified-candidate email through to OtpVerificationStep unchanged", () => {
+  it("passes the applicant's verified-candidate email through to OtpVerificationStep unchanged", async () => {
+    const user = userEvent.setup();
     render(<RegisterPage />);
-    fillMinimalValidForm();
+    await fillMinimalValidForm(user);
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(screen.getByText('jane@kilimanjaroseed.co.tz', { exact: false })).toBeInTheDocument();

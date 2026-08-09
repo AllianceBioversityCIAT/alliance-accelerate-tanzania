@@ -31,6 +31,24 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
 }
 
 export const handler: Handler = async (event, context) => {
+  // `serverless-http` sets `callbackWaitsForEmptyEventLoop = false`, which
+  // freezes the container the instant the response is written. That silently
+  // killed the registration OTP: `RegistrationsService` dispatches mail
+  // fire-and-forget ON PURPOSE — awaiting SES would make response latency an
+  // oracle for whether an address was recently used, which FR-4 (requirements
+  // .md:245) forbids as a hard `AND IT MUST` — so the in-flight SES call was
+  // frozen mid-request and lost, with its own `.catch()` never running either.
+  // Observed in production, not theorised: CloudWatch carried three
+  // `mail send attempt` lines and ZERO `mail send outcome` lines, which is
+  // exactly the attempt-without-outcome signature T-8's review named as the
+  // detection channel for this failure.
+  //
+  // Restoring the default delays the FREEZE, not the RESPONSE: the `202` is
+  // still written immediately and the caller sees identical latency, so the
+  // timing property FR-4 protects is untouched. The cost is billed duration
+  // until the event loop drains — a few hundred ms on requests that send mail.
+  context.callbackWaitsForEmptyEventLoop = true;
+
   if (!cachedHandler) {
     cachedHandler = await bootstrapHandler();
   }

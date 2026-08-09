@@ -26,6 +26,11 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
   statements elsewhere in the same spec before it is published; a count that contradicts a sentence in a
   sibling document is a defect detectable without re-measuring.
 
+- **Cite stable anchors, not line numbers (KZ-009).** `file:line` decays on its own — every edit above the
+  cited line falsifies it, including edits made by the same task. In any persistent document, anchor citations
+  to a **symbol, a unique class or literal string, or a section title**, and use bare line numbers only in
+  transient agent reports.
+
 ## 3. Functional Requirements
 For each:
 ```
