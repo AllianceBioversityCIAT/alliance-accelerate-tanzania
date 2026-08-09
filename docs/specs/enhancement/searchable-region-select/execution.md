@@ -854,3 +854,17 @@ Given the actual cause (scope, not staleness), the user explicitly chose to add 
 **Verification (final):** `npm test -- --silent --testPathPatterns "ActorForm"` — 40/40 passing (Leader independently reproduced). `npx next lint --file components/admin/ActorForm.tsx` — clean.
 
 **Requirements covered:** same clause-preservation discipline as FR-4, extended to a second consumer (no new FR invented) — `aria-invalid`, `aria-describedby`, required asterisk, `disabled`, inline error, payload fidelity, FR-3's typed-but-uncommitted boundary. NFR-1 (WCAG 2.1 AA).
+
+---
+
+## Session 3 (continued) — merge with the parallel app-visual-refresh-v2 / form-elevation-ux line
+
+After T-7, the user's deployed-review screenshots (via CloudFront) surfaced a second divergent line of work: the main checkout's `enhancement/app-visual-refresh-v2` branch had, in parallel and unknown to this session until now, fully executed **two** specs — `enhancement/app-visual-refresh` (T-1–T-7, warm-earth color/border/shadow tokens, the 3 AA contrast fixes, elevation ladder) and `enhancement/form-elevation-ux` (7 more commits, card treatment on form sections, dialog shadows) — both already archived on that branch (`docs/specs/archive/2026-08-08-enhancement--form-elevation-ux/`). That branch never adopted `SearchableSelect`; its `RegistrationForm.tsx`/`ActorForm.tsx` region fields still used the native `<select>`.
+
+User explicitly directed a merge (commit `ee2db16`). Two real code conflicts, both in each form's Location fieldset — resolved by keeping the incoming card-treatment wrapper (`div.rounded-md.border.border-border.bg-surface.shadow-sm > fieldset.border-0`) and, for `RegistrationForm.tsx`, the `gpsHintId` `aria-describedby` association, while restoring `renderRegionField()` (`SearchableSelect`) in place of their `renderSelect('region', ...)`. This branch's `marketLocation` hint text (added post-fork via an earlier `/akili-quick` change, confirmed absent at the merge-base) was preserved rather than silently dropped by the incoming side's plainer `renderInput('marketLocation', 'Market location')`.
+
+The `docs/specs/enhancement/app-visual-refresh/{design,requirements,tasks}.md` add/add conflict was resolved by taking the incoming side's fully-executed version outright — this branch only ever had the pre-execution draft from `5514fa6`.
+
+**Everything else merged clean** (`DirectoryFilters.tsx`, `FilterControls.tsx`, `globals.css`, `tailwind.config.ts`, `package.json`, etc.) — verified rather than assumed: `SearchableSelect` import count checked in all four adoption sites post-merge (`ActorForm.tsx` 4, `RegistrationForm.tsx` 4, `DirectoryFilters.tsx` 5, `FilterControls.tsx` 5), the primitive and `fold-search.ts` confirmed present, then a full verification pass with the tree quiet: `npm test -- --silent` — **88 suites / 1357 tests passing**; `npm run build` — static export clean, 23/23 pages; `npm run lint` — clean (only pre-existing unrelated `<img>` warnings).
+
+Frontend redeployed to Dev (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`) so the reconciled result — visual refresh tokens **and** `SearchableSelect` together — is what's now live at `https://d3idqvvg0xa1r7.cloudfront.net`.
