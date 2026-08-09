@@ -903,18 +903,19 @@ branch, as a recorded decision backed by a comparison.**
 
 | Field | Value |
 |---|---|
-| **Status** | **`[~]` — ACT 1 COMPLETE, ACTS 2 AND 3 OUTSTANDING** |
+| **Status** | **PASS — all three acts complete.** *(Corrected at archive, 2026-08-08: this row read "`[~]` — ACT 1 COMPLETE, ACTS 2 AND 3 OUTSTANDING", written when acts 2–3 were still blocked and never refreshed when they closed further down this entry. The header table contradicted its own body — a KZ-008 defect in the record of the task that spent two rework rounds removing that exact class. Corrected rather than left, because an archived record that contradicts itself misleads every later reader; the original wording is preserved in this note.)* |
 | **Date** | 2026-08-08 |
 | **Act 1 (FR-4 closure)** | **PASS** — Implementer 1 attempt, Reviewer `STATUS: PASS` |
-| **Act 2 (deployed capture set)** | **NOT STARTED** — blocked on an operator-run deploy |
-| **Act 3 (human visual gate)** | **NOT STARTED** — requires the user's explicit approval |
-| **Requirements covered so far** | **FR-4 (all clauses) — closed.** FR-1 / FR-2 / FR-7 rendered closure, NFR-5, NFR-6 remain open |
+| **Act 2 (deployed capture set)** | **COMPLETE** — 4 surfaces × 3 widths against deployed Dev after invalidation `I266OLYP1OP2U17COUWOEGAXF0` |
+| **Act 3 (human visual gate)** | **DISCHARGED** — explicit user approval of FR-1, FR-2 and FR-7 |
+| **Requirements covered** | **FR-4 (all clauses), plus FR-1 / FR-2 / FR-7 rendered closure, NFR-5, NFR-6 — all closed** |
 | **Design** | DD-4 |
 | **Skills assigned** | `tailwind-design-system` |
 | **Effort assigned** | `xhigh` |
 
-**This entry must not be read as T-6 complete.** The task is held at `[~]` deliberately. Act 1 was
-executed because it needs no deploy; the remaining two acts are gated on things no agent can supply.
+**Written when act 1 landed alone, and left in place.** At the time the task was held at `[~]`
+deliberately: act 1 needed no deploy, and the remaining two acts were gated on things no agent can
+supply. Both have since closed — see "Act 2" and "Act 3" below.
 
 #### Act 1 — FR-4 closure: PASS
 

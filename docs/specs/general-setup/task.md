@@ -43,6 +43,8 @@ carrying every required clause can still be unexecutable. Operator-facing docume
 - Backend: `npm run test` / `npm run build` / `npm run lint`. Frontend: `npm run build` / `npm run lint` / component tests.
 - Infra tasks: validation/plan/dry-run commands, always with `--profile IBD-DEV`.
 - **A presence-assertion is not a behavioral proof (KZ-002).** A test asserting that a class, config entry, or attribute *exists* must record what it **cannot** prove — it will pass while the feature does nothing. A property the harness structurally cannot evaluate (layout, contrast, focus order, whether a style actually applies) is **not covered**: route it to a human/T6 check instead of counting it as verified.
+- **Prove the gate discriminates before trusting it (KZ-002, recurrence ×3).** A `Verify` command that greps or counts **generated output** (built bundles, minified CSS, compiled artifacts) MUST be run against the **pre-change** state and shown to return a different result. A gate that cannot fail is not a gate — it produces a number that looks like evidence and proves nothing.
+- **An assertion about an artefact is a defect when the artefact does not bear it (KZ-008, recurrence ×2).** This governs **evidence artefacts** — capture manifests, README provenance claims, status tables in `execution.md` — exactly as it governs code comments. Re-resolve every such claim against the artefact it names at the moment it is written, and again before the record is frozen.
 
 ## Execution Conventions
 - Commits use the JCSPECS standard: `[SPEC:<spec-path>] <message>`.
