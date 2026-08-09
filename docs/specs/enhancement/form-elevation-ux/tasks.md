@@ -63,17 +63,18 @@
       **Done when:** a before/after comparison exists at all three widths **and** a decision is recorded. **"Evaluated at three widths, no change warranted" fully satisfies FR-7** — this task is not required to produce a diff.
       **Evidence is disqualified if:** (a) spacing changed without a before/after comparison to justify it — FR-7 is a `SHOULD` gated on evidence, not a licence to tune. (b) Any interactive control's hit area drops below **44×44 CSS px**, or the `lg:grid-cols-2` field arrangement changed. (c) The change exceeds one step on the Tailwind spacing scale — that trips the `design.md` §11 tripwire and must escalate rather than land.
 
-- [~] **T-6** Close FR-4's sweep, capture the full rendered set, and run the human gate  (deps: T-1, T-2, T-3, T-4, T-5)
-      **Progress:** act 1 (**FR-4 closure**) is **complete and PASSED** — 34/34 citations re-resolved,
-      10 stale ones corrected, ledger integrity verified (`execution.md` → T-6). Acts 2 and 3 are
-      **outstanding and blocked on the user**: act 2 needs an operator-run deploy to Dev before the
-      capture set can be taken against the origin `requirements.md` §7 names, and act 3 is the human
-      visual gate for FR-1/FR-2/FR-7, which T-6 disqualifier (c) forbids inferring from direction to
-      proceed.
+- [x] **T-6** Close FR-4's sweep, capture the full rendered set, and run the human gate  (deps: T-1, T-2, T-3, T-4, T-5)
+      **All three acts complete.** Act 1 — 34/34 `REACHABLE` citations re-resolved, 10 stale ones
+      corrected, ledger integrity verified structurally. Act 2 — four surfaces × three widths captured
+      against deployed Dev after invalidation `I266OLYP1OP2U17COUWOEGAXF0`, every shot asserting
+      `window.innerWidth` and the served stylesheet hash. Act 3 — **the user explicitly approved
+      FR-1, FR-2 and FR-7** on the deployed set. Gates: suite 1281/1281 · build and lint clean · diff
+      scope 11/11 against `design.md` §3 · LOC 133 (`-w`) within the 200 tripwire. Full record in
+      `execution.md` → T-6.
       **Done-when amendment (2026-08-08, user-approved):** the diff-scope check reads "only the 10
-      files in `design.md` §3". `design.md` §3 has been amended to name **11** — it omitted
-      `RegistrationForm.test.tsx`, which T-4's own Done-when mandates. **Check against §3's list as
-      it now stands, not against the literal number 10.**
+      files in `design.md` §3". §3 was amended to name **11** — it omitted `RegistrationForm.test.tsx`,
+      which T-4's own Done-when mandates. Checked against §3's list as it now stands; it matches
+      one-for-one.
       **Size:** M · **Skills:** `ui-ux-pro-max`, `frontend-design`
       **Scope:** Three closing acts.
       1. **FR-4 closure** — re-resolve **every** `file:line` citation in `contrast.test.ts`'s `REACHABLE` map against the final tree, not only the two known-stale ones and not only what T-1 moved. Add any ink/ground pair inside a fieldset newly reachable on `--color-surface`.

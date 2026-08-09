@@ -41,6 +41,32 @@ here. **`actor-form-1440.png` *is* faithful**, because `mx-auto max-w-4xl` (896 
 the harness and the real 1120 px content region. A dev-mode overlay also paints over content in three
 of the FR-7 frames.
 
+## Deployed evidence lives in `deployed/`
+
+Every file above is **pre-deploy NFR-5 evidence** ("rendered evidence before deploy"), and caution 2
+specifically warns the FR-7 set must not be cited as deployed evidence. The act-2 / §7 deployed
+confirmation is a separate set, committed alongside its own `deployed/manifest.json`: full-page
+frames for `1-register`, `2-admin-new`, `3-admin-table` and `4-dialog` at 375/768/1440, plus targeted
+crops for FR-2, FR-3 and FR-6.
+
+Those shots were taken against `https://d3idqvvg0xa1r7.cloudfront.net` after CloudFront invalidation
+`I266OLYP1OP2U17COUWOEGAXF0` reached `Completed`. Every **full-page frame** entry asserts, in page,
+`window.innerWidth` against the requested breakpoint and the served stylesheet — hash
+`d4851289373f404a`, with `--shadow-xs` resolving to `0 1px 2px rgba(61,47,32,0.12)` — so each of those
+shots is tied to the build it claims to show, not merely to a URL.
+
+**The three crops carry no freshness block of their own.** They are cut from the full-page frames in
+the same set and inherit their provenance that way; the manifest records only `id`, `width`, `file`
+and `purpose` for them. Cite a frame, not a crop, when the point at issue is *which build* was
+photographed.
+
+**FR-1 is evidenced on the full-page frames, not on a crop.** Two corner crops **of the deployed set**
+were taken and then deleted: neither showed a card corner or the card's border edge — what each
+framed was an input's top border — while their captions claimed to show an unbroken card corner.
+The full-page frames are the better proof regardless —
+FR-1's criterion is a silhouette "continuous and unbroken around the full perimeter", which a whole
+card demonstrates and a corner cannot.
+
 ## Reproducing
 
 Playwright (global install, deliberately **not** vendored — see

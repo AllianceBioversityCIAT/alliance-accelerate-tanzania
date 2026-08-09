@@ -1,0 +1,281 @@
+[
+  {
+    "note": "auth-probe",
+    "detail": {
+      "probe": "auth-check",
+      "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+      "isLogin": false,
+      "title": "ACCELERATE Tanzania Seed Registry",
+      "authOk": true
+    }
+  },
+  {
+    "id": "1-register",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/register",
+    "width": "375",
+    "real": {
+      "inner": 375,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "1-register__375.png",
+    "timestamp": "2026-08-09T01:35:18.122Z"
+  },
+  {
+    "id": "1-register",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/register",
+    "width": "768",
+    "real": {
+      "inner": 768,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "1-register__768.png",
+    "timestamp": "2026-08-09T01:35:21.543Z"
+  },
+  {
+    "id": "1-register",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/register",
+    "width": "1440",
+    "real": {
+      "inner": 1440,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "1-register__1440.png",
+    "timestamp": "2026-08-09T01:35:25.001Z"
+  },
+  {
+    "id": "2-admin-new",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors/new",
+    "width": "375",
+    "real": {
+      "inner": 375,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "2-admin-new__375.png",
+    "timestamp": "2026-08-09T01:35:28.906Z"
+  },
+  {
+    "id": "2-admin-new",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors/new",
+    "width": "768",
+    "real": {
+      "inner": 768,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "2-admin-new__768.png",
+    "timestamp": "2026-08-09T01:35:32.536Z"
+  },
+  {
+    "id": "2-admin-new",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors/new",
+    "width": "1440",
+    "real": {
+      "inner": 1440,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "2-admin-new__1440.png",
+    "timestamp": "2026-08-09T01:35:36.266Z"
+  },
+  {
+    "id": "3-admin-table",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "375",
+    "real": {
+      "inner": 375,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "3-admin-table__375.png",
+    "timestamp": "2026-08-09T01:35:41.609Z"
+  },
+  {
+    "id": "3-admin-table",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "768",
+    "real": {
+      "inner": 768,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "3-admin-table__768.png",
+    "timestamp": "2026-08-09T01:35:46.612Z"
+  },
+  {
+    "id": "3-admin-table",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "1440",
+    "real": {
+      "inner": 1440,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "3-admin-table__1440.png",
+    "timestamp": "2026-08-09T01:35:51.475Z"
+  },
+  {
+    "id": "4-dialog",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "1440",
+    "real": {
+      "inner": 1440,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "4-dialog__1440.png",
+    "opened": true,
+    "triggerLabel": "Delete",
+    "timestamp": "2026-08-09T01:37:09.014Z"
+  },
+  {
+    "id": "4-dialog",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "375",
+    "real": {
+      "inner": 375,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "4-dialog__375.png",
+    "opened": true,
+    "triggerLabel": "Delete Arusha Acacia Bean Seed Co.",
+    "timestamp": "2026-08-09T01:44:13.698Z"
+  },
+  {
+    "id": "4-dialog",
+    "url": "https://d3idqvvg0xa1r7.cloudfront.net/admin/actors",
+    "width": "768",
+    "real": {
+      "inner": 768,
+      "dpr": 2
+    },
+    "fresh": {
+      "links": [
+        "https://d3idqvvg0xa1r7.cloudfront.net/_next/static/css/d4851289373f404a.css"
+      ],
+      "hrefMatch": true,
+      "shadowXs": "0 1px 2px rgba(61,47,32,0.12)",
+      "shadowMatch": true,
+      "pass": true
+    },
+    "file": "4-dialog__768.png",
+    "opened": true,
+    "triggerLabel": "Delete Arusha Acacia Bean Seed Co.",
+    "timestamp": "2026-08-09T01:44:20.156Z"
+  },
+  {
+    "note": "tight-crops",
+    "crops": [
+      {
+        "id": "1-register-input-edge-crop",
+        "width": "1440",
+        "file": "1-register-input-edge-crop__1440.png",
+        "purpose": "FR-2: input lower edge, --shadow-xs 0.12-alpha"
+      },
+      {
+        "id": "3-admin-table-badge-crop",
+        "width": "1440",
+        "file": "3-admin-table-badge-crop__1440.png",
+        "purpose": "FR-6: consent/source badges hug content (Team-managed 106.5px vs Published 72.5px)"
+      },
+      {
+        "id": "4-dialog-panel-edge-crop",
+        "width": "1440",
+        "file": "4-dialog-panel-edge-crop__1440.png",
+        "purpose": "FR-3: dialog panel edge, shadow-lg"
+      }
+    ]
+  }
+]

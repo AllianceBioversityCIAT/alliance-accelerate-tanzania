@@ -1098,3 +1098,138 @@ rework attempt consumed** by any of them.
 citations corrected, including two the Leader's own regex could not see · one false citation replaced
 with a verified true one · no ledger entry weakened, skipped or deleted, corroborated structurally ·
 129/129 contrast pairs pass, unchanged. **FR-4 is closed.**
+
+**Act 1 commit:** `d1b9e3b`
+
+#### Act 2 — deployed capture set: COMPLETE
+
+**The deploy.** `requirements.md` §7 requires rendered verification against the Dev CloudFront origin,
+and `design.md` §12 makes deploys **operator-run**. The user ran
+`./infra/scripts/deploy-frontend.sh --profile IBD-DEV` themselves; it failed announcing profile
+`MELIA-DEV` and could not describe `accelerate-tz-dev-backend`. **Root cause: the script reads
+`AWS_PROFILE` and parses no flags** (`PROFILE="${AWS_PROFILE:-IBD-DEV}"`), so `--profile IBD-DEV` was
+silently ignored and the shell's `AWS_PROFILE=MELIA-DEV` won, pointing the lookup at the wrong
+account. The user then **explicitly instructed the Leader to deploy with the correct profile.**
+
+Recorded plainly because the script's own header says it is *"NOT run by the SDD agent loop"*: the
+Leader ran it **on the user's explicit instruction**, not on its own initiative, after verifying all
+three stacks were `UPDATE_COMPLETE` under `IBD-DEV`. Correct invocation is
+`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`.
+
+**Freshness gate (disqualifier (a)) — discharged before any capture.** CloudFront invalidation
+`I266OLYP1OP2U17COUWOEGAXF0` was polled to `Completed`, then the Leader fetched the served bundle and
+asserted this spec's changes are live in `/_next/static/css/d4851289373f404a.css`:
+
+| Change | Asserted in served CSS |
+|---|---|
+| T-2 | `--shadow-xs:0 1px 2px rgba(61,47,32,0.12)` |
+| T-3 | `.shadow-lg{--tw-shadow:var(--shadow-lg);--tw-shadow-colored:var(--shadow-lg)}` |
+| T-4 | `self-start` present |
+
+**Auth.** The existing Playwright storage state's id/access tokens had expired ~24 h earlier
+(`exp` −1452 min), but it **silently re-authenticated via its refresh token**. No credentials were
+requested, read, or guessed. The Leader had pre-authorised stopping and asking the user for a login
+had it failed.
+
+**Captured:** all four surfaces × three widths against the deployed origin. Every one of the 12 base
+frames asserts, in page, `window.innerWidth == target` at `devicePixelRatio: 2`, **and** that the
+loaded stylesheet is `d4851289373f404a` with `--shadow-xs` resolving to the `0.12` value.
+
+**Safety on a live environment.** The only interaction was opening a delete-confirmation dialog and
+dismissing it with Escape. The Reviewer corroborated this from the artefacts rather than accepting
+it: `4-dialog__1440.png` and `4-dialog__375.png` show the confirmation field empty, the Delete button
+**disabled**, and the helper text "Confirm is disabled until the acknowledgement is entered exactly".
+**No create, edit, publish, import, or delete was performed.**
+
+#### Act 3 — the human visual gate: DISCHARGED
+
+`requirements.md` §8 classes FR-1, FR-2 and FR-7 as having **no automated check**, and T-6
+disqualifier (c) states that "continue", "do as you see fit", or silence are **not** aesthetic
+sign-off. The Leader presented the deployed set and asked three separately-answerable questions. The
+user answered each **explicitly**:
+
+| Requirement | User's verdict |
+|---|---|
+| **FR-1** — legend artefact | **"Approve — artefact resolved"** |
+| **FR-2** — `--shadow-xs` perceptibility | **"Approve — visible enough"** |
+| **FR-7** — density left unchanged | **"Approve — no change was right"** |
+
+The Reviewer ruled disqualifier (c) satisfied, noting the **FR-2 approval is the strongest of the
+three** precisely because it was asked with the honest caveat that the Leader could not distinguish
+`0.12` from flat at native scale, and with the pre-authorised removal fallback offered as an equal
+option — *"the user approved with the weakness of the evidence in front of them. That is sign-off,
+not inference."*
+
+#### Gate results
+
+| Gate | Result |
+|---|---|
+| **Full suite** `npm test -- --silent` | **86 suites, 1281 tests, ALL PASSED** — a clean run, so the Suite gate's flakiness conditional never fired |
+| `npm run build` | **Success**, static export, shared First Load JS 103 kB |
+| `npx next lint --quiet` | **No ESLint warnings or errors** |
+| **Diff scope** vs amended `design.md` §3 | **exactly 11 files, one-for-one. PASS** |
+| **LOC** (`git diff -w`) | **133 insertions / 47 deletions** vs ~120 estimate, 200 tripwire. **PASS** |
+
+#### Two rework rounds on the evidence record itself
+
+**Round 1 — `STATUS: FAIL`, record integrity.** The Reviewer found `manifest.json` asserting of two
+PNGs that they showed "FR-1: card top-left corner, border/radius unbroken" — **neither contained a
+corner**, and the admin one contained no border edge at all; the capture report compounded it by
+describing them as showing "a continuous rounded white border". Two further entries recorded a
+`./t6-captures/` path that is not where the files live. **KZ-008 landing in the spec's own evidence
+index, for its hardest-gated requirement** — after this spec had already spent FR-4 and two T-4
+rework rounds removing that exact class. The Leader had independently found the mis-framing when
+adjudicating the pixels and put it in the Reviewer's brief rather than letting it pass.
+
+Remediated **subtractively** per T-4 attempt 3's precedent: the two mis-framed PNGs were **deleted,
+not re-cropped**. FR-1's criterion is a silhouette "continuous and unbroken around the full
+perimeter", which a whole-card frame demonstrates *better* than a corner crop — so a re-crop would
+have meant a fresh authenticated browser run to produce weaker evidence. The three retained crops
+were each verified against their `purpose` strings.
+
+**Round 2 — `STATUS: FAIL`, a defect the remediation introduced.** The new `README.md` section
+claimed *"Every entry in `deployed/manifest.json` asserts … `window.innerWidth` … and the served
+stylesheet"*. False for the three crop records, which carry only `id`/`width`/`file`/`purpose` — so
+3 of 15 PNGs had no manifest-recorded tie to the build, **landing on exactly the three artefacts
+whose captions had just failed an integrity audit.** Fixed by narrowing the claim to the twelve
+full-page frames and stating the crops' weaker, inherited provenance explicitly, with an instruction
+to cite a frame rather than a crop when build attribution is the question.
+
+**A Leader authoring note, recorded for transparency.** The round-2 fix was written by the **Leader**,
+not an Implementer: `captures/` sits under `docs/specs/<spec-path>/`, which `.agents/leader.md`
+assigns to the Leader; the Reviewer had specified the exact remediation; and a further delegated round
+for one clause was poor economy. **It was still sent for independent confirmation** — the spec's
+terminal gate was not closed on an unaudited Leader edit. The Leader also added a paragraph *beyond*
+the remediation (recording that the corner crops existed, were mis-framed, and were deleted) and
+explicitly asked the Reviewer to judge it rather than accept it; the Reviewer kept it as "accurate in
+substance, appropriate to record" and supplied two one-clause precision corrections, **both applied**
+— including one where the Leader's phrasing had overstated the defect.
+
+**Also cleared in round 2:** the Leader had flagged the badge caption's numeric claim
+("Team-managed 106.5px vs Published 72.5px") as a possible residual instance of the same class, since
+an image cannot demonstrate a measurement. The Reviewer **measured it from the base frame at known
+scale** (2880 device px for a 1440 CSS-px viewport) and obtained ≈105 and ≈72 CSS px, corroborating
+the caption and T-4's independent `getBoundingClientRect` reading of 72.547 px. **True and checkable
+from the artefact set — not a defect.**
+
+#### ADVISORY (4R lens) — recorded, non-gating, **not** convertible into tasks
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **1** | risk | **`/register` scrolls horizontally at 768 px.** `1-register__768.png` is ≈1209 CSS px wide against an `innerWidth` of 768, driven by the header, whose rightmost control sits at ≈1153 CSS px; the footer band would end mid-screen when scrolled right. The admin 768 frame shows no overflow. This is the pre-existing **nav clipping at 768 px** that `requirements.md` §6 puts out of scope and attributes to another spec | **Recorded and closed here.** Now has *deployed* evidence for the `bugfix/` proposal §6 anticipates — cite `captures/deployed/1-register__768.png` |
+| **2** | reliability | NFR-6's baseline is the earliest **in-spec** build (T-2, post-T-1), not a pre-spec build at `02ce79d`. Route totals held (`/register` 111 kB at T-2 and again at T-4; `/admin/actors` 161 kB), and the mechanism argument is decisive — the diff adds no import, dependency or component — but a strictly-comparable pre/post pair was never captured | **Recorded and closed** |
+| **3** | readability | The `4-dialog` manifest entries are ordered 1440/375/768 with later timestamps on 375/768, evidence of the re-capture after the first attempt targeted a CSS-hidden desktop-table button (zero-size bounding box) rather than the visible card-view control. Not an accuracy defect | **Recorded and closed** |
+| **4** | risk | DD-2's recorded design tension — that an input on a white card may be a *well* rather than a raised chip, and might need no shadow at all — **survives** the `0.12` re-tune. Correctly not acted on, and the user has now approved the re-tune | **Closed for this spec** |
+
+**Issues encountered.** Two rework rounds, both on the evidence record rather than on code or
+requirements. Every worker in this task went idle without emitting its report and resent completed
+work on re-prompt — occurrences 12 through 16 of the harness delivery pattern; **no rework attempt
+was consumed by any of them.**
+
+**T-6 final verification result:** FR-4 closed on a 34-citation sweep · four surfaces captured at
+three widths against deployed Dev with per-shot bundle-freshness assertions · **explicit user
+approval of FR-1, FR-2 and FR-7** · full suite 1281/1281 · build and lint clean · diff scope 11/11
+against amended §3 · LOC within budget · evidence record verified internally consistent after two
+integrity rounds. **T-6 CLOSES.**
+
+**Commits:** `d1b9e3b` (act 1) · `a5ae948` (§3 amendment + gates) · this entry's commit (acts 2–3)
