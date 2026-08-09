@@ -515,6 +515,7 @@ function Field({ id, label, error, hint, required, children }: FieldProps) {
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
+    'shadow-xs',
     'placeholder:text-muted',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
     'disabled:cursor-not-allowed disabled:opacity-50',
@@ -822,98 +823,110 @@ export default function ActorForm({
         )}
 
         {/* Identity */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Identity</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {renderInput('traderId', 'Trader ID', 'text', true)}
-            {renderInput('traderName', 'Trader name', 'text', true)}
-            {renderSelect(
-              'traderType',
-              'Trader type',
-              Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
-              true,
-            )}
-            {renderSelect('sex', 'Sex', SEX_OPTIONS)}
-            {renderInput('position', 'Position')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Identity</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {renderInput('traderId', 'Trader ID', 'text', true)}
+              {renderInput('traderName', 'Trader name', 'text', true)}
+              {renderSelect(
+                'traderType',
+                'Trader type',
+                Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
+                true,
+              )}
+              {renderSelect('sex', 'Sex', SEX_OPTIONS)}
+              {renderInput('position', 'Position')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Location */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {renderRegionField()}
-            {renderInput('district', 'District')}
-            {renderInput('marketLocation', 'Market location')}
-            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-            {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
-            {renderInput('gpsAltitude', 'GPS altitude', 'number')}
-            {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {renderRegionField()}
+              {renderInput('district', 'District')}
+              {renderInput('marketLocation', 'Market location')}
+              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
+              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
+              {renderInput('gpsAltitude', 'GPS altitude', 'number')}
+              {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Capacity & support */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Capacity & support</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {renderInput('capacityTons', 'Capacity (tons)', 'number', false, 'Must be 0 or greater')}
-            {renderTextarea('technicalSupport', 'Technical support required')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Capacity & support</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput('capacityTons', 'Capacity (tons)', 'number', false, 'Must be 0 or greater')}
+              {renderTextarea('technicalSupport', 'Technical support required')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Contact */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Contact</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {renderInput('phone', 'Phone')}
-            {renderInput('email', 'Email', 'email')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput('phone', 'Phone')}
+              {renderInput('email', 'Email', 'email')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Crops */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Crops</legend>
-          <div className="flex flex-wrap gap-4">
-            {CROP_NAMES.map((crop) => {
-              const id = `${baseId}-crop-${crop.value}`;
-              const checked = values.crops.includes(crop.value);
-              return (
-                <div key={crop.value} className="flex items-center gap-2">
-                  <input
-                    id={id}
-                    type="checkbox"
-                    value={crop.value}
-                    checked={checked}
-                    onChange={() => toggleCrop(crop.value)}
-                    disabled={loading}
-                    className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  />
-                  <label htmlFor={id} className="text-sm text-fg">
-                    {crop.label}
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Crops</legend>
+            <div className="flex flex-wrap gap-4">
+              {CROP_NAMES.map((crop) => {
+                const id = `${baseId}-crop-${crop.value}`;
+                const checked = values.crops.includes(crop.value);
+                return (
+                  <div key={crop.value} className="flex items-center gap-2">
+                    <input
+                      id={id}
+                      type="checkbox"
+                      value={crop.value}
+                      checked={checked}
+                      onChange={() => toggleCrop(crop.value)}
+                      disabled={loading}
+                      className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    />
+                    <label htmlFor={id} className="text-sm text-fg">
+                      {crop.label}
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Consent & provenance */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Consent & provenance</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {renderRegistrationSourceSelect()}
-            {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
-            {renderConsentMethodSelect()}
-            {renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
-            {renderInput(
-              'consentReference',
-              'Consent reference',
-              'text',
-              false,
-              'Optional — e.g. document ID or email thread',
-            )}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Consent & provenance</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {renderRegistrationSourceSelect()}
+              {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
+              {renderConsentMethodSelect()}
+              {renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
+              {renderInput(
+                'consentReference',
+                'Consent reference',
+                'text',
+                false,
+                'Optional — e.g. document ID or email thread',
+              )}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">

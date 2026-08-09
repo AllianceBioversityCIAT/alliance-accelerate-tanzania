@@ -10,6 +10,8 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 ## Design tokens (zero tolerance)
 
 - Only semantic token classes from `tailwind.config.ts` / docs/ux-ui/design.md §7 (`bg-surface`, `text-fg`, `text-muted`, `border-border`, `bg-primary-soft`, `text-danger`, `bg-danger-soft`, `bg-highlight-tint`, …). No hex, no `rgb()`, no arbitrary values (`bg-[#…]`). Opacity modifiers on tokens (`bg-warning/10`, `border-danger/30`) are acceptable precedent. Reviewers grep for violations — so should you.
+- **Elevation ladder — four rungs, all with real consumers:** `shadow-xs` inputs · `shadow-sm` form-section cards · `shadow-md` cards · `shadow-lg` all four dialogs. Keep every rung consumed; a token defined with zero consumers is drift, and `--color-surface` on `--color-bg` is only **1.05:1**, so `border border-border` — not the shadow — is what carries a section boundary under WCAG 1.4.11.
+- **Form sections: card treatment on a wrapping `<div>`, `<fieldset>` semantic-only** (`border-0 p-0 m-0`). A `<legend>` that straddles a bordered fieldset renders as a tab that breaks the card's corner radius. ⚠️ Never "fix" that with `float-left w-full` — it broke the `/register` grid and shipped to Dev **with contrast, lint and build all green**; none of those gates evaluates layout, so any change to flow, positioning or spacing needs a rendered capture at 375/768/1440 before deploy.
 
 ## API client conventions (`lib/api/`)
 

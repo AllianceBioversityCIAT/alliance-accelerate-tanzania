@@ -51,7 +51,7 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 | Validate all templates | `./infra/scripts/validate.sh` |
 | Deploy all three stacks, ordered + idempotent | `./infra/scripts/deploy.sh` |
 | Run migrations + seed | `./infra/scripts/migrate-seed.sh` |
-| Build + publish the frontend to S3/CloudFront | `./infra/scripts/deploy-frontend.sh` |
+| Build + publish the frontend to S3/CloudFront | `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh` — this script reads `AWS_PROFILE` and **parses no flags**, so a `--profile` argument is silently ignored and an ambient profile wins |
 | Lock API CORS to the CloudFront origin | `./infra/scripts/set-cors.sh` |
 | Post-deploy smoke check | `./infra/scripts/smoke.sh` |
 | Tear down | `./infra/scripts/teardown.sh` |

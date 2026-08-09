@@ -1,5 +1,5 @@
 // Footer is a server component — no 'use client' needed.
-// Dark surface: bg-fg (#333333) + text-bg (#FFFFFF)
+// Dark surface: bg-fg (#2A2724) + text-bg (#FBF9F6)
 // — an intentional light-on-dark inversion using the two existing semantic tokens.
 // No raw hex values are used; all colors reference token utilities (NFR-4).
 

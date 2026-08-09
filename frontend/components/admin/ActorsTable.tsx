@@ -303,7 +303,17 @@ function SourceBadge({ source }: { source: string }) {
   return (
     <span
       className={[
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        // FR-6: `self-start` sits on the badge itself, not a wrapper, so it
+        // holds under any future re-parenting. It isn't stretched today:
+        // SourceBadge's own parents are a plain `<td>` at ≥lg, not a flex
+        // container and a `flex items-center` row in the <lg card, a row,
+        // not a column. The live defect is ConsentBadge's parent in
+        // ConsentCell, `flex flex-col gap-1`, whose default
+        // `align-items: stretch` stretches an inline-flex child. SourceBadge
+        // takes the same utility defensively, since it shares this exact
+        // class string and could be moved under a `flex-col` wrapper later —
+        // FR-6's acceptance criteria require the fix apply here too.
+        'inline-flex items-center self-start rounded-full px-2 py-0.5 text-xs font-medium',
         sourceBadgeClasses(source),
       ].join(' ')}
     >
@@ -316,7 +326,11 @@ function ConsentBadge({ status }: { status: string }) {
   return (
     <span
       className={[
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+        // FR-6: see SourceBadge's `self-start` note above. Unlike
+        // SourceBadge, this badge IS stretched today — its parent in
+        // ConsentCell is the `flex flex-col` wrapper — so this is the live
+        // fix, not a defensive one.
+        'inline-flex items-center self-start rounded-full px-2 py-0.5 text-xs font-medium',
         consentBadgeClasses(status),
       ].join(' ')}
     >

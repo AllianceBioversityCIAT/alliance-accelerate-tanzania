@@ -459,6 +459,7 @@ function Field({ id, label, error, hint, required, children }: FieldProps) {
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
+    'shadow-xs',
     'placeholder:text-muted',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
     'disabled:cursor-not-allowed disabled:opacity-50',
@@ -600,6 +601,10 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
     type: 'text' | 'number' | 'email' = 'text',
     required = false,
     hint?: string,
+    // FR-5: an extra id to append to aria-describedby, ALONGSIDE the field's
+    // own hint id — never in place of it. Only the GPS pair uses this today
+    // (the standalone GPS-optional paragraph, see `gpsHintId` below).
+    extraDescribedBy?: string,
   ) => {
     const id = fieldId(field);
     const error = errors[field];
@@ -618,12 +623,20 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
           // forms), and this was the one place it was missing.
           autoComplete={AUTOCOMPLETE_HINTS[field]}
           aria-invalid={error ? 'true' : undefined}
-          aria-describedby={[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
+          aria-describedby={
+            [hint ? `${id}-hint` : '', extraDescribedBy ?? '', error ? `${id}-error` : '']
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           className={inputClasses(!!error)}
         />
       </Field>
     );
   };
+
+  // FR-5: id for the standalone GPS-optional paragraph, following the same
+  // `baseId`-derived pattern as the crops group's `${baseId}-crops-label`.
+  const gpsHintId = `${baseId}-gps-hint`;
 
   const errorCount = Object.keys(errors).length;
 
@@ -659,134 +672,154 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       )}
 
       {/* Identity */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Identity</legend>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderInput('traderName', 'Organisation name', 'text', true)}
-          {renderSelect(
-            'traderType',
-            'Trader type',
-            Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
-            true,
-          )}
-        </div>
-      </fieldset>
+      <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="mb-4 text-base font-semibold text-fg">Identity</legend>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderInput('traderName', 'Organisation name', 'text', true)}
+            {renderSelect(
+              'traderType',
+              'Trader type',
+              Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
+              true,
+            )}
+          </div>
+        </fieldset>
+      </div>
 
       {/* Location */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderRegionField()}
-          {renderInput('district', 'District')}
-          {renderInput(
-            'marketLocation',
-            'Market location',
-            'text',
-            false,
-            'Name of the market or trading point where you operate — e.g. Kibaigwa Grain Market',
-          )}
-        </div>
-        {/* GPS-optional copy (A25, FR-2 scenario 3) — stated, not just a placeholder hint on one field. */}
-        <p className="mt-4 text-xs text-muted">
-          GPS coordinates are optional. You may leave both fields blank — a reviewer will place your
-          organisation on the map using the region and district above.
-        </p>
-        <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-          {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
-        </div>
-      </fieldset>
+      <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderRegionField()}
+            {renderInput('district', 'District')}
+            {renderInput(
+              'marketLocation',
+              'Market location',
+              'text',
+              false,
+              'Name of the market or trading point where you operate — e.g. Kibaigwa Grain Market',
+            )}
+          </div>
+          {/*
+            GPS-optional copy (A25, FR-2 scenario 3) — stated, not just a placeholder hint on one
+            field. FR-5: also programmatically associated with both GPS inputs below via
+            `gpsHintId`, appended to their aria-describedby alongside each field's own hint id —
+            position and mt-4 spacing are unchanged (FR-5's negative clause).
+          */}
+          <p id={gpsHintId} className="mt-4 text-xs text-muted">
+            GPS coordinates are optional. You may leave both fields blank — a reviewer will place your
+            organisation on the map using the region and district above.
+          </p>
+          <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90', gpsHintId)}
+            {renderInput(
+              'gpsLongitude',
+              'GPS longitude',
+              'number',
+              false,
+              'Decimal between -180 and 180',
+              gpsHintId,
+            )}
+          </div>
+        </fieldset>
+      </div>
 
       {/* Crops & capacity */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Crops & capacity</legend>
-        <div className="flex flex-col gap-1.5">
-          <span id={`${baseId}-crops-label`} className="text-sm font-medium text-fg">
-            Crops <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
-          </span>
-          {/*
-            A labelled group, not a bare div (Reviewer FAIL, attempt 2): the
-            group carries the id the error summary's anchor already targets
-            (`fieldId('crops')` === `${baseId}-crops`) so that link resolves,
-            and `aria-describedby` pointing at the inline error so a
-            screen-reader user gets the same association every other
-            errored control gets.
-          */}
-          <div
-            id={fieldId('crops')}
-            role="group"
-            aria-labelledby={`${baseId}-crops-label`}
-            aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
-            // T17-A3: the error summary's anchor targets this div
-            // (`#${fieldId('crops')}`). A plain <div> is not a native focus
-            // target, so fragment navigation scrolled here without moving
-            // focus — exactly the case where a quick-nav/summary-link user
-            // jumps straight past the group's own on-entry announcement.
-            // tabIndex={-1} makes it a valid, non-tab-order focus target for
-            // `:target`/fragment navigation without adding it to the normal
-            // Tab sequence.
-            tabIndex={-1}
-            className="flex flex-wrap gap-4"
-          >
-            {CROP_NAMES.map((crop) => {
-              const id = `${baseId}-crop-${crop.value}`;
-              const checked = values.crops.includes(crop.value);
-              return (
-                <div key={crop.value} className="flex items-center gap-2">
-                  <input
-                    id={id}
-                    type="checkbox"
-                    value={crop.value}
-                    checked={checked}
-                    onChange={() => toggleCrop(crop.value)}
-                    disabled={submitting}
-                    // T17-A1: the group's description is announced on
-                    // ENTERING the group, which a keyboard/screen-reader user
-                    // recovering from the error summary link does not do —
-                    // they land past it. Associating the error at each
-                    // checkbox too means recovery via quick-nav/summary-link
-                    // still surfaces "Select at least one crop." on the
-                    // control the user actually lands on.
-                    aria-invalid={errors.crops ? 'true' : undefined}
-                    aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
-                    className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  />
-                  <label htmlFor={id} className="text-sm text-fg">
-                    {crop.label}
-                  </label>
-                </div>
-              );
-            })}
+      <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="mb-4 text-base font-semibold text-fg">Crops & capacity</legend>
+          <div className="flex flex-col gap-1.5">
+            <span id={`${baseId}-crops-label`} className="text-sm font-medium text-fg">
+              Crops <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
+            </span>
+            {/*
+              A labelled group, not a bare div (Reviewer FAIL, attempt 2): the
+              group carries the id the error summary's anchor already targets
+              (`fieldId('crops')` === `${baseId}-crops`) so that link resolves,
+              and `aria-describedby` pointing at the inline error so a
+              screen-reader user gets the same association every other
+              errored control gets.
+            */}
+            <div
+              id={fieldId('crops')}
+              role="group"
+              aria-labelledby={`${baseId}-crops-label`}
+              aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
+              // T17-A3: the error summary's anchor targets this div
+              // (`#${fieldId('crops')}`). A plain <div> is not a native focus
+              // target, so fragment navigation scrolled here without moving
+              // focus — exactly the case where a quick-nav/summary-link user
+              // jumps straight past the group's own on-entry announcement.
+              // tabIndex={-1} makes it a valid, non-tab-order focus target for
+              // `:target`/fragment navigation without adding it to the normal
+              // Tab sequence.
+              tabIndex={-1}
+              className="flex flex-wrap gap-4"
+            >
+              {CROP_NAMES.map((crop) => {
+                const id = `${baseId}-crop-${crop.value}`;
+                const checked = values.crops.includes(crop.value);
+                return (
+                  <div key={crop.value} className="flex items-center gap-2">
+                    <input
+                      id={id}
+                      type="checkbox"
+                      value={crop.value}
+                      checked={checked}
+                      onChange={() => toggleCrop(crop.value)}
+                      disabled={submitting}
+                      // T17-A1: the group's description is announced on
+                      // ENTERING the group, which a keyboard/screen-reader user
+                      // recovering from the error summary link does not do —
+                      // they land past it. Associating the error at each
+                      // checkbox too means recovery via quick-nav/summary-link
+                      // still surfaces "Select at least one crop." on the
+                      // control the user actually lands on.
+                      aria-invalid={errors.crops ? 'true' : undefined}
+                      aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
+                      className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    />
+                    <label htmlFor={id} className="text-sm text-fg">
+                      {crop.label}
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            {errors.crops && (
+              <p id={`${baseId}-crops-error`} role="alert" className="text-xs text-danger">
+                {errors.crops}
+              </p>
+            )}
           </div>
-          {errors.crops && (
-            <p id={`${baseId}-crops-error`} role="alert" className="text-xs text-danger">
-              {errors.crops}
-            </p>
-          )}
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderInput('otherCrops', 'Other crop(s)', 'text', false, 'Review context — not published to the public directory')}
-          {renderInput('capacityTons', 'Capacity (tons)', 'number', true)}
-        </div>
-      </fieldset>
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderInput('otherCrops', 'Other crop(s)', 'text', false, 'Review context — not published to the public directory')}
+            {renderInput('capacityTons', 'Capacity (tons)', 'number', true)}
+          </div>
+        </fieldset>
+      </div>
 
       {/* Contact */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Contact</legend>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {renderInput('contactPerson', 'Contact person', 'text', true, 'Review context — not published to the public directory')}
-          {renderInput('position', 'Position')}
-          {renderSelect('sex', 'Sex', SEX_OPTIONS)}
-          {renderInput('phone', 'Phone', 'text', true)}
-          {/*
-            The one verified, top-level `email` (S-6) — collected here, not
-            in `RegistrationPayloadDto`. See the file header's T-19-seam
-            note. Format-validated client-side against `@IsEmail()`;
-            verification of control happens later, in T-19's OTP step.
-          */}
-          {renderInput('email', 'Email', 'email', true)}
-        </div>
-      </fieldset>
+      <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderInput('contactPerson', 'Contact person', 'text', true, 'Review context — not published to the public directory')}
+            {renderInput('position', 'Position')}
+            {renderSelect('sex', 'Sex', SEX_OPTIONS)}
+            {renderInput('phone', 'Phone', 'text', true)}
+            {/*
+              The one verified, top-level `email` (S-6) — collected here, not
+              in `RegistrationPayloadDto`. See the file header's T-19-seam
+              note. Format-validated client-side against `@IsEmail()`;
+              verification of control happens later, in T-19's OTP step.
+            */}
+            {renderInput('email', 'Email', 'email', true)}
+          </div>
+        </fieldset>
+      </div>
 
       {/*
         Data protection & consent — `ConsentPolicyDisclosure` (T-18):
@@ -803,26 +836,28 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
         `handleConsentPolicyLoaded`) so `handleSubmit` sends the version the
         applicant was actually shown, never a placeholder.
       */}
-      <fieldset className="rounded-md border border-border p-4 sm:p-6">
-        <legend className="px-2 text-sm font-semibold text-fg">Data protection & consent</legend>
-        {/*
-          The error summary's anchor targets `fieldId('consentAccepted')`
-          (`#${baseId}-consentAccepted`) via `FIELD_LABELS`, the same as
-          every other field — but `ConsentPolicyDisclosure`'s own checkbox
-          carries its own internal `useId()`, not this id. This wrapping div
-          is the landing target, mirroring the crops group's pattern
-          (Reviewer FAIL, attempt 2 caught the identical dead-anchor gap
-          there) so the link resolves to a live element instead of nothing.
-        */}
-        <div id={fieldId('consentAccepted')}>
-          <ConsentPolicyDisclosure
-            checked={values.consentAccepted}
-            onChange={(checked) => setField('consentAccepted', checked)}
-            error={errors.consentAccepted}
-            onPolicyLoaded={handleConsentPolicyLoaded}
-          />
-        </div>
-      </fieldset>
+      <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="mb-4 text-base font-semibold text-fg">Data protection & consent</legend>
+          {/*
+            The error summary's anchor targets `fieldId('consentAccepted')`
+            (`#${baseId}-consentAccepted`) via `FIELD_LABELS`, the same as
+            every other field — but `ConsentPolicyDisclosure`'s own checkbox
+            carries its own internal `useId()`, not this id. This wrapping div
+            is the landing target, mirroring the crops group's pattern
+            (Reviewer FAIL, attempt 2 caught the identical dead-anchor gap
+            there) so the link resolves to a live element instead of nothing.
+          */}
+          <div id={fieldId('consentAccepted')}>
+            <ConsentPolicyDisclosure
+              checked={values.consentAccepted}
+              onChange={(checked) => setField('consentAccepted', checked)}
+              error={errors.consentAccepted}
+              onPolicyLoaded={handleConsentPolicyLoaded}
+            />
+          </div>
+        </fieldset>
+      </div>
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-3 pt-2">

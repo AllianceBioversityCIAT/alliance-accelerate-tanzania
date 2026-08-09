@@ -22,7 +22,8 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 - Functional requirements are `FR-1…`; non-functional `NFR-1…`.
 - Every requirement is atomic and testable. Every contrast figure in this document is **computed from the token values**, not estimated.
 - MUST / SHOULD / MAY per RFC 2119.
-- **Figures reconciled against prose (KZ-005):** the counts asserted here — 231 surface usages, 3 hex comment occurrences, 3 shipped AA failures, 2 comment-only file edits — are each stated once and used consistently in `design.md` and `tasks.md`.
+- **Figures reconciled against prose (KZ-005):** the counts asserted here — 231 surface usages, 3 hex comment occurrences, **4 shipped AA failing pairs**, 2 comment-only file edits — are each stated once and used consistently in `design.md` and `tasks.md`.
+- **Pairs, not sites (amended 2026-08-07, T-1):** FR-2 counts failing **(ink, ground) pairs**, because a token re-authoring fixes a pair everywhere it renders. Its table cites *representative* render sites per pair, not an exhaustive site list. The exhaustive site sweep lives in the T-1 harness's `REACHABLE.citedAt` fields, which is where it can be kept honest by a test.
 
 ---
 
@@ -81,17 +82,20 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 
 ---
 
-### FR-2: Remediate the three shipped WCAG AA failures
+### FR-2: Remediate the four shipped WCAG AA failures
 
-- **Description:** The system MUST correct three ink/background pairs that fail WCAG 2.1 AA for small text on `main` today.
-- **Rationale / Source:** Measured during `/akili-propose`. TRD **QA-11** asserts AA is enforced; these have shipped regardless — see FR-8.
+- **Description:** The system MUST correct four ink/background **pairs** that fail WCAG 2.1 AA for small text on `main` today.
+- **Rationale / Source:** Measured during `/akili-propose`; the 4th pair was discovered by the T-1 two-direction sweep (KZ-004) and added on 2026-08-07. TRD **QA-11** asserts AA is enforced; these have shipped regardless — see FR-8.
 - **PII/RBAC impact:** None.
 
-| Site | Pair | Today | Required |
+| Pair | Representative site(s) | Today | Required |
 |---|---|---|---|
-| `frontend/components/admin/ImportPreviewTable.tsx:130` | `text-warning` at 12px on `--color-surface` | **3.14:1** | ≥ 4.5:1 |
-| `frontend/components/admin/ImportPreviewTable.tsx:98` | `text-warning` on its own `bg-warning/10` chip | **2.83:1** | ≥ 4.5:1 |
-| `frontend/components/admin/UsersTable.tsx:282`, `:377` | `text-success` on `bg-highlight/20` | **4.35:1** | ≥ 4.5:1 |
+| `text-warning` at 12px on `--color-surface` | `ImportPreviewTable.tsx:130`; also `ActorsTable.tsx:282` (tbody `bg-surface`) | **3.14:1** | ≥ 4.5:1 |
+| `text-warning` on its own `bg-warning/10` chip | `ImportPreviewTable.tsx:98` | **2.83:1** | ≥ 4.5:1 |
+| `text-success` on `bg-highlight/20` | `UsersTable.tsx:282`, `:377`; also `app/(admin)/admin/users/page.tsx:349` | **4.35:1** | ≥ 4.5:1 |
+| `text-warning` on `--color-surface-alt` | `ActorHistoryPanel.tsx:87` (BULK_CONSENT badge); also `ActorsTable.tsx:282` under `hover:bg-surface-alt` | **2.93:1** | ≥ 4.5:1 |
+
+> **Why this pair was missed.** The original sweep enumerated `text-warning` sites whose ground was the *default* body/table surface and stopped there; `ActorHistoryPanel.tsx:87` sets ink and ground together in one returned class string (`'bg-surface-alt text-warning'`), so it did not match that shape. The T-1 harness now gates the pair directly, which is why the miss is recoverable by test rather than by re-reading. **It requires no new token value** — the `--color-warning` → `#8F5E10` already planned for the other three pairs yields **4.90:1** here, so this is a documentation defect, not a design defect.
 
 #### Scenario: Warning text becomes legible at 12px
 
@@ -196,7 +200,7 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 ### FR-8: Correct the QA-11 verification method
 
 - **Description:** TRD **QA-11** claims WCAG 2.1 AA is "enforced in frontend tests via `jest-axe`". For contrast this is structurally false and MUST be corrected.
-- **Rationale / Source:** `jest-axe` runs under jsdom, which has no layout or paint engine, so axe's `color-contrast` rule cannot execute and is skipped without failing. QA-11 has reported green for a property its harness cannot evaluate — precisely **KZ-002**. The three FR-2 failures shipped through that gap.
+- **Rationale / Source:** `jest-axe` runs under jsdom, which has no layout or paint engine, so axe's `color-contrast` rule cannot execute and is skipped without failing. QA-11 has reported green for a property its harness cannot evaluate — precisely **KZ-002**. All four FR-2 failing pairs shipped through that gap.
 - **PII/RBAC impact:** None.
 
 #### Scenario: The gate names what it can actually see
@@ -220,7 +224,15 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 | **NFR-4** | **Dark-mode readiness preserved** | `design.md` §11 requires tokens authored so a `.dark` scope can override them later. All new tokens MUST be declared as CSS variables inside `:root`; no colour literal may appear outside that block. |
 | **NFR-5** | **Static-export safe** | `next build` static export succeeds; no SSR, route handler, or dynamic segment introduced. |
 | **NFR-6** | **Motion and reduced-motion untouched** | All `--dur-*` / `--ease-*` tokens and the `prefers-reduced-motion` gating are byte-identical. |
-| **NFR-7** | **Scope containment** | Exactly **two** component files change, and both changes are **comment-only**: `Footer.tsx`, `DashboardMapPanel.tsx`. No component's markup, classes, props or behaviour changes. Verified by `git diff`. |
+| **NFR-7** | **Scope containment** | ~~Exactly **two** component files change, and both changes are **comment-only**: `Footer.tsx`, `DashboardMapPanel.tsx`. No component's markup, classes, props or behaviour changes.~~ **AMENDED 2026-08-07 — see below.** Verified by `git diff`. |
+
+> **NFR-7 amendment (2026-08-07, user-authorized at the T-6 visual gate).** The original clause forbade *any* component class change. It is amended to admit **T-7** — form-section elevation and hierarchy in `RegistrationForm.tsx` and `ActorForm.tsx`.
+>
+> **Why, and what it costs.** At the AR-1 gate the user judged the form sections illegible and asked three times for the fix. The Leader had adjudicated it out of scope (VF-1) and routed it to `enhancement/form-elevation-ux`; the user's repeated request supersedes that adjudication. **This is a real loss, stated plainly:** the spec is no longer token-only, and T-6's diff-containment check no longer proves what it originally proved. The amendment is recorded rather than absorbed silently so the weakening is visible to anyone auditing this spec later.
+>
+> **Amended scope containment:** exactly **four** component files change — `Footer.tsx` and `DashboardMapPanel.tsx` (comment-only, unchanged from the original clause), plus `RegistrationForm.tsx` and `ActorForm.tsx` (**class-only**: no markup restructuring, no props, no behaviour, no new components). `frontend/lib/dashboard/chart-tokens.ts` remains a comment-only lib edit (LF-1). Anything beyond this set still escalates.
+>
+> **What T-7 must not do:** `--color-surface` (`#FFFFFF`) against `--color-bg` (`#FBF9F6`) is only **1.05:1**, so the *border* — not the background or the shadow — carries the section boundary under WCAG 1.4.11's 3:1 floor for non-text UI. `border border-border` MUST survive on every fieldset. A shadow **adds** to the boundary; it never substitutes for it.
 
 ---
 
@@ -269,7 +281,7 @@ The change advances PRD §4's *"Make actors discoverable"* and `design.md` §1.5
 | ID | Requirement | Primary artifact |
 |---|---|---|
 | FR-1 | Warm-earth surface and ink tokens | `globals.css`, `tailwind.config.ts` |
-| FR-2 | Remediate three shipped WCAG AA failures | `globals.css` |
+| FR-2 | Remediate four shipped WCAG AA failing pairs | `globals.css` |
 | FR-3 | Separate semantic ink from crop identity | `globals.css`, `design.md` §7 |
 | FR-4 | Elevation ladder | `globals.css`, `tailwind.config.ts` |
 | FR-5 | Atmospheric gradient tokens | `globals.css`, `tailwind.config.ts` |

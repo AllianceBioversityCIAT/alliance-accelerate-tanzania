@@ -27,7 +27,7 @@ These form the **constitutional baseline** for all AKILI-SPECS work. Module/feat
 - **Maps:** **Leaflet**. **Auth/RBAC:** **AWS Cognito** (groups `admin`, `staff`; anonymous = `Public`).
 
 ## Hard constraints
-- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV`.
+- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); passing it `--profile` is silently ignored and an ambient profile wins.
 - **PII protection:** `phone` and `email` are PII — never exposed to the `Public` role in any API response, page, or export. Enforce server-side in the role-aware serializer (defense in depth), not just in the client.
 - **Static export:** no Next.js SSR/ISR/route handlers — all server logic lives in the NestJS API.
 - **Design tokens:** use tokens from `docs/ux-ui/design.md §7` — no hardcoded colors/geometry.
