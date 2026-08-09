@@ -836,3 +836,21 @@ After T-4 and T-5 closed, the frontend was deployed to the live Dev environment 
 The user was also asked to `git rebase` onto `main` on the assumption that `main` had newer changes explaining the discrepancy. Checked before acting: `git diff <merge-base> main` is **empty** — `main` has zero content differences from this branch's fork point despite 3 "ahead" merge commits (no-op merges). A rebase would have been a no-op; **not run**, and the user was told why rather than running a pointless history rewrite.
 
 Given the actual cause (scope, not staleness), the user explicitly chose to add the admin form as new work rather than defer it. **T-7 "Adopt in the admin actor form" added to `tasks.md`**, mirroring T-4's clause-preservation structure against `ActorForm.tsx`'s existing `renderSelect('region', ...)` (`:810-815`) and its own `aria-invalid`/`aria-describedby`/required-asterisk/`disabled`/error-message wiring. Dependency graph and `design.md` §11's budget table updated in the same change (T-7: ~90 LOC, no requirement clause invented — it extends FR-4's discipline to a second consumer). T-7 depends only on T-3, independent of T-4/T-5/T-6; does not gate or get gated by the manual browser pass.
+
+### T-7 — Adopt in the admin actor form · **PASS** (attempt 1 of 3, 1 review round)
+
+- **Date:** 2026-08-08
+- **Implementer:** `akili-implementer` wrapper (sonnet). **Skills:** `tailwind-design-system`, then `react-doctor`. **Effort:** `medium`.
+- **Files changed:** `ActorForm.tsx` (`renderRegionField()` added, character-for-character the reviewed T-4 exemplar modulo `submitting`→`loading`), `ActorForm.test.tsx` (`selectRegion(user, label)` helper using the real pointer-commit path, never `fireEvent.change`).
+
+**Round 1 — PASS.** All six clauses verified at their actual sites, not just plausible: `aria-invalid` (structural, via the primitive's own `invalid` prop), `aria-describedby` → `#<id>-error` (resolved and its text asserted), required asterisk (unchanged `Field`), `disabled` while `loading` (via a genuinely never-resolving mock, not a timing hack), `Region is required.` inline (unchanged `validate()`), and payload fidelity (`buildDto` still reads `values.region`, written only from a canonical `REGION_OPTIONS` value — plus the FR-3 typed-but-uncommitted-text boundary test, mirroring T-4's).
+
+**Assertion-count claim independently re-verified against the raw patch, not the report:** 115→127 `expect(`, 33→40 `it(`. Zero deleted `expect(` lines; exactly six deleted `it(` lines, each re-added on the following line with an identical title (only `() =>` → `async () =>` changed) — reconstructs the old suite exactly. No case dropped, gate strengthened.
+
+**ADVISORY, both applied in this closeout (non-blocking, no rework consumed):**
+1. Spec docs were stale against the now-authorized T-7 reality: `requirements.md` §2's "3 adopted / 3 deferred" count and §6's Out of Scope table both still described `ActorForm.tsx` as a non-goal. **Corrected in this change** — §2 now reads 4 adopted / 2 deferred, §6's admin non-goal row narrowed to the one remaining site (`app/(admin)/admin/actors/page.tsx`); `design.md`'s matching "2 admin sites keep their native `<select>`" line and the "distinct-shells argument covers only the 2 admin sites" line corrected the same way.
+2. Cosmetic: `ActorForm.tsx:673`'s new doc comment (copied from the T-4 exemplar) said `renderSelect` "still renders for `traderType`/`sex`," omitting that it also renders `consentStatus` in this file. **Corrected.**
+
+**Verification (final):** `npm test -- --silent --testPathPatterns "ActorForm"` — 40/40 passing (Leader independently reproduced). `npx next lint --file components/admin/ActorForm.tsx` — clean.
+
+**Requirements covered:** same clause-preservation discipline as FR-4, extended to a second consumer (no new FR invented) — `aria-invalid`, `aria-describedby`, required asterisk, `disabled`, inline error, payload fidelity, FR-3's typed-but-uncommitted boundary. NFR-1 (WCAG 2.1 AA).

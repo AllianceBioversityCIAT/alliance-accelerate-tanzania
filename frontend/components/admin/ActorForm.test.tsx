@@ -1,4 +1,5 @@
 // @sdd-spec admin/actor-crud-audit (T-8)
+// @sdd-spec enhancement/searchable-region-select (T-7)
 /**
  * Unit tests for ActorForm.
  *
@@ -12,6 +13,19 @@
  *   - successful submit calls onSuccess
  *   - AuthFailureError triggers onAuthFailure
  *   - jest-axe clean in create mode and with the FR-3 inline errors shown (NFR-5)
+ *   - (T-7) the Region field is the `SearchableSelect` primitive: `aria-invalid`
+ *     present-when-errored/absent-when-clean, `aria-describedby` → `#<id>-error`,
+ *     the required asterisk, `disabled` while `loading`, "Region is required."
+ *     inline, and payload fidelity — every clause `tasks.md` T-7 owns for this
+ *     field, named individually
+ *
+ * Region selection (T-7): mirrors RegistrationForm.test.tsx's T-4 rewrite.
+ * `SearchableSelect` never commits from typing (FR-3) — `fireEvent.change` on
+ * its input only edits the in-progress search text, never `values.region`.
+ * Every place this file used to select a region via `fireEvent.change(...,
+ * { target: { value: 'Iringa' } })` (the native-`<select>` shape) now drives
+ * the real commit path with `@testing-library/user-event`: open the control,
+ * then click the option. `selectRegion` centralizes it.
  */
 
 // ---------------------------------------------------------------------------
@@ -33,6 +47,7 @@ jest.mock('@/lib/api/actors-admin', () => ({
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 import ActorForm from './ActorForm';
@@ -99,10 +114,22 @@ function renderForm(props: Partial<React.ComponentProps<typeof ActorForm>> = {})
   return { ...result, onSuccess, onAuthFailure };
 }
 
-function fillRequiredFields() {
+/**
+ * Commits a region on the `SearchableSelect` combobox (T-7) via the real
+ * pointer-commit path — open, then click the option — never
+ * `fireEvent.change`, which only edits the in-progress search text and
+ * never reaches `onChange` (FR-3). Mirrors RegistrationForm.test.tsx's T-4
+ * `selectRegion` helper.
+ */
+async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^region/i));
+  await user.click(screen.getByRole('option', { name: label }));
+}
+
+async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/trader id/i), { target: { value: 'T-002' } });
   fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'Iringa Cooperative' } });
-  fireEvent.change(screen.getByLabelText(/region/i), { target: { value: 'Iringa' } });
+  await selectRegion(user, 'Iringa');
   fireEvent.change(screen.getByLabelText(/trader type/i), { target: { value: 'cooperative' } });
   fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'UNKNOWN' } });
 }
@@ -204,9 +231,10 @@ describe('ActorForm — client validation', () => {
     expect(getFieldError(/consent status/i)?.textContent).toMatch(/required/i);
   });
 
-  it('rejects invalid email format', () => {
+  it('rejects invalid email format', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'not-an-email' } });
     submitForm();
 
@@ -214,9 +242,10 @@ describe('ActorForm — client validation', () => {
     expect(createActor).not.toHaveBeenCalled();
   });
 
-  it('rejects GPS latitude outside [-90, 90]', () => {
+  it('rejects GPS latitude outside [-90, 90]', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
     submitForm();
 
@@ -224,9 +253,10 @@ describe('ActorForm — client validation', () => {
     expect(createActor).not.toHaveBeenCalled();
   });
 
-  it('rejects GPS longitude outside [-180, 180]', () => {
+  it('rejects GPS longitude outside [-180, 180]', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-200' } });
     submitForm();
 
@@ -234,9 +264,10 @@ describe('ActorForm — client validation', () => {
     expect(createActor).not.toHaveBeenCalled();
   });
 
-  it('rejects negative capacity', () => {
+  it('rejects negative capacity', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/capacity/i), { target: { value: '-10' } });
     submitForm();
 
@@ -251,10 +282,11 @@ describe('ActorForm — client validation', () => {
 
 describe('ActorForm — consent acknowledgement gating', () => {
   it('opens AcknowledgeDialog and sends acknowledged: true when creating with GRANTED', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     grantConsentWithProvenance();
     submitForm();
 
@@ -274,9 +306,10 @@ describe('ActorForm — consent acknowledgement gating', () => {
   });
 
   it('does not submit when GRANTED acknowledgement is cancelled', async () => {
+    const user = userEvent.setup();
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     grantConsentWithProvenance();
     submitForm();
 
@@ -325,9 +358,10 @@ describe('ActorForm — consent acknowledgement gating', () => {
   // provenance" fieldset (T-9), so it omits AcknowledgeDialog's opt-in
   // `provenance` prop and must render no duplicate method/date inputs.
   it('T-10: renders no consent-method or consent-date inputs on the acknowledge dialog', async () => {
+    const user = userEvent.setup();
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     grantConsentWithProvenance();
     submitForm();
 
@@ -337,10 +371,11 @@ describe('ActorForm — consent acknowledgement gating', () => {
   });
 
   it('does not gate submits with consent DENIED or UNKNOWN', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
     submitForm();
 
@@ -374,9 +409,10 @@ describe('ActorForm — consent & provenance fieldset', () => {
     expect(screen.getByLabelText(/consent reference/i)).toHaveValue('doc-123');
   });
 
-  it('blocks submit and surfaces field-level, aria-described, live-region errors when GRANTED is selected with no method or date', () => {
+  it('blocks submit and surfaces field-level, aria-described, live-region errors when GRANTED is selected with no method or date', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
     submitForm();
 
@@ -398,9 +434,10 @@ describe('ActorForm — consent & provenance fieldset', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('requires only the missing field when just one of method/date is absent', () => {
+  it('requires only the missing field when just one of method/date is absent', async () => {
+    const user = userEvent.setup();
     renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
     fireEvent.change(screen.getByLabelText(/consent method/i), { target: { value: 'EMAIL' } });
     submitForm();
@@ -411,10 +448,11 @@ describe('ActorForm — consent & provenance fieldset', () => {
   });
 
   it('allows a GRANTED submission once method and date are supplied, sending a full RFC-3339 instant anchored at Tanzania midnight', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
     fireEvent.change(screen.getByLabelText(/consent method/i), { target: { value: 'SIGNED_FORM' } });
     fireEvent.change(screen.getByLabelText(/consent obtained/i), { target: { value: '2026-01-15' } });
@@ -556,10 +594,11 @@ describe('ActorForm — registration source (FR-6)', () => {
   });
 
   it('sends registrationSource explicitly as TEAM_MANAGED when a new actor is created without changing the default', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     submitForm();
 
     await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
@@ -591,6 +630,100 @@ describe('ActorForm — registration source (FR-6)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Region field — SearchableSelect adoption (T-7, design.md §5.6)
+//
+// Every clause `tasks.md` T-7 owns for this one field, named individually so
+// none can be discharged by an adjacent green check (KZ-001): aria-invalid
+// present/absent, aria-describedby, the required asterisk, disabled while
+// loading, "Region is required." inline from the one errors record, and
+// payload fidelity (committed value and only the committed value reaches
+// the DTO). Mirrors RegistrationForm.test.tsx's T-4 Region field block.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — Region field (T-7, SearchableSelect adoption)', () => {
+  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', () => {
+    renderForm();
+    expect(screen.getByLabelText(/^region/i)).not.toHaveAttribute('aria-invalid');
+
+    submitForm();
+    expect(screen.getByLabelText(/^region/i)).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', () => {
+    renderForm();
+    submitForm();
+
+    const region = screen.getByLabelText(/^region/i);
+    const describedBy = region.getAttribute('aria-describedby');
+    expect(describedBy).toBe(`${region.id}-error`);
+    expect(document.getElementById(describedBy!)).toHaveTextContent('Region is required.');
+  });
+
+  it('the Region label carries the required asterisk', () => {
+    renderForm();
+    const region = screen.getByLabelText(/^region/i);
+    const label = document.querySelector(`label[for="${region.id}"]`);
+    expect(label).not.toBeNull();
+    // Field renders `{label}{required && <span aria-hidden>*</span>}` with no
+    // separating whitespace — the exact text every other required field's
+    // label carries.
+    expect(label).toHaveTextContent('Region*');
+  });
+
+  it('the region combobox is disabled while loading (mid-submit)', async () => {
+    const user = userEvent.setup();
+    // Never resolves — keeps `loading` true for the duration of this assertion.
+    jest.mocked(createActor).mockReturnValue(new Promise(() => {}));
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(screen.getByLabelText(/^region/i)).toBeDisabled());
+  });
+
+  it('"Region is required." appears inline from the one errors record', () => {
+    renderForm();
+    submitForm();
+
+    expect(getFieldError(/^region/i)?.textContent).toBe('Region is required.');
+  });
+
+  it('a region committed via the combobox flows unchanged into the create payload', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.region).toBe('Iringa');
+  });
+
+  it('typed, uncommitted region text is never emitted to the payload — FR-3 preserved through the adoption', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+    await fillRequiredFields(user);
+
+    // Reopen the already-committed control, type a fragment that matches no
+    // region, then abandon it without committing (FR-2's "abandoning a
+    // partial search" — blur reverts, never emits).
+    const region = screen.getByLabelText(/^region/i);
+    await user.click(region);
+    await user.keyboard('Zzz');
+    await user.tab();
+
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.region).toBe('Iringa');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Accessibility (jest-axe, NFR-5)
 // ---------------------------------------------------------------------------
 
@@ -603,8 +736,9 @@ describe('ActorForm — accessibility', () => {
   });
 
   it('has no axe violations once the FR-3 guard has produced inline errors', async () => {
+    const user = userEvent.setup();
     const { container } = renderForm();
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
     submitForm();
 
@@ -623,12 +757,13 @@ describe('ActorForm — accessibility', () => {
 
 describe('ActorForm — server error mapping', () => {
   it('maps 409 duplicate traderId inline to the traderId field', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(
       new ApiError(409, 'An actor with this traderId already exists'),
     );
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     submitForm();
 
     await waitFor(() => expect(getFieldError(/trader id/i)?.textContent).toMatch(/already exists/i));
@@ -636,6 +771,7 @@ describe('ActorForm — server error mapping', () => {
   });
 
   it('maps 400 field errors inline via aria-describedby', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(
       new ApiError(400, 'Validation failed', [
         { field: 'email', message: 'Email must be a valid email address' },
@@ -643,7 +779,7 @@ describe('ActorForm — server error mapping', () => {
     );
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'valid@example.com' } });
     submitForm();
 
@@ -654,20 +790,22 @@ describe('ActorForm — server error mapping', () => {
   });
 
   it('renders a top-level form error for non-field server errors', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(new ApiError(500, 'Server error'));
     renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     submitForm();
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Server error'));
   });
 
   it('calls onAuthFailure when the API returns 401', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(new AuthFailureError());
     const { onAuthFailure } = renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     submitForm();
 
     await waitFor(() => expect(onAuthFailure).toHaveBeenCalledTimes(1));
@@ -680,10 +818,11 @@ describe('ActorForm — server error mapping', () => {
 
 describe('ActorForm — success flow', () => {
   it('calls onSuccess after a successful create', async () => {
+    const user = userEvent.setup();
     jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
     const { onSuccess } = renderForm();
 
-    fillRequiredFields();
+    await fillRequiredFields(user);
     submitForm();
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));

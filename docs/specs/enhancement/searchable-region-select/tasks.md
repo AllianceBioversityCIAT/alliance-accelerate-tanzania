@@ -142,7 +142,7 @@ This is not a weaker gate: in T-2 it caught a real `react-hooks/exhaustive-deps`
       **Done when:** all six combinations are recorded with an explicit verdict. A failure here is a **normal outcome** and blocks the spec until fixed — it is not a formality.
       **Evidence is DISQUALIFIED if:** the report says "looks fine" without naming the six combinations, or reports contrast without a measured ratio. **"I could not check mobile" is a legitimate, reportable outcome and must be escalated — it must NOT be recorded as a pass.** This task exists because the automated suite is blind here; a hand-waved T-6 removes the only gate these three classes have.
 
-- [ ] **T-7  Adopt in the admin actor form**  (deps: T-3)
+- [x] **T-7  Adopt in the admin actor form**  (deps: T-3)
       **Added post-hoc, explicitly authorized by the user during T-6** — the admin `ActorForm` region field was never in this spec's original scope (T-1–T-6 cover the primitive plus the three *public* surfaces only); the user asked for it after visually comparing the deployed public form against the still-native admin one.
       **Size:** S · ~90 LOC (component ~15, test updates ~75 — same shape as T-4, smaller test file already has less region-specific coverage to migrate)
       **Traces:** same clause-preservation discipline as FR-4 (no admin-specific requirement clause exists for this field yet — this task extends FR-4's discipline to a second consumer, it does not invent a new FR) · NFR-1 (WCAG 2.1 AA)

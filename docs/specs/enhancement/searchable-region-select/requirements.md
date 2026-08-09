@@ -23,7 +23,7 @@ The problem is sharpest on `/register`, where the target user is a Tanzanian sma
 
 - Functional requirements `FR-1…FR-6`; non-functional `NFR-1…NFR-5`.
 - RFC 2119 keywords: **MUST / SHOULD / MAY**.
-- Numeric claims used throughout, reconciled per KZ-005: **31** canonical regions (`frontend/lib/content/regions.ts`, mirroring `CANONICAL_REGIONS` in `backend/src/common/normalize.ts`); **6** total `REGIONS` consumer sites, split **4 public-facing / 2 admin-facing**; **3** adopted here; **3** deferred (§6). The public/admin split was wrong in the first draft and corrected by Judgment Day JD-9 — see §6.
+- Numeric claims used throughout, reconciled per KZ-005: **31** canonical regions (`frontend/lib/content/regions.ts`, mirroring `CANONICAL_REGIONS` in `backend/src/common/normalize.ts`); **6** total `REGIONS` consumer sites, split **4 public-facing / 2 admin-facing**; **4** adopted (3 original + `components/admin/ActorForm.tsx` via T-7, added post-hoc and user-authorized — see §6); **2** deferred (§6). The public/admin split was wrong in the first draft and corrected by Judgment Day JD-9 — see §6.
 
 ---
 
@@ -179,7 +179,7 @@ Per the methodology's gate-coverage rule and **KZ-002**, each defect class this 
 
 | Non-goal | Why |
 |---|---|
-| The **2 admin-facing** region selects — `components/admin/ActorForm.tsx`, `app/(admin)/admin/actors/page.tsx` | Staff/Admin are trained repeat users on desktop; the public audience is the stated problem. The primitive is built to be reused, so adopting them later is a mechanical follow-up spec |
+| The remaining **1 admin-facing** region select — `app/(admin)/admin/actors/page.tsx` (`components/admin/ActorForm.tsx`, the other admin site, was adopted post-hoc as **T-7**, user-authorized after visual comparison against the live public deploy) | Staff/Admin are trained repeat users on desktop; the public audience is the stated problem. The primitive is built to be reused, so adopting it later is a mechanical follow-up spec |
 | **`components/dashboard/DashboardFilters.tsx` — deferred, but NOT for the reason above** | ⚠️ **Corrected after Judgment Day round 1 (JD-9).** An earlier draft of this section grouped this file with the admin sites and justified deferring it as "Staff/Admin are trained repeat users on desktop." **That is verifiably false:** it renders through `app/(public)/dashboard/page.tsx` — the public shell — and `RequireRole` appears nowhere in the public tree. An anonymous visitor reaches it. There are **4** public-facing region selects, not 3. It is deferred purely to hold this spec's size (the 4th adoption would add ~60 LOC and a 7th task), and the cost is real and named: a public user on `/dashboard` keeps the exact 31-item scroll problem this spec exists to fix, and the redundant `aria-label` at `DashboardFilters.tsx:147` survives there too. **Its follow-up is higher priority than the 2 admin sites', not equal to it.** |
 | Generalizing the control to the **crop** and **trader-type** selects | 3 and ~8 options respectively — a searcher adds cost with no benefit |
 | Multi-select region filtering | Not requested; the backend `?region=` contract is single-valued |

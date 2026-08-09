@@ -1,4 +1,5 @@
 // @sdd-spec admin/actor-crud-audit (T-8)
+// @sdd-spec enhancement/searchable-region-select (T-7)
 'use client';
 
 /**
@@ -20,6 +21,7 @@ import { useCallback, useId, useState } from 'react';
 
 import { AcknowledgeDialog } from './AcknowledgeDialog';
 import Button from '../ui/Button';
+import { SearchableSelect } from '../ui/SearchableSelect';
 
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
@@ -56,6 +58,10 @@ const CONSENT_OPTIONS = [
   { value: 'DENIED', label: 'Denied' },
   { value: 'UNKNOWN', label: 'Unknown' },
 ] as const;
+
+// T-7 (design.md §5.6) — computed once at module scope, mirroring
+// RegistrationForm's REGION_OPTIONS (T-4), for SearchableSelect's `options` prop.
+const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
 
 /**
  * T-9 (FR-2, FR-6) — mirrors the labels used by the admin actors table filter
@@ -662,6 +668,35 @@ export default function ActorForm({
     );
   };
 
+  /**
+   * T-7 (design.md §5.6) — `SearchableSelect` swapped in for the native
+   * `<select>` `renderSelect` still renders for `traderType`/`sex`/`consentStatus`, inside
+   * the SAME `Field` wrapper so the label, required asterisk, and inline
+   * error message are unchanged. `invalid`/`describedBy` are computed the
+   * same way `renderSelect` computes them for every other field, so
+   * `aria-invalid`/`aria-describedby` follow the one `errors` record with no
+   * second path. No `clearOptionLabel` — region is required here too.
+   */
+  const renderRegionField = () => {
+    const field: keyof FormValues = 'region';
+    const id = fieldId(field);
+    const error = errors[field];
+    return (
+      <Field id={id} label="Region" error={error} required>
+        <SearchableSelect
+          id={id}
+          value={values.region}
+          onChange={(next) => setField('region', next)}
+          options={REGION_OPTIONS}
+          placeholder="Select…"
+          disabled={loading}
+          invalid={!!error}
+          describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
   const renderInput = (
     field: keyof FormValues,
     label: string,
@@ -807,12 +842,7 @@ export default function ActorForm({
         <fieldset className="rounded-md border border-border p-4 sm:p-6">
           <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {renderSelect(
-              'region',
-              'Region',
-              REGIONS.map((r) => ({ value: r, label: r })),
-              true,
-            )}
+            {renderRegionField()}
             {renderInput('district', 'District')}
             {renderInput('marketLocation', 'Market location')}
             {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
