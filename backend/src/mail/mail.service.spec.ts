@@ -162,4 +162,55 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     expect(emitted).not.toContain(email);
     expect(emitted).toContain('status=failed');
   });
+
+  it(
+    'sendContactMessage (contact/contact-channels T-1) logs kind=contact with ' +
+      'reference=n/a and never the recipient address',
+    async () => {
+      process.env.MAIL_TRANSPORT = 'ses';
+      process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
+      process.env.AWS_REGION = 'eu-west-1';
+      resetMailTransport();
+      resetSesClient();
+      sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+
+      const service = new MailService();
+      const adminEmail = 'admin-secret@example.org';
+
+      await service.sendContactMessage({
+        to: [adminEmail],
+        subject: 'New contact submission',
+        text: 'body',
+        replyTo: 'Jane Requester <jane@example.org>',
+      });
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(adminEmail);
+      expect(emitted).toContain('kind=contact');
+      expect(emitted).toContain('reference=n/a');
+      expect(emitted).toContain('status=sent');
+    },
+  );
+
+  it('sendContactMessage rethrows a transport failure unchanged', async () => {
+    process.env.MAIL_TRANSPORT = 'ses';
+    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
+    process.env.AWS_REGION = 'eu-west-1';
+    resetMailTransport();
+    resetSesClient();
+    sesMock.on(SendEmailCommand).rejects(new Error('Throttling'));
+
+    const service = new MailService();
+
+    await expect(
+      service.sendContactMessage({ to: ['admin@example.org'], subject: 's', text: 't' }),
+    ).rejects.toThrow('Throttling');
+
+    const emitted = emittedText();
+    expect(emitted).toContain('kind=contact');
+    expect(emitted).toContain('status=failed');
+  });
 });

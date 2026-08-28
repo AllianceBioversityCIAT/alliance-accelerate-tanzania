@@ -1,7 +1,31 @@
 // @sdd-spec actors/public-self-registration (T-3)
+// @sdd-spec contact/contact-channels (T-1)
 import { SendEmailCommand, SESClient } from '@aws-sdk/client-ses';
 import { MailMessage, MailTransport } from './mail-transport.interface';
 import { getSesMailConfig } from './mail.config';
+
+/**
+ * contact/contact-channels T-1 (design.md §4.2, §4.6, DD-5) — the fixed
+ * `From` display name every message sent through this transport now carries,
+ * layered over the verified sender address rather than replacing it. SES
+ * verifies the address, not the display name, so this needs no separate
+ * verification and no IAM change.
+ */
+const MAIL_SENDER_DISPLAY_NAME = 'ACCELERATE Tanzania Seed Registry';
+
+/**
+ * Builds the SES `Source` field. If `MAIL_SENDER_ADDRESS` already contains
+ * `<` — i.e. an operator configured it as its own `"Name" <address>` form —
+ * it is used verbatim so the display name is never wrapped twice (design.md
+ * §4.2's double-wrapping guard). Otherwise the fixed
+ * `MAIL_SENDER_DISPLAY_NAME` is layered over the bare address.
+ */
+function buildSource(senderAddress: string): string {
+  if (senderAddress.includes('<')) {
+    return senderAddress;
+  }
+  return `${MAIL_SENDER_DISPLAY_NAME} <${senderAddress}>`;
+}
 
 /**
  * Single, shared SES client (Lambda-tuned — mirrors
@@ -39,10 +63,13 @@ export class SesMailTransport implements MailTransport {
     const { senderAddress, region } = getSesMailConfig();
     const sesClient = getSesClient(region);
 
+    const toAddresses = Array.isArray(message.to) ? message.to : [message.to];
+
     await sesClient.send(
       new SendEmailCommand({
-        Source: senderAddress,
-        Destination: { ToAddresses: [message.to] },
+        Source: buildSource(senderAddress),
+        Destination: { ToAddresses: toAddresses },
+        ...(message.replyTo ? { ReplyToAddresses: [message.replyTo] } : {}),
         Message: {
           Subject: { Data: message.subject, Charset: 'UTF-8' },
           Body: { Text: { Data: message.text, Charset: 'UTF-8' } },

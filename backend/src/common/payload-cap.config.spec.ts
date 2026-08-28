@@ -1,4 +1,5 @@
 // @sdd-spec actors/public-self-registration (T-6)
+// @sdd-spec contact/contact-channels (T-4)
 /**
  * T-6 — Unit-level, per-clause proof of `registrationsPayloadCapMiddleware`
  * (FR-7 scenario 2, NFR-4, design.md §4.4 P-1…P-3).
@@ -16,6 +17,13 @@
  * Express routes case-insensitively by default, so a case-sensitive matcher
  * here is narrower than the route set it exists to cover), and every branch
  * of P-3's "declares no length" rule.
+ *
+ * **T-4 extension (contact/contact-channels).** The final `describe` block
+ * re-proves P-2/P-3 against `/api/v1/contact` — the same middleware, the
+ * same `REGISTRATIONS_PAYLOAD_CAP_BYTES` value, a second path prefix. The
+ * last case in that block ("no regression") pins that adding the contact
+ * prefix did not narrow or otherwise disturb the pre-existing registrations
+ * behaviour asserted by every `describe` above it.
  */
 import { PayloadTooLargeException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
@@ -234,6 +242,99 @@ describe('registrationsPayloadCapMiddleware', () => {
       const req = fakeReq({
         path: '/api/v1/registrations',
         method: 'POST',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+    });
+  });
+
+  describe('T-4 extension — /api/v1/contact is capped by the SAME middleware and byte value', () => {
+    it('caps an oversized body on the PREFIXED contact path', () => {
+      const req = fakeReq({
+        path: '/api/v1/contact',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+    });
+
+    it('does NOT cap the same oversized body on the UN-PREFIXED contact path', () => {
+      const req = fakeReq({
+        path: '/contact',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect((next as jest.Mock).mock.calls[0]).toHaveLength(0);
+    });
+
+    it('does not treat "/api/v1/contactX" as the contact path (segment-boundary match)', () => {
+      const req = fakeReq({
+        path: '/api/v1/contactX',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('caps an oversized body on an UPPERCASE/mixed-case contact path', () => {
+      const req = fakeReq({
+        path: '/API/V1/CONTACT',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+    });
+
+    it('rejects a chunked contact request carrying no Content-Length at all (P-3 axis)', () => {
+      const req = fakeReq({
+        path: '/api/v1/contact',
+        method: 'POST',
+        headers: { 'transfer-encoding': 'chunked' },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+    });
+
+    it('passes a contact request with a valid Content-Length AT the cap', () => {
+      const req = fakeReq({
+        path: '/api/v1/contact',
+        method: 'POST',
+        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES) },
+      });
+      const next = jest.fn() as unknown as NextFunction;
+
+      registrationsPayloadCapMiddleware(req, fakeRes, next);
+
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('leaves the pre-existing registrations path capped exactly as before (no regression)', () => {
+      const req = fakeReq({
+        path: '/api/v1/registrations/verify',
         headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
       });
       const next = jest.fn() as unknown as NextFunction;

@@ -1,4 +1,5 @@
 // @sdd-spec actors/public-self-registration (T-3)
+// @sdd-spec contact/contact-channels (T-1)
 /**
  * T-3 — `MailService` (FR-14, NFR-10, design.md §4.9).
  *
@@ -14,6 +15,15 @@
  * `MailModule`'s wiring, or to this class's shape is needed — see
  * `mail-transport.interface.ts` for the message contract 3b's templates
  * build against.
+ *
+ * `sendContactMessage` (contact/contact-channels T-1, design.md §2, §4.6)
+ * departs from that shape in one way: it takes an already-rendered
+ * `MailMessage` rather than building one from a template internally, because
+ * the contact form's recipients are resolved by the caller (Cognito `admin`
+ * group membership, T-5), not known to this service. It still dispatches
+ * through the same private `dispatch()` and carries no `reference` — nothing
+ * is persisted on the contact path, so there is no applicant-facing
+ * correlator to allocate (FR-7).
  *
  * Every dispatch logs an attempt line and an outcome line via Nest's built-in
  * `Logger` (design.md §4.10 attributes these lines to `MailService` directly,
@@ -42,6 +52,17 @@ export class MailService {
   /** FR-5 / FR-14 — send the submission receipt. Carries the reference. */
   async sendReceipt(to: string, reference: string): Promise<void> {
     await this.dispatch('receipt', buildReceiptMessage(to, reference));
+  }
+
+  /**
+   * contact/contact-channels FR-2, FR-4 — dispatch an already-rendered
+   * contact-form message (recipients, `replyTo`, subject and body all built
+   * by the caller). Rethrows unchanged on transport failure, same as every
+   * other `dispatch()` caller — the contact endpoint turns that rejection
+   * into its `502` (design.md §4.6). Carries no `reference` (see class docblock).
+   */
+  async sendContactMessage(message: MailMessage): Promise<void> {
+    await this.dispatch('contact', message);
   }
 
   /**
