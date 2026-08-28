@@ -69,7 +69,7 @@
       Done when: the throttle assertion discriminates — it must **fail** against a controller with no guard, so assert the dispatch count across the allowed requests, not merely that the 6th is `429`. `registrations-throttle.e2e.spec.ts` still observes **its own** 20/60 s. A standalone-compiled test module registers `ThrottlerModule.forRoot(...)` itself, as `ThrottleDbTestModule` does.
       Skills: `nestjs-expert`, `tdd`
 
-- [ ] **T-8** FR-7's zero-writes gate, and the PII boundary extension  (deps: T-6)
+- [x] **T-8** FR-7's zero-writes gate, and the PII boundary extension  (deps: T-6)
       Scope: (a) DC-4 e2e — **compile `AppModule` and `.overrideProvider(PrismaService)`**, following `pii-boundary.spec.ts`; the override models Prisma's **delegate** shape (`prisma.actor.create`), not flat methods; assert zero queries across success, validation-failure, honeypot and throttled paths. (b) Extend `pii-boundary.spec.ts` to `POST /api/v1/contact` with a **log-capture seam** — that suite has zero occurrences of "log" today — asserting no requester value and no recipient address in any response, error or log line.
       Traces: FR-7, NFR-1 (**release gate**), DC-1, DC-4 · `design.md` §10
       Files: `backend/src/contact/contact-no-writes.e2e.spec.ts`, `backend/src/test/pii-boundary.spec.ts`

@@ -388,3 +388,61 @@ The Reviewer stated it could not run `git`, so its "byte-identical" finding for 
 *Consequence worth stating for the rest of this spec: with nothing committed, no "restore" or "unchanged" claim in this run has a git baseline to be checked against.*
 
 **ADVISORY (recorded; none gate):** `storage.clear()` leaves `timeoutIds` populated — harmless today (the suite finishes well under 60 s, `app.close()` clears them) and the failure direction is safe, since a stale timer can only turn the throttle test red, never green. · The seam couples to a library internal (`throttlerStorage.storage`); a minor bump would break loudly, not silently. · The dispatch seam asserts only `to`; `design.md` §10 also names `replyTo`/subject/body, which `tasks.md`'s coverage table assigns to T-1/T-2/T-3's unit specs — noted so the row is not later read as unowned. · Honeypot tests compare status, not bodies; indistinguishability holds structurally via `Promise<void>` + unconditional `@HttpCode(202)`. · The `502` test has no **positive** assertion on the friendly envelope — an accidentally emptied body would pass. Outside T-7's scope; T-9 owns the visitor-facing half.
+### T-8 — FR-7's zero-writes gate, and the PII boundary extension · **PASS**
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-28 · Implementer attempts **1** · Reviewer `STATUS: PASS` (+ 4 ADVISORY) |
+| Requirements covered | FR-7, **NFR-1 (release gate)**, DC-1, DC-4 |
+
+**Files:** `backend/src/contact/contact-no-writes.e2e.spec.ts` (new) · `backend/src/test/pii-boundary.spec.ts` (extended — a release gate owned by `actors/public-self-registration`).
+
+**Verification — Leader-measured on a quiet tree:** **64 suites / 815 tests, zero failures** (baseline 63 / 807, so +1 suite / +8). Build and lint clean. `git diff --stat -- backend/src/contact/contact.service.ts` → **empty**, so the transient red-proof mutations are *provably* reverted — the first task in this spec where that claim could be measured rather than inferred, thanks to commit `19bffbf`.
+
+#### Both gates were observed failing. That was the task.
+
+**DC-4 red proof:** a `PrismaService` param added to `ContactService` and `await this.prismaService.actor.findMany()` inserted at the top of `submitContact`. **3 of 4 tests reddened** — `Received: 1` on success and honeypot, `Received: 5` on throttled. The Reviewer confirmed those numbers are arithmetically consistent with the injection point (above the honeypot short-circuit, and 5 allowed requests before the 429).
+
+**PII red proof** — `err.name` → `err.message`, driving a `MessageRejected`-shaped rejection:
+
+```
+Expected substring: not "contact-admin-recipient-do-not-leak@example.org"
+Received string: "...contact message send failed: errorType=Email address is not
+verified. The following identities failed the check in region EU-WEST-1:
+contact-admin-recipient-do-not-leak@example.org"
+```
+
+That is not a test passing — **it is the leak §3.2 exists to prevent, happening.** The AWS SDK error carries the recipient address verbatim in its `message`; one word changed in the catch block puts it in CloudWatch. There is now a gate that has been seen catching it.
+
+#### The one-line deletion in the release gate — bounded arithmetically, not by assurance
+
+`git diff --stat` showed **230 insertions, 1 deletion** in a file owned by another spec. The Reviewer identified the deletion as line 3's import, rewritten in place: `import { RequestMethod }` → `import { Logger, RequestMethod }`, with `RequestMethod` already used at lines 659/665 (pre-existing) and `Logger` used only inside the new block.
+
+**The proof is the arithmetic:** 1,413 original lines − 1 + 230 = 1,642 actual. Insertions decompose as 1 (rewritten import) + 2 (new imports) + 227 (the append, verified to begin at line 1416, immediately after the `});` closing the pre-existing B28 block). **Because the count is exact, any other mid-file edit is arithmetically excluded** — a changed assertion would have produced a second deletion; a mid-file insertion would have pushed insertions past 230. No pre-existing `describe`, assertion or fixture was touched, and the new block is a **fifth sibling**, not a modification.
+
+*The Reviewer also corrected the Implementer's own wording: "lines 1–1413 byte-identical" is not literally true, since line 3 changed. The substance held; the phrasing overstated it.*
+
+#### The gate that could have been vacuous, and was not
+
+`design.md` §10 names two ways DC-4 could pass unconditionally. Both were checked:
+- **Standalone `ContactModule`** → `PrismaService` absent from the graph, `overrideProvider` a silent no-op. **Avoided:** the suite compiles the real `AppModule`, where `PrismaModule` is `@Global()` and the token genuinely resolves.
+- **A flat mock** → would not intercept the calls a real violation makes. **Avoided:** `buildNoWritesPrismaMock()` models the **delegate shape** (`actor`, `registration`, `cropsOnActors`, `actorAuditLog`, each with 13 spied methods), and the camelCase names were verified against real call sites.
+
+#### A coverage boundary, stated plainly rather than left implied
+
+The Leader asked whether the validation-failure test's staying green during the red proof indicated a gap. **The Reviewer's answer: yes, and it is structural.** `@IsIn(CONTACT_CATEGORIES)` makes the global pipe reject before `ContactController` — and therefore before `ContactService` — ever runs, so an injected Prisma call there is unreachable.
+
+**Plainly: DC-4's validation-failure test has no gate over `ContactService`.** What it does gate is narrower but real — the code that *does* execute on a 400: `RequestContextMiddleware`, the throttle guard, the payload cap, the global pipe and the exception filter. If a future audit-logging exception filter began querying Prisma, this catches it. FR-7 is satisfied on that path structurally, because no service code runs there to violate it.
+
+#### The disclosed flake — investigated, not waved through
+
+The Implementer reported one non-reproducing flake on a pre-existing `registrations` 429-isolation test (B28) — **in the same file T-8 edited**, which is why it warranted the check. The Reviewer found **no shared-state mechanism**: B28 compiles its own `AppModule` with its own DI container, so `ThrottlerStorageService` instances are distinct; the new block is declared after B28 and its `Logger` spies are `beforeEach`-scoped inside its own describe; Jest's per-file module registry rules out cross-file sharing.
+
+The residual mechanism is **timing, not state**: B28 drives 21 sequential requests inside a 60 s window, so a process stall lets early hits expire before the 21st arrives. T-8 adds two `AppModule`-compiling suites and therefore adds load — **it can make a pre-existing window-dependent assertion trip more often; it does not create the fragility.** The Leader's quiet-tree run (64/815, zero failures) is the confirming re-run. Recorded as a known load-sensitive test.
+
+**ADVISORY (recorded; none gate):**
+
+1. **A trap for whoever adds a fifth test.** The new `pii-boundary` block issues exactly 4 requests against the 5/60 s limit and — unlike `contact-no-writes.e2e.spec.ts` — does **not** clear `ThrottlerStorage` between tests. Deterministic today; a fifth test would `429` and fail for a reason unrelated to PII. Adding the same `afterEach` clear would make the two T-8 suites consistent and remove the trap.
+2. **A narrowing worth recording rather than assuming absent:** DC-4 stubs `AdminRecipientResolver` and `MailService`, so a Prisma query introduced *inside the resolver* would be invisible to FR-7's only gate. Low risk today — that file imports only `@nestjs/common` and the Cognito SDK — and the stubs are unavoidable, since the real resolver calls Cognito.
+3. No `429` path in the NFR-1 block; `design.md` §10's "any response, error or log line" reads slightly wider than what is asserted. Exposure minimal — the 429 envelope is fixed and the middleware line carries no fixture value.
+4. `PRISMA_DELEGATE_METHODS`'s docblock claims "every method Prisma generates" but omits `findUniqueOrThrow`, `findFirstOrThrow`, `createManyAndReturn`. Not a hole: a call to a missing method hits `undefined` and surfaces as a loud 500, failing the status assertion rather than passing silently. The sentence is imprecise, not the gate.
