@@ -446,3 +446,56 @@ The residual mechanism is **timing, not state**: B28 drives 21 sequential reques
 2. **A narrowing worth recording rather than assuming absent:** DC-4 stubs `AdminRecipientResolver` and `MailService`, so a Prisma query introduced *inside the resolver* would be invisible to FR-7's only gate. Low risk today — that file imports only `@nestjs/common` and the Cognito SDK — and the stubs are unavoidable, since the real resolver calls Cognito.
 3. No `429` path in the NFR-1 block; `design.md` §10's "any response, error or log line" reads slightly wider than what is asserted. Exposure minimal — the 429 envelope is fixed and the middleware line carries no fixture value.
 4. `PRISMA_DELEGATE_METHODS`'s docblock claims "every method Prisma generates" but omits `findUniqueOrThrow`, `findFirstOrThrow`, `createManyAndReturn`. Not a hole: a call to a missing method hits `undefined` and surfaces as a loud 500, failing the status assertion rather than passing silently. The sentence is imprecise, not the gate.
+### T-9 — Contact form component and API client · **PASS** (2 attempts)
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-28 · Implementer attempts **2** — attempt 1 FAIL, attempt 2 PASS · Reviewer `STATUS: PASS` (+ 2 ADVISORY) |
+| Requirements covered | FR-2, FR-5, NFR-3, NFR-4, NFR-6, NFR-7 · `design.md` §5.1 |
+
+**Files:** `frontend/lib/api/contact.ts` + test · `frontend/components/contact/ContactForm.tsx` + test (all new).
+
+**Frontend baseline, established by the Leader before the spawn** (none existed for this package): **88 suites / 1357 tests**; lint emits **3 pre-existing `<img>` warnings** in admin test files. *(The Leader's first reading said "one" — a truncated `tail -4`. The Implementer's count of three was correct and the Leader's baseline was the wrong one.)*
+
+**Verification after rework — Leader-measured on a quiet tree:** **90 suites / 1379 tests**, lint clean of new warnings.
+
+#### The anti-pattern was avoided — which was the point of the brief
+
+The nearest precedent, `OtpVerificationStep.classifySendError`, returns `err.message || GENERIC` for every non-400/429; combined with `apiFetch` setting `message` to `HTTP <status> <statusText>` on a non-JSON body, copying it renders **"HTTP 502 Bad Gateway"** into the form — the exposure FR-5 forbids. The brief warned that the exemplar contains the anti-pattern.
+
+`extractFieldErrors` has three exits and **none reads `err.message`**; it partitions on `Array.isArray(err.details) && err.details.length > 0`, never on `err.status`. The Reviewer confirmed both holes the design warned about are real and both fall to the constant: `BodyShapeValidationPipe` emits `details: []`, and `apiFetch` leaves `details` undefined on a non-JSON body. `429` and amendment 3's `500` are covered by the same status-blind branch.
+
+#### Attempt 1 — `STATUS: FAIL`: the fourth comment asserting behaviour the code did not perform
+
+`ContactForm.tsx` documented, in a file-header comment **and** an inline comment, that it moves focus to the success panel so a screen-reader user is told the outcome after the form unmounts. **It did not.** No `useEffect` was imported, `successRef.current` was never read, and `tabIndex={-1}` on the panel had no consumer — it existed only as a target for an effect that did not exist. On success the form unmounted with the focused submit button inside it and focus fell to `<body>`.
+
+**The exemplar the file itself cites does the opposite.** `StatusLookupForm.tsx` (T21-A1) carries the effect *and* a comment recording why: a prior defect where "a result did not announce at all and left focus wherever it was — on the just-removed submit button, which drops it to `<body>` once the form is gone."
+
+**The Implementer copied the panel's structure and the rationale comment, and left the mechanism behind.** No test asserted focus, so the claim was **unfalsifiable as well as untrue** — a reviewer asking only "do the tests pass?" would have let it through.
+
+#### Attempt 2 — the fix, with the red observed
+
+```
+● ContactForm › successful submission › moves focus onto the success panel (T9-A1)
+    expect(element).toHaveFocus()
+    Expected element with focus: <div ... role="status" ...>
+    Received element with focus: <body>...
+```
+
+That is the `<body>`-focus defect itself, observed. Restored from backup with an empty `diff`, then green. The Reviewer verified the effect is structurally identical to the exemplar — guard for guard, dep for dep — and that `tabIndex={-1}` is now **load-bearing**: a `<div>` without it is not a valid focus target, so `.focus()` would silently no-op.
+
+#### One advisory folded into the rework, declared as an exception
+
+The Reviewer found a **vacuous assertion**: `queryByLabelText(/website/i, …)` matched nothing, because the honeypot's label reads "Leave this field blank" — it **would have passed against a fully visible, tabbable honeypot**. Advisories neither gate nor grow scope, and that rule is not relaxed generally; this one was included because it was **a gate that could not fail, inside the test file the rework already opened**. Retargeted at the real label; the Reviewer confirmed it is now genuinely failable (`queryByLabelText` is not accessibility-tree filtered, so neither `aria-hidden` nor `sr-only` suppresses it — only the `input:not([tabindex="-1"])` selector does). The other three advisories were explicitly excluded and confirmed **not** implemented.
+
+#### An operational rule the Leader did not have
+
+The Implementer disclosed that `react-doctor` "reported no changed source files against `main` (git scope/diff quirk on untracked new files)" and did not chase it. The Reviewer's adjudication:
+
+> *"It is **both**: an honest limitation, correctly declared, **and** a mandated skill that effectively did not run. `git diff main` cannot see untracked files, so the tool's 'no changed source files' is a true report of a no-op, not a clean pass. The Leader should treat 'skill reported no files' as an **unrun skill, never as a pass**."*
+
+It then **substituted the skipped skill's work by hand** — verifying every hook is declared above the conditional return (no conditional-hook hazard), the dependency array is complete, `successRef` is correctly omitted as a stable ref, no cleanup is needed, and the effect sets no state so it cannot loop — and said so rather than leaving the gap silent.
+
+**Mitigation for future frontend tasks:** `git add -N` restores diff visibility for untracked files. Committing T-9 achieves the same for T-10.
+
+**ADVISORY (recorded):** two dangling identifiers in `ContactForm.tsx`'s header — **KZ-008 instances 5 and 6 in this spec**, of a lesser class than the FAIL because they misname a correct performer rather than assert absent behaviour. Line 29 cites `classifySubmitError`, which lives in `OtpVerificationStep.tsx`, not here (the function is `extractFieldErrors`) — sharpened by line 22 telling the reader "this is the one part a Reviewer will re-derive line by line" and then pointing at a symbol that is not in the file. Line 71 cites `handleSuccess`, which does not exist; the clear is inline in `handleSubmit`. Both describe behaviour the code genuinely performs. · The retargeted honeypot assertion is now redundant with an adjacent `tabIndex` check — acceptable, since the defect was vacuity, not duplication.

@@ -79,7 +79,7 @@
 
 ## Phase 4 — Frontend
 
-- [ ] **T-9** Contact form component and API client  (deps: T-6)
+- [x] **T-9** Contact form component and API client  (deps: T-6)
       Scope: `ContactForm.tsx` — fields per `design.md` §4.1.1, visually hidden honeypot outside the tab order, values preserved on failure, success and error announced through an `aria-live` region. `lib/api/contact.ts` — one typed caller with **`expectEmpty: true`**. Error rule partitioned on `details[]`: a `400` with **non-empty** `details[]` renders inline field errors; **every other outcome** — `400` with empty/absent `details`, `429`, `502`, network rejection — renders one **fixed constant**, never `ApiError.message`.
       Traces: FR-2, FR-5, NFR-3, NFR-4, NFR-7 · `design.md` §5.1
       Files: `frontend/components/contact/ContactForm.tsx` + test, `frontend/lib/api/contact.ts` + test
