@@ -338,7 +338,7 @@ export default function Header() {
             */}
           </Link>
 
-          {/* Primary nav — desktop (md+) */}
+          {/* Primary nav — desktop (lg+); below lg the hamburger drawer serves. */}
           <nav
             aria-label="Primary"
             className="hidden lg:flex items-center gap-4 xl:gap-6"

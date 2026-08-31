@@ -180,7 +180,9 @@ The status-based partition of revision 5 left a hole: `BodyShapeValidationPipe` 
 
 The privacy page states what submissions collect, who receives them, that messages are relayed by email and not stored, and that submission is not consent to publish anything. It is FR-6's link target and **does not exist today**.
 
-**Navigation.** `NAV_LINKS` in `frontend/components/shell/Header.tsx` holds **six** entries — Home, Discovery Map, Dashboard, Directory, About, and the primary-variant Register your organisation; `AuthSlot` is a sibling outside the array. Contact makes **seven array entries, six plain-text before the primary CTA**. The header comment records that primary links must not wrap, so the rendered capture at 375 / 768 / 1440 must confirm no crowding at `md`–`lg`.
+**Navigation.** *(Rewritten 2026-08-31 after DC-9 failed and was fixed — this paragraph described the pre-fix bar.)* `NAV_LINKS` holds **six** entries: Discovery Map, Dashboard, Directory, About, Contact, and the primary-variant Register your organisation. `AuthSlot` is a sibling outside the array. There is **no `Home` entry** — the brand lockup is itself the link to `/`.
+
+The desktop bar renders from **`lg`**, not `md`; 768–1023 uses the hamburger. This is not a preference: measured in a real browser, the row's min-content width was **1270px** against a container ceiling of **1216px** (`max-w-7xl`, which never grows with the viewport), so the bar overflowed at **every** width ≥768. Removing `Home` and the brand descriptor and raising the breakpoint leaves 41px of slack at 1024 and 201px at 1280+. See `execution.md`, T-10 DC-9 closure.
 
 `Header.tsx` maps `NAV_LINKS` into **both** the desktop `<nav>` and the mobile drawer, so FR-1's hamburger clause holds by adding one entry — provided no second, divergent list appears. §10 asserts both renderings.
 
@@ -282,7 +284,7 @@ No drain seams, no ordering discipline, no ⟳ markers — every code path the r
 |---|---|---|
 | **OD-1** | **SES: request production access, or verify each admin address operationally?** (§7.2) | **Request production access.** Per-address verification must fire on every admin onboarding forever, and it does not touch the quota interaction with the OTP path at all |
 | **OD-2** | Who monitors the sender mailbox? `MAIL_SENDER_ADDRESS` is today an individual's mailbox, `j.cadavid@cgiar.org` | Confirm with the mailbox owner, or drop the claim from R-2 |
-| **OD-3** | Does the nav survive a seventh entry at `md`–`lg`? | Decided by the rendered capture |
+| **OD-3** | ~~Does the nav survive a seventh entry at `md`–`lg`?~~ | **Closed 2026-08-31: no.** It did not survive the *sixth* either — the row was already 1270px against a 1216px ceiling before Contact was added. Resolved by dropping `Home` and the brand descriptor and moving the bar to `lg` |
 
 ## 12. Risks
 
@@ -294,7 +296,7 @@ No drain seams, no ordering discipline, no ⟳ markers — every code path the r
 | R-4 | **SES sandbox quota is account-wide and shared with the registration OTP path** | §7.2. Contact traffic can starve OTP delivery for applicants. Only OD-1 removes it |
 | R-5 | Content abuse under the registry's identity | §4.5's provenance line; residue accepted (§6) |
 | R-6 | IAM grant confirmed absent | §7.1's named edit |
-| R-7 | Nav crowding at `md`–`lg` | Rendered capture; escalated to the owner |
+| R-7 | Nav crowding at `md`–`lg` | **Materialised.** The capture showed a page-level horizontal scrollbar at 768; escalated to the owner per T-10's instruction and resolved by an IA change, not by shortening a label |
 | R-8 | Added response latency | Accepted deliberately (§1) — the price of an error the visitor can see |
 
 ## 13. Budget

@@ -85,8 +85,9 @@ describe('/contact page — axe accessibility (T-10, NFR-3)', () => {
   // scope) — this assertion only proves the link is reachable from the
   // rendered /contact page, mirroring KZ-002 ("presence is not proof it
   // resolves" — the /privacy route's own existence is asserted separately
-  // in privacy-a11y.test.tsx, and the build assertion proves
-  // out/privacy/index.html is emitted).
+  // in privacy-a11y.test.tsx, and `next build` under output: 'export'
+  // emits out/privacy/index.html — there is no committed assertion on that
+  // file, so the emission is proven by the build, not by a test).
   it('links the privacy notice to /privacy (FR-6, DC-11)', () => {
     renderContactPage();
 

@@ -720,3 +720,56 @@ Missing required Cognito env var COGNITO_CLIENT_ID
 **Not a defect today** — `infra/20-backend/template.yaml` does set `COGNITO_CLIENT_ID` (added long before this spec, by `changes/auth-wiring` in `0a41406`, for JWT audience verification in `jwt-verifier.ts`). But the failure mode is bad: a deployment missing it would route every contact message to the fallback address, permanently and silently, while the panel showed a healthy admin group. That is exactly what was observed locally before the variable was supplied.
 
 Left as-is. Narrowing `getCognitoAdminClient()` to read `AWS_REGION` directly is a one-line change in `backend/src/users/cognito-admin.client.ts` that touches the auth module and belongs to whoever owns it, not to a contact-form spec.
+
+## `/akili-validate` — 2026-08-31 · **verdict: safe to archive, after documentation corrections**
+
+An independent T3 auditor (read-only, fresh context, not the author) validated the completed spec. **Verdict: no behavioural defect, no PII leak, and no gate that cannot fail.** Every DC-1…DC-11 gate had a failing input constructed against it; DC-1, DC-4 and DC-5 were observed red. The PII boundary was re-derived and discriminates: `err.name` → `err.message` reddens it with the fixture address in captured log text, and the anti-vacuity guard is real.
+
+Everything owed was **documentation**. Two findings sat in constitutional baselines, which is the serious class — future agents trust those without re-deriving them.
+
+### The auditor was trusted on evidence, not assumed
+
+One known documentation defect was **deliberately withheld** from the brief: the phantom `DD-6` in `proposal.md`. The auditor found it independently, and found it in a second document the Leader had not noticed. That is why the rest of its verdict is taken at face value rather than re-litigated.
+
+### F-1 — `docs/infrastructure.md` §6 asserted a deployment topology that does not exist · CORRECTED
+
+The Cross-origin note claimed *"the deployed API is same-origin behind CloudFront, which serves the static frontend and proxies `/api` to API Gateway."* **False.** Verified directly: `infra/30-frontend/template.yaml` declares one origin (S3 via OAC) and one default cache behaviour — no `/api` path pattern, no API Gateway origin. `infra/20-backend/template.yaml` carries its own `CorsConfiguration.AllowOrigins`. The deployed browser call is cross-origin too; **API Gateway owns CORS**, locked to the CloudFront origin by `scripts/set-cors.sh`.
+
+The conclusion — do not add CORS to `lambda.ts` — was right. Its stated reason was invented, and it contradicted §3 and §4 of its own document.
+
+**This is the cost of T-11's no-Reviewer decision, and it landed in the same change.** That decision was recorded as reasoned and proportionate. It was wrong on this file, and the record now says so.
+
+### F-2 — `docs/trd/trd.md` §4 said *"Always `202`, empty body"* · CORRECTED
+
+The shipped contract is `202` · `400` · `413` · `429` · `502` · `500`. "Always 202" was the uniform-response machinery `design.md` §3 **explicitly retired** with the actor channel; it survived into the TRD row T-11 wrote. A baseline document was wrong about a live API contract.
+
+### F-3 — the phantom `DD-6` · CORRECTED in both documents
+
+`requirements.md` §7 credited *"per-recipient sends (DD-6, so one bad address costs one recipient)"* and `proposal.md` §5 said the contract *"sends one message per recipient rather than one message to many"*. **`DD-6` does not exist** — §9 holds DD-1…DD-5, and DD-3 decided the opposite. The operational consequence was **inverted**: one unverified administrator kills the send for everyone. That is the exact risk now tracked as **ATP-59** — the spec was crediting a mitigation against a risk it had actually accepted.
+
+### F-4 — `requirements.md` NFR-2 never received Decision B · CORRECTED
+
+It still required *"rejection of header-injection sequences in every submitted field"*. `message` is deliberately **not** stripped — it renders only into `Message.Body.Text.Data`, and stripping it flattened multi-paragraph submissions. The amendment reached `design.md` §4.5 and `tasks.md` T-3 and stopped there. Behaviourally safe; the requirement a future reader would trace was wrong.
+
+### F-5 — the nav description survived its own fix · CORRECTED
+
+`design.md` §5.2 still described the pre-DC-9 bar (six entries incl. `Home`, `md`); OQ-2 and OD-3 still posed the seventh-entry question as **open** after it had been answered and resolved. `Header.tsx` still carried `{/* Primary nav — desktop (md+) */}` above a `hidden lg:flex`. All corrected; OQ-2 and OD-3 closed with the measured answer — *no, and it had not survived the sixth either*.
+
+### F-6…F-10 — minor, all corrected
+
+NFR-5 claimed *"a build assertion"* that does not exist (no test, script or CI step asserts either emitted file; two test files referenced it as real) — reworded to the mechanism that does exist, `next build` under `output: 'export'`. `tasks.md` claimed T-9 asserts the absence of analytics; it does not, and nothing guards a future addition — now stated. `docs/ux-ui/design.md` carried the **pre-CTA-margin** DC-9 figures (931/45px, 1007/209px) against `execution.md`'s final ones (935/41px, 1015/201px) — one measurement, two published numbers (KZ-005); aligned to the final. QA-13 described a `Logger` spy over `MailService.dispatch`'s lines, which never run because `MailService` is provider-overridden — reworded to the line actually gated. Dangling refs and stale docblocks fixed: `§3.2` in `contact.service.ts`, `§1.1` ×2 in `contact-no-writes.e2e.spec.ts`, "folding" in `contact.template.ts` (withdrawn by Decision A), `ReplyToAddresses`-as-header in `reply-to.util.ts` (overturned by amendment 1), and `classifySubmitError` / `handleSuccess` in `ContactForm.tsx` — neither exists; the real symbols are `extractFieldErrors` and the submit handler's success branch.
+
+### Deliberately NOT changed
+
+- **`judgment.md`** — a frozen record of four review rounds. Its `§3.1`/`§3.2`/`DD-6` citations were accurate against the design revisions **then under review**. Rewriting them would falsify the account.
+- **`§3.1` across `registrations/`, `import/` and their frontends** — those cite *their own* specs, where §3.1 exists. Not defects.
+- **`execution.md`'s historical rows** carrying the same dangling refs. Editing a past audit entry to tidy a pointer is worse than the pointer.
+- **F-6's missing build assertion, as a mechanism.** The clause was corrected to describe reality rather than a gate being invented at validation time to satisfy a sentence.
+
+### Verification after the corrections
+
+Backend `npx eslint --quiet` clean · **64 suites / 815 tests green**. Frontend lint 3 pre-existing `no-img-element` warnings in admin test files · **93 suites / 1402 tests green** · build clean · both routes emitted.
+
+> One backend run failed a single test before these two green runs. **Its identity was not captured** — `--silent` had suppressed the detail — and it did not reproduce across two subsequent full runs. Consistent with the `registrations` 429-isolation flake already recorded in this spec, but **not verified as such**, and recorded as an unidentified non-reproducing failure rather than assigned to a convenient known cause.
+
+**The spec is complete and safe to archive.** Standing items are tracked in Jira, not here: **ATP-59** (SES production access), **ATP-60** (EOL Lambda runtime), **ATP-58** (dedicated sender). The `COGNITO_CLIENT_ID` coupling in `getCognitoAdminClient()` remains recorded above for the auth module's owner.

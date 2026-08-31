@@ -1,10 +1,10 @@
 // @sdd-spec contact/contact-channels (T-8)
 /**
- * T-8 — FR-7's zero-writes gate (design.md §1.1, §10's "E2E — DC-4
+ * T-8 — FR-7's zero-writes gate (design.md §1, §10's "E2E — DC-4
  * zero-writes" row; requirements.md FR-7, §8 DC-4).
  *
  * **Why this test exists at all — FR-7 is disciplinary, not structural
- * (design.md §1.1).** `PrismaModule` is `@Global()`
+ * (design.md §1).** `PrismaModule` is `@Global()`
  * (`prisma/prisma.module.ts`), so `PrismaService` is injectable into
  * `ContactService` with NO import anywhere in `ContactModule` and Nest
  * resolves it anyway. The absence of a Prisma import in this module's files

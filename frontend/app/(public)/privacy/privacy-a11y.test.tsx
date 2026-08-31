@@ -9,9 +9,11 @@
  * without an HTTP server is that this page's own module resolves, renders,
  * and carries the content design.md §5.2 requires (what is collected, who
  * receives it, that it is relayed and not stored, and that submitting is
- * not consent to publish). The build assertion (`out/privacy/index.html`
- * emitted under `trailingSlash: true`) is the complementary static-export
- * half of that proof (NFR-5) and is exercised by `npm run build`, not here.
+ * not consent to publish). The complementary static-export half of that
+ * proof (NFR-5) is `npm run build` itself: under output: 'export' it fails
+ * loudly on any static-export violation and emits `out/privacy/index.html`
+ * under `trailingSlash: true`. No committed check asserts that file — the
+ * build is the gate, and no test here proves emission.
  *
  * PrivacyPage is a pure static server component: no hooks, no data
  * fetching, no useSearchParams.

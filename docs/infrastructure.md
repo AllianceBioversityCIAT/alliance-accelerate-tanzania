@@ -96,7 +96,13 @@ The contract for starting the local stack. **This project has no Docker Compose 
 | **Health check** | `curl http://localhost:3001/api/v1/health` · frontend reachable at `http://localhost:3000` |
 | **URLs / ports** | Frontend `http://localhost:3000` · Backend `http://localhost:3001` · MySQL `3306` |
 
-**Cross-origin note.** Locally the frontend (`:3000`) and API (`:3001`) are different origins, so the browser blocks calls between them without a CORS header. `main.ts` enables CORS for `LOCAL_CORS_ORIGIN` (default `http://localhost:3000`) **for this reason only**. `lambda.ts` sets none and must not: the deployed API is same-origin behind CloudFront, which serves the static frontend and proxies `/api` to API Gateway. Adding CORS to the Lambda path would widen the deployed surface to solve a problem that exists only on a developer's machine.
+**Cross-origin note.** Locally the frontend (`:3000`) and API (`:3001`) are different origins, so the browser blocks calls between them without a CORS header. `main.ts` enables CORS for `LOCAL_CORS_ORIGIN` (default `http://localhost:3000`).
+
+`lambda.ts` sets none, and must not — but **not because the deployed API is same-origin**. It is not. `30-frontend`'s distribution declares a single origin (the S3 bucket, via OAC) and a single default cache behaviour: there is **no `/api` path pattern and no API Gateway origin**, so CloudFront does not proxy the API. The deployed browser call is cross-origin too.
+
+What makes the Lambda's own CORS unnecessary is that **API Gateway already owns it**: `20-backend` declares `CorsConfiguration.AllowOrigins: [!Ref AllowedOrigin]`, locked to the CloudFront origin by `scripts/set-cors.sh` after `30` is deployed (§3, §5 step 5). Adding a second CORS layer inside the Lambda would duplicate — and could contradict — a header API Gateway already emits.
+
+> *Corrected 2026-08-31.* The paragraph this replaces asserted the CloudFront-proxies-`/api` topology, which contradicted §3 and §4 of this same document and is refuted by `infra/30-frontend/template.yaml`. Recorded rather than silently overwritten: it was introduced the same day, in the one change that deliberately shipped without a Reviewer.
 
 **Boundary rule.** The local environment is **disposable**: agents may freely start it, seed it, reset it, and drop its database to verify work. Deployments to cloud/PROD are **governed** — they follow §1–5 (components, IaC, deploy scripts defined at constitution time) and are never improvised by an agent.
 

@@ -17,7 +17,7 @@ import { composeReplyTo } from '../../contact/reply-to.util';
  *    this file never touches `admin-recipient.resolver.ts` or Cognito.
  * 2. **`replyTo` is set, via `composeReplyTo` (T-2) — not reimplemented.**
  *    FR-4 requires the `Reply-To` display name to be composed safely
- *    (CR/LF stripped, RFC 5322 quoting, RFC 2047 encoding, folding, a
+ *    (CR/LF stripped, RFC 5322 quoting, RFC 2047 encoding, a
  *    bare-address fallback); `reply-to.util.ts` already does exactly that,
  *    so this file only calls it.
  *

@@ -5,7 +5,9 @@
  * `Reply-To` is the one header in the contact-form message that carries
  * requester-supplied text (design.md §4.5: "`Reply-To` is the one header
  * carrying attacker-supplied text"). `composeReplyTo` produces the value
- * `MailMessage.replyTo` carries into the SES `ReplyToAddresses` header
+ * `MailMessage.replyTo` carries into the SES `ReplyToAddresses` API field
+ * — SES assembles the actual header itself (amendment 1 overturned the
+ * earlier premise that this code writes a header directly)
  * (`mail-transport.interface.ts`, `ses-mail.transport.ts`). This file does
  * NOT touch `mail/` — it is a pure, side-effect-free string transform with
  * no Nest decorators, no DI, no I/O, consumed by a later task's template

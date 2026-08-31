@@ -189,7 +189,9 @@ Zero occurrences of any requester field value, any administrator email address, 
 
 ### NFR-2: Abuse resistance on an outbound relay
 
-Per-IP rate limiting at **5 requests / 60 s**, set with `@Throttle(...)` at the controller class level over the existing global registration; honeypot; server-side length caps; **a 32 KB request-body cap applied before parsing**; server-generated subject; DTO validation; rejection of header-injection sequences in every submitted field.
+Per-IP rate limiting at **5 requests / 60 s**, set with `@Throttle(...)` at the controller class level over the existing global registration; honeypot; server-side length caps; **a 32 KB request-body cap applied before parsing**; server-generated subject; DTO validation; **CR/LF stripped from every single-line field that reaches a header or a header-like body line** — `name`, `email`, `organization`, `category` and the visitor's own `subject`.
+
+> *Amended 2026-08-31 (Decision B, `design.md` §4.5 amendment 2).* This clause previously said "rejection of header-injection sequences in **every** submitted field", which is neither what was built nor what should be: `message` is deliberately **not** stripped, because it renders only into `Message.Body.Text.Data` where no header can be injected, and stripping it flattened multi-paragraph submissions. The mechanism is also stripping, not rejection. FR-4's narrower clause — "must NOT allow a newline or header-injection sequence in any submitted field to reach any **header**" — is the accurate statement and is the one that shipped.
 
 *The body cap matters on its own: `configurePayloadCap`'s strict limit is path-scoped to `/registrations`, so without extending it `/contact` would inherit the global 8 MB limit and parse it into Lambda memory before the throttle guard runs — body parsing is Express-level, guards are Nest-level.*
 
@@ -211,7 +213,9 @@ Only semantic token classes from `tailwind.config.ts` / `docs/ux-ui/design.md` �
 
 ### NFR-5: Static-export safety
 
-Both new pages build under `output: 'export'`: no SSR, no route handlers, no dynamic path segments. Neither page calls `useSearchParams()`, so neither needs a `<Suspense>` boundary; only the form is a client component. **Gated by a build assertion that `out/contact/index.html` and `out/privacy/index.html` are emitted** — an earlier revision traced this NFR with no mechanism and no gate.
+Both new pages build under `output: 'export'`: no SSR, no route handlers, no dynamic path segments. Neither page calls `useSearchParams()`, so neither needs a `<Suspense>` boundary; only the form is a client component. **Gated by `next build` itself**: under `output: 'export'` the build fails loudly on any static-export violation — an SSR-only API, a route handler, a dynamic segment without `generateStaticParams`, or an un-suspended `useSearchParams()` — and emits `out/contact/index.html` and `out/privacy/index.html` on success. Emission is confirmed by inspecting the build output.
+
+> *Corrected 2026-08-31.* This clause previously claimed "a build assertion", implying a committed check. **There is none** — no test, script or CI step asserts either file, and two test files referred to "the build assertion" as though one existed. The property holds and the build does enforce it; what did not exist was the artifact the clause named.
 
 ### NFR-6: Analytics restriction
 
@@ -261,7 +265,9 @@ No new PII field is introduced; `PII_ALLOWLIST` is unchanged. **No actor data is
 | ~~D-5~~ | ~~`callbackWaitsForEmptyEventLoop` in `lambda.ts`~~ | **Withdrawn 2026-08-28 (round 4).** This was a dependency only while dispatch was fire-and-forget. `design.md` DD-3 awaits the send, so the flag no longer governs delivery |
 | A-1 | Administrators answer contact mail from their own inboxes | The entire no-persistence design rests on this |
 
-**SES production access is a live dependency — an earlier revision claimed otherwise and was wrong.** `infra/20-backend/template.yaml` states in-tree that "the account is still in the SES **sandbox**, so this can only deliver to other verified addresses". Adding a user to a Cognito group performs no SES verification, so FR-3's live resolution can introduce unverified recipients at any time with no operator action. `design.md` §7.2 records the interaction and its three mitigations: per-recipient sends (DD-6, so one bad address costs one recipient), an admin-onboarding verification step, and production access as the only real fix. **This is D-6.**
+**SES production access is a live dependency — an earlier revision claimed otherwise and was wrong.** `infra/20-backend/template.yaml` states in-tree that "the account is still in the SES **sandbox**, so this can only deliver to other verified addresses". Adding a user to a Cognito group performs no SES verification, so FR-3's live resolution can introduce unverified recipients at any time with no operator action. `design.md` §7.2 records the interaction and its mitigations: an admin-onboarding verification step, and production access as the only real fix. **This is D-6.**
+
+> *Corrected 2026-08-31.* This paragraph credited a third mitigation — "per-recipient sends (DD-6, so one bad address costs one recipient)". **`DD-6` does not exist**: `design.md` §9 holds DD-1…DD-5, and DD-3 decided the opposite. One message carries every recipient (`SesMailTransport.send` builds a single `SendEmailCommand` with `Destination.ToAddresses`), so the accepted risk is the inverse of what was written: **one unverified administrator kills the entire send, for everyone**, not "costs one recipient". Tracked as **ATP-59**.
 
 All AWS commands use `--profile IBD-DEV`.
 
@@ -286,7 +292,7 @@ All AWS commands use `--profile IBD-DEV`.
 | # | Question | Working default |
 |---|---|---|
 | OQ-1 | Who monitors the interim sender mailbox? DC-8's tolerability leans on someone reading bounces | Confirm with the mailbox owner, or drop the claim |
-| OQ-2 | Does the nav survive a seventh entry at `md`–`lg`? | Verified by rendered capture; returns to the owner if it crowds |
+| OQ-2 | ~~Does the nav survive a seventh entry at `md`–`lg`?~~ | **Closed 2026-08-31: no — and it had not survived the sixth.** The capture showed a page-level horizontal scrollbar at 768. Returned to the owner as designed; resolved by removing `Home` and the brand descriptor and moving the desktop bar to `lg` |
 
 ## 10. Requirement ID Index
 

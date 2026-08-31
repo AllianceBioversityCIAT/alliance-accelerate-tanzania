@@ -63,7 +63,7 @@ There is no contact channel of any kind. No `/contact` route exists under `front
 
 **Backend** — a new `ContactModule` with `POST /api/v1/contact` (public, unauthenticated, stateless); an administrator-recipient resolver over the Cognito `admin` group with a bounded cache and a configured fallback; DTO validation, sanitization, honeypot, length caps, server-generated subject; rate limiting reusing the existing throttle guard and exception filter.
 
-**Mail** — `replyTo` added (the recipient contract is unchanged — `design.md` DD-6 sends one message per recipient rather than one message to many); `SesMailTransport` sends `ReplyToAddresses` and a display-name `Source`; one new public `MailService` method; one template; a reply-to composition utility handling RFC 5322 quoting and RFC 2047 encoding.
+**Mail** — `replyTo` added, and `MailMessage.to` widened to `string | string[]` so one message can carry every administrator (`design.md` DD-3; the per-recipient fan-out of an earlier revision was withdrawn — see `requirements.md` FR-2's amendment note); `SesMailTransport` sends `ReplyToAddresses` and a display-name `Source`; one new public `MailService` method; one template; a reply-to composition utility handling RFC 5322 quoting and RFC 2047 encoding.
 
 **Frontend** — the `/contact` page and form; a minimal `/privacy` page as the privacy-notice link target; nav, footer, About and home entry points; a link from `RestrictedContactPanel`.
 

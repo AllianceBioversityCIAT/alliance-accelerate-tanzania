@@ -26,7 +26,7 @@
  * `apiFetch` (`lib/api/client.ts`) sets that `message` to
  * `HTTP <status> <statusText>` whenever the error body isn't JSON, so that
  * fallback renders the literal status code FR-5 forbids exposing. THIS FORM
- * DOES NOT DO THAT. `classifySubmitError` below never reads
+ * DOES NOT DO THAT. `extractFieldErrors` below never reads
  * `ApiError.message` at all — it inspects only `err.details`:
  *
  *   - a **non-empty** `details[]` (the only shape `NestJS`'s validation pipe
@@ -68,7 +68,8 @@
  *
  * ── Values preserved on failure ──
  * `values` state is never cleared, reset, or replaced on a failed submit —
- * only `handleSuccess` clears it, and only after a real `202`.
+ * only the submit handler's success branch clears it (`setValues(toFormValues())`
+ * immediately after `setSucceeded(true)`), and only after a real `202`.
  *
  * Tokens only (NFR-4): every class here resolves through
  * `tailwind.config.ts` / `docs/ux-ui/design.md` §7 — no raw color functions,

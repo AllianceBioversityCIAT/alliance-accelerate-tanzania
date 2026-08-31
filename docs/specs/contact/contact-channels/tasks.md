@@ -141,7 +141,7 @@ Closes at **scenario and clause** granularity, not requirement ID (KZ-001). A ga
 | NFR-2 throttle · honeypot · caps · body cap · sanitization | T-4, T-6, T-7 |
 | NFR-3 WCAG 2.1 AA · NFR-4 tokens | T-9, T-10 |
 | NFR-5 static export | T-10 |
-| NFR-6 analytics — satisfied by adding none | T-9 (assert absence) |
+| NFR-6 analytics — satisfied by adding none | T-9 (by construction: no analytics call exists in `frontend/components/contact/`; **no test asserts this** — the requirement is met by what was not written, and nothing guards a future addition) |
 | NFR-7 error envelope | T-6, T-9 |
 | NFR-8 cache cost | T-5 |
 | DC-9 layout / nav density — **no automated gate** | T-10 manual gate |

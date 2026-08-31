@@ -34,7 +34,8 @@
  * reach `RegistrationsService`'s. The thrown `BadGatewayException`'s body
  * carries a fixed, friendly `message` and no `error`-derived text at all —
  * no provider name, no status code, no stack, no recipient address (design.md
- * §3.2, §6 "Error logging" row).
+ * §3's response table and §6's "Error logging" row; the §3.2 this once cited
+ * belonged to a design revision that was later restructured).
  */
 import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { AdminRecipientResolver } from './admin-recipient.resolver';
