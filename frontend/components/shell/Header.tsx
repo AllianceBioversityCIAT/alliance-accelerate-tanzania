@@ -21,6 +21,9 @@ const NAV_LINKS = [
   { label: 'Dashboard', href: '/dashboard', variant: 'default' as const },
   { label: 'Directory', href: '/directory', variant: 'default' as const },
   { label: 'About', href: '/about', variant: 'default' as const },
+  // T-10, FR-1: a public, unauthenticated entry point into the contact form
+  // — plain-text treatment like every entry above, ahead of the primary CTA.
+  { label: 'Contact', href: '/contact', variant: 'default' as const },
   // FR-1: a discoverable, visually distinct action into the public
   // registration form — separate from "Staff sign-in" (AuthSlot), which
   // continues to serve Staff/Admin. Absent from the admin shell because the

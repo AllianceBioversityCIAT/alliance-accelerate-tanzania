@@ -260,6 +260,54 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
   });
 });
 
+describe('Header — Contact entry (T-10, FR-1)', () => {
+  beforeEach(() => {
+    mockUseSession.mockReturnValue(publicSession());
+  });
+
+  it('renders a Contact link in the desktop nav pointing to /contact', () => {
+    renderHeader();
+
+    // Before the hamburger is opened, RTL's role queries exclude the hidden
+    // mobile panel — only the desktop occurrence is visible.
+    const [desktopLink] = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(desktopLink).toBeInTheDocument();
+    expect(desktopLink).toHaveAttribute('href', '/contact');
+  });
+
+  it('renders Contact in the OPEN mobile drawer too, from the same NAV_LINKS source as the desktop bar (no second, divergent list)', () => {
+    renderHeader();
+
+    // Collapsed: exactly one occurrence (desktop only — the mobile panel is
+    // `hidden` and excluded from role queries).
+    expect(screen.getAllByRole('link', { name: /^contact$/i })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /open navigation menu/i }));
+
+    // Open: exactly two — desktop NavLink + mobile MobileNavLink, both
+    // mapped from the single NAV_LINKS array. A second, divergent list would
+    // either drop the mobile occurrence or duplicate it further; either way
+    // this count would no longer be exactly 2.
+    const links = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(links).toHaveLength(2);
+    links.forEach((link) => expect(link).toHaveAttribute('href', '/contact'));
+  });
+
+  it('keeps Contact as a plain-text nav entry, not the primary-variant treatment reserved for "Register your organisation"', () => {
+    renderHeader();
+
+    const [desktopLink] = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(desktopLink.className).not.toContain('bg-primary');
+    expect(desktopLink.className).not.toContain('text-primary-fg');
+  });
+
+  it('is absent from the admin sidebar, which renders AdminSidebar\'s own NAV_ITEMS, not Header', () => {
+    render(<AdminSidebar />);
+
+    expect(screen.queryByRole('link', { name: /^contact$/i })).not.toBeInTheDocument();
+  });
+});
+
 describe('Header — authenticated (Admin)', () => {
   beforeEach(() => {
     mockUseSession.mockReturnValue(adminSession());

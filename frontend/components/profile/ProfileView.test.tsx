@@ -316,5 +316,19 @@ describe('ProfileView', () => {
         screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 })
       ).toBeInTheDocument();
     });
+
+    // T-10: the closing sentence used to be a dead end ("…please contact the
+    // ACCELERATE Tanzania programme team", no link). It now links /contact —
+    // the public entry point this task built.
+    it('T-10: the closing sentence links "contact the ACCELERATE Tanzania programme team" to /contact', () => {
+      useSearchParams.mockReturnValue({ get: () => 'actor-full' });
+      useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
+
+      renderProfile();
+
+      const link = screen.getByRole('link', { name: /contact the accelerate tanzania programme team/i });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', '/contact');
+    });
   });
 });

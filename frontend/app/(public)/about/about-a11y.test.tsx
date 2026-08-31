@@ -111,4 +111,12 @@ describe('/about page — axe accessibility (T-9, NFR-3)', () => {
     expect(directoryLink).toBeInTheDocument();
     expect(directoryLink).toHaveAttribute('href', '/directory');
   });
+
+  it('T-10: links the contact page — "Contact us" → /contact (FR-1)', () => {
+    renderAboutPage();
+
+    const contactLink = screen.getByRole('link', { name: /contact us/i });
+    expect(contactLink).toBeInTheDocument();
+    expect(contactLink).toHaveAttribute('href', '/contact');
+  });
 });

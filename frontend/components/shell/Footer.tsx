@@ -26,6 +26,11 @@ const LOGO_DIMS: Record<string, { width: number; height: number }> = {
   bmgf:     { width: 1000, height: 202 },
 };
 
+// Shared token-only treatment for the footer's link row (About / Contact /
+// Privacy — T-10). Factored out so the three links stay visually identical.
+const FOOTER_LINK_CLASSES =
+  'text-xs text-bg/80 hover:text-bg underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg rounded-sm';
+
 export default function Footer() {
   return (
     <footer className="bg-fg text-bg">
@@ -47,18 +52,26 @@ export default function Footer() {
             />
           </Link>
 
-          {/* Governance note + About link */}
+          {/* Governance note + footer links (About, Contact, Privacy — T-10, FR-1, DC-11) */}
           <div className="flex flex-col items-end gap-1.5">
             <p className="text-xs opacity-60 max-w-md text-right">
               A seed-system registry for institutional partners and agribusinesses
               &middot; Data governed under participant consent.
             </p>
-            <Link
-              href="/about"
-              className="text-xs text-bg/80 hover:text-bg underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg rounded-sm"
+            <nav
+              aria-label="Footer"
+              className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1"
             >
-              About this project
-            </Link>
+              <Link href="/about" className={FOOTER_LINK_CLASSES}>
+                About this project
+              </Link>
+              <Link href="/contact" className={FOOTER_LINK_CLASSES}>
+                Contact
+              </Link>
+              <Link href="/privacy" className={FOOTER_LINK_CLASSES}>
+                Privacy notice
+              </Link>
+            </nav>
           </div>
 
         </div>
