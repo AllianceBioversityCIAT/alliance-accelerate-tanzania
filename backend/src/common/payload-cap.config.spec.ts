@@ -18,16 +18,19 @@
  * here is narrower than the route set it exists to cover), and every branch
  * of P-3's "declares no length" rule.
  *
- * **T-4 extension (contact/contact-channels).** The final `describe` block
- * re-proves P-2/P-3 against `/api/v1/contact` — the same middleware, the
- * same `REGISTRATIONS_PAYLOAD_CAP_BYTES` value, a second path prefix. The
- * last case in that block ("no regression") pins that adding the contact
- * prefix did not narrow or otherwise disturb the pre-existing registrations
- * behaviour asserted by every `describe` above it.
+ * **T-4 extension (contact/contact-channels), restructured 2026-08-31.** T-4
+ * generalised `isRegistrationsPath` into `isCappedPath` over
+ * `CAPPED_PATH_PREFIXES`, so the contract is no longer "registrations is
+ * capped" but **"every prefix in that array behaves identically"**. The
+ * P-2/P-3 cases below are therefore driven by `describe.each` over the
+ * REAL exported array, not over a copy: adding a third prefix extends this
+ * suite automatically, where the previous copy-pasted contact block would
+ * have said nothing about it. The parameterisation is the assertion.
  */
 import { PayloadTooLargeException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import {
+  CAPPED_PATH_PREFIXES,
   REGISTRATIONS_PAYLOAD_CAP_BYTES,
   configurePayloadCap,
   registrationsPayloadCapMiddleware,
@@ -48,6 +51,21 @@ function fakeReq(overrides: {
 const fakeRes = {} as Response;
 
 describe('registrationsPayloadCapMiddleware', () => {
+  /** Drives the middleware and returns the single argument `next` received. */
+  function run(req: Request): unknown[] {
+    const next = jest.fn() as unknown as NextFunction;
+    registrationsPayloadCapMiddleware(req, fakeRes, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    return (next as jest.Mock).mock.calls[0] as unknown[];
+  }
+
+  const expectCapped = (req: Request) =>
+    expect(run(req)[0]).toBeInstanceOf(PayloadTooLargeException);
+  /** `next()` with NO argument — the request was let through untouched. */
+  const expectPassed = (req: Request) => expect(run(req)).toHaveLength(0);
+
+  const OVER = String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1);
+
   describe('P-1 — registered through the shared configure* helper', () => {
     it('configurePayloadCap wires the middleware onto the app via app.use', () => {
       const use = jest.fn();
@@ -60,289 +78,125 @@ describe('registrationsPayloadCapMiddleware', () => {
     });
   });
 
-  describe('P-2 — path matching accounts for the api/v1 global prefix', () => {
-    it('caps an oversized body on the PREFIXED registrations path', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations/verify',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+  // ───────────────────────────────────────────────────────────────────────────
+  // The shared contract, run once per REAL capped prefix (T-4).
+  // ───────────────────────────────────────────────────────────────────────────
+  describe.each(CAPPED_PATH_PREFIXES)('capped prefix %s', (prefix) => {
+    const unprefixed = prefix.replace('/api/v1', '');
+
+    describe('P-2 — path matching accounts for the api/v1 global prefix', () => {
+      it('caps an oversized body on the PREFIXED path', () => {
+        expectCapped(fakeReq({ path: prefix, headers: { 'content-length': OVER } }));
       });
-      const next = jest.fn() as unknown as NextFunction;
 
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
+      it(
+        `does NOT cap the same oversized body on the UN-PREFIXED path (${unprefixed}) — a test ` +
+          'written against the un-prefixed path would wrongly read as covered while the real ' +
+          '(prefixed) route sailed through uncapped (RA8) if this middleware matched the wrong string',
+        () => {
+          expectPassed(fakeReq({ path: unprefixed, headers: { 'content-length': OVER } }));
+        },
+      );
 
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+      it(`does not treat "${prefix}X" as a capped path (segment-boundary match)`, () => {
+        expectPassed(fakeReq({ path: `${prefix}X`, headers: { 'content-length': OVER } }));
+      });
+
+      it(
+        'caps an oversized body on an UPPERCASE/mixed-case path — Express routes ' +
+          'case-insensitively by default, so a case-sensitive matcher here would be bypassed by ' +
+          'a caller who merely shifts one character to uppercase (2026-08-05 review finding)',
+        () => {
+          expectCapped(
+            fakeReq({ path: prefix.toUpperCase(), headers: { 'content-length': OVER } }),
+          );
+        },
+      );
+
+      it('also catches the chunked/no-length bypass on a mixed-case path (same defect, P-3 axis)', () => {
+        expectCapped(
+          fakeReq({
+            path: prefix.toUpperCase(),
+            method: 'POST',
+            headers: { 'transfer-encoding': 'chunked' },
+          }),
+        );
+      });
     });
 
-    it(
-      'does NOT cap the same oversized body on the UN-PREFIXED path — proving a test written ' +
-        'against /registrations rather than /api/v1/registrations would wrongly read as covered ' +
-        'while the real (prefixed) route sails through uncapped (RA8) if this middleware matched ' +
-        'the wrong string',
-      () => {
-        const req = fakeReq({
-          path: '/registrations/verify',
-          headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-        });
-        const next = jest.fn() as unknown as NextFunction;
-
-        registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-        expect(next).toHaveBeenCalledTimes(1);
-        expect((next as jest.Mock).mock.calls[0]).toHaveLength(0);
-      },
-    );
-
-    it('leaves an unrelated, non-registrations path uncapped regardless of size', () => {
-      const req = fakeReq({
-        path: '/api/v1/admin/actors/import',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES * 100) },
+    describe('P-3 — a request declaring no length cannot bypass the cap', () => {
+      it('rejects a chunked request with NO Content-Length at all', () => {
+        expectCapped(
+          fakeReq({ path: prefix, method: 'POST', headers: { 'transfer-encoding': 'chunked' } }),
+        );
       });
-      const next = jest.fn() as unknown as NextFunction;
 
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('does not treat "/api/v1/registrationsX" as a registrations path (segment-boundary match)', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrationsX',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
+      it('rejects a POST with no Content-Length header and no Transfer-Encoding either', () => {
+        expectCapped(fakeReq({ path: prefix, method: 'POST', headers: {} }));
       });
-      const next = jest.fn() as unknown as NextFunction;
 
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
+      it.each(['not-a-number', '+100', '0x20', ' 100 ', '', '1.5', '-1'])(
+        'rejects a Content-Length header of %j — a shape Number(...) would silently accept but ' +
+          "this middleware's stricter digits-only rule does not rest on Node's parser never " +
+          'producing it',
+        (contentLength) => {
+          expectCapped(
+            fakeReq({ path: prefix, method: 'POST', headers: { 'content-length': contentLength } }),
+          );
+        },
+      );
 
-      expect(next).toHaveBeenCalledWith();
-    });
+      it(
+        'does NOT reject a bodyless GET carrying neither header — GET routes under a capped ' +
+          'prefix (e.g. GET /api/v1/registrations/consent-policy, the one such route shipped ' +
+          'today) must keep working',
+        () => {
+          expectPassed(fakeReq({ path: prefix, method: 'GET', headers: {} }));
+        },
+      );
 
-    it(
-      'caps an oversized body on an UPPERCASE/mixed-case registrations path — Express routes ' +
-        "case-insensitively by default, so a case-sensitive matcher here would be bypassed by a " +
-        'caller who merely shifts one character to uppercase (2026-08-05 review finding)',
-      () => {
-        const req = fakeReq({
-          path: '/API/V1/REGISTRATIONS/verify',
-          headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-        });
-        const next = jest.fn() as unknown as NextFunction;
-
-        registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-        expect(next).toHaveBeenCalledTimes(1);
-        expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-      },
-    );
-
-    it('also catches the chunked/no-length bypass on a mixed-case path (same defect, P-3 axis)', () => {
-      const req = fakeReq({
-        path: '/Api/V1/Registrations',
-        method: 'POST',
-        headers: { 'transfer-encoding': 'chunked' },
+      it('passes a request with a valid Content-Length AT the cap', () => {
+        expectPassed(
+          fakeReq({
+            path: prefix,
+            method: 'POST',
+            headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES) },
+          }),
+        );
       });
-      const next = jest.fn() as unknown as NextFunction;
 
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-  });
-
-  describe('P-3 — a request declaring no length cannot bypass the cap', () => {
-    it('rejects a chunked request with NO Content-Length at all', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations',
-        method: 'POST',
-        headers: { 'transfer-encoding': 'chunked' },
+      it('rejects a request with a valid Content-Length one byte OVER the cap', () => {
+        expectCapped(
+          fakeReq({ path: prefix, method: 'POST', headers: { 'content-length': OVER } }),
+        );
       });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it('rejects a POST with no Content-Length header and no Transfer-Encoding either', () => {
-      const req = fakeReq({ path: '/api/v1/registrations/verify', method: 'POST', headers: {} });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it('rejects a request with an unparsable Content-Length header', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations',
-        method: 'POST',
-        headers: { 'content-length': 'not-a-number' },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it.each(['+100', '0x20', ' 100 ', '', '1.5', '-1'])(
-      'rejects a Content-Length header of %j — a shape Number(...) would silently accept but ' +
-        "this middleware's stricter digits-only rule does not rest on Node's parser never " +
-        'producing it',
-      (contentLength) => {
-        const req = fakeReq({
-          path: '/api/v1/registrations',
-          method: 'POST',
-          headers: { 'content-length': contentLength },
-        });
-        const next = jest.fn() as unknown as NextFunction;
-
-        registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-        expect(next).toHaveBeenCalledTimes(1);
-        expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-      },
-    );
-
-    it(
-      'does NOT reject a bodyless GET carrying neither header — the one route this module ships ' +
-        'today (GET /api/v1/registrations/consent-policy) must keep working',
-      () => {
-        const req = fakeReq({
-          path: '/api/v1/registrations/consent-policy',
-          method: 'GET',
-          headers: {},
-        });
-        const next = jest.fn() as unknown as NextFunction;
-
-        registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-        expect(next).toHaveBeenCalledWith();
-      },
-    );
-
-    it('passes a request with a valid Content-Length AT the cap', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations',
-        method: 'POST',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('rejects a request with a valid Content-Length one byte OVER the cap', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations',
-        method: 'POST',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
     });
   });
 
-  describe('T-4 extension — /api/v1/contact is capped by the SAME middleware and byte value', () => {
-    it('caps an oversized body on the PREFIXED contact path', () => {
-      const req = fakeReq({
-        path: '/api/v1/contact',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
+  // ───────────────────────────────────────────────────────────────────────────
+  // Membership pin. WITHOUT this, `describe.each` above is a gate that cannot
+  // fail in one direction: deleting a prefix from CAPPED_PATH_PREFIXES does not
+  // redden anything, it silently deletes that prefix's cases and the suite goes
+  // green with fewer tests. Demonstrated 2026-08-31 — removing the contact
+  // prefix took the suite from 36 passing to 19 passing, with zero failures
+  // (KZ-002: a gate that cannot fail is not a gate).
+  // `arrayContaining` on purpose: ADDING a prefix must stay free, since the
+  // parameterisation then covers it automatically. Only REMOVAL fails here.
+  // ───────────────────────────────────────────────────────────────────────────
+  it('pins the capped prefixes — removing one fails HERE rather than shrinking the suite above', () => {
+    expect(CAPPED_PATH_PREFIXES).toEqual(
+      expect.arrayContaining(['/api/v1/registrations', '/api/v1/contact']),
+    );
+  });
 
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it('does NOT cap the same oversized body on the UN-PREFIXED contact path', () => {
-      const req = fakeReq({
-        path: '/contact',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0]).toHaveLength(0);
-    });
-
-    it('does not treat "/api/v1/contactX" as the contact path (segment-boundary match)', () => {
-      const req = fakeReq({
-        path: '/api/v1/contactX',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('caps an oversized body on an UPPERCASE/mixed-case contact path', () => {
-      const req = fakeReq({
-        path: '/API/V1/CONTACT',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it('rejects a chunked contact request carrying no Content-Length at all (P-3 axis)', () => {
-      const req = fakeReq({
-        path: '/api/v1/contact',
-        method: 'POST',
-        headers: { 'transfer-encoding': 'chunked' },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
-    });
-
-    it('passes a contact request with a valid Content-Length AT the cap', () => {
-      const req = fakeReq({
-        path: '/api/v1/contact',
-        method: 'POST',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledWith();
-    });
-
-    it('leaves the pre-existing registrations path capped exactly as before (no regression)', () => {
-      const req = fakeReq({
-        path: '/api/v1/registrations/verify',
-        headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1) },
-      });
-      const next = jest.fn() as unknown as NextFunction;
-
-      registrationsPayloadCapMiddleware(req, fakeRes, next);
-
-      expect(next).toHaveBeenCalledTimes(1);
-      expect((next as jest.Mock).mock.calls[0][0]).toBeInstanceOf(PayloadTooLargeException);
+  describe('paths outside CAPPED_PATH_PREFIXES are never capped', () => {
+    it('leaves an unrelated path uncapped regardless of size', () => {
+      expectPassed(
+        fakeReq({
+          path: '/api/v1/admin/actors/import',
+          headers: { 'content-length': String(REGISTRATIONS_PAYLOAD_CAP_BYTES * 100) },
+        }),
+      );
     });
   });
 });

@@ -116,7 +116,14 @@ const CONTACT_PATH_PREFIX = '/api/v1/contact';
  * rule, the case-insensitivity, and the P-3 "declares no length" logic below
  * apply uniformly to every entry.
  */
-const CAPPED_PATH_PREFIXES = [REGISTRATIONS_PATH_PREFIX, CONTACT_PATH_PREFIX];
+/**
+ * Exported so `payload-cap.config.spec.ts` can parameterise its contract over
+ * the REAL list rather than a copy. That matters: the contract this middleware
+ * offers is "every prefix in this array behaves identically", and a test that
+ * hard-codes its own copy proves nothing about a prefix added later. Adding an
+ * entry here automatically extends the suite.
+ */
+export const CAPPED_PATH_PREFIXES = [REGISTRATIONS_PATH_PREFIX, CONTACT_PATH_PREFIX];
 
 /**
  * Case-insensitive on purpose: Express's router matches routes
