@@ -664,3 +664,59 @@ T-1…T-10 `[x]`. **T-11 `[~]`** — every deliverable is in place and verified;
 
 - **OD-1 — SES sandbox.** The account can deliver only to addresses verified in SES. Adding someone to the Cognito `admin` group does **not** verify them, so a new admin silently becomes an unreachable recipient. Either request SES production access once, or verify each administrator address. The owner is raising this with the team.
 - **OD-2 — interim sender.** Mail still originates from `j.cadavid@cgiar.org`; the dedicated address is **ATP-58**. Whoever owns that mailbox receives replies that bypass `Reply-To`.
+
+## T-11 — closure · 2026-08-31 · **`sam validate` ran; T-11 is `[x]`**
+
+The owed clause was never blocked on work or on credentials — it was blocked on a missing binary. The AWS SAM CLI was installed (`brew install aws-sam-cli`, v1.165.0) and `./infra/scripts/validate.sh` ran with `--profile IBD-DEV --region eu-west-1`, the form the constitution requires.
+
+| Stack | Result |
+|---|---|
+| `10-data-auth` | **PASS** — valid SAM template |
+| `20-backend` | **FAIL** — `W2531`, EOL Lambda runtime (below) |
+| `30-frontend` | **PASS** — valid SAM template |
+
+### The 20-backend failure is pre-existing and is not T-11's
+
+```
+W2531: Runtime 'nodejs20.x' was deprecated on '2026-04-30'.
+       Creation disabled '2027-02-01', update disabled '2027-03-03'.
+```
+
+`--lint` promotes this to a non-zero exit, so the whole script reports failure.
+
+**Demonstrated, not asserted.** The same template was extracted at `12b52ef^` — the commit *before* T-11 touched it — and linted identically. The finding sets were diffed and are **identical**: T-11 introduced no new finding, and the failure reproduces with T-11's edits reverted. T-11's two additions (`ListUsersInGroup`, `CONTACT_FALLBACK_RECIPIENT`) are structurally valid SAM; `sam validate` confirms what the earlier CFN-tag-aware YAML parse could only suggest.
+
+**Adjudication.** Holding T-11 open on a defect it did not cause, cannot fix within its scope, and which predates it would make the checkbox a hostage rather than a record. T-11 is `[x]`. The runtime deprecation is a real, dated obligation and is recorded below as its own item, not folded into this spec.
+
+### New standing issue — the validate gate is red for everyone
+
+`./infra/scripts/validate.sh` is the constitution's pre-deploy gate (`CLAUDE.md`, verification table). **It now exits non-zero on every run**, for every future task, until the runtime is bumped. A gate that always fails stops being a gate: the next person to see red will learn to ignore it, and the real finding underneath it will be ignored too.
+
+This is not hypothetical urgency — AWS disables **creation** on 2027-02-01 and **updates** on 2027-03-03. After the latter, the existing function can no longer be updated at all: no deploy, no rollback, no hotfix.
+
+Bumping `nodejs20.x` → `nodejs24.x` is a one-line template change, but it is a **deployment-affecting** change that must be exercised against the deployed stack, and it belongs to nobody's spec. Raised to the owner rather than slipped into this one.
+
+### Live verification performed the same day, against real AWS
+
+Two links of the contact chain had only ever been exercised against a mocked SES and a mocked directory. Both were run through the project's **own compiled code**, not through generic CLI commands:
+
+| Link | Result |
+|---|---|
+| `AdminRecipientResolver.resolve()` against the live `admin` group | **✅** returned the three real administrators, **without** falling through to `CONTACT_FALLBACK_RECIPIENT` |
+| `SesMailTransport.send()` with the real contact template | **✅** accepted by SES; `SentLast24Hours` moved 0 → 1 |
+
+SES account state was measured, not inferred: `Max24HourSend: 200`, `MaxSendRate: 1.0` — the sandbox defaults. All three administrator addresses were verified in SES the same day. Recorded as **ATP-59**, because the constraint is structural: adding an administrator in the panel does not verify them in SES, so the next admin added silently breaks delivery for all of them.
+
+### Latent coupling found while testing — recorded, not fixed
+
+The first live resolver run **fell back to `CONTACT_FALLBACK_RECIPIENT`** and the reason was invisible: `AdminRecipientResolver.resolve()` catches every exception with a bare `catch`. Surfacing it showed:
+
+```
+Missing required Cognito env var COGNITO_CLIENT_ID
+```
+
+`getCognitoAdminClient()` needs only `region`, but destructures it out of `getCognitoConfig()`, which demands `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` **and** `AWS_REGION` together. So the contact form's recipient resolution has a hard dependency on a variable that `ListUsersInGroup` never uses.
+
+**Not a defect today** — `infra/20-backend/template.yaml` does set `COGNITO_CLIENT_ID` (added long before this spec, by `changes/auth-wiring` in `0a41406`, for JWT audience verification in `jwt-verifier.ts`). But the failure mode is bad: a deployment missing it would route every contact message to the fallback address, permanently and silently, while the panel showed a healthy admin group. That is exactly what was observed locally before the variable was supplied.
+
+Left as-is. Narrowing `getCognitoAdminClient()` to read `AWS_REGION` directly is a one-line change in `backend/src/users/cognito-admin.client.ts` that touches the auth module and belongs to whoever owns it, not to a contact-form spec.

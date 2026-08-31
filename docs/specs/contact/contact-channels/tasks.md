@@ -98,7 +98,7 @@
 
 ## Phase 5 — Infrastructure and documentation
 
-- [~] **T-11** IAM, environment, and baseline-document sync  (deps: T-6, T-10)  — *infra, docs and env sync delivered and verified; **`sam validate` is owed** — the SAM CLI is not installed on this machine, so the done-when's validate clause is unevidenced. Templates were parsed with a CFN-tag-aware YAML loader instead, which is weaker. Extended by the Leader to fix three pre-existing local-environment defects (port collision, missing CORS, empty API base URL). See execution.md.*
+- [x] **T-11** IAM, environment, and baseline-document sync  (deps: T-6, T-10)  — *`sam validate` ran 2026-08-31 after installing the SAM CLI: `10-data-auth` and `30-frontend` PASS; `20-backend` fails on `W2531`, a **pre-existing EOL Lambda runtime** proven identical at `12b52ef^` — T-11 introduced no finding. Raised separately as a standing issue: the validate gate is now red for everyone. Live-verified the same day against real AWS: the resolver returned the three real admins without the fallback, and SES accepted a real send. See execution.md.*
       Scope: add `cognito-idp:ListUsersInGroup` to the existing statement in `infra/20-backend/template.yaml` (eleven actions today, action-scoped, no wildcard, this one absent) and `CONTACT_FALLBACK_RECIPIENT` to the `Environment` block. Update `docs/trd/trd.md` §4 (add the path) and §13 (register **QA-13**, worded to match QA-12); `docs/ux-ui/design.md` §2 (add `/contact` and `/privacy`, **fix `/directory/[id]` → `/profile?id=`**), §4 (screen rows), §5 (nav model — already stale on Dashboard and About).
       Traces: FR-3, NFR-1, `design.md` §7.1, §8
       Files: `infra/20-backend/template.yaml`, `docs/trd/trd.md`, `docs/ux-ui/design.md`
