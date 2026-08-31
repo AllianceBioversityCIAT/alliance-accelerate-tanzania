@@ -580,3 +580,67 @@ Committing T-9 restored diff visibility (the operational rule from that task's r
 **Verification after the extension:** `npx eslint "{src,test}/**/*.ts" --quiet` clean · `npm run build` clean · `npm test -- --silent` **64 suites / 815 tests, all green**.
 
 **No Reviewer was dispatched.** Deliberate, and recorded rather than omitted. T-11 is configuration and documentation; the one code change is a four-line local-only bootstrap edit on a file no test or deployed path imports, verified by parse, lint, build and the full suite. The owner had explicitly challenged this spec's process cost as disproportionate to the feature, and an adversarial review round here would have been ceremony. The residual risk is accepted at Leader level and named here: **`sam validate` remains owed**, and it is the check most likely to catch anything a YAML parse cannot.
+
+## T-10 — DC-9 closure · 2026-08-31 · **the gate FAILED, was fixed, and is now closed on measured evidence**
+
+DC-9 was the one clause in this spec no automated check could reach, held open since T-10's review. The owner captured it and it **failed**: at 768×681 the header did not merely crowd, it forced a horizontal scrollbar on the whole page.
+
+`tasks.md` T-10 instructed that a crowded nav **stop and return to the owner as a placement question**, and forbade resolving it by shortening a label or dropping an entry. That is what happened — the owner made the call. No label was shortened.
+
+### The measurement, which contradicted the Leader's own estimate
+
+Prior rounds reasoned about this bar from class-inspection arithmetic. That arithmetic was directionally right and **quantitatively wrong**, and its error changed the diagnosis. Chromium was driven over the DevTools protocol (`Runtime.evaluate` against a running dev server) to read `scrollWidth`/`clientWidth` directly.
+
+| viewport | row min-content | available | page overflow |
+|---|---|---|---|
+| 375 | 343 | 343 | none |
+| 768 | **1270** | 720 | **+526px** |
+| 1024 | **1270** | 960 | **+278px** |
+| 1280 | **1270** | 1216 | **+22px** |
+| 1440 | 1270 | 1216 | none — *spills into the gutter instead* |
+
+Two findings the estimate could not have produced:
+
+1. **The header was broken at every width ≥768, not just at `md`.** It still overflowed at 1280. At 1440 there is no scrollbar only because the surplus escapes into the centred container's outer margin — the row is still wider than its container.
+2. **Deferring the descriptor to a wider breakpoint is impossible, not merely undesirable.** The container is `max-w-7xl`, so usable width is **permanently capped at 1216px** and does not grow with the viewport. With the descriptor the row needs 1209px — a 7px margin at *any* screen size. The Leader had proposed "show it only on wide screens" to the owner; the measurement withdrew that option. The owner's original instinct — remove it — was correct.
+
+### Owner decision and what was changed
+
+Owner chose: drop **Home**, keep **About**, full bar from `lg`. Applied to `Header.tsx` only:
+
+| Change | Rationale |
+|---|---|
+| `Home` removed from `NAV_LINKS` | The brand lockup already links `/` and its `aria-label` names it as home — the entry duplicated an adjacent control. Removing it from the array keeps the one-source invariant T-10's tests assert; it leaves the mobile drawer too, where the always-visible logo still serves. |
+| Brand descriptor removed outright | ~196px against a 1216px ceiling; no breakpoint can hold it (above). Logo carries identity, `aria-label` carries the name — no visual or assistive-tech loss. |
+| Desktop bar `md:` → `lg:` (nav, auth slot, hamburger, drawer) | 768–1023 uses the existing, already-tested hamburger. |
+| `gap-6` → `gap-4`, `xl:gap-6` · `lg:px-8` → `xl:px-8` · logo `lg:h-8 xl:h-10` | Recovers ~92px precisely in the 1024–1279 band where the row is tightest, leaving the ≥1280 presentation unchanged. |
+| `ml-1 xl:ml-2` on the primary CTA | Separates the action from the plain links, which the tightened gap had flattened. Costs 4px of the 45px slack. |
+
+### Result — measured, not asserted
+
+| viewport | row needs | available | **slack** |
+|---|---|---|---|
+| 1024 (tightest) | 935 | 976 | **41px** |
+| 1280+ | 1015 | 1216 | **201px** |
+
+No horizontal overflow at 375 / 414 / 768 / 1023 / 1024 / 1180 / 1280 / 1440 / 1920, verified on `/`, `/contact`, `/privacy`, `/about` and `/directory`. Rendered captures taken at 375 / 768 / 1024 / 1440 and inspected: mobile and tablet show logo + hamburger; 1024 and 1440 show the full bar with even spacing and no wrap.
+
+### Tests added, and an explicit statement of what they do not prove
+
+Three regression tests in `Header.test.tsx`. **jsdom performs no layout and cannot detect overflow**, so none of them proves the header fits — they pin the three inputs whose measured effect is recorded above, so a silent revert fails in CI instead of shipping. This is stated in the test file itself rather than left for a reader to infer (KZ-008).
+
+Their discrimination was demonstrated, not assumed (KZ-002): reverting the breakpoint tokens and re-adding `Home` was applied to a scratch copy and **2 of the 3 tests failed**; the third did not, correctly, because that revert did not touch the descriptor.
+
+### Verification
+
+Frontend `npm run lint` — 3 warnings, all pre-existing `no-img-element` in admin test files, unrelated and unchanged. `npm test -- --silent` — **93 suites / 1402 tests green** (1399 + the 3 added). `npm run build` — clean; `out/contact/index.html` and `out/privacy/index.html` emitted.
+
+**`docs/ux-ui/design.md` §5 was re-corrected.** T-11 had synced it to the seven-entry bar hours earlier; this change invalidated that sync the same day. §5 now records the composition, the `lg` breakpoint, the 1216px ceiling, and a standing instruction to measure before adding a nav entry — the ceiling is fixed and the bar was already over budget at six entries without anyone noticing.
+
+**DC-9 is closed. T-10 is `[x]`.**
+
+#### Method note — how this was measured, and why it is not a repo dependency
+
+No Playwright package is installed and none was added. The Playwright **browser cache** already existed on this machine, and Node 26 ships a native `WebSocket`, so a ~40-line client drove the cached `headless_shell` over the DevTools protocol directly from the scratchpad. Nothing was installed, and no repo file or verification command depends on it — `CLAUDE.md` requires every command to remain runnable by a teammate without these tools, and that holds. A teammate reproduces this the ordinary way: open the page and resize.
+
+**This should have been done in round 1.** Four review rounds reasoned about this bar from class inspection and produced a number that was wrong by 46px and a diagnosis that missed the 1216px ceiling entirely — the single fact that determined the fix. The measurement took minutes and was available the whole time.

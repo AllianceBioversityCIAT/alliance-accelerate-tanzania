@@ -239,11 +239,67 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
     // Regression for the additive-prop constraint: existing entries must
     // render unchanged. A default-variant link never carries the
     // primary-variant's solid background class.
-    for (const name of [/^home$/i, /discovery map/i, /^dashboard$/i, /directory/i, /^about$/i]) {
+    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^about$/i, /^contact$/i]) {
       const [link] = screen.getAllByRole('link', { name });
       expect(link.className).not.toContain('bg-primary');
       expect(link.className).not.toContain('text-primary-fg');
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // DC-9 — header overflow fix (2026-08-31)
+  //
+  // WHAT THESE ASSERTIONS ARE AND ARE NOT. jsdom performs no layout: it has no
+  // box model, so it cannot measure a width and CANNOT detect overflow. None of
+  // the tests below prove the header fits. They pin the three *inputs* whose
+  // measured effect was recorded, so a later edit that silently reverts one
+  // fails here instead of shipping.
+  //
+  // The behavioural evidence is a real-browser measurement, not this file:
+  // the row's min-content width was 1270px against a permanent 1216px ceiling
+  // (max-w-7xl), overflowing at every width >= 768. After this fix it is 931px
+  // at 1024 (45px slack) and 1007px at 1280+ (209px slack). See execution.md,
+  // T-10 DC-9 closure, for the full measurement table and how it was taken.
+  // -------------------------------------------------------------------------
+  it('does not render a Home nav entry — the brand lockup is the home link', () => {
+    renderHeader();
+
+    // The brand Link still points at '/' and still names itself as home, so
+    // removing the duplicate entry cost no route and no accessible name.
+    const brand = screen.getByRole('link', { name: /accelerate tanzania seed registry.*home/i });
+    expect(brand).toHaveAttribute('href', '/');
+
+    // No nav item whose accessible name is exactly "Home".
+    expect(screen.queryAllByRole('link', { name: /^home$/i })).toHaveLength(0);
+  });
+
+  it('does not render the "Tanzania Seed Registry" descriptor in the bar', () => {
+    renderHeader();
+
+    // Removed rather than deferred to a wider breakpoint: the container is
+    // max-w-7xl, so usable width is capped at 1216px and never grows with the
+    // viewport — there is no screen wide enough for the descriptor to fit.
+    expect(screen.queryByText(/tanzania seed registry/i)).toBeNull();
+  });
+
+  it('switches between the mobile drawer and the desktop bar at lg, not md', () => {
+    const { container } = renderHeader();
+
+    // Class-string assertions only — jsdom applies no media query and computes
+    // no layout, so this checks the breakpoint token is still `lg`, nothing
+    // more. It exists because reverting to `md` reopens a 526px overflow at
+    // 768px that no other test in this suite can see.
+    const desktopNav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(desktopNav.className).toContain('lg:flex');
+    expect(desktopNav.className).not.toContain('md:flex');
+
+    const hamburger = screen.getByRole('button', { name: /open navigation menu/i });
+    expect(hamburger.className).toContain('lg:hidden');
+    expect(hamburger.className).not.toContain('md:hidden');
+
+    const drawer = container.querySelector('#mobile-menu');
+    expect(drawer?.className).toContain('lg:hidden');
+    expect(drawer?.className).not.toContain('md:hidden');
   });
 
   it('is absent from the admin sidebar, which is a different mode (DD-5) and a different component', () => {

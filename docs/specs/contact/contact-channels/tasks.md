@@ -87,7 +87,7 @@
       Done when: tests assert a `400` with empty `details`, a `502`, and a network rejection each render the fixed constant — `apiFetch` sets `message` to `HTTP <status> <statusText>`, so rendering it would surface the status code FR-5 forbids. Grep the component for hex, `rgb(` and `-[` returns nothing. `jest-axe` passes.
       Skills: `frontend-design` (or `ui-ux-pro-max`), `tailwind-design-system`, `shadcn-ui`, `react-doctor`
 
-- [~] **T-10** Pages, navigation and entry points  (deps: T-9)  — *automatable scope PASSED; **DC-9's rendered capture at 375/768/1440 is owed** and is a HITL gate. See execution.md.*
+- [x] **T-10** Pages, navigation and entry points  (deps: T-9)  — *DC-9 captured by the owner 2026-08-31 and it **failed**: the header forced a page-level horizontal scrollbar. Returned to the owner as a placement question per this task's own instruction; owner dropped "Home" and the brand descriptor and moved the desktop bar to `lg`. Re-measured in a real browser: 41px slack at 1024, 201px at 1280+, no overflow at any width. See execution.md.*
       Scope: `app/(public)/contact/page.tsx` and `app/(public)/privacy/page.tsx`, both **static** (no `useSearchParams`, so no `<Suspense>`). Privacy page content per `design.md` §5.2. Add Contact to `NAV_LINKS`; link `/contact` from footer, About and home; link `/privacy` from the footer; link `/contact` from `RestrictedContactPanel`'s closing sentence.
       Traces: FR-1, FR-6 (link resolves), NFR-3, NFR-5, DC-9, DC-11 · `design.md` §5.2, §5.3
       Files: `frontend/app/(public)/contact/page.tsx`, `app/(public)/privacy/page.tsx`, `components/shell/Header.tsx`, `Footer.tsx`, About and home pages, `components/profile/RestrictedContactPanel.tsx`
