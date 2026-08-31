@@ -91,10 +91,12 @@ The contract for starting the local stack. **This project has no Docker Compose 
 | **Database** | A MySQL 8 the developer supplies. Either a local install, a container (`docker run --name accelerate-mysql -e MYSQL_ROOT_PASSWORD=… -e MYSQL_DATABASE=accelerate -p 3306:3306 -d mysql:8`), or a dev RDS instance. Point `DATABASE_URL` in `backend/.env` at it. |
 | **Fallback route (no Docker)** | The primary route already is the no-Docker route. Only the database choice changes — a native MySQL install or the dev RDS endpoint (requires the `DevCidr` ingress rule). |
 | **Pre-check** | `node -v` (Node 20+ required) and a reachable `DATABASE_URL`. If using a container, `docker info` first — on failure (daemon off, not installed), surface it and offer: start Docker, install MySQL natively, or point at dev RDS. **Never block silently.** |
-| **Env setup** | `cp backend/.env.example backend/.env` · `cp frontend/.env.example frontend/.env.local` |
+| **Env setup** | `cp backend/.env.example backend/.env` · `cp frontend/.env.example frontend/.env.local`. Both examples ship working local defaults; **only `DATABASE_URL` must be edited** to match the MySQL you supplied. `backend/.env.example` sets `PORT=3001` deliberately — `main.ts` defaults to **3000**, the same port as the Next.js dev server, so an unset `PORT` makes whichever process starts second fail to bind. |
 | **Seed / reset data** | `cd backend && npx prisma migrate reset` (drops, re-migrates, re-seeds) · seeders: `prisma/seed.ts`, `prisma/seed-data.ts`, `prisma/seed-synthetic.ts` |
 | **Health check** | `curl http://localhost:3001/api/v1/health` · frontend reachable at `http://localhost:3000` |
 | **URLs / ports** | Frontend `http://localhost:3000` · Backend `http://localhost:3001` · MySQL `3306` |
+
+**Cross-origin note.** Locally the frontend (`:3000`) and API (`:3001`) are different origins, so the browser blocks calls between them without a CORS header. `main.ts` enables CORS for `LOCAL_CORS_ORIGIN` (default `http://localhost:3000`) **for this reason only**. `lambda.ts` sets none and must not: the deployed API is same-origin behind CloudFront, which serves the static frontend and proxies `/api` to API Gateway. Adding CORS to the Lambda path would widen the deployed surface to solve a problem that exists only on a developer's machine.
 
 **Boundary rule.** The local environment is **disposable**: agents may freely start it, seed it, reset it, and drop its database to verify work. Deployments to cloud/PROD are **governed** — they follow §1–5 (components, IaC, deploy scripts defined at constitution time) and are never improvised by an agent.
 

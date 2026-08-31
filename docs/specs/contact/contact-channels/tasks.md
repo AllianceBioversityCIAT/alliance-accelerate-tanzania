@@ -87,7 +87,7 @@
       Done when: tests assert a `400` with empty `details`, a `502`, and a network rejection each render the fixed constant — `apiFetch` sets `message` to `HTTP <status> <statusText>`, so rendering it would surface the status code FR-5 forbids. Grep the component for hex, `rgb(` and `-[` returns nothing. `jest-axe` passes.
       Skills: `frontend-design` (or `ui-ux-pro-max`), `tailwind-design-system`, `shadcn-ui`, `react-doctor`
 
-- [ ] **T-10** Pages, navigation and entry points  (deps: T-9)
+- [~] **T-10** Pages, navigation and entry points  (deps: T-9)  — *automatable scope PASSED; **DC-9's rendered capture at 375/768/1440 is owed** and is a HITL gate. See execution.md.*
       Scope: `app/(public)/contact/page.tsx` and `app/(public)/privacy/page.tsx`, both **static** (no `useSearchParams`, so no `<Suspense>`). Privacy page content per `design.md` §5.2. Add Contact to `NAV_LINKS`; link `/contact` from footer, About and home; link `/privacy` from the footer; link `/contact` from `RestrictedContactPanel`'s closing sentence.
       Traces: FR-1, FR-6 (link resolves), NFR-3, NFR-5, DC-9, DC-11 · `design.md` §5.2, §5.3
       Files: `frontend/app/(public)/contact/page.tsx`, `app/(public)/privacy/page.tsx`, `components/shell/Header.tsx`, `Footer.tsx`, About and home pages, `components/profile/RestrictedContactPanel.tsx`
@@ -98,7 +98,7 @@
 
 ## Phase 5 — Infrastructure and documentation
 
-- [ ] **T-11** IAM, environment, and baseline-document sync  (deps: T-6, T-10)
+- [~] **T-11** IAM, environment, and baseline-document sync  (deps: T-6, T-10)  — *infra, docs and env sync delivered and verified; **`sam validate` is owed** — the SAM CLI is not installed on this machine, so the done-when's validate clause is unevidenced. Templates were parsed with a CFN-tag-aware YAML loader instead, which is weaker. Extended by the Leader to fix three pre-existing local-environment defects (port collision, missing CORS, empty API base URL). See execution.md.*
       Scope: add `cognito-idp:ListUsersInGroup` to the existing statement in `infra/20-backend/template.yaml` (eleven actions today, action-scoped, no wildcard, this one absent) and `CONTACT_FALLBACK_RECIPIENT` to the `Environment` block. Update `docs/trd/trd.md` §4 (add the path) and §13 (register **QA-13**, worded to match QA-12); `docs/ux-ui/design.md` §2 (add `/contact` and `/privacy`, **fix `/directory/[id]` → `/profile?id=`**), §4 (screen rows), §5 (nav model — already stale on Dashboard and About).
       Traces: FR-3, NFR-1, `design.md` §7.1, §8
       Files: `infra/20-backend/template.yaml`, `docs/trd/trd.md`, `docs/ux-ui/design.md`

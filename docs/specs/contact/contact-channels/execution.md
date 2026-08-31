@@ -499,3 +499,84 @@ It then **substituted the skipped skill's work by hand** — verifying every hoo
 **Mitigation for future frontend tasks:** `git add -N` restores diff visibility for untracked files. Committing T-9 achieves the same for T-10.
 
 **ADVISORY (recorded):** two dangling identifiers in `ContactForm.tsx`'s header — **KZ-008 instances 5 and 6 in this spec**, of a lesser class than the FAIL because they misname a correct performer rather than assert absent behaviour. Line 29 cites `classifySubmitError`, which lives in `OtpVerificationStep.tsx`, not here (the function is `extractFieldErrors`) — sharpened by line 22 telling the reader "this is the one part a Reviewer will re-derive line by line" and then pointing at a symbol that is not in the file. Line 71 cites `handleSuccess`, which does not exist; the clear is inline in `handleSubmit`. Both describe behaviour the code genuinely performs. · The retargeted honeypot assertion is now redundant with an adjacent `tabIndex` check — acceptable, since the defect was vacuity, not duplication.
+### T-10 — Pages, navigation and entry points · **PASS on the automatable scope · DC-9 OWED · task remains `[~]`**
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-28 · Implementer attempts **1** · Reviewer `STATUS: PASS` (+ 4 ADVISORY) |
+| Requirements covered | FR-1, FR-6, NFR-3, NFR-4, NFR-5, DC-11 · **DC-9 not covered — manual gate, unperformed** |
+
+**Files:** `app/(public)/contact/page.tsx`, `app/(public)/privacy/page.tsx` + a11y tests, `components/shell/Footer.test.tsx` (new) · `Header.tsx` + test, `Footer.tsx`, About page + test, `ClosingCTA.tsx` + test, `RestrictedContactPanel.tsx`, `ProfileView.test.tsx` (modified).
+
+**Verification — Leader-measured on a quiet tree:** **93 suites / 1399 tests** (baseline 90 / 1379); `out/contact/index.html` and `out/privacy/index.html` both present on disk; lint clean of new output. The Reviewer reconstructed the +20 exactly (13 new + 7 added to modified suites) and confirmed zero `.skip`/`.only`/`.todo` repo-wide.
+
+#### DC-9 was declared owed, not smuggled
+
+The brief told the Implementer it could not discharge this gate and must not pretend to. It reported: *"I did not perform the rendered capture at 375/768/1440. No browser or Playwright binary is available… I am not claiming it looks fine — this is an owed, unverified gap."*
+
+The Reviewer verified that claim rather than accepting it: it grepped `375|1440|768|crowd|wrap|visual|capture|DC-9` across every `.tsx` and found **no visual-conformance assertion anywhere** — every hit is either a pre-existing class or an explicit disclaimer (`Footer.test.tsx`: *"not asserting layout/visual density (that is DC-9's manual gate, out of jsdom's reach)"*). **This is the opposite of the KZ-008 pattern this spec has produced six times.**
+
+#### The nav finding — the Implementer was right, and understated it
+
+It computed ~725 px of nav content against ~720 px of container width at `md` and returned it as a placement question rather than shortening a label. The Reviewer sanity-checked the arithmetic against the actual classes and found the figure correct **but incomplete**: it omitted the two non-shrinkable siblings.
+
+| Component | Estimated min-content at `md` |
+|---|---|
+| Nav (7 entries, `gap-6`, `px-1`/`px-3`, Inter `text-sm`) | ≈ 740 px |
+| Brand lockup (`shrink-0`, `sm:h-10` + descriptor) | ≈ 368 px |
+| `AuthSlot` ("Staff sign-in", `whitespace-nowrap`) | ≈ 109 px |
+| Two `gap-4` | 32 px |
+| **Row total** | **≈ 1 250 px against 720 px available** |
+
+**Two consequences that reframe the decision:**
+
+1. The crowding threshold is not `md` — it is **≈ 1 300 px viewport**, so the header is over budget across most of the `md`–`lg`–`xl` band.
+2. **With six entries the row already demanded ≈ 1 163 px.** This is a **pre-existing overflow that Contact deepens by ≈ 87 px, not one it creates.**
+
+That independently vindicates the Implementer's refusal to shorten a label: relabelling or dropping Contact does not bring the row inside budget. The real levers are the desktop-nav breakpoint (`md` → `lg`), the brand descriptor, or moving an entry off the bar.
+
+**A caution the Reviewer stated and the Leader endorses:** *"These are estimates derived from class inspection, not measurements — they sharpen DC-9's question, they do not discharge it."* And they sit oddly against the fact that the site is deployed and no one has reported a broken header, which is itself evidence the glyph estimates may run high. **The capture settles it; the arithmetic only says where to look.**
+
+#### `react-doctor` ran this time, and one of its findings is wrong
+
+Committing T-9 restored diff visibility (the operational rule from that task's review: *"skill reported no files" is an unrun skill, never a pass*). It scanned 13 changed files, scored 86/100, and raised two findings — **both in `ContactForm.tsx`, T-9's file, which T-10 was forbidden to touch. The Implementer flagged rather than fixed them, which was correct.**
+
+- **"Missing accessible label" on the honeypot — the tool is wrong on the association.** `fieldId` is a `useCallback` over `useId()`, so a static linter cannot match a computed `htmlFor` to a computed `id`; the same dynamic pattern serves all six real fields. The input does lack an accessible *name in the a11y tree*, but only because the wrapper is `aria-hidden="true"` — **required** by FR-8 and asserted by T-9's own test. **"Fixing" it with an `aria-label` would re-expose the trap.** T-9's Reviewer was right; no follow-up.
+- **`nextjs-no-a-element` on `<a href="/privacy">` — real, minor, worth a follow-up.** It is the **only** bare internal `<a href="/…">` in the entire frontend, so it is a genuine consistency defect and costs a full document reload. It is **not** broken in production: `infra/30-frontend/template.yaml`'s CloudFront viewer-request function rewrites extensionless `/privacy` → `/privacy/index.html` — which is exactly the `trailingSlash: true` mismatch that would otherwise bite, since `next/link` emits `/privacy/` while a bare `<a>` emits `/privacy`.
+
+**ADVISORY (recorded):**
+
+1. **DC-9 remains owed. T-10 must not flip to `[x]` until the 375/768/1440 capture is taken at the HITL pause.** This entry records a PASS on the automatable scope only.
+2. The nav-crowding finding goes to the owner with the corrected numbers above.
+3. **KZ-008 instance 7, and this one is in a test comment.** `Header.test.tsx:288` claims *"A second, divergent list would either drop the mobile occurrence or duplicate it further; either way this count would no longer be exactly 2."* **Not true** — replacing the drawer's `NAV_LINKS.map` with a verbatim hardcoded array keeps the count at exactly 2 and the test green. The requirement (both renderings, correct href) *is* genuinely proven; the structural "no second list" clause was discharged by the Reviewer's inspection, not by that assertion. Either soften the comment or assert `NAV_LINKS.length * 2` occurrences after opening the drawer.
+4. Follow-up on T-9's file: convert `ContactForm.tsx:557`'s bare `<a>` to `next/link`.
+
+### T-11 — IAM, environment, and baseline-document sync · **PASS on the automatable scope · SAM VALIDATE UNVERIFIABLE · task remains `[~]`**
+
+**Implementer:** T2 (`sonnet`), effort medium, skills `aws-serverless` + `software-architect`.
+
+**Delivered as specified.** `cognito-idp:ListUsersInGroup` appended to the existing action-scoped Cognito statement in `infra/20-backend/template.yaml` (twelfth action; the list is not alphabetical, so thematic order was matched rather than an alphabetical order invented), scoped to the same imported user-pool ARN. `CONTACT_FALLBACK_RECIPIENT` added to `Environment.Variables` as a literal, matching the idiom of its neighbours `MAIL_TRANSPORT` and `MAIL_SENDER_ADDRESS` — which are literals, not CloudFormation `Parameter`s. TRD §4 gained the `POST /api/v1/contact` row; TRD §13 gained QA-13, worded from `requirements.md` NFR-1 rather than paraphrased. `docs/ux-ui/design.md` §2 gained `/contact` and `/privacy` and had the stale `/directory/[id]` corrected to `/profile?id=`; §4 gained both screen rows; §5's nav model was re-derived from the actual `NAV_LINKS` array, correcting the pre-existing staleness on Dashboard and About.
+
+**`CONTACT_FALLBACK_RECIPIENT`'s value was inferred, not specified.** No spec document states it. The Implementer set it to `j.cadavid@cgiar.org` and documented the reasoning inline: under the SES sandbox (`design.md` §7.2) only a verified identity can receive mail, and that address is the only identity this template verifies. A fallback recipient that cannot receive mail is not a fallback. The inference is sound and is recorded here so the owner can override it when ATP-58 lands the dedicated address.
+
+#### Why this task does not close
+
+**`./infra/scripts/validate.sh` did not run: `sam: command not found` for all three stacks.** The AWS SAM CLI is not installed on this machine, so `--profile IBD-DEV` credential resolution was never reached. The Implementer did not edit the script and did not drop the profile flag — both correct. The done-when clause *"SAM validate passes with `--profile IBD-DEV`"* is therefore **unverified, and is not claimed**. T-11 stays `[~]` for the same reason T-10 does: an unevidenced clause is an open clause (KZ-001).
+
+**What was verified instead, and what that does and does not prove.** All three templates were parsed with `js-yaml` under a schema extended with the CloudFormation short tags (`!Ref`, `!Sub`, `!GetAtt`, `!ImportValue`, …); all three parse clean, and `ListUsersInGroup` and `CONTACT_FALLBACK_RECIPIENT` are both present in the parsed tree of `20-backend`. This rules out the dominant failure mode of a hand edit — broken indentation or syntax — and satisfies the done-when's *"confirm the action is present in the rendered template, not merely that validate passed"*. It does **not** substitute for `sam validate`, which additionally checks SAM resource semantics. Recorded as the weaker evidence it is.
+
+#### Leader-initiated scope extension — the local environment did not work as documented
+
+`backend/.env.example` was rewritten from a single `DATABASE_URL` line into a grouped, code-derived checklist (owner-authorized: the owner has never run this project locally). Deriving it from `process.env.` across `backend/src` surfaced three defects in the documented local route, none of them introduced by this spec, all of them directly in the path of the owner's request:
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | **Port collision.** `main.ts` defaults to `PORT ?? 3000` — the same port as the Next.js dev server. Whichever process starts second fails to bind. `docs/infrastructure.md` §6 asserted "API on `:3001`, **per `backend/.env.example`**" while that file said nothing about a port — an assertion sourced to an artifact that did not bear it (KZ-008), in the constitutional baseline. | `PORT=3001` now set, uncommented, in `backend/.env.example`, which makes §6's claim true at its cited source. |
+| 2 | **No CORS anywhere in the backend.** Frontend `:3000` → API `:3001` is cross-origin; the browser blocks every call. The documented primary route could not actually exercise the app. | `app.enableCors({ origin: process.env.LOCAL_CORS_ORIGIN ?? 'http://localhost:3000', credentials: true })` in **`main.ts` only**. Verified first that `lambda.ts` bootstraps independently and never imports `main.ts`, so the deployed surface is unchanged: production is same-origin behind CloudFront and must stay that way. §6 records the asymmetry and why `lambda.ts` must not mirror it. |
+| 3 | **`NEXT_PUBLIC_API_BASE_URL` shipped empty**, and `client.ts` throws on first call when unset — so a fresh `cp` of the example produced a frontend that could not reach any API. | Defaulted to `http://localhost:3001`, with the build-time-inlining caveat noted. |
+
+`main.ts` is the only `backend/src/` file touched. It has no test coverage and no importer other than the `start` script.
+
+**Verification after the extension:** `npx eslint "{src,test}/**/*.ts" --quiet` clean · `npm run build` clean · `npm test -- --silent` **64 suites / 815 tests, all green**.
+
+**No Reviewer was dispatched.** Deliberate, and recorded rather than omitted. T-11 is configuration and documentation; the one code change is a four-line local-only bootstrap edit on a file no test or deployed path imports, verified by parse, lint, build and the full suite. The owner had explicitly challenged this spec's process cost as disproportionate to the feature, and an adversarial review round here would have been ceremony. The residual risk is accepted at Leader level and named here: **`sam validate` remains owed**, and it is the check most likely to catch anything a YAML parse cannot.
