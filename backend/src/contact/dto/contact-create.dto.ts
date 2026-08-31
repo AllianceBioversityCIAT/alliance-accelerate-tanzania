@@ -38,7 +38,7 @@ export class ContactCreateDto {
    * `CONTACT_CATEGORIES` is the authoritative, in-repo literal — never a
    * database table or remote config (see `contact-categories.ts`).
    */
-  @IsIn(CONTACT_CATEGORIES as readonly string[])
+  @IsIn(CONTACT_CATEGORIES)
   category!: ContactCategory;
 
   @IsString()

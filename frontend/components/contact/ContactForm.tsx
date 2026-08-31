@@ -551,7 +551,13 @@ export default function ContactForm() {
               className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             />
             <label htmlFor={fieldId('privacyAcknowledged')} className="text-sm text-fg">
-              I acknowledge the privacy notice.
+              {/* Braces, not bare text: JSX collapses the newline to nothing, so the
+                  asterisk renders flush against the full stop and `ml-0.5` supplies
+                  the gap. Written explicitly so a reader cannot mistake the absence
+                  of a space for an oversight. The `*` is aria-hidden, so the
+                  accessible name stays "I acknowledge the privacy notice." either
+                  way — pinned by the tests that find this control by its label. */}
+              {'I acknowledge the privacy notice.'}
               <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
             </label>
           </div>
