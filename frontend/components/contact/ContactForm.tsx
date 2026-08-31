@@ -78,6 +78,7 @@
  * added here.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ApiError } from '@/lib/api/client';
@@ -554,9 +555,9 @@ export default function ContactForm() {
           */}
           <p className="mt-2 text-xs text-muted">
             Read our{' '}
-            <a href="/privacy" className="font-medium text-primary hover:underline">
+            <Link href="/privacy" className="font-medium text-primary hover:underline">
               privacy notice
-            </a>{' '}
+            </Link>{' '}
             to see what a submission collects and how it is used.
           </p>
         </fieldset>

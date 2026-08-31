@@ -644,3 +644,23 @@ Frontend `npm run lint` — 3 warnings, all pre-existing `no-img-element` in adm
 No Playwright package is installed and none was added. The Playwright **browser cache** already existed on this machine, and Node 26 ships a native `WebSocket`, so a ~40-line client drove the cached `headless_shell` over the DevTools protocol directly from the scratchpad. Nothing was installed, and no repo file or verification command depends on it — `CLAUDE.md` requires every command to remain runnable by a teammate without these tools, and that holds. A teammate reproduces this the ordinary way: open the page and resize.
 
 **This should have been done in round 1.** Four review rounds reasoned about this bar from class inspection and produced a number that was wrong by 46px and a diagnosis that missed the 1216px ceiling entirely — the single fact that determined the fix. The measurement took minutes and was available the whole time.
+
+## Closing follow-ups · 2026-08-31 · owner confirmed the responsive fix
+
+The owner verified the header fix in a browser: responsive behaviour is correct. Two recorded follow-ups were closed in the same pass, both small and both ours:
+
+| Item | Resolution |
+|---|---|
+| `ContactForm.tsx`'s privacy link was a bare `<a href="/privacy">` | Converted to `next/link`. Under `output: 'export'` a bare anchor triggers a **full document reload** instead of a client-side transition — correct destination, wrong navigation. Recorded during T-9 and deferred; closed now. |
+| `CONTACT_FALLBACK_RECIPIENT` shipped commented-out in `backend/.env.example` | Uncommented with a placeholder. With no Cognito credentials the group lookup always fails and `resolve()` falls through to `getFallback()`, whose throw sits **outside** the `try` — so a fresh local checkout got a **500 on every contact submission**. Same class as the three local-environment defects closed in T-11: the documented path did not run. |
+
+Verification: frontend lint 3 pre-existing warnings, **93 suites / 1402 tests green**, build clean, both routes emitted.
+
+### Spec state at close
+
+T-1…T-10 `[x]`. **T-11 `[~]`** — every deliverable is in place and verified; the single owed clause is `sam validate --profile IBD-DEV`, which needs the SAM CLI and credentials neither of which exist on this machine. It is not blocked on work, only on access.
+
+### Standing owner decisions, carried forward — neither is a task
+
+- **OD-1 — SES sandbox.** The account can deliver only to addresses verified in SES. Adding someone to the Cognito `admin` group does **not** verify them, so a new admin silently becomes an unreachable recipient. Either request SES production access once, or verify each administrator address. The owner is raising this with the team.
+- **OD-2 — interim sender.** Mail still originates from `j.cadavid@cgiar.org`; the dedicated address is **ATP-58**. Whoever owns that mailbox receives replies that bypass `Reply-To`.
