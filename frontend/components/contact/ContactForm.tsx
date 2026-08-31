@@ -101,7 +101,7 @@ export const SUBMIT_FAILURE_MESSAGE =
   "We couldn't send your message just now. Please try again shortly.";
 
 export const SUBMIT_SUCCESS_MESSAGE =
-  "Thank you — your message has been sent. We'll be in touch soon.";
+  "Thank you, your message has been sent. We'll be in touch soon.";
 
 /**
  * `@MaxLength` bounds, transcribed field-for-field from
