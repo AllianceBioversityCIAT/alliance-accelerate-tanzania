@@ -272,6 +272,28 @@ function Field({ id, label, error, required, children }: FieldProps) {
   );
 }
 
+/**
+ * The two error-dependent ARIA bindings every field repeats.
+ *
+ * Centralised 2026-08-31. The `${id}-error` convention belongs to `Field`,
+ * which renders the error element with exactly that id — but each input used
+ * to rebuild the string itself, seven times. That is where a mismatch hides:
+ * an `aria-describedby` pointing at an id that does not exist announces
+ * nothing to a screen reader, fails silently, and **no test asserted it** (the
+ * suite pins `aria-invalid` once, on email, and `aria-describedby` nowhere).
+ * One definition is one thing to get right instead of seven.
+ *
+ * `undefined` rather than `false`/`""` on the happy path is deliberate: React
+ * omits the attribute entirely, and a present-but-empty `aria-describedby` is
+ * itself an axe violation.
+ */
+function errorBindings(id: string, error?: string) {
+  return {
+    'aria-invalid': error ? ('true' as const) : undefined,
+    'aria-describedby': error ? `${id}-error` : undefined,
+  };
+}
+
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
@@ -416,8 +438,7 @@ export default function ContactForm() {
                 autoComplete="name"
                 value={values.name}
                 onChange={(e) => setField('name', e.target.value)}
-                aria-invalid={errors.name ? 'true' : undefined}
-                aria-describedby={errors.name ? `${fieldId('name')}-error` : undefined}
+                {...errorBindings(fieldId('name'), errors.name)}
                 className={inputClasses(!!errors.name)}
               />
             </Field>
@@ -429,8 +450,7 @@ export default function ContactForm() {
                 autoComplete="email"
                 value={values.email}
                 onChange={(e) => setField('email', e.target.value)}
-                aria-invalid={errors.email ? 'true' : undefined}
-                aria-describedby={errors.email ? `${fieldId('email')}-error` : undefined}
+                {...errorBindings(fieldId('email'), errors.email)}
                 className={inputClasses(!!errors.email)}
               />
             </Field>
@@ -442,8 +462,7 @@ export default function ContactForm() {
                 autoComplete="organization"
                 value={values.organization}
                 onChange={(e) => setField('organization', e.target.value)}
-                aria-invalid={errors.organization ? 'true' : undefined}
-                aria-describedby={errors.organization ? `${fieldId('organization')}-error` : undefined}
+                {...errorBindings(fieldId('organization'), errors.organization)}
                 className={inputClasses(!!errors.organization)}
               />
             </Field>
@@ -453,8 +472,7 @@ export default function ContactForm() {
                 id={fieldId('category')}
                 value={values.category}
                 onChange={(e) => setField('category', e.target.value as FormValues['category'])}
-                aria-invalid={errors.category ? 'true' : undefined}
-                aria-describedby={errors.category ? `${fieldId('category')}-error` : undefined}
+                {...errorBindings(fieldId('category'), errors.category)}
                 className={inputClasses(!!errors.category)}
               >
                 <option value="">Select…</option>
@@ -479,8 +497,7 @@ export default function ContactForm() {
                 type="text"
                 value={values.subject}
                 onChange={(e) => setField('subject', e.target.value)}
-                aria-invalid={errors.subject ? 'true' : undefined}
-                aria-describedby={errors.subject ? `${fieldId('subject')}-error` : undefined}
+                {...errorBindings(fieldId('subject'), errors.subject)}
                 className={inputClasses(!!errors.subject)}
               />
             </Field>
@@ -491,8 +508,7 @@ export default function ContactForm() {
                 rows={6}
                 value={values.message}
                 onChange={(e) => setField('message', e.target.value)}
-                aria-invalid={errors.message ? 'true' : undefined}
-                aria-describedby={errors.message ? `${fieldId('message')}-error` : undefined}
+                {...errorBindings(fieldId('message'), errors.message)}
                 className={inputClasses(!!errors.message)}
               />
             </Field>
@@ -531,8 +547,7 @@ export default function ContactForm() {
               type="checkbox"
               checked={values.privacyAcknowledged}
               onChange={(e) => setField('privacyAcknowledged', e.target.checked)}
-              aria-invalid={errors.privacyAcknowledged ? 'true' : undefined}
-              aria-describedby={errors.privacyAcknowledged ? `${fieldId('privacyAcknowledged')}-error` : undefined}
+              {...errorBindings(fieldId('privacyAcknowledged'), errors.privacyAcknowledged)}
               className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             />
             <label htmlFor={fieldId('privacyAcknowledged')} className="text-sm text-fg">

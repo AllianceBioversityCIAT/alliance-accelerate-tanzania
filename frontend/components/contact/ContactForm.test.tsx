@@ -270,6 +270,59 @@ describe('ContactForm', () => {
     });
   });
 
+  describe('error bindings — every invalid field points at its own error text', () => {
+    // Added 2026-08-31 alongside extracting `errorBindings`. Before this, the
+    // wiring was uncovered: pointing `aria-describedby` at an id that does not
+    // exist left all 15 tests green, jest-axe included. A dangling reference
+    // announces NOTHING to a screen reader while looking correct in the DOM.
+    //
+    // One test now covers all seven fields, which is the point of collapsing
+    // seven copies of the binding into one function: previously this would
+    // have needed seven assertions, and the field nobody remembered to assert
+    // is exactly the one that would drift.
+    it.each([
+      ['name', /^name/i],
+      ['email', /^email/i],
+      ['organization', /^organization/i],
+      ['category', /^category/i],
+      ['subject', /^subject/i],
+      ['message', /^message/i],
+    ])('%s: aria-describedby resolves to the rendered error element', async (field, label) => {
+      mockSubmitContact.mockRejectedValue(
+        new ApiError(400, 'HTTP 400 Bad Request', [
+          { field, message: `${field} is not acceptable` },
+        ]),
+      );
+      await fillValidForm();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: /send message/i }));
+      await screen.findByText(`${field} is not acceptable`);
+
+      const control = screen.getByLabelText(label);
+      expect(control).toHaveAttribute('aria-invalid', 'true');
+
+      const describedBy = control.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+
+      // The reference must RESOLVE — not merely be present — and the element
+      // it resolves to must carry this field's message.
+      const target = document.getElementById(describedBy as string);
+      expect(target).not.toBeNull();
+      expect(target).toHaveTextContent(`${field} is not acceptable`);
+    });
+
+    it('sets neither ARIA attribute while a field is valid', async () => {
+      render(<ContactForm />);
+
+      const nameInput = screen.getByLabelText(/^name/i);
+      expect(nameInput).not.toHaveAttribute('aria-invalid');
+      // Present-but-empty aria-describedby is itself an axe violation, so the
+      // attribute must be absent, not blank.
+      expect(nameInput).not.toHaveAttribute('aria-describedby');
+    });
+  });
+
   describe('accessibility (NFR-3)', () => {
     it('has no jest-axe violations on initial render', async () => {
       const { container } = render(<ContactForm />);
