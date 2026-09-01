@@ -11,14 +11,14 @@
 | **Approval Mode** | **gated** |
 | Status | Draft — awaiting `/akili-specify` |
 | Parent epic | [`epic/hybrid-actor-registration`](../../epic/hybrid-actor-registration/proposal.md) — chunk **3b of 5** |
-| **Depends on** | `actors/public-self-registration` (chunk **3a**) — hard prerequisite |
+| **Depends on** | `actors/public-self-registration` (chunk **3a**) — hard prerequisite. **Satisfied:** executed and archived 2026-08-06 to `docs/specs/archive/2026-08-06-actors--public-self-registration/` |
 | **Parallel-safe** | **no** — 3a creates the `Registration` model this spec adjudicates |
 | Suggested depth | **Full** — irreversible publication of another party's PII, one transactional write path, five admin endpoints |
-| Origin | **Split from chunk 3** on 2026-08-05, user-approved. See `../../actors/public-self-registration/judgment.md` §5 |
+| Origin | **Split from chunk 3** on 2026-08-05, user-approved. See `../../archive/2026-08-06-actors--public-self-registration/judgment.md` §5 |
 
 ## 2. Why this spec exists separately
 
-Chunk 3 was specified as one spec covering both the applicant flow and the admin review queue. That spec was audited by a blind dual review (`../../actors/public-self-registration/judgment.md`): round 1 produced 8 both-judge SEVERE findings, the correction round fixed 22 and **injected 6 more**, and the re-derived budget came to **31 tasks / ~9,300 LOC** — roughly 7× chunk 1, which finally agreed with the epic's own 6× RICE sizing that the original estimate had under-read by half.
+Chunk 3 was specified as one spec covering both the applicant flow and the admin review queue. That spec was audited by a blind dual review (`../../archive/2026-08-06-actors--public-self-registration/judgment.md`): round 1 produced 8 both-judge SEVERE findings, the correction round fixed 22 and **injected 6 more**, and the re-derived budget came to **31 tasks / ~9,300 LOC** — roughly 7× chunk 1, which finally agreed with the epic's own 6× RICE sizing that the original estimate had under-read by half.
 
 The split was approved for two reasons, and the second matters more than size:
 
@@ -74,7 +74,7 @@ There is also no way to turn an accepted submission into an `Actor`: `traderId` 
 
 ## 7. Carried-Forward Design Material
 
-The split spec's design work is **not discarded**. `/akili-specify` for this path should start from `../../actors/public-self-registration/design.md` revision 2 (§2.4–2.5, §3.2, §4.6–4.8, §5.5–5.6, DD-6, DD-10) and its `requirements.md` FR-9…FR-13, rather than re-deriving. Both were audited; the audit outcomes below are the important inheritance.
+The split spec's design work is **not discarded**. `/akili-specify` for this path should start from `../../archive/2026-08-06-actors--public-self-registration/design.md` revision 2 (§2.4–2.5, §3.2, §4.6–4.8, §5.5–5.6, DD-6, DD-10) and its `requirements.md` FR-9…FR-13, rather than re-deriving. Both were audited; the audit outcomes below are the important inheritance.
 
 ### 7.1 Verified codebase facts (re-verified during Judgment Day, cite these)
 
@@ -149,7 +149,7 @@ The split spec's design work is **not discarded**. `/akili-specify` for this pat
 
 ## 11. Visual Reference
 
-- **Source:** the client mockup strip at `../../actors/public-self-registration/mockup/self-registration-flow.png` — the admin panels (queue with status chips, registration detail, approve-and-publish modal with typed confirmation, reject modal with reason dropdown, result banners).
+- **Source:** the client mockup strip at `../../archive/2026-08-06-actors--public-self-registration/mockup/self-registration-flow.png` — the admin panels (queue with status chips, registration detail, approve-and-publish modal with typed confirmation, reject modal with reason dropdown, result banners).
 - **Flow-authoritative, copy-provisional** (the client stated it is approximate).
 - **Panels deliberately not implemented**, decided during chunk 3's specify and carried here: the bulk action bar, *"Edit before approving"*, the GPS/district *"Falls inside Hai district"* check, the internal-notes card, *"Export queue (CSV)"*, and the `Awaiting applicant` segment (chunk 4).
 

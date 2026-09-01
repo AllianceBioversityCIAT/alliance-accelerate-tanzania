@@ -80,7 +80,7 @@ Scored with RICE (`product-manager-toolkit`). *Reach* = records or actors touche
 
 **Build order: 1 → (2 ∥ 3a) → 3b → 4.**
 
-> **Chunk 3 was split into 3a and 3b on 2026-08-05 (user-approved).** Its `/akili-specify` run produced one spec whose re-derived budget came to **31 tasks / ~9,300 LOC** — roughly 7× chunk 1, which agrees with this table's own `E = 3.0` sizing and revealed that the first estimate (~4,700 LOC) had under-read the chunk by half. Full record: `docs/specs/actors/public-self-registration/judgment.md` §5.
+> **Chunk 3 was split into 3a and 3b on 2026-08-05 (user-approved).** Its `/akili-specify` run produced one spec whose re-derived budget came to **31 tasks / ~9,300 LOC** — roughly 7× chunk 1, which agrees with this table's own `E = 3.0` sizing and revealed that the first estimate (~4,700 LOC) had under-read the chunk by half. Full record: `docs/specs/archive/2026-08-06-actors--public-self-registration/judgment.md` §5.
 >
 > The split boundary is **risk-based, not arithmetic**: 3a owns the system's first unauthenticated write path and unapproved PII at rest, gated by the `pii-boundary` release gate; 3b owns the irreversible publication of another party's personal data, gated by transactional-integrity and projection-correctness. One spec had to serve two unrelated failure modes with one gate table.
 >
@@ -202,7 +202,7 @@ Chunks 2 and 3 may then be specified in parallel; chunk 4 only after chunk 3 is 
 ## 14. Visual Reference
 
 - **Source:** Client-supplied mockup strip (approximate, explicitly not final design — the client noted the copy is provisional).
-- **Location:** `docs/specs/epic/hybrid-actor-registration/mockup/self-registration-flow.png` (also copied into `docs/specs/actors/public-self-registration/mockup/`).
+- **Location:** `docs/specs/epic/hybrid-actor-registration/mockup/self-registration-flow.png` (also copied into `docs/specs/archive/2026-08-06-actors--public-self-registration/mockup/`).
 - **Covers:** landing CTA → registration form (organisation · location · crops & trade · contact · consent) → validation and consent-required states → submission received (`REG-2026-0184`) with withdraw link → admin Registrations queue (6 statuses) → registration detail → approve-and-publish / request-more-information / reject modals → result banners → applicant return-via-emailed-link revision screen.
 - **Not covered by any visual:** chunks 1, 2, and 4. Chunk 1's admin-table additions and chunk 2's runbook are non-visual or reuse existing screens.
 - **No Figma file was provided.** If one is produced later, attach it to chunk 3 before `/akili-specify`.
