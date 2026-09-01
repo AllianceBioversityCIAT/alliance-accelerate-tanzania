@@ -14,12 +14,15 @@ import { AdminRegistrationsService } from './admin-registrations.service';
  */
 describe('AdminRegistrationsController', () => {
   let controller: AdminRegistrationsController;
-  let service: { list: jest.Mock; getById: jest.Mock };
+  let service: { list: jest.Mock; getById: jest.Mock; dismissDuplicate: jest.Mock };
 
   beforeEach(() => {
     service = {
       list: jest.fn().mockResolvedValue({ data: [], page: 1, pageSize: 20, total: 0 }),
       getById: jest.fn().mockResolvedValue({ id: 'reg-1' }),
+      dismissDuplicate: jest.fn().mockResolvedValue({
+        registration: { id: 'reg-1', reference: 'REG-2026-0001', status: 'PENDING_REVIEW' },
+      }),
     };
     controller = new AdminRegistrationsController(
       service as unknown as AdminRegistrationsService,
@@ -61,4 +64,8 @@ describe('AdminRegistrationsController', () => {
       );
     });
   });
+
+  // `dismissDuplicate` (T-7) controller unit tests live in
+  // `admin-registrations-dismiss-duplicate.spec.ts`, matching the task's
+  // Verify command filename pattern (`npm test -- --silent dismiss-duplicate`).
 });

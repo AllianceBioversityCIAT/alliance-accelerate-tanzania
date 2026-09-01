@@ -6,6 +6,7 @@ import { EmailVerificationService } from './email-verification.service';
 import { AdminRegistrationsController } from './admin-registrations.controller';
 import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { LoggingModule } from '../logging/logging.module';
 import { RequestContextMiddleware } from '../logging/request-context.middleware';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -88,6 +89,16 @@ import {
  * (below, `providers`) so `AdminRegistrationsService.list` can inject it
  * (`design.md` §6.5, DD-20). No controller of its own — it is consumed
  * only from within this module, never routed directly.
+ *
+ * `admin/registration-review-queue` T-7 — adds `ActingAdminResolver`
+ * (below, `providers`) so `AdminRegistrationsService.dismissDuplicate` can
+ * resolve the dismissing reviewer's email server-side (`design.md` §8).
+ * `ActorsModule` already provides this same class but does not export it, so
+ * it is provided again here rather than importing `ActorsModule` wholesale
+ * — `ActingAdminResolver` has no constructor dependencies of its own (a
+ * bare per-container `Map` cache plus free functions from
+ * `../users/cognito-admin.client`), so a second instance costs at most one
+ * extra Cognito `ListUsers` call per container, never a correctness issue.
  */
 @Module({
   imports: [
@@ -105,6 +116,7 @@ import {
     RegistrationsService,
     AdminRegistrationsService,
     DuplicateDetectionService,
+    ActingAdminResolver,
   ],
 })
 export class RegistrationsModule implements NestModule {

@@ -1417,6 +1417,43 @@ describe(
               .get('/api/v1/admin/registrations/admin-registrations-detail-route-scan-probe-id')
               .set('Authorization', 'Bearer staff-token'),
         },
+        // `admin/registration-review-queue` T-7 — the THIRD `access: 'admin'`
+        // entry, and the FIRST WRITE (`POST`) route in this map. Its key,
+        // `POST /api/v1/admin/registrations/:id/dismiss-duplicate`, is the
+        // raw decorator path (`@Post(':id/dismiss-duplicate')`) — never a
+        // sender's concrete URL — so it is checked by hand, per the
+        // admin-entry contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/dismiss-duplicate`,
+        // the SAME controller as the two entries above, one literal segment
+        // deeper than the `:id` detail route — re-read against T-8/T-9's
+        // sibling write routes (`/:id/approve`, `/:id/reject`) once they
+        // land, since all three share an identical 401/403 shape and are
+        // mutually substitutable by copy-paste (the exact trap this file's
+        // contract JSDoc names). The probe id and body are irrelevant to
+        // this test: `sendAnonymous`/`sendStaff` are both rejected by the
+        // guard stack before the controller method — let alone
+        // `AdminRegistrationsService.dismissDuplicate`'s Prisma lookups —
+        // ever run, so no Prisma mock support for either probe value is
+        // needed. A body is still sent (matching
+        // `RegistrationDismissDuplicateDto`'s shape) so a future guard-order
+        // regression that let a request reach the validation pipe would not
+        // ALSO surface as an unrelated `400` masking the real assertion.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/dismiss-duplicate')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-dismiss-duplicate-route-scan-probe-id/dismiss-duplicate',
+              )
+              .send({ candidateActorId: 'route-scan-probe-candidate-actor-id' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-dismiss-duplicate-route-scan-probe-id/dismiss-duplicate',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ candidateActorId: 'route-scan-probe-candidate-actor-id' }),
+        },
       };
 
       it(
@@ -1440,9 +1477,11 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per public route (4) + 2 requests per admin route (anonymous + Staff; 2 admin routes = 4), ' +
-          "8 requests total against this describe block's own throttle bucket (admin routes carry no " +
-          'throttle guard at all — `design.md` §6.1 — so this count is informational, not a limit check)',
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 3 admin routes = 6), ' +
+          '10 requests total, of which only the 4 public requests hit this describe block\'s own ' +
+          'throttle bucket — the admin routes carry no throttle guard at all (`design.md` §6.1), so ' +
+          'that count is informational, not a limit check (A-38: corrected from an earlier revision ' +
+          'that mis-stated ALL requests as hitting the bucket)',
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);

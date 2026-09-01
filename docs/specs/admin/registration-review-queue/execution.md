@@ -841,3 +841,143 @@ One real signal did appear in the clean run and is recorded rather than dismisse
 - **Issue 3 promoted from advisory to in-scope rework** (reasoned above).
 - **A-37 forward-pointed to T-7 rather than fixed here** — the constraint belongs on the writer.
 - **The `consentingOrganisation` rename pulled forward into this task** rather than deferred: both Reviewers confirmed the referent (the organisation, not the signatory — `contactPerson` would be *actively wrong* and `submitterEmail` is already on the detail root), but the old name invited "the person who clicked". T-11's typed client and T-13's card are both about to consume it; renaming later means churn across three tasks.
+
+### T-7 — `POST /admin/registrations/:id/dismiss-duplicate`
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **medium** → **high** (rework bump) · Skills: `nestjs-expert` |
+| Reviewer | `akili-reviewer` (opus, T3) — single Reviewer, lens-checklist. **Reviewer concurred with the depth call**, noting the one thing it would not have accepted lightly was the write→read round trip — which is exactly where the defect was. |
+| Review rounds consumed | **2** (running total: **16** of 35) |
+| Requirements covered | FR-11 scenario 2 · `design.md` §4.3, §5 (decision 4), §8 |
+
+#### Files changed
+New: `dto/registration-dismiss-duplicate.dto.ts`, `admin-registrations-dismiss-duplicate.spec.ts`.
+Modified: `admin-registrations.service.ts`, `.controller.ts`, both specs, `registrations.module.ts`, `pii-boundary.spec.ts`, and — at attempt 2 — `serializers/activity-trail.serializer.ts`.
+
+---
+
+#### THE HEADLINE FINDING — a defect living between two individually-correct tasks (KZ-007)
+
+**T-6 was correct. T-7 was correct. The bug was between them.**
+
+T-6 had been FAILed for coalescing a null reviewer identity to `''`, and fixed it properly: `ADJUDICATED` now carries `reviewedBySub`/`reviewedByEmail: string | null` with a JSDoc explaining that the resolver's null is *"a real, reachable production state… passed through verbatim, never coalesced"*.
+
+T-7 then correctly persisted `dismissedByEmail: null` on resolver failure, citing that same lesson.
+
+But T-6's **dismissal** guard in the same file still demanded a string:
+
+```ts
+typeof entry?.dismissedByEmail === 'string' &&   // ← null fails here
+```
+
+while `extractDismissedActorIds` — the *suppression* filter — needs only `actorId`. The two extractors diverge, so on `GET /admin/registrations/:id`:
+
+- the candidate **is** suppressed from `duplicateCandidates`;
+- the `DUPLICATE_DISMISSED` event **is silently dropped** from the activity trail.
+
+**A reviewer's judgement disappears from the audit trail, and the warning it cleared disappears too** — "silence, not a wrong value", the failure mode this spec names at DC-29. It violates FR-10 scenario 3 (*"it lists a 'cleared as not a duplicate' event when that judgement **is** stored"*) and FR-11 scenario 2's final clause (*"…so the activity trail's entry is derived from a real stored fact"*).
+
+**No test in either task could have seen it.** Each task's suite exercises only its own side of the seam. This is `docs/specs/kaizen-log.md` **KZ-007** verbatim — *"Constraint sets are conjunctive. Satisfying each member individually can still break the set; review must reason about interaction, since no test covers a defect that lives between two correct constraints"* — recurring on the exact field the previous task had been FAILed over.
+
+**Leader scope ruling:** fixed in **T-7**, not by reopening T-6. `activity-trail.serializer.ts` is T-6's file, but the defect is T-7's — T-7 is the change that makes the state reachable, and nothing downstream would have found it (T-8/T-9 don't touch the trail, T-10 is the PII gate, T-6 was already `[x]`).
+
+##### The gate — pre-fix run, verbatim
+
+```
+FAIL src/registrations/admin-registrations-dismiss-duplicate.spec.ts
+  ● ... ROUND-TRIP — a resolver-null dismissal survives write→read ...
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+    > 296 |       expect(dismissedEvents).toHaveLength(1);
+Tests: 1 failed, 11 skipped, 12 total
+```
+
+`Received length: 0` — the event did not merely lose its email, it **vanished**. Diagnosis and evidence match exactly.
+
+##### The fix and why the guard is exactly right
+
+```ts
+(typeof entry?.dismissedByEmail === 'string' || entry?.dismissedByEmail === null) &&
+```
+
+The Reviewer verified: `undefined === null` is **`false`** (only loose `==` coerces), so a **missing key is still rejected** and T-6's skip-malformed-rather-than-throw contract survives intact; `42`, `{}`, `[]`, `true` are all still rejected. T-6's existing malformed-entry test omits **`dismissedAt`**, not the email, so it is unaffected and still proves what it did.
+
+**The widening is complete** across every consumer — the serializer's push, `admin-registration.serializer.ts` (consumes `ActivityTrailEvent[]` opaquely, no field access), the service's producer type (already `string | null`), a same-named but module-private type that reads only `actorId`, all specs, and **zero frontend consumers** (T-13 confirmed unwritten). `backend/tsconfig.json` sets `"strictNullChecks": true`, so the green ts-jest suite is a genuine type-check of that claim.
+
+**The round-trip test is load-bearing, not incidental.** It never hand-constructs the array it asserts on: it captures `prisma.registration.update.mock.calls[0][0].data.duplicateDismissals` — the array the **real** `dismissDuplicate` built — and feeds that exact value back as the `findUnique` row for a real `getById()`, which runs `buildActivityTrail`. Only the Prisma boundary is faked. That is a genuine write→read seam spanning both tasks, which is precisely why neither task's own suite could see it.
+
+---
+
+#### THE OTHER FINDING — the spec's own falsifying input is imprecise, and the Implementer proved it
+
+`tasks.md` T-7 asserts the overwrite mutation makes **the three-candidate test** redden. It does not, and the Reviewer confirmed the reasoning is *provable rather than plausible*: with `duplicateDismissals: null → []`,
+
+- append → `[...[], newEntry]` → `[newEntry]`
+- overwrite → `[newEntry]`
+
+**are the same value**, so no assertion over the write payload or anything derived from it can distinguish them. The three-candidate fixture starts empty, so it structurally cannot redden.
+
+The task conflates **two distinct mutations** under one name:
+
+| Mutation | Breaks | Caught by |
+|---|---|---|
+| Write only the requested candidate but **discard prior history** | dismissals from earlier sessions | the *pre-existing dismissal* test — needs prior history; candidate count irrelevant |
+| Write the **whole detected set** rather than the one requested | the other candidates in the same session | the *three-candidate* test — needs ≥3 candidates; prior history irrelevant |
+
+DC-31's own text in `requirements.md` describes the **second**; the task's `Falsifying input` line attaches the **first** to that test. Not jointly satisfiable by one test as specified. The Implementer built both and **disclosed the discrepancy rather than reporting a green it could not have earned** — the third time this spec's stated falsification has proven imprecise (T-1's was vacuous, T-4's clause was misassigned) and the second time an Implementer caught it pre-review.
+
+**Recorded honestly (Reviewer's request):** the three-candidate test's discrimination is **argued from construction, not demonstrated by a mutation run** — the row-level alternative it guards is a *design shape*, not a one-line mutation of this write path, which holds no detected set to write. The pre-existing-history test *was* demonstrated, verbatim (`Expected length: 2 / Received length: 1`).
+
+---
+
+#### Other checks
+
+**Identity (§8) is structurally server-sourced, not merely tested.** The service never receives the request body — the controller passes `dto.candidateActorId` and `user.sub` as two scalars, and the DTO declares one field. Body-sourced identity is impossible by construction. The null-resolver test asserts `toBeNull()` **and** `not.toBe('')`.
+
+**`dismissedAt: new Date().toISOString()`** (carried-forward A-37), asserted by regex `^\d{4}-…Z$` and bracketed between before/after timestamps. The trail sorts with `localeCompare`, so an offset-bearing instant would have mis-ordered it.
+
+**`FIXTURE_MAP`** — third admin route, second `:id`-scoped, first **write**. Both closures re-read against the key by hand; Reviewer independently confirmed they target `/api/v1/admin/registrations/<segment>/dismiss-duplicate` and not a sibling. `toBe(401)`/`toBe(403)` intact. Request count corrected to 10, with the A-38 wording fix (**only the 4 public requests hit a throttle bucket** — the admin routes carry no throttle guard).
+
+**Body reachability:** the global pipe is `whitelist: true` without `forbidNonWhitelisted`, so unknown fields are **stripped, not rejected** — project-wide behaviour, consistent with §5 listing `400` only for the DTO's own constraints. Nothing but `candidateActorId` can reach the persisted entry.
+
+#### Three disclosures, adjudicated (all upheld)
+
+| Disclosure | Ruling |
+|---|---|
+| **Candidate validated against the `Actor` table, not against current detection** | **Upheld.** Validating against current detection would make the endpoint time-dependent (valid at T, rejected at T+1 as the match set shifts), would couple a write path to a service §6.5 defines as read-time and *"never persisted as a verdict"*, and would let detection **decide** whether a write is permitted — the one thing FR-11's title forbids. Dismissals are filtered against the current candidate set on read, so an entry naming a non-candidate is inert. |
+| **Minimal `{ id, reference, status }` response** | **Upheld.** §5 names only `{ registration }` and pins no fields. Avoiding the detection call on the write path is consistent with the above. **Forward pointer → T-11**: the typed client must not expect `AdminRegistrationDetail` back. |
+| **Non-atomic read-then-write** | **Advisory, not a violation.** FR-11 scenario 2 requires persistence across reloads, which this satisfies. DD-17's compare-and-set is scoped to *approval*, where a race publishes a second public record. Here a lost update **fails open** — the candidate reappears as a warning to re-clear, never a real duplicate silently suppressed. The fix would need `$executeRaw`/`JSON_ARRAY_APPEND`, disproportionate for this failure mode. |
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent dismiss-duplicate` | **12/12** |
+| `npm test -- --silent activity-trail` | **12/12** (T-6's suite unchanged and green) |
+| `npm test -- --silent admin-registrations` | **38/38** (3 suites) |
+| `npm test -- --silent pii-boundary` | **25/25** |
+| `npm test -- --silent` (full backend, **run twice**) | **70 suites / 915 tests green, both runs** |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-42** | **Test-suite flakiness — attribution recorded honestly rather than assumed.** Every full-suite run, **before and after this spec's changes**, emits `A worker process has failed to exit gracefully … tests leaking due to improper teardown`. Two workers reported intermittent single-test failures (`registrations-throttle.e2e`, `pii-boundary`, `admin-actors-crud.e2e`) that **do not reproduce on a quiet tree** — the Leader ran the full suite twice, green both times. Reviewer's analysis: the new dismiss suite uses plain `new` + `jest.fn()` with no Nest app, no supertest, no timers — **structurally incapable of leaking a handle**. `pii-boundary.spec.ts` boots four Nest apps, each with a matching `close()` — lifecycle symmetric, no missing teardown. All three flaky suites are app-booting, throttler-bearing, and **wall-clock sensitive**; `registrations-throttle.e2e.spec.ts` predates this spec entirely. **Verdict: pre-existing warning; plausible marginal contribution to per-worker pressure, unproven.** Cheap falsifier for later: `npm test -- --detectOpenHandles --runInBand` to name the handle. | Recorded. **Relevant to T-8**, which adds `admin-registrations.e2e.spec.ts` — another app-booting suite. |
+| A-43 | Repeat dismissal of the same candidate **appends a second entry**. Filtering is unaffected (`matchOne` builds a `Set`), but the trail then shows two "cleared as not a duplicate" events for one candidate, and the JSON column grows unbounded on replayed requests. §4.3 pins no idempotency, and its *"membership is significant"* reads as set semantics. | Recorded. A no-op-if-present branch returning the same `200` would close it. |
+| A-44 | Three JSDoc inaccuracies on the widened field (**KZ-008**): "already models **above**" (it is declared *below*); "this **type** used to be non-nullable, which made the guard reject a real row" — **a type cannot cause a runtime rejection**, TypeScript types are erased; the *guard* did the rejecting and the narrow type was its silent co-conspirator; and "only a **MISSING** key is rejected" — `42`, `{}`, `[]`, `true` are rejected too. | Recorded. The middle one matters most: it misnames the defect in the one comment whose job is to explain it. |
+| A-45 | **The rejection side of the new disjunct is untested.** No test asserts a *missing* `dismissedByEmail` is still skipped (T-6's malformed fixture omits `dismissedAt`). Correct today, but a refactor to loose `== null` would accept a missing key and emit an event whose email is `undefined` — dropping the key from the JSON — **with nothing reddening**. One fixture line closes it. | Recorded. Coverage hardening for a future edit, not a defect in the shipped code. |
+| A-46 | `''` is never *produced* on this path, but is not structurally impossible: `acting-admin.resolver.ts` returns `email ?? null`, so an empty-string Cognito `email` attribute would pass through as `''`. Pre-existing and shared identically with the endorsed `ADJUDICATED` path. | Recorded. |
+| A-47 | `tasks.md` T-7's `Falsifying input` names a mutation its own named test structurally cannot satisfy. **The same wording pattern is about to be copied into T-8/T-9.** | **FORWARD POINTER → T-16** (spec amendment). Correct it to name two mutations, or specify the tighter single fixture: three candidates with **one already dismissed**, dismiss a second, assert only the third remains open — that single test reddens under *both* mutations. |
+
+#### Decisions made
+
+- Single Reviewer for the first write route (Reviewer concurred: no publication, no PII egress, a suppression flag on an admin-only warning).
+- **The cross-task defect fixed in T-7, not by reopening T-6** — T-7 makes the state reachable, and no downstream task would have found it.
+- The Implementer's contradiction of the task's falsifying input **accepted and endorsed**; two tests for two failure modes, rather than forcing one test to misrepresent both.

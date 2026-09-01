@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { RegistrationStatus } from '@prisma/client';
 import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
+import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 
 /**
  * T-4 — `AdminRegistrationsService` unit tests with a MOCKED PrismaService
@@ -26,9 +27,11 @@ interface MockPrisma {
     findMany: jest.Mock;
     count: jest.Mock;
     findUnique: jest.Mock;
+    update: jest.Mock;
   };
   actor: {
     findMany: jest.Mock;
+    findUnique: jest.Mock;
   };
 }
 
@@ -66,6 +69,7 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
 describe('AdminRegistrationsService (mocked Prisma)', () => {
   let service: AdminRegistrationsService;
   let prisma: MockPrisma;
+  let actingAdminResolver: { resolve: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -73,13 +77,20 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
         findUnique: jest.fn(),
+        update: jest.fn(),
       },
       actor: {
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
       },
     };
+    actingAdminResolver = { resolve: jest.fn() };
     const duplicateDetection = new DuplicateDetectionService(prisma as unknown as never);
-    service = new AdminRegistrationsService(prisma as unknown as never, duplicateDetection);
+    service = new AdminRegistrationsService(
+      prisma as unknown as never,
+      duplicateDetection,
+      actingAdminResolver as unknown as ActingAdminResolver,
+    );
   });
 
   describe('list', () => {
@@ -448,3 +459,8 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
     });
   });
 });
+
+// `dismissDuplicate` (T-7) unit tests live in their own file,
+// `admin-registrations-dismiss-duplicate.spec.ts` — its filename is what the
+// task's Verify command (`npm test -- --silent dismiss-duplicate`) matches
+// against; the class stays defined here.

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RegistrationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
 import {
   DuplicateDetectionInput,
@@ -34,9 +35,24 @@ import {
  * against the SAME `DuplicateDetectionService.detectForBatch` call `list`
  * uses — one row, one-element batch, still exactly one `actor.findMany`.
  *
+ * T-7 — `dismissDuplicate` (FR-11 scenario 2, `design.md` §5's
+ * `dismiss-duplicate` contract row, §4.3). Appends one entry to
+ * `duplicateDismissals` — **appends, never overwrites**, so dismissing one
+ * candidate cannot suppress the others (DC-31; FR-11's `BUT it must NOT be
+ * row-level`). The candidate is validated against the `Actor` table (a real,
+ * existing actor — `404` if not), never against `DuplicateDetectionService`:
+ * detection stays read-only and is never consulted from this write path
+ * (`design.md` §5's honesty note carried into this task's brief). The
+ * dismisser's identity is resolved server-side — `sub` from the validated
+ * JWT (the controller's `@CurrentUser()`), email from
+ * {@link ActingAdminResolver} — never from the request body, and the
+ * resolver's `null`-on-failure result is persisted as `null`, never
+ * coalesced to `''` (the exact defect T-6 was reworked for — see that
+ * task's `execution.md` FAIL Issue 2).
+ *
  * Design refs: `design.md` §5 (route contract), §6.1 (module wiring), §6.5,
  * §6.6, §7.3. Requirements: FR-9 scenarios 1, 2, 3, 4; FR-10 scenarios 1, 2,
- * 3; FR-11 scenario 1; NFR-8, NFR-9.
+ * 3; FR-11 scenarios 1, 2; NFR-8, NFR-9.
  */
 
 /** One row of the admin queue list — FR-9 scenario 1's column set plus T-5's `duplicateCandidateCount`, minus `action` (a frontend affordance, not a data field). */
@@ -152,11 +168,31 @@ function toDuplicateDetectionInput(row: QueueSourceRow): DuplicateDetectionInput
   };
 }
 
+/** One entry this task appends to `Registration.duplicateDismissals` (`design.md` §4.3). */
+interface DuplicateDismissalEntryWrite {
+  actorId: string;
+  dismissedBySub: string;
+  /** `null` when {@link ActingAdminResolver} could not resolve the reviewer's email — never `''`. */
+  dismissedByEmail: string | null;
+  /** `new Date().toISOString()` — always `Z`-suffixed, never an offset-bearing instant (carried from T-6's execution.md A-37: the activity trail reads this raw and sorts it with `localeCompare`). */
+  dismissedAt: string;
+}
+
+/** `POST /admin/registrations/:id/dismiss-duplicate`'s response envelope (`design.md` §5: `{ registration }`). */
+export interface DismissDuplicateResult {
+  registration: {
+    id: string;
+    reference: string;
+    status: RegistrationStatus;
+  };
+}
+
 @Injectable()
 export class AdminRegistrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly duplicateDetection: DuplicateDetectionService,
+    private readonly actingAdminResolver: ActingAdminResolver,
   ) {}
 
   /**
@@ -311,5 +347,100 @@ export class AdminRegistrationsService {
     // request `id` would then silently miss and fall back to `[]` on the
     // one screen whose job is to warn before an irreversible publication.
     return toAdminRegistrationDetail(sourceRow, candidatesMap.get(sourceRow.id) ?? []);
+  }
+
+  /**
+   * `POST /admin/registrations/:id/dismiss-duplicate` — record that
+   * `candidateActorId` is not a duplicate for this registration (FR-11
+   * scenario 2).
+   *
+   * **Appends, never overwrites** (DC-31): the existing
+   * `duplicateDismissals` array (or `[]` if the column is `null`) is read,
+   * the new entry is pushed onto it, and the WHOLE array is written back —
+   * so dismissing one candidate can never suppress a previously-dismissed
+   * one, which is what a row-level write (e.g. `data: {
+   * duplicateDismissals: [newEntry] }`) would do.
+   *
+   * **The candidate is validated against the `Actor` table, not against
+   * `DuplicateDetectionService`.** `design.md` §5's contract row makes
+   * `404` cover "unknown registration OR unknown candidate" — this method
+   * satisfies the second limb by confirming `candidateActorId` names a real,
+   * existing `Actor` row. It deliberately does NOT call
+   * `this.duplicateDetection` to re-derive the current candidate set: this
+   * task's brief states plainly that detection "must remain read-only and
+   * must not be consulted from any write path" (FR-11 — detection warns, it
+   * never decides), so this write path never asks detection anything.
+   *
+   * **The dismisser's identity is resolved server-side, never accepted from
+   * the request.** `actingSub` is the controller's `@CurrentUser().sub` —
+   * the validated JWT subject, always a real string. The email is resolved
+   * HERE via {@link ActingAdminResolver.resolve}, which returns `null` on
+   * any failure (unknown user, missing email attribute, Cognito error);
+   * that `null` is persisted as `null`, never coalesced to `''` — coalescing
+   * it was T-6's FAIL Issue 2 (`execution.md`), and this column feeds the
+   * same activity trail that defect was found in.
+   *
+   * `dismissedAt` is `new Date().toISOString()` — always `Z`-suffixed.
+   * `ActivityTrailEvent`'s `DUPLICATE_DISMISSED` entry (`serializers/
+   * activity-trail.serializer.ts`) reads this value back RAW from the JSON
+   * column and sorts the whole trail with `localeCompare`; an
+   * offset-bearing instant (`…+03:00`) would both mis-order that event and
+   * diverge in wire format from the other four trail events, which are all
+   * `.toISOString()` (carried forward from T-6's `execution.md` A-37).
+   *
+   * Returns `{ registration: { id, reference, status } }` — a minimal
+   * confirmation, not the full detail projection: building the full detail
+   * (`toAdminRegistrationDetail`) requires the SAME `DuplicateDetectionService`
+   * call this method deliberately avoids on the write path. The updated
+   * candidate list and the new `DUPLICATE_DISMISSED` trail entry are visible
+   * on the next `GET /admin/registrations/:id` — the read path, where
+   * consulting detection is the intended, documented behaviour.
+   */
+  async dismissDuplicate(
+    id: string,
+    candidateActorId: string,
+    actingSub: string,
+  ): Promise<DismissDuplicateResult> {
+    const row = await this.prisma.registration.findUnique({
+      where: { id },
+      select: { id: true, reference: true, status: true, duplicateDismissals: true },
+    });
+
+    if (!row) {
+      throw new NotFoundException(`Registration ${id} not found`);
+    }
+
+    const candidateActor = await this.prisma.actor.findUnique({
+      where: { id: candidateActorId },
+      select: { id: true },
+    });
+
+    if (!candidateActor) {
+      throw new NotFoundException(
+        `Duplicate candidate ${candidateActorId} not found for registration ${id}`,
+      );
+    }
+
+    const dismissedByEmail = await this.actingAdminResolver.resolve(actingSub);
+
+    const existingDismissals: unknown[] = Array.isArray(row.duplicateDismissals)
+      ? row.duplicateDismissals
+      : [];
+    const newEntry: DuplicateDismissalEntryWrite = {
+      actorId: candidateActorId,
+      dismissedBySub: actingSub,
+      dismissedByEmail,
+      dismissedAt: new Date().toISOString(),
+    };
+
+    const updated = await this.prisma.registration.update({
+      where: { id },
+      data: { duplicateDismissals: [...existingDismissals, newEntry] as Prisma.InputJsonValue },
+      select: { id: true, reference: true, status: true },
+    });
+
+    return {
+      registration: { id: updated.id, reference: updated.reference, status: updated.status },
+    };
   }
 }

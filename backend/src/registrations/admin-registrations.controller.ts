@@ -1,12 +1,16 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.types';
 import {
   AdminRegistrationList,
   AdminRegistrationsService,
+  DismissDuplicateResult,
 } from './admin-registrations.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
+import { RegistrationDismissDuplicateDto } from './dto/registration-dismiss-duplicate.dto';
 import { AdminRegistrationDetail } from './serializers/admin-registration.serializer';
 
 /**
@@ -25,9 +29,10 @@ import { AdminRegistrationDetail } from './serializers/admin-registration.serial
  * derives its route set from `RegistrationsModule`'s own `controllers`
  * array, keeps seeing every route this controller adds.
  *
- * T-6 adds `GET /:id` — the full detail read (FR-10). T-7…T-9 add the
- * remaining three routes `design.md` §5's contract table names (`POST
- * /:id/approve`, `POST /:id/reject`, `POST /:id/dismiss-duplicate`).
+ * T-6 adds `GET /:id` — the full detail read (FR-10). T-7 adds `POST
+ * /:id/dismiss-duplicate` (FR-11 scenario 2) below. T-8…T-9 add the
+ * remaining two routes `design.md` §5's contract table names (`POST
+ * /:id/approve`, `POST /:id/reject`).
  *
  * T-6's `GET /:id` — unlike `GET /` above — is `:id`-scoped, which matters
  * for `pii-boundary.spec.ts`'s `FIXTURE_MAP`: a parameterized key can never
@@ -68,5 +73,31 @@ export class AdminRegistrationsController {
   @Get(':id')
   getById(@Param('id') id: string): Promise<AdminRegistrationDetail> {
     return this.adminRegistrationsService.getById(id);
+  }
+
+  /**
+   * `POST /api/v1/admin/registrations/:id/dismiss-duplicate` — record that
+   * `candidateActorId` is not a duplicate for this registration (FR-11
+   * scenario 2, `design.md` §5's contract row). `404` covers either an
+   * unknown registration id OR an unknown candidate id — both branches live
+   * in `AdminRegistrationsService.dismissDuplicate`, so this handler adds no
+   * branching of its own.
+   *
+   * The dismisser's identity is never read from the request body: `sub`
+   * comes from `@CurrentUser()` (the validated JWT), and the email is
+   * resolved server-side inside the service via `ActingAdminResolver`
+   * (`design.md` §8). The request body carries only `candidateActorId`.
+   * `@HttpCode(200)` matches the codebase's other admin write precedent
+   * (`admin-actors.controller.ts`'s `bulk/delete`) — this is a state change
+   * to an existing resource, not a creation.
+   */
+  @Post(':id/dismiss-duplicate')
+  @HttpCode(200)
+  dismissDuplicate(
+    @Param('id') id: string,
+    @Body() dto: RegistrationDismissDuplicateDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<DismissDuplicateResult> {
+    return this.adminRegistrationsService.dismissDuplicate(id, dto.candidateActorId, user.sub);
   }
 }

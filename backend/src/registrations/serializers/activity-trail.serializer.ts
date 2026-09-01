@@ -74,7 +74,15 @@ export interface DuplicateDismissedTrailEvent {
   occurredAt: string;
   candidateActorId: string;
   dismissedBySub: string;
-  dismissedByEmail: string;
+  /**
+   * `null` when `acting-admin.resolver.ts` could not resolve the dismissing
+   * admin's identity (`design.md` §8 — same reachable failure state
+   * `ADJUDICATED.reviewedByEmail` already models above). Passed through
+   * verbatim, never coalesced to `''` — T-7 rework FAIL: this type used to
+   * be non-nullable `string`, which made `isDuplicateDismissalEntry` reject
+   * a real, `dismissDuplicate`-written row and silently drop the event.
+   */
+  dismissedByEmail: string | null;
 }
 
 export interface AdjudicatedTrailEvent {
@@ -119,7 +127,8 @@ interface RawDuplicateDismissalEntry {
 interface DuplicateDismissalEntry {
   actorId: string;
   dismissedBySub: string;
-  dismissedByEmail: string;
+  /** `null` is a valid, reachable value (see {@link DuplicateDismissedTrailEvent}) — only a MISSING key is rejected. */
+  dismissedByEmail: string | null;
   dismissedAt: string;
 }
 
@@ -129,7 +138,7 @@ function isDuplicateDismissalEntry(
   return (
     typeof entry?.actorId === 'string' &&
     typeof entry?.dismissedBySub === 'string' &&
-    typeof entry?.dismissedByEmail === 'string' &&
+    (typeof entry?.dismissedByEmail === 'string' || entry?.dismissedByEmail === null) &&
     typeof entry?.dismissedAt === 'string'
   );
 }
