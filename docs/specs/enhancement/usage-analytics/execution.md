@@ -851,3 +851,41 @@ It follows that a **scroll-0 capture at 375 would be evidence-shaped and empty**
 #### ADVISORY (recorded, not actioned)
 
 `map.attributionControl` is non-optional in the typings only because `attributionControl: true` is Leaflet's default. Anyone later adding `attributionControl: false` to the `L.map()` options makes this line throw at runtime, and with no `LeafletMap.test.tsx` nothing would catch it.
+
+#### T-8 — the 375 re-capture, post-T-9 (closing the stale-evidence debt)
+
+T-8's original 375 measurements described a build that no longer existed. Re-captured against committed `74a91b2`. **No source file changed** — evidence only.
+
+**The scroll hypothesis was falsified by measurement.** The Reviewer predicted the attribution might sit below the fold at 375 because `map/page.tsx` is `flex-col` there. In fact `DiscoverRail` **collapses to a compact "Filters & list" toggle below `md`**, so the map begins almost immediately and the attribution's document-space Y at load is **123px** — on screen at scroll 0, no scrolling needed. The hypothesis was reasonable to raise and wrong; it was settled by measuring, not by arguing.
+
+**The sticky-Header question, swept at 24 offsets from 0 to `maxScroll` (406px) rather than one:**
+
+| Scroll band | Geometry | `elementFromPoint` at the intersection |
+|---|---|---|
+| 0–51 | no overlap with the header band `[0, 57]` | n/a |
+| **68–135** | attribution rect **does** overlap the header's on-screen band | **the attribution's own `<a>`, at all 5 overlapping samples** — never the header |
+| ≥152 | attribution scrolled above the viewport | n/a |
+
+**The attribution never passes under the header.** Measured, at every overlapping offset.
+
+**Other 375 results:** no line wrap (verified via `Range.getClientRects()` over the whole container — a single line at y=65; an earlier single-link probe false-positived on the inline SVG flag icon); **93.75px clearance** from the zoom control; zero horizontal overflow; `window.innerWidth` 375, unclamped; 6/6 tiles loaded; header measured at `sticky`, `z-index: 40`, `57px` tall.
+
+**The occluded-controls sweep, and an A/B that settles its attribution.** At scroll 58 one footer brand link, and at max scroll three funder-logo links, sit under the banner's fixed rect. The Implementer did **not** assert this was unrelated — it **reverted `LeafletMap.tsx` to its pre-T-9 committed content, rebuilt, and re-ran the identical sweep**: results byte-for-byte identical at all three offsets. Pre-existing, a function of page length against a fixed bottom bar, entirely independent of where Leaflet's attribution sits. Worth noting that T-8's original "no occluded controls at 375" was implicitly **scroll-0-scoped**; scrolled, the footer does meet the banner, and always did.
+
+#### ⚠️ A NEW COSMETIC ARTEFACT INTRODUCED BY T-9 — reported, not fixed
+
+For a **~67px scroll band (offsets ~68–135) at 375 only**, the attribution control **paints on top of** the sticky Header rather than passing behind it. Leaflet's control z-index outranks the header's `z-40` because the map's wrapper (`className="relative h-full min-h-[480px] w-full"`) sets no z-index and therefore **establishes no intervening stacking context**.
+
+- It is **visual, not functional**: the link wins the hit-test throughout and stays clickable.
+- It is confined to 375 — at 768/1440 `/map` does not scroll, so the band cannot exist.
+- **It did not exist before T-9**: pre-fix the attribution lived at the map's bottom, nowhere near the header.
+
+Escalated to the user rather than adjudicated, consistent with how T-8's original finding was handled. **T-8's own `Done when` clauses concern the *banner*, and all of them are satisfied** — this artefact is the attribution against the Header, a different pair.
+
+#### T-8 verdict — **PASS**, human gate satisfied
+
+All `Done when` clauses met at all three widths: the banner obscures no interactive control that is not an accepted transient, nothing is pushed off-screen, the body does not scroll horizontally, the banner paints above the Leaflet controls and `MapLegend` on `/map`, and the legend overlap is visibly transient — absent after a choice.
+
+**What this task bought, stated plainly:** it is the only task in the spec that writes no production code, and it found the only defect that seven tasks and 1,475 green tests could not see. It then produced a second finding on its follow-up capture. `requirements.md` §4.1 predicted exactly this by recording layout/occlusion as the one class with no automated gate — and the substituted gate earned its place twice.
+
+**Limitation recorded, not glossed:** CDP's synthetic `window.scrollTo` is not real mobile Safari — momentum scrolling and address-bar collapse are untested, the same limitation T-8's first run operated under.

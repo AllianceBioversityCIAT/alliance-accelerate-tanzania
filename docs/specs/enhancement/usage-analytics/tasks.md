@@ -80,7 +80,7 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       ⚠️ **Do not** move this value into SSM or Secrets Manager — a GA4 measurement ID ships in the page source of every page and is not a secret (`design.md` §7). ⚠️ **Do not** add `--profile` to `deploy-frontend.sh`: it reads `AWS_PROFILE` and parses no flags, so a passed flag is silently ignored and an ambient profile wins.
       ⚠️ **Disqualifies the evidence:** `npm run build` succeeding with the variable **set** proves nothing about the absent case, which is the one FR-7 rests on. Both runs are required.
 
-- [~] **T-8 Rendered layout verification — the substituted NFR-5 gate** (deps: T-5, T-6, T-7)
+- [x] **T-8 Rendered layout verification — the substituted NFR-5 gate** (deps: T-5, T-6, T-7)
       Size: S · Effort: `medium` · Skills: none (drive headless Chromium over CDP; `playwright-cli` only if the running environment already provides it)
       Scope: capture the banner rendered at **375 / 768 / 1440** on a `(public)` route **and on `/map`**, plus one post-choice capture confirming the banner is gone. Attach the captures to `execution.md`.
       Traces: NFR-5, NFR-6, `design.md` §5.4, §9
