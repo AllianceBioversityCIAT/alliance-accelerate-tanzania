@@ -1495,6 +1495,43 @@ describe(
               .set('Authorization', 'Bearer staff-token')
               .send({ acknowledgement: 'route-scan-probe-acknowledgement' }),
         },
+        // `admin/registration-review-queue` T-9 — the FIFTH and FINAL
+        // `access: 'admin'` entry, and the THIRD WRITE (`POST`) route in
+        // this map. Its key, `POST /api/v1/admin/registrations/:id/reject`,
+        // is the raw decorator path (`@Post(':id/reject')`) — never a
+        // sender's concrete URL — so it is checked by hand, per the
+        // admin-entry contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/reject`, ONE
+        // literal segment deeper than the `:id` detail route, and DISTINCT
+        // from `/:id/approve`'s and `/:id/dismiss-duplicate`'s literal
+        // segments — re-read against BOTH of those siblings by hand before
+        // trusting this entry (the exact copy-paste trap the contract JSDoc
+        // names: `approve` is a sibling on an identical shape and returns
+        // identical `401`/`403`, so a URL pointed at `/approve` under this
+        // key's closures would pass green while `reject` itself went
+        // untested). The probe id and body are irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone
+        // `AdminRegistrationsService.reject`'s Prisma transaction — ever
+        // runs, so no Prisma mock support for either probe value is needed.
+        // A body IS still sent (matching `RegistrationRejectDto`'s shape)
+        // for the same reason T-7's and T-8's entries do.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/reject')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-reject-route-scan-probe-id/reject',
+              )
+              .send({ reason: 'DUPLICATE_OF_EXISTING_RECORD' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-reject-route-scan-probe-id/reject',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ reason: 'DUPLICATE_OF_EXISTING_RECORD' }),
+        },
       };
 
       it(
@@ -1518,11 +1555,12 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per public route (4) + 2 requests per admin route (anonymous + Staff; 4 admin routes = 8), ' +
-          '12 requests total, of which only the 4 public requests hit this describe block\'s own ' +
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 5 admin routes = 10), ' +
+          '14 requests total, of which only the 4 public requests hit this describe block\'s own ' +
           'throttle bucket — the admin routes carry no throttle guard at all (`design.md` §6.1), so ' +
           'that count is informational, not a limit check (A-38: corrected from an earlier revision ' +
-          'that mis-stated ALL requests as hitting the bucket)',
+          'that mis-stated ALL requests as hitting the bucket; `admin/registration-review-queue` T-9 ' +
+          'brought the admin route count from four to the full five this module\'s design specifies)',
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);

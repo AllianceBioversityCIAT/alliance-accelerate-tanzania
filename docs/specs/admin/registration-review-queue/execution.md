@@ -1147,3 +1147,152 @@ DB left at **0 registrations / 14 actors**.
 #### Issues encountered
 
 **The correction pass introduced a defect of the same class it was commissioned to fix — the third such occurrence in this spec** (T-3 attempt 2 did the same; T-4 attempt 2's comment fix was clean). **Candidate kaizen entry:** corrective edits to prose appear to carry a higher defect rate than the code changes they accompany, and in both occurrences the new false claim landed *inside the very artefact meant to prevent the original defect*.
+
+### T-9 — `POST /admin/registrations/:id/reject` + `rejection-reasons.ts`
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** (attempt 1 stalled mid-task and was resumed — see the incident below) |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** → **xhigh** · Skills: `nestjs-expert`, `api-design-principles` |
+| Reviewer | `akili-reviewer` (opus, T3) — single Reviewer, lens-checklist, carrying the PII lens explicitly |
+| Review rounds consumed | **2** (running total: **22** of 35) |
+| Requirements covered | FR-11 scenario 3 · FR-13 scenarios 1, 2 · FR-14 scenarios 1, 2 · NFR-10 · DC-32 · `design.md` §6.4 |
+
+#### Files changed
+New: `rejection-reasons.ts` + `.spec.ts`, `dto/registration-reject.dto.ts` + `.spec.ts`, `admin-registrations-reject.spec.ts` (400), `backend/src/test/admin-registrations-reject.e2e.spec.ts` (424), `mail/templates/rejection.template.ts`.
+Modified: `admin-registrations.service.ts`, `.controller.ts`, `mail/mail.service.ts`, `mail.service.spec.ts`, `pii-boundary.spec.ts`.
+
+---
+
+#### INCIDENT — a stalled worker left a live PII probe in the tree
+
+Attempt 1's Implementer ended with the text *"Waiting for the monitor notification before proceeding"* — **not a completion report**. The Leader checked `git status` rather than trusting the notification, and found:
+
+**The DC-32 falsification probe was still live in `backend/src/registrations/serializers/public-registration.serializer.ts`**, spreading `rejectionReason` into the public lookup response. Nothing had been committed, so the repository was never at risk — but the probe was one commit away from putting an admin-only field on the public surface.
+
+**Lesson, recorded:** *"the agent completed"* is not the same as *"the task is in a safe state."* Checking the tree before trusting a report is what caught it. The Leader resumed the agent with instructions to revert and finish, rather than spawning fresh, preserving 119 tool-uses of context.
+
+**The Leader also captured the falsification evidence the stalled agent never reported** (tree quiet, no agent active) — see below.
+
+---
+
+#### DC-32 — the falsification, and a finding about the spec's own verification
+
+**The task's named Verify target cannot carry this falsification.** With the probe live:
+
+```
+$ npm test -- --silent registrations-lookup
+PASS src/registrations/registrations-lookup.e2e.spec.ts
+Tests: 4 passed, 4 total
+```
+
+**Diagnosis (Leader, confirmed and strengthened by the Reviewer):** 3a's lookup suite has no REJECTED fixture carrying a `rejectionReason` — its fixture **type** declares only `status` and `reviewNote`, so no row even has the property and the probe's `!= null` guard never fires. Its only exhaustive assertion is `toEqual({ status: 'PENDING_REVIEW' })`, a second independent reason it is blind.
+
+**The gates that genuinely catch DC-32:**
+
+1. **The new reject e2e** — Leader-captured, verbatim:
+```
+FAIL src/test/admin-registrations-reject.e2e.spec.ts
+  ● ... end-to-end: an Admin rejects with a reason and a note, under the no-op transport, and the applicant
+    then reads the note (never the reason code) back through 3a's public lookup — FR-13 scenario 2, NFR-10, DC-32
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+      Object {
+    +   "rejectionReason": "DUPLICATE_OF_EXISTING_RECORD",
+        "reviewNote": "We already list an active registrant at this location — please contact support if this is in error.",
+        "status": "REJECTED",
+      }
+
+      > 337 |         expect(lookupRes.body).toEqual({
+Tests: 1 failed, 6 passed, 7 total
+```
+2. **`pii-boundary.spec.ts`** — and it reddens **twice over**: its `REJECTED_REGISTRATION_ROW.rejectionReason` is non-null, so the rejected-fixture lookup assertion fails **and** `expectRegistrationResponseClean` fails, because `nonPublicValues()` puts `row.rejectionReason` into `REGISTRATION_LEAKABLE_VALUES`. (Note its `FIXTURE_MAP` `/registrations/lookup` entry uses the *APPROVED* row and is blind — the catching test is the rejected-fixture one further down.)
+
+**FORWARD POINTER → T-16:** T-9's `Verify` second command should name `pii-boundary` (or the new reject e2e), **not** `registrations-lookup`. **This is the fourth time this spec's stated verification has proven imprecise** — T-1's falsifying input was vacuous, T-4's clause was misassigned to a route with no `:id`, T-7's named a mutation its own test structurally cannot detect, and now T-9's Verify target cannot exercise the leak it is meant to catch.
+
+Probe reverted; **Leader-verified**: `git diff` on the serializer is empty, its output interface is `{ status, reviewNote? }`, the function body is byte-identical to committed, and `rejectionReason` appears solely in the *"accepted on input and NEVER emitted"* block.
+
+---
+
+#### ATTEMPT 1 — `FAIL`, on a premise that was itself false
+
+The Reviewer FAILed on: *"the `400` for an **unknown** reason code is unexercised… **delete `@IsIn(...)` and every test in this change set stays green**, while `POST /reject` would then persist any string into `Registration.rejectionReason`."* It attributed the only apparent coverage to `isKnownRejectionReasonCode`, a helper with **zero production callers** (Leader-verified: `grep -rn` returned only its own definition).
+
+**The zero-caller finding was correct. The "every test stays green" claim was not.**
+
+The re-review Reviewer caught it, and **the Leader settled it empirically rather than by reading** — removing `@IsIn` and running the DTO spec alone:
+
+```
+    Received value has no prototype
+    Received value: undefined
+
+      82 |     const { error } = await run({ reason: 'THIS_IS_NOT_A_KNOWN_REASON_CODE' });
+      83 |
+    > 84 |     expect(error).toBeInstanceOf(BadRequestException);
+         |                   ^
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 6 passed, 7 total
+```
+
+`dto/registration-reject.dto.spec.ts` — **created in attempt 1**, and running the **production** `createValidationPipe()` (*"the same factory `main.ts`/`lambda.ts` install"*) — already gated `@IsIn` through the real pipe. Mutation reverted; `reject` back to 34/34.
+
+**The honest record:** the added e2e is a **second, HTTP-level gate**, not the first. It is genuinely worth keeping — it proves the gate through the real HTTP stack including the error envelope, which a DTO-level pipe test does not — but the rework's stated justification was wrong.
+
+**This is the first Reviewer error in the run**, across 22 rounds, and it is recorded rather than quietly absorbed: writing *"unexercised"* into the permanent record would itself have been the KZ-008 pattern this spec keeps catching. The five other attempt-2 items were independently valid.
+
+---
+
+#### ATTEMPT 2 — `STATUS: PASS`
+
+| Item | Outcome |
+|---|---|
+| **HTTP-level unknown-code gate** | Added, asserting the **pipe's envelope** (`details: [{ field: 'reason' }]`), not merely a status. **Mutation proof:** with `@IsIn` removed the request skips validation and reaches the service — `expected 400 "Bad Request", got 409 "Conflict"`. The Reviewer confirmed it discriminates **in any suite position**: placed above the happy path a missing `@IsIn` yields `200` *and* corrupts the shared store. |
+| **`isKnownRejectionReasonCode`** | **Deleted** (function + its 3 tests). Zero references repo-wide including `docs/`; no spec mandates the export. |
+| **Empty-string note (KZ-007 seam)** | Closed **on the write side**: `reviewNote: dto.note?.trim() ? dto.note.trim() : null`. `''`, `'   '`, tabs, newlines, NBSP → `null`; a note with one non-whitespace character survives and **internal newlines are preserved**, so deliberate multi-line formatting is intact. The seam is real: `toPublicRegistrationLookup` branches on `!= null`, so an empty-but-present string would have emitted `reviewNote: ""` to the applicant — and **T-14 cannot be the gate**, since a blank controlled `<textarea>` submits `''`, not `undefined`. |
+| **Three KZ-008 naming corrections** | All three verified true by the Reviewer at source — including that no `PENDING_REVIEW` claim remains anywhere in the file. |
+| **Attempt-line log assertions (FR-14 s2)** | Pin `'mail send attempt kind=approval'` / `'kind=rejection'` — substrings that exist **only** on the attempt line (the outcome line reads `mail send outcome`), so deleting the attempt log now reddens both. Previously `kind=…` appeared on both lines and `status=sent` only on the outcome line, so the attempt line was unpinned. |
+| **Closed union (NFR-11)** | `REJECTION_REASONS_SOURCE … as const`; `RejectionReasonCode` is the five literals, not `string`; both `RejectionReason.code` and `RegistrationRejectDto.reason` typed to it. Runtime `Object.freeze` still in force on the array, each element, and the code list. Dropping `as readonly string[]` is **provably behaviour-neutral** — `class-validator` declares `IsIn(values: readonly any[])`. A sixth reason flows automatically to the union, the exports, and the DTO with no second edit site. |
+
+#### What attempt 1 got right (Reviewer-endorsed, unchanged)
+
+- **The end-to-end proof is genuine.** One `AppModule` instance and one shared store: the admin reject mutates the row, then **3a's real** `POST /registrations/lookup` — real controller, service, HMAC IP pseudonymisation, lookup-attempt counter, and serializer, all unmodified — reads it back. The assertion is `toEqual` (exhaustive), backed by raw-`res.text` sweeps for the reason code, the internal id, the reviewer email, and a payload contact-person value.
+- **The no-op transport is genuinely selected.** `MailService` is **not** DI-overridden (unlike T-8's approve e2e): `MAIL_TRANSPORT='no-op'` + `resetMailTransport()` before boot, the real lazy factory resolves `NoOpMailTransport`, and a spy on its prototype proves the attempt reached it. **NFR-10 is proven, not asserted** — a DI-overridden `MailService` would have made the claim vacuous.
+- **Clause sweep by value:** zero `actor.create` **call count** (asserted three times, on a mock that *has* the delegate so absence is counted rather than TypeErrored); consent columns equal by value **and** the `updateMany` payload never *names* them, with deliberately distinctive fixture values so a coincidental match cannot hide an overwrite.
+- **The single `409` meaning** — no `traderId` derivation, no `P2002` catch, no second `ConflictException` site. Approval's second `409` was **not** copied in.
+- **`FIXTURE_MAP`, fifth and final admin route** — both closures target `…/reject`, distinct from the identically-shaped `/approve` sibling; `toBe(401)`/`toBe(403)` intact; count 14 with only the 4 public requests hitting a throttle bucket. The bidirectional totality assertion is itself independent structural proof the route is registered.
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent reject` | **34/34** (4 suites) |
+| `npm test -- --silent registrations-lookup` | 4/4 |
+| `npm test -- --silent pii-boundary` | **25/25** |
+| `npm test -- --silent admin-registrations` | **97/97** (6 suites) |
+| `npm test -- --silent mail.service` | 9/9 |
+| `npm test -- --silent` (full backend) | **75 suites / 987 tests** |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-61** | **Four of the five reason codes are pinned by no test** after the attempt-2 spec deletions — only `DUPLICATE_OF_EXISTING_RECORD` is asserted by value. A rename of e.g. `OTHER` would ship green while orphaning stored `Registration.rejectionReason` values, which the file's own docblock forbids. One line closes it: `expect(REJECTION_REASON_CODES).toEqual([…five literals])`. | Recorded. |
+| **A-62** | **The reason list is served over no endpoint.** `design.md` §5 has five endpoints and none returns the reasons, so **T-14's select will hand-copy five code/label pairs across the module boundary** with nothing gating the drift. The closed union helps T-11's types but does not reach the frontend at runtime. | **FORWARD POINTER → T-14.** Must be in its brief. |
+| **A-63** | The label *"Ineligible actor type for this registry"* asserts an **eligibility policy the PRD does not define** — there is no documented eligibility rule for actor type, so a reviewer selecting it records a judgement the registry has never published criteria for. The other four labels are applicant-neutral and carry no PII or accusatory framing. | **Routed to the user / product review.** Not blocking. |
+| A-64 | `const row = (…) as RejectedRegistrationRow \| null` casts away Prisma's inferred `select` type; dropping a selected column later would keep compiling and fail at runtime. | Recorded. `Prisma.RegistrationGetPayload<{ select: … }>` would close it. |
+| A-65 | `@MaxLength(2000)` measures the **untrimmed** string, so 2000 chars plus a trailing newline `400`s; and a note of only U+200B (not ECMAScript whitespace) still stores as present. Neither judged worth a change. | Recorded. |
+| A-66 | The `rejection-reasons.ts` docblock claims a future addition/removal "is a compile error at every call site that assumed the old set" — strictly true only for *removals* and for **exhaustive** consumers (a `Record<RejectionReasonCode, …>` or `never`-checked switch). No such consumer exists yet; T-11/T-14 are the intended beneficiaries. | Recorded — **do not lean on this claim later**. |
+
+#### Decisions made
+
+- **The stalled agent was resumed rather than replaced**, preserving its context; the Leader captured the missing falsification evidence itself during the quiet window.
+- **The attempt-1 FAIL premise was tested empirically, not accepted**, and the honest version recorded. The rework stands on its other five items.
+- **A-63 routed to the user** rather than changed unilaterally — a reason label is product copy asserting policy, not an implementation detail.

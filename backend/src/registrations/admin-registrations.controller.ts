@@ -9,10 +9,12 @@ import {
   AdminRegistrationsService,
   DismissDuplicateResult,
   RegistrationApproveResult,
+  RegistrationRejectResult,
 } from './admin-registrations.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
 import { RegistrationApproveDto } from './dto/registration-approve.dto';
 import { RegistrationDismissDuplicateDto } from './dto/registration-dismiss-duplicate.dto';
+import { RegistrationRejectDto } from './dto/registration-reject.dto';
 import { AdminRegistrationDetail } from './serializers/admin-registration.serializer';
 
 /**
@@ -128,5 +130,28 @@ export class AdminRegistrationsController {
     @CurrentUser() user: AuthUser,
   ): Promise<RegistrationApproveResult> {
     return this.adminRegistrationsService.approve(id, dto, user.sub);
+  }
+
+  /**
+   * `POST /api/v1/admin/registrations/:id/reject` — the rejection write
+   * (FR-11 scenario 3, FR-13 scenarios 1, 2, FR-14 scenarios 1, 2;
+   * `design.md` §5's contract row, §6.4). The handler adds no branching of
+   * its own — the compare-and-set, the audit write, and the post-commit
+   * notification all live in `AdminRegistrationsService.reject`.
+   *
+   * The acting admin's identity is never read from the request body: `sub`
+   * comes from `@CurrentUser()` (the validated JWT), same as every other
+   * write in this controller. `@HttpCode(200)` matches this module's other
+   * action routes (`approve`, `dismiss-duplicate` above) — an action verb
+   * on an existing resource, not a bare resource-creation `POST`.
+   */
+  @Post(':id/reject')
+  @HttpCode(200)
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RegistrationRejectDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RegistrationRejectResult> {
+    return this.adminRegistrationsService.reject(id, dto, user.sub);
   }
 }

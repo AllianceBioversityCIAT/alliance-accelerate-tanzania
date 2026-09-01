@@ -142,6 +142,56 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     expect(emitted).toContain(reference);
   });
 
+  it(
+    'admin/registration-review-queue A-55 — emits attempt + outcome lines for kind=approval ' +
+      'carrying the reference, never the address',
+    async () => {
+      const service = new MailService();
+      const email = 'director-secret@example.org';
+      const reference = 'REG-2026-0184';
+
+      await service.sendApproval(email, reference);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).toContain('kind=approval');
+      expect(emitted).toContain(reference);
+      expect(emitted).toContain('status=sent');
+      // FR-14 scenario 2 — "log the send attempt AND its outcome": the
+      // outcome line alone (`status=sent`) is not sufficient evidence of
+      // this, since `kind=approval` appears on both lines. Assert the
+      // attempt line explicitly so deleting it cannot leave this test green.
+      expect(emitted).toContain('mail send attempt kind=approval');
+    },
+  );
+
+  it(
+    'admin/registration-review-queue A-55 — emits attempt + outcome lines for kind=rejection ' +
+      'carrying the reference, never the address',
+    async () => {
+      const service = new MailService();
+      const email = 'director-secret@example.org';
+      const reference = 'REG-2026-0299';
+
+      await service.sendRejection(email, reference);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).toContain('kind=rejection');
+      expect(emitted).toContain(reference);
+      expect(emitted).toContain('status=sent');
+      // FR-14 scenario 2 — same discrimination as the approval test above:
+      // the outcome line alone is not evidence of the attempt line.
+      expect(emitted).toContain('mail send attempt kind=rejection');
+    },
+  );
+
   it('logs a failed outcome (still without PII) when the transport rejects', async () => {
     process.env.MAIL_TRANSPORT = 'ses';
     process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';

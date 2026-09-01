@@ -24,6 +24,7 @@ import { FieldErrorDetail } from '../common/validation-pipe';
 import { MailService } from '../mail/mail.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
 import { RegistrationApproveDto } from './dto/registration-approve.dto';
+import { RegistrationRejectDto } from './dto/registration-reject.dto';
 import {
   DuplicateDetectionInput,
   DuplicateDetectionService,
@@ -309,6 +310,40 @@ export interface RegistrationApproveResult {
     publishedActorId: string | null;
   };
   actor: AdminActor;
+}
+
+/**
+ * `POST /admin/registrations/:id/reject`'s response envelope (`design.md`
+ * §5: `{ registration }`) — the same minimal `{ id, reference, status }`
+ * shape T-7's `DismissDuplicateResult` already established for a write path
+ * with no richer projection to return. `rejectionReason`/`reviewNote` are
+ * NOT echoed back here: this is the ADMIN write response, not the public
+ * lookup, so there is no DC-32 concern either way — they are simply not
+ * needed by this response's one caller (the confirmation the reject action
+ * just succeeded).
+ */
+export interface RegistrationRejectResult {
+  registration: {
+    id: string;
+    reference: string;
+    status: RegistrationStatus;
+  };
+}
+
+/**
+ * The subset of a `Registration` row {@link AdminRegistrationsService.reject}
+ * reads back inside its transaction — exactly what
+ * {@link RegistrationRejectResult}, `dispatchRejectionEmail`, and
+ * `ActorAuditService.logRegistrationReject` each need, no whole-row fetch
+ * (T-4 advisory A-25's discipline, carried into this task).
+ */
+interface RejectedRegistrationRow {
+  id: string;
+  reference: string;
+  status: RegistrationStatus;
+  payload: Prisma.JsonValue;
+  rejectionReason: string | null;
+  submitterEmail: string;
 }
 
 @Injectable()
@@ -838,6 +873,135 @@ export class AdminRegistrationsService {
   }
 
   /**
+   * `POST /admin/registrations/:id/reject` (FR-11 scenario 3, FR-13
+   * scenarios 1, 2, FR-14 scenarios 1, 2; `design.md` §6.4). Mandatory
+   * structured `reason` (validated against `rejection-reasons.ts`'s frozen
+   * list by `RegistrationRejectDto`'s `@IsIn(...)` — a missing or unknown
+   * reason never reaches this method at all, it is a `400` from the global
+   * `ValidationPipe`) and an OPTIONAL applicant-facing `note`.
+   *
+   * **Same conditional-update construction as `approve` (DD-17), one
+   * meaning of `409`.** `tx.registration.updateMany({ where: { id, status:
+   * PENDING_REVIEW }, ... })` is step 1, exactly mirroring `approve`'s step
+   * 1 — `count === 0` IS the "already adjudicated" `409`, by construction,
+   * never a read-then-check race. **The asymmetry from `approve`, stated
+   * plainly: rejection has only ONE `409` meaning.** There is no `traderId`
+   * to derive, no `Actor` to create, so there is no second `409` meaning (a
+   * collision) and no `P2002` catch here — do not import `approve`'s second
+   * `409` path.
+   *
+   * **No `Actor` is touched, and the stored consent record is not altered
+   * (FR-13 scenario 1's `BUT` clause).** The `data` object below writes
+   * exactly five columns — `status`, `rejectionReason`, `reviewNote`,
+   * `reviewedBySub`/`reviewedByEmail`/`reviewedAt` — and NEVER
+   * `consentAcceptedAt`/`consentPolicyVersion`. This method's `tx` never
+   * calls `tx.actor.create` (or any `tx.actor.*` method at all) — the
+   * absence is structural, not merely untested: unlike `approve`'s `buildTx`
+   * test double, a `reject`-only transaction never even NEEDS an `actor`
+   * delegate on its mock, which is itself evidence the write path cannot
+   * reach one.
+   *
+   * **Audited inside the SAME `tx`** (`backend/CLAUDE.md`) via
+   * `actorAuditService.logRegistrationReject` — writes `actorId` = the
+   * REGISTRATION id (there is no actor), per `design.md` §6.7 and FR-16's
+   * carried-forward clause that no `REGISTRATION_REJECT` row may appear in
+   * any actor's history.
+   *
+   * **After commit, never inside it (DD-9):** the rejection notification —
+   * same placement, same fire-and-forget shape, same error-class-name-only
+   * logging as `dispatchApprovalEmail` (FR-14 scenario 1's "a send failure
+   * does not roll back an adjudication", which binds this path identically).
+   *
+   * **FR-13 scenario 2 — the note reaches the applicant through 3a's public
+   * lookup, independent of email (NFR-10).** This method writes `reviewNote`
+   * to the SAME column `toPublicRegistrationLookup`
+   * (`serializers/public-registration.serializer.ts`) reads — the write
+   * half of that cross-module seam. `rejectionReason` is written to a
+   * DIFFERENT column that serializer never reads at all (DC-32) — the
+   * read-side proof that the reason code stays admin-only lives in
+   * `registrations-lookup.e2e.spec.ts` and `pii-boundary.spec.ts`'s fixture
+   * sweep, not here; this method's job is only to write the two columns
+   * correctly.
+   */
+  async reject(
+    id: string,
+    dto: RegistrationRejectDto,
+    actingSub: string,
+  ): Promise<RegistrationRejectResult> {
+    const acting = await this.resolveActing(actingSub);
+    const now = new Date();
+
+    const { registration, submitterEmail } = await this.prisma.$transaction(async (tx) => {
+      // Step 1 (DD-17, mirrors approve) — the conditional update IS the
+      // double-adjudication refusal. Writes exactly the five adjudication
+      // columns this scenario owns; consent columns are untouched.
+      const updated = await tx.registration.updateMany({
+        where: { id, status: RegistrationStatus.PENDING_REVIEW },
+        data: {
+          status: RegistrationStatus.REJECTED,
+          rejectionReason: dto.reason,
+          // KZ-007 — trim, then treat a now-empty string identically to a
+          // missing one. `@IsOptional()` only skips `null`/`undefined`, so
+          // an admin submitting a blank/whitespace-only note (exactly what
+          // a controlled `<textarea>` submits — T-14 must not be relied on
+          // to prevent this) would otherwise store `''`, and 3a's public
+          // lookup (`toPublicRegistrationLookup`) treats any non-null
+          // `reviewNote` as present, surfacing an empty-but-present field to
+          // the applicant.
+          reviewNote: dto.note?.trim() ? dto.note.trim() : null,
+          reviewedBySub: actingSub,
+          reviewedByEmail: acting.email,
+          reviewedAt: now,
+        },
+      });
+
+      if (updated.count === 0) {
+        // Rejection has only ONE 409 meaning — "already adjudicated". There
+        // is no traderId-collision analogue on this path.
+        const existing = await tx.registration.findUnique({
+          where: { id },
+          select: { id: true },
+        });
+        if (!existing) {
+          throw new NotFoundException(`Registration ${id} not found`);
+        }
+        throw new ConflictException(`Registration ${id} has already been adjudicated`);
+      }
+
+      const row = (await tx.registration.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          reference: true,
+          status: true,
+          payload: true,
+          rejectionReason: true,
+          submitterEmail: true,
+        },
+      })) as RejectedRegistrationRow | null;
+      if (!row) {
+        throw new Error('Rejected registration could not be refetched');
+      }
+
+      // Audited inside the same tx (backend/CLAUDE.md). No Actor exists for
+      // this write path — actorId = the registration id (design.md §6.7).
+      await this.actorAuditService.logRegistrationReject(tx, row, acting);
+
+      return {
+        registration: { id: row.id, reference: row.reference, status: row.status },
+        submitterEmail: row.submitterEmail,
+      };
+    });
+
+    // DD-9 / FR-14 scenarios 1, 2 — dispatched only AFTER commit, never
+    // awaited, using the value returned FROM that (already-committed)
+    // result — same placement discipline as approve's dispatchApprovalEmail.
+    this.dispatchRejectionEmail(submitterEmail, registration.reference);
+
+    return { registration };
+  }
+
+  /**
    * FR-12 scenario 3 — the server-side half of the typed acknowledgement
    * gate. The client-side half (`AcknowledgeDialog`, T-14) is UX only;
    * THIS is what makes a crafted request that omits or misspells the
@@ -906,6 +1070,22 @@ export class AdminRegistrationsService {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration approval notification send failed: errorType=${errorType} reference=${reference}`,
+      );
+    });
+  }
+
+  /**
+   * DD-9 / FR-14 scenarios 1, 2: dispatched only after the caller's
+   * transaction has committed, never awaited, and a failure is logged by
+   * the error's CLASS NAME only — mirrors `dispatchApprovalEmail`'s
+   * identical, already-reviewed pattern (a transport failure can embed the
+   * destination address verbatim in its message).
+   */
+  private dispatchRejectionEmail(to: string, reference: string): void {
+    void this.mailService.sendRejection(to, reference).catch((err: unknown) => {
+      const errorType = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.error(
+        `registration rejection notification send failed: errorType=${errorType} reference=${reference}`,
       );
     });
   }

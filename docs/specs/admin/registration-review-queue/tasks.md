@@ -139,7 +139,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Done when: all six scenarios pass, the `contactPerson` mutation reddens by name with output recorded, `409` on both meanings distinguishable by message, notification dispatched post-commit.
       **Re-measure the budget at this task's close.**
 
-- [ ] **T-9 `POST /admin/registrations/:id/reject` + `rejection-reasons.ts`** (deps: T-2, T-6)
+- [x] **T-9 `POST /admin/registrations/:id/reject` + `rejection-reasons.ts`** (deps: T-2, T-6)
       Scope: frozen reason list incl. *"Duplicate of an existing registry record"*; optional applicant-facing note; same compare-and-set; audit; post-commit notification. Its `FIXTURE_MAP` entry.
       Traces: FR-11 scenario 3 · FR-13 scenarios 1, 2 · FR-14 scenarios 1, 2 · `design.md` §6.4
       Files: `rejection-reasons.ts` + `.spec.ts`, `dto/registration-reject.dto.ts`, service/controller + specs, mail template, `pii-boundary.spec.ts`
@@ -207,6 +207,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Files: `components/admin/RejectDialog.tsx` + test, approve wiring in `RegistrationDetailPanel.tsx`, `DuplicateWarningCard.tsx`
       Skills: `shadcn-ui`, `tailwind-design-system`, `react-doctor` · Effort: **high**
       Verify: `cd frontend && npm test -- --silent RejectDialog && npm test -- --silent RegistrationDetailPanel && npm run lint`
+      **Carried forward from T-9's review (`execution.md` A-62):** the rejection reason list is served over **no endpoint** — `design.md` §5 has five and none returns it. Your reason `<select>` will hand-copy five code/label pairs across the module boundary with **nothing gating the drift**. Import the codes from the backend's closed `RejectionReasonCode` union if the build allows it; otherwise state plainly in the component that the list is duplicated and must be kept in step with `backend/src/registrations/rejection-reasons.ts`.
       Falsifying input: use `ConfirmDialog` for approve → assert the approve path renders `AcknowledgeDialog`'s typed input; the swap must redden. `ConfirmDialog` also hardcodes `bg-danger`, so a token grep for `danger` on the publish action is a second, independent signal.
       Disqualifying: the client gate is **UX only** — a green dialog test says nothing about server-side re-validation, which T-8 owns. Do not report this task as covering FR-12's `BUT the gate must NOT be client-only`; that clause is T-8's.
       Clause sweep: FR-12's `AND IT MUST name the policy version and acceptance date` → assert both appear in the dialog body sourced from the fetched record, not hardcoded. FR-13's `AND the interface states that rejection cannot be undone` → assert the notice text. `AND IT MUST make the reason mandatory` → assert submit disabled with no reason.
