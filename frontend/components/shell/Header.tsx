@@ -16,11 +16,18 @@ import type { Role } from '@/lib/auth/useSession';
 // every other entry keeps its plain-text treatment unchanged.
 // ---------------------------------------------------------------------------
 const NAV_LINKS = [
-  { label: 'Home', href: '/', variant: 'default' as const },
+  // No 'Home' entry: the brand lockup below is itself a link to '/' and its
+  // aria-label already names it as home, so a "Home" nav item duplicated an
+  // adjacent control. Removed 2026-08-31 when DC-9's measurement showed the
+  // row's min-content width (1270px) exceeded the container's permanent
+  // ceiling (1216px, from max-w-7xl) at EVERY width — see execution.md T-10.
   { label: 'Discovery Map', href: '/map', variant: 'default' as const },
   { label: 'Dashboard', href: '/dashboard', variant: 'default' as const },
   { label: 'Directory', href: '/directory', variant: 'default' as const },
   { label: 'About', href: '/about', variant: 'default' as const },
+  // T-10, FR-1: a public, unauthenticated entry point into the contact form
+  // — plain-text treatment like every entry above, ahead of the primary CTA.
+  { label: 'Contact', href: '/contact', variant: 'default' as const },
   // FR-1: a discoverable, visually distinct action into the public
   // registration form — separate from "Staff sign-in" (AuthSlot), which
   // continues to serve Staff/Admin. Absent from the admin shell because the
@@ -269,7 +276,7 @@ function NavLink({
       <Link
         href={href}
         aria-current={isActive ? 'page' : undefined}
-        className="inline-flex items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        className="ml-1 xl:ml-2 inline-flex items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-fg transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
       >
         {label}
       </Link>
@@ -300,7 +307,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-sm">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 xl:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
 
           {/* Brand lockup */}
@@ -316,19 +323,25 @@ export default function Header() {
               height={194}
               alt=""
               priority
-              className="h-8 w-auto sm:h-10"
+              className="h-8 w-auto sm:h-10 lg:h-8 xl:h-10"
             />
 
-            {/* Platform descriptor — visually separates logo from nav on larger screens */}
-            <span className="hidden sm:block border-l border-border pl-2.5 text-xs font-medium uppercase tracking-wider text-muted">
-              Tanzania Seed Registry
-            </span>
+            {/*
+              The "Tanzania Seed Registry" descriptor that used to sit here was
+              removed 2026-08-31 (owner decision, DC-9). It cost ~196px of a row
+              that had only 1216px to spend. Deferring it to a wider breakpoint
+              was measured and rejected: the container is `max-w-7xl`, so the
+              usable width is capped at 1216px and never grows with the viewport
+              — there is no screen wide enough for it to fit. The logo carries
+              brand identity and the Link's aria-label above still announces the
+              full name, so nothing is lost visually or to assistive tech.
+            */}
           </Link>
 
-          {/* Primary nav — desktop (md+) */}
+          {/* Primary nav — desktop (lg+); below lg the hamburger drawer serves. */}
           <nav
             aria-label="Primary"
-            className="hidden md:flex items-center gap-6"
+            className="hidden lg:flex items-center gap-4 xl:gap-6"
           >
             {NAV_LINKS.map((link) => (
               <NavLink key={link.href} href={link.href} label={link.label} variant={link.variant} />
@@ -339,7 +352,7 @@ export default function Header() {
           <div className="flex items-center gap-3">
             {/* Desktop auth — hidden on mobile; the mobile auth lives in the
                 hamburger menu below so the top bar stays uncluttered. */}
-            <div className="hidden md:flex items-center">
+            <div className="hidden lg:flex items-center">
               <AuthSlot />
             </div>
 
@@ -350,7 +363,7 @@ export default function Header() {
               aria-expanded={menuOpen}
               aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="inline-flex md:hidden items-center justify-center rounded-md p-2 text-muted hover:bg-border hover:text-fg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              className="inline-flex lg:hidden items-center justify-center rounded-md p-2 text-muted hover:bg-border hover:text-fg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
               {/* Accessible icon: two states, animated respectfully */}
               <span aria-hidden="true" className="block h-5 w-5 relative">
@@ -394,7 +407,7 @@ export default function Header() {
       <div
         id="mobile-menu"
         hidden={!menuOpen}
-        className="md:hidden border-t border-border bg-surface"
+        className="lg:hidden border-t border-border bg-surface"
       >
         <nav aria-label="Primary mobile" className="flex flex-col px-4 py-3 gap-1">
           {NAV_LINKS.map((link) => (

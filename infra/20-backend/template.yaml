@@ -107,6 +107,14 @@ Resources:
           MAIL_TRANSPORT: ses
           MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org
           OTP_HMAC_SECRET: !Sub "{{resolve:secretsmanager:${OtpHmacSecret}:SecretString}}"
+          # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
+          # recipient for the public contact form when the Cognito `admin`
+          # group resolves empty or the directory call fails
+          # (AdminRecipientResolver.getFallback()). Same address as
+          # MAIL_SENDER_ADDRESS above — the account is still in the SES
+          # sandbox (§7.2), so it must be a verified identity, and this is
+          # the only one this template verifies.
+          CONTACT_FALLBACK_RECIPIENT: j.cadavid@cgiar.org
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
@@ -134,6 +142,12 @@ Resources:
                 - cognito-idp:AdminRemoveUserFromGroup
                 - cognito-idp:AdminListGroupsForUser
                 - cognito-idp:AdminResetUserPassword
+                # contact/contact-channels (T-11, FR-3): the contact form's
+                # AdminRecipientResolver lists the `admin` group's current
+                # members to resolve live recipients. Missing grants fail at
+                # runtime, not deploy — the resolver's directory call would
+                # error and silently degrade to CONTACT_FALLBACK_RECIPIENT.
+                - cognito-idp:ListUsersInGroup
               Resource: !Sub
                 - "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${PoolId}"
                 - PoolId: !ImportValue

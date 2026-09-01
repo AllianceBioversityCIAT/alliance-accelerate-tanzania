@@ -1,9 +1,24 @@
 // @sdd-spec actors/public-self-registration (T-6)
+// @sdd-spec contact/contact-channels (T-4)
 /**
  * T-6 — Request-size cap for every public registration route (FR-7 scenario
  * 2, NFR-4, `design.md` §4.4's P-1…P-3), registered through a single
  * `common/` helper and called from BOTH bootstraps (`main.ts`, `lambda.ts`)
  * IMMEDIATELY BEFORE `configureBodyParser(app)` — never after.
+ *
+ * **T-4 extension (contact/contact-channels).** Without an explicit path
+ * scope, `/api/v1/contact` would inherit the global 8 MB `JSON_BODY_LIMIT`
+ * (`common/body-parser.config.ts`) and parse it into Lambda memory BEFORE the
+ * throttle guard runs — guards are Nest-level, this middleware is Express-
+ * level and runs ahead of Nest's router (`design.md` §4.1.1, NFR-2). Rather
+ * than adding a second, parallel middleware, `CAPPED_PATH_PREFIXES` below now
+ * lists both routes against the SAME `REGISTRATIONS_PAYLOAD_CAP_BYTES` value
+ * (both specs independently land on 32 KB), so P-1's "one source of truth"
+ * still holds — now for two routes instead of one. Every P-2/P-3 rule this
+ * header documents (prefix matching incl. the global `api/v1` prefix,
+ * case-insensitivity, the chunked/malformed-`Content-Length` bypass) applies
+ * identically to the contact route; nothing about the mechanism changed,
+ * only the set of paths it is scoped to.
  *
  * Why this cannot be a `MiddlewareConsumer`-registered Nest module middleware
  * (`design.md` §4.4, C-2): Nest module middleware registers during
@@ -62,15 +77,21 @@ import { PayloadTooLargeException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 
 /**
- * Maximum request body size for every public registration route. Deliberately
- * far below the global 8 MB `JSON_BODY_LIMIT` (`../common/body-parser.config`),
- * which serves the admin import path and is untouched by this spec
- * (`design.md` §4.4). `RegistrationCreateDto`'s largest realistic body — every
- * bounded string field at its `@MaxLength`, GPS, up to nine crops — is well
- * under 2 KB; 32 KB leaves generous headroom for JSON/whitespace overhead and
- * future fields while staying roughly 250x smaller than the import limit, so
- * even a flood of maximally-sized bodies cannot approach the connection
- * pressure NFR-4 exists to prevent.
+ * Maximum request body size for every route listed in
+ * {@link CAPPED_PATH_PREFIXES} (registrations AND, as of T-4, contact).
+ * Deliberately far below the global 8 MB `JSON_BODY_LIMIT`
+ * (`../common/body-parser.config`), which serves the admin import path and is
+ * untouched by either spec (`design.md` §4.4 here; contact/contact-channels
+ * `design.md` §4.1.1/§4.2 there). `RegistrationCreateDto`'s largest realistic
+ * body — every bounded string field at its `@MaxLength`, GPS, up to nine
+ * crops — is well under 2 KB, and `ContactCreateDto`'s is smaller still; 32 KB
+ * leaves generous headroom for JSON/whitespace overhead and future fields
+ * while staying roughly 250x smaller than the import limit, so even a flood
+ * of maximally-sized bodies cannot approach the connection pressure NFR-4
+ * (registrations) / NFR-2 (contact) exist to prevent. Retains its
+ * registrations-only name for backward compatibility — `lambda-handler.e2e
+ * .spec.ts` (owned by actors/public-self-registration) imports it by this
+ * name — but the VALUE now governs both routes identically.
  */
 export const REGISTRATIONS_PAYLOAD_CAP_BYTES = 32 * 1024;
 
@@ -83,18 +104,39 @@ export const REGISTRATIONS_PAYLOAD_CAP_BYTES = 32 * 1024;
 const REGISTRATIONS_PATH_PREFIX = '/api/v1/registrations';
 
 /**
+ * T-4 (contact/contact-channels): the public contact endpoint, capped at the
+ * same 32 KB figure for the same "declared before parsed" reason — see the
+ * file header's "T-4 extension" note.
+ */
+const CONTACT_PATH_PREFIX = '/api/v1/contact';
+
+/**
+ * Every path prefix this middleware caps. Adding a route here is the ONLY
+ * change needed to bring a new public endpoint under the cap — the matching
+ * rule, the case-insensitivity, and the P-3 "declares no length" logic below
+ * apply uniformly to every entry.
+ */
+/**
+ * Exported so `payload-cap.config.spec.ts` can parameterise its contract over
+ * the REAL list rather than a copy. That matters: the contract this middleware
+ * offers is "every prefix in this array behaves identically", and a test that
+ * hard-codes its own copy proves nothing about a prefix added later. Adding an
+ * entry here automatically extends the suite.
+ */
+export const CAPPED_PATH_PREFIXES = [REGISTRATIONS_PATH_PREFIX, CONTACT_PATH_PREFIX];
+
+/**
  * Case-insensitive on purpose: Express's router matches routes
  * case-insensitively by default, so a case-sensitive comparison here would be
  * NARROWER than the route set it exists to cover — a request whose path
- * merely differs in case would reach `RegistrationsController` while this
- * check waved it through uncapped. Lower-casing before comparing keeps the
- * two in agreement without touching global routing behaviour.
+ * merely differs in case would reach the controller while this check waved
+ * it through uncapped. Lower-casing before comparing keeps the two in
+ * agreement without touching global routing behaviour.
  */
-function isRegistrationsPath(path: string): boolean {
+function isCappedPath(path: string): boolean {
   const lowerPath = path.toLowerCase();
-  return (
-    lowerPath === REGISTRATIONS_PATH_PREFIX ||
-    lowerPath.startsWith(`${REGISTRATIONS_PATH_PREFIX}/`)
+  return CAPPED_PATH_PREFIXES.some(
+    (prefix) => lowerPath === prefix || lowerPath.startsWith(`${prefix}/`),
   );
 }
 
@@ -159,7 +201,7 @@ export function registrationsPayloadCapMiddleware(
   _res: Response,
   next: NextFunction,
 ): void {
-  if (!isRegistrationsPath(req.path)) {
+  if (!isCappedPath(req.path)) {
     next();
     return;
   }
@@ -187,10 +229,10 @@ export function registrationsPayloadCapMiddleware(
 }
 
 /**
- * Apply the registrations payload cap to a Nest Express application. Call
- * this from EVERY bootstrap (`main.ts`, `lambda.ts`) BEFORE
- * `configureBodyParser(app)` — see this file's header for why the ordering is
- * load-bearing.
+ * Apply the payload cap (registrations AND contact — {@link
+ * CAPPED_PATH_PREFIXES}) to a Nest Express application. Call this from EVERY
+ * bootstrap (`main.ts`, `lambda.ts`) BEFORE `configureBodyParser(app)` — see
+ * this file's header for why the ordering is load-bearing.
  */
 export function configurePayloadCap(app: NestExpressApplication): void {
   app.use(registrationsPayloadCapMiddleware);

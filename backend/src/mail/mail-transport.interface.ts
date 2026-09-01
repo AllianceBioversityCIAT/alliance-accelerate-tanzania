@@ -1,4 +1,5 @@
 // @sdd-spec actors/public-self-registration (T-3)
+// @sdd-spec contact/contact-channels (T-1)
 /**
  * T-3 — Mail transport abstraction (design.md §4.9).
  *
@@ -21,13 +22,22 @@
  * "record the attempt, send nothing" (no-op, NFR-10). Both implementations
  * receive the identical `MailMessage` shape, so a caller cannot tell which is
  * selected except by observing whether bytes left the process.
+ *
+ * contact/contact-channels T-1 (design.md §2, §4.6) widens `to` to accept
+ * multiple recipients — mapped to SES `ToAddresses` — and adds `replyTo`, a
+ * pre-composed `Display Name <address>` string the contact form uses to route
+ * a reply to the requester rather than the registry (FR-4). Both are optional
+ * additions; the verification-code and receipt messages never set `replyTo`
+ * and continue to pass a single-string `to`.
  */
 export interface MailMessage {
-  to: string;
+  to: string | string[];
   subject: string;
   text: string;
   /** The applicant-facing reference, when one has been allocated. See above. */
   reference?: string;
+  /** Pre-composed `Display Name <address>` for the SES `ReplyToAddresses` header (FR-4). Absent for the verification-code and receipt messages. */
+  replyTo?: string;
 }
 
 export interface MailTransport {

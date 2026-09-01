@@ -147,6 +147,27 @@ export default function ClosingCTA() {
             About the project
           </Link>
 
+          {/* T-10, FR-1: home page's own entry point into the contact form —
+              same hand-crafted secondary-on-dark treatment as "About the
+              project" above (Button's secondary variant is light-surfaced
+              and would be unreadable here). */}
+          <Link
+            href="/contact"
+            className={[
+              'inline-flex items-center gap-2 px-5 py-2.5',
+              'text-sm font-medium leading-none',
+              'rounded-md',
+              'border border-bg/40 text-bg',
+              'transition-colors motion-reduce:transition-none',
+              'hover:bg-bg/10',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bg',
+              'focus-visible:ring-offset-2 focus-visible:ring-offset-fg',
+              'whitespace-nowrap',
+            ].join(' ')}
+          >
+            Contact us
+          </Link>
+
         </div>
 
       </div>

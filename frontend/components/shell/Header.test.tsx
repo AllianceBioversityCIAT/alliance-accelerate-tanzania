@@ -239,11 +239,67 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
     // Regression for the additive-prop constraint: existing entries must
     // render unchanged. A default-variant link never carries the
     // primary-variant's solid background class.
-    for (const name of [/^home$/i, /discovery map/i, /^dashboard$/i, /directory/i, /^about$/i]) {
+    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^about$/i, /^contact$/i]) {
       const [link] = screen.getAllByRole('link', { name });
       expect(link.className).not.toContain('bg-primary');
       expect(link.className).not.toContain('text-primary-fg');
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // DC-9 — header overflow fix (2026-08-31)
+  //
+  // WHAT THESE ASSERTIONS ARE AND ARE NOT. jsdom performs no layout: it has no
+  // box model, so it cannot measure a width and CANNOT detect overflow. None of
+  // the tests below prove the header fits. They pin the three *inputs* whose
+  // measured effect was recorded, so a later edit that silently reverts one
+  // fails here instead of shipping.
+  //
+  // The behavioural evidence is a real-browser measurement, not this file:
+  // the row's min-content width was 1270px against a permanent 1216px ceiling
+  // (max-w-7xl), overflowing at every width >= 768. After this fix it is 931px
+  // at 1024 (45px slack) and 1007px at 1280+ (209px slack). See execution.md,
+  // T-10 DC-9 closure, for the full measurement table and how it was taken.
+  // -------------------------------------------------------------------------
+  it('does not render a Home nav entry — the brand lockup is the home link', () => {
+    renderHeader();
+
+    // The brand Link still points at '/' and still names itself as home, so
+    // removing the duplicate entry cost no route and no accessible name.
+    const brand = screen.getByRole('link', { name: /accelerate tanzania seed registry.*home/i });
+    expect(brand).toHaveAttribute('href', '/');
+
+    // No nav item whose accessible name is exactly "Home".
+    expect(screen.queryAllByRole('link', { name: /^home$/i })).toHaveLength(0);
+  });
+
+  it('does not render the "Tanzania Seed Registry" descriptor in the bar', () => {
+    renderHeader();
+
+    // Removed rather than deferred to a wider breakpoint: the container is
+    // max-w-7xl, so usable width is capped at 1216px and never grows with the
+    // viewport — there is no screen wide enough for the descriptor to fit.
+    expect(screen.queryByText(/tanzania seed registry/i)).toBeNull();
+  });
+
+  it('switches between the mobile drawer and the desktop bar at lg, not md', () => {
+    const { container } = renderHeader();
+
+    // Class-string assertions only — jsdom applies no media query and computes
+    // no layout, so this checks the breakpoint token is still `lg`, nothing
+    // more. It exists because reverting to `md` reopens a 526px overflow at
+    // 768px that no other test in this suite can see.
+    const desktopNav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(desktopNav.className).toContain('lg:flex');
+    expect(desktopNav.className).not.toContain('md:flex');
+
+    const hamburger = screen.getByRole('button', { name: /open navigation menu/i });
+    expect(hamburger.className).toContain('lg:hidden');
+    expect(hamburger.className).not.toContain('md:hidden');
+
+    const drawer = container.querySelector('#mobile-menu');
+    expect(drawer?.className).toContain('lg:hidden');
+    expect(drawer?.className).not.toContain('md:hidden');
   });
 
   it('is absent from the admin sidebar, which is a different mode (DD-5) and a different component', () => {
@@ -257,6 +313,54 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
     // The two enabled admin entries stay exactly as they were.
     expect(screen.getByRole('link', { name: /^users$/i })).toHaveAttribute('href', '/admin/users');
     expect(screen.getByRole('link', { name: /^actors$/i })).toHaveAttribute('href', '/admin/actors');
+  });
+});
+
+describe('Header — Contact entry (T-10, FR-1)', () => {
+  beforeEach(() => {
+    mockUseSession.mockReturnValue(publicSession());
+  });
+
+  it('renders a Contact link in the desktop nav pointing to /contact', () => {
+    renderHeader();
+
+    // Before the hamburger is opened, RTL's role queries exclude the hidden
+    // mobile panel — only the desktop occurrence is visible.
+    const [desktopLink] = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(desktopLink).toBeInTheDocument();
+    expect(desktopLink).toHaveAttribute('href', '/contact');
+  });
+
+  it('renders Contact in the OPEN mobile drawer too, from the same NAV_LINKS source as the desktop bar (no second, divergent list)', () => {
+    renderHeader();
+
+    // Collapsed: exactly one occurrence (desktop only — the mobile panel is
+    // `hidden` and excluded from role queries).
+    expect(screen.getAllByRole('link', { name: /^contact$/i })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /open navigation menu/i }));
+
+    // Open: exactly two — desktop NavLink + mobile MobileNavLink, both
+    // mapped from the single NAV_LINKS array. A second, divergent list would
+    // either drop the mobile occurrence or duplicate it further; either way
+    // this count would no longer be exactly 2.
+    const links = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(links).toHaveLength(2);
+    links.forEach((link) => expect(link).toHaveAttribute('href', '/contact'));
+  });
+
+  it('keeps Contact as a plain-text nav entry, not the primary-variant treatment reserved for "Register your organisation"', () => {
+    renderHeader();
+
+    const [desktopLink] = screen.getAllByRole('link', { name: /^contact$/i });
+    expect(desktopLink.className).not.toContain('bg-primary');
+    expect(desktopLink.className).not.toContain('text-primary-fg');
+  });
+
+  it('is absent from the admin sidebar, which renders AdminSidebar\'s own NAV_ITEMS, not Header', () => {
+    render(<AdminSidebar />);
+
+    expect(screen.queryByRole('link', { name: /^contact$/i })).not.toBeInTheDocument();
   });
 });
 

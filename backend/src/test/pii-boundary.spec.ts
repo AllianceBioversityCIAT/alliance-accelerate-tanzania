@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { RequestMethod } from '@nestjs/common';
+import { Logger, RequestMethod } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA, MODULE_METADATA } from '@nestjs/common/constants';
 import {
   ConsentMethod,
@@ -23,6 +23,8 @@ import { MailService } from '../mail/mail.service';
 import { CONSENT_POLICY_VERSION } from '../registrations/consent-policy';
 import { REGISTRATIONS_THROTTLE_LIMIT } from '../registrations/registrations-throttle.guard';
 import { RegistrationsModule } from '../registrations/registrations.module';
+import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
+import { CONTACT_CATEGORIES } from '../contact/contact-categories';
 
 /**
  * `actors/registration-source-and-consent` T-9 — End-to-end PII-boundary +
@@ -1411,3 +1413,230 @@ describe('PII boundary (HTTP e2e) — registrations module, 429 isolation (T-13,
     },
   );
 });
+
+// ============================================================================
+// @sdd-spec contact/contact-channels (T-8)
+// ============================================================================
+
+/**
+ * T-8 — extends this release gate to `POST /api/v1/contact` (FR-7, NFR-1
+ * (release gate), requirements.md §8 DC-1; `design.md` §10's
+ * "`pii-boundary.spec.ts` extension" row). Sibling top-level `describe`,
+ * exactly as `public-self-registration` T-13's blocks above sit beside the
+ * original `registration-source-and-consent` T-9 block rather than nested
+ * inside it — this module has its own fixture set and its own leak surface.
+ *
+ * **The log-capture seam this suite adds — the thing NFR-1's own text says
+ * this file has none of today.** Every prior block above scans only
+ * `res.body`/`res.text`. `jest.spyOn(Logger.prototype, 'log'/'warn'/'error')`
+ * (the established idiom — see `mail.service.spec.ts`,
+ * `registrations.service.spec.ts`'s "mail-failure logging never leaks the
+ * address" block) intercepts every line ANY class's `Logger` instance emits
+ * for the lifetime of one request, regardless of which class logged it.
+ * Installed fresh in `beforeEach`/torn down in `afterEach` so no boot-time
+ * Nest log ever pollutes a capture window, and so each test's window is
+ * exactly "everything logged while this one HTTP request was in flight."
+ *
+ * **Why the timing needs no drain/settle discipline (NFR-1 condition 1,
+ * amended 2026-08-28).** `ContactService.submitContact` `await`s
+ * `MailService.sendContactMessage` directly (`design.md` DD-3) — there is no
+ * fire-and-forget continuation running after the response is written, so
+ * every log line this path can possibly emit (the honeypot rejection, the
+ * transport-failure line, `MailService.dispatch`'s own attempt/outcome
+ * lines when it is not overridden) has already happened by the time
+ * `supertest`'s `await request(...).post(...)` resolves. A spy installed
+ * before the request and read after it needs nothing more.
+ *
+ * **Why `MailService` is provider-overridden here rather than driven
+ * through the real SES transport.** The one log line whose CONTENT is
+ * actually at risk — `ContactService`'s own `catch` block
+ * (`contact.service.ts`: "class name only, never `err.message`") — fires
+ * from `ContactService` itself regardless of what `MailService` is, real or
+ * mocked; overriding `MailService` (as `contact.e2e.spec.ts` already does)
+ * removes the SES SDK and Cognito as dependencies for this suite with no
+ * loss of coverage over the actual defect surface NFR-1 condition 2 names.
+ * `AdminRecipientResolver` is overridden for the identical reason
+ * `contact.e2e.spec.ts` gives: a FIXED, known recipient list makes "the
+ * recipient address never leaks" a real value-equality check against a
+ * value this file controls, not merely "nothing happened."
+ *
+ * **The gate's shown-to-fail proof (NFR-1 condition 2, KZ-002) — performed
+ * manually, not left as a standing mutation, recorded in `execution.md` →
+ * T-8, not kept in this file:** `contact.service.ts`'s catch block was
+ * temporarily changed from `err.name` to `err.message`, the "a transport
+ * rejection…" `it` below was re-run against a `MessageRejected`-shaped
+ * rejection embedding {@link CONTACT_ADMIN_RECIPIENT} verbatim in its
+ * message (mirroring the real SES shape `registrations.service.ts`
+ * documents), the suite failed with the recipient address present in the
+ * captured log text, the mutation was reverted, and the suite returned to
+ * green (`git diff` confirmed clean).
+ */
+
+/** Fixture requester values — distinct from every other block's fixtures in this file so a cross-suite leak cannot hide behind a shared value. */
+const CONTACT_REQUESTER_NAME = 'Contact Fixture Requester — DO NOT LEAK';
+const CONTACT_REQUESTER_EMAIL = 'contact-requester-do-not-leak@example.com';
+const CONTACT_ORGANIZATION = 'Contact Fixture Organization — DO NOT LEAK';
+const CONTACT_SUBJECT = 'Contact Fixture Subject — DO NOT LEAK';
+const CONTACT_MESSAGE_BODY =
+  'Contact fixture message body, deliberately distinct from every other value in this file — DO NOT LEAK.';
+/** The resolved administrator recipient — the value FR-3/NFR-1 forbid ever reaching a response, error envelope or log line. */
+const CONTACT_ADMIN_RECIPIENT = 'contact-admin-recipient-do-not-leak@example.org';
+
+/** Every requester value + the recipient address — the full leak-value sweep this block's assertions check every path against. */
+const CONTACT_LEAKABLE_VALUES: readonly string[] = [
+  CONTACT_REQUESTER_NAME,
+  CONTACT_REQUESTER_EMAIL,
+  CONTACT_ORGANIZATION,
+  CONTACT_SUBJECT,
+  CONTACT_MESSAGE_BODY,
+  CONTACT_ADMIN_RECIPIENT,
+];
+
+function contactBodyFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name: CONTACT_REQUESTER_NAME,
+    email: CONTACT_REQUESTER_EMAIL,
+    organization: CONTACT_ORGANIZATION,
+    category: CONTACT_CATEGORIES[0],
+    subject: CONTACT_SUBJECT,
+    message: CONTACT_MESSAGE_BODY,
+    privacyAcknowledged: true,
+    ...overrides,
+  };
+}
+
+describe(
+  'PII boundary (HTTP e2e) — contact module (contact/contact-channels T-8, release gate: FR-7, NFR-1, DC-1)',
+  () => {
+    let app: NestExpressApplication;
+    let sendContactMessageMock: jest.Mock;
+    let resolveMock: jest.Mock;
+    let logSpy: jest.SpyInstance;
+    let warnSpy: jest.SpyInstance;
+    let errorSpy: jest.SpyInstance;
+
+    beforeAll(async () => {
+      sendContactMessageMock = jest.fn().mockResolvedValue(undefined);
+      resolveMock = jest.fn().mockResolvedValue([CONTACT_ADMIN_RECIPIENT]);
+
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      })
+        .overrideProvider(PrismaService)
+        .useValue({} as unknown as PrismaService)
+        .overrideProvider(MailService)
+        .useValue({
+          sendContactMessage: sendContactMessageMock,
+          sendVerificationCode: jest.fn(),
+          sendReceipt: jest.fn(),
+        } as unknown as MailService)
+        .overrideProvider(AdminRecipientResolver)
+        .useValue({
+          resolve: resolveMock,
+          resetCache: jest.fn(),
+        } as unknown as AdminRecipientResolver)
+        .compile();
+
+      app = moduleRef.createNestApplication<NestExpressApplication>();
+      app.setGlobalPrefix('api/v1');
+      app.useGlobalPipes(createValidationPipe());
+      configurePayloadCap(app);
+      configureBodyParser(app);
+      await app.init();
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    beforeEach(() => {
+      sendContactMessageMock.mockReset().mockResolvedValue(undefined);
+      resolveMock.mockReset().mockResolvedValue([CONTACT_ADMIN_RECIPIENT]);
+      // Fresh spy per test (the log-capture seam) — installed here, never in
+      // `beforeAll`, so no Nest boot-time log line is ever in a capture window.
+      logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    /** Flatten every captured log call's arguments, across all three levels, into one searchable string. */
+    function emittedLogText(): string {
+      return [...logSpy.mock.calls, ...warnSpy.mock.calls, ...errorSpy.mock.calls]
+        .map((args) => args.map((a: unknown) => String(a)).join(' '))
+        .join('\n');
+    }
+
+    /** Assert neither the response wire text nor anything captured by the log spies contains any {@link CONTACT_LEAKABLE_VALUES} entry. */
+    function expectContactResponseAndLogsClean(res: request.Response): void {
+      const wireText = `${JSON.stringify(res.body ?? {})}\n${res.text ?? ''}`;
+      const emitted = emittedLogText();
+      for (const leakable of CONTACT_LEAKABLE_VALUES) {
+        expect(wireText).not.toContain(leakable);
+        expect(emitted).not.toContain(leakable);
+      }
+    }
+
+    it('a valid submission leaks no requester value or recipient address in the response or the logs', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/contact')
+        .send(contactBodyFixture());
+
+      expect(res.status).toBe(202);
+      expect(sendContactMessageMock).toHaveBeenCalledTimes(1);
+      expectContactResponseAndLogsClean(res);
+    });
+
+    it('a validation failure leaks no requester value or recipient address in the 400 envelope or the logs', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/contact')
+        .send(contactBodyFixture({ category: 'Not a real category' }));
+
+      expect(res.status).toBe(400);
+      expect(sendContactMessageMock).not.toHaveBeenCalled();
+      expectContactResponseAndLogsClean(res);
+    });
+
+    it('a filled honeypot leaks no requester value or recipient address in the 202 response or the logs', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/contact')
+        .send(contactBodyFixture({ website: 'http://spam.example' }));
+
+      expect(res.status).toBe(202);
+      expect(sendContactMessageMock).not.toHaveBeenCalled();
+      // Prove a line WAS emitted first (the vacuous-absence trap, KZ-002) —
+      // an empty log stream would pass the sweep above with nothing proven.
+      expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
+      expectContactResponseAndLogsClean(res);
+    });
+
+    it(
+      "a transport rejection whose error message embeds the recipient address verbatim (SES " +
+        "MessageRejected's real shape) leaks it into neither the 502 body nor any log line " +
+        '(NFR-1 condition 2 — the shown-to-fail proof)',
+      async () => {
+        const rejection = new Error(
+          'Email address is not verified. The following identities failed the check in ' +
+            `region EU-WEST-1: ${CONTACT_ADMIN_RECIPIENT}`,
+        );
+        rejection.name = 'MessageRejected';
+        sendContactMessageMock.mockRejectedValueOnce(rejection);
+
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/contact')
+          .send(contactBodyFixture());
+
+        expect(res.status).toBe(502);
+        // Prove a line WAS emitted first (KZ-002) — the disqualifying trap
+        // this whole block exists to avoid.
+        expect(errorSpy.mock.calls.length).toBeGreaterThan(0);
+        expectContactResponseAndLogsClean(res);
+      },
+    );
+  },
+);

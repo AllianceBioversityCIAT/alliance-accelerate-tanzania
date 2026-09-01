@@ -16,6 +16,17 @@ import { configurePayloadCap } from './common/payload-cap.config';
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Local-dev only — `lambda.ts` deliberately sets no CORS header and this
+  // file is never imported there. The deployed API is same-origin: CloudFront
+  // serves the static frontend and proxies `/api` to API Gateway, so a browser
+  // never makes a cross-origin call in production. Locally the frontend is on
+  // :3000 and this API on :3001 — different origins — so without this every
+  // `npm run dev` request is blocked by the browser before it is sent.
+  app.enableCors({
+    origin: process.env.LOCAL_CORS_ORIGIN ?? 'http://localhost:3000',
+    credentials: true,
+  });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(createValidationPipe());
   configurePayloadCap(app);

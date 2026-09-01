@@ -45,6 +45,12 @@ Before the first deploy you need:
   Gateway, Cognito, S3, CloudFront, IAM, Secrets Manager, and CloudFormation
   stacks in `eu-west-1` (NFR-1; no static keys committed — NFR-2).
 - **AWS SAM CLI** and **AWS CLI v2**.
+
+> **Only deploying needs the access above.** To run the stack locally you need **no AWS account
+> at all** — `MAIL_TRANSPORT=no-op` and a local MySQL (`docs/infrastructure.md` §6). The one
+> thing that genuinely requires AWS is **real email delivery**, and the minimum policy for that
+> is `infra/policies/developer-local-test-policy.json` — SES send + sandbox verification +
+> `ListUsersInGroup`, with no deploy rights.
 - **`jq`** (scripts parse stack outputs / the DB secret with it).
 - **Node 20** (backend build + Prisma; frontend static export).
 - An available **default VPC** with public subnets in `eu-west-1` (auto-detected

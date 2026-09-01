@@ -16,12 +16,15 @@
 ```
 /                         Landing / Public Registry Portal (metrics + entry points)
 /directory                Searchable, paginated actor directory (list/table)
-/directory/[id]           Actor profile page (public-safe by default)
+/profile?id=              Actor profile page (public-safe by default)
 /map                      Seed Maps — interactive geospatial view + filters
 /register                 Public self-registration form (Identity · Location · Crops & capacity ·
                            Contact · Data protection & consent) + in-flow OTP verification step
 /register/submitted       Receipt — reference code (?ref=), save-and-lookup instructions
 /register/status          Status lookup by reference + email — status and reviewer note only
+/contact                  Public contact form — relays to the current Cognito `admin` group,
+                           no sign-in required
+/privacy                  Privacy notice — static content
 /admin                    Admin/Staff console (auth-gated)
   /admin/actors           Actor management table (CRUD)
   /admin/actors/new       Create actor (validated form)
@@ -57,10 +60,15 @@
 | Export | Staff / Admin | Filter builder, role-aware scope notice, download button. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
+| Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
+| Privacy | Public | Static notice: what a contact submission collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything. |
 
 ## 5. Navigation Model
 
-- **Public top nav:** Logo · Home · Directory · Map · Register your organisation · (Sign in). Sticky, condenses to a hamburger on mobile. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`.
+- **Public top nav:** Logo · Discovery Map · Dashboard · Directory · About · Contact · Register your organisation · (Sign in). Sticky; the full bar renders from **`lg` (1024px)** and condenses to a hamburger below it — tablet included. `NAV_LINKS` in `frontend/components/shell/Header.tsx` is the single source for both the desktop bar and the mobile drawer — no second, divergent list. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`; `AuthSlot` (Sign in) is a sibling outside `NAV_LINKS`.
+  - **No "Home" entry, and no brand descriptor**, both removed 2026-08-31. The brand lockup is itself the link to `/` and its `aria-label` names it as home, so a "Home" item duplicated an adjacent control; the "Tanzania Seed Registry" descriptor beside the logo cost ~196px of a row that has only 1216px to spend.
+  - **Why `lg` and not `md`.** Measured in a real browser, not estimated: the row's min-content width was **1270px** against a container ceiling of **1216px** — `max-w-7xl` caps usable width, so it never grows with the viewport and there is no screen wide enough. The bar overflowed at **every** width ≥768 (+526px at 768, +278px at 1024, +22px at 1280), spilling into the page gutter above that. After the fix the row needs 935px at 1024 (**41px slack**) and 1015px at 1280+ (**201px slack**). Recorded in `docs/specs/contact/contact-channels/execution.md`, T-10 DC-9 closure.
+  - **Adding a nav entry is not free.** The 1216px ceiling is fixed. Before adding one, measure the row's min-content width rather than assuming headroom exists — this bar was already over budget with six entries and nobody noticed.
 - **Admin shell:** left sidebar (Actors · Import · Export · Users) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile.
 - **Cross-links:** Directory rows link to profiles; profiles link to the map; map popups link to profiles. One consistent breadcrumb pattern in Admin.
 

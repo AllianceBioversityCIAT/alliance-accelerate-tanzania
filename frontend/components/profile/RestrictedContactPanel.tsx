@@ -11,6 +11,12 @@
 //
 // Token-driven: no raw hex (NFR-4). Uses `bg-restricted` (--color-restricted-bg)
 // and `text-muted` for the locked surface, `border-border` for the outline.
+//
+// T-10 (contact-channels spec): the closing sentence used to end at "please
+// contact the ACCELERATE Tanzania programme team" with no way to actually do
+// that. It now links `/contact`, the public entry point T-9/T-10 built.
+
+import Link from 'next/link';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +78,11 @@ export default function RestrictedContactPanel() {
 
         <p className="text-xs text-muted">
           If you represent this organization and wish to update your consent
-          status, please contact the ACCELERATE Tanzania programme team.
+          status, please{' '}
+          <Link href="/contact" className="font-medium text-primary hover:underline">
+            contact the ACCELERATE Tanzania programme team
+          </Link>
+          .
         </p>
       </div>
     </section>

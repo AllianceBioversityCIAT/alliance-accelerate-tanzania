@@ -1,4 +1,5 @@
 // @sdd-spec actors/public-self-registration (T-3)
+// @sdd-spec contact/contact-channels (T-1)
 /**
  * `SesMailTransport` unit tests with a mocked SES client (`aws-sdk-client-mock`,
  * mirroring `users/users.service.spec.ts`'s Cognito mocking convention).
@@ -8,6 +9,10 @@
  * message reaches SES, that the configured sender identity is verified, or
  * that the account's SES sandbox/quota allows it — there is no application
  * sender identity under this repo's default infra parameters.
+ *
+ * contact/contact-channels T-1 (design.md §4.2, §4.6, DD-5) adds coverage for
+ * the widened `to` (array form), `ReplyToAddresses`, and the `Source`
+ * double-wrapping guard.
  */
 import { SendEmailCommand, SESClient } from '@aws-sdk/client-ses';
 import { mockClient } from 'aws-sdk-client-mock';
@@ -41,7 +46,7 @@ describe('SesMailTransport (design.md §4.9)', () => {
       Destination?: { ToAddresses?: string[] };
       Message?: { Subject?: { Data?: string }; Body?: { Text?: { Data?: string } } };
     };
-    expect(input.Source).toBe('registry@example.org');
+    expect(input.Source).toBe('ACCELERATE Tanzania Seed Registry <registry@example.org>');
     expect(input.Destination?.ToAddresses).toEqual(['applicant@example.org']);
     expect(input.Message?.Subject?.Data).toBe('Registration received — REG-2026-0007');
     expect(input.Message?.Body?.Text?.Data).toBe('Your reference is REG-2026-0007.');
@@ -64,5 +69,55 @@ describe('SesMailTransport (design.md §4.9)', () => {
       transport.send({ to: 'applicant@example.org', subject: 's', text: 't' }),
     ).rejects.toThrow(/MAIL_SENDER_ADDRESS/);
     expect(sesMock.calls()).toHaveLength(0);
+  });
+
+  it('maps an array `to` to every ToAddresses entry (design.md §2, §4.6)', async () => {
+    sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+    const transport = new SesMailTransport();
+
+    await transport.send({
+      to: ['admin-one@example.org', 'admin-two@example.org'],
+      subject: 's',
+      text: 't',
+    });
+
+    const input = sesMock.call(0).args[0].input as { Destination?: { ToAddresses?: string[] } };
+    expect(input.Destination?.ToAddresses).toEqual(['admin-one@example.org', 'admin-two@example.org']);
+  });
+
+  it('passes ReplyToAddresses when `replyTo` is present (FR-4)', async () => {
+    sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+    const transport = new SesMailTransport();
+
+    await transport.send({
+      to: 'admin@example.org',
+      subject: 's',
+      text: 't',
+      replyTo: 'Jane Requester <jane@example.org>',
+    });
+
+    const input = sesMock.call(0).args[0].input as { ReplyToAddresses?: string[] };
+    expect(input.ReplyToAddresses).toEqual(['Jane Requester <jane@example.org>']);
+  });
+
+  it('omits ReplyToAddresses when `replyTo` is absent', async () => {
+    sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+    const transport = new SesMailTransport();
+
+    await transport.send({ to: 'admin@example.org', subject: 's', text: 't' });
+
+    const input = sesMock.call(0).args[0].input as { ReplyToAddresses?: string[] };
+    expect(input.ReplyToAddresses).toBeUndefined();
+  });
+
+  it('uses MAIL_SENDER_ADDRESS verbatim when it already contains a display name (design.md §4.2 double-wrapping guard)', async () => {
+    process.env.MAIL_SENDER_ADDRESS = 'Existing Name <registry@example.org>';
+    sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+    const transport = new SesMailTransport();
+
+    await transport.send({ to: 'admin@example.org', subject: 's', text: 't' });
+
+    const input = sesMock.call(0).args[0].input as { Source?: string };
+    expect(input.Source).toBe('Existing Name <registry@example.org>');
   });
 });

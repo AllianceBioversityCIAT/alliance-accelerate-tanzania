@@ -56,6 +56,16 @@ describe('ClosingCTA', () => {
     expect(link).toHaveAttribute('href', '/about');
   });
 
+  // ── (contact-channels T-10) "Contact us" link → /contact (FR-1) ──────────
+
+  it('contact-channels T-10: renders the "Contact us" link pointing to /contact', () => {
+    render(<ClosingCTA />);
+
+    const link = screen.getByRole('link', { name: /contact us/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/contact');
+  });
+
   // ── (d) [T-10] No <video> under reduced-motion (matchMedia matches:false) ─
 
   it('does NOT render a <video> element when matchMedia returns matches:false (poster branch)', () => {
