@@ -742,3 +742,112 @@ Summary-block alignment independently re-confirmed by column count: all seven la
 #### ADVISORY (recorded, not actioned — pre-existing drift, not introduced here)
 
 The script's header block now describes less than the script does: PURPOSE step 3 shows only `NEXT_PUBLIC_API_BASE_URL=<ApiBaseUrl> npm run build` for what is now a **four**-variable prefix; the "non-secret wiring values" enumeration lists four of **seven** echoed values; and the USAGE examples omit `GA_MEASUREMENT_ID=`. **All three already omitted the Cognito pair before this diff**, so none is introduced by T-7 and none is in its scope. Worth a separate cleanup pass.
+
+### T-8 Rendered layout verification — **EVIDENCE GATHERED, human gate pending**
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-31 |
+| Effort | `medium` |
+| Source changes | **none** — this task observes; it does not fix |
+| Method | headless Chrome (`--headless=new`) driven over raw CDP via a throwaway driver using the `ws` package already in `node_modules`. No installs. Static export rebuilt at HEAD and served over http, not `file://`. |
+| Captures | 14 PNGs + `report.json` (raw measurement dump) in the session scratchpad, deliberately **not** committed — binary screenshots do not belong in git |
+
+#### Viewport verification — the disqualifier's first half
+
+`window.innerWidth` measured **in-page** matched the requested width exactly at all six route×width combinations (375/375, 768/768, 1440/1440 on home and `/map`). Chrome neither clamped nor silently resized. A capture at an unverified viewport would have proved nothing about 375; this one is verified.
+
+#### Measured results
+
+**Horizontal overflow:** `documentElement.scrollWidth === clientWidth` and `body.scrollWidth === clientWidth` **exactly**, at all six combinations, in both banner-visible and post-choice states. Zero horizontal overflow anywhere.
+
+**Stacking on `/map`:** the banner computes to `z-index: 1100`, `MapLegend` to `1000`. At 768 and 1440 they overlap, and `document.elementFromPoint()` at the intersection returns the banner's own inner element — **the rendered truth, not an arithmetic inference**. At 375 they do not overlap at all (the legend's bottom edge sits at y=568, the banner's top at y=753).
+
+#### The four forward pointers — all four answered here, none answerable anywhere else
+
+1. **T-4's border-parity fix is confirmed rendered.** Both buttons carry `border: 1px` on all four sides with `box-sizing: border-box`, and **`offsetHeight` is identical at 39px** across every width and route. Their widths differ (76 vs 82) purely from the glyph widths of "Reject" versus "Accept", not from border asymmetry. The 2px defect that produced T-4's attempt-1 FAIL is closed — and this is the rendered verification `design.md` §5.3's *"identical in dimensions"* needed, which jsdom structurally could not supply.
+2. **The 1px hover rim exists and is acceptable.** At rest, accept's border and background are both `rgb(31,78,140)`; on hover the background darkens to `rgb(22,58,102)` while the border stays, producing the predicted lighter rim. Subtle, and consistent with `Header.tsx`'s existing pattern. Not a defect.
+3. **The `/map` transient overlap is confirmed in both halves** — the banner does overlap `MapLegend` at 768/1440, and it is entirely gone post-choice.
+4. **No horizontal body scroll** at any width, either state.
+
+#### ⚠️ A GENUINE LAYOUT DEFECT — found, reported, deliberately not fixed
+
+At **768px and 1440px on `/map`**, while the banner is visible, it occludes two things `design.md` §5.4 never named:
+
+- the **last rail-list card** ("Iringa Research Institute"), rect (16, 809, 255×89)
+- the **Leaflet and OpenStreetMap attribution links**, rects (535.75, 898.45, 51×14) and (609.39, 898.45, 85×14)
+
+All three confirmed by `elementFromPoint`, not rect arithmetic. `design.md` §5.4 accepted **only** the `MapLegend` overlap as a named, transient risk. This is broader than what was accepted, and the attribution links are a **licensing** control, not decoration.
+
+**This is exactly what T-8 exists to find.** `requirements.md` §4.1 records layout/occlusion as the one defect class in this spec with no automated gate; seven tasks and 1,475 green tests could not see it, and the substituted gate did on its first run.
+
+**Escalated to the user rather than adjudicated by the Leader** — it exceeds an explicitly accepted risk boundary, it carries a licensing dimension, and any fix is new scope on a task whose entire purpose is to observe.
+
+#### Disclosed deviation — the mock backend, and why it was accepted
+
+The real backend is not running, and `getActors()` returning `null` sends `ActorMap` into an **error branch that never mounts `LeafletMap` at all** — not an empty map, a different branch entirely. Capturing that would have produced a tileless, legend-less, Leaflet-less `/map`, which the task's own disqualifier forbids presenting as evidence.
+
+Rather than report a gap, the Implementer stood up a throwaway Node mock on `:3001` serving five synthetic actors in the real `PublicActorList` shape, and killed it after the captures. No repo file was touched.
+
+**Leader ruling: accepted.** The disqualifier forbids substituting *a different route* or presenting a *tileless* map. Neither happened: the real `/map` route rendered with **real OSM tiles from the network** (6/6 at 375, 12/12 at 768, 24/24 at 1440), a real Leaflet instance, a real legend and a real rail. The mock replaced only the data source, which is not what that clause was protecting against — and the evidence produced is strictly stronger than the gap report would have been. Recorded as a judgment call that could reasonably have gone the other way.
+
+#### Observed and left alone
+
+At 375px on `/map` there is a large blank gap between the end of the map region (~y=592) and the banner (~y=753) in the collapsed-rail mobile layout. **Unrelated to the consent banner** and pre-existing; noted, not diagnosed, out of scope.
+
+### T-9 Move the OSM attribution control clear of the banner — **PASS (attempt 1 of max 3)**
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-31 |
+| Implementer attempts | **1** |
+| Effort | `medium` |
+| Files | `frontend/components/map/LeafletMap.tsx` — **one line plus a comment** |
+| Traces | FR-2 scenario 2 · `design.md` §5.4 (amended) · T-8's measured finding |
+| Verification | `npm test -- --silent` → 98/98 suites, 1475/1475 · `npm run build` → static export completed, 25/25 pages |
+
+`map.attributionControl.setPosition('topright')`, added three lines below the `L.tileLayer(…, { attribution: OSM_ATTRIBUTION })` call it modifies. `OSM_ATTRIBUTION`'s text and `OSM_TILE_URL` untouched.
+
+#### The evidence — and an unprompted strength the Reviewer credited
+
+The Implementer **captured a pre-fix baseline** by stashing the change, rebuilding and re-measuring at identical coordinates. Nobody asked for it. It converts the harness from an assertion generator into a gate **demonstrated to fail**:
+
+| Width | Link | `elementFromPoint` **before** | **after** |
+|---|---|---|---|
+| 768 | Leaflet | `DIV` (banner inner container) | `A`, attribution |
+| 768 | OpenStreetMap | `DIV` (banner) | `A`, attribution |
+| 1440 | Leaflet | `DIV` (banner) | `A`, attribution |
+| 1440 | OpenStreetMap | `DIV` (banner) | `A`, attribution |
+
+The baseline reproduced **T-8's recorded rects digit-for-digit** — attribution (535.75, 898.45, 51×14) and (609.39, 898.45, 85×14), legend (310, 399.25, 117×481), rail card (16, 809, 255×89) — independently validating that a second, freshly-spawned worker's harness matched the first's methodology.
+
+Zoom control `(298, 67, 34×64)` and `MapLegend` `(310, 399.25, 117.36×481)` **pixel-identical before and after** — surgical. The legend and rail-card occlusions **still present**, as required: a fix that silently resolved them too would have meant more moved than intended.
+
+#### Reviewer verifications against source, not against the report
+
+- **The idiom is not merely right, the alternative is unavailable.** `MapOptions.attributionControl` is typed `boolean | undefined` — there is no position field. Configuring position at construction would need `attributionControl: false` plus a separately constructed `L.control.attribution({position})`: two constructs, order-dependent against the tile layer's attribution registration, and **carrying a live risk of dropping the OSM credit entirely if the ordering is got wrong.** `Control.setPosition` is public typed API and `Map.attributionControl` is non-optional.
+- **Top-right is verifiably unclaimed.** The only positioned claims in `components/map/` are the legend control's `bottomleft`, `MapLegend`'s own `bottom-6 left-3`, and `ActorMap`'s `absolute inset-0` — which is the **loading** state, mutually exclusive with a rendered map.
+- **All four factual claims in the new comment hold** against source (KZ-008 clean).
+- **Licensing strictly strengthened.** The credit moved from a state where `elementFromPoint` returned the banner — i.e. **not clickable** — to one where it returns the `A`. Text, href and Leaflet's prefix unchanged.
+
+#### The 375 ruling — a debt on T-8, not a failure of T-9
+
+T-9's `Verify` line names 768 and 1440, and that clause was authored **with T-8's finding already in hand** — a deliberate narrowing by the task author, not a shortfall. NFR-5's three-width obligation is assigned by name in the Coverage Closure table to **T-8**; FAILing T-9 for a clause the spec assigns elsewhere would be inventing a requirement.
+
+**But T-8's 375 evidence is now stale** — it describes a build that no longer exists, and re-inheriting it would be an inherited-claim failure. `frontend/CLAUDE.md` requires the same independently: *"any change to flow, positioning or spacing needs a rendered capture at 375/768/1440 before deploy"*, and `setPosition` is a positioning change.
+
+#### ⚠️ A NEW OCCLUSION HYPOTHESIS THE FIX MAY CREATE — and why it is only reachable at 375
+
+The Reviewer identified something neither the Leader nor the Implementer had considered:
+
+**Pre-fix the attribution sat at the map's *bottom*. Post-fix it sits at the map's *top* — the strip that scrolls under the `sticky top-0 z-40` Header.**
+
+At 768 and 1440 this cannot arise: the page does not scroll (`min-h-[calc(100vh-4rem)]`, with the rail internally scrollable). **At 375 the layout is `flex-col` — the rail stacks above the map — so the page does scroll, and the attribution could pass under the sticky Header.** The one uncaptured width is precisely the one exposed.
+
+It follows that a **scroll-0 capture at 375 would be evidence-shaped and empty**: the map's top row may be below the fold entirely, proving nothing. The re-capture must be scrolled.
+
+**The Reviewer computed an analytic bound showing the text fits at 375 with ~90px clearance — and explicitly declined to offer it as coverage**, citing this spec's own §5.4 lesson that reasoning-instead-of-measuring is exactly what under-counted the accepted-risk set and created this task. That refusal is the correct call and is recorded as such.
+
+#### ADVISORY (recorded, not actioned)
+
+`map.attributionControl` is non-optional in the typings only because `attributionControl: true` is Leaflet's default. Anyone later adding `attributionControl: false` to the `L.map()` options makes this line throw at runtime, and with no `LeafletMap.test.tsx` nothing would catch it.

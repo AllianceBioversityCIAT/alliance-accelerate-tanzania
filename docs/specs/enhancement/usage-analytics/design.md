@@ -98,7 +98,12 @@ Measured, not assumed. Current z-index owners:
 The banner is `fixed bottom-0` and full-width at `z-[1100]`. Two consequences, both accepted and both requiring the NFR-5 rendered capture rather than a test:
 
 1. **It must clear Leaflet.** Anything at or below `z-[1000]` would be painted *under* the map's controls and legend. `z-[1100]` is the lowest value that clears the highest current owner.
-2. **On `/map` it overlays `MapLegend`, which sits at bottom-left.** This is accepted as a **transient**: the banner exists only until the visitor's first choice, after which it never renders again for that visitor. Mitigating it by relocating the legend would change a delivered component for a one-time overlap; mitigating it by moving the banner to a corner would weaken FR-2's prominence. The overlap is therefore documented and verified visually, not designed away.
+2. **On `/map` it overlays three things, not one — corrected 2026-08-31 after T-8's rendered capture.** This section originally named only `MapLegend`. The measured reality at 768px and 1440px is that the banner also occludes the **last rail-list card** and the **Leaflet/OpenStreetMap attribution links**. All three were confirmed by `document.elementFromPoint()`, not rect arithmetic.
+
+   - **`MapLegend`** and the **last rail-list card** are accepted as **transient**: the banner exists only until the visitor's first choice, after which it never renders again for that visitor. Relocating the legend would change a delivered component for a one-time overlap; moving the banner to a corner would weaken FR-2's prominence.
+   - **The attribution links are not accepted**, and are fixed in **T-9**. They are a licensing control, not decoration — and FR-2 scenario 2 contemplates a visitor who *ignores the banner entirely*, for whom the occlusion is not transient at all but permanent. That case is what separates them from the other two.
+
+   **This section's original single-item list is exactly the defect `requirements.md` §4.1 predicted:** layout occlusion is the one class in this spec with no automated gate, so the accepted-risk set was written from reasoning rather than measurement, and it under-counted. Seven tasks and 1,475 green tests could not see it; the substituted gate saw it on its first run.
 
 `z-[1100]` is an arbitrary Tailwind value. It is **not** an NFR-2 violation: `docs/ux-ui/design.md` §7 defines no z-index scale, and `MapLegend`'s `z-[1000]` is the established in-repo precedent for exactly this. Called out here so a Reviewer greping for arbitrary values reads it as precedent rather than drift.
 
@@ -225,7 +230,7 @@ Estimated from the design above, and a **tripwire for `/akili-execute`**, not a 
 
 | Metric | Estimate |
 |---|---|
-| Tasks | **8** (unchanged) |
+| Tasks | **9** — was 8; T-9 added 2026-08-31 from T-8's finding, user-approved |
 | LOC (implementation + tests) | **~1,600** — roughly 600 implementation, 1,000 tests |
 | Review rounds | **~13** — one per task plus ~5 rework rounds |
 

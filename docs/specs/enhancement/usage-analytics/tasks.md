@@ -80,7 +80,7 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       ⚠️ **Do not** move this value into SSM or Secrets Manager — a GA4 measurement ID ships in the page source of every page and is not a secret (`design.md` §7). ⚠️ **Do not** add `--profile` to `deploy-frontend.sh`: it reads `AWS_PROFILE` and parses no flags, so a passed flag is silently ignored and an ambient profile wins.
       ⚠️ **Disqualifies the evidence:** `npm run build` succeeding with the variable **set** proves nothing about the absent case, which is the one FR-7 rests on. Both runs are required.
 
-- [ ] **T-8 Rendered layout verification — the substituted NFR-5 gate** (deps: T-5, T-6, T-7)
+- [~] **T-8 Rendered layout verification — the substituted NFR-5 gate** (deps: T-5, T-6, T-7)
       Size: S · Effort: `medium` · Skills: none (drive headless Chromium over CDP; `playwright-cli` only if the running environment already provides it)
       Scope: capture the banner rendered at **375 / 768 / 1440** on a `(public)` route **and on `/map`**, plus one post-choice capture confirming the banner is gone. Attach the captures to `execution.md`.
       Traces: NFR-5, NFR-6, `design.md` §5.4, §9
@@ -91,12 +91,23 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       ⚠️ **Disqualifies the evidence:** a capture taken at a viewport the harness silently resized, or one showing a route that failed to load its map tiles, is not evidence — re-take it. If `/map` cannot be captured with the map actually rendered, report the gap rather than substituting a directory-route capture.
       ⚠️ **Human gate:** this task's output is reviewed by the user at the HITL pause, not adjudicated by an automated PASS.
 
+- [x] **T-9 Move the OSM attribution control clear of the banner** (deps: T-8's finding)
+      Size: S · Effort: `medium` · Skills: none
+      Scope: reposition Leaflet's attribution control in `frontend/components/map/LeafletMap.tsx` so the consent banner cannot occlude it. The zoom control occupies top-left and `MapLegend` occupies bottom-left, so **top-right is the free corner**. Change nothing else about the map.
+      Traces: FR-2 scenario 2 (*"every link, control, and region of the underlying page remains operable"*), `design.md` §5.4 (amended), T-8's measured finding
+      Files: `frontend/components/map/LeafletMap.tsx`
+      Verify: `cd frontend && npm test -- --silent && npm run build`, then **re-run T-8's `/map` capture at 768 and 1440** and confirm by `elementFromPoint` that the attribution links are no longer under the banner.
+      Done when: the attribution renders in a position the banner never reaches; `elementFromPoint` at the attribution's rect returns the attribution, not the banner, while the banner is visible; the OSM attribution text itself is unchanged; the zoom control and `MapLegend` are undisturbed.
+      ⚠️ **Added 2026-08-31 by user approval**, from T-8's rendered finding — not minted from an advisory. `design.md` §5.4 was amended in the same change to record which occlusions are accepted and which are not.
+      ⚠️ **Disqualifies the evidence:** `npm test` cannot see this. There is no `LeafletMap.test.tsx` — Leaflet does not render in jsdom — so a green suite proves only that nothing else broke. **The evidence for this task is the re-captured `elementFromPoint` result**, exactly as it was for the finding that created the task.
+      ⚠️ Do **not** change `OSM_ATTRIBUTION`'s text or the tile URL. The licensing requirement is that the attribution be *visible*; its wording is already correct.
+
 ---
 
 ## Dependency Graph
 
 ```
-T-1 → T-2 → T-3 → T-5 → T-8
+T-1 → T-2 → T-3 → T-5 → T-8 → T-9
               └──→ T-7 → T-8
       T-2 → T-4 → T-5
       T-2 → T-6 ──────→ T-8
