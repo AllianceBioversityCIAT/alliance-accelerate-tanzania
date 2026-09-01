@@ -50,6 +50,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from 'react';
 
@@ -155,8 +156,21 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
   // Children render unconditionally, regardless of consent state or
   // loading — this provider is state-only and renders nothing of its own.
 
+  // Stable identity when contents are stable, not an optimisation: today no
+  // render is saved (the parent is a server component that never
+  // re-renders on the client, and when this provider's own state changes
+  // every consumer needs to re-render anyway). What this guards is T-10's
+  // `PublicShellFrame`, which runs a `ResizeObserver` inside an effect keyed
+  // on `showBanner`. If that effect — or any future one — ever depends on
+  // this context object itself, a fresh object every render would tear down
+  // and re-establish the observer on every render, a real, silent bug.
+  const value = useMemo<ConsentContextValue>(
+    () => ({ consent, loading, showBanner, setConsent }),
+    [consent, loading, showBanner, setConsent],
+  );
+
   return (
-    <ConsentContext.Provider value={{ consent, loading, showBanner, setConsent }}>
+    <ConsentContext.Provider value={value}>
       {children}
     </ConsentContext.Provider>
   );
