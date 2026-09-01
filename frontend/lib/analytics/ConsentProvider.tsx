@@ -167,7 +167,8 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 
 /** Returns the raw ConsentContextValue. Consumed by ConsentBanner (T-4),
- *  GoogleAnalytics (T-3), and ConsentChoiceControl (T-6). */
+ *  GoogleAnalytics (T-3), ConsentChoiceControl (T-6), and PublicShellFrame
+ *  (T-10). */
 export function useConsentContext(): ConsentContextValue {
   return useContext(ConsentContext);
 }

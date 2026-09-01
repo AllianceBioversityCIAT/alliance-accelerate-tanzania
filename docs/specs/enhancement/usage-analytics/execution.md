@@ -7,7 +7,7 @@
 | Spec path | `docs/specs/enhancement/usage-analytics/` |
 | Depth | Standard |
 | Branch | `tracking-tools` |
-| Budget (`design.md` §11) | **~1,600 LOC · 8 tasks · ~13 review rounds** (re-baselined 2026-08-31 at the T-2 gate, user-approved; originally ~580 LOC / 9 rounds — see the T-2 entry for the breach and diagnosis) |
+| Budget (`design.md` §11) | **~1,600 LOC · 9 tasks · ~13 review rounds** (re-baselined at the T-2 gate, user-approved; originally ~580 LOC / 8 tasks / 9 rounds). **All three exceeded — closing budget at the foot of this log.** |
 | Triad | Leader `opus` (T1) · Implementer `opus`* (T2 wrapper: `sonnet`) · Reviewer `opus` (T3, tools `Read`/`Grep`/`Glob`) |
 | `author ≠ auditor` | Enforced by configuration — `.claude/agents/akili-implementer.md` binds `model: sonnet`, `.claude/agents/akili-reviewer.md` binds `model: opus` |
 | Spec commit status | **Intentionally uncommitted** at user request as of first run |
@@ -346,7 +346,7 @@ Rework is the binding constraint, exactly as flagged at the T-2 gate. Five tasks
 | Date | 2026-08-31 |
 | Implementer attempts | **3** (FAIL → FAIL → PASS) |
 | Effort | `xhigh` throughout — already the T2 ceiling; escalating the tier was unavailable (T1 is the Reviewer's model, and `author ≠ auditor` is enforced by the `.claude/agents/` wrappers) |
-| Final files | `frontend/components/analytics/GoogleAnalytics.tsx` (119) · `GoogleAnalytics.test.tsx` (259) |
+| Final files | `frontend/components/analytics/GoogleAnalytics.tsx` (119) · `GoogleAnalytics.test.tsx` (**327** — this entry recorded **259**, a 68-line error by the Leader, found by `/akili-validate`. `GoogleAnalytics.tsx`'s 119 matched exactly, so the counting method was whole-file and this was not a definitional difference. The error suppressed a third budget breach; see the closing budget.) |
 | Requirements covered | FR-1 (3 scenarios + both clauses) · FR-4 (scenario + both clauses) · FR-7 (2 scenarios + both clauses) · NFR-7 · `design.md` §5.5, DD-1 |
 | Verification | `npm test -- GoogleAnalytics --silent` → 7/7 · `npm run lint` → clean · `npx tsc --noEmit` → only the pre-existing `admin/actors/page.test.tsx(45,64)` error |
 
@@ -889,3 +889,106 @@ All `Done when` clauses met at all three widths: the banner obscures no interact
 **What this task bought, stated plainly:** it is the only task in the spec that writes no production code, and it found the only defect that seven tasks and 1,475 green tests could not see. It then produced a second finding on its follow-up capture. `requirements.md` §4.1 predicted exactly this by recording layout/occlusion as the one class with no automated gate — and the substituted gate earned its place twice.
 
 **Limitation recorded, not glossed:** CDP's synthetic `window.scrollTo` is not real mobile Safari — momentum scrolling and address-bar collapse are untested, the same limitation T-8's first run operated under.
+
+---
+
+## Closing budget — the third breach, recorded late
+
+`design.md` §11's re-baseline note reads: *"The tripwire stays armed at the new figure — a second breach is a signal about the spec, not about the estimate."* **A breach that is never measured disarms the tripwire retroactively**, and that is what happened: the last budget table in this log is T-4's (1,787 / 112%). Nothing after T-4 re-measured, and the 68-line error in T-3's entry made the running total look smaller than it was.
+
+| | Budget (re-baselined) | Actual | |
+|---|---|---|---|
+| Tasks | 9 | 9 | ✅ |
+| LOC | ~1,600 | **~2,595 insertions across 16 files** | **162% — third breach** |
+| — implementation | 600 | ~735 | 123% |
+| — tests | 1,000 | ~1,830 | **183%** |
+| Review rounds | ~13 | **15** | 115% |
+| — of which rework | ~5 | **7** | 140% |
+
+Test-to-implementation ratio: **~2.5:1**, against the 1.72:1 the re-baseline assumed and the 0.76:1 the original estimate assumed. The ratio rose at every measurement. Implementation tracked near budget throughout; **evidence was the entire overrun, all three times.**
+
+**Corrected counts.** The Leader reported "20 review rounds, 9 FAILs" to the user and to `/akili-validate`. The log records **15 rounds and 7 FAILs** (T-1 ×1 · T-2 ×3 · T-3 ×3 · T-4 ×2 · T-5 ×1 · T-6 ×3 · T-7 ×1 · T-8 human gate, no Reviewer · T-9 ×1). Both figures were overstated; neither was cross-checked against the log before being repeated. That is the KZ-005 defect — a numeric claim not reconciled against the prose of the document that contains it — committed by the Leader while auditing others for it.
+
+## F-1 — FR-2 scenario 2 IS violated. The earlier dismissal measured the wrong variable.
+
+`/akili-validate` found that T-8's A/B could not support its own conclusion: it reverted `LeafletMap.tsx` and re-swept, but **the consent banner was present in both arms**. The variable of interest was never varied. "Pre-existing" could only mean *pre-existing relative to T-9*; relative to this spec, the fixed bottom bar this spec introduced is the occluder. **The Leader accepted that conclusion and praised it as "measured, not asserted." It was measured, and it measured the wrong thing.**
+
+Re-measured properly: **two Chrome profiles, fully isolated `--user-data-dir` and separate debug ports**, so `localStorage` could not leak between arms. Arm A fresh (banner visible); Arm B seeded with a stored `granted` record via `Page.addScriptToEvaluateOnNewDocument` (banner absent). Routes `/` and `/map`, widths 375/768/1440, scroll 0/mid/max computed live per combination from measured `scrollHeight - innerHeight`. **252 cells**, every hit by `document.elementFromPoint()` at the link's live rect centre, never rect arithmetic.
+
+**Manipulation check — added unprompted by the worker**, on the reasoning that *"the banner is the only thing that varied" is itself a claim that needs evidence, not narrative, given this spec's history*: `bannerPresent` was `true` in all 18 Arm-A combinations and `false` in all 18 Arm-B combinations, zero exceptions. That check is what makes this A/B valid where T-8's was not.
+
+**Result — 27 of 252 cells occluded in Arm A and reachable in Arm B:**
+
+| Route | Widths | Scroll | Occluded in A → hits the banner |
+|---|---|---|---|
+| `/` | 375, 768, 1440 | max | all three funder logos (Alliance, PABRA, BMGF) |
+| `/map` | 375 | mid / max | `/about`, `/contact`, `/privacy` / BMGF logo |
+| `/map` | 768, 1440 | mid / max | brand, `/about`, `/contact`, `/privacy` / all three funder logos |
+
+At every one of the 27, the identical cell in Arm B returns the link's own element. **7 of 7 footer controls are unreachable by pointer at some reachable scroll position**, across both routes and all three widths.
+
+**This is not a documentation gap.** FR-2 scenario 2 requires that *"every link, control, and region of the underlying page remains operable"* while the banner shows, and FR-2's own framing is the visitor who **ignores the banner entirely** — for whom this is permanent, not transient. `design.md` §5.4's accepted set (`MapLegend`, the last rail-list card, the now-fixed attribution) contains none of these controls, and the reasoning that disqualified the attribution links applies here verbatim.
+
+The funder logos are the worst case: occluded at max scroll on **every width** of the home route. For a donor-funded programme, sponsor attribution being unreachable is not a cosmetic concern.
+
+**Escalated to the user. Not fixed** — the fix changes a delivered layout and needs its own rendered verification.
+
+**Limitations recorded:** three scroll samples per combination (0/mid/max), not the 24-offset sweep T-8 used at 375 — a finer sweep could find additional narrow bands between mid and max on `/`. CDP's synthetic `scrollTo` is not real mobile Safari.
+
+### T-10 Clear the footer from under the banner — **PASS (attempt 3 of max 3)**
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Implementer attempts | **3** (FAIL → FAIL → PASS) — all three FAILs were **claim accuracy**, never the mechanism |
+| Files | `frontend/components/shell/PublicShellFrame.tsx` (new) · `frontend/app/(public)/layout.tsx` · `frontend/lib/analytics/ConsentProvider.tsx` (one line) |
+| Verification | `npm test -- --silent` → 98/98 suites, 1475/1475 · `npm run build` → 25/25 static pages, 2/2 exported |
+
+**The mechanism was adjudicated correct at attempt 1** and never reworked: `PublicShellFrame` reads `showBanner` from context (DD-7, never recomposed), measures `ConsentBanner`'s live `getBoundingClientRect().height` via `ResizeObserver`, and applies it as `paddingBottom` on the existing flex column. `(public)/layout.tsx` stays a server component.
+
+**End-to-end corroboration the Reviewer supplied and neither the Leader nor the Implementer had measured:** Arm A minus Arm B `scrollHeight` is exactly **147 / 75 / 72** at 375 / 768 / 1440, on **both** routes — the reservation equals the measured banner height at every width. That is the live-measurement design working, not a coincidence of values.
+
+#### THE MEASUREMENT EVIDENCE — transcribed here because the artefacts are ephemeral
+
+The sweep JSONs live in a session scratchpad that will be garbage-collected, and they are the **sole evidence for a residual this spec accepts in `design.md` §5.4**. Recording the decompositions here, independently re-derived by the Reviewer from the raw files rather than from any report:
+
+**Baseline (`PREFIX`) — 27 occlusions:**
+
+| Category | Cells | Which controls |
+|---|---|---|
+| **Settled** (`/` max ×9, `/map` max ×7) | **16** | the three funder logos **only** |
+| **Mid-transit** (`/map` mid 3+4+4) | **11** | brand, `/about`, `/contact`, `/privacy` |
+
+Confirmed a genuine pre-reservation baseline: its Arm A `maxScroll` equals Arm B exactly (6194 / 4169 / 3569 / 406 / 269 / 269), so no padding was applied.
+
+**Shipped code (`NEWCODE-SAMEENV`, reproduced in `RUN2`): 0 settled, 11 mid** (`/map` mid 2+6+3), at byte-identical line offsets in both files.
+
+**"Different members" is real, not a convenient framing** — the sets are **disjoint** at 375 and 1440:
+
+| Width | Baseline `/map` mid | Post-fix `/map` mid |
+|---|---|---|
+| 375 | about, contact, privacy | Alliance, PABRA |
+| 768 | brand, about, contact, privacy | about, contact, privacy, Alliance, PABRA, Gates |
+| 1440 | brand, about, contact, privacy | Alliance, PABRA, Gates |
+
+The count coinciding at 11 is genuinely coincidental. Cause: the harness computes `mid = round((scrollHeight − innerHeight)/2)`, and the reservation inflates `scrollHeight`, moving the sample onto different controls.
+
+**The 16→0 claim is better supported than it was argued.** The Reviewer found `/` is **environment-identical** between the baseline and shipped runs (Arm B `maxScroll` 6194 / 4169 / 3569 in both), so **9 of the 16 are attributable to the fix with no environment confound at all**. Only `/map` shifted.
+
+#### Advisory 1 from attempt 2, confirmed and recorded here as instructed
+
+**The scroll-0 half of the gate is vacuous.** At offset 0, **zero** footer links are `inViewport` in any of the six route×width cells, so no hit test is performed. Only the max-scroll half carries information — and there all 42 are in viewport and all 42 clean. **"0 and max both clean" must not be read as two independent confirmations.** The probe is nonetheless proven to discriminate, since the identical probe returns `isBanner` at `mid`. The docblock's phrase *"scroll offset 0 or max, where the reservation and the banner's own `fixed bottom-0` coincide"* is loose in the same way — at scroll 0 nothing coincides; the claim is true only vacuously.
+
+#### A LEADER OVERCLAIM, INTRODUCED WHILE RECORDING THE CORRECTIONS TO OTHERS
+
+`design.md` §5.4 was amended by the Leader alongside this task to record the footer occlusions. It claimed the sweep found the banner occluding **"all seven footer controls at their settled reading positions."** That is **false**: at settled positions only the three funder logos were occluded. Brand, `/about`, `/contact` and `/privacy` appear **only** in the mid-transit band — the very category the next bullet classifies as accepted and not a violation.
+
+The Reviewer's arithmetic is decisive and needed no re-measurement: **seven controls across six route×width cells would be 42 settled occlusions, not the 16 the same bullet cites.**
+
+**This is the same overclaim family the `PublicShellFrame` docblock was corrected twice to remove — reintroduced one file over, by the Leader, in the very edit that recorded those corrections.** Corrected in `design.md` §5.4 with the two categories separated and the arithmetic that refutes the original stated inline. It is the fifth defect this spec has produced in the Leader's own artefacts.
+
+#### ADVISORY (recorded, not actioned)
+
+1. `PublicShellFrame.tsx`'s parenthetical *"(a session with `/map` 42px shorter measured 10)"* has the **direction inverted** — that session's `/map` was 42px **taller** (Arm A `scrollHeight` 1243/1240 versus 1201/1198 at 768/1440). The magnitude is exact and the sentence's conclusion — the count is sample- and environment-dependent, therefore not a gate — is unaffected. The Reviewer drew the line explicitly: attempt 2's defect was a false claim about *what the fix accomplished*; this is a sign error in an illustrative aside. One word.
+2. `OLDCODE-SAMEENV.json` is **mislabelled** — it carries the reservation and is the pre-*1px-fix* build, not pre-*reservation* code. Citing it as a same-environment pre-fix control would mislead a later reader.
+3. The measurement artefacts should not be the only home for this evidence. Discharged by the transcription above.

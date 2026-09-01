@@ -98,10 +98,22 @@ Measured, not assumed. Current z-index owners:
 The banner is `fixed bottom-0` and full-width at `z-[1100]`. Two consequences, both accepted and both requiring the NFR-5 rendered capture rather than a test:
 
 1. **It must clear Leaflet.** Anything at or below `z-[1000]` would be painted *under* the map's controls and legend. `z-[1100]` is the lowest value that clears the highest current owner.
-2. **On `/map` it overlays three things, not one — corrected 2026-08-31 after T-8's rendered capture.** This section originally named only `MapLegend`. The measured reality at 768px and 1440px is that the banner also occludes the **last rail-list card** and the **Leaflet/OpenStreetMap attribution links**. All three were confirmed by `document.elementFromPoint()`, not rect arithmetic.
+2. **The occlusion set — corrected twice, and the corrections are themselves the lesson.** This section originally named `MapLegend` alone. T-8's rendered capture (2026-08-31) found **two more** on `/map` at 768/1440: the last rail-list card and the Leaflet/OpenStreetMap attribution links. T-10's two-arm sweep (2026-09-01) found **seven more** — every footer control, on both routes, at all three widths. Every one was confirmed by `document.elementFromPoint()`, never by rect arithmetic.
+
+   **Each correction was smaller than the gap it left.** The set went 1 → 3 → 10, and both times the missing members were found by *measuring*, never by re-reading this section. The count is deliberately not restated as a number here: a number would go stale the next time someone measures, and the point is not how many there are but that a set written from reasoning was wrong twice.
 
    - **`MapLegend`** and the **last rail-list card** are accepted as **transient**: the banner exists only until the visitor's first choice, after which it never renders again for that visitor. Relocating the legend would change a delivered component for a one-time overlap; moving the banner to a corner would weaken FR-2's prominence.
    - **The attribution links are not accepted**, and are fixed in **T-9**. They are a licensing control, not decoration — and FR-2 scenario 2 contemplates a visitor who *ignores the banner entirely*, for whom the occlusion is not transient at all but permanent. That case is what separates them from the other two.
+
+   - **The footer, and the transit band — added 2026-09-01 after T-10.** A two-arm measurement (252 cells, `elementFromPoint`, with a manipulation check confirming the banner was the only variable) found the banner occluding footer controls in two distinct categories, which this section originally conflated:
+
+     - **At settled reading positions: the three funder logos only** — 16 occlusions (`/` max ×9, `/map` max ×7). That was the real FR-2 scenario 2 violation.
+     - **In the mid-transit band: brand, `/about`, `/contact`, `/privacy`** — these were *never* occluded at a settled position, and fall in the accepted category below.
+
+     **Corrected 2026-09-01 after review.** This bullet first claimed all seven controls were occluded at settled positions. Its own cited figure refutes it: seven controls across six route×width cells would be 42, not 16. That overclaim inflated both the defect and the fix, and it is the same family the `PublicShellFrame` docblock was corrected twice to remove — reintroduced one file over, by the Leader, while recording those very corrections.
+
+     **Fixed** in T-10: `PublicShellFrame` reserves the banner's live-measured height, and all 16 settled-position occlusions are eliminated (42/42 cells clean at max scroll, both routes, all three widths).
+   - **What remains accepted is the transit band.** A `fixed bottom-0` bar of height *h* necessarily overlays any element for an *h*-wide band of scroll space as it travels to its resting position — `S ∈ [c − H, c − H + h]` — and on a scrolling page that band is **invariant under trailing padding**. Since this section prescribes `fixed bottom-0`, a requirement forbidding all transit occlusion would forbid the design this section mandates. Closing it would mean abandoning `fixed`, which is a different decision than this one.
 
    **This section's original single-item list is exactly the defect `requirements.md` §4.1 predicted:** layout occlusion is the one class in this spec with no automated gate, so the accepted-risk set was written from reasoning rather than measurement, and it under-counted. Seven tasks and 1,475 green tests could not see it; the substituted gate saw it on its first run.
 
@@ -236,7 +248,7 @@ Estimated from the design above, and a **tripwire for `/akili-execute`**, not a 
 
 **Re-baselined during Phase 3 (from 7 tasks / 8 rounds).** The rendered-layout verification was split out of the env-wiring task into its own T-8: it is the substituted gate for NFR-5, the one defect class with no automated coverage, and folding it into another task's *done when* would have made it quietly skippable. Recorded rather than silently adjusted — a budget edited without a reason is not a tripwire.
 
-The estimate matches the declared **Standard** depth: eight tasks with one substantive component is not a Lite change, and the absence of any data, API, auth, or migration surface keeps it below Full. It crosses the ~400-LOC line where `/akili-specify` asks about splitting delivery — addressed in `tasks.md`.
+The estimate matches the declared **Standard** depth: nine tasks with one substantive component is not a Lite change, and the absence of any data, API, auth, or migration surface keeps it below Full. It crosses the ~400-LOC line where `/akili-specify` asks about splitting delivery — addressed in `tasks.md`.
 
 **Re-baselined 2026-08-31 at the T-2 gate, from ~580 LOC / 9 rounds, with the user's approval.** The tripwire fired correctly and the diagnosis is recorded in `execution.md` under T-2: **implementation LOC is tracking *under* budget (269 of 330 after two tasks); the entire overrun is tests.** The original figure assumed a test-to-implementation ratio of ~0.76:1; the observed ratio is **1.72:1**.
 

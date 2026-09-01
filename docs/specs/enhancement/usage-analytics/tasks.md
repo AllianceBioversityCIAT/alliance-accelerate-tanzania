@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/enhancement/usage-analytics/`
 - Traces: `requirements.md` FR-1…FR-7, NFR-1…NFR-7 · `design.md` §5–§10
-- Depth: **Standard** · Budget (`design.md` §11, re-baselined 2026-08-31): **8** tasks · **~1,600** LOC · **~13** review rounds
+- Depth: **Standard** · Budget (`design.md` §11): **9** tasks · **~1,600** LOC · **~13** review rounds — **all three figures were exceeded; see the closing budget in `execution.md`**
 - Commits: `[SPEC:enhancement/usage-analytics] <message>`
 
 All verification runs from `frontend/` unless stated. Per the root guide's asymmetry rule, the **failure-only** form is canonical: a green run costs one summary line, and a **failure must be pasted complete and verbatim** — that output is the evidence the Reviewer audits. Use `npx eslint … --quiet` for lint, never `npm run lint` in `backend/` (it runs `--fix` and mutates files).
@@ -101,6 +101,17 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       ⚠️ **Added 2026-08-31 by user approval**, from T-8's rendered finding — not minted from an advisory. `design.md` §5.4 was amended in the same change to record which occlusions are accepted and which are not.
       ⚠️ **Disqualifies the evidence:** `npm test` cannot see this. There is no `LeafletMap.test.tsx` — Leaflet does not render in jsdom — so a green suite proves only that nothing else broke. **The evidence for this task is the re-captured `elementFromPoint` result**, exactly as it was for the finding that created the task.
       ⚠️ Do **not** change `OSM_ATTRIBUTION`'s text or the tile URL. The licensing requirement is that the attribution be *visible*; its wording is already correct.
+
+- [x] **T-10 Clear the footer from under the banner** (deps: T-8's F-1 measurement)
+      Size: S · Effort: `medium` · Skills: `vercel-react-best-practices`
+      Scope: while `showBanner` is true, the public shell must reserve space so the banner overlays no footer control. `frontend/app/(public)/layout.tsx` and whatever minimal client seam it needs.
+      Traces: **FR-2 scenario 2** (*"every link, control, and region of the underlying page remains operable"*), `design.md` §5.4
+      Verify: re-run the two-arm `elementFromPoint` sweep from the F-1 measurement — **the 27 occluded cells must become 0**, with Arm B unchanged.
+      Done when: **at the settled reading position (max scroll) and at scroll 0**, no footer control returns the banner from `elementFromPoint`, on `/` and `/map`, at 375/768/1440; the sticky-footer behaviour on short pages is unchanged; `npm test` and `npm run build` stay green.
+      ⚠️ **`Done when` amended 2026-09-01, after the physics were measured.** The original clause said "at any sampled scroll position". That gate is **unachievable by any implementation that keeps a fixed bottom bar** — a `fixed bottom-0` bar of height *h* necessarily overlays any element for an *h*-wide band of scroll space as it travels to its resting position, and on a scrolling page that band is invariant under trailing padding. Since `design.md` §5.4 *prescribes* `fixed bottom-0`, the literal reading made this requirement forbid the design the same spec mandates. Worse, it was a gate whose green state would be **an artefact of where an arbitrary sample landed** — at 0 residual cells the property still would not have been established, because the band persists between samples (KZ-002 in its second form). Transit-band occlusion at intermediate offsets is expected and accepted; closing it would require changing `ConsentBanner.tsx`'s `fixed` positioning, which is a different task against a prescribed design decision.
+      ⚠️ **Added 2026-09-01 by user approval** from `/akili-validate`'s F-1 finding — a confirmed FR-2 violation, not a documentation gap.
+      ⚠️ **The banner's height is responsive** (measured: 147px at 375, 75px at 768, 72px at 1440). Any fix that hardcodes a matching height creates **two places that must stay in sync** — the same defect shape as T-4's border parity, which shipped a false claim and cost a FAIL round. Prefer a mechanism that cannot drift.
+      ⚠️ **Do not break the sticky footer.** `(public)/layout.tsx`'s own comment explains why `flex-1` sits on `<main>` rather than a min-height on the footer: short pages (the OTP and receipt steps) otherwise ride the footer up under the content.
 
 ---
 
