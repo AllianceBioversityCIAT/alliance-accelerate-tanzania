@@ -1296,3 +1296,166 @@ Tests:       1 failed, 6 passed, 7 total
 - **The stalled agent was resumed rather than replaced**, preserving its context; the Leader captured the missing falsification evidence itself during the quiet window.
 - **The attempt-1 FAIL premise was tested empirically, not accepted**, and the honest version recorded. The rework stands on its other five items.
 - **A-63 routed to the user** rather than changed unilaterally — a reason label is product copy asserting policy, not an implementation detail.
+
+### T-10 — PII release gate: discrimination proof and the by-value admin sweep
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (first attempt) |
+| Date | 2026-09-01 |
+| Implementer attempts | **1** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **xhigh** · Skills: `nestjs-expert`, `error-handling-patterns` |
+| Reviewer | `akili-reviewer` (opus, T3) — lens-checklist, PII lens primary |
+| Review rounds consumed | **1** (running total: **23** of 35) |
+| Requirements covered | NFR-1 (release gate) · FR-9 scenario 3 · `design.md` DD-15, DD-16, DC-28 |
+
+#### The notable result: `pii-boundary.spec.ts` needed ZERO changes
+
+T-4 through T-9 each added its own `access: 'admin'` `FIXTURE_MAP` entry as it landed, along with the by-value sweep coverage and the corrected request-count title. **The widened gate assembled itself incrementally.** The Implementer read the file in full, found it already complete against T-10's Done-when, and declined to edit it — reasoning that re-editing a correct release gate risks exactly the collateral damage DD-16 warns about.
+
+**This is DD-15's design working as intended.** Siting the admin controller inside the existing `RegistrationsModule` makes the gate **fail on day one** for every uncovered route (R-8, deliberate), so each task had to close its own hole rather than leaving a sweep-up for the end.
+
+**The Leader did not accept "no change needed" on the Implementer's word.** The Reviewer verified independently against shipped code:
+
+| Check | Result |
+|---|---|
+| Five route decorators on the controller, five `access: 'admin'` entries | ✔ |
+| Each key's closures target **its own** route | ✔ — re-read one by one; the three write closures each carry the literal segment their key names, and both closures within each entry agree. **No sibling aliasing** (`approve`/`reject`/`dismiss-duplicate` share a shape). |
+| Admin branch asserts `401` **and** `403`, both bodies swept | ✔ — including the exact `toBe(401)` form that catches `@UseGuards` order inversion |
+| Sweep is **by value**, not field name | ✔ — `expect(res.text).not.toContain(leakableValue)` over fixture values, plus a key scan. A renamed field still fails. |
+| Bidirectional totality intact | ✔ — and the second consumer still `throw`s on a missing entry rather than `continue`ing (R-10/DD-16 preserved) |
+| Request-count prose (14 = 4 public + 5 admin × 2; only the 4 public hit a throttle bucket) | ✔ — verified against both controllers' guards |
+
+---
+
+#### PROBE 1 — a new route on an already-covered controller
+
+A throwaway `@Get('t10-throwaway-probe')` on `AdminRegistrationsController`. **Verbatim:**
+
+```
+FAIL src/test/pii-boundary.spec.ts
+  ● ... FIXTURE_MAP has EXACTLY one entry per route this module registers...
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 1
+    + Received  + 0
+      Array [
+        "GET /api/v1/admin/registrations",
+        "GET /api/v1/admin/registrations/:id",
+    -   "GET /api/v1/admin/registrations/t10-throwaway-probe",
+        ...
+  ● ... every discovered route's fixture response is PII-clean ...
+    RA7: no FIXTURE_MAP entry for GET /api/v1/admin/registrations/t10-throwaway-probe — the totality test above should have caught this first.
+Tests: 2 failed, 23 passed, 25 total
+```
+
+#### PROBE 2 — a second controller in the module (the one DD-15 turns on)
+
+A throwaway `T10ThrowawaySecondController` with one route, registered in `RegistrationsModule.controllers`. **Verbatim:**
+
+```
+FAIL src/test/pii-boundary.spec.ts
+  ● ... FIXTURE_MAP has EXACTLY one entry per route this module registers...
+    - Expected  - 1
+    + Received  + 0
+      Array [
+        "GET /api/v1/admin/registrations",
+        "GET /api/v1/admin/registrations/:id",
+        "GET /api/v1/registrations/consent-policy",
+    -   "GET /api/v1/registrations/t10-throwaway-second-controller-probe",
+        ...
+  ● ... every discovered route's fixture response is PII-clean ...
+    RA7: no FIXTURE_MAP entry for GET /api/v1/registrations/t10-throwaway-second-controller-probe — the totality test above should have caught this first.
+Tests: 2 failed, 23 passed, 25 total
+```
+
+**Why probe 2 is not ceremony.** DD-15 records that siting the admin controller in a *sibling* module would have made this gate **pass** while the five most PII-dense routes in the system shipped with zero coverage — *"the green suite would actively certify it."* 3a's T-13 ran this probe pair **before any admin controller existed**. Running it now, with a second controller genuinely present, is what confirms the module-scoped derivation still walks every controller in the case it was designed against.
+
+**Both probes run one at a time, each removed and `git diff`-confirmed before the next** — probe discipline tightened after T-9's Implementer left its DC-32 probe live in the tree.
+
+**Removal verified three ways:** Leader `grep -rn "t10-throwaway|T10Throwaway" backend/src/` → **zero hits**; `git status --porcelain` → only the e2e file; and the **Reviewer confirmed by reading source rather than trusting `git status`** — the controller has exactly five route decorators, `RegistrationsModule.controllers` is exactly `[RegistrationsController, AdminRegistrationsController]`, and no `@Controller` anywhere in `backend/src` registers a sixth registrations route.
+
+**The Reviewer also cross-checked the probe outputs for internal coherence** rather than taking them at face value: the Jest diff direction is correct for `expect(fixtureKeys).toEqual(derivedKeys)`; both sort positions are lexicographically correct (`:id` < `t10-…`; `/admin/…` < `/registrations/…`; `consent-policy` < `t10-…`); the second failure reproduces the `throw` literal verbatim including its trailing clause; and `2 failed + 23 passed = 25` matches the suite's known size.
+
+---
+
+#### A-53 CLOSED — and the mutation evidence, captured by the Leader
+
+The carried gap: **no test proved an Admin-authenticated `GET /admin/registrations` 200 body is PII-clean over HTTP.** T-8's e2e issues **no `GET` at all** (Reviewer-verified: the only `.get(` in that file is the new one), and `pii-boundary`'s contract JSDoc **forbids** an Admin-authenticated builder — correctly, since a `200` carrying real PII to a legitimate Admin is *intended* behaviour, not a leak. So the claim rested only on T-5's unit-level assertion.
+
+Closed in `admin-registrations.e2e.spec.ts` — the only correct home. It asserts the row carries exactly the eight-key projection and that `res.text` excludes `submitterEmail`, `contactPerson`, `position`, `district`, `marketLocation`, `phone`, `otherCrops`, GPS values, and the `duplicateDismissals` key.
+
+**It is non-vacuous for a structural reason the Reviewer verified:** `buildPrismaMock`'s `findMany` **ignores `select`** and returns whole rows, so `list()` genuinely receives `payload` and `submitterEmail` — **the projection is the only thing keeping them off the wire.**
+
+**The Leader ran the discrimination mutation itself** (the Implementer reported running it but did not quote the output; this spec's L-2 rule requires execution-shaped evidence recorded verbatim, not summarised). It revealed a **layered defence**:
+
+**Step 1 — spreading `submitterEmail` into the projection alone fails at compile time:**
+```
+  ● Test suite failed to run
+
+    src/registrations/admin-registrations.service.ts:176:5 - error TS2353: Object literal may only specify known properties, and 'submitterEmail' does not exist in type 'AdminRegistrationListRow'.
+
+    176     submitterEmail: row.submitterEmail,
+                ~~~~~~~~~~~~~~
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+```
+
+**Step 2 — widening the interface first (the realistic two-step mistake) gets past the compiler, and the runtime gate then reddens naming the key:**
+```
+  ● Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53 › an authenticated Admin GET /admin/registrations 200s with a well-formed body carrying ONLY the eight-key list projection, and neither submitterEmail, payload PII beyond that projection, nor duplicateDismissals reaches the wire (A-53)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -4,7 +4,8 @@
+        "id",
+        "reference",
+        "region",
+        "status",
+        "submittedAt",
+    +   "submitterEmail",
+        "traderType",
+      ]
+
+      > 558 |       expect(Object.keys(row).sort()).toEqual(
+      at Object.<anonymous> (test/admin-registrations.e2e.spec.ts:558:39)
+```
+
+Service restored; `git diff` empty. **Two independent gates: the closed interface, then the runtime key assertion.**
+
+---
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent pii-boundary` | **25/25** |
+| `npm test -- --silent` (full backend) | **75 suites / 988 tests** (987 baseline + the A-53 test) |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+Files changed: **one** — `backend/src/test/admin-registrations.e2e.spec.ts` (+118).
+
+#### THE RESIDUAL GAP — stated plainly, because the gate cannot close it
+
+**Probe 2 proves the derivation is *module-complete*. It does not close DD-15's actual hazard, and cannot.** A controller sited in a sibling `AdminRegistrationsModule` remains **invisible** to a derivation rooted at `MODULE_METADATA.CONTROLLERS` of one module — the suite would go green while those routes shipped uncovered.
+
+**Today the only defence is the DD-15 placement decision plus the `registrations.module.ts` JSDoc explaining why the controller must stay there. No test enforces it.** The file's own JSDoc states this honestly (*"pays for that with having to be explicitly walked module-by-module … rather than getting app-wide coverage for free"*).
+
+This is structural, not a defect in this task.
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-67** | **The sibling-module residual above.** If TRD §2/§4 is being amended anyway, that constraint deserves a sentence there rather than living only in a test-file comment and a module JSDoc. | **FORWARD POINTER → T-16.** |
+| **A-68** | The scan-loop `it` title still routes readers to **`execution.md → T-13`** for the throwaway proofs. Not false — 3a's pair is recorded there — but the **current-generation pair, the one DD-15's argument actually turns on because it ran with a real admin controller present, is recorded here under T-10.** | Recorded. **This entry supersedes T-13's pair as the standing proof.** Amend the title at T-16 or leave this note as the pointer. |
+| A-69 | `tasks.md` T-10's `Files:` line names only `pii-boundary.spec.ts`, while the task body directs the A-53 fix into `admin-registrations.e2e.spec.ts`. The diff follows the body, which is correct; **the `Files` line is the stale artefact.** | Recorded so the discrepancy is not later read as scope drift. |
+| A-70 | The value sweep against a `401`/`403` body *reads* like an uncatchable gate. It is disclosed in the JSDoc as belt-and-suspenders, with the **key scan** and the exact **`toBe(401)`** named as the discriminating halves. | Recorded. **Must not be re-described later as a value-leak proof for admin routes** — that would be a KZ-008 instance. |
+
+#### Decisions made
+
+- **Declining to edit `pii-boundary.spec.ts` was upheld** — the gate was already complete, and churn on a hard release gate is a real risk (DD-16). The Reviewer verified completeness independently rather than accepting the claim.
+- **The Leader ran the A-53 mutation itself** to satisfy L-2's verbatim-evidence rule, and recorded the layered type/runtime result the Implementer's summary had not conveyed.

@@ -151,7 +151,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Clause sweep: `BUT it must NOT create an Actor / publish any field / alter the consent record` → assert zero `actor.create` calls and the consent columns byte-identical before and after. `AND IT MUST make the reason mandatory` → omit it → `400`. `AND IT MUST work with email delivery disabled` → run the lookup assertion under the no-op transport.
       Done when: rejection terminal, note readable via public lookup with mail disabled, reason code absent from that response, no actor created.
 
-- [ ] **T-10 PII release gate — discrimination proof and the by-value admin sweep** (deps: T-4, T-6, T-7, T-8, T-9)
+- [x] **T-10 PII release gate — discrimination proof and the by-value admin sweep** (deps: T-4, T-6, T-7, T-8, T-9)
       Scope: assert, for all five admin routes, that an anonymous caller gets `401` and a `Staff` caller `403`, and that **neither body contains any fixture value**. Then prove the gate discriminates.
       Traces: NFR-1 (release gate), FR-9 scenario 3 · `design.md` DD-15, DD-16, DC-28
       Files: `backend/src/test/pii-boundary.spec.ts`
@@ -229,6 +229,7 @@ So every task below carries three fields beyond the template's, and the Implemen
 ## Phase E — Constitutional
 
 - [ ] **T-16 Amend the baseline documents** (deps: T-10, T-14, T-15)
+      **Carried forward from T-10's review (`execution.md` A-67, A-68):** (1) **the release gate is module-scoped by construction** — a registrations route added to a *different* module is invisible to a derivation rooted at `MODULE_METADATA.CONTROLLERS`, and the suite would go green while those routes shipped uncovered. Today the only defence is DD-15's placement decision and a module JSDoc; **no test enforces it.** Since §2/§4 are being amended anyway, that constraint belongs in the TRD, not only in a test-file comment. (2) `pii-boundary.spec.ts`'s scan-loop `it` title still routes readers to `execution.md → T-13`; the current-generation probe pair lives under **T-10** and supersedes it.
       Scope: TRD §2 (module responsibility), §4 (+5 endpoints), §8 (adjudication authority), §12.5 (**ADR-011**, drafted in `design.md` §9), §13 (QA-3, and resolve B3 — either widen QA-12's actor text to cover admin-gated PII routes or cite QA-3 alone). `docs/ux-ui/design.md` §2 IA (+2 routes), §4 screen inventory (+2 screens), §5 admin shell nav.
       Traces: `requirements.md` §4.2 · `design.md` §9 ADR-011 · `judgment.md` B3
       Files: `docs/trd/trd.md`, `docs/ux-ui/design.md`

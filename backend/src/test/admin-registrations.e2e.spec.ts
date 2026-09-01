@@ -150,6 +150,13 @@ function buildPrismaMock(initialRegistrations: Record<string, unknown>[]) {
   }
 
   const registrationDelegate = {
+    // T-10, A-53 — `AdminRegistrationsService.list`'s two read calls.
+    // `buildPrismaMock` is shared by every describe block in this file
+    // (including the A-53 `GET /admin/registrations` block further below),
+    // so both must exist even though the approve-e2e block's own tests
+    // never call `list()`.
+    findMany: jest.fn(async () => registrations.map((r) => ({ ...r }))),
+    count: jest.fn(async () => registrations.length),
     updateMany: jest.fn(
       async (args: {
         where: { id: string; status: RegistrationStatus };
@@ -478,4 +485,115 @@ describe('Admin registrations approve e2e (HTTP + in-memory Prisma) — T-8, FR-
       .find((r) => r.id === 'reg-approve-e2e-sibling');
     expect(siblingRow?.status).toBe(RegistrationStatus.PENDING_REVIEW);
   });
+});
+
+/**
+ * `admin/registration-review-queue` T-10, `execution.md` A-53 (carried
+ * forward from T-8's review). No test previously proved an
+ * Admin-authenticated `GET /admin/registrations` 200 body is PII-clean
+ * over HTTP: T-8's e2e above issues no `GET` at all, and
+ * `pii-boundary.spec.ts`'s own contract JSDoc forbids adding an
+ * Admin-authenticated request builder to `FIXTURE_MAP` — correctly, since a
+ * 200 with real PII to a legitimately-authorized Admin is this spec's
+ * INTENDED behaviour, not a leak that release gate exists to catch. That
+ * claim therefore rested only on `admin-registrations.service.spec.ts`'s
+ * unit-level assertion. This closes it at the HTTP level: a real
+ * `AppModule`, the real guard stack, the real
+ * `AdminRegistrationsService.list` → `toAdminRegistrationListRow`
+ * projection, driven with supertest — asserting the response carries
+ * EXACTLY the eight-key list projection (`id` plus the seven fields FR-9
+ * scenario 1 names: `reference`, `applicant`, `traderType`, `region`,
+ * `submittedAt`, `status`, `duplicateCandidateCount`), and that the raw
+ * wire body (`res.text`) carries none of the fixture's non-projected PII
+ * VALUES — never merely their absent key names, matching this file's own
+ * "row isolation" test's value-sweep convention above.
+ */
+describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53', () => {
+  let app: INestApplication;
+  let prismaMock: ReturnType<typeof buildPrismaMock>;
+
+  beforeAll(async () => {
+    prismaMock = buildPrismaMock([registrationFixture()]);
+
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prismaMock as unknown as PrismaService)
+      .overrideGuard(JwtAuthGuard)
+      .useValue(new TestJwtAuthGuard())
+      .overrideProvider(ActingAdminResolver)
+      .useValue({ resolve: jest.fn().mockResolvedValue('reviewer@example.org') })
+      .overrideProvider(MailService)
+      .useValue({
+        sendApproval: jest.fn().mockResolvedValue(undefined),
+        sendVerificationCode: jest.fn().mockResolvedValue(undefined),
+        sendReceipt: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MailService)
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(createValidationPipe());
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it(
+    'an authenticated Admin GET /admin/registrations 200s with a well-formed body carrying ' +
+      'ONLY the eight-key list projection, and neither submitterEmail, payload PII beyond that ' +
+      'projection, nor duplicateDismissals reaches the wire (A-53)',
+    async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/registrations')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.total).toBe(1);
+      expect(res.body.data).toHaveLength(1);
+      const row = res.body.data[0];
+      expect(Object.keys(row).sort()).toEqual(
+        [
+          'id',
+          'reference',
+          'applicant',
+          'traderType',
+          'region',
+          'submittedAt',
+          'status',
+          'duplicateCandidateCount',
+        ].sort(),
+      );
+      expect(row.id).toBe('reg-approve-e2e-1');
+      expect(row.reference).toBe('REG-2026-0184');
+      expect(row.applicant).toBe('Meru Agro-Processing & Seeds');
+      expect(row.traderType).toBe('seed_company');
+      expect(row.region).toBe('Arusha');
+      expect(row.status).toBe('PENDING_REVIEW');
+      expect(row.duplicateCandidateCount).toBe(0);
+
+      // By VALUE, not merely by absent key — a renamed field must still
+      // fail this. `Registration.select` in `list()` fetches `payload` and
+      // `submitterEmail` whole (detection needs them), so the containment
+      // this asserts is a property of the PROJECTION, not of what was
+      // queried.
+      expect(res.text).not.toContain('director@example.com'); // submitterEmail
+      expect(res.text).not.toContain('Grace Mushi'); // payload.contactPerson
+      expect(res.text).not.toContain('Director'); // payload.position
+      expect(res.text).not.toContain('Arusha Urban'); // payload.district
+      expect(res.text).not.toContain('Arusha Central Market'); // payload.marketLocation
+      expect(res.text).not.toContain('+255700000000'); // payload.phone
+      expect(res.text).not.toContain('Sunflower'); // payload.otherCrops
+      expect(res.text).not.toContain('-3.3869'); // payload.gpsLatitude
+      expect(res.text).not.toContain('36.683'); // payload.gpsLongitude
+      // `duplicateDismissals` is `null` on this fixture, so a value sweep
+      // would pass vacuously (the same reasoning `pii-boundary.spec.ts`
+      // applies to registration-source/consent fields) — a KEY scan is the
+      // only signal that actually catches this column reaching the wire.
+      expect(res.text).not.toContain('duplicateDismissals');
+    },
+  );
 });
