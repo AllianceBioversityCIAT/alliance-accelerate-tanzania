@@ -64,7 +64,10 @@ type GtagFn = (...args: unknown[]) => void;
 
 declare global {
   interface Window {
-    dataLayer?: unknown[][];
+    // Each queued entry is the `arguments` object gtag.js's own snippet
+    // pushes (see onLoad below) — not a plain array — so the element type
+    // widens to `unknown` rather than `unknown[]`.
+    dataLayer?: unknown[];
     gtag?: GtagFn;
   }
 }
@@ -102,10 +105,21 @@ export function GoogleAnalytics() {
       onLoad={() => {
         // The vendor's own init sequence — nothing else. See file header
         // "Zero custom calls".
+        //
+        // Must be a real (non-arrow) function so `arguments` exists: gtag.js
+        // recognises a queued command by the `arguments` object shape, not
+        // by a plain Array — pushing `args` (a real Array, from a rest
+        // param) is silently ignored by gtag.js and no hit is ever sent,
+        // even though the entries land in `dataLayer` looking correct. This
+        // matches Google's own canonical snippet
+        // (`function gtag(){dataLayer.push(arguments);}`) exactly.
         window.dataLayer = window.dataLayer || [];
-        const gtag: GtagFn = (...args) => {
-          window.dataLayer!.push(args);
-        };
+        function gtag(..._args: unknown[]) {
+          // eslint-disable-next-line prefer-rest-params -- must push the
+          // real `arguments` object, not the rest-param array, per the
+          // note above.
+          window.dataLayer!.push(arguments);
+        }
         window.gtag = gtag;
         gtag('js', new Date());
         gtag('config', measurementId);

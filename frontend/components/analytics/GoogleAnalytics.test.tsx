@@ -273,7 +273,7 @@ describe('GoogleAnalytics — mounted (consent granted, measurement ID configure
     // file-header note on why it must run last among the "mounted" tests.
     fireEvent(scripts[0], new Event('load'));
 
-    const dataLayer = (window as unknown as { dataLayer?: unknown[][] }).dataLayer;
+    const dataLayer = (window as unknown as { dataLayer?: unknown[] }).dataLayer;
     expect(dataLayer).toBeDefined();
     // Behavioral evidence, run in the loaded state (not vacuously on a
     // denied/undecided fixture): exactly two entries, and their command
@@ -281,9 +281,36 @@ describe('GoogleAnalytics — mounted (consent granted, measurement ID configure
     // 'event' entry, no third argument carrying a custom parameter or
     // user property.
     expect(dataLayer).toHaveLength(2);
-    expect(dataLayer![0]).toEqual(['js', expect.any(Date)]);
-    expect(dataLayer![1]).toEqual(['config', 'G-CONFIG-TEST']);
-    expect(dataLayer!.map((entry) => entry[0])).toEqual(['js', 'config']);
+
+    // ── Command-shape assertion (this is the actual production bug) ──────
+    // gtag.js recognises a queued entry as a real command ONLY when it is
+    // the `arguments` object our `gtag()` wrapper pushes — a plain Array
+    // with the identical elements is silently ignored by gtag.js and no
+    // `/g/collect` hit is ever sent, even though it looks identical to
+    // `toEqual(['js', expect.any(Date)])`. The previous version of this
+    // test asserted only entry *contents* (`toEqual([...])`), which passes
+    // equally for `dataLayer.push(args)` (a real Array — the bug) and
+    // `dataLayer.push(arguments)` (the fix) because `toEqual` does
+    // structural, not type, comparison. That is precisely how this bug
+    // shipped to production undetected. Asserting `Array.isArray() ===
+    // false` is what actually discriminates the two: see the discrimination
+    // proof in this task's completion report, where reverting the
+    // component's onLoad to `dataLayer.push(args)` reddens this exact
+    // assertion while leaving every other assertion in this file green.
+    expect(Array.isArray(dataLayer![0])).toBe(false);
+    expect(Array.isArray(dataLayer![1])).toBe(false);
+
+    // Read via Array.from(), which works on an `arguments` object (an
+    // array-like, not an Array) the same way it would on a real Array —
+    // so the content checks below are unaffected by the shape change above.
+    expect(Array.from(dataLayer![0] as ArrayLike<unknown>)).toEqual(['js', expect.any(Date)]);
+    expect(Array.from(dataLayer![1] as ArrayLike<unknown>)).toEqual([
+      'config',
+      'G-CONFIG-TEST',
+    ]);
+    expect(
+      dataLayer!.map((entry) => Array.from(entry as ArrayLike<unknown>)[0]),
+    ).toEqual(['js', 'config']);
 
     expect(typeof (window as unknown as { gtag?: unknown }).gtag).toBe('function');
   });
