@@ -66,7 +66,7 @@ import React, { useLayoutEffect } from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 
 import { ConsentProvider, useConsentContext } from './ConsentProvider';
-import { writeConsent, readConsent } from './consent-storage';
+import { writeConsent, readConsent, type ConsentChoice } from './consent-storage';
 
 // ---------------------------------------------------------------------------
 // Per-commit frame log (see file header)
@@ -113,44 +113,47 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Shared render-and-resolve helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Seeds storage with `stored` when given (omit for the no-record case),
+ * renders `ConsentProvider` around `ConsentProbe`, and awaits the resolved
+ * frame (`loading-state` === `resolved`). Collapses the six lines of setup
+ * ceremony repeated across this file's tests, which varied in exactly one
+ * thing — which choice was seeded, or none — so callers keep that seeded
+ * state visible at the call site (`await renderResolved('granted')`,
+ * `await renderResolved()`) instead of it disappearing into a `beforeEach`.
+ */
+async function renderResolved(stored?: ConsentChoice) {
+  if (stored) writeConsent(stored);
+  render(
+    <ConsentProvider>
+      <ConsentProbe />
+    </ConsentProvider>,
+  );
+  await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
+}
+
+// ---------------------------------------------------------------------------
 // State resolves from storage after mount (Done when #1)
 // ---------------------------------------------------------------------------
 
 describe('ConsentProvider — state resolves from storage after mount', () => {
   it('resolves to the stored `granted` choice once the read completes', async () => {
-    writeConsent('granted');
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
+    await renderResolved('granted');
     expect(screen.getByTestId('consent-state')).toHaveTextContent('granted');
     expect(screen.getByTestId('show-banner-state')).toHaveTextContent('false');
   });
 
   it('resolves to the stored `denied` choice once the read completes', async () => {
-    writeConsent('denied');
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
+    await renderResolved('denied');
     expect(screen.getByTestId('consent-state')).toHaveTextContent('denied');
     expect(screen.getByTestId('show-banner-state')).toHaveTextContent('false');
   });
 
   it('resolves to `undecided` when no record is stored', async () => {
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
+    await renderResolved();
     expect(screen.getByTestId('consent-state')).toHaveTextContent('undecided');
     expect(screen.getByTestId('show-banner-state')).toHaveTextContent('true');
   });
@@ -164,22 +167,16 @@ describe('ConsentProvider — state resolves from storage after mount', () => {
 
 describe('ConsentProvider — a stored choice never produces a banner-visible frame', () => {
   it('never shows the banner marker for a stored `granted` choice, on any commit (frame log)', async () => {
-    writeConsent('granted');
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
+    await renderResolved('granted');
 
-    // Post-`render()` frame: this is the only frame a `screen.query*`
-    // assertion placed here can reach, because `act()` has already flushed
-    // the synchronous mount effect by the time `render()` returns (see
-    // file header). It is a real assertion, just not the pre-resolution
-    // one — that one is `frameLog`, checked below.
+    // `renderResolved` seeds storage, renders, and awaits the resolved
+    // frame — by the time it returns, `act()` has already flushed the
+    // synchronous mount effect (see file header), so every `screen.query*`
+    // assertion here observes the same post-resolution frame; no
+    // `screen.query*` placed anywhere after `render()` can reach the
+    // pre-resolution frame. That frame is only reachable via `frameLog`
+    // (checked below), captured from the layout phase of the first commit.
     expect(screen.queryByTestId('banner-marker')).not.toBeInTheDocument();
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
-
     expect(screen.getByTestId('consent-state')).toHaveTextContent('granted');
     expect(screen.queryByTestId('banner-marker')).not.toBeInTheDocument();
 
@@ -190,17 +187,9 @@ describe('ConsentProvider — a stored choice never produces a banner-visible fr
   });
 
   it('never shows the banner marker for a stored `denied` choice, on any commit (frame log)', async () => {
-    writeConsent('denied');
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
+    await renderResolved('denied');
 
     expect(screen.queryByTestId('banner-marker')).not.toBeInTheDocument();
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
-
     expect(screen.getByTestId('consent-state')).toHaveTextContent('denied');
     expect(screen.queryByTestId('banner-marker')).not.toBeInTheDocument();
 
@@ -215,13 +204,7 @@ describe('ConsentProvider — a stored choice never produces a banner-visible fr
   // correctly or simply never renders anything — this is the assertion
   // that discriminates a working hydration gate from a broken provider.
   it('DOES show the banner marker once the read resolves with no stored record, and the frame log records absent-then-present', async () => {
-    render(
-      <ConsentProvider>
-        <ConsentProbe />
-      </ConsentProvider>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId('loading-state')).toHaveTextContent('resolved'));
+    await renderResolved();
 
     expect(screen.getByTestId('consent-state')).toHaveTextContent('undecided');
     expect(screen.getByTestId('show-banner-state')).toHaveTextContent('true');
