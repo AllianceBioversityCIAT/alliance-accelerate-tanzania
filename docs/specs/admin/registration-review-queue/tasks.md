@@ -75,7 +75,7 @@ So every task below carries three fields beyond the template's, and the Implemen
 
 ## Phase B — Backend read surface
 
-- [ ] **T-4 `AdminRegistrationsController` + module wiring + `GET /admin/registrations`** (deps: T-1, T-3)
+- [x] **T-4 `AdminRegistrationsController` + module wiring + `GET /admin/registrations`** (deps: T-1, T-3)
       Scope: the controller with class-level `@UseGuards(JwtAuthGuard, RolesGuard) @Roles('Admin')`; register in `RegistrationsModule.controllers`; **extend `configure()`'s `forRoutes(...)` to the new controller**; the paginated list with `status`/`q`/`region`/`traderType`/`sort`/`page`/`pageSize`, oldest-first default, `pageSize` capped. Its `FIXTURE_MAP` entry.
       Traces: FR-9 scenarios 1, 2, 3, 4 · NFR-8, NFR-9 · `design.md` §5, §6.1, DD-15, DD-19
       Files: `backend/src/registrations/admin-registrations.controller.ts` + `.spec.ts`, `admin-registrations.service.ts` + `.spec.ts`, `dto/admin-registration-list-query.dto.ts`, `registrations.module.ts`, `backend/src/test/pii-boundary.spec.ts`
@@ -83,7 +83,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Verify: `cd backend && npm test -- --silent admin-registrations && npm test -- --silent pii-boundary`
       Falsifying input: **for `forRoutes` specifically** — revert `configure()` to name only `RegistrationsController` → the log-line assertion must fail. **If it still passes, the assertion is checking registration rather than emission and is not evidence** (DC-29).
       Disqualifying: a green `pii-boundary` here proves the route has *an* entry, not a correct one. Absent the T-9 discrimination proof, treat this as a presence assertion and say so in the report.
-      Clause sweep: FR-9's `BUT it must NOT` leak existence via `403` → mutation: return a `404` for an unknown id before the guard runs; assert both real and invented ids yield an identical `403` body. FR-9's `AND IT MUST NOT rely on the client guard` → the endpoint test issues a raw HTTP call with no frontend involved, so the client guard is structurally absent from the harness — **declared as satisfied by construction, not by assertion.**
+      Clause sweep: FR-9's `BUT it must NOT` leak existence via `403` → **REASSIGNED TO T-6 on 2026-09-01** (`execution.md` T-4, *Spec correction*): the mutation presupposes a route taking an id, and `GET /admin/registrations` is a collection route with no `:id` — the clause has no referent here. Re-homed to T-6, the first `:id` route, so it cannot evaporate. FR-9's `AND IT MUST NOT rely on the client guard` → the endpoint test issues a raw HTTP call with no frontend involved, so the client guard is structurally absent from the harness — **declared as satisfied by construction, not by assertion.**
       Done when: five-route controller registered (four still absent), list returns the envelope, `Staff` → `403`, anonymous → `401`, one structured log line per request with no PII, `pii-boundary` green.
       **Re-measure the budget at this task's close.**
 
@@ -106,7 +106,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Verify: `cd backend && npm test -- --silent admin-registration.serializer && npm test -- --silent activity-trail`
       Falsifying input: add a `duplicateCheckedAt` field to the trail → the "no fabricated timestamp" assertion must redden. It is the clause most likely to be re-added by a well-meaning later edit.
       Disqualifying: the trail test is worthless if it asserts only that events *appear*. It must assert the trail is a **pure function of stored fields** — same input row, same output, and **no field in the output that has no source column**.
-      Clause sweep: FR-10's `BUT it must NOT claim a duplicate check occurred at a particular time` → mutation above. FR-10's `AND IT MUST be derived from fields the registration already stores` → assert output field-by-field against source columns. FR-10's *review context* marking is a **frontend** concern → owned by T-13, declared here as split, not discharged.
+      Clause sweep: **FR-9's `403`-indistinguishability clause, reassigned here from T-4 on 2026-09-01** → this is the first route taking an `:id`, so the mutation is finally expressible: assert a real id and an invented id yield a **byte-identical `403` body** for a `Staff` caller, and that no `404` is returned before the guard runs. (DD-22's honest `404` is for the *authenticated Admin*; the uniformity requirement stops at the auth boundary.) FR-10's `BUT it must NOT claim a duplicate check occurred at a particular time` → mutation above. FR-10's `AND IT MUST be derived from fields the registration already stores` → assert output field-by-field against source columns. FR-10's *review context* marking is a **frontend** concern → owned by T-13, declared here as split, not discharged.
       Done when: every payload field present, trail derived and order-stable, no fabricated timestamp, `404` for unknown id, `403` for `Staff`.
 
 - [ ] **T-7 `POST /admin/registrations/:id/dismiss-duplicate`** (deps: T-6)

@@ -192,3 +192,91 @@ describe('A guard-rejected request still emits a structured line (attempt-2 fix,
     },
   );
 });
+
+/**
+ * `admin/registration-review-queue` T-4 — the `forRoutes(...)` EMISSION
+ * proof for `AdminRegistrationsController` (`design.md` §6.1, DD-19, NFR-8,
+ * DC-29). Registering a second controller in `RegistrationsModule.
+ * controllers` is caught by any endpoint test the moment it's missing
+ * (`pii-boundary.spec.ts`'s totality assertion). Extending `configure()`'s
+ * `forRoutes(...)` call has NO such signal — omitting it produces silence,
+ * never an error — so this is a DEDICATED test for that second edit,
+ * modelled directly on the "guard-rejected request still emits a line"
+ * block above (real HTTP pipeline, no test double for the middleware or
+ * the guard stack).
+ *
+ * Deliberately hits the real, production `AdminRegistrationsController`
+ * route ANONYMOUSLY (no `Authorization` header) rather than an
+ * authenticated Admin request: `JwtAuthGuard` rejects with `401` before the
+ * handler (or `PrismaService`) is ever reached, so this test needs no
+ * database fixture at all and stays entirely about whether a log line was
+ * emitted for the request — not about what the route returns.
+ *
+ * **This IS the falsifying-input check `tasks.md` T-4 names.** Reverting
+ * `RegistrationsModule.configure()` to
+ * `forRoutes(RegistrationsController)` (naming only the original
+ * controller) must fail this test's `toHaveLength(1)` assertion with `0`
+ * captured lines — the middleware is simply never registered on this
+ * controller's routes, so nothing runs the `res.on('finish', ...)`
+ * listener that would have emitted one. If reverting `forRoutes(...)` does
+ * NOT fail this test, the test is checking controller REGISTRATION rather
+ * than middleware EMISSION and is not evidence for DC-29 (KZ-002).
+ */
+describe(
+  "AdminRegistrationsController is covered by RegistrationsModule's forRoutes(...) (T-4, DD-19, NFR-8, DC-29)",
+  () => {
+    let app: INestApplication;
+    let logSpy: jest.SpyInstance;
+
+    beforeAll(async () => {
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      })
+        .overrideProvider(PrismaService)
+        .useValue({} as unknown as PrismaService)
+        .compile();
+
+      app = moduleRef.createNestApplication();
+      app.setGlobalPrefix('api/v1');
+      await app.init();
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    beforeEach(() => {
+      logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+    });
+
+    it(
+      'emits exactly ONE structured line for an anonymous (401) GET /api/v1/admin/registrations — ' +
+        'proof that configure()\'s forRoutes(...) call was extended to the new controller, not just ' +
+        "the controllers array (a guard-thrown 401 still passes through the middleware's " +
+        "res.on('finish', ...) listener, DD-19, since middleware runs ahead of guards)",
+      async () => {
+        await request(app.getHttpServer()).get('/api/v1/admin/registrations').expect(401);
+
+        // The middleware's res.on('finish') listener fires on the next tick
+        // after supertest resolves the response — give it one before asserting.
+        await new Promise((resolve) => setImmediate(resolve));
+
+        const lines = capturedLines(logSpy);
+
+        expect(lines).toHaveLength(1);
+
+        const line = lines[0];
+        expect(line.route).toBe('/api/v1/admin/registrations');
+        expect(line.method).toBe('GET');
+        expect(line.status).toBe(401);
+        expect(
+          ['requestId', 'route', 'method', 'status', 'role', 'latencyMs'].every((k) => k in line),
+        ).toBe(true);
+      },
+    );
+  },
+);

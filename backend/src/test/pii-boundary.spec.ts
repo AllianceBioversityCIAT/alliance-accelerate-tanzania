@@ -1,6 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { Logger, RequestMethod } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+  RequestMethod,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA, MODULE_METADATA } from '@nestjs/common/constants';
 import {
   ConsentMethod,
@@ -25,6 +32,8 @@ import { REGISTRATIONS_THROTTLE_LIMIT } from '../registrations/registrations-thr
 import { RegistrationsModule } from '../registrations/registrations.module';
 import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import { CONTACT_CATEGORIES } from '../contact/contact-categories';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthUser } from '../auth/auth.types';
 
 /**
  * `actors/registration-source-and-consent` T-9 — End-to-end PII-boundary +
@@ -1080,6 +1089,62 @@ function buildRegistrationPrismaMock(
   } as unknown as Partial<PrismaService>;
 }
 
+/**
+ * `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+ * `FIXTURE_MAP` entry (below) needs a real `JwtAuthGuard` override so
+ * `sendAnonymous`/`sendStaff` can exercise the actual guard stack over
+ * HTTP, exactly as `admin-actors-crud.e2e.spec.ts` already does for the
+ * `admin/actors` surface. Copied from that file's module-scope
+ * `TestJwtAuthGuard`/`TOKEN_USERS` verbatim (not re-derived) — see this
+ * file's JSDoc contract block above `FIXTURE_MAP` for why.
+ */
+const TOKEN_USERS: Record<string, AuthUser> = {
+  'admin-token': {
+    sub: 'admin-sub',
+    username: 'admin-user',
+    groups: ['admin'],
+    role: 'Admin',
+  },
+  'staff-token': {
+    sub: 'staff-sub',
+    username: 'staff-user',
+    groups: ['staff'],
+    role: 'Staff',
+  },
+  'public-token': {
+    sub: 'public-sub',
+    username: 'public-user',
+    groups: [],
+    role: 'Public',
+  },
+};
+
+/** Pull the token out of an `Authorization: Bearer <token>` header. */
+function extractBearer(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  const [scheme, token] = header.split(' ');
+  return scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
+}
+
+/**
+ * Test guard replacing Cognito JWT verification. Maps known Bearer tokens
+ * to fixed `req.user` identities; a missing or unknown token throws `401` —
+ * the same shape a real, unauthenticated `Authorization` header failure
+ * takes in production (`JwtAuthGuard`).
+ */
+@Injectable()
+class TestJwtAuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    const token = extractBearer(req.headers?.authorization);
+    if (!token || !TOKEN_USERS[token]) {
+      throw new UnauthorizedException('Invalid token');
+    }
+    req.user = TOKEN_USERS[token];
+    return true;
+  }
+}
+
 describe(
   'PII boundary (HTTP e2e) — registrations module (T-13, release gate: FR-8, NFR-1, DC-1, DC-2)',
   () => {
@@ -1116,6 +1181,13 @@ describe(
           sendVerificationCode: sendVerificationCodeMock,
           sendReceipt: sendReceiptMock,
         } as unknown as MailService)
+        // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+        // FIXTURE_MAP entry needs a real guard stack over HTTP so
+        // `sendAnonymous`/`sendStaff` actually exercise `JwtAuthGuard` +
+        // `RolesGuard`, not the always-401 real Cognito verifier this test
+        // process has no JWKS reachable for.
+        .overrideGuard(JwtAuthGuard)
+        .useValue(new TestJwtAuthGuard())
         .compile();
 
       app = moduleRef.createNestApplication<NestExpressApplication>();
@@ -1306,6 +1378,17 @@ describe(
                 email: APPROVED_REGISTRATION_ROW.submitterEmail,
               }),
         },
+        // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+        // entry (FR-9 scenario 3). Not `:id`-scoped, so its key IS its
+        // sender's literal URL — verified by eye against both closures below.
+        [routeKey('GET', '/api/v1/admin/registrations')]: {
+          access: 'admin',
+          sendAnonymous: () => request(app.getHttpServer()).get('/api/v1/admin/registrations'),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .get('/api/v1/admin/registrations')
+              .set('Authorization', 'Bearer staff-token'),
+        },
       };
 
       it(
@@ -1329,7 +1412,8 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per route, 4 requests total against this describe block\'s own throttle bucket',
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 1 admin route = 2), ' +
+          "6 requests total against this describe block's own throttle bucket",
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);

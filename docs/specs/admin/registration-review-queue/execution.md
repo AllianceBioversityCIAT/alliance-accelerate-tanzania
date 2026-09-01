@@ -398,3 +398,192 @@ Tests:       24 passed, 24 total
 #### Issues encountered
 
 Two rework cycles, both on documentation accuracy, neither on code. The pattern is worth carrying forward: **this task's executable claims were verifiable and got verified; its prose claims were the ones that drifted from the repo.** Attempt 3 required a claim-by-claim self-audit table before reporting, which is the control that closed it.
+
+---
+
+## Leader Decision — DEC-1: `ActorAuditLog.acknowledged` on the approve row (advisory A-14)
+
+**Date:** 2026-09-01 · **Decided by:** the user, at the Phase A gate · **Owed at:** T-8
+
+The Phase A gate surfaced A-14: `design.md` §6.7 pins `logRegistrationApprove`'s envelope as *identical in shape to `logCreate`'s*, and `logCreate` does not set `ActorAuditLog.acknowledged`. But `acknowledged` is the **typed consent-acknowledgement flag** (set by `logBulkConsent` and `logImport`), and FR-12's approve gate *is* a typed consent acknowledgement re-validated server-side. As specified, the system's most consequential consent write would not record its own gate.
+
+Three options were put to the user: (a) T-8 sets `acknowledged: true` on the approve row; (b) leave it null, matching `logCreate` and §6.7 literally; (c) amend §6.7 first, then implement.
+
+**Resolution: (a) — adopted.** The Leader recommended (a) and the user approved continuation on that recommendation.
+
+**Rationale.** §6.7 pins the **`changes` envelope**; `acknowledged` is a separate top-level column §6.7 never addresses, so setting it does not violate the pinned shape — the envelope stays byte-identical to `logCreate`'s and `SnapshotDetails` still needs no new narrowing branch. The audit row becomes self-evidencing about the gate that authorised it, which is the point of the column.
+
+**Binding on T-8:**
+1. `logRegistrationApprove` sets `acknowledged: true` on the row it writes. This is an **additive** change to a T-2 method whose envelope must otherwise remain untouched — the `changes` value must not change.
+2. T-8's test asserts `acknowledged === true` **by value** on the created audit row.
+3. T-2's existing 30-test audit suite must stay green; if the approve-envelope assertions redden, the change went into `changes` rather than beside it, which is the failure mode this decision must avoid.
+4. `T-16` records the resolution when it amends the baseline documents — §6.7 is silent on this column and should say what the code does.
+
+### T-4 — `AdminRegistrationsController` + module wiring + `GET /admin/registrations`
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** → **xhigh** (rework bump) · Skills: `nestjs-expert`, `api-design-principles` |
+| Reviewers | Attempt 1: **parallel lens mode**, 2 lens Reviewers (conformance+reliability; security/PII-adversarial). Attempt 2: 1 focused Reviewer scoped to the delta. All `akili-reviewer` (opus, T3). |
+| Review rounds consumed | **3** (running total: **10** of 35) |
+| Requirements covered | FR-9 scenarios 1, 2, 4 (scenario 3's `403`-indistinguishability limb **reassigned — see below**) · NFR-8 · NFR-9 · `design.md` §5, §6.1, DD-15, DD-19, DD-22 |
+
+#### Files changed
+
+New: `admin-registrations.controller.ts` (49) + `.spec.ts` (45), `admin-registrations.service.ts` (144) + `.spec.ts` (181), `dto/admin-registration-list-query.dto.ts` (80).
+Modified: `registrations.module.ts` (+42/−3), `backend/src/test/pii-boundary.spec.ts` (+86/−2), `backend/src/logging/logging-scope.e2e.spec.ts` (+88/−0).
+
+**`Files`-list deviation, adjudicated and allowed:** `logging-scope.e2e.spec.ts` is not in T-4's `Files` list, but T-4's *Falsifying input* field **mandates** a log-line assertion that reddens when `forRoutes` is reverted, and none of the five listed files can host one — the two unit specs have no HTTP pipeline, and `pii-boundary.spec.ts` asserts PII cleanliness, not emission. **The `Files` list is the incomplete artefact, not the diff.** The edit is purely additive; the file's two pre-existing blocks are untouched.
+
+---
+
+#### ATTEMPT 1 — `STATUS: FAIL` (both lens Reviewers, independently, on the same finding)
+
+##### The defect: PostgreSQL-shaped JSON paths against a MySQL database
+
+`admin-registrations.service.ts` built its three payload filters as:
+
+```ts
+conditions.push({ payload: { path: 'region', equals: q.region } });
+conditions.push({ payload: { path: 'traderType', equals: q.traderType } });
+conditions.push({ payload: { path: 'traderName', string_contains: q.q } });
+```
+
+On the MySQL connector Prisma passes `path` **verbatim** into `JSON_EXTRACT(payload, ?)` and never `$.`-prefixes it. MySQL requires every JSON path expression to be `$`-rooted. So `?region=`, `?traderType=` and `?q=` — **three of the seven query parameters, and the entirety of FR-9's filtering limb** — each raised `MysqlError 3143` and surfaced as a `500`, outside `design.md` §5's pinned `400`/`401`/`403` error set.
+
+##### Why three independent layers of green missed it — the important part
+
+| Layer | Why it could not catch this |
+|---|---|
+| **The service spec** | Asserts the `where` object equals the same literal the service emits. Passes identically for `'region'`, `'$.region'`, or `'nonsense'` — it tests that the service constructs an object, not that the object is a valid query. |
+| **The type checker** | `path?: string` is the correct MySQL shape **whatever the value**. (PostgreSQL's generator emits `string[]`.) The types were the one source that structurally could not carry this information. |
+| **The Leader's first DB probe** | Ran against an **empty `Registration` table** and returned "OK, 0 rows" for *both* path forms — MySQL never evaluates the path expression with no row source. |
+
+The Implementer disclosed the risk correctly ("no in-repo precedent, designed from the generated client's types") and then treated the type-check as the verification.
+
+##### Executed evidence — Leader-run, pre-fix, against live MySQL 8 with one seeded row
+
+```
+path:'region'      equals -> ERROR: Error occurred during query execution: | ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(Server(MysqlError { code: 3143, message: "Invalid JSON path expression. The error is around character position 1.", state: "42000" })), transient: false })
+path:'$.region'    equals -> OK, matched 1 row(s)
+path:'traderName'  contains -> ERROR: Error occurred during query execution: | ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(Server(MysqlError { code: 3143, message: "Invalid JSON path expression. The error is around character position 1.", state: "42000" })), transient: false })
+path:'$.traderName' contains -> OK, matched 1 row(s)
+```
+
+The `3143` message's *"error is around character position 1"* is precisely where the missing `$` belongs.
+
+##### What attempt 1 got right (confirmed clean by both lens Reviewers, unchanged since)
+
+- Guard stack `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('Admin')` at class level — **byte-identical to the `admin-actors.controller.ts` exemplar** §5 mandates, and the order is behaviourally pinned: inverted, `RolesGuard` would see `req.user === undefined` and return `403` instead of `401`.
+- Both §6.1 module edits present; `forRoutes` **extended, not globalised** (DD-19 honoured — no `'*'`, no `APP_*` provider).
+- `RegistrationsThrottleGuard` correctly **absent** from the admin surface, per §6.1's recorded decision.
+- `{ data, page, pageSize, total }` envelope; `pageSize` capped **twice** (`@Max(100)` → `400`, plus a service-side `Math.min`); default `orderBy: { createdAt: 'asc' }` = oldest-first.
+- **Row projection is an explicit seven-field literal pick** — `id`, `reference`, `applicant`, `traderType`, `region`, `submittedAt`, `status`. Absent: `submitterEmail`, `reviewNote`, `reviewedBySub`/`reviewedByEmail`, `publishedActorId`, `duplicateDismissals`, and every payload field but the three named. No spread.
+- `403` body is `ForbiddenException('Insufficient role')` — a static literal, no interpolation from query or row, so it cannot leak existence.
+- **NFR-8 PII-freedom is structural, not asserted:** `RequestContextMiddleware` takes `route` from `req.path`, which excludes the query string, so `?q=<applicant name>` can never reach the log stream. It touches neither `req.query` nor `req.body`.
+- No injection surface: `path` is a hardcoded literal at every site; `region`/`traderType` are `@IsIn`-whitelisted against the **same** `CANONICAL_REGIONS`/`TRADER_TYPES` constants the write path validates against.
+
+##### The `forRoutes` falsification (DC-29) — real evidence, not a registration check
+
+Reverting `configure()` to name only `RegistrationsController`:
+
+```
+FAIL src/logging/logging-scope.e2e.spec.ts
+  ● AdminRegistrationsController is covered by RegistrationsModule's forRoutes(...) (T-4, DD-19, NFR-8, DC-29)
+    › emits exactly ONE structured line for an anonymous (401) GET /api/v1/admin/registrations …
+    expect(received).toHaveLength(expected)
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+      270 |         expect(lines).toHaveLength(1);
+Tests:       1 failed, 2 passed, 3 total
+```
+
+`Received length: 0` — an **empty array**, which is DD-19's exact failure mode: omitting the edit produces *silence*, not a wrong value. The assertion checks emission (the `res.on('finish')` listener never registered), not registration. Restored → PASS 3/3.
+
+---
+
+#### ATTEMPT 2 — `STATUS: PASS`
+
+Three narrow items: the six `$.`-rooted path literals (service + spec), a JSDoc sentence naming the provider-specific grammar, and correction of one `registrations.module.ts` comment that attempt 1's own change had falsified (`forRoutes(RegistrationsController)` — **KZ-008 / KZ-004**).
+
+**Post-fix confirmation, using the exact `AND`-wrapped `where` shape the service builds:**
+
+```
+Row count BEFORE probe: 0
+Seeded probe row id: cmtj1af4e0000xbfl1nl2vcr5
+path:'$.region' equals -> matched 1 row(s)
+path:'$.traderType' equals -> matched 1 row(s)
+path:'$.traderName' string_contains -> matched 1 row(s)
+Deleted probe row id: cmtj1af4e0000xbfl1nl2vcr5
+Row count AFTER cleanup: 0
+```
+
+**Leader-verified independently:** all six call sites `$.`-rooted; throwaway probe scripts absent from disk and from `git status`; `Registration` count re-confirmed at **0**.
+
+**Reviewer's completeness sweep:** a repo-wide search for Prisma JSON `path` filters across `backend/**/*.ts` returns **exactly six** hits, all `$.`-rooted. No other JSON-path surface exists in `backend/src` (other `path:` hits are Express `req.path` / APIGW fixtures). No missed site.
+
+**On `string_contains` specifically:** the claim is carried by a **two-sided experiment on that exact operator** — `path:'traderName'` raised `3143`, `path:'$.traderName'` matched — not by inference from `equals`.
+
+##### Final verification
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent admin-registrations` | 2 suites, **11 tests** PASS |
+| `npm test -- --silent pii-boundary` | **24/24** PASS |
+| `npm test -- --silent` (full backend) | **66 suites / 846 tests** green (baseline 64/834) |
+| `npm run build` | Clean |
+| `npx eslint "{src,test}/**/*.ts" --quiet` | Clean |
+
+##### Final Reviewer verdict
+
+> All three JSON paths are `$.`-rooted at all six call sites with no missed surface anywhere in `backend/src`; the `string_contains` claim is carried by a two-sided experiment on that exact operator against a live row, not by inference from `equals`; the new JSDoc's in-repo-checkable half is confirmed against the generated client (`path?: string`, provider `mysql`) and its Postgres half is correct and inert; and the module comment now carries history without carrying a superseded present-tense claim.
+
+---
+
+#### DECLARED GAPS — recorded because a later reader cannot reconstruct them (Reviewer A-21)
+
+| # | Gap | Why it matters |
+|---|---|---|
+| **DG-1** | **No automated test proves the MySQL JSON-path grammar.** The spec's assertions pin these three *literals* against regression (they assert the exact string, not `expect.any(String)`), but they would pass identically for a **new** wrong path added by a later task — which is exactly the defect that shipped here. The `$.` correctness rests on a one-off manual DB probe. | T-5…T-9 touch this surface. The service JSDoc is the mitigation; it is not a gate. |
+| **DG-2** | **The empty-table trap.** With zero `Registration` rows, **both** `'region'` and `'$.region'` return "OK, 0 rows" — MySQL never evaluates the path expression without a row source. Any future probe of this kind **must seed a row first**, or it will re-derive a false green. | The Leader's first probe hit exactly this and was inconclusive. |
+| **DG-3** | **Index usage is unprovable (DC-25, pre-existing).** The `where`/`orderBy` shape does serve `@@index([status, createdAt])` for the status-equality-plus-createdAt-order pattern. The JSON predicates cannot use that index — there is no functional index on the JSON paths — but they do not defeat it either: MySQL ranges on `(status, createdAt)` and evaluates the JSON predicates as residuals. | Advisory-level, correctly covered by the spec's existing DC-25. |
+| **DG-4** | **The release gate now stipulates its authentication primitive.** `pii-boundary.spec.ts` asserts `401`/`403` through `TestJwtAuthGuard`, not the production `JwtAuthGuard`. **This is not a reduction:** with no JWKS reachable in-process the real guard returns `401` for *every* request, so `sendStaff` could never assert `403` — the admin-entry contract is unimplementable with the real guard, and the alternative is not a stronger gate but no gate. Guard **ordering**, `@Roles('Admin')` presence, and the real `RolesGuard`'s Admin-vs-Staff logic are all still exercised. What is stipulated is JWT verification itself (signature, `iss`/`aud`/`exp`, `cognito:groups` → role), which is covered by `auth/` unit tests and the `admin-actors-crud.e2e.spec.ts` precedent. | Recorded so a future reader meeting `TestJwtAuthGuard` inside a file labelled *release gate* need not re-derive this. |
+
+#### A-16 honesty statement (required by T-4's Disqualifying clause)
+
+**The green `pii-boundary` run proves this route has *an* entry that correctly asserts `401`/`403` and a clean body for the two under-privileged callers. It does NOT prove the gate's totality/discrimination mechanism still catches an uncovered route or a second controller now that an admin route is genuinely present.** That two-probe discrimination proof is **T-10's** and was not run here. Treat this as a correct **presence** assertion for one route, not as evidence the gate discriminates.
+
+#### SPEC CORRECTION — FR-9 scenario 3's `403`-indistinguishability clause reassigned to T-6
+
+T-4's clause sweep required: *"assert both real and invented ids yield an identical `403` body"*, operationalised as *"return a `404` for an unknown id before the guard runs"*. **Both formulations presuppose a route that takes an id.** `GET /admin/registrations` is a **collection** route with no `:id` segment, so the mutation has no referent — there is no unknown id to `404` on, and every Staff request produces the same `403` body because there is only one request shape.
+
+Both lens Reviewers independently judged the clause **misassigned**, and the conformance Reviewer directed the Leader to re-home it *"so it does not evaporate; a clause discharged as 'not applicable here' and never re-homed is how these go missing."*
+
+**Action taken:** the clause is moved to **T-6** (`GET /admin/registrations/:id`), the first route where a real-vs-invented id becomes expressible, and `tasks.md` is amended accordingly. This is the clause-sweep rule's **second** option — an unevaluable gap with a structural reason — not a skipped clause. It is not a Pivot: the spec is not wrong about the requirement, only about which task can discharge it.
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| A-25 | **`findMany` has no `select`.** Whole `Registration` rows are fetched — `submitterEmail`, full `payload`, `reviewedBy*`, `duplicateDismissals` — then all but seven fields discarded by the mapper. Nothing leaks today, but containment is **behavioural** (one mapper call), not **structural**. A one-character slip to `data: rows` would publish every column with no test in this task reddening — and this file is the pattern four more PII-dense routes will copy. Adding `select:` would also stop loading 100 full payload blobs per page (NFR-9). | **FORWARD POINTER → T-5**, which edits this exact method to add `duplicateCandidateCount`. Not folded into T-4: the *Advisory Never Becomes A Task* rule forbids widening a task to absorb an advisory. |
+| A-26 | **The `$.` rule and DG-1/DG-2 must be carried into T-5…T-9 briefs.** T-5 matches on normalized `traderName`/`phone`/`email`; T-6 reads the full payload. If any adds a `payload` path filter, the same grammar applies. | **FORWARD POINTER → T-5, T-6, T-7, T-8, T-9.** Copy the one-line rule into the briefs rather than trusting the comment to be found. |
+| A-27 | **T-4's emission test does not itself assert PII-absence** — the request it sends carries no query string, so the NFR-8 no-PII claim rests on the *pre-existing* middleware unit test (which does plant an OTP and assert its absence). Sending `?q=applicant-secret@example.org` plus one `not.toContain` would let this route's own test carry the claim it is cited for. | Recorded. |
+| A-28 | **`q` is unbounded and its LIKE metacharacters are unescaped** — no `@MaxLength` (contrast `traderName`'s `@MaxLength(200)` on the write path), and `%`/`_` act as wildcards, so `?q=%` matches every row. Admin-only and non-exploitable. | Recorded. Decide before T-12 wires the search box. |
+| A-29 | **`q` search case-sensitivity is decided by collation, not by the spec.** `utf8mb4_0900_ai_ci` makes it case-insensitive; Prisma's `mode: 'insensitive'` is unavailable for JSON filters on MySQL. FR-9 states no case requirement, so nothing is violated — but no test pins the behaviour. | Recorded. |
+| A-30 | **`page` has no `@Max`.** `?page=99999999` produces a `skip` that will likely surface as a `500` rather than an empty page. **Inherited from `AdminActorListQueryDto`** — pre-existing repo convention, not new drift — but FR-9's "page beyond the result set" scenario is one of the four this task traces. | Recorded. |
+| A-31 | **`request-context.middleware.ts`'s class doc is now stale** — it states *"this module's routes run behind no guard today … so every current request takes this branch"*, true before T-4 and false after. Outside T-4's `Files` list, so deliberately not corrected here. | **FORWARD POINTER → T-16** (baseline-document amendment) or the next task touching that file. **KZ-004.** |
+| A-32 | The JSDoc phrase *"passed verbatim into `JSON_EXTRACT`"* names a function inferred from the error signature, not read from a query log. The load-bearing claim (`$.`-rooted required) **is** observed. | Recorded; harmless. |
+
+#### Decisions made
+
+- **Parallel lens mode at attempt 1** despite effort `high`: this is the first route behind the admin gate on the spec's most PII-dense surface, which the mode table's security trigger covers. Narrowed to one focused Reviewer at attempt 2 once the delta was six literals and two comments.
+- **Advisories were deliberately not folded into the attempt-2 brief**, per *Advisory Never Becomes A Task*. A-25 and A-26 are forward-pointed instead.
+- **The Leader executed the pre-fix DB probe personally** rather than spending a rework attempt on an unconfirmed FAIL — two Reviewers agreeing is strong, but the claim was cheap to settle definitively and the verbatim `3143` output became the Implementer's brief.
+
+#### Issues encountered
+
+One rework cycle, on a genuine runtime defect that every automated layer certified as green. No scope creep. The `Files` list proved incomplete for the falsification the task itself mandates.
