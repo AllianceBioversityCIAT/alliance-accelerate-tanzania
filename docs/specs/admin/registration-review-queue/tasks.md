@@ -1,9 +1,9 @@
 # Tasks — Registration Review Queue & Approve-to-Publish
 
 - Spec path: `docs/specs/admin/registration-review-queue/`
-- Status: **Draft — awaiting Phase 3 approval**
+- Status: **Approved 2026-09-01 — in execution**
 - Traces: `requirements.md` FR-9…FR-14, FR-16 · `design.md` §4–§9, DD-15…DD-23
-- Depth: **Full** · Approval Mode: **gated**
+- Depth: **Full** · Approval Mode: **gated**, relaxed to **pause-per-phase** by the user 2026-09-01 (HALT / Pivot / budget tripwire / FATAL_FAIL still stop immediately)
 - Design reviewed: `judgment.md` — **APPROVED**, 1 fix round used, 1 remaining
 - Commits: `[SPEC:admin/registration-review-queue] <message>`
 
@@ -41,7 +41,7 @@ So every task below carries three fields beyond the template's, and the Implemen
 
 ## Phase A — Foundation (must be green before any route exists)
 
-- [ ] **T-1 Widen `ActorAuditAction` with the two adjudication members** (deps: none)
+- [x] **T-1 Widen `ActorAuditAction` with the two adjudication members** (deps: none)
       Scope: `schema.prisma` enum + one migration. No service or route changes.
       Traces: FR-16, `design.md` §4.1–4.2
       Files: `backend/prisma/schema.prisma`, `backend/prisma/migrations/<ts>_add_registration_audit_actions/`
