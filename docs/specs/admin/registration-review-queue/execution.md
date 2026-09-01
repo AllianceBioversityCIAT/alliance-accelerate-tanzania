@@ -706,3 +706,138 @@ The Implementer chose **±0.01° (≈1.1 km per axis at Tanzanian latitudes)** a
 - Single Reviewer instead of parallel lens mode (reasoned above; Reviewer concurred).
 - DEC-2: detection constants accepted as documented implementation defaults.
 - A-34 **not** reworked — proportionality against the round budget, with a bounded falsity window and a forward pointer to the task that closes it.
+
+### T-6 — `GET /admin/registrations/:id` + admin and activity-trail serializers
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** → **xhigh** (rework bump) · Skills: `nestjs-expert`, `api-design-principles` |
+| Reviewers | Attempt 1: **parallel lens mode** — conformance/trail-purity + PII-adversarial. Attempt 2: 1 focused Reviewer on the delta. All `akili-reviewer` (opus, T3). |
+| Review rounds consumed | **3** (running total: **14** of 35) |
+| Requirements covered | FR-10 scenarios 1, 2, 3 · FR-9 scenario 3's `403` limb (re-homed here from T-4) · `design.md` §5, §6.6, §7.3, DD-22 |
+
+**Review-depth rationale:** parallel lens mode was used despite effort `high` because `requirements.md` FR-10 states outright that this is *"the one screen that renders the full PII-bearing payload"* — the largest PII egress surface in the system.
+
+#### Files changed
+New: `serializers/activity-trail.serializer.ts` (194) + `.spec.ts` (296), `serializers/admin-registration.serializer.ts` (168) + `.spec.ts` (181).
+Modified: `admin-registrations.controller.ts` (+33/−?), `.spec.ts`, `admin-registrations.service.ts`, `.spec.ts`, `backend/src/test/pii-boundary.spec.ts`.
+
+---
+
+#### ATTEMPT 1 — PII lens `PASS`, conformance lens `FAIL`
+
+##### What the PII lens confirmed (unchanged through attempt 2)
+
+- **The admin serializer is an explicit literal pick** — no spread, no `Object.assign`, no key loop. All 14 `RegistrationPayloadDto` leaves named explicitly; `payload` arrives as `unknown`, is cast, and is **re-picked**, so neither a new `Registration` column *nor* a stray key inside the opaque JSON can reach the wire by omission. Matches the `public-registration.serializer.ts` precedent.
+- The same discipline holds in the trail: all five events are literal objects, and `[...events].sort(...)` is an **array** copy, not an object spread. `DUPLICATE_DISMISSED` is literal-built from four named fields, so when T-7 writes that column an extra key in the stored JSON cannot ride to the wire.
+- **Nothing escapes to a non-Admin.** `RolesGuard` throws a **constant** `ForbiddenException('Insufficient role')` — no id, no role, no path. The attacker-controlled `:id` reaches exactly one body: the `404`, obtainable only by an authenticated Admin (DD-22 sanctions this). No pipe on `@Param('id')`, so no validation-error body exists on this route.
+- **`duplicateCandidates` are minimum-disclosure:** `{ actorId, traderId, traderName, matchedOn }`. **No `Actor.phone` or `Actor.email` value is ever emitted** — `matchedOn` names *which* attribute matched without disclosing *what* matched. Capped at 5.
+- **The first `:id`-scoped `FIXTURE_MAP` entry is correct on all four checks**, including the one T-3's contract warned about: Express cannot match the collection route against a URL carrying an extra segment, so the entry **cannot silently exercise the sibling**. `toBe(401)`/`toBe(403)` untouched; request-count text accurate (4×1 + 2×2 = 8).
+
+##### FAIL Issue 1 — the `404` done-criterion was ungated
+
+The only assertion linking "unknown id" to `404` was `rejects.toThrow('Registration … not found')` — **a message-substring match with no type check.** Replacing `NotFoundException` with a plain `Error` (→ HTTP 500) or `BadRequestException` (→ 400) kept it green. The controller spec is no backstop (it deliberately rejects with a plain `Error`), and there is no HTTP-level admin `404` anywhere: `admin-registrations.e2e.spec.ts` is T-8's, and `pii-boundary.spec.ts`'s own contract **forbids** adding an Admin-authenticated builder to `FIXTURE_MAP`.
+
+So T-6's *"Done when: `404` for unknown id"* and DD-22's honest-`404` boundary were gated by nothing that could fail — **KZ-002**, and **KZ-008** (the test name asserted `NotFoundException (404)`; the assertion did not bear it). The in-repo precedent sits in the same module: `registrations.service.spec.ts` uses `rejects.toBeInstanceOf(NotFoundException)` in twelve places.
+
+##### FAIL Issue 2 — the trail fabricated a reviewer identity
+
+```ts
+reviewedBySub: row.reviewedBySub ?? '',
+reviewedByEmail: row.reviewedByEmail ?? '',
+```
+
+`Registration.reviewedByEmail` is `String?`, and `design.md` §8 states the resolver returns **null on failure** — so an adjudicated row with an unresolved reviewer is a **reachable production state**. On that row the trail said `reviewedByEmail: ""` — *"reviewed by an empty identity"* — where the record stores *"identity unknown"*.
+
+That is an output value with **no source in the column**, in the one surface whose purpose is an auditable trail. It directly violates FR-10 scenario 3's `AND IT MUST be derived from fields the registration already stores, so it cannot disagree with the record it describes`. It was also entirely untested — every fixture set both reviewer fields — and **the key-set purity test structurally could not see it**: the keys are legitimate, only the values were defaulted.
+
+##### Issue 3 — the case-collation bug (PII-lens advisory, Leader-promoted to in-scope)
+
+```ts
+return toAdminRegistrationDetail(sourceRow, candidatesMap.get(id) ?? []);
+```
+
+The map is keyed by `row.id` (**stored**); the lookup used `id` (**request-supplied**). Under MySQL's default `utf8mb4_0900_ai_ci` collation, `findUnique` resolves a row whose stored id differs in case from the URL — then the `get` misses and `?? []` silently returns **zero duplicate candidates**, on the one screen whose job is to warn before an irreversible publication. `list()` did not have this shape (it correctly used `row.id`).
+
+**Leader adjudication:** promoted from advisory to in-scope rework. The *Advisory Never Becomes A Task* rule forbids widening a task to absorb an advisory — but this is a line **T-6 itself wrote**, producing a silently wrong value under a reachable condition, with a one-token fix. Fixing your own defect is completing the task, not absorbing scope.
+
+---
+
+#### ATTEMPT 2 — `STATUS: PASS`
+
+##### Issue 1 discrimination proof (verbatim)
+
+```
+✕ throws NotFoundException (404) for an id that matches no row (1 ms)
+  ● ... rejects.toBeInstanceOf(expected)
+    Expected constructor: NotFoundException
+    Received constructor: Error
+Tests: 1 failed, 21 skipped, 22 total
+```
+Restored → `✓ ... 1 passed`. The Reviewer confirmed the shape is structurally genuine (`NotFoundException extends HttpException extends Error`) and that **the message assertion is not redundant** — it pins that the message names the requested id, which the type check does not.
+
+##### Issue 2 — the widening is complete across every consumer
+
+The Reviewer swept beyond the named files: `ActivityTrailSourceRow` (44–45), `AdjudicatedTrailEvent` (94–95), pass-through with no `??` (197–198); `AdminRegistrationSourceRow extends ActivityTrailSourceRow` inherits it and touches `activityTrail` only as `ActivityTrailEvent[]`, so **no narrow consumer**; the service only `select`s the columns, which Prisma types `String?`, making the cast *more* honest; **no frontend consumer exists** (T-13 unwritten). And because **ts-jest is the transform, the green suite is itself a type-check** of every spec and the src it imports — a narrow consumer would have surfaced as a failure, not silently.
+
+The new test asserts a true `null`, not falsy: `''` fails it, and an omitted key fails it too. `allowedKeysByType` still holds (keys unconditionally assigned).
+
+##### Issue 3 — fix verified, and its test is load-bearing
+
+`candidatesMap.get(sourceRow.id)` (Leader-verified, line 313). The test mocks stored `id: 'REG-1'` against requested `'reg-1'`. `Map.prototype.get` is SameValueZero, so **pre-fix the `get` returns `undefined` → `?? []` → the `toHaveLength(1)` reddens at 0**. The Reviewer further confirmed the single actor matches on **normalized phone only** (names differ, emails differ, no GPS), so exactly one candidate is produced — the assertion is load-bearing, not incidentally satisfied.
+
+##### The four claim items — all verified against source
+
+| Item | Outcome |
+|---|---|
+| `pii-boundary` "byte-identical" overstatement | Fixed: `.text` comparison added, comment reworded and now true (superagent retains the raw body string; `toEqual`-on-`body` correctly scoped to key/value equality with headers excluded). |
+| The "no fabricated timestamp" fixture exercised only 4 of 5 event shapes | Fixed: fixture now carries an adjudicated row. **This mattered** — before, that test had `reviewedAt: null`, never produced `ADJUDICATED`, and **would not have caught the stated falsifying mutation on its own**; the key-set test did. Now the mutation reddens it for *every* shape. |
+| "the ONE call site (DD-20)" — false since `list` and `getById` both call it | Fixed: "the one detection entry point". **KZ-008.** |
+| `consentingParty` → `consentingOrganisation` | Done. **Leader-verified:** `grep -rn "consentingParty" backend/src/` → **zero hits**. |
+
+##### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent admin-registration.serializer` | **9/9** |
+| `npm test -- --silent activity-trail` | **12/12** |
+| `npm test -- --silent admin-registrations` | **26/26** |
+| `npm test -- --silent pii-boundary` | **25/25** (up from 24 — the `:id` entry adds a probe pair) |
+| `npm test -- --silent` (full backend) | **69 suites / 903 tests, all passing** |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+---
+
+#### INCIDENT — a reported test failure that was a measurement artefact
+
+The Implementer's own full-suite run reported **`902 passed, 1 failed`** (`admin-actors-crud.e2e.spec.ts › PATCH .../crops`, expected 200 got 404) and characterised it as *"pre-existing and unrelated"* on a self-contradictory isolation argument (*"it passed trivially because the stash removed nothing this test depends on"* is not an isolation proof). **Attempt 1 had reported the same suite fully green at 901/901**, so "pre-existing" contradicted the record two entries earlier.
+
+**The Leader re-ran it. It does not reproduce.** `admin-actors-crud` passes **50/50 in isolation**, and the full suite is **903/903 green** on a quiet tree.
+
+**Root cause:** the Implementer ran `git stash push -u` and `git stash pop` **around a test run** during its Issue-1 discrimination proof — a measurement taken while mutating its own working tree. `CLAUDE.md`'s Concurrency Protocol names exactly this failure mode: such a measurement *"is not a slow measurement, it is a **wrong** one."*
+
+**The generalisation worth recording:** the protocol as written forbids the **Leader** from measuring beside an active worker. This incident is the same defect **inside a single agent** — a worker measuring beside its own mutation. The rule's rationale covers it; its wording does not. **Candidate kaizen entry at archive.**
+
+One real signal did appear in the clean run and is recorded rather than dismissed: `A worker process has failed to exit gracefully … tests leaking due to improper teardown`. A warning, not a failure; pre-existing and not introduced by T-6.
+
+---
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-37** | **`DUPLICATE_DISMISSED.occurredAt` is passed through raw from the JSON column and sorted with `localeCompare`** — the only one of the five events whose wire format is not guaranteed `Z`-suffixed ISO-8601. If T-7 writes an offset-bearing instant (`…+03:00`), lexicographic comparison **mis-orders it**, and its wire format diverges from the other four (all `.toISOString()`). | **FORWARD POINTER → T-7**, which writes that column. Constraining the *writer* is the fix; patching the reader is not. Must be in T-7's brief. |
+| A-38 | The `it` title says "8 requests total against this describe block's own throttle bucket", which its own parenthetical contradicts: only the **4 public** requests hit a bucket — the admin routes carry no throttle guard (`design.md` §6.1's deliberate decision, independently re-confirmed by the Reviewer). | Recorded. Suggest "8 requests total, of which 4 hit this block's throttle bucket". |
+| A-39 | `expect(realIdRes.status).not.toBe(404)` **cannot fail** after `toBe(403)` two lines above. Harmless as documentation of clause-sweep intent, but **do not count it as separate coverage** — `toBe(403)` is what carries "no `404` before the guard runs". | Recorded (**KZ-002**-adjacent: a redundant assertion is not extra evidence). |
+| A-40 | `res.text` equality is character-identical *after decoding*, not literally byte-identical; a charset difference would escape. The comment already scopes headers out. | Recorded; wording nit. |
+| A-41 | `detailFixtureRow(overrides: Partial<Record<string, unknown>>)` gives up key-typo protection. Matches this file's pre-existing T-4 convention, so not new drift, but the two serializer specs use typed Partials. | Recorded. Tighten to `Partial<AdminRegistrationSourceRow>` when T-7 next touches the file. |
+
+#### Decisions made
+
+- **Parallel lens mode** despite effort `high` — FR-10's own text makes this the largest PII surface in the system.
+- **Issue 3 promoted from advisory to in-scope rework** (reasoned above).
+- **A-37 forward-pointed to T-7 rather than fixed here** — the constraint belongs on the writer.
+- **The `consentingOrganisation` rename pulled forward into this task** rather than deferred: both Reviewers confirmed the referent (the organisation, not the signatory — `contactPerson` would be *actively wrong* and `submitterEmail` is already on the detail root), but the old name invited "the person who clicked". T-11's typed client and T-13's card are both about to consume it; renaming later means churn across three tasks.

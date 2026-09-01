@@ -14,11 +14,12 @@ import { AdminRegistrationsService } from './admin-registrations.service';
  */
 describe('AdminRegistrationsController', () => {
   let controller: AdminRegistrationsController;
-  let service: { list: jest.Mock };
+  let service: { list: jest.Mock; getById: jest.Mock };
 
   beforeEach(() => {
     service = {
       list: jest.fn().mockResolvedValue({ data: [], page: 1, pageSize: 20, total: 0 }),
+      getById: jest.fn().mockResolvedValue({ id: 'reg-1' }),
     };
     controller = new AdminRegistrationsController(
       service as unknown as AdminRegistrationsService,
@@ -40,6 +41,24 @@ describe('AdminRegistrationsController', () => {
       await controller.list({} as never);
 
       expect(service.list).toHaveBeenCalledWith({});
+    });
+  });
+
+  describe('GET /admin/registrations/:id (T-6)', () => {
+    it('forwards the path id to the service unchanged and returns its result', async () => {
+      const result = await controller.getById('reg-42');
+
+      expect(service.getById).toHaveBeenCalledTimes(1);
+      expect(service.getById).toHaveBeenCalledWith('reg-42');
+      expect(result).toEqual({ id: 'reg-1' });
+    });
+
+    it('adds no branching of its own — the 404-vs-found decision is entirely the service\'s', async () => {
+      service.getById.mockRejectedValueOnce(new Error('Registration reg-unknown not found'));
+
+      await expect(controller.getById('reg-unknown')).rejects.toThrow(
+        'Registration reg-unknown not found',
+      );
     });
   });
 });

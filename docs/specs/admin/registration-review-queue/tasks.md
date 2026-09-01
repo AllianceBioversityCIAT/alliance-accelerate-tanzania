@@ -98,7 +98,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Clause sweep: FR-11's `BUT it must NOT prevent approval / pre-select rejection` → detection returns data only and is called from no write path; mutation: have `approve` consult detection → the approve test's call-count assertion reddens.
       Done when: matching correct across all four attributes, one fetch per page proven by call count, dismissed candidates excluded.
 
-- [ ] **T-6 `GET /admin/registrations/:id` + admin and activity-trail serializers** (deps: T-5)
+- [x] **T-6 `GET /admin/registrations/:id` + admin and activity-trail serializers** (deps: T-5)
       Scope: full payload, consent record, duplicate candidates, derived activity trail. `ConsentRecordCard`'s data shape carries the timezone-explicit instant and the *recorded-at-submission* qualifier. Its `FIXTURE_MAP` entry.
       Traces: FR-10 scenarios 1, 2, 3 · `design.md` §6.6, §7.3
       Files: `serializers/admin-registration.serializer.ts` + `.spec.ts`, `serializers/activity-trail.serializer.ts` + `.spec.ts`, controller/service, `pii-boundary.spec.ts`
@@ -115,6 +115,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Files: `dto/registration-dismiss-duplicate.dto.ts`, controller/service + specs, `pii-boundary.spec.ts`
       Skills: `nestjs-expert` · Effort: **medium**
       Verify: `cd backend && npm test -- --silent dismiss-duplicate`
+      **Carried forward from T-6's review (`execution.md` A-37):** `DUPLICATE_DISMISSED.occurredAt` is read back raw from this JSON column and sorted with `localeCompare`, so it is the only trail event whose wire format is not guaranteed `Z`-suffixed ISO-8601. **You are the writer** — emit `new Date().toISOString()`, never an offset-bearing instant (`…+03:00`), or the trail mis-orders that event lexicographically and its format diverges from the other four.
       Falsifying input: make the handler overwrite `duplicateDismissals` instead of appending → the three-candidate test must redden showing the other two suppressed (DC-31).
       Disqualifying: a single-candidate fixture cannot detect row-level-vs-per-candidate behaviour — **both shapes pass it.** The test needs **at least three** candidates with exactly one dismissed.
       Clause sweep: FR-11's `BUT it must NOT be row-level` → the three-candidate mutation above. `AND IT MUST record who dismissed it and when` → assert both fields present and sourced from the resolved acting admin, never the request body.

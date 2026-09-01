@@ -1389,6 +1389,34 @@ describe(
               .get('/api/v1/admin/registrations')
               .set('Authorization', 'Bearer staff-token'),
         },
+        // `admin/registration-review-queue` T-6 — the FIRST `:id`-SCOPED
+        // `FIXTURE_MAP` entry. Its key, `GET /api/v1/admin/registrations/:id`,
+        // is the raw decorator path Nest itself derives (`@Get(':id')`) — it
+        // can NEVER equal a sender's concrete probe URL, so the usual
+        // key-vs-URL eyeball check does not apply here (see the admin-entry
+        // contract JSDoc above). Checked by hand instead: both closures below
+        // target `/api/v1/admin/registrations/<a single path segment>` — the
+        // SAME controller/method as the collection route above, one path
+        // segment deeper, and there is no sibling static route under this
+        // controller (e.g. no `/bulk`) that a single-segment id could
+        // collide with. The probe id's value is irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone `AdminRegistrationsService
+        // .getById`'s Prisma lookup — ever runs, so no Prisma mock support
+        // for this id is needed (proven separately, and more pointedly, by
+        // the 403-indistinguishability test below, which uses a REAL fixture
+        // id for exactly this reason).
+        [routeKey('GET', '/api/v1/admin/registrations/:id')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer()).get(
+              '/api/v1/admin/registrations/admin-registrations-detail-route-scan-probe-id',
+            ),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .get('/api/v1/admin/registrations/admin-registrations-detail-route-scan-probe-id')
+              .set('Authorization', 'Bearer staff-token'),
+        },
       };
 
       it(
@@ -1412,8 +1440,9 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per public route (4) + 2 requests per admin route (anonymous + Staff; 1 admin route = 2), ' +
-          "6 requests total against this describe block's own throttle bucket",
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 2 admin routes = 4), ' +
+          "8 requests total against this describe block's own throttle bucket (admin routes carry no " +
+          'throttle guard at all — `design.md` §6.1 — so this count is informational, not a limit check)',
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);
@@ -1450,6 +1479,47 @@ describe(
         },
       );
     });
+
+    describe(
+      'GET /api/v1/admin/registrations/:id — 403 is indistinguishable between a real id and an ' +
+        'invented one (FR-9 scenario 3, REASSIGNED to T-6 on 2026-09-01: T-4 owns no `:id` route, ' +
+        'so the mutation had no referent there — see tasks.md T-6\'s clause sweep)',
+      () => {
+        it(
+          'a Staff caller gets a BYTE-IDENTICAL 403 body for a REAL registration id (the APPROVED ' +
+            'fixture row) and an INVENTED one — and neither resolves 404, proving the RolesGuard ' +
+            'rejects before AdminRegistrationsService.getById ever runs its Prisma lookup ' +
+            '(DD-22: a 404 is honest ONLY for an authenticated Admin, never surfaced to Staff)',
+          async () => {
+            const realIdRes = await request(app.getHttpServer())
+              .get(`/api/v1/admin/registrations/${APPROVED_REGISTRATION_ROW.id}`)
+              .set('Authorization', 'Bearer staff-token');
+            const inventedIdRes = await request(app.getHttpServer())
+              .get('/api/v1/admin/registrations/this-id-was-never-created-by-anything')
+              .set('Authorization', 'Bearer staff-token');
+
+            expect(realIdRes.status).toBe(403);
+            expect(inventedIdRes.status).toBe(403);
+            // Byte-identical, not merely "both 403" — the actual FR-9
+            // no-leak clause. `toEqual` on the parsed `res.body` only proves
+            // the two objects have the same keys/values — it is blind to key
+            // order, whitespace, and headers, so it alone is not a
+            // byte-identical check. `res.text` is the raw response body
+            // string, so comparing it IS the byte-identical check for the
+            // JSON body (headers are out of scope for this assertion). The
+            // `.text` sweep is the strong half of this pair: it is what
+            // would catch a per-id value (e.g. an echoed id) leaking into
+            // the error body even if `toEqual` missed it via key reordering.
+            expect(realIdRes.body).toEqual(inventedIdRes.body);
+            expect(realIdRes.text).toEqual(inventedIdRes.text);
+            expect(realIdRes.status).not.toBe(404);
+            expect(inventedIdRes.status).not.toBe(404);
+            expectRegistrationResponseClean(realIdRes);
+            expectRegistrationResponseClean(inventedIdRes);
+          },
+        );
+      },
+    );
 
     describe('approved and rejected registrations stay non-public (FR-8 scenario 3)', () => {
       it(

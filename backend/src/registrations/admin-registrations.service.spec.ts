@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { RegistrationStatus } from '@prisma/client';
 import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
@@ -24,6 +25,7 @@ interface MockPrisma {
   registration: {
     findMany: jest.Mock;
     count: jest.Mock;
+    findUnique: jest.Mock;
   };
   actor: {
     findMany: jest.Mock;
@@ -70,6 +72,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       registration: {
         findMany: jest.fn(),
         count: jest.fn(),
+        findUnique: jest.fn(),
       },
       actor: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -312,6 +315,136 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
 
         expect(prisma.actor.findMany).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('getById (T-6, FR-10 scenarios 1, 2, 3)', () => {
+    function detailFixtureRow(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        ...fixtureRow(),
+        emailVerifiedAt: new Date('2026-01-01T00:05:00Z'),
+        consentAcceptedAt: new Date('2026-01-01T00:10:00Z'),
+        consentPolicyVersion: 'v3',
+        reviewedAt: null,
+        reviewedBySub: null,
+        reviewedByEmail: null,
+        ...overrides,
+      };
+    }
+
+    it('selects exactly the columns the detail projection and activity trail need', async () => {
+      prisma.registration.findUnique.mockResolvedValue(detailFixtureRow());
+
+      await service.getById('reg-1');
+
+      expect(prisma.registration.findUnique.mock.calls[0][0]).toEqual({
+        where: { id: 'reg-1' },
+        select: {
+          id: true,
+          reference: true,
+          payload: true,
+          createdAt: true,
+          status: true,
+          submitterEmail: true,
+          duplicateDismissals: true,
+          emailVerifiedAt: true,
+          consentAcceptedAt: true,
+          consentPolicyVersion: true,
+          reviewedAt: true,
+          reviewedBySub: true,
+          reviewedByEmail: true,
+        },
+      });
+    });
+
+    it('throws NotFoundException (404) for an id that matches no row', async () => {
+      prisma.registration.findUnique.mockResolvedValue(null);
+
+      await expect(service.getById('reg-does-not-exist')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.getById('reg-does-not-exist')).rejects.toThrow(
+        'Registration reg-does-not-exist not found',
+      );
+    });
+
+    it('returns the full projected detail — payload, consent, duplicate candidates, activity trail — for a known id', async () => {
+      prisma.registration.findUnique.mockResolvedValue(
+        detailFixtureRow({
+          id: 'reg-1',
+          reference: 'REG-2026-0001',
+          payload: {
+            traderName: 'Meru Agro-Processing & Seeds',
+            traderType: 'seed_company',
+            contactPerson: 'Grace Mushi',
+            region: 'Arusha',
+            crops: ['sorghum'],
+            capacityTons: 50,
+            phone: '+255712345678',
+          },
+        }),
+      );
+      prisma.actor.findMany.mockResolvedValue([fixtureActor({ phone: '+255712345678' })]);
+
+      const result = await service.getById('reg-1');
+
+      expect(result.id).toBe('reg-1');
+      expect(result.reference).toBe('REG-2026-0001');
+      expect(result.payload.contactPerson).toBe('Grace Mushi');
+      expect(result.consent).toEqual({
+        consentingOrganisation: 'Meru Agro-Processing & Seeds',
+        policyVersion: 'v3',
+        acceptedAt: '2026-01-01T00:10:00.000Z',
+        acceptedAtQualifier: 'RECORDED_AT_SUBMISSION',
+      });
+      expect(result.duplicateCandidates).toHaveLength(1);
+      expect(result.duplicateCandidates[0].matchedOn).toContain('phone');
+      expect(result.activityTrail.map((e) => e.type)).toEqual([
+        'SUBMITTED',
+        'EMAIL_VERIFIED',
+        'CONSENT_RECORDED',
+      ]);
+    });
+
+    it('issues exactly ONE actor.findMany call for a single-row detail lookup (DD-20 still holds outside the batch path)', async () => {
+      prisma.registration.findUnique.mockResolvedValue(detailFixtureRow());
+      prisma.actor.findMany.mockResolvedValue([]);
+
+      await service.getById('reg-1');
+
+      expect(prisma.actor.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns non-empty candidates when the stored id differs in case from the requested id (MySQL default collation is case-insensitive)', async () => {
+      // `findUnique({ where: { id } })` can resolve a row whose STORED id
+      // differs in case from the request-supplied path parameter under
+      // MySQL's default `utf8mb4_0900_ai_ci` collation. The duplicate
+      // candidates map is keyed by the stored id
+      // (`toDuplicateDetectionInput(sourceRow).registrationId`, i.e.
+      // `sourceRow.id`) — looking it up by the request `id` instead would
+      // silently miss and fall back to `[]` on the one screen whose job is
+      // to warn before an irreversible publication.
+      prisma.registration.findUnique.mockResolvedValue(
+        detailFixtureRow({
+          id: 'REG-1',
+          payload: { traderName: 'Match Co', traderType: 'x', region: 'Arusha', phone: '+255712345678' },
+        }),
+      );
+      prisma.actor.findMany.mockResolvedValue([fixtureActor({ phone: '+255712345678' })]);
+
+      const result = await service.getById('reg-1');
+
+      expect(result.duplicateCandidates).toHaveLength(1);
+    });
+
+    it('never places submitterEmail outside the admin-only response shape it belongs in (still present here — unlike list, this IS the admin detail surface)', async () => {
+      prisma.registration.findUnique.mockResolvedValue(
+        detailFixtureRow({ submitterEmail: 'org@example.com' }),
+      );
+
+      const result = await service.getById('reg-1');
+
+      expect(result.submitterEmail).toBe('org@example.com');
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RegistrationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
@@ -6,6 +6,11 @@ import {
   DuplicateDetectionInput,
   DuplicateDetectionService,
 } from './duplicate-detection.service';
+import {
+  AdminRegistrationDetail,
+  AdminRegistrationSourceRow,
+  toAdminRegistrationDetail,
+} from './serializers/admin-registration.serializer';
 
 /**
  * T-4 — Admin-only registrations service (FR-9). `list` is the only method
@@ -18,8 +23,20 @@ import {
  * `DuplicateDetectionService.detectForBatch` call for the whole page — never
  * one detection pass per row.
  *
- * Design refs: `design.md` §5 (route contract), §6.1 (module wiring), §6.5.
- * Requirements: FR-9 scenarios 1, 2, 3, 4; FR-11 scenario 1; NFR-8, NFR-9.
+ * T-6 — `getById` (FR-10 scenarios 1, 2, 3; `design.md` §6.6, §7.3) adds the
+ * detail read: full payload, consent record, duplicate candidates and the
+ * derived activity trail, via `serializers/admin-registration.serializer.ts`
+ * and `serializers/activity-trail.serializer.ts`. Unknown id → `404`
+ * (`NotFoundException`) — DD-22: the admin `404` is honest, unlike the
+ * public lookup's byte-identical-across-failure-modes one, because an
+ * authenticated Admin is entitled to know whether a registration exists.
+ * Reuses `toDuplicateDetectionInput` below (already private to this file)
+ * against the SAME `DuplicateDetectionService.detectForBatch` call `list`
+ * uses — one row, one-element batch, still exactly one `actor.findMany`.
+ *
+ * Design refs: `design.md` §5 (route contract), §6.1 (module wiring), §6.5,
+ * §6.6, §7.3. Requirements: FR-9 scenarios 1, 2, 3, 4; FR-10 scenarios 1, 2,
+ * 3; FR-11 scenario 1; NFR-8, NFR-9.
  */
 
 /** One row of the admin queue list — FR-9 scenario 1's column set plus T-5's `duplicateCandidateCount`, minus `action` (a frontend affordance, not a data field). */
@@ -241,5 +258,58 @@ export class AdminRegistrationsService {
       pageSize,
       total,
     };
+  }
+
+  /**
+   * `GET /admin/registrations/:id` — full detail read (FR-10 scenarios 1,
+   * 2, 3). Unknown id → `404` (DD-22 — honest here, unlike the public
+   * lookup's uniform failure shape, because the caller is an authenticated
+   * Admin entitled to know whether the row exists at all).
+   *
+   * `select` is explicit, same discipline as `list` (T-4 advisory A-25):
+   * exactly the columns the serializer and the activity trail read, no
+   * whole-row fetch.
+   *
+   * Duplicate candidates come from the SAME `DuplicateDetectionService`
+   * this class already injects for `list` — one row, a one-element batch,
+   * still exactly one `actor.findMany` (DD-20).
+   */
+  async getById(id: string): Promise<AdminRegistrationDetail> {
+    const row = await this.prisma.registration.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        reference: true,
+        payload: true,
+        createdAt: true,
+        status: true,
+        submitterEmail: true,
+        duplicateDismissals: true,
+        emailVerifiedAt: true,
+        consentAcceptedAt: true,
+        consentPolicyVersion: true,
+        reviewedAt: true,
+        reviewedBySub: true,
+        reviewedByEmail: true,
+      },
+    });
+
+    if (!row) {
+      throw new NotFoundException(`Registration ${id} not found`);
+    }
+
+    const sourceRow = row as AdminRegistrationSourceRow;
+    const candidatesMap = await this.duplicateDetection.detectForBatch([
+      toDuplicateDetectionInput(sourceRow),
+    ]);
+
+    // Keyed by `toDuplicateDetectionInput(sourceRow).registrationId`, i.e.
+    // `sourceRow.id` — the STORED id — not the request-supplied `id` path
+    // parameter. MySQL's default collation is case-insensitive, so
+    // `findUnique({ where: { id } })` can resolve a row whose stored id
+    // differs in case from the URL; looking the candidates up by the
+    // request `id` would then silently miss and fall back to `[]` on the
+    // one screen whose job is to warn before an irreversible publication.
+    return toAdminRegistrationDetail(sourceRow, candidatesMap.get(sourceRow.id) ?? []);
   }
 }
