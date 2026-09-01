@@ -51,7 +51,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Disqualifying: **the emitted SQL is read from disk before the task closes.** It MUST contain `ALTER TABLE \`ActorAuditLog\` MODIFY \`action\` ENUM(...)` and MUST NOT contain `DROP`, a data `UPDATE`, or a narrowed column. A done-criterion demanding "no `MODIFY`" would FAIL a correct migration — see `design.md` §4.2. A drift or reset prompt against the shared dev RDS is **abort-and-report**, never answered.
       Done when: migration applies, generated client carries eight members, emitted SQL matches the disclosure above, existing audit suite green.
 
-- [ ] **T-2 Two additive `ActorAuditService` methods with pinned `changes` envelopes** (deps: T-1)
+- [x] **T-2 Two additive `ActorAuditService` methods with pinned `changes` envelopes** (deps: T-1)
       Scope: `logRegistrationApprove` (full actor snapshot, `logCreate`'s shape) and `logRegistrationReject` (snapshot-shaped over reference, organisation name, structured reason). No existing signature changes.
       Traces: FR-16, FR-12 (audit clause), FR-13 (audit clause), `design.md` §6.7, DD-6
       Files: `backend/src/actors/actor-audit.service.ts`, `.spec.ts`

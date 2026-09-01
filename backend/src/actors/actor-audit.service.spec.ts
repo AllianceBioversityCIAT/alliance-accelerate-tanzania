@@ -551,6 +551,268 @@ describe('ActorAuditService', () => {
     });
   });
 
+  // T-2 — additive: two new audit methods for the registration review queue
+  // (admin/registration-review-queue). Envelopes pinned by design.md §6.7 /
+  // DD-6. No existing describe block above this comment is modified.
+  describe('logRegistrationApprove', () => {
+    it('writes a REGISTRATION_APPROVE snapshot identical in shape to logCreate (FR-16, design.md §6.7)', async () => {
+      const tx = mockTx();
+      const actor = fixtureActor();
+      const created = {
+        id: 'log-approve-1',
+        actorId: actor.id,
+        traderId: actor.traderId,
+        traderName: actor.traderName,
+        action: ActorAuditAction.REGISTRATION_APPROVE,
+        actingSub: acting.sub,
+        actingEmail: acting.email,
+        changes: {},
+        acknowledged: null,
+        createdAt: new Date(),
+      };
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue(created);
+
+      const result = await service.logRegistrationApprove(
+        tx,
+        actor,
+        acting,
+        'REG-2026-0184',
+      );
+
+      expect(result).toBe(created);
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+
+      expect(data).toMatchObject({
+        actorId: actor.id,
+        traderId: actor.traderId,
+        traderName: actor.traderName,
+        action: ActorAuditAction.REGISTRATION_APPROVE,
+        actingSub: acting.sub,
+        actingEmail: acting.email,
+      });
+
+      // §6.7: pinned identical in shape to logCreate's full snapshot envelope.
+      const changes = data.changes as {
+        kind: string;
+        values: Record<string, unknown>;
+      };
+      expect(changes.kind).toBe('snapshot');
+      expect(changes.values).toMatchObject({
+        traderId: actor.traderId,
+        traderName: actor.traderName,
+        region: actor.region,
+        district: actor.district,
+        traderType: actor.traderType,
+        sex: actor.sex,
+        position: actor.position,
+        marketLocation: actor.marketLocation,
+        technicalSupport: actor.technicalSupport,
+        phone: actor.phone,
+        email: actor.email,
+        consentStatus: actor.consentStatus,
+        registrationSource: actor.registrationSource,
+        consentMethod: actor.consentMethod,
+        consentReference: actor.consentReference,
+        crops: actor.crops,
+      });
+      // Decimal fields must be strings, matching logCreate's contract.
+      expect(changes.values.capacityTons).toBe('1850');
+      expect(changes.values.gpsLatitude).toBe('-3.3869');
+    });
+
+    it('satisfies isSnapshot-style narrowing so ActorHistoryPanel never falls through to "Details not available"', async () => {
+      const tx = mockTx();
+      const actor = fixtureActor({
+        registrationSource: 'SELF_REGISTERED',
+        consentMethod: 'PORTAL_CHECKBOX',
+        consentObtainedAt: new Date('2026-08-01T00:00:00Z'),
+        consentReference: 'REG-2026-0184',
+      });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logRegistrationApprove(tx, actor, acting, 'REG-2026-0184');
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+      const changes = data.changes as {
+        kind?: unknown;
+        values?: unknown;
+        fields?: unknown;
+      };
+
+      // Replica of the frontend `isDiff`/`isSnapshot` narrowing in
+      // ActorHistoryPanel.tsx — a correct badge above an empty body is
+      // exactly the failure mode §6.7 exists to prevent (KZ-002: presence is
+      // not proof, this asserts the actual shape).
+      const isDiff =
+        typeof changes === 'object' &&
+        changes !== null &&
+        changes.kind === 'diff' &&
+        typeof changes.fields === 'object';
+      const isSnapshot =
+        typeof changes === 'object' &&
+        changes !== null &&
+        changes.kind === 'snapshot' &&
+        typeof changes.values === 'object';
+
+      expect(isDiff || isSnapshot).toBe(true);
+      expect(isSnapshot).toBe(true);
+    });
+
+    it('writes inside the caller-supplied tx, never a separate transaction', async () => {
+      const tx = mockTx();
+      const otherTx = mockTx();
+      const actor = fixtureActor();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      otherTx.actorAuditLog.create = jest.fn();
+
+      await service.logRegistrationApprove(tx, actor, acting, 'REG-2026-0184');
+
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(otherTx.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logRegistrationReject', () => {
+    function fixtureRegistration(
+      overrides: Partial<{
+        id: string;
+        reference: string;
+        payload: unknown;
+        rejectionReason: string | null;
+      }> = {},
+    ) {
+      return {
+        id: 'registration-1',
+        reference: 'REG-2026-0184',
+        payload: {
+          traderName: 'Meru Agro-Processing & Seeds',
+          traderType: 'seed_company',
+          contactPerson: 'Jane Applicant',
+          position: 'Director',
+          district: 'Arusha Urban',
+          region: 'Arusha',
+        },
+        rejectionReason: 'Duplicate of an existing registry record',
+        ...overrides,
+      };
+    }
+
+    it('writes a REGISTRATION_REJECT snapshot-shaped envelope over reference, organisation name and reason (design.md §6.7)', async () => {
+      const tx = mockTx();
+      const registration = fixtureRegistration();
+      const created = {
+        id: 'log-reject-1',
+        actorId: registration.id,
+        traderId: registration.reference,
+        traderName: 'Meru Agro-Processing & Seeds',
+        action: ActorAuditAction.REGISTRATION_REJECT,
+        actingSub: acting.sub,
+        actingEmail: acting.email,
+        changes: {},
+        acknowledged: null,
+        createdAt: new Date(),
+      };
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue(created);
+
+      const result = await service.logRegistrationReject(
+        tx,
+        registration as never,
+        acting,
+      );
+
+      expect(result).toBe(created);
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+
+      expect(data.action).toBe(ActorAuditAction.REGISTRATION_REJECT);
+      expect(data.actingSub).toBe(acting.sub);
+      expect(data.actingEmail).toBe(acting.email);
+
+      const changes = data.changes as {
+        kind: string;
+        values: Record<string, unknown>;
+      };
+      expect(changes.kind).toBe('snapshot');
+      expect(changes.values).toMatchObject({
+        reference: registration.reference,
+        traderName: 'Meru Agro-Processing & Seeds',
+        reason: registration.rejectionReason,
+      });
+    });
+
+    it('writes actorId = the registration id, traderId = the reference, traderName = the submitted organisation name — never a real actor id (carried-forward FR-16 clause: no REGISTRATION_REJECT row may appear in any actor history)', async () => {
+      const tx = mockTx();
+      const registration = fixtureRegistration({
+        id: 'registration-42',
+        reference: 'REG-2026-0999',
+      });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logRegistrationReject(tx, registration as never, acting);
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+
+      // ActorAuditLog.actorId is deliberately FK-less (§6.7); this row's
+      // actorId is a Registration id, never an Actor id, so the
+      // actor-history read path — which queries by actorId against a real
+      // actor — structurally can never match this row. Persistence-level
+      // proof of the gap the UI layer cannot evaluate (tasks.md T-15's
+      // clause sweep, carried forward to T-2).
+      expect(data.actorId).toBe('registration-42');
+      expect(data.actorId).not.toBe(registration.reference);
+      expect(data.traderId).toBe('REG-2026-0999');
+      expect(data.traderName).toBe('Meru Agro-Processing & Seeds');
+    });
+
+    it('falls back to null when the registration carries no rejection reason yet', async () => {
+      const tx = mockTx();
+      const registration = fixtureRegistration({ rejectionReason: null });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logRegistrationReject(tx, registration as never, acting);
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+      const changes = data.changes as { values: Record<string, unknown> };
+      expect(changes.values.reason).toBeNull();
+    });
+
+    it('is snapshot-shaped, satisfying isSnapshot narrowing even though there is no actor to snapshot', async () => {
+      const tx = mockTx();
+      const registration = fixtureRegistration();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logRegistrationReject(tx, registration as never, acting);
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+      const changes = data.changes as { kind?: unknown; values?: unknown };
+      const isSnapshot =
+        typeof changes === 'object' &&
+        changes !== null &&
+        changes.kind === 'snapshot' &&
+        typeof changes.values === 'object';
+      expect(isSnapshot).toBe(true);
+    });
+
+    it('writes inside the caller-supplied tx', async () => {
+      const tx = mockTx();
+      const otherTx = mockTx();
+      const registration = fixtureRegistration();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      otherTx.actorAuditLog.create = jest.fn();
+
+      await service.logRegistrationReject(tx, registration as never, acting);
+
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(otherTx.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('toAuditEntry', () => {
     it('passes changes through and formats createdAt as ISO string', () => {
       const createdAt = new Date('2026-07-09T12:34:56Z');
