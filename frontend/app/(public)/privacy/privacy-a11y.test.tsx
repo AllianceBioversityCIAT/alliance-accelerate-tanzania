@@ -15,12 +15,13 @@
  * under `trailingSlash: true`. No committed check asserts that file — the
  * build is the gate, and no test here proves emission.
  *
- * PrivacyPage is a pure static server component: no hooks, no data
- * fetching, no useSearchParams.
+ * PrivacyPage the module is a pure static server component: no hooks, no
+ * data fetching, no useSearchParams. As of T-6, though, the tree this file
+ * renders is no longer purely static — see the note below the T-6 marker.
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -30,6 +31,9 @@ jest.mock('next/navigation', () => ({
 }));
 
 import PrivacyPage from './page';
+import { ConsentProvider } from '@/lib/analytics/ConsentProvider';
+import { ConsentBanner } from '@/components/analytics/ConsentBanner';
+import { readConsent } from '@/lib/analytics/consent-storage';
 
 function renderPrivacyPage() {
   return render(
@@ -38,6 +42,135 @@ function renderPrivacyPage() {
     </main>
   );
 }
+
+// T-6 additions below (FR-6, design.md §5.6/§8.1, DD-4/DD-5). This task is
+// purely additive to this file (tasks.md T-6's disqualifier): the six
+// pre-existing `it(` blocks — in the `axe accessibility` and `content per
+// design.md §5.2` describes further down — are untouched and still use the
+// unchanged `renderPrivacyPage()` helper. Above this line, two things
+// changed: the imports (the RTL import widened to `fireEvent, within`, the
+// three new analytics imports, and the `next/navigation` stub — a guard,
+// not a requirement: removing it and rerunning this suite left it green),
+// and this file's header docblock, whose closing paragraph now records
+// that the rendered tree is no longer purely static (T-6, item 3).
+//
+// The six pre-existing `it(` blocks render `PrivacyPage` with no
+// `ConsentProvider`, so `ConsentChoiceControl` (inside the new analytics
+// section) falls back to `ConsentProvider.tsx`'s `DEFAULT_CONTEXT` — a safe,
+// inert value (`loading: false`, `consent: 'undecided'`, a no-op
+// `setConsent`) that renders the control's markup without needing a real
+// provider. That is sufficient for the axe/heading/content checks above,
+// but proving the control actually changes the *stored* choice, and that
+// the banner reacts to it with no reload (DD-4), needs a real provider —
+// hence the separate helper below, used only by the new tests.
+function renderWithProvider() {
+  return render(
+    <ConsentProvider>
+      <ConsentBanner />
+      <main>
+        <PrivacyPage />
+      </main>
+    </ConsentProvider>
+  );
+}
+
+describe('/privacy page — analytics disclosure per design.md §5.6 (FR-6, T-6)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('has no axe violations with a real ConsentProvider mounted (WCAG 2.1 AA)', async () => {
+    const { container } = renderWithProvider();
+    const results = await axe(container);
+
+    expect(results).toHaveNoViolations();
+  });
+
+  it('names the 4 collected signals (FR-4/FR-6)', () => {
+    renderPrivacyPage();
+
+    const section = screen.getByRole('heading', { name: /analytics cookies/i }).closest('section');
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(scoped.getByText(/page views/i)).toBeInTheDocument();
+    expect(scoped.getByText(/sessions/i)).toBeInTheDocument();
+    expect(scoped.getByText(/geographic origin at country, region, and city level/i)).toBeInTheDocument();
+    expect(scoped.getByText(/device and browser category/i)).toBeInTheDocument();
+  });
+
+  it('names Google as the recipient of analytics data', () => {
+    renderPrivacyPage();
+
+    const section = screen.getByRole('heading', { name: /analytics cookies/i }).closest('section');
+    expect(within(section as HTMLElement).getByText(/sent to\s*google/i)).toBeInTheDocument();
+  });
+
+  it('states analytics cookies are set only after consent', () => {
+    renderPrivacyPage();
+
+    expect(screen.getByText(/analytics cookies are set only after you consent/i)).toBeInTheDocument();
+  });
+
+  it('states the route to change a prior choice, and renders the change-choice control', () => {
+    renderPrivacyPage();
+
+    expect(screen.getByText(/change this choice at any time.*using the control below/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /accept analytics cookies/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reject analytics cookies/i })).toBeInTheDocument();
+  });
+
+  it('re-scopes the opening sentence to an enumerated two-item set, and still states what it does not cover (FR-6 BUT, design.md §8.1)', () => {
+    renderPrivacyPage();
+
+    const scopeSentence = screen.getByText(/this notice covers two things/i);
+    expect(scopeSentence).toBeInTheDocument();
+    expect(scopeSentence.textContent).toMatch(/contact form/i);
+    expect(scopeSentence.textContent).toMatch(/analytics cookies/i);
+    // still explicitly out of scope — the limitation is re-scoped, not deleted.
+    expect(scopeSentence.textContent).toMatch(/organisation registration/i);
+    expect(scopeSentence.textContent).toMatch(/public directory/i);
+  });
+
+  it('leaves the "not consent to publish" section’s own text untouched', () => {
+    renderPrivacyPage();
+
+    // Same string the pre-existing test above asserts — proves this task
+    // added a new section without touching this one's content.
+    expect(
+      screen.getByText(/not consent to publish any organisation.s information/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not change the consent status,\s*contact visibility/i)
+    ).toBeInTheDocument();
+  });
+
+  it('lets a visitor change their stored consent choice, and the banner reacts with no reload (DD-4)', () => {
+    renderWithProvider();
+
+    // No stored record yet: FR-3's "absence is not consent" resolves to
+    // `undecided`, so the banner (mounted alongside, as it is in the real
+    // (public) layout) is visible.
+    expect(screen.getByRole('region', { name: /cookie consent/i })).toBeInTheDocument();
+    expect(readConsent()).toBe('undecided');
+
+    fireEvent.click(screen.getByRole('button', { name: /accept analytics cookies/i }));
+
+    // The stored choice changed...
+    expect(readConsent()).toBe('granted');
+    // ...and the banner — a sibling consumer of the same ConsentProvider,
+    // not re-rendered via any reload — reacted immediately.
+    expect(screen.queryByRole('region', { name: /cookie consent/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /reject analytics cookies/i }));
+
+    // The control can also change an already-decided choice (the "route to
+    // change a prior choice" FR-6 requires) — still no reload, still no
+    // banner, since `denied` is not `undecided` either.
+    expect(readConsent()).toBe('denied');
+    expect(screen.queryByRole('region', { name: /cookie consent/i })).not.toBeInTheDocument();
+  });
+});
 
 describe('/privacy page — axe accessibility (T-10, NFR-3)', () => {
   it('has no axe violations (WCAG 2.1 AA compliance)', async () => {
