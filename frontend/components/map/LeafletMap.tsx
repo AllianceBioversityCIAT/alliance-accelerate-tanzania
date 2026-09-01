@@ -173,6 +173,12 @@ export default function LeafletMap({
       maxZoom: 18,
     }).addTo(map);
 
+    // T-9: Leaflet's default attribution control sits bottom-right, where the
+    // fixed consent banner (z-[1100]) can occlude it — a licensing control,
+    // not decoration (design.md §5.4). Top-right is the only free corner:
+    // the zoom control holds top-left, MapLegend holds bottom-left.
+    map.attributionControl.setPosition('topright');
+
     // Create the marker layer group (cleared + repopulated in the actors effect).
     const group = L.layerGroup().addTo(map);
     markerGroupRef.current = group;
