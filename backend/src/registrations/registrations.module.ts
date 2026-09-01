@@ -5,6 +5,7 @@ import { RegistrationsService } from './registrations.service';
 import { EmailVerificationService } from './email-verification.service';
 import { AdminRegistrationsController } from './admin-registrations.controller';
 import { AdminRegistrationsService } from './admin-registrations.service';
+import { DuplicateDetectionService } from './duplicate-detection.service';
 import { LoggingModule } from '../logging/logging.module';
 import { RequestContextMiddleware } from '../logging/request-context.middleware';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -82,6 +83,11 @@ import {
  * `AdminRegistrationsController` — the admin surface is authenticated and
  * `@Roles('Admin')`-gated, so it carries neither abuse profile the public
  * throttle addresses (`design.md` §6.1).
+ *
+ * `admin/registration-review-queue` T-5 — adds `DuplicateDetectionService`
+ * (below, `providers`) so `AdminRegistrationsService.list` can inject it
+ * (`design.md` §6.5, DD-20). No controller of its own — it is consumed
+ * only from within this module, never routed directly.
  */
 @Module({
   imports: [
@@ -98,6 +104,7 @@ import {
     EmailVerificationService,
     RegistrationsService,
     AdminRegistrationsService,
+    DuplicateDetectionService,
   ],
 })
 export class RegistrationsModule implements NestModule {

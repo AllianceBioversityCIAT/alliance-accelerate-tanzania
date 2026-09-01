@@ -587,3 +587,122 @@ Both lens Reviewers independently judged the clause **misassigned**, and the con
 #### Issues encountered
 
 One rework cycle, on a genuine runtime defect that every automated layer certified as green. No scope creep. The `Files` list proved incomplete for the falsification the task itself mandates.
+
+### T-5 — `DuplicateDetectionService` + `duplicateCandidateCount` on list rows
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (first attempt) |
+| Date | 2026-09-01 |
+| Implementer attempts | **1** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **xhigh** · Skills: `nestjs-expert`, `tdd` |
+| Reviewer | `akili-reviewer` (opus, T3) — **single Reviewer, lens-checklist mode carrying the PII lens explicitly** |
+| Review rounds consumed | **1** (running total: **11** of 35) |
+| Requirements covered | FR-11 scenario 1 (queue-flag limb) · NFR-9 · `design.md` §6.5, DD-20 · DC-31 (read side), DC-34, DC-35 |
+
+**Review-depth deviation, recorded.** T-5's effort is `xhigh`, which nominally triggers parallel lens mode. The Leader used a **single** Reviewer because T-5 adds no route, no write path, and does not widen the PII boundary — and because the review-round budget was running ahead of pace (10/35 at 4/16 tasks at the time of the call). The Reviewer was briefed to carry the PII lens as well as conformance, and was asked to say so if the call was wrong. **Its verdict: "correct. T-5 adds no route, no write, and no new PII egress — it *narrows* the query (`select:` replacing a whole-row fetch) rather than widening the boundary."**
+
+#### Files changed
+
+New: `duplicate-detection.service.ts`, `duplicate-detection.service.spec.ts` (20 tests).
+Modified: `admin-registrations.service.ts` (+106/−12), `admin-registrations.service.spec.ts` (+138/−2), `registrations.module.ts` (+7/−0).
+
+**`Files`-list deviation, allowed:** `admin-registrations.service.spec.ts` is not in T-5's list, but the new constructor parameter makes the existing spec fail to compile. The Reviewer confirmed the edit is confined to the instantiation, the mock shape, and additive `describe` blocks — **no existing assertion weakened or deleted**.
+
+#### DD-20 — the one-fetch design, verified by tracing rather than by its tests
+
+`list()` is `Promise.all([registration.findMany, registration.count])` → **one** `detectForBatch(...)` → a **synchronous** `.map` over `duplicateCounts.get(row.id)?.length ?? 0`. The Reviewer traced the code directly and found **no `await` inside any `map`, no per-row helper, no lazy getter**; inside the service, `actor.findMany` sits above the `for (const input of inputs)` loop and `matchOne` is a plain synchronous function with no reachable I/O.
+
+**The call-count assertions are sound, and the second is the load-bearing one:**
+
+```ts
+// duplicate-detection.service.spec.ts — 4-row batch
+expect(prisma.actor.findMany).toHaveBeenCalledTimes(1);
+// admin-registrations.service.spec.ts — 3-row page, with the REAL
+// DuplicateDetectionService wired to a mocked PrismaService (not a stub)
+expect(prisma.actor.findMany).toHaveBeenCalledTimes(1);
+```
+
+Every plausible N-shaped regression (detect-per-row, an awaited `map`) yields exactly `inputs.length` calls, so the assertion reddens at 4 and at 3. Wiring the real service through `list()` proves the property end-to-end rather than only inside the service's own suite — **that is what closes the disqualifying condition.**
+
+#### The four §6.5 match attributes — all present, with the guard that matters
+
+Normalized phone (reusing the **same** `normalizePhone` the import pipeline applies on write, untouched in this diff), lowercased email, whitespace-collapsed `traderName`, and `isWithinBoundingBox`.
+
+**The null-guard direction is right, and it is the classic false-positive:** `normalizeEmailForMatch` collapses blank to `null` and the match requires **both** sides truthy, so two blank emails never "match" each other. Same for phone; a blank `traderName` normalizes to `''`, which is falsy, so blank names do not pair either. `isWithinBoundingBox` returns false unless **all four** coordinates are non-null, and its Decimal coercion is tested with an actual `{ toString }` object rather than a plain number.
+
+#### Falsifying input — executed, verbatim, reverted
+
+Fixture: actor `+255712345678` vs submitted `'0712 345 678'` — matching **only** on a normalized-away spacing difference. Breaking `normalizePhoneForMatch` (returning the raw string) reddened exactly that test:
+
+```
+● matching — normalized phone equality › matches when phones are equal after normalization (spacing difference)
+  expect(received).toHaveLength(expected)
+  Expected length: 1
+  Received length: 0
+Test Suites: 1 failed, 1 total
+Tests: 1 failed, 19 passed, 20 total
+```
+
+Reverted → 20/20; `git diff` shows no residue.
+
+#### Carried-forward T-4 advisory A-25 — discharged
+
+The `findMany` now carries an explicit projection:
+
+```ts
+select: { id: true, reference: true, payload: true, createdAt: true, status: true, submitterEmail: true, duplicateDismissals: true }
+```
+
+`submitterEmail` and `duplicateDismissals` are pulled **deliberately** — detection genuinely needs them (email-match attribute; per-candidate dismissal filtering) — and neither reaches the response. The Reviewer traced every path: `toAdminRegistrationListRow` builds an explicit eight-field object literal **with no spread**, the empty path returns `data: []`, and there is no `try`/`catch` that could echo a row into an error body. `duplicateCandidateCount` is a `number` — the candidate *list* never crosses into the list response, matching §6.5's "returns a **count** per row, not candidates".
+
+The pinning test is value-based (`expect(serialized).not.toContain('applicant@example.com')`), so it **fails on a rename of the field, not merely on the field name**. Reviewer's summary: the PII boundary is *tightened* by this change.
+
+#### FR-11 "never decides" — structurally satisfied
+
+Repo-wide, `DuplicateDetectionService` has exactly **three** non-test references: the module `providers` array, the import, and the injected field. **One caller: `list()`.** No write method exists on the service; `PrismaService` is used for a single `findMany`; no verdict is persisted.
+
+#### DC-31 read-side filtering — filters, and the tests can tell the difference
+
+`extractDismissedActorIds` is defensive (`!Array.isArray → []`, non-string `actorId` skipped) but **not vacuous**: the paired tests `duplicateDismissals: [{actorId:'actor-1'}] → count 0` and `duplicateDismissals: null → count 1` differ only in that column, so a parser that always returned `[]` fails the first. The 1-of-3 per-candidate test sits at the service layer. The "after reload" limb is T-7's and correctly out of scope.
+
+#### Final verification
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent duplicate-detection` | **20/20** PASS |
+| `npm test -- --silent admin-registrations` | **18/18** PASS (2 suites) |
+| `npm test -- --silent pii-boundary` | **24/24** PASS (unchanged — no route added, so DC-28's totality gate is untriggered) |
+| `npm test -- --silent` (full backend) | **67 suites / 873 tests** (baseline 66/846, +27) |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+**Leader-verified DB state:** `Registration` = **0 rows** (unchanged), `Actor` = 14 rows (pre-existing seed data, untouched). All T-5 tests run against a mocked `PrismaService`.
+
+---
+
+#### LEADER DECISION — DEC-2: the unpinned detection constants
+
+**A genuine spec gap, Leader-confirmed at source:** neither `requirements.md` nor `design.md` pins the **GPS bounding-box size** or the **candidate cap**. `design.md` §6.5 says only *"a GPS bounding-box proximity check when both coordinates are present"* and *"Capped and ordered by match strength"*. FR-11's three scenarios name no distance and no number.
+
+The Implementer chose **±0.01° (≈1.1 km per axis at Tanzanian latitudes)** and a cap of **5**, and — correctly — documented them inline as *implementation defaults, not spec-derived constants* rather than inventing authority for them.
+
+**Resolution: accepted as defaults, and surfaced to the user at the Phase B gate.**
+
+**Rationale.** FR-11 makes detection strictly advisory — it *"must NOT block, reject, merge, or auto-approve"* and must not pre-select rejection. So the two error directions are asymmetric: a false positive costs a reviewer one glance, a false negative misses a duplicate. That argues for erring **wide**. And **DC-34 already books detection *recall* as an accepted, unmeasurable gap** (*"A known duplicate is gated; 'no duplicate is ever missed' is not"*), so an unpinned radius **inherits that posture rather than creating a new one**. The Reviewer independently judged both values defensible and neither actively wrong.
+
+**Open for the user:** ±0.01° is a real product judgment — in a Tanzanian town two genuinely distinct seed traders can fall inside 1.1 km. Tightening (±0.005° ≈ 550 m) or widening is cheap now; T-13 renders these candidates and T-16 documents them.
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-33** | **Self-match after T-8 — a false positive that will ship unless T-8 prevents it.** `Registration.publishedActorId` exists in the schema but is **not** in the new `select:`, and `list()` applies **no default status filter** (`where` is `{}` when `q.status` is absent), so approved registrations appear in the default view. Once T-8 sets `publishedActorId`, every approved row will match the actor **it itself created** on all four attributes and report `duplicateCandidateCount ≥ 1` — *a registration flagged as a duplicate of its own output.* **Leader-verified:** `publishedActorId` is absent from the `select:` (lines 218–226) and `where` is `{}` (line 207). Latent today (`Registration` = 0 rows, no approve path exists), unspecified in `requirements.md`/`design.md`, therefore **not a T-5 defect**. | **FORWARD POINTER → T-8.** The fix is one field in `select:` plus one exclusion in `matchOne`. Must be in T-8's Implementer brief **and** its Reviewer brief. |
+| **A-34** | **Premature citation (KZ-008).** `admin-registrations.service.ts` states in the present tense that PII containment is what *"`admin-registrations.e2e.spec.ts`/`pii-boundary.spec.ts` prove elsewhere"* — but **`admin-registrations.e2e.spec.ts` does not exist**; `design.md` §3 schedules it `(new)` and `tasks.md` assigns it to **T-8**. **Leader-verified absent.** The containment claim itself is true and is proven in-commit by the new value-based unit test; only the citation is ahead of reality, and its window of falsity is bounded — it becomes true when T-8 lands. | **FORWARD POINTER → T-8.** Not reworked here: one incidental JSDoc line, and a rework cycle plus review round is disproportionate against a round budget already ahead of pace. T-8 creates that file and must confirm the citation is then true. |
+| A-35 | **The count silently saturates.** `duplicateCandidateCount` is derived from the post-`slice(0, 5)` list, so it is `min(open, 5)`, while the field's JSDoc reads "Open (non-dismissed) duplicate candidates" with no mention of the cap. §6.5 does say "Capped", so it is coherent — but FR-11 scenario 1's *"a warning names the number of candidates"* will **under-report at ≥6**. | Recorded. Either disclose the cap in the JSDoc or have **T-13** render "5+" at the cap. |
+| A-36 | **One assertion weaker than its name.** `it('caps the candidate list at the documented maximum')` asserts `toBeLessThanOrEqual(5)`. It **does** redden if the `slice` is removed (8 matching actors → length 8), so it is not vacuous — but it would also pass at length 0, i.e. if matching broke entirely, and it does not pin the cap *value*. `toHaveLength(5)` against the same 8-actor fixture is strictly stronger at zero cost. | Recorded. |
+
+#### Decisions made
+
+- Single Reviewer instead of parallel lens mode (reasoned above; Reviewer concurred).
+- DEC-2: detection constants accepted as documented implementation defaults.
+- A-34 **not** reworked — proportionality against the round budget, with a bounded falsity window and a forward pointer to the task that closes it.

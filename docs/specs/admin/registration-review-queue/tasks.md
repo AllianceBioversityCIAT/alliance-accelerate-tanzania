@@ -87,7 +87,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Done when: five-route controller registered (four still absent), list returns the envelope, `Staff` → `403`, anonymous → `401`, one structured log line per request with no PII, `pii-boundary` green.
       **Re-measure the budget at this task's close.**
 
-- [ ] **T-5 `DuplicateDetectionService` + `duplicateCandidateCount` on list rows** (deps: T-4)
+- [x] **T-5 `DuplicateDetectionService` + `duplicateCandidateCount` on list rows** (deps: T-4)
       Scope: normalized phone / lowercased email / normalized name equality + GPS bounding box; **one narrow `Actor` fetch per request, matched in memory** — never one detection pass per row; capped and ordered by match strength; dismissed candidates filtered out.
       Traces: FR-11 scenario 1 (queue flag limb) · NFR-9 · `design.md` §6.5, DD-20, DC-35
       Files: `backend/src/registrations/duplicate-detection.service.ts` + `.spec.ts`, `admin-registrations.service.ts`
@@ -132,6 +132,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Verify: `cd backend && npm test -- --silent admin-registrations && npm test -- --silent pii-boundary`
       Falsifying input: map `contactPerson` onto `Actor.position` → the DC-23 by-value sweep must redden **naming the column**. Run this mutation and record the output verbatim; it is the single most valuable falsification in the spec.
       Disqualifying: **the projection gate must assert fixture _values_ absent from _every_ column, never field names.** A field-name assertion passes after a rename and proves nothing. And a green atomicity test is **not** proof of rollback — the harness mocks Prisma and `$transaction` is a pass-through (DC-24). Report atomicity as *structurally asserted*, never as *rollback proven*.
+      **Carried forward from T-5's review (`execution.md` A-33, A-34):** (1) **self-match** — `publishedActorId` is absent from `list()`'s `select:` and the queue applies no default status filter, so once this task sets `publishedActorId` every approved row will match the actor it itself created and report `duplicateCandidateCount >= 1`. Add the field to `select:` and exclude it in `matchOne`. (2) creating `admin-registrations.e2e.spec.ts` makes true a citation in `admin-registrations.service.ts` that is currently ahead of reality (KZ-008) — confirm it.
       Clause sweep: `BUT contactPerson must NOT land on position` → mutation above. `AND IT MUST leave technicalSupport/gpsAltitude/gpsAccuracy null` → assert null by value. `AND IT MUST satisfy chunk 1's invariant` → the call is present but **cannot return false** on this path (§6.2's honesty note) — **declared an unevaluable gap, not a gate.** `BUT the gate must NOT be client-only` → craft a request with a misspelled acknowledgement → `400`. Double approval → second call returns `409` and `actor.create` was invoked exactly once.
       Done when: all six scenarios pass, the `contactPerson` mutation reddens by name with output recorded, `409` on both meanings distinguishable by message, notification dispatched post-commit.
       **Re-measure the budget at this task's close.**

@@ -1,5 +1,6 @@
 import { RegistrationStatus } from '@prisma/client';
 import { AdminRegistrationsService } from './admin-registrations.service';
+import { DuplicateDetectionService } from './duplicate-detection.service';
 
 /**
  * T-4 — `AdminRegistrationsService` unit tests with a MOCKED PrismaService
@@ -10,12 +11,22 @@ import { AdminRegistrationsService } from './admin-registrations.service';
  * pagination envelope, page-beyond-result-set) and NFR-9 (pageSize cap,
  * `where`/`orderBy` shape — index USAGE is DC-25, declared unprovable
  * without a real MySQL `EXPLAIN`).
+ *
+ * T-5 — `list` gains `duplicateCandidateCount` (FR-11 scenario 1). The
+ * REAL `DuplicateDetectionService` is wired to the SAME mocked
+ * `PrismaService` (not a stub), so the DD-20 "exactly one `actor.findMany`
+ * per page, never one per row" property is proven end-to-end through
+ * `AdminRegistrationsService.list`, not just inside
+ * `duplicate-detection.service.spec.ts`.
  */
 
 interface MockPrisma {
   registration: {
     findMany: jest.Mock;
     count: jest.Mock;
+  };
+  actor: {
+    findMany: jest.Mock;
   };
 }
 
@@ -28,8 +39,24 @@ function fixtureRow(overrides: Partial<Record<string, unknown>> = {}) {
       traderName: 'Meru Agro-Processing & Seeds',
       traderType: 'seed_company',
       region: 'Arusha',
+      phone: '+255712345678',
     },
     createdAt: new Date('2026-01-01T00:00:00Z'),
+    submitterEmail: 'applicant@example.com',
+    duplicateDismissals: null,
+    ...overrides,
+  };
+}
+
+function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'actor-1',
+    traderId: 'TZ-SEED-0001',
+    traderName: 'Meru Agro-Processing & Seeds',
+    phone: '+255712345678',
+    email: 'director@example.com',
+    gpsLatitude: -3.3869,
+    gpsLongitude: 36.683,
     ...overrides,
   };
 }
@@ -44,8 +71,12 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
+      actor: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
-    service = new AdminRegistrationsService(prisma as unknown as never);
+    const duplicateDetection = new DuplicateDetectionService(prisma as unknown as never);
+    service = new AdminRegistrationsService(prisma as unknown as never, duplicateDetection);
   });
 
   describe('list', () => {
@@ -138,7 +169,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       expect(res.pageSize).toBe(100);
     });
 
-    it('projects each row to { id, reference, applicant, traderType, region, submittedAt, status }', async () => {
+    it('projects each row to { id, reference, applicant, traderType, region, submittedAt, status, duplicateCandidateCount }', async () => {
       prisma.registration.findMany.mockResolvedValue([
         fixtureRow({
           id: 'reg-2',
@@ -164,6 +195,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         region: 'Dodoma',
         submittedAt: new Date('2026-02-01T00:00:00Z'),
         status: RegistrationStatus.APPROVED,
+        duplicateCandidateCount: 0,
       });
     });
 
@@ -176,6 +208,110 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       expect(res.data).toEqual([]);
       expect(res.total).toBe(0);
       expect(res.page).toBe(5);
+    });
+
+    describe('select — the PII containment is a property of the query (T-4 advisory A-25)', () => {
+      it('selects only the fields the row projection and duplicate detection need — never the whole row', async () => {
+        prisma.registration.findMany.mockResolvedValue([]);
+        prisma.registration.count.mockResolvedValue(0);
+
+        await service.list({} as never);
+
+        expect(prisma.registration.findMany.mock.calls[0][0].select).toEqual({
+          id: true,
+          reference: true,
+          payload: true,
+          createdAt: true,
+          status: true,
+          submitterEmail: true,
+          duplicateDismissals: true,
+        });
+      });
+
+      it('never places submitterEmail or duplicateDismissals in the response payload', async () => {
+        prisma.registration.findMany.mockResolvedValue([fixtureRow()]);
+        prisma.registration.count.mockResolvedValue(1);
+
+        const res = await service.list({} as never);
+
+        const serialized = JSON.stringify(res.data[0]);
+        expect(serialized).not.toContain('applicant@example.com');
+        expect(res.data[0]).not.toHaveProperty('submitterEmail');
+        expect(res.data[0]).not.toHaveProperty('duplicateDismissals');
+      });
+    });
+
+    describe('duplicateCandidateCount — one Actor fetch per page, not per row (DD-20)', () => {
+      it('issues exactly ONE prisma.actor.findMany call for a multi-row page', async () => {
+        prisma.registration.findMany.mockResolvedValue([
+          fixtureRow({ id: 'reg-1' }),
+          fixtureRow({ id: 'reg-2' }),
+          fixtureRow({ id: 'reg-3' }),
+        ]);
+        prisma.registration.count.mockResolvedValue(3);
+        prisma.actor.findMany.mockResolvedValue([fixtureActor()]);
+
+        await service.list({} as never);
+
+        expect(prisma.actor.findMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('counts open (non-dismissed) candidates per row from the batch detection result', async () => {
+        prisma.registration.findMany.mockResolvedValue([
+          fixtureRow({ id: 'reg-1', payload: { traderName: 'Match Co', traderType: 'x', region: 'Arusha', phone: '+255712345678' } }),
+          fixtureRow({ id: 'reg-2', payload: { traderName: 'No Match Co', traderType: 'x', region: 'Arusha' } }),
+        ]);
+        prisma.registration.count.mockResolvedValue(2);
+        prisma.actor.findMany.mockResolvedValue([fixtureActor({ phone: '+255712345678' })]);
+
+        const res = await service.list({} as never);
+
+        const row1 = res.data.find((r) => r.id === 'reg-1')!;
+        const row2 = res.data.find((r) => r.id === 'reg-2')!;
+        expect(row1.duplicateCandidateCount).toBe(1);
+        expect(row2.duplicateCandidateCount).toBe(0);
+      });
+
+      it('excludes a dismissed candidate from the count (DC-31, via duplicateDismissals)', async () => {
+        prisma.registration.findMany.mockResolvedValue([
+          fixtureRow({
+            id: 'reg-1',
+            payload: { traderName: 'Match Co', traderType: 'x', region: 'Arusha', phone: '+255712345678' },
+            duplicateDismissals: [{ actorId: 'actor-1' }],
+          }),
+        ]);
+        prisma.registration.count.mockResolvedValue(1);
+        prisma.actor.findMany.mockResolvedValue([fixtureActor({ id: 'actor-1', phone: '+255712345678' })]);
+
+        const res = await service.list({} as never);
+
+        expect(res.data[0].duplicateCandidateCount).toBe(0);
+      });
+
+      it('treats an absent duplicateDismissals column the same as an empty array', async () => {
+        prisma.registration.findMany.mockResolvedValue([
+          fixtureRow({
+            id: 'reg-1',
+            payload: { traderName: 'Match Co', traderType: 'x', region: 'Arusha', phone: '+255712345678' },
+            duplicateDismissals: null,
+          }),
+        ]);
+        prisma.registration.count.mockResolvedValue(1);
+        prisma.actor.findMany.mockResolvedValue([fixtureActor({ id: 'actor-1', phone: '+255712345678' })]);
+
+        const res = await service.list({} as never);
+
+        expect(res.data[0].duplicateCandidateCount).toBe(1);
+      });
+
+      it('issues zero actor.findMany calls when the page has no rows', async () => {
+        prisma.registration.findMany.mockResolvedValue([]);
+        prisma.registration.count.mockResolvedValue(0);
+
+        await service.list({} as never);
+
+        expect(prisma.actor.findMany).not.toHaveBeenCalled();
+      });
     });
   });
 });
