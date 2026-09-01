@@ -12,7 +12,10 @@
 // stored by the platform, and that submitting is NOT consent to publish
 // anything; and (2) analytics cookies: the 4 signals GA4 collects, Google
 // as recipient, that cookies are set only after consent, and the control
-// below to change a prior choice. It still does not describe how the
+// below to change a prior choice — and, as of T-11, the asymmetric timing
+// of that change (immediate on accept, deferred to the next page load on
+// reject) and that this site does not delete cookies already set. It
+// still does not describe how the
 // registry handles data collected through organisation registration or
 // shown in the public directory — this is not a site-wide privacy policy.
 // (§8.1 records why: deleting that limitation instead of re-scoping it
@@ -110,6 +113,15 @@ export default function PrivacyPage() {
           <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
             You can change this choice at any time, for this browser, using the control
             below.
+          </p>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
+            Rejecting analytics here takes effect from your next page load, not
+            immediately on the page you are currently viewing &mdash; analytics already
+            loaded keeps running for the rest of this visit, including as you move
+            between pages, and stops the next time you load the site. Accepting takes
+            effect immediately. Changing your choice does not remove any analytics
+            cookies already set in this browser &mdash; this site does not delete
+            cookies itself.
           </p>
           <div className="mt-4">
             <ConsentChoiceControl />

@@ -22,7 +22,7 @@
  * The residual is the mid-transit band on `/map` — 11 cells before the fix
  * and 11 after, with different members, because `mid` is derived from
  * `scrollHeight` and the reservation inflates it. The exact count is
- * sample- and environment-dependent (a session with `/map` 42px shorter
+ * sample- and environment-dependent (a session with `/map` 42px taller
  * measured 10), which is why it is not a gate. Closing the residual would
  * require changing
  * `ConsentBanner.tsx`'s positioning (e.g. off `fixed`), which is out of this

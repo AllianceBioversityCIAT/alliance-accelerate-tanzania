@@ -992,3 +992,36 @@ The Reviewer's arithmetic is decisive and needed no re-measurement: **seven cont
 1. `PublicShellFrame.tsx`'s parenthetical *"(a session with `/map` 42px shorter measured 10)"* has the **direction inverted** — that session's `/map` was 42px **taller** (Arm A `scrollHeight` 1243/1240 versus 1201/1198 at 768/1440). The magnitude is exact and the sentence's conclusion — the count is sample- and environment-dependent, therefore not a gate — is unaffected. The Reviewer drew the line explicitly: attempt 2's defect was a false claim about *what the fix accomplished*; this is a sign error in an illustrative aside. One word.
 2. `OLDCODE-SAMEENV.json` is **mislabelled** — it carries the reservation and is the pre-*1px-fix* build, not pre-*reservation* code. Citing it as a same-environment pre-fix control would mislead a later reader.
 3. The measurement artefacts should not be the only home for this evidence. Discharged by the transcription above.
+
+### T-11 Disclose when a withdrawn consent takes effect — **PASS (attempt 3 of max 3)**
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Implementer attempts | **3** (FAIL → FAIL → PASS) |
+| Files | `frontend/app/(public)/privacy/page.tsx` · `privacy-a11y.test.tsx` (additive, 14 → 17 `it(`) · `frontend/components/shell/PublicShellFrame.tsx` (one word) |
+| Verification | `npm test -- privacy --silent` → 17/17 · full suite → 98/98 suites, **1478/1478** · `npm run build` → `/privacy` emits `○ (Static)` · lint clean |
+
+**The paragraph was wrong twice, in opposite directions, and both times it sounded reasonable.**
+
+- **Attempt 1** said *any* change takes effect from the next page load. False in the accept direction: `GoogleAnalytics` mounts in the same provider as the control, so granting injects on the current page and `gtag('config', …)` records a page view for `/privacy` and sets `_ga` cookies **before any navigation**. It **understated when collection begins**, in a privacy notice. **The Leader induced it** — the attempt-1 brief instructed *"state that the change takes effect on the next page load, not immediately"*, generalising past the task's own withdrawal-scoped title and `Done when`.
+- **Attempt 2** said already-loaded analytics *"keeps running until you navigate away"*. False: every in-site link is `next/link`, so navigation is a soft transition with no document load, and `next/script` has no unmount cleanup — the node, `gtag`, `dataLayer` and `_ga` cookies survive the **document**, not the route change. It **overstated when collection stops**. **The Reviewer had authored that wording itself** and found it only because it was instructed to re-derive its own proposal against the code rather than trust it.
+
+**Final copy, verified clause by clause against source:**
+
+> "Rejecting analytics here takes effect from your next page load, not immediately on the page you are currently viewing — analytics already loaded keeps running for the rest of this visit, including as you move between pages, and stops the next time you load the site. Accepting takes effect immediately. Changing your choice does not remove any analytics cookies already set in this browser — this site does not delete cookies itself."
+
+**Stronger than the paragraph needs:** "stops the next time you load the site" holds on **every** `readConsent` path — a valid `denied` record, and `undecided` for absent, unparseable, stale-version, or throwing-accessor. None satisfies `consent === 'granted'`. **There is no path on which a next document load resumes collection.**
+
+**On the two ambiguities the Leader flagged**, both resolved rather than waved past:
+- *"stops the next time you load the site"* — **the sentence supplies its own disambiguation.** "keeps running … including as you move between pages, and stops the next time you load the site" places the two readings in explicit contrast: if a reader took "load the site" to include a soft navigation, the halves would flatly contradict, forcing the correct reading.
+- *"for the rest of this visit"* — looser than "document", since a visit may span several loads. Bounded by its trailing clause, and any residual misreading makes collection sound **longer** than it is — the direction FR-4's own correction identifies as the acceptable one for a privacy notice.
+
+**The negative assertion is well-formed, and its mechanics are load-bearing.** `not.toMatch(/until you navigate away/i)` cannot pass by the text having vanished: its `getByText` anchor **throws** on absence, and the regression it targets necessarily removes the anchor phrase, reddening the test before the negative is reached. `Element.textContent` is never `null`, so there is no vacuity. The Reviewer also noted the Implementer's `grep` of JSX wrap positions "was checking something that does not actually matter here; it happens to be fine for a reason it did not state" — the regexes pass because Babel condenses intra-literal newlines, not because the wraps are preserved.
+
+#### ADVISORY (recorded, not actioned)
+
+1. The negative assertion is **element-scoped**. Splitting the paragraph and reintroducing the false clause in a sibling would leave all four assertions green. `expect(screen.queryByText(/until you navigate away/i)).toBeNull()` would be strictly stronger at no cost.
+2. *"for the rest of this visit"* describes document lifetime with a session-scoped word; *"for the rest of this page"* would be exact.
+3. The three positive regexes pass only because the paragraph is one unbroken JSX text literal. An inline `<strong>` would break the `getByText` anchor while leaving `textContent` complete — failure direction is safe (false *failure*, not false pass).
+4. In a build with `NEXT_PUBLIC_GA_MEASUREMENT_ID` unset, "Accepting takes effect immediately" describes something that never happens. T-7's committed default means production always has the ID, and over-disclosure is the safe direction.

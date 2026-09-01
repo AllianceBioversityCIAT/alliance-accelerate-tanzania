@@ -57,11 +57,20 @@ Three states, and **only** `granted` permits the script to exist:
 |---|---|---|---|
 | `undecided` | no record; record unreadable; record's version < current | shown | **not injected** |
 | `granted` | record at current version says granted | hidden | injected once |
-| `denied` | record at current version says denied | hidden | **not injected** |
+| `denied` | record at current version says denied | hidden | **not injected** on load — but see the asymmetry note below |
 
 `undecided` is the initial value on every render path, including the one where storage throws. Absence never resolves to `granted` (FR-3). The record carries the **policy version**, so raising the version constant re-prompts every visitor — the mechanism FR-6's disclosure change will need if the disclosure is ever materially revised.
 
 **Hydration note.** The provider must not render the banner during the first paint pass on a value it has not yet read from storage, or a visitor who already chose will see the banner flash on every page load. State initialises as `undecided` with a separate "not yet read" flag; the banner renders only after the read completes. This is the standard static-export hydration constraint, not an optimisation.
+
+**The two directions are asymmetric, and the notice must say so — corrected 2026-09-01.** This table describes a **cold load**. On a live transition inside one page session the two directions differ:
+
+| Transition | Effect |
+|---|---|
+| → `granted` | **Immediate.** `GoogleAnalytics` mounts in the same provider as the control, injects the script on the current page, and `gtag('config', …)` records a page view and sets `_ga` cookies **before any navigation.** |
+| → `denied` | **Deferred to the next load.** `next/script` performs no unmount cleanup, so the script node, `gtag`, `dataLayer` and any `_ga` cookies all survive for the rest of that page session. |
+
+Neither direction is a defect — the first is the point of consent, the second is how `next/script` behaves. What *was* a defect is a notice that described only one of them. `/privacy` now states both (T-11).
 
 **The context exposes a derived `showBanner` boolean, and consumers use it rather than composing the condition themselves (DD-7, added 2026-08-31).** `showBanner` is true only when the read has resolved *and* the state is `undecided`. Consumers MUST NOT reconstruct that condition from the raw values: `consent === 'undecided'` alone is the *natural* expression and is **wrong** — it is true during the unresolved window, which produces exactly the flash this note forbids, and the mistake is invisible in jsdom. The raw `consent` and `loading` values stay exported for T-3 (which gates on `granted`) and T-6 (which needs the current choice), but the banner's condition is the provider's to compute, not its consumer's to assemble.
 
@@ -178,7 +187,7 @@ Deploy is unchanged: `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh` �
 ### DD-4: A single provider owns the state, rather than each consumer reading storage
 - **Context:** the banner, the script mount, and `/privacy`'s change control all need the same value.
 - **Decision:** one context provider in the `(public)` layout; consumers use a hook.
-- **Consequences:** Changing the choice on `/privacy` takes effect immediately, with no reload — three independent storage readers would have left the layout stale until navigation. Cost: one context, mirroring `SessionProvider`'s existing shape.
+- **Consequences:** Changing the choice on `/privacy` propagates through the context immediately, with no reload — three independent storage readers would have left the layout stale until navigation. Cost: one context, mirroring `SessionProvider`'s existing shape. **Note the scope of "immediately" (corrected 2026-09-01):** the *context value* and every consumer of it update at once, which is what this decision bought. Whether **collection** stops is a different question and is direction-dependent — see the asymmetry table in §5.2. This bullet previously read "takes effect immediately", which was true of accept and false of reject.
 
 ### DD-7: The banner's visibility condition is derived in the provider, not composed by consumers
 - **Context:** raised by T-2's Reviewer during execution, and approved by the user at the T-2 gate. The three-value contract `tasks.md` T-2 originally assigned is spec-conformant and faithfully mirrors `SessionProvider` — but it makes the *incorrect* usage the natural one.

@@ -172,6 +172,48 @@ describe('/privacy page — analytics disclosure per design.md §5.6 (FR-6, T-6)
   });
 });
 
+describe('/privacy page — withdrawal timing and cookie-removal disclosure (F-2, T-11)', () => {
+  it('states rejecting takes effect from the next page load, and accepting takes effect immediately', () => {
+    renderPrivacyPage();
+
+    const timingParagraph = screen.getByText(/takes effect from your next page load, not immediately/i);
+    expect(timingParagraph).toBeInTheDocument();
+    // Rejecting is deferred...
+    expect(timingParagraph.textContent).toMatch(
+      /rejecting analytics here takes effect from your next page load, not immediately/i
+    );
+    // ...but accepting is not — pins the direction the T-11 rework fixed.
+    expect(timingParagraph.textContent).toMatch(/accepting takes effect immediately/i);
+  });
+
+  it('states plainly that cookies already set are not removed by this site', () => {
+    renderPrivacyPage();
+
+    expect(
+      screen.getByText(/does not remove\s*any analytics cookies already set/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/this site does not delete cookies itself/i)).toBeInTheDocument();
+  });
+
+  // Attempt-3 addition: the rider's cutoff, corrected against next/script's
+  // actual behaviour (design.md §5.2's asymmetry table, "corrected
+  // 2026-09-01") — already-loaded analytics survives a client-side route
+  // change (every in-site link is next/link; no document reload occurs)
+  // and stops only on the next real page load, not "until you navigate
+  // away". This is the only sentence in the analytics paragraph that had no
+  // assertion pinning it; this closes that gap.
+  it('states the rider accurately: already-loaded analytics survives moving between pages and stops only on the next page load', () => {
+    renderPrivacyPage();
+
+    const rider = screen.getByText(/analytics already loaded keeps running for the rest of this visit/i);
+    expect(rider).toBeInTheDocument();
+    expect(rider.textContent).toMatch(/including as you move between pages/i);
+    expect(rider.textContent).toMatch(/stops the next time you load the site/i);
+    // Guards against regressing to the attempt-2 wording this task replaced.
+    expect(rider.textContent).not.toMatch(/until you navigate away/i);
+  });
+});
+
 describe('/privacy page — axe accessibility (T-10, NFR-3)', () => {
   it('has no axe violations (WCAG 2.1 AA compliance)', async () => {
     const { container } = renderPrivacyPage();

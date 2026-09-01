@@ -113,6 +113,15 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       ⚠️ **The banner's height is responsive** (measured: 147px at 375, 75px at 768, 72px at 1440). Any fix that hardcodes a matching height creates **two places that must stay in sync** — the same defect shape as T-4's border parity, which shipped a false claim and cost a FAIL round. Prefer a mechanism that cannot drift.
       ⚠️ **Do not break the sticky footer.** `(public)/layout.tsx`'s own comment explains why `flex-1` sits on `<main>` rather than a min-height on the footer: short pages (the OTP and receipt steps) otherwise ride the footer up under the content.
 
+- [x] **T-11 Disclose when a withdrawn consent takes effect** (deps: T-10)
+      Size: S · Effort: `medium` · Skills: `frontend-design`
+      Scope: `/privacy` currently says a visitor can change their choice *"at any time"*, which reads as "and collection stops now". It does not. Correct the copy, and fix one demonstrably false word in `PublicShellFrame.tsx`'s docblock.
+      Traces: FR-6 · `/akili-validate` remediation item 4 (F-2) · T-10 review advisory 1
+      Files: `frontend/app/(public)/privacy/page.tsx`, `frontend/app/(public)/privacy/privacy-a11y.test.tsx` (additions only), `frontend/components/shell/PublicShellFrame.tsx`
+      Verify: `cd frontend && npm test -- privacy --silent && npm run build`
+      Done when: the page states when a withdrawal takes effect and that already-set cookies are not removed by this site; the six pre-existing `it(` blocks and all eight T-6 additions still pass **unmodified**; the docblock word is corrected.
+      ⚠️ **This is a privacy notice.** F-2 is not a bug — it is how `next/script` behaves (no unmount cleanup, so the script node, `gtag` and `dataLayer` all survive a `granted` → `denied` transition, and `_ga` cookies are untouched). The defect is that the page **implies otherwise**. Do not overstate the remedy either: the copy must not promise a cookie deletion the site does not perform.
+
 ---
 
 ## Dependency Graph
