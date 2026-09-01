@@ -69,7 +69,7 @@ All verification runs from `frontend/` unless stated. Per the root guide's asymm
       Done when: the page names the **4** collected signals, Google as recipient, that cookies are set only after consent, and the route to change a prior choice; the control changes the stored choice and the banner state reacts without a reload; the scope sentence is **re-scoped, not deleted**, and still states that registration and directory data are out of its scope; the "not consent to publish" section is semantically unchanged; `jest-axe` stays clean.
       ⚠️ **Disqualifies the evidence:** this task is **purely additive** to `privacy-a11y.test.tsx` — the four existing content assertions (*what a submission collects*, *who receives it*, *relayed by email and not stored*, *not consent to publish*) were verified during specification to not assert the scope sentence, so none of them needs relaxing. **If any pre-existing assertion was edited, weakened, or removed to make this task pass, the evidence is void** and the change must be re-done. Per `design.md` §8.1, deleting the scope limitation rather than re-scoping it is a regression, not a simplification.
 
-- [ ] **T-7 Measurement-ID wiring** (deps: T-3)
+- [x] **T-7 Measurement-ID wiring** (deps: T-3)
       Size: S · Effort: `low` · Skills: none
       Scope: add `NEXT_PUBLIC_GA_MEASUREMENT_ID` to `frontend/.env.example` (documented, **empty**, noting that it is deliberately left unset for local dev so development traffic does not pollute the property). In `infra/scripts/deploy-frontend.sh`, add `GA_MEASUREMENT_ID` with a committed default and inject it on the existing `npm run build` line, following the script's established `API_BASE_URL` override shape.
       Traces: `requirements.md` §7, `design.md` §7, NFR-6

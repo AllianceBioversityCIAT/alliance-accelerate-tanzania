@@ -709,3 +709,36 @@ It deliberately declined to assert *why* the stub exists, having isolated only t
 #### ADVISORY (recorded, not actioned)
 
 The `(T-6, item 3)` provenance tag resolves only through this log's attempt-2 record — traceable, but through an artefact outside the checkout's source tree. And the stub claim is correctly time-indexed to "this suite": if a `usePathname` consumer ever enters this tree the sentence becomes stale rather than wrong, which is the right failure direction.
+
+### T-7 Measurement-ID wiring — **PASS (attempt 1 of max 3)**
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-31 |
+| Implementer attempts | **1** |
+| Effort | `medium` (Leader raised from the task file's `low` — not for difficulty, but because a deploy script's failure mode is **silent and out-of-band**: a mistake surfaces weeks later as missing data, never as a red test) |
+| Files | `frontend/.env.example` · `infra/scripts/deploy-frontend.sh` |
+| Traces | `requirements.md` §7 and **OQ-2** (now closed) · `design.md` §7 · NFR-6 |
+| Verification | `bash -n` parses · build **with** the variable → 25/25 static pages, 2/2 exported · build **without** it → identical · `npm test -- --silent` → 98/98 suites, 1475/1475 |
+
+The measurement ID `G-8E35GQG2SV` was supplied by the user and is committed as the default in `deploy-frontend.sh`, overridable via `GA_MEASUREMENT_ID`, and echoed in the pre-build summary block — whose own comment already reads *"(all non-secret wiring values)"*.
+
+**The Reviewer verified the decision, not only its execution.** It checked the `trd.md` §8 citation in the new comment rather than the wording: §8 reserves SSM/Secrets Manager for *"DB credentials and Cognito config"*, which does not reach a GA4 measurement ID. Committed default is correct.
+
+#### Two corrections the Reviewer made to the Implementer's record — both honoured here
+
+1. **The empty echo branch is more dead than disclosed.** The Implementer reported it reachable via `GA_MEASUREMENT_ID=""`. **That is false:** `${parameter:-word}` substitutes when the parameter is unset **or null**, so an explicitly-empty override is *also* replaced by the committed default. The branch is unreachable through **any** env input; only editing the default literal reaches it. Recorded here as **unconditionally dead-by-design**, not conditionally reachable.
+
+   **Leader ruling: keep `:-`, keep the branch.** The Reviewer offered a one-character alternative — `${GA_MEASUREMENT_ID-G-8E35GQG2SV}`, no colon — which would make an explicit empty override an opt-out and the branch live. Declined: it would diverge from the `:-` shape of five sibling config lines, and it enables a feature nobody asked for. The committed default exists so a **forgotten** variable cannot ship analytics-free; an explicit opt-out is a different thing. The two branch lines cost nothing and stay honest if the default is ever blanked. This is not a KZ-002 concern — the echo is a diagnostic, not a gate: no evidence rests on it and no green run can be misread as proving anything.
+
+2. **The unset build run is NFR-6 evidence, not FR-7 evidence.** At prerender `consent` is `'undecided'`, so `GoogleAnalytics.tsx`'s consent gate returns **before** the measurement-ID branch is ever reached — the unset build never exercises it. What that run proves is that an absent `NEXT_PUBLIC_*` inline does not break the static export, which is NFR-6 and is T-7's actual trace. **FR-7's behavioural evidence remains T-3's** `delete process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID` case, which runs in a `granted` state and does reach the branch — exactly as the coverage table assigns it. The disqualifier's purpose (refusing a set-only run) is satisfied; the record must not overclaim beyond it.
+
+#### Other Reviewer confirmations
+
+The `:-` guard matches the idiom of five sibling config lines and is `set -u`-safe on every path; it correctly does **not** copy `API_BASE_URL`'s stack-resolution shape, which `design.md` §7 anticipated (*"except the default is a committed constant rather than a CloudFormation output"*). The injection sits inside the `( cd "$FRONTEND_DIR" … )` subshell as the fourth assignment in an unbroken continuation chain, and the name matches the consumer exactly. `.env.example`'s instruction *gives the reason*, not just the instruction — which is what actually stops a helpful completion — and its FR-7 claim is accurate against T-3's `if (!measurementId) return null;`, a **falsy** check, so the empty string a copied `.env.example` produces short-circuits as well as `undefined`. The Reviewer also checked the reverse direction: this checkout's real `.env.local` defines only `NEXT_PUBLIC_API_BASE_URL`, and Next's loader does not override an already-set `process.env` key, so a developer's empty `.env.local` cannot clobber the deploy script's exported value.
+
+Summary-block alignment independently re-confirmed by column count: all seven labels place `=` at column 20, values at column 22.
+
+#### ADVISORY (recorded, not actioned — pre-existing drift, not introduced here)
+
+The script's header block now describes less than the script does: PURPOSE step 3 shows only `NEXT_PUBLIC_API_BASE_URL=<ApiBaseUrl> npm run build` for what is now a **four**-variable prefix; the "non-secret wiring values" enumeration lists four of **seven** echoed values; and the USAGE examples omit `GA_MEASUREMENT_ID=`. **All three already omitted the Cognito pair before this diff**, so none is introduced by T-7 and none is in its scope. Worth a separate cleanup pass.

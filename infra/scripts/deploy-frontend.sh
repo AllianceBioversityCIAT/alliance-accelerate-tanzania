@@ -47,6 +47,13 @@ BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 
+# GA4 measurement ID (usage-analytics T-7). Not a secret — a GA4 measurement ID
+# is transmitted to every visitor in the page source, so a committed default is
+# correct (unlike the SSM/Secrets Manager-gated values in docs/trd/trd.md §8).
+# Override via env; the committed default keeps a forgotten override from
+# silently shipping a build with no analytics.
+GA_MEASUREMENT_ID="${GA_MEASUREMENT_ID:-G-8E35GQG2SV}"
+
 # Resolve infra/ + frontend/ paths relative to this script so it runs from any CWD.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRONTEND_DIR="$(cd "$SCRIPT_DIR/../../frontend" && pwd)"
@@ -148,6 +155,11 @@ echo "    CognitoClient  = $COGNITO_CLIENT_ID"
 echo "    Bucket         = $BUCKET"
 echo "    DistributionId = $DIST_ID"
 echo "    CloudFrontUrl  = $CLOUDFRONT_URL"
+if [[ -n "$GA_MEASUREMENT_ID" ]]; then
+  echo "    GaMeasurementId= $GA_MEASUREMENT_ID"
+else
+  echo "    GaMeasurementId= not set — building without analytics"
+fi
 echo
 
 # ── Step 1: Build the static export with the API URL baked in (build-time env) ─
@@ -157,6 +169,7 @@ echo "==> Building the static export (NEXT_PUBLIC_API_BASE_URL injected at build
   NEXT_PUBLIC_API_BASE_URL="$API_BASE_URL" \
   NEXT_PUBLIC_COGNITO_USER_POOL_ID="$COGNITO_USER_POOL_ID" \
   NEXT_PUBLIC_COGNITO_CLIENT_ID="$COGNITO_CLIENT_ID" \
+  NEXT_PUBLIC_GA_MEASUREMENT_ID="$GA_MEASUREMENT_ID" \
     npm run build
 )
 
