@@ -981,3 +981,169 @@ DC-31's own text in `requirements.md` describes the **second**; the task's `Fals
 - Single Reviewer for the first write route (Reviewer concurred: no publication, no PII egress, a suppression flag on an admin-only warning).
 - **The cross-task defect fixed in T-7, not by reopening T-6** — T-7 makes the state reachable, and no downstream task would have found it.
 - The Implementer's contradiction of the task's falsifying input **accepted and endorsed**; two tests for two failure modes, rather than forcing one test to misrepresent both.
+
+### T-8 — `POST /admin/registrations/:id/approve` — the transaction
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 3) |
+| Date | 2026-09-01 |
+| Implementer attempts | **3** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **max** → **high** → **high** · Skills: `nestjs-expert`, `tdd`, `error-handling-patterns` |
+| Reviewers | Attempt 1: **three** parallel lens Reviewers — transaction/conformance, projection/PII-adversarial, carried-obligations/honesty. Attempt 2: 1 focused. Attempt 3: **none** (see the recorded decision below). All `akili-reviewer` (opus, T3). |
+| Review rounds consumed | **4** (running total: **20** of 35) |
+| Requirements covered | FR-12 scenarios 1–6 · FR-14 scenario 1 · NFR-2, NFR-3 · `design.md` §6.2, §6.3, DD-17, DD-18, DD-23, ADR-011 |
+
+**This is the spec's irreversible surface — the system's only path from private submitted data to public record. There is no un-publish.** `tasks.md` PR 3: *"Review this one hardest — isolating it is the point."* Three lens Reviewers at attempt 1 was that.
+
+#### Files changed
+New: `dto/registration-approve.dto.ts`, `mail/templates/approval.template.ts`, `backend/src/test/admin-registrations.e2e.spec.ts` (481 lines).
+Modified: `admin-registrations.service.ts` (+455/−5), `.spec.ts` (+582/−3), `.controller.ts`, `.controller.spec.ts`, `duplicate-detection.service.ts`, `serializers/admin-registration.serializer.ts`, `registrations.module.ts`, `actors/actor-audit.service.ts`, `mail/mail.service.ts`, `admin-registrations-dismiss-duplicate.spec.ts` (constructor signature), `pii-boundary.spec.ts`.
+
+---
+
+#### THE FALSIFICATION — recorded verbatim, because a spec file cites this entry for it
+
+`admin-registrations.service.spec.ts`'s DD-18 block states the transcript *"is in the completion report / execution.md"*. **That citation becomes true here.** The mutation changed `approve` step 3's
+
+```ts
+position: payload.position ?? null,
+```
+to
+```ts
+position: (payload as unknown as { contactPerson?: string }).contactPerson,
+```
+
+and the DISQUALIFYING GATE test was re-run:
+
+```
+FAIL src/registrations/admin-registrations.service.spec.ts
+  ● ... DISQUALIFYING GATE — asserts fixture VALUES absent from EVERY column ...
+
+    expect(received).not.toContain(expected) // indexOf
+
+    Expected substring: not "Grace Mushi"
+    Received string: "{\"id\":\"actor-approved-1\",...,\"position\":\"Grace Mushi — DO NOT PUBLISH\",...}"
+
+Tests: 1 failed, 45 skipped, 46 total
+```
+
+**The failure names the column** — `"position":"Grace Mushi — DO NOT PUBLISH"` appears verbatim in the received JSON. Source reverted; Leader-verified that `position: payload.position ?? null` is restored and that `contactPerson` appears in the service **only inside comments**.
+
+**Why the cast is required, and why that strengthens rather than weakens the evidence.** `RegistrationApprovalPayload` deliberately declares no `contactPerson` member, so the realistic one-liner `position: payload.position ?? payload.contactPerson` **does not compile** (TS2339). DD-18 therefore has **two** defences, and the falsification demonstrates the second while the first is attested by the type:
+
+| Defence | Mechanism | Status |
+|---|---|---|
+| **Compile-time** | `RegistrationApprovalPayload` omits `contactPerson`/`otherCrops` — the one-liner is a TS error on every build | Attested by the type; **guarded only by a JSDoc clause** (see A-56) |
+| **Runtime** | The DC-23 by-value sweep over every `Actor` column | Demonstrated above |
+
+The cast strips the first defence and shows the second still fires — i.e. it emulates the realistic form of the defect (someone widens the interface by one line, *then* maps the field). A Reviewer independently judged this *"genuine evidence, in fact stronger than the literal mutation."*
+
+---
+
+#### ATTEMPT 1 — all three lens Reviewers `PASS`
+
+##### The transaction (lens 1)
+
+Each of §6.2's eight steps is where the design puts it, and each *reason* holds. The conditional update `updateMany({ where: { id, status: PENDING_REVIEW } })` is **the first statement in the callback and the first statement in the method that touches the registration at all**; `count === 0` **is** the refusal, and the follow-up `findUnique` is diagnostic-only (404 vs 409 per DD-22) and gates no write.
+
+**Double approval is closed by construction.** The Reviewer traced it under InnoDB semantics: the compare-and-set is a locking current read, so a second concurrent approval blocks on the first's row lock, re-evaluates after commit, sees `APPROVED`, gets `count = 0` → `409`. Step 8's unconditional update is safe **because step 1 took the lock first** — the ordering is load-bearing for more than the `409`, and it also blocks a concurrent *reject*. `assertAcknowledgement` and the Cognito `resolveActing` call both sit **before** `$transaction`, so no network round-trip runs while a row lock is held.
+
+**Both `409` meanings are distinguishable**, and the `P2002` catch is genuinely narrow — the `try` block contains **exactly one statement**, `tx.actor.create`; the crop links, audit write and `publishedActorId` update all sit outside it. The Reviewer confirmed against `schema.prisma` that `Actor` has exactly **one** unique constraint besides the PK, so the message cannot misattribute today.
+
+| Path | Message |
+|---|---|
+| Step 1, zero rows | `Registration ${id} has already been adjudicated` |
+| Step 5, `P2002` | `An actor with traderId ${traderId} already exists` |
+
+**Atomicity — the honest form.** `grep -n 'catch'` over the service returns three hits: two are JSDoc prose, the third is the **post-commit** `dispatchApprovalEmail` `.catch`. Inside `approve` there is exactly **one** `catch` and it re-throws. Every write is inside the single `$transaction` callback, and the "no bypass" test asserts each landed on the `tx` delegate — *a different object from the outer `prisma.*` mocks*, so a top-level bypass would have nothing to land on. **Reported as structurally asserted, never rollback-proven**, in the method doc, the describe title, and the e2e class doc, each naming DC-24.
+
+**Step 4's provenance call.** The Reviewer checked the policy itself: `isConsentProvenanceSatisfied` returns true whenever effective method ≠ `NOT_RECORDED` and `consentObtainedAt` is non-null, and `Registration.consentAcceptedAt` is **non-nullable**. So §6.2's honesty note is factually correct — it cannot return false here. The code says *"drift protection, NOT a gate"*, and **no test asserts it as a gate**.
+
+**Notification after commit (FR-14).** Dispatched after the awaited `$transaction`, on the destructured resolved result. `void … .catch(...)`, logging error **class name** and reference only — never the address. A mail failure cannot reject `approve()` nor roll anything back. Four proofs: a call-order array `['transaction-committed','notification-dispatched']`, rejection tolerance, an in-callback "not yet called" assertion, and an e2e forced-failure case.
+
+##### The projection and PII boundary (lens 2)
+
+All twelve columned payload fields land exactly where FR-12's table says, each target written once. **Two exclusions hold structurally, not by discipline** — `contactPerson` and `otherCrops` are not members of `RegistrationApprovalPayload` at all; a grep of the service returns **only doc-comment lines**. The three sourceless columns are literal `null`, not defaulted or conditional. `email: row.submitterEmail` — the OTP-verified address; the payload interface has no `email` member, so `payload.email` would not compile.
+
+**The gate is value-based and genuinely total.** The Reviewer verified the "every column" claim rather than accepting it: `toAdminActor` maps **all 24 `Actor` columns plus `crops`**, cross-checked one by one against `schema.prisma`. There is no column the sweep cannot see.
+
+**Nothing else leaks on the approve path.** The `409`/`404` bodies carry no payload value. The audit envelope is the §6.7-pinned full snapshot (carrying `phone`/`email`) reachable **only** through an `@Roles('Admin')` route. The mail template carries the recipient and the `reference` only — no payload field, no PII, and **not** the internal registration id. The structured log line structurally never reads `req.body`/`req.query`.
+
+**What the created actor publishes.** `toPublic` emits only `id, traderName, region, district, traderType, capacityTons, crops, gps`. Every PII field the projection writes — `phone`, `email`, `sex`, `position`, `marketLocation` — is on the accepted-but-never-emitted list and cannot reach `Public`. The one field that becomes public *because of* this write is `gps`, gated on `consentStatus = GRANTED` — exactly what FR-12 intends and what the acknowledgement copy discloses.
+
+##### The five carried obligations (lens 3) — all discharged
+
+| # | Obligation | Verification |
+|---|---|---|
+| **DEC-1** | `acknowledged: true` on the approve audit row | Set as a **sibling** of `changes:` in the same `data` literal; `changes: this.buildSnapshot(actor)` byte-unchanged. **The forensic proof that T-2's assertions were untouched:** T-2's `execution.md` transcript carries line anchors `> 601` and `> 660`; in the current spec file, **lines 601 and 660 still carry exactly those statements** — any insertion above them would have shifted both. Asserted by value twice, against the **real** `ActorAuditService`. |
+| **A-33** | Self-match false positive | `publishedActorId` in **both** selects, threaded through `toDuplicateDetectionInput`, excluded in `matchOne`. **Scoped, not blanket** — proven in both wrong directions: without the exclusion the self-test yields 1; with a blanket "skip APPROVED rows" the companion test yields 0 instead of 1. |
+| **A-34** | The premature e2e citation | File created (481 lines), not a stub: value-based PII assertions over real HTTP on the exact adjacency trap, plus cross-row isolation. |
+| **A-8** | `consentReference === reference` | Asserted by value; **and converted from a silent to a loud failure** by a runtime throw. |
+| **A-42** | e2e hygiene | One app, `beforeAll`/`afterAll` symmetric, no timers, no `Date.now`, no sockets (Prisma overridden with a plain object), no throttle guard on admin routes. Not wall-clock dependent. |
+
+**The A-8 throw, adjudicated.** Lens 1 flagged it as possibly repeating the step-4 "cannot fire" pattern; **lens 3 traced it more carefully and disagreed**, and the Leader went with lens 3: step 4 compares four locally-assigned constants with no I/O between assignment and check — provably unfireable — whereas the A-8 check compares a value that has round-tripped **through `tx.actor.create` → `findUnique` → `toAdminActor`**. Its failure set is small but **non-empty**, so it needs no "cannot fire" note. More importantly it does what A-8 asked: A-8's stated risk was that a relaxed assertion makes the approve row *"**silently** lose the reference"* — with the throw, divergence aborts before the audit write and the failure can no longer be silent.
+
+---
+
+#### ATTEMPT 2 — bounded hardening, then `FAIL`
+
+Five items commissioned by the Leader from the attempt-1 advisories: three false-or-imprecise claims (**KZ-008**) and two converting a structural claim into a demonstrated one (**KZ-002**).
+
+Four landed correctly:
+- The falsification transcript was corrected — it had recorded `position: payload.contactPerson`, **which does not compile**, so a reader re-running it literally would hit TS2339 and might conclude the gate was broken.
+- The A-8 comment stopped claiming sole authorship of a safety it shares with step 3's literal assignment.
+- **The A-8 throw became a demonstrated gate.** A new test overrides `tx.actor.findUnique` to return a mutated `consentReference` and asserts `approve` rejects **and** `tx.actorAuditLog.create` was never called — proving the abort lands *before* step 7, not merely that something threw. Verified by falsification: with the throw commented out, `Received promise resolved instead of rejected / Resolved to value: {"actor": {..., "consentReference": "REG-2026-DIVERGED", ...}}`. Restored → green.
+- **A coercion blind spot in the DC-23 gate was closed.** The existing sweep runs over `result.actor`, i.e. **after** `toAdminActor`, whose `toNullableNumber` coerces a non-numeric string to `null` — so a text value mis-mapped onto `gpsAltitude`/`gpsAccuracy` would satisfy the existing `toBeNull()` assertions **and vanish from the sweep**, with nothing else in the suite reddening. Two assertions now also sweep `tx.getCreatedActors()[0]`, the **pre-serialization create input**.
+
+**But the pass introduced a KZ-008 defect of its own — in the very clause commissioned to prevent one.** The new guard JSDoc read:
+
+> *"Do not replace this with `RawRegistrationPayload`: its `contactPerson`/`otherCrops` members are exactly what make the DD-18 adjacency mistake a compile error."*
+
+**Inverted.** `RawRegistrationPayload` **declares** both members (Leader-verified: `contactPerson: string` at line 97), so they are exactly what would make the mistake **compile clean**. What makes it an error is *this* type's **omission** of them. The two halves of the block contradicted each other, and **the leading half argued the refactorer's case** — "Raw carries the protection" — i.e. an argument *for* the unification the paragraph forbids.
+
+Not cosmetic: **nothing reddens on the unification itself.** Swapping the annotation changes no behaviour and all 951 tests stay green; only a *later* adjacency edit would then compile silently. This comment is the entire compile-time guard, so a clause pointing the wrong way is a guard pointing the wrong way.
+
+#### ATTEMPT 3 — the one-clause correction
+
+Applied the Reviewer's exact remediation text, plus one related overclaim (the transcript had attributed the *non-compilation* to the executed run; the run used the cast and demonstrated only the value leak).
+
+**Leader-verified inline against ground truth:** the clause now reads *"…are exactly what **would make** the DD-18 adjacency mistake **COMPILE**. This type's omission of them is what makes it a compile error instead."* — correctly signed; `RawRegistrationPayload` does declare both members; `RegistrationApprovalPayload` still omits both (grep count 0).
+
+**Recorded decision — no review round was spent on attempt 3.** The Reviewer dictated the exact replacement text and stated explicitly that *"no behavioural re-verification is needed"*; the change is two comment blocks with no design judgment remaining, and the Leader verified the corrected sentence against the two facts it asserts. Recording this so a missing round reads as a decision rather than an oversight.
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent admin-registrations` | **74/74** (4 suites) |
+| `npm test -- --silent pii-boundary` | **25/25** |
+| `npm test -- --silent actor-audit` | **30/30** (T-2's suite, untouched) |
+| `npm test -- --silent` (full backend) | **71 suites / 951 tests** |
+| `npm run build` · `npx eslint … --quiet` | Clean |
+
+DB left at **0 registrations / 14 actors**.
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-53** | **No test proves an Admin-authenticated `GET /admin/registrations` 200 body is PII-clean over HTTP.** The new e2e issues **no `GET` at all**, and `pii-boundary`'s admin variant only sends anonymous/Staff (its contract forbids an Admin-authenticated builder). That claim still rests on T-5's unit-level assertion. A 3-line authenticated `GET` asserting `res.text` carries no `submitterEmail`/payload PII is the cheapest place in the repo to close a real coverage hole. | **FORWARD POINTER → T-10** (the release gate), or T-16. |
+| **A-54** | The `P2002` catch keys on `err.code` alone, not `err.meta.target`. Correct **today** because `Actor` has exactly one unique constraint — but a second `@unique` would make the `409` name `traderId` for an unrelated collision. | Recorded. Narrowing on `meta.target` would make the message's accuracy structural rather than schema-dependent. |
+| **A-55** | `sendApproval` has no test in `mail.service.spec.ts`, which does cover `sendReceipt`/`sendVerificationCode` including the NFR-8 "no address in the log line" assertions. It delegates to the same private `dispatch()`, so behaviour is inherited. | **FORWARD POINTER → T-9** — FR-14 scenario 2's logging clause is T-9's trace; it should add `kind=approval` and `kind=rejection` log assertions with its own template. |
+| **A-56** | **The compile-time half of DD-18 is guarded by prose alone.** No test reddens if the two interfaces are unified. A one-line type-level assertion (e.g. `@ts-expect-error` on `payload.contactPerson` against a `RegistrationApprovalPayload`-typed value) would fail to compile the moment the omission is undone, turning a prose guard into a mechanical one. | Recorded. Deliberately **not** folded in — advisory, and the Leader does not widen a task to absorb advisories. Worth doing when someone next touches that file. |
+| A-57 | `deriveTraderIdFromReference` throws a bare `Error` (→500) for a non-`REG-` reference, at step 2 — i.e. after the status flip. A rollback restores `PENDING_REVIEW`, so it is recoverable, and it is unreachable today since references are always allocated with the prefix. | Recorded, not a defect. |
+| A-58 | The e2e "second approval" test depends on the happy-path test having run earlier against the shared in-memory store. Jest runs `it`s in declaration order so it is deterministic, it is documented in the test, and the unit suite covers the case independently. | Recorded. |
+| A-59 | `afterAll` calls `app.close()` unguarded — if `beforeAll` throws, the teardown error masks the real one. Identical to `admin-actors-crud.e2e.spec.ts`; pre-existing convention. | Recorded. |
+| **A-60** | **`@HttpCode(200)`, not 201.** Unpinned by the spec; the module convention governs (`bulk/delete` 200, `import` 200, bare `create()` **201**, sibling `dismiss-duplicate` 200). An action verb on an existing resource with no `Location` header — 201 would be worse. The e2e's `.expect(200)` now pins it. | **FORWARD POINTER → T-11** (the typed client must expect 200) and **T-16** (consider pinning it in the spec). |
+
+#### Decisions made
+
+- **Three parallel lens Reviewers at attempt 1** — the maximum used in this spec, for the task `tasks.md` says to review hardest.
+- **Lens 1 and lens 3 disagreed on the A-8 throw**; the Leader adopted lens 3's reading (the value round-trips through the DB, so the check is not vacuous) and instructed attempt 2 **not** to add a "cannot fire" note.
+- **Five advisories folded into a bounded attempt 2** — three false-claim corrections (KZ-008 class, consistently treated as in-scope in this spec) and two gate-hardening additions inside T-8's own files. Five further advisories were **not** folded in and are recorded above with forward pointers.
+- **No review round on attempt 3** (reasoned above).
+
+#### Issues encountered
+
+**The correction pass introduced a defect of the same class it was commissioned to fix — the third such occurrence in this spec** (T-3 attempt 2 did the same; T-4 attempt 2's comment fix was clean). **Candidate kaizen entry:** corrective edits to prose appear to carry a higher defect rate than the code changes they accompany, and in both occurrences the new false claim landed *inside the very artefact meant to prevent the original defect*.

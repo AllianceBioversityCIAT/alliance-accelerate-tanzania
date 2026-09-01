@@ -1,8 +1,29 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RegistrationStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ConsentMethod,
+  ConsentStatus,
+  Prisma,
+  RegistrationSource,
+  RegistrationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import {
+  ActingAdmin,
+  ActorAuditService,
+} from '../actors/actor-audit.service';
+import { AdminActor, toAdminActor } from '../actors/admin-actor.serializer';
+import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import { FieldErrorDetail } from '../common/validation-pipe';
+import { MailService } from '../mail/mail.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
+import { RegistrationApproveDto } from './dto/registration-approve.dto';
 import {
   DuplicateDetectionInput,
   DuplicateDetectionService,
@@ -50,9 +71,28 @@ import {
  * coalesced to `''` (the exact defect T-6 was reworked for — see that
  * task's `execution.md` FAIL Issue 2).
  *
- * Design refs: `design.md` §5 (route contract), §6.1 (module wiring), §6.5,
- * §6.6, §7.3. Requirements: FR-9 scenarios 1, 2, 3, 4; FR-10 scenarios 1, 2,
- * 3; FR-11 scenarios 1, 2; NFR-8, NFR-9.
+ * T-8 — `approve` (FR-12 all six scenarios, FR-14 scenario 1; `design.md`
+ * §6.2, §6.3, DD-17, DD-18, DD-23). The system's only path from private
+ * submitted data to public record — see the method's own doc for the
+ * eight-step transaction order and its honesty notes on step 4 (drift
+ * protection, not a gate) and on atomicity (structurally asserted, never
+ * rollback-proven — DC-24).
+ *
+ * **A-33 — the self-match false positive (T-5's `list`/T-6's `getById`
+ * shared fix, landed here because both funnel through
+ * {@link toDuplicateDetectionInput}).** Neither method previously selected
+ * `publishedActorId`, and `list()` applies no default `status` filter — so
+ * once `approve` sets it, an APPROVED row's detection input would carry
+ * every attribute of the actor it itself just created, reporting
+ * `duplicateCandidateCount >= 1` for a registration flagged as a duplicate
+ * of its own output. Both `select`s below now fetch it, and
+ * `DuplicateDetectionService.matchOne` excludes it exactly like a
+ * dismissed candidate.
+ *
+ * Design refs: `design.md` §5 (route contract), §6.1 (module wiring), §6.2,
+ * §6.3, §6.5, §6.6, §6.7, §7.3, DD-17, DD-18, DD-23. Requirements: FR-9
+ * scenarios 1, 2, 3, 4; FR-10 scenarios 1, 2, 3; FR-11 scenarios 1, 2;
+ * FR-12 scenarios 1-6; FR-14 scenario 1; NFR-2, NFR-3, NFR-8, NFR-9.
  */
 
 /** One row of the admin queue list — FR-9 scenario 1's column set plus T-5's `duplicateCandidateCount`, minus `action` (a frontend affordance, not a data field). */
@@ -122,6 +162,8 @@ interface QueueSourceRow {
   status: RegistrationStatus;
   submitterEmail: string;
   duplicateDismissals: Prisma.JsonValue | null;
+  /** A-33 — see the class doc above. Optional: `getById`'s source type declares it optional too, so a fixture built before this field existed still satisfies this interface. */
+  publishedActorId?: string | null;
 }
 
 function toAdminRegistrationListRow(
@@ -165,6 +207,7 @@ function toDuplicateDetectionInput(row: QueueSourceRow): DuplicateDetectionInput
     gpsLatitude: payload.gpsLatitude ?? null,
     gpsLongitude: payload.gpsLongitude ?? null,
     dismissedActorIds: extractDismissedActorIds(row.duplicateDismissals),
+    publishedActorId: row.publishedActorId ?? null,
   };
 }
 
@@ -187,12 +230,97 @@ export interface DismissDuplicateResult {
   };
 }
 
+/** Crop include reused so the refetched actor can be projected via `toAdminActor` (mirrors `ActorsAdminService`'s `CROPS_INCLUDE`). */
+const CROPS_INCLUDE = {
+  crops: { include: { crop: true } },
+} satisfies Prisma.ActorInclude;
+
+/**
+ * T-8 — the exact phrase `RegistrationApproveDto.acknowledgement` must
+ * match (FR-12's "typed acknowledgement gate"; `tasks.md` T-14 pins this
+ * SAME literal as `AcknowledgeDialog`'s `acknowledgementText` prop for the
+ * client-side dialog this brief does not build). Server-side re-validation
+ * is the actual gate (FR-12 scenario 3's "must NOT be client-only") — a
+ * crafted request that omits or misspells this exact string is rejected
+ * here regardless of what any client sends.
+ */
+export const APPROVAL_ACKNOWLEDGEMENT_TEXT = 'I confirm consent is on file';
+
+/** DD-23 — `REG-<year>-<seq>` → `SR-<year>-<seq>`. Pure, no I/O (§6.2 step 2). */
+const REGISTRATION_REFERENCE_PREFIX = 'REG-';
+const TRADER_ID_PREFIX = 'SR-';
+
+/**
+ * DD-23 — derive a self-registered actor's `traderId` from its originating
+ * registration's `reference`. Inherits `Registration.reference`'s own
+ * `@unique` + atomic-allocation race-safety (`registration-reference.util.ts`)
+ * with no second counter — unique AMONG SELF-REGISTERED ACTORS, not
+ * table-wide by construction (`ActorCreateDto` accepts any client-supplied
+ * `traderId`), which is why {@link AdminRegistrationsService.approve} must
+ * still catch a `P2002` on the resulting `tx.actor.create` call.
+ */
+export function deriveTraderIdFromReference(reference: string): string {
+  if (!reference.startsWith(REGISTRATION_REFERENCE_PREFIX)) {
+    throw new Error(
+      `Cannot derive traderId: reference "${reference}" does not start with "${REGISTRATION_REFERENCE_PREFIX}"`,
+    );
+  }
+  return TRADER_ID_PREFIX + reference.slice(REGISTRATION_REFERENCE_PREFIX.length);
+}
+
+/**
+ * The subset of `RegistrationPayloadDto` the approval projection reads
+ * (`design.md` §6.3/DD-18). Mirrors `RawRegistrationPayload` in
+ * `serializers/admin-registration.serializer.ts` — not imported from there
+ * because that type is file-private; duplicated here rather than exported
+ * across a module boundary for a single read-only shape both files already
+ * derive independently from the SAME source of truth, `RegistrationPayloadDto`.
+ *
+ * Do not replace this with `RawRegistrationPayload`: its
+ * `contactPerson`/`otherCrops` members are exactly what would make the
+ * DD-18 adjacency mistake COMPILE. This type's omission of them is what
+ * makes it a compile error instead. `RegistrationApprovalPayload`
+ * deliberately omits them so the realistic one-liner
+ * `position: payload.position ?? payload.contactPerson` cannot compile —
+ * that is a load-bearing safety property of this type's shape, not an
+ * oversight to "fix" by unifying the two interfaces.
+ */
+interface RegistrationApprovalPayload {
+  traderName: string;
+  traderType: string;
+  position?: string | null;
+  district?: string | null;
+  marketLocation?: string | null;
+  sex?: string | null;
+  region: string;
+  gpsLatitude?: number | null;
+  gpsLongitude?: number | null;
+  crops: string[];
+  capacityTons: number;
+  phone: string;
+}
+
+/** `POST /admin/registrations/:id/approve`'s response envelope (`design.md` §5: `{ registration, actor }`). */
+export interface RegistrationApproveResult {
+  registration: {
+    id: string;
+    reference: string;
+    status: RegistrationStatus;
+    publishedActorId: string | null;
+  };
+  actor: AdminActor;
+}
+
 @Injectable()
 export class AdminRegistrationsService {
+  private readonly logger = new Logger(AdminRegistrationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly duplicateDetection: DuplicateDetectionService,
     private readonly actingAdminResolver: ActingAdminResolver,
+    private readonly actorAuditService: ActorAuditService,
+    private readonly mailService: MailService,
   ) {}
 
   /**
@@ -276,6 +404,10 @@ export class AdminRegistrationsService {
           status: true,
           submitterEmail: true,
           duplicateDismissals: true,
+          // A-33 — see the class doc above: without this, an APPROVED row
+          // matches the actor it itself created on every detection
+          // attribute.
+          publishedActorId: true,
         },
       }),
       this.prisma.registration.count({ where }),
@@ -327,6 +459,9 @@ export class AdminRegistrationsService {
         reviewedAt: true,
         reviewedBySub: true,
         reviewedByEmail: true,
+        // A-33 — see the class doc above: without this, an APPROVED
+        // registration's own detail view flags itself as its own duplicate.
+        publishedActorId: true,
       },
     });
 
@@ -442,5 +577,336 @@ export class AdminRegistrationsService {
     return {
       registration: { id: updated.id, reference: updated.reference, status: updated.status },
     };
+  }
+
+  /**
+   * `POST /admin/registrations/:id/approve` — the transaction (FR-12 all six
+   * scenarios, FR-14 scenario 1; `design.md` §6.2, §6.3, DD-17, DD-18,
+   * DD-23). The registry's ONLY path from private submitted data to public
+   * record — there is no un-publish.
+   *
+   * **Server-side re-validation of the typed acknowledgement gate**
+   * (FR-12 scenario 3's "must NOT be client-only") happens FIRST, before any
+   * I/O: a request whose `acknowledgement` does not match
+   * {@link APPROVAL_ACKNOWLEDGEMENT_TEXT} EXACTLY never reaches the
+   * transaction.
+   *
+   * **The eight-step order, §6.2, and why each step sits where it does:**
+   * 1. **Conditional status update** — `tx.registration.updateMany({ where:
+   *    { id, status: PENDING_REVIEW }, ... })`. This IS the double-approval
+   *    refusal, by construction (DD-17): a read-then-check races, and the
+   *    race publishes two actors from one act of consent. `count === 0`
+   *    means either the id does not exist or it is not `PENDING_REVIEW`; a
+   *    follow-up `findUnique` (still inside this `tx`) distinguishes a
+   *    genuine `404` from the `409` "already adjudicated" — DD-22: an
+   *    authenticated Admin is entitled to know whether a registration
+   *    exists at all.
+   * 2. **Derive `traderId`** ({@link deriveTraderIdFromReference}, DD-23) —
+   *    pure, no I/O, placed before any write that could fail on it.
+   * 3. **Project the publishable subset** (§6.3/DD-18) — an EXPLICIT
+   *    LITERAL PICK, never a spread, never a loop over payload keys.
+   *    `contactPerson` and `otherCrops` go nowhere (no `Actor` column
+   *    exists for either); `technicalSupport`/`gpsAltitude`/`gpsAccuracy`
+   *    are left `null` (the payload has no source for them — inventing a
+   *    value would publish something no applicant supplied); `Actor.email`
+   *    comes from `Registration.submitterEmail` (the OTP-verified address),
+   *    never from the payload, which carries no email field at all.
+   *    **The trap this guards against is adjacency, not similarity:**
+   *    `contactPerson` and `position` are neighbouring `RegistrationPayloadDto`
+   *    fields, so "fall back to `contactPerson` when `position` is absent"
+   *    is a one-line, plausible-looking change that publishes a named
+   *    natural person to the public directory. `position` is read ONLY
+   *    from `payload.position`, never from `payload.contactPerson`.
+   * 4. **`isConsentProvenanceSatisfied` — drift protection, NOT a gate.**
+   *    With all four provenance values below set to satisfying constants
+   *    and `consentObtainedAt` sourced from a non-nullable column, this call
+   *    CANNOT return `false` on this path (§6.2's honesty note, inherited
+   *    from 3a A22·B31). It is retained so this path inherits any future
+   *    tightening of chunk 1's shared rule. **The real gate is the by-value
+   *    assertion this method's tests run on the created actor's four
+   *    provenance fields (DC-6)** — this call is not that assertion and
+   *    must never be reported as one.
+   * 5. **`tx.actor.create`** — the first write that can collide: a
+   *    `P2002` on `traderId` is caught immediately around this ONE call and
+   *    turned into a `409` NAMING the colliding key, never left to surface
+   *    as an unhandled `500` (which would leave the registration
+   *    permanently unapprovable with no operator path forward — DD-23's
+   *    consequence).
+   * 6. **`tx.cropsOnActors.createMany`** — needs the actor id from step 5.
+   * 7. **`actorAuditService.logRegistrationApprove(tx, actor, acting,
+   *    reference)`** — inside the SAME `tx` (`backend/CLAUDE.md`). DEC-1:
+   *    that method additionally sets `acknowledged: true` on the row it
+   *    writes — the typed consent-acknowledgement flag, because this call
+   *    IS one. **A-8** — `reference` is accepted by that method but
+   *    deliberately NOT duplicated into its envelope, on the reasoning that
+   *    `actor.consentReference` already carries the identical value; this
+   *    method asserts that equality BY VALUE immediately after the create,
+   *    before logging, so the discarded parameter stays provably harmless.
+   * 8. **Set `publishedActorId`** on the registration — only knowable after
+   *    step 5.
+   *
+   * **Atomicity — structurally asserted, never rollback-proven (DC-24).**
+   * Every write above (the conditional update, the diagnostic `findUnique`,
+   * the actor create, the crop links, the audit row, the `publishedActorId`
+   * set) runs inside this ONE `prisma.$transaction` callback; a throw at
+   * any step propagates unswallowed (the `P2002` catch around step 5 is the
+   * only `catch` in this method, and it re-throws a `ConflictException`
+   * rather than absorbing the failure). What is NOT provable here: that
+   * MySQL actually rolls back — every backend suite substitutes an
+   * in-memory Prisma mock whose `$transaction` is a pass-through with no
+   * real rollback semantics (DC-24). Reported as such, never as "rollback
+   * proven".
+   *
+   * **After commit, never inside it (DD-9):** the approval email. Dispatched
+   * via {@link dispatchApprovalEmail} using the `submitterEmail`/`reference`
+   * returned FROM the (already-committed) transaction result — never from a
+   * variable captured mid-transaction — fire-and-forget, its own failure
+   * logged by error CLASS NAME only (never the address), exactly mirroring
+   * `RegistrationsService.dispatchReceiptEmail`'s already-reviewed pattern.
+   */
+  async approve(
+    id: string,
+    dto: RegistrationApproveDto,
+    actingSub: string,
+  ): Promise<RegistrationApproveResult> {
+    this.assertAcknowledgement(dto.acknowledgement);
+
+    const acting = await this.resolveActing(actingSub);
+    const now = new Date();
+
+    const { registration, actor, submitterEmail } = await this.prisma.$transaction(
+      async (tx) => {
+        // Step 1 (DD-17) — the conditional update IS the double-approval
+        // refusal; a read-then-check races.
+        const updated = await tx.registration.updateMany({
+          where: { id, status: RegistrationStatus.PENDING_REVIEW },
+          data: {
+            status: RegistrationStatus.APPROVED,
+            reviewedBySub: actingSub,
+            reviewedByEmail: acting.email,
+            reviewedAt: now,
+          },
+        });
+
+        if (updated.count === 0) {
+          // DD-22 — distinguish a genuine 404 from the 409 "already
+          // adjudicated" so the two `409` meanings (this one, and step 5's
+          // traderId collision) stay separately diagnosable, and an unknown
+          // id stays honestly 404 rather than a misleading 409.
+          const existing = await tx.registration.findUnique({
+            where: { id },
+            select: { id: true },
+          });
+          if (!existing) {
+            throw new NotFoundException(`Registration ${id} not found`);
+          }
+          throw new ConflictException(`Registration ${id} has already been adjudicated`);
+        }
+
+        const row = await tx.registration.findUnique({
+          where: { id },
+          select: {
+            reference: true,
+            payload: true,
+            submitterEmail: true,
+            consentAcceptedAt: true,
+          },
+        });
+        if (!row) {
+          throw new Error('Approved registration could not be refetched');
+        }
+
+        // Step 2 (DD-23) — no I/O.
+        const traderId = deriveTraderIdFromReference(row.reference);
+
+        // Step 3 (§6.3/DD-18) — explicit literal pick. See the class-level
+        // doc above for the two omitted fields and the three null columns.
+        const payload = row.payload as unknown as RegistrationApprovalPayload;
+        const actorCreateData: Prisma.ActorCreateInput = {
+          traderId,
+          traderName: payload.traderName,
+          traderType: payload.traderType,
+          position: payload.position ?? null,
+          district: payload.district ?? null,
+          marketLocation: payload.marketLocation ?? null,
+          sex: payload.sex ?? null,
+          region: payload.region,
+          gpsLatitude: payload.gpsLatitude ?? null,
+          gpsLongitude: payload.gpsLongitude ?? null,
+          capacityTons: payload.capacityTons,
+          phone: payload.phone,
+          // §6.3 — NOT payload.email: the payload carries no email field at
+          // all. This is the OTP-verified submitter address.
+          email: row.submitterEmail,
+          // §6.3 — the payload has no source for these three; inventing a
+          // value would publish something no applicant supplied.
+          technicalSupport: null,
+          gpsAltitude: null,
+          gpsAccuracy: null,
+          consentStatus: ConsentStatus.GRANTED,
+          registrationSource: RegistrationSource.SELF_REGISTERED,
+          consentMethod: ConsentMethod.PORTAL_CHECKBOX,
+          consentObtainedAt: row.consentAcceptedAt,
+          consentReference: row.reference,
+        };
+
+        // Step 4 — drift protection, NOT a gate. See the class-level doc
+        // above: this call cannot return false on this path.
+        if (
+          !isConsentProvenanceSatisfied(null, {
+            consentStatus: actorCreateData.consentStatus as ConsentStatus,
+            consentMethod: actorCreateData.consentMethod as ConsentMethod,
+            consentObtainedAt: actorCreateData.consentObtainedAt as Date,
+            consentReference: actorCreateData.consentReference as string,
+          })
+        ) {
+          throw new BadRequestException('Consent provenance check failed for this approval');
+        }
+
+        // Step 5 — the first write that can collide.
+        let created;
+        try {
+          created = await tx.actor.create({ data: actorCreateData });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            throw new ConflictException(`An actor with traderId ${traderId} already exists`);
+          }
+          throw err;
+        }
+
+        // Step 6
+        if (payload.crops.length > 0) {
+          const cropLinks = await this.buildCropLinks(tx, created.id, payload.crops);
+          await tx.cropsOnActors.createMany({ data: cropLinks });
+        }
+
+        const full = await tx.actor.findUnique({
+          where: { id: created.id },
+          include: CROPS_INCLUDE,
+        });
+        if (!full) {
+          throw new Error('Created actor could not be refetched');
+        }
+        const adminActor = toAdminActor(full);
+
+        // A-8 — keeps a future divergence between `reference` and
+        // `adminActor.consentReference` LOUD rather than silent. The two
+        // are equal today because step 3 literally sets `consentReference:
+        // row.reference` and `adminActor` round-trips unchanged through
+        // `tx.actor.create → findUnique → toAdminActor`; nothing enforces
+        // that equality by construction. A future step-3 source change (a
+        // different field feeding `consentReference`) or `toAdminActor`
+        // mapping drift is exactly what this assertion guards against,
+        // before `logRegistrationApprove`'s discarded `reference` parameter
+        // could otherwise get logged against a mismatched actor.
+        if (adminActor.consentReference !== row.reference) {
+          throw new Error(
+            `Invariant violated: created actor's consentReference "${adminActor.consentReference}" ` +
+              `does not equal registration reference "${row.reference}"`,
+          );
+        }
+
+        // Step 7 — inside the same tx.
+        await this.actorAuditService.logRegistrationApprove(
+          tx,
+          adminActor,
+          acting,
+          row.reference,
+        );
+
+        // Step 8 — only knowable after step 5.
+        const updatedRegistration = await tx.registration.update({
+          where: { id },
+          data: { publishedActorId: created.id },
+          select: { id: true, reference: true, status: true, publishedActorId: true },
+        });
+
+        return {
+          registration: updatedRegistration,
+          actor: adminActor,
+          submitterEmail: row.submitterEmail,
+        };
+      },
+    );
+
+    // DD-9 / FR-14 scenario 1 — dispatched only AFTER the transaction above
+    // has committed, never awaited, using values returned FROM that
+    // (already-committed) result.
+    this.dispatchApprovalEmail(submitterEmail, registration.reference);
+
+    return { registration, actor };
+  }
+
+  /**
+   * FR-12 scenario 3 — the server-side half of the typed acknowledgement
+   * gate. The client-side half (`AcknowledgeDialog`, T-14) is UX only;
+   * THIS is what makes a crafted request that omits or misspells the
+   * acknowledgement fail regardless of what any client enforces.
+   */
+  private assertAcknowledgement(acknowledgement: string): void {
+    if (acknowledgement !== APPROVAL_ACKNOWLEDGEMENT_TEXT) {
+      const details: FieldErrorDetail[] = [
+        {
+          field: 'acknowledgement',
+          message: `Must be typed exactly: "${APPROVAL_ACKNOWLEDGEMENT_TEXT}"`,
+        },
+      ];
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Acknowledgement text does not match the required confirmation.',
+        details,
+      });
+    }
+  }
+
+  /** Resolve the acting Admin email and package it with the verified sub — mirrors `ActorsAdminService.resolveActing`. */
+  private async resolveActing(actingSub: string): Promise<ActingAdmin> {
+    const email = await this.actingAdminResolver.resolve(actingSub);
+    return { sub: actingSub, email };
+  }
+
+  /**
+   * Resolve crop names to `Crop` ids and build `CropsOnActors` link rows.
+   * `RegistrationPayloadDto.crops` is already validated at submission time
+   * against the same canonical crop catalog (`@IsIn(CROP_NAMES...)`), so a
+   * missing name here means catalog drift between submission and approval
+   * time, not applicant error — a bare `Error` (surfacing as `500`), not a
+   * `BadRequestException`, mirrors `Created actor could not be refetched`'s
+   * treatment of an unexpected invariant violation elsewhere in this method.
+   */
+  private async buildCropLinks(
+    tx: Prisma.TransactionClient,
+    actorId: string,
+    cropNames: string[],
+  ): Promise<Array<{ actorId: string; cropId: string }>> {
+    const crops = await tx.crop.findMany({
+      where: { name: { in: cropNames } },
+      select: { id: true, name: true },
+    });
+
+    const foundNames = new Set(crops.map((c) => c.name));
+    const missing = cropNames.filter((name) => !foundNames.has(name));
+    if (missing.length > 0) {
+      throw new Error(`Unknown crops in approved registration payload: ${missing.join(', ')}`);
+    }
+
+    return crops.map((crop) => ({ actorId, cropId: crop.id }));
+  }
+
+  /**
+   * DD-9 / FR-14 scenario 1: dispatched only after the caller's transaction
+   * has committed, never awaited, and a failure is logged by the error's
+   * CLASS NAME only — mirrors `RegistrationsService.dispatchReceiptEmail`'s
+   * identical, already-reviewed pattern (a transport failure can embed the
+   * destination address verbatim in its message).
+   */
+  private dispatchApprovalEmail(to: string, reference: string): void {
+    void this.mailService.sendApproval(to, reference).catch((err: unknown) => {
+      const errorType = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.error(
+        `registration approval notification send failed: errorType=${errorType} reference=${reference}`,
+      );
+    });
   }
 }

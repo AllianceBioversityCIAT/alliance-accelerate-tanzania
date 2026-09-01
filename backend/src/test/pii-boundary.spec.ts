@@ -1180,6 +1180,12 @@ describe(
         .useValue({
           sendVerificationCode: sendVerificationCodeMock,
           sendReceipt: sendReceiptMock,
+          // `admin/registration-review-queue` T-8's `approve` route calls
+          // `sendApproval` — never reached by any assertion in this file
+          // (every admin-entry request here is rejected by the guard stack
+          // before the controller method runs), but the DI graph still
+          // needs the method to exist on this override.
+          sendApproval: jest.fn().mockResolvedValue(undefined),
         } as unknown as MailService)
         // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
         // FIXTURE_MAP entry needs a real guard stack over HTTP so
@@ -1454,6 +1460,41 @@ describe(
               .set('Authorization', 'Bearer staff-token')
               .send({ candidateActorId: 'route-scan-probe-candidate-actor-id' }),
         },
+        // `admin/registration-review-queue` T-8 — the FOURTH `access: 'admin'`
+        // entry, and the SECOND WRITE (`POST`) route in this map. Its key,
+        // `POST /api/v1/admin/registrations/:id/approve`, is the raw
+        // decorator path (`@Post(':id/approve')`) — never a sender's
+        // concrete URL — so it is checked by hand, per the admin-entry
+        // contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/approve`,
+        // ONE literal segment deeper than the `:id` detail route, and
+        // DISTINCT from `/:id/dismiss-duplicate`/`/:id/reject`'s literal
+        // segment — re-read against `/:id/reject` once T-9 lands them both
+        // share the identical 401/403 shape and are mutually substitutable
+        // by copy-paste (the exact trap this file's contract JSDoc names).
+        // The probe id and body are irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone
+        // `AdminRegistrationsService.approve`'s Prisma transaction — ever
+        // runs, so no Prisma mock support for either probe value is needed.
+        // A body IS still sent (matching `RegistrationApproveDto`'s shape)
+        // for the same reason T-7's entry does.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/approve')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-approve-route-scan-probe-id/approve',
+              )
+              .send({ acknowledgement: 'route-scan-probe-acknowledgement' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-approve-route-scan-probe-id/approve',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ acknowledgement: 'route-scan-probe-acknowledgement' }),
+        },
       };
 
       it(
@@ -1477,8 +1518,8 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per public route (4) + 2 requests per admin route (anonymous + Staff; 3 admin routes = 6), ' +
-          '10 requests total, of which only the 4 public requests hit this describe block\'s own ' +
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 4 admin routes = 8), ' +
+          '12 requests total, of which only the 4 public requests hit this describe block\'s own ' +
           'throttle bucket — the admin routes carry no throttle guard at all (`design.md` §6.1), so ' +
           'that count is informational, not a limit check (A-38: corrected from an earlier revision ' +
           'that mis-stated ALL requests as hitting the bucket)',

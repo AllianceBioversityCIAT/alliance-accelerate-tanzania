@@ -387,6 +387,17 @@ export class ActorAuditService {
    * and `consentReference` is already an `AUDITABLE_FIELDS` member captured
    * by {@link buildSnapshot} — adding it again would invent a field outside
    * §6.7's pinned table rather than reuse `logCreate`'s shape.
+   *
+   * **DEC-1 (Leader decision, user-approved at the Phase A gate,
+   * `admin/registration-review-queue` T-8).** This row sets
+   * `acknowledged: true` — the typed consent-acknowledgement flag
+   * `logBulkConsent`/`logImport` already persist. FR-12's approve gate *is*
+   * a typed consent acknowledgement, re-validated server-side
+   * (`AdminRegistrationsService.assertAcknowledgement`), so the spec's most
+   * consequential consent write records its own gate. This is ADDITIVE to
+   * the pinned envelope: `acknowledged` is a separate top-level column
+   * §6.7 never addresses, and the `changes` value above is UNCHANGED —
+   * still `logCreate`'s exact snapshot shape.
    */
   async logRegistrationApprove(
     tx: Prisma.TransactionClient,
@@ -403,6 +414,8 @@ export class ActorAuditService {
         actingSub: acting.sub,
         actingEmail: acting.email ?? null,
         changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+        // DEC-1 — additive; the `changes` envelope above is untouched.
+        acknowledged: true,
       },
     });
   }

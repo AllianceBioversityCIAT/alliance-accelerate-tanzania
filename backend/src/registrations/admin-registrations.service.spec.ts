@@ -1,8 +1,13 @@
-import { NotFoundException } from '@nestjs/common';
-import { RegistrationStatus } from '@prisma/client';
-import { AdminRegistrationsService } from './admin-registrations.service';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ConsentMethod, ConsentStatus, Prisma, RegistrationSource, RegistrationStatus } from '@prisma/client';
+import {
+  APPROVAL_ACKNOWLEDGEMENT_TEXT,
+  AdminRegistrationsService,
+  deriveTraderIdFromReference,
+} from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import { ActorAuditService } from '../actors/actor-audit.service';
 
 /**
  * T-4 — `AdminRegistrationsService` unit tests with a MOCKED PrismaService
@@ -33,6 +38,18 @@ interface MockPrisma {
     findMany: jest.Mock;
     findUnique: jest.Mock;
   };
+  /**
+   * T-8 — `approve`'s ONLY entry point into Prisma. Deliberately a
+   * SEPARATE `tx` delegate set (built per-test below, in the `approve`
+   * describe block), never the SAME object as `registration`/`actor`
+   * above — `list`/`getById`/`dismissDuplicate` never open a transaction,
+   * so this keeps their existing coverage untouched while making
+   * `approve`'s "every write happens through `tx`, never bypassing it"
+   * structurally checkable: `registration`/`actor` above have no
+   * `updateMany`/`create` spies at all, so a hypothetical bypass would
+   * throw "not a function" rather than silently passing.
+   */
+  $transaction: jest.Mock;
 }
 
 function fixtureRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -70,6 +87,8 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
   let service: AdminRegistrationsService;
   let prisma: MockPrisma;
   let actingAdminResolver: { resolve: jest.Mock };
+  let actorAuditService: ActorAuditService;
+  let mailService: { sendApproval: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -83,13 +102,28 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
       },
+      // Default: no test outside the `approve` describe block opens a
+      // transaction; a real call here (if `list`/`getById`/
+      // `dismissDuplicate` ever accidentally did) throws loudly rather than
+      // silently resolving `undefined`.
+      $transaction: jest.fn(() => {
+        throw new Error('$transaction called outside the approve describe block');
+      }),
     };
     actingAdminResolver = { resolve: jest.fn() };
     const duplicateDetection = new DuplicateDetectionService(prisma as unknown as never);
+    // T-8 — real `ActorAuditService` (no constructor deps), same convention
+    // `actors-admin.service.spec.ts` already uses: it lets `approve`'s tests
+    // assert the actual persisted audit envelope/`acknowledged` flag by
+    // value, not a mock's stand-in return.
+    actorAuditService = new ActorAuditService();
+    mailService = { sendApproval: jest.fn().mockResolvedValue(undefined) };
     service = new AdminRegistrationsService(
       prisma as unknown as never,
       duplicateDetection,
       actingAdminResolver as unknown as ActingAdminResolver,
+      actorAuditService,
+      mailService as unknown as never,
     );
   });
 
@@ -239,6 +273,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           status: true,
           submitterEmail: true,
           duplicateDismissals: true,
+          publishedActorId: true,
         });
       });
 
@@ -326,6 +361,69 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
 
         expect(prisma.actor.findMany).not.toHaveBeenCalled();
       });
+
+      it(
+        'A-33 — an APPROVED registration does not flag itself: it matches every ' +
+          'detection attribute of the actor it itself created, and publishedActorId excludes exactly that actor',
+        async () => {
+          prisma.registration.findMany.mockResolvedValue([
+            fixtureRow({
+              id: 'reg-approved-1',
+              status: RegistrationStatus.APPROVED,
+              payload: {
+                traderName: 'Meru Agro-Processing & Seeds',
+                traderType: 'seed_company',
+                region: 'Arusha',
+                phone: '+255712345678',
+              },
+              // Every one of these attributes matches `fixtureActor()`
+              // below on phone, traderName AND email (via submitterEmail) —
+              // without the A-33 exclusion this row would report itself as
+              // its own duplicate on all three.
+              publishedActorId: 'actor-1',
+            }),
+          ]);
+          prisma.registration.count.mockResolvedValue(1);
+          prisma.actor.findMany.mockResolvedValue([
+            fixtureActor({ id: 'actor-1', email: 'applicant@example.com' }),
+          ]);
+
+          const res = await service.list({} as never);
+
+          expect(res.data[0].duplicateCandidateCount).toBe(0);
+        },
+      );
+
+      it(
+        "A-33 — a genuine OTHER duplicate is still reported for an APPROVED row (the exclusion is " +
+          'scoped to publishedActorId, not to APPROVED status generally)',
+        async () => {
+          prisma.registration.findMany.mockResolvedValue([
+            fixtureRow({
+              id: 'reg-approved-1',
+              status: RegistrationStatus.APPROVED,
+              payload: {
+                traderName: 'Meru Agro-Processing & Seeds',
+                traderType: 'seed_company',
+                region: 'Arusha',
+                phone: '+255712345678',
+              },
+              publishedActorId: 'actor-1',
+            }),
+          ]);
+          prisma.registration.count.mockResolvedValue(1);
+          prisma.actor.findMany.mockResolvedValue([
+            // Its own published actor (excluded) plus an UNRELATED actor
+            // that happens to share the same phone number.
+            fixtureActor({ id: 'actor-1' }),
+            fixtureActor({ id: 'actor-2', traderName: 'A Different Trader' }),
+          ]);
+
+          const res = await service.list({} as never);
+
+          expect(res.data[0].duplicateCandidateCount).toBe(1);
+        },
+      );
     });
   });
 
@@ -364,6 +462,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           reviewedAt: true,
           reviewedBySub: true,
           reviewedByEmail: true,
+          publishedActorId: true,
         },
       });
     });
@@ -456,6 +555,524 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       const result = await service.getById('reg-1');
 
       expect(result.submitterEmail).toBe('org@example.com');
+    });
+  });
+
+  describe('approve (T-8, FR-12 all six scenarios, FR-14 scenario 1)', () => {
+    const ACKNOWLEDGEMENT = { acknowledgement: APPROVAL_ACKNOWLEDGEMENT_TEXT };
+    const ACTING_SUB = 'admin-sub-1';
+    const ACTING_EMAIL = 'admin@example.com';
+
+    const CROPS_CATALOG = [
+      { id: 'crop-sorghum', name: 'sorghum' },
+      { id: 'crop-common_bean', name: 'common_bean' },
+      { id: 'crop-groundnut', name: 'groundnut' },
+    ];
+
+    /**
+     * The stored `Registration` row `approve`'s tx-scoped `findUnique`
+     * calls resolve to. Every field carries a distinctive value so a
+     * projection bug (a field landing on the wrong column, or an omitted
+     * field silently reappearing) is unmistakable in a failure message.
+     */
+    function approvalRegistrationRow(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: 'reg-approve-1',
+        reference: 'REG-2026-0184',
+        status: RegistrationStatus.PENDING_REVIEW,
+        payload: {
+          traderName: 'Meru Agro-Processing & Seeds',
+          traderType: 'seed_company',
+          contactPerson: 'Grace Mushi — DO NOT PUBLISH',
+          position: 'Director',
+          district: 'Arusha Urban',
+          marketLocation: 'Arusha Central Market',
+          sex: 'F',
+          region: 'Arusha',
+          gpsLatitude: -3.3869,
+          gpsLongitude: 36.683,
+          crops: ['sorghum', 'common_bean'],
+          otherCrops: 'Sunflower — DO NOT PUBLISH',
+          capacityTons: 120,
+          phone: '+255700000000',
+        },
+        submitterEmail: 'director@example.com',
+        consentAcceptedAt: new Date('2026-01-01T00:10:00Z'),
+        ...overrides,
+      };
+    }
+
+    /**
+     * A fresh, ISOLATED `tx` delegate set (never the SAME object as the
+     * outer `prisma.registration`/`prisma.actor` mocks list/getById/
+     * dismissDuplicate use) — see the `MockPrisma.$transaction` JSDoc
+     * above. `prisma.$transaction` is wired to invoke the callback with
+     * THIS object, so any call `approve` makes outside it (a hypothetical
+     * bypass of the transaction) has nothing to land on.
+     */
+    function buildTx(registrationRow = approvalRegistrationRow()) {
+      let registration = { ...registrationRow };
+      const createdActors: Record<string, unknown>[] = [];
+      const cropLinks: Array<{ actorId: string; cropName: string }> = [];
+      let actorSeq = 0;
+
+      const registrationDelegate = {
+        updateMany: jest.fn(
+          async (args: { where: { id: string; status: RegistrationStatus }; data: Record<string, unknown> }) => {
+            if (args.where.id !== registration.id || registration.status !== args.where.status) {
+              return { count: 0 };
+            }
+            registration = { ...registration, ...args.data };
+            return { count: 1 };
+          },
+        ),
+        findUnique: jest.fn(async (args: { where: { id: string } }) => {
+          if (args.where.id !== registration.id) return null;
+          return { ...registration };
+        }),
+        update: jest.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+          registration = { ...registration, ...args.data };
+          return { ...registration };
+        }),
+      };
+
+      const actorDelegate = {
+        create: jest.fn(async (args: { data: Record<string, unknown> }) => {
+          if (createdActors.some((a) => a.traderId === args.data.traderId)) {
+            throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+              code: 'P2002',
+              clientVersion: '0.0.0',
+              meta: { target: ['traderId'] },
+            });
+          }
+          actorSeq += 1;
+          const now = new Date('2026-01-05T00:00:00Z');
+          const created = {
+            id: `actor-approved-${actorSeq}`,
+            ...args.data,
+            createdAt: now,
+            updatedAt: now,
+          };
+          createdActors.push(created);
+          return created;
+        }),
+        findUnique: jest.fn(async (args: { where: { id: string } }) => {
+          const found = createdActors.find((a) => a.id === args.where.id);
+          if (!found) return null;
+          const links = cropLinks
+            .filter((l) => l.actorId === args.where.id)
+            .map((l) => ({ crop: { name: l.cropName } }));
+          return { ...found, crops: links };
+        }),
+      };
+
+      const cropsOnActorsDelegate = {
+        createMany: jest.fn(async (args: { data: Array<{ actorId: string; cropId: string }> }) => {
+          for (const link of args.data) {
+            const crop = CROPS_CATALOG.find((c) => c.id === link.cropId);
+            if (crop) cropLinks.push({ actorId: link.actorId, cropName: crop.name });
+          }
+          return { count: args.data.length };
+        }),
+      };
+
+      const cropDelegate = {
+        findMany: jest.fn(async (args: { where: { name: { in: string[] } } }) => {
+          const wanted = new Set(args.where.name.in);
+          return CROPS_CATALOG.filter((c) => wanted.has(c.name));
+        }),
+      };
+
+      const actorAuditLogDelegate = {
+        create: jest.fn(async (args: { data: Record<string, unknown> }) => ({
+          id: 'audit-1',
+          createdAt: new Date(),
+          ...args.data,
+        })),
+      };
+
+      return {
+        registration: registrationDelegate,
+        actor: actorDelegate,
+        cropsOnActors: cropsOnActorsDelegate,
+        crop: cropDelegate,
+        actorAuditLog: actorAuditLogDelegate,
+        getStoredRegistration: () => registration,
+        getCreatedActors: () => createdActors,
+      };
+    }
+
+    function wireTransaction(tx: ReturnType<typeof buildTx>) {
+      prisma.$transaction = jest.fn(async (cb: (tx: unknown) => unknown) => cb(tx));
+    }
+
+    beforeEach(() => {
+      actingAdminResolver.resolve.mockResolvedValue(ACTING_EMAIL);
+    });
+
+    describe('Scenario: Approval publishes with correct provenance', () => {
+      it('creates an Actor with SELF_REGISTERED/GRANTED/PORTAL_CHECKBOX provenance, the stored acceptance instant, and the reference as consentReference', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(result.actor.registrationSource).toBe(RegistrationSource.SELF_REGISTERED);
+        expect(result.actor.consentStatus).toBe(ConsentStatus.GRANTED);
+        expect(result.actor.consentMethod).toBe(ConsentMethod.PORTAL_CHECKBOX);
+        expect(result.actor.consentObtainedAt).toEqual(new Date('2026-01-01T00:10:00Z'));
+        expect(result.actor.consentReference).toBe('REG-2026-0184');
+      });
+
+      it("marks the registration APPROVED with publishedActorId, reviewedBySub, reviewedByEmail and reviewedAt", async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(result.registration.status).toBe(RegistrationStatus.APPROVED);
+        expect(result.registration.publishedActorId).toBe(result.actor.id);
+        const stored = tx.getStoredRegistration() as Record<string, unknown>;
+        expect(stored.reviewedBySub).toBe(ACTING_SUB);
+        expect(stored.reviewedByEmail).toBe(ACTING_EMAIL);
+        expect(stored.reviewedAt).toBeInstanceOf(Date);
+      });
+
+      it('resolves the acting admin identity server-side via ActingAdminResolver — never from the request body (no such field exists on the DTO)', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(actingAdminResolver.resolve).toHaveBeenCalledWith(ACTING_SUB);
+      });
+    });
+
+    describe('Scenario: The publishable subset is exactly this, and nothing else (§6.3/DD-18 — the projection gate)', () => {
+      it(
+        'DISQUALIFYING GATE — asserts fixture VALUES absent from EVERY column of the created actor, ' +
+          'never field names (a renamed target must still fail this)',
+        async () => {
+          const tx = buildTx();
+          wireTransaction(tx);
+
+          const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+          // The two review-context values, which must land NOWHERE in the
+          // created actor — checked as raw VALUES across the whole
+          // serialized object, not by absence of a key name.
+          const serializedActor = JSON.stringify(result.actor);
+          expect(serializedActor).not.toContain('Grace Mushi');
+          expect(serializedActor).not.toContain('Sunflower');
+
+          // Same sweep, one layer earlier: the pre-serialization `tx.actor.create`
+          // input, BEFORE `toAdminActor` runs. `capacityTons`/`gpsAltitude`/
+          // `gpsAccuracy` pass through `toNullableNumber` on the way OUT of
+          // `toAdminActor`, which coerces a non-numeric string to `null` — a
+          // text value mis-mapped onto one of those columns would vanish
+          // before `serializedActor` above ever saw it. Sweeping the create
+          // input closes that blind spot on the other side of the serializer.
+          const serializedCreateInput = JSON.stringify(tx.getCreatedActors()[0]);
+          expect(serializedCreateInput).not.toContain('Grace Mushi');
+          expect(serializedCreateInput).not.toContain('Sunflower');
+
+          // The three columns with no payload source stay null.
+          expect(result.actor.technicalSupport).toBeNull();
+          expect(result.actor.gpsAltitude).toBeNull();
+          expect(result.actor.gpsAccuracy).toBeNull();
+
+          // Actor.email comes from Registration.submitterEmail, not the payload.
+          expect(result.actor.email).toBe('director@example.com');
+
+          // Every published field lands where FR-12's projection table says.
+          expect(result.actor.traderName).toBe('Meru Agro-Processing & Seeds');
+          expect(result.actor.traderType).toBe('seed_company');
+          expect(result.actor.position).toBe('Director');
+          expect(result.actor.district).toBe('Arusha Urban');
+          expect(result.actor.marketLocation).toBe('Arusha Central Market');
+          expect(result.actor.sex).toBe('F');
+          expect(result.actor.region).toBe('Arusha');
+          expect(result.actor.gpsLatitude).toBe(-3.3869);
+          expect(result.actor.gpsLongitude).toBe(36.683);
+          expect(result.actor.capacityTons).toBe(120);
+          expect(result.actor.phone).toBe('+255700000000');
+          expect(result.actor.crops.sort()).toEqual(['common_bean', 'sorghum']);
+        },
+      );
+
+      // The `contactPerson` → `Actor.position` falsifying mutation (the
+      // spec's single most valuable falsification) was performed BY HAND
+      // against `admin-registrations.service.ts`'s `approve` step 3 —
+      // temporarily changing `position: payload.position ?? null,` to
+      // `position: (payload as unknown as { contactPerson?: string })
+      // .contactPerson,`. The cast is required because
+      // `RegistrationApprovalPayload` deliberately has no `contactPerson`
+      // member (see that interface's JSDoc) — the realistic one-liner
+      // `payload.contactPerson` does not compile on its own. THIS describe block's
+      // "DISQUALIFYING GATE" test was re-run against the mutation, its
+      // failure output recorded VERBATIM, and the source reverted. Not kept
+      // as a standing test (a permanently mutated line would itself be the
+      // defect this gate exists to catch) — the transcript is in the
+      // completion report / execution.md, per this repo's established
+      // convention for manual falsification proofs (see e.g.
+      // `pii-boundary.spec.ts`'s T-13 RA7 throwaway-route proofs).
+    });
+
+    describe('Scenario: The acknowledgement gate is real (server-side, FR-12 scenario 3)', () => {
+      it('400s a request whose acknowledgement is misspelled, with a field-scoped detail', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', { acknowledgement: 'i confirm consent is on file' } as never, ACTING_SUB),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(tx.actor.create).not.toHaveBeenCalled();
+      });
+
+      it('400s a request with an empty acknowledgement', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', { acknowledgement: '' } as never, ACTING_SUB),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('proceeds when the acknowledgement matches exactly', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).resolves.toBeDefined();
+      });
+    });
+
+    describe('Scenario: Atomicity under failure (structurally asserted — DC-24, never rollback-proven)', () => {
+      it(
+        'a throw at the audit step (step 7) propagates unswallowed out of approve() — no catch ' +
+          'absorbs it, and the step AFTER it (setting publishedActorId) is never reached',
+        async () => {
+          const tx = buildTx();
+          tx.actorAuditLog.create.mockRejectedValueOnce(new Error('forced audit failure'));
+          wireTransaction(tx);
+
+          await expect(
+            service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+          ).rejects.toThrow('forced audit failure');
+
+          // Step 8 (publishedActorId) is a SECOND registration.update call —
+          // never reached because step 7 threw first.
+          expect(tx.registration.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it(
+        'every write this method makes lands on the tx delegate the $transaction callback receives, ' +
+          'never on a second, un-transacted path (no bypass)',
+        async () => {
+          const tx = buildTx();
+          wireTransaction(tx);
+
+          await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+          expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+          expect(tx.registration.updateMany).toHaveBeenCalledTimes(1);
+          expect(tx.actor.create).toHaveBeenCalledTimes(1);
+          expect(tx.cropsOnActors.createMany).toHaveBeenCalledTimes(1);
+          expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+          expect(tx.registration.update).toHaveBeenCalledTimes(1);
+        },
+      );
+    });
+
+    describe('Scenario: Double approval is refused (DD-17 — a conditional update, not read-then-check)', () => {
+      it('409s when the registration is not PENDING_REVIEW, and actor.create is never invoked', async () => {
+        const tx = buildTx(approvalRegistrationRow({ status: RegistrationStatus.APPROVED }));
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(tx.actor.create).not.toHaveBeenCalled();
+      });
+
+      it('the "already adjudicated" 409 message is distinguishable from the traderId-collision 409 message', async () => {
+        const tx = buildTx(approvalRegistrationRow({ status: RegistrationStatus.APPROVED }));
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).rejects.toThrow('has already been adjudicated');
+      });
+
+      it('404s (never 409) when the id does not exist at all (DD-22 — honest here)', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-does-not-exist', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+    });
+
+    describe('Scenario: The generated natural key does not collide (DD-23)', () => {
+      it('derives SR-<year>-<seq> from REG-<year>-<seq>', () => {
+        expect(deriveTraderIdFromReference('REG-2026-0184')).toBe('SR-2026-0184');
+      });
+
+      it('the SR- prefix collides with none of chunk 2\'s eight prefixes, nor with TZ-SEED-*', () => {
+        const traderId = deriveTraderIdFromReference('REG-2026-0184');
+        const foreignPrefixes = [
+          'OFB-',
+          'OFS-',
+          'OFG-',
+          'BBB-',
+          'HUM-',
+          'DSP-',
+          'SDC-',
+          'QDS-',
+          'TZ-SEED-',
+        ];
+        for (const prefix of foreignPrefixes) {
+          expect(traderId.startsWith(prefix)).toBe(false);
+        }
+        expect(traderId.startsWith('SR-')).toBe(true);
+      });
+
+      it('a traderId collision (P2002) 409s naming the colliding key, distinguishable from the "already adjudicated" 409', async () => {
+        const tx = buildTx();
+        // Pre-seed a colliding actor by calling create once with the SAME
+        // derived traderId this registration will produce.
+        await tx.actor.create({ data: { traderId: 'SR-2026-0184' } });
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).rejects.toMatchObject({
+          message: expect.stringContaining('SR-2026-0184'),
+        });
+      });
+
+      it('the traderId-collision 409 is a ConflictException, not an unhandled 500', async () => {
+        const tx = buildTx();
+        await tx.actor.create({ data: { traderId: 'SR-2026-0184' } });
+        wireTransaction(tx);
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).rejects.toBeInstanceOf(ConflictException);
+      });
+    });
+
+    describe('DEC-1 — acknowledged: true on the audit row, by value', () => {
+      it('logRegistrationApprove writes acknowledged: true on the created audit row', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        const auditData = tx.actorAuditLog.create.mock.calls[0][0].data;
+        expect(auditData.acknowledged).toBe(true);
+      });
+
+      it("the changes envelope is UNCHANGED — still logCreate's exact snapshot shape", async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        const auditData = tx.actorAuditLog.create.mock.calls[0][0].data as {
+          changes: { kind: string; values: Record<string, unknown> };
+        };
+        expect(auditData.changes.kind).toBe('snapshot');
+        expect(auditData.changes.values.traderName).toBe('Meru Agro-Processing & Seeds');
+      });
+    });
+
+    describe('A-8 — actor.consentReference === reference asserted by value at the call site', () => {
+      it('the created actor\'s consentReference equals the registration reference passed to logRegistrationApprove', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        const auditCallArgs = tx.actorAuditLog.create.mock.calls[0][0].data as {
+          changes: { values: Record<string, unknown> };
+        };
+        expect(auditCallArgs.changes.values.consentReference).toBe('REG-2026-0184');
+      });
+
+      it(
+        'rejects and never writes the audit row when the refetched actor\'s consentReference has ' +
+          'diverged from the registration reference (demonstrates the throw\'s true branch, which ' +
+          'the two harnesses above never exercise — both echo `create`\'s data straight back through ' +
+          '`findUnique`)',
+        async () => {
+          const tx = buildTx();
+          const originalFindUnique = tx.actor.findUnique;
+          tx.actor.findUnique = jest.fn(async (args: { where: { id: string } }) => {
+            const found = await originalFindUnique(args);
+            return found ? { ...found, consentReference: 'REG-2026-DIVERGED' } : found;
+          });
+          wireTransaction(tx);
+
+          await expect(
+            service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+          ).rejects.toThrow('Invariant violated');
+
+          // The throw must abort BEFORE step 7's audit write, not after.
+          expect(tx.actorAuditLog.create).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    describe('FR-14 scenario 1 — the notification is dispatched AFTER commit, never inside it', () => {
+      it('sendApproval is called with the submitter email and reference, AFTER the transaction resolves', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+        const callOrder: string[] = [];
+        (prisma.$transaction as jest.Mock).mockImplementationOnce(async (cb: (tx: unknown) => unknown) => {
+          const result = await cb(tx);
+          callOrder.push('transaction-committed');
+          return result;
+        });
+        mailService.sendApproval.mockImplementationOnce(async () => {
+          callOrder.push('notification-dispatched');
+        });
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(mailService.sendApproval).toHaveBeenCalledWith('director@example.com', 'REG-2026-0184');
+        expect(callOrder).toEqual(['transaction-committed', 'notification-dispatched']);
+      });
+
+      it('a notification failure does not reject approve() — it is fire-and-forget, logged by error class name only', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+        mailService.sendApproval.mockRejectedValueOnce(new Error('SES unavailable'));
+
+        await expect(
+          service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
+        ).resolves.toBeDefined();
+      });
+
+      it('the transaction never calls sendApproval itself — only the post-await dispatch does', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+        (prisma.$transaction as jest.Mock).mockImplementationOnce(async (cb: (tx: unknown) => unknown) => {
+          const result = await cb(tx);
+          // Inside the transaction's own execution window, the mail spy
+          // must not have been touched yet.
+          expect(mailService.sendApproval).not.toHaveBeenCalled();
+          return result;
+        });
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(mailService.sendApproval).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });

@@ -114,6 +114,17 @@ export interface AdminRegistrationSourceRow extends ActivityTrailSourceRow {
   reference: string;
   payload: unknown;
   submitterEmail: string;
+  /**
+   * `admin/registration-review-queue` T-8 (A-33) — fetched so
+   * `AdminRegistrationsService.getById` can pass it through to
+   * `DuplicateDetectionService` and exclude an approved registration's own
+   * published actor from its own candidate list. Not read by this
+   * serializer's projection itself. Optional so
+   * `admin-registration.serializer.spec.ts`'s pre-existing fixture builder
+   * (built before this field existed) still compiles unchanged — absent is
+   * read identically to `null` everywhere this is consumed.
+   */
+  publishedActorId?: string | null;
 }
 
 function toAdminRegistrationPayload(raw: RawRegistrationPayload): AdminRegistrationPayload {

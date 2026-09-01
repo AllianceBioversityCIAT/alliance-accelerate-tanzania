@@ -61,6 +61,23 @@ export interface DuplicateDetectionInput {
    * per-candidate, never row-level (DC-31).
    */
   dismissedActorIds: string[];
+  /**
+   * A-33 — `Registration.publishedActorId`, when this registration has
+   * already been approved. `list()` applies no default `status` filter and
+   * `publishedActorId` was not previously in its `select`, so an APPROVED
+   * row's own detection input carried every one of its own published
+   * actor's attributes — the actor it itself just created inevitably
+   * matches on phone/email/traderName/GPS, reporting
+   * `duplicateCandidateCount >= 1` for a registration flagged as a
+   * duplicate of its own output. Excluded from the candidate set below
+   * exactly like a manually dismissed id, one call site earlier. Optional
+   * so `duplicate-detection.service.spec.ts`'s existing fixtures (built
+   * before this field existed) still compile and pass unchanged; `null`/
+   * absent means "no published actor to exclude", never "exclude nothing
+   * on purpose vs. by omission" — the two are indistinguishable and both
+   * correctly exclude nothing.
+   */
+  publishedActorId?: string | null;
 }
 
 /** The narrow `Actor` comparison projection DD-20 fetches once per request. */
@@ -208,6 +225,10 @@ function matchOne(
   const candidates: DuplicateCandidate[] = [];
   for (const actor of actors) {
     if (dismissed.has(actor.id)) continue;
+    // A-33 — a registration can never be a duplicate of the actor IT
+    // ITSELF published; exclude it the same way a dismissed id is excluded,
+    // never merely deprioritized.
+    if (input.publishedActorId && actor.id === input.publishedActorId) continue;
 
     const matchedOn: DuplicateMatchAttribute[] = [];
     if (normalizedPhone && actor.normalizedPhone && normalizedPhone === actor.normalizedPhone) {

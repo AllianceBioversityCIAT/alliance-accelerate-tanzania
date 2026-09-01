@@ -102,10 +102,15 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
     };
     actingAdminResolver = { resolve: jest.fn() };
     const duplicateDetection = new DuplicateDetectionService(prisma as unknown as never);
+    // T-8 — `AdminRegistrationsService` gained two constructor deps
+    // (`ActorAuditService`, `MailService`) for `approve`; `dismissDuplicate`
+    // uses neither, so bare mocks are enough to satisfy the constructor.
     service = new AdminRegistrationsService(
       prisma as unknown as never,
       duplicateDetection,
       actingAdminResolver as unknown as ActingAdminResolver,
+      { logRegistrationApprove: jest.fn() } as unknown as never,
+      { sendApproval: jest.fn() } as unknown as never,
     );
   });
 

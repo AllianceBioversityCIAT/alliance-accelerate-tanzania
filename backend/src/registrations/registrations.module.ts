@@ -7,6 +7,7 @@ import { AdminRegistrationsController } from './admin-registrations.controller';
 import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import { ActorAuditService } from '../actors/actor-audit.service';
 import { LoggingModule } from '../logging/logging.module';
 import { RequestContextMiddleware } from '../logging/request-context.middleware';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -99,6 +100,15 @@ import {
  * bare per-container `Map` cache plus free functions from
  * `../users/cognito-admin.client`), so a second instance costs at most one
  * extra Cognito `ListUsers` call per container, never a correctness issue.
+ *
+ * `admin/registration-review-queue` T-8 — adds `ActorAuditService` (below,
+ * `providers`) so `AdminRegistrationsService.approve` can write its
+ * `REGISTRATION_APPROVE` audit row inside the same `$transaction`
+ * (`design.md` §6.2 step 7, `backend/CLAUDE.md`). Same reasoning as
+ * `ActingAdminResolver` immediately above: `ActorsModule` already provides
+ * this class but does not export it, and `ActorAuditService` itself has no
+ * constructor dependencies, so providing a second instance here costs
+ * nothing beyond one extra DI-managed singleton per container.
  */
 @Module({
   imports: [
@@ -117,6 +127,7 @@ import {
     AdminRegistrationsService,
     DuplicateDetectionService,
     ActingAdminResolver,
+    ActorAuditService,
   ],
 })
 export class RegistrationsModule implements NestModule {

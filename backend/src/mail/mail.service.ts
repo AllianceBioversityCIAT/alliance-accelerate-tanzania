@@ -39,6 +39,7 @@ import { MailMessage } from './mail-transport.interface';
 import { getMailTransport } from './mail-transport.factory';
 import { buildVerificationCodeMessage } from './templates/verification-code.template';
 import { buildReceiptMessage } from './templates/receipt.template';
+import { buildApprovalMessage } from './templates/approval.template';
 
 @Injectable()
 export class MailService {
@@ -52,6 +53,17 @@ export class MailService {
   /** FR-5 / FR-14 — send the submission receipt. Carries the reference. */
   async sendReceipt(to: string, reference: string): Promise<void> {
     await this.dispatch('receipt', buildReceiptMessage(to, reference));
+  }
+
+  /**
+   * `admin/registration-review-queue` T-8 — FR-12 / FR-14 scenario 1: send
+   * the approval-decision message. Callers MUST dispatch this only after
+   * their adjudication transaction has committed (DD-9) — this method
+   * itself enforces nothing about ordering; see
+   * `AdminRegistrationsService.approve`'s `dispatchApprovalEmail`.
+   */
+  async sendApproval(to: string, reference: string): Promise<void> {
+    await this.dispatch('approval', buildApprovalMessage(to, reference));
   }
 
   /**

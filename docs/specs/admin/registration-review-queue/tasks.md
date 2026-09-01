@@ -125,7 +125,7 @@ So every task below carries three fields beyond the template's, and the Implemen
 
 ## Phase C — Adjudication (the irreversible surface)
 
-- [ ] **T-8 `POST /admin/registrations/:id/approve` — the transaction** (deps: T-2, T-6)
+- [x] **T-8 `POST /admin/registrations/:id/approve` — the transaction** (deps: T-2, T-6)
       Scope: compare-and-set → derive `traderId` (`SR-<year>-<seq>`, DD-23) → literal-pick projection → provenance assertion → `actor.create` (`P2002` → `409` naming the key) → `cropsOnActors.createMany` → audit → `publishedActorId`. Server-side acknowledgement re-validation. **Notification dispatched after commit, never inside.** Its `FIXTURE_MAP` entry.
       Traces: FR-12 scenarios 1–6 · FR-14 scenario 1 · NFR-2, NFR-3 · `design.md` §6.2, §6.3, DD-17, DD-18, DD-23
       Files: `admin-registrations.service.ts` + `.spec.ts`, `dto/registration-approve.dto.ts`, `admin-registrations.e2e.spec.ts`, mail template, `pii-boundary.spec.ts`
@@ -145,6 +145,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Files: `rejection-reasons.ts` + `.spec.ts`, `dto/registration-reject.dto.ts`, service/controller + specs, mail template, `pii-boundary.spec.ts`
       Skills: `nestjs-expert`, `api-design-principles` · Effort: **high**
       Verify: `cd backend && npm test -- --silent reject && npm test -- --silent registrations-lookup`
+      **Carried forward from T-8's review (`execution.md` A-55):** `mail.service.spec.ts` covers `sendReceipt`/`sendVerificationCode` including the NFR-8 *no address in the log line* assertions, but `sendApproval` has none. FR-14 scenario 2's logging clause is **your** trace — add `kind=approval` and `kind=rejection` log assertions when you land the rejection template.
       Falsifying input: make the public lookup serializer include `rejectionReason` → the lookup assertion must redden (DC-32). The reason code is admin-only; only the note is applicant-facing.
       Disqualifying: a green reject test that never exercises 3a's **public lookup** has not shown the note reaches the applicant. FR-13 scenario 2 spans two modules and must be asserted end-to-end with the **no-op mail transport selected**, or NFR-10 is unproven.
       Clause sweep: `BUT it must NOT create an Actor / publish any field / alter the consent record` → assert zero `actor.create` calls and the consent columns byte-identical before and after. `AND IT MUST make the reason mandatory` → omit it → `400`. `AND IT MUST work with email delivery disabled` → run the lookup assertion under the no-op transport.
@@ -156,6 +157,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Files: `backend/src/test/pii-boundary.spec.ts`
       Skills: `nestjs-expert`, `error-handling-patterns` · Effort: **xhigh**
       Verify: `cd backend && npm test -- --silent pii-boundary`
+      **Carried forward from T-8's review (`execution.md` A-53):** **no test proves an Admin-authenticated `GET /admin/registrations` 200 body is PII-clean over HTTP.** T-8's e2e issues no `GET` at all, and this file's own contract forbids an Admin-authenticated builder in `FIXTURE_MAP` — so that claim rests only on T-5's unit assertion. A 3-line authenticated `GET` in `admin-registrations.e2e.spec.ts` asserting `res.text` carries no `submitterEmail`/payload PII is the cheapest place in the repo to close a real coverage hole.
       Falsifying input: **two probes, both required, both removed afterward** — (1) a throwaway `@Get` on `AdminRegistrationsController` with no `FIXTURE_MAP` entry; (2) a throwaway **second controller** registered in `RegistrationsModule.controllers` with one uncovered route. Each must fail the totality assertion **naming the exact route**. This is the pair 3a's T-13 ran; repeating it here is what proves the module-scoped derivation still holds with a second controller genuinely present.
       Disqualifying: **record both probe outputs verbatim in `execution.md`.** A summary of a discrimination probe is not the probe — and a permanent throwaway route would itself become an uncovered path, the opposite of what this gate is for. `git diff` must confirm both probes removed.
       Done when: bidirectional totality green over the widened set, five admin routes asserted by value on `401`/`403`, both probes run, output recorded verbatim, probes removed.
@@ -170,6 +172,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Files: `frontend/lib/api/registrations-admin.ts` + `.test.ts`
       Skills: `vercel-react-best-practices` · Effort: **medium**
       Verify: `cd frontend && npm test -- --silent registrations-admin && npx tsc --noEmit`
+      **Carried forward from T-8's review (`execution.md` A-60):** `POST /:id/approve` returns **200**, not 201 (module convention; the e2e pins it with `.expect(200)`). Type the client accordingly.
       **Carried forward from T-7's review:** `POST /:id/dismiss-duplicate` returns only `{ registration: { id, reference, status } }`, **not** `AdminRegistrationDetail` — the write path deliberately omits the detection call. Type the client to the actual response; the refreshed candidate list arrives on the next `GET /:id`.
       Falsifying input: widen a status union to `string` → `tsc --noEmit` must fail at a consumer. **`npm test` alone cannot catch this** — `next/jest` uses SWC and type-checks nothing.
       Disqualifying: tests that assert against mocks only. `frontend/CLAUDE.md` records mock-vs-live drift shipping bugs; assert real wire shapes — URL, method, body, error mapping.

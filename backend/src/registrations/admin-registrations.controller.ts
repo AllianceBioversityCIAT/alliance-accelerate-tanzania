@@ -8,8 +8,10 @@ import {
   AdminRegistrationList,
   AdminRegistrationsService,
   DismissDuplicateResult,
+  RegistrationApproveResult,
 } from './admin-registrations.service';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
+import { RegistrationApproveDto } from './dto/registration-approve.dto';
 import { RegistrationDismissDuplicateDto } from './dto/registration-dismiss-duplicate.dto';
 import { AdminRegistrationDetail } from './serializers/admin-registration.serializer';
 
@@ -99,5 +101,32 @@ export class AdminRegistrationsController {
     @CurrentUser() user: AuthUser,
   ): Promise<DismissDuplicateResult> {
     return this.adminRegistrationsService.dismissDuplicate(id, dto.candidateActorId, user.sub);
+  }
+
+  /**
+   * `POST /api/v1/admin/registrations/:id/approve` — the transaction
+   * (FR-12 all six scenarios, FR-14 scenario 1; `design.md` §5's contract
+   * row, §6.2). The handler adds no branching of its own — the compare-
+   * and-set, the projection, the acknowledgement re-validation, the
+   * `traderId` derivation, the actor create, and the audit write all live
+   * in `AdminRegistrationsService.approve`. `@HttpCode(200)` matches this
+   * module's other action routes (`dismiss-duplicate` above): this is an
+   * action verb on an existing resource (`/:id/approve`), not a bare
+   * resource-creation `POST`, even though it creates an `Actor` as a side
+   * effect (matching `admin-actors.controller.ts`'s `bulk/delete`/`import`
+   * precedent over its bare `create()`'s `201`).
+   *
+   * The acting admin's identity is never read from the request body:
+   * `sub` comes from `@CurrentUser()` (the validated JWT), same as every
+   * other write in this controller.
+   */
+  @Post(':id/approve')
+  @HttpCode(200)
+  approve(
+    @Param('id') id: string,
+    @Body() dto: RegistrationApproveDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RegistrationApproveResult> {
+    return this.adminRegistrationsService.approve(id, dto, user.sub);
   }
 }

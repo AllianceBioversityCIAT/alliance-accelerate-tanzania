@@ -14,7 +14,12 @@ import { AdminRegistrationsService } from './admin-registrations.service';
  */
 describe('AdminRegistrationsController', () => {
   let controller: AdminRegistrationsController;
-  let service: { list: jest.Mock; getById: jest.Mock; dismissDuplicate: jest.Mock };
+  let service: {
+    list: jest.Mock;
+    getById: jest.Mock;
+    dismissDuplicate: jest.Mock;
+    approve: jest.Mock;
+  };
 
   beforeEach(() => {
     service = {
@@ -22,6 +27,15 @@ describe('AdminRegistrationsController', () => {
       getById: jest.fn().mockResolvedValue({ id: 'reg-1' }),
       dismissDuplicate: jest.fn().mockResolvedValue({
         registration: { id: 'reg-1', reference: 'REG-2026-0001', status: 'PENDING_REVIEW' },
+      }),
+      approve: jest.fn().mockResolvedValue({
+        registration: {
+          id: 'reg-1',
+          reference: 'REG-2026-0001',
+          status: 'APPROVED',
+          publishedActorId: 'actor-1',
+        },
+        actor: { id: 'actor-1' },
       }),
     };
     controller = new AdminRegistrationsController(
@@ -68,4 +82,33 @@ describe('AdminRegistrationsController', () => {
   // `dismissDuplicate` (T-7) controller unit tests live in
   // `admin-registrations-dismiss-duplicate.spec.ts`, matching the task's
   // Verify command filename pattern (`npm test -- --silent dismiss-duplicate`).
+
+  describe('POST /admin/registrations/:id/approve (T-8)', () => {
+    it('forwards the path id, the DTO, and the acting sub (never anything else from the request) to the service', async () => {
+      const dto = { acknowledgement: 'I confirm consent is on file' } as never;
+      const user = { sub: 'admin-sub-1', username: 'a', groups: ['admin'], role: 'Admin' } as never;
+
+      const result = await controller.approve('reg-42', dto, user);
+
+      expect(service.approve).toHaveBeenCalledTimes(1);
+      expect(service.approve).toHaveBeenCalledWith('reg-42', dto, 'admin-sub-1');
+      expect(result).toEqual({
+        registration: {
+          id: 'reg-1',
+          reference: 'REG-2026-0001',
+          status: 'APPROVED',
+          publishedActorId: 'actor-1',
+        },
+        actor: { id: 'actor-1' },
+      });
+    });
+
+    it('adds no branching of its own — every error (400/404/409) is entirely the service\'s', async () => {
+      service.approve.mockRejectedValueOnce(new Error('Registration reg-unknown not found'));
+
+      await expect(
+        controller.approve('reg-unknown', {} as never, { sub: 'x' } as never),
+      ).rejects.toThrow('Registration reg-unknown not found');
+    });
+  });
 });
