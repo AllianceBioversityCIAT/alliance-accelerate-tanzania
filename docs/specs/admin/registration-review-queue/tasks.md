@@ -61,7 +61,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Disqualifying: a green run proves nothing if the **existing** audit tests were modified. The 606-line suite must pass **untouched** — `git diff` on `actor-audit.service.spec.ts` must show additions only.
       Done when: both methods write inside the caller's `tx`, envelopes match §6.7's table, existing suite green with additions only.
 
-- [ ] **T-3 `FIXTURE_MAP` gains an access discriminant — no new routes** (deps: none)
+- [x] **T-3 `FIXTURE_MAP` gains an access discriminant — no new routes** (deps: none)
       Scope: add `access: 'public' | 'admin'` to every existing entry; branch the scan loop on it; **the missing-entry branch keeps `throw`ing, never `continue`s**. Document the admin-entry contract for T-4…T-9 to follow.
       Traces: NFR-1, `design.md` DD-16, R-10
       Files: `backend/src/test/pii-boundary.spec.ts`

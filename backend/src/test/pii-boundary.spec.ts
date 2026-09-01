@@ -1153,22 +1153,159 @@ describe(
     );
 
     describe('every registered public route has a fixture (RA7 — the totality assertion)', () => {
-      const FIXTURE_MAP: Record<string, () => request.Test> = {
-        [routeKey('GET', '/api/v1/registrations/consent-policy')]: () =>
-          request(app.getHttpServer()).get('/api/v1/registrations/consent-policy'),
-        [routeKey('POST', '/api/v1/registrations/verify')]: () =>
-          request(app.getHttpServer())
-            .post('/api/v1/registrations/verify')
-            .send({ email: 'route-scan-probe@example.com' }),
-        [routeKey('POST', '/api/v1/registrations')]: () =>
-          request(app.getHttpServer()).post('/api/v1/registrations').send(submitBodyFixture()),
-        [routeKey('POST', '/api/v1/registrations/lookup')]: () =>
-          request(app.getHttpServer())
-            .post('/api/v1/registrations/lookup')
-            .send({
-              reference: APPROVED_REGISTRATION_ROW.reference,
-              email: APPROVED_REGISTRATION_ROW.submitterEmail,
-            }),
+      /**
+       * **The `FIXTURE_MAP` entry shape (DD-16) — a discriminant, never an
+       * exemption flag.** Every entry still asserts a LEAK is impossible;
+       * `access` changes WHAT is asserted, never WHETHER a route is
+       * asserted. The bidirectional totality test below reads `Object.keys`
+       * only, so it is unaffected by which variant an entry is — a route
+       * with no entry at all still fails there, by name, regardless of
+       * `access`.
+       *
+       * - `{ access: 'public', send }` — a route reachable with no
+       *   authentication that MUST leak nothing to anyone. `send()` is
+       *   called once; the response MUST be a 2xx and MUST be PII-clean
+       *   (`expectRegistrationResponseClean`). This is every entry today.
+       * - `{ access: 'admin', sendAnonymous, sendStaff }` — a route that
+       *   legitimately returns PII, but ONLY to an authenticated `Admin`.
+       *   The assertion is still a leak assertion, aimed at every caller
+       *   who is NOT that Admin:
+       *   - `sendAnonymous()` — the identical request with no
+       *     `Authorization` header — MUST resolve `401`.
+       *   - `sendStaff()` — the identical request authenticated as a
+       *     `Staff` (not `Admin`) principal — MUST resolve `403`.
+       *   - BOTH responses are run through `expectRegistrationResponseClean`,
+       *     which two-layer scans the body: a forbidden-KEY scan
+       *     (`REGISTRATION_FORBIDDEN_KEYS` — includes `payload`, `id`,
+       *     `submitterEmail`, `reviewedByEmail`) and a fixed-VALUE sweep
+       *     (`REGISTRATION_LEAKABLE_VALUES`). For a `401`/`403` this is
+       *     BELT AND SUSPENDERS with the status assertion, not a
+       *     substitute for it: a guard that fails open, or 403s late after
+       *     partially building a body, is still caught here — but caught
+       *     principally by the KEY scan, because every PII field this
+       *     module can leak (`payload`, `submitterEmail`, `id`,
+       *     `reviewedByEmail`, …) is a forbidden KEY, not merely a fixed
+       *     VALUE. **Know the limitation:** `REGISTRATION_LEAKABLE_VALUES`
+       *     is a fixed list drawn from THIS FILE's own fixtures. A route
+       *     that reads a row a later task adds to the Prisma mock — one
+       *     whose values are not in that fixed list — would leak that
+       *     row's VALUES undetected by the value sweep; only the KEY scan
+       *     would still catch it, and only for keys already forbidden
+       *     above. Do not describe this coverage as value-leak-proof
+       *     against arbitrary future rows; it is not.
+       *
+       * **The admin-entry contract, for T-4…T-9 — copy one of the two
+       * shapes above verbatim; do not invent a third.** Adding the FIRST
+       * `access: 'admin'` entry to this map also requires overriding
+       * `JwtAuthGuard` in the OUTER `describe`'s `beforeAll` — the one at
+       * this file's `describe('PII boundary (HTTP e2e) — registrations
+       * module (T-13, release gate: FR-8, NFR-1, DC-1, DC-2)')` block
+       * that builds `app` via
+       * `Test.createTestingModule({ imports: [AppModule] })…compile()` —
+       * NOT the sibling top-level `describe('PII boundary (HTTP e2e) —
+       * registrations module, 429 isolation (T-13, B28)')` further below
+       * in this file, which also builds an app the same way but is a
+       * different block, and NOT this nested `describe('every registered
+       * public route has a fixture …')`, which has no `beforeAll` of its
+       * own and shares the outer block's `app`. Chain
+       * `.overrideGuard(JwtAuthGuard).useValue(new TestJwtAuthGuard())`
+       * onto that same `Test.createTestingModule(...)` call, mapping
+       * fixed bearer tokens to `Admin` / `Staff` / no identity —
+       * `admin-actors-crud.e2e.spec.ts`'s `TestJwtAuthGuard` class and
+       * `TOKEN_USERS` map (both MODULE-scope declarations in that file,
+       * not contents of its `beforeAll` — what lives in that `beforeAll`
+       * is the `.overrideGuard(...)` chain itself) are the exemplar to
+       * copy, not re-derive. `sendStaff()` sends
+       * `Authorization: Bearer staff-token`; `sendAnonymous()` sends no
+       * `Authorization` header at all. Do **not** add an
+       * `Admin`-authenticated request builder to an entry here — a 200
+       * response containing real PII to a legitimately-authorized Admin is
+       * this spec's INTENDED behaviour, asserted by that task's own
+       * feature test (e.g. T-6's registration-detail test), not by this
+       * release gate, whose job stops at proving the boundary holds
+       * against everyone who is not supposed to see it.
+       *
+       * **The sender-to-key binding is NOT enforced by the map's shape —
+       * you must get it right by hand.** Nothing here checks that
+       * `sendAnonymous`/`sendStaff` actually issue a request against the
+       * route their entry is keyed under; a `FixtureEntry` is just two
+       * closures next to a string key. Nothing enforces the match for
+       * `public` entries either — a `public` entry keyed `/verify` that
+       * sends to `/lookup` would also pass green (all four current
+       * entries do match, verified by re-reading each key against its
+       * closure). The true distinction a parameterized `:id`-scoped key
+       * loses is COMPARABILITY: none of the four existing `public` routes
+       * are parameterized, so a literal key CAN be checked by eye against
+       * a sender's literal URL; a parameterized key can never equal its
+       * sender's concrete URL, so that eyeball check is unavailable for
+       * it. `design.md` §5 adds four `:id`-scoped sibling routes — three
+       * writes (`POST /api/v1/admin/registrations/:id/approve`,
+       * `/reject`, `/dismiss-duplicate`) plus one read
+       * (`GET /api/v1/admin/registrations/:id`); a fifth route,
+       * `GET /api/v1/admin/registrations`, is not `:id`-scoped. All three
+       * writes share an identical unauthorized/under-privileged shape
+       * (`401` anonymous / `403` Staff), so they are mutually
+       * substitutable by copy-paste: an entry keyed `.../:id/reject`
+       * whose `sendAnonymous`/
+       * `sendStaff` actually `POST` to `.../:id/approve` returns `401`/
+       * `403` identically and **passes green while `reject` itself is
+       * never exercised** — a plausible copy-paste outcome, not sabotage.
+       * **`sendAnonymous`/`sendStaff` MUST target the exact route this
+       * entry's key names; a request sent to a wrong sibling path also
+       * returns `401`/`403` and will pass green without proving anything
+       * about the route it claims to cover.** When adding a `:id`-scoped
+       * entry, re-read the key string against the URL literal in both
+       * closures before trusting the test.
+       *
+       * **Why `toBe(401)` (not `expect([401, 403]).toContain(...)`) is the
+       * exact, load-bearing assertion for `sendAnonymous()`.** It is the
+       * only check in this file that detects `@UseGuards` order
+       * inversion. `@UseGuards(RolesGuard, JwtAuthGuard)` — guards
+       * reversed from the correct `@UseGuards(JwtAuthGuard, RolesGuard)`
+       * — makes an anonymous caller hit `RolesGuard` first with
+       * `req.user === undefined`, which resolves `403`, not `401`.
+       * Loosening this to `expect([401, 403]).toContain(anonRes.status)`
+       * would make that exact inversion pass. Do not relax it merely
+       * because a future controller returns `403` to an anonymous caller
+       * under some other guard arrangement — that is the bug this
+       * assertion exists to catch, not a false positive to accommodate.
+       *
+       * The scan loop's missing-entry branch (below) is unconditional and
+       * reads `access` only AFTER confirming an entry exists at all — a
+       * route with no entry still `throw`s, never `continue`s, regardless
+       * of which variant a future entry would have used (R-10).
+       */
+      type FixtureEntry =
+        | { access: 'public'; send: () => request.Test }
+        | { access: 'admin'; sendAnonymous: () => request.Test; sendStaff: () => request.Test };
+
+      const FIXTURE_MAP: Record<string, FixtureEntry> = {
+        [routeKey('GET', '/api/v1/registrations/consent-policy')]: {
+          access: 'public',
+          send: () => request(app.getHttpServer()).get('/api/v1/registrations/consent-policy'),
+        },
+        [routeKey('POST', '/api/v1/registrations/verify')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer())
+              .post('/api/v1/registrations/verify')
+              .send({ email: 'route-scan-probe@example.com' }),
+        },
+        [routeKey('POST', '/api/v1/registrations')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer()).post('/api/v1/registrations').send(submitBodyFixture()),
+        },
+        [routeKey('POST', '/api/v1/registrations/lookup')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer())
+              .post('/api/v1/registrations/lookup')
+              .send({
+                reference: APPROVED_REGISTRATION_ROW.reference,
+                email: APPROVED_REGISTRATION_ROW.submitterEmail,
+              }),
+        },
       };
 
       it(
@@ -1196,19 +1333,35 @@ describe(
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);
-            const send = FIXTURE_MAP[key];
+            const entry = FIXTURE_MAP[key];
             // The totality test above is the actual gate for a MISSING
             // entry; this throws rather than silently skipping so the
             // anti-pattern cannot hide by moving to this SECOND consumer of
-            // the same map (RA7).
-            if (!send) {
+            // the same map (RA7). Unconditional and discriminant-independent
+            // — `access` is never consulted until an entry is known to exist
+            // (R-10, DD-16).
+            if (!entry) {
               throw new Error(
                 `RA7: no FIXTURE_MAP entry for ${key} — the totality test above should have caught this first.`,
               );
             }
-            const res = await send();
-            expect([200, 201, 202]).toContain(res.status);
-            expectRegistrationResponseClean(res);
+            if (entry.access === 'public') {
+              const res = await entry.send();
+              expect([200, 201, 202]).toContain(res.status);
+              expectRegistrationResponseClean(res);
+            } else {
+              // Admin-entry contract (DD-16) — exercised for real starting
+              // T-4, the first task to add an `access: 'admin'` entry. Still
+              // a LEAK assertion: an anonymous caller gets 401, a Staff
+              // caller gets 403, and neither response body carries a fixture
+              // value.
+              const anonRes = await entry.sendAnonymous();
+              expect(anonRes.status).toBe(401);
+              expectRegistrationResponseClean(anonRes);
+              const staffRes = await entry.sendStaff();
+              expect(staffRes.status).toBe(403);
+              expectRegistrationResponseClean(staffRes);
+            }
           }
         },
       );

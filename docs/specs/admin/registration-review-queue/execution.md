@@ -250,3 +250,151 @@ None requiring rework. One Leader-side brief defect (the `DIFF_PLACEHOLDER`), co
 #### Final verification result
 
 `npm test -- --silent actor-audit` → **30/30 PASS** · full backend suite 64 suites / 834 tests green · eslint clean · build clean.
+
+### T-3 — `FIXTURE_MAP` gains an access discriminant
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 3) |
+| Date | 2026-09-01 |
+| Implementer attempts | **3** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **xhigh** → **xhigh** → **max** (rework bump) · Skills: `nestjs-expert`, `error-handling-patterns` |
+| Reviewers | Attempt 1: **parallel lens mode**, 2 lens Reviewers (conformance+reliability; risk/security-adversarial). Attempts 2–3: single narrow-scope Reviewer. All `akili-reviewer` (opus, T3). |
+| Review rounds consumed | **4** (running total: **7** of 35) |
+| Requirements covered | NFR-1 (release gate) · `design.md` DD-16 · R-10 |
+
+**The isolation property R-10 requires was genuinely held:** T-1 and T-2 were committed and **no admin route or controller existed** when the intermediate green run was taken. `AdminRegistrationsController` is unwritten. A failure here was attributable to the discriminant edit alone.
+
+#### Attempt 1 — the code (PASSED, and unchanged through attempts 2–3)
+
+Files: `backend/src/test/pii-boundary.spec.ts` only (99 insertions, 22 deletions at this attempt).
+
+`FIXTURE_MAP`'s value type became a discriminated union:
+
+```ts
+type FixtureEntry =
+  | { access: 'public'; send: () => request.Test }
+  | { access: 'admin'; sendAnonymous: () => request.Test; sendStaff: () => request.Test };
+```
+
+All four existing entries became `{ access: 'public', send: <the previous sender> }`. The scan loop branches on `access` **after** the unconditional missing-entry `throw`.
+
+**Intermediate green run — the deliverable, taken before any route exists:**
+
+```
+> jest --silent pii-boundary
+PASS src/test/pii-boundary.spec.ts
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+```
+
+**Falsifying input — and an honest disclosure that improved on the task text.** The mutation was `throw` → `continue` plus a temporary `@Get('t3-throwaway-probe')` on `RegistrationsController` with no `FIXTURE_MAP` entry. **The task's stated falsifying input is wrong about this file:** the bidirectional totality assertion is an independent second detector of the same condition, so the suite can *never* go fully green under that mutation. Rather than report a green it could not have obtained, the Implementer isolated the single test under review:
+
+```
+> jest --silent pii-boundary -t "every discovered route's fixture response is PII-clean"
+PASS src/test/pii-boundary.spec.ts
+Test Suites: 1 passed, 1 total
+Tests:       23 skipped, 1 passed, 24 total
+```
+
+Restoring the `throw` with the throwaway route still present reddened both detectors:
+
+```
+FAIL src/test/pii-boundary.spec.ts
+  ● ... FIXTURE_MAP has EXACTLY one entry per route ...
+    "GET /api/v1/registrations/t3-throwaway-probe" (missing from FIXTURE_MAP)
+  ● ... every discovered route's fixture response is PII-clean ...
+    RA7: no FIXTURE_MAP entry for GET /api/v1/registrations/t3-throwaway-probe — the totality test above should have caught this first.
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 22 passed, 24 total
+```
+
+Both mutations reverted; `grep -rn "t3-throwaway" backend/src/` → no residue (Leader-verified). A Reviewer judged the `-t` isolation **a valid two-sided mutation experiment, not an artefact of test selection** — it removes only the *other* detector, whose failure would have masked attribution.
+
+**Adversarial security verdict — the highest-stakes check, and it came back clean.** The `admin` branch has zero coverage today, so the danger was a **vacuously-passing leak assertion** that would report green across all five PII-bearing routes T-4…T-9 add. The Reviewer traced every leak mode against the real guards and found no silent-pass path:
+
+| Leak mode | Caught by | Vacuous? |
+|---|---|---|
+| Guard missing → `200` + PII to anonymous | `toBe(401)` | No |
+| Guard fails open for Staff → `200` + PII | `toBe(403)` | No |
+| `403` thrown late, after a body was partially built | forbidden-**key** scan (`payload`, `id`, `submitterEmail`, `reviewedByEmail`), value-independent | No |
+| Sender points at a non-existent path (typo) | Nest `404`, guards never run → `toBe(401)` reddens | No |
+
+`expectRegistrationResponseClean` on an error envelope passes the key scan correctly and non-dangerously; `res.text` **is** populated for `application/json`, so the value sweep runs for real; and were it ever `undefined`, the matcher throws rather than skipping. Mislabeling fails in **both** directions (admin route marked `public` → `401` fails the 2xx check; public route marked `admin` → `2xx` fails `toBe(401)`). DD-16's rejected option (a), an exemption flag, is **structurally absent from the code**, not merely deprecated in prose.
+
+Both attempt-1 Reviewers returned `STATUS: PASS`.
+
+#### Attempts 2 and 3 — the contract comment, and why they were run
+
+**The code was never in question after attempt 1 and never changed again** — the Leader re-verified byte-identity of the non-comment changed lines after each subsequent attempt.
+
+What failed twice was T-3's *other* named deliverable: *"Document the admin-entry contract for T-4…T-9 to follow."* Six tasks copy this block, and it shipped a false claim twice running:
+
+| Attempt | Defect in the contract text | Class |
+|---|---|---|
+| 1 | Told T-4 to override `JwtAuthGuard` in "this `describe`'s `beforeAll`" — **the nested `describe` has none**; the app is built in the outer one. | KZ-008 |
+| 1 | "do not invent a seventh shape" — **no referent**; there are two variants. | KZ-005 (figures vs prose) |
+| 1 | Claimed a fail-open/late-`403` body is caught "as a **value** leak" — it is caught by the forbidden-**key** scan; `REGISTRATION_LEAKABLE_VALUES` is a fixed list from this file's own fixtures. | KZ-008 |
+| 2 | Fixed all three, then **introduced a new one**: folded `GET /admin/registrations/:id` into a set described as "`POST /admin/registrations/:id/*` routes" and called them "four writes". | KZ-008 — **FAIL** |
+| 3 | None found. | — |
+
+**Leader adjudication — why these were treated as unfinished scope rather than as advisories.** The command's *Advisory Never Becomes A Task* rule forbids minting new work from advisory findings. That rule was **not** in tension here: the admin-entry contract is T-3's own stated deliverable, so correcting false claims in it is completing the assigned task, not widening it. Three of the four defects are KZ-008 instances — a standing constitutional lesson — in a document six later tasks will follow as instructions.
+
+**The route table, verified by the Leader at source (`design.md` §5) and handed to attempt 3 as ground truth:**
+
+| Method & path | Kind | `:id`-scoped? |
+|---|---|---|
+| `GET /api/v1/admin/registrations` | read (collection) | no |
+| `GET /api/v1/admin/registrations/:id` | read | yes |
+| `POST /api/v1/admin/registrations/:id/approve` | write | yes |
+| `POST /api/v1/admin/registrations/:id/reject` | write | yes |
+| `POST /api/v1/admin/registrations/:id/dismiss-duplicate` | write | yes |
+
+`:id`-scoped = **4** (1 read + 3 writes) · `POST /:id/<segment>` = **3** · writes = **3**.
+
+#### The clause that justifies the whole rework — the gate's cheapest neutralisation
+
+The adversarial Reviewer found that **nothing binds a fixture's sender to the key it is filed under.** This was harmless until now: none of the four public routes are parameterized, so each sender's literal URL could be checked by eye against its key. **T-4…T-9 is the first time a key contains `:id` and therefore can never equal its sender's concrete URL.**
+
+Because all three writes share an identical `401`/`403` unauthorized shape, an entry keyed `.../:id/reject` whose senders actually `POST` to `.../:id/approve` **returns `401`/`403` identically and passes green while `reject` is never exercised.** Three of the four `:id`-scoped routes are mutually substitutable this way, and it is a plausible copy-paste outcome, not sabotage.
+
+Attempt 3's contract now carries this as an explicit mandate — *"`sendAnonymous`/`sendStaff` MUST target the exact route this entry's key names; a request sent to a wrong sibling path also returns `401`/`403` and will pass green without proving anything about the route it claims to cover"* — plus the instruction to re-read the key against both URL literals by hand when adding an `:id`-scoped entry.
+
+It also now records **why `toBe(401)` is exact**: it is the only assertion in the file that detects `@UseGuards` order inversion. `@UseGuards(RolesGuard, JwtAuthGuard)` makes an anonymous caller hit `RolesGuard` with `req.user === undefined` → `403`, not `401`; relaxing it to `expect([401,403]).toContain(...)` would certify that inversion as correct.
+
+#### Final Reviewer verdict (attempt 3)
+
+**`STATUS: PASS`**
+> Every assertion in the contract block checks out at source — the five-route enumeration now matches `design.md` §5 exactly, both `describe` anchors are byte-exact and unambiguous, the exemplar's module-scope-vs-`beforeAll` split is stated correctly, and the comparability wording no longer overstates enforcement. I found no new false claim introduced by this attempt.
+
+Independently corroborated by the Leader: `pii-boundary.spec.ts:1084` and `:1500` carry the quoted titles verbatim; `admin-actors-crud.e2e.spec.ts:109`/`:135` are module-scope declarations as described.
+
+#### Final verification
+
+```
+PASS src/test/pii-boundary.spec.ts
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+```
+`npx eslint "src/test/pii-boundary.spec.ts" --quiet` → clean. Full backend suite at attempt 1: 64 suites / 834 tests green.
+
+#### ADVISORY (recorded, non-gating, **not** convertible into tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| A-15 | **Sender/key binding is still unenforced structurally.** The contract now warns about it in prose; a structural fix (admin variant carries `{ method, url }`, senders derived, `url` asserted against the key's path with `:param` substituted, ~10 lines) was **explicitly held out of scope**. | **FORWARD POINTER → T-4.** Copy the warning into T-4's brief. A later task may close it structurally; this spec does not. |
+| A-16 | **The `admin` branch has never executed** — no entry uses it yet. Its 401/403 assertions are structurally present and type-checked, not empirically proven. T-4 is where they first run. | Recorded. `tasks.md` T-4 already says a green `pii-boundary` there proves *an* entry, not a correct one. |
+| A-17 | **The `it` title's request count goes stale at T-4.** It says "4 requests total against this describe block's own throttle bucket"; each admin entry costs **two** requests, so five admin routes take it to 14. No real throttle risk (the admin controller is outside `RegistrationsThrottleGuard`; the limit is per-handler), but the B28 note says these counts are maintained in the `it` comments. | **FORWARD POINTER → T-4 / T-10.** Update the number rather than let it rot. |
+| A-18 | Consider splitting the scan loop per route (`it.each` over `Object.keys(FIXTURE_MAP)`; senders are lazy closures so collection-time evaluation is safe) so one broken route does not mask the other four. Today the first failing route aborts the loop — the gate still reddens, but under-reports. | Recorded. Held out of scope deliberately. |
+| A-19 | The exemplar asserts `403` for **three** non-Admin identities (no token, `staff-token`, `public-token`); the admin variant covers two. DD-16 names only anonymous and Staff, so this is conformant — but an authenticated `Public`-group identity is one this gate will not see. | Recorded. Cheap to add as a third sender if T-4 finds it free. |
+| A-20 | Minor residual imprecisions in the block, all judged non-blocking by the final Reviewer: "MUST be a 2xx" is looser than the code's `[200,201,202]`; a third top-level `describe` (contact module, ~line 1661) also builds an app but shares no name prefix; "no identity" is not literally a token mapping; the `(R-10)` tag on the throw-not-continue mandate would be more precisely `DD-16`. | Recorded, no fix required. |
+
+#### Decisions made
+
+- **Parallel lens mode at attempt 1** (effort `xhigh` + release-gate/security surface), narrowed to a **single focused Reviewer** for attempts 2–3 once the executable code was settled and only prose was in question — proportionality against the 35-round budget.
+- **The two contract corrections were run as T-3 rework, not deferred into T-4's brief.** Deferring would have made T-4's Implementer fix T-3's file while doing T-4, muddying exactly the attribution R-10 exists to protect.
+- Effort bumped `xhigh` → `max` at attempt 3 per the rework rule.
+
+#### Issues encountered
+
+Two rework cycles, both on documentation accuracy, neither on code. The pattern is worth carrying forward: **this task's executable claims were verifiable and got verified; its prose claims were the ones that drifted from the repo.** Attempt 3 required a claim-by-claim self-audit table before reporting, which is the control that closed it.
