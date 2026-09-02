@@ -29,9 +29,31 @@
  * access token via `getSession()` and redirects to `/login` on
  * unauthenticated or `AuthFailureError` — server-side enforcement is the
  * real gate (DD-22 / `frontend/CLAUDE.md`).
+ *
+ * **T-14 — `loadDetail` is reused for both the initial fetch and post-
+ * mutation refresh.** `RegistrationDetailPanel`'s approve/reject/dismiss
+ * mutations return minimal envelopes (`registrations-admin.ts`'s doc
+ * comments) with no refreshed status, activity trail, or duplicate-
+ * candidate list — those arrive only on the next `GET /:id`. `onRefresh`
+ * below re-runs the SAME fetch+error-handling path as the initial load,
+ * without re-showing the full-page `ReviewFallback` skeleton (that would
+ * hide the panel — including any in-flight dialog — mid-mutation).
+ *
+ * **T-14 attempt-2 fix — the data write is cancellation-gated again.**
+ * `loadDetail` takes a `shouldApply: () => boolean` predicate and checks it
+ * AFTER the `await`, immediately before every `setDetail`/`setError` call
+ * (mirroring T-13's original two `if (cancelled) return;` guards around its
+ * inline fetch). The mount effect passes `() => !cancelled`, so a soft
+ * navigation that changes `?id=` mid-flight cannot let the earlier,
+ * later-resolving request overwrite state for the newer id — the effect's
+ * cleanup flips `cancelled` and the stale response's `shouldApply()` call
+ * returns `false`. `handleRefresh` passes `() => true`: a manual
+ * post-mutation refresh has no competing request to lose to, and gating it
+ * on the mount effect's `cancelled` flag would (wrongly) drop the refresh's
+ * own result once the effect had already settled.
  */
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { getSession } from '@/lib/auth/auth-client';
@@ -109,36 +131,33 @@ function ReviewView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const handleAuthFailure = useCallback(() => {
+    router.push('/login');
+  }, [router]);
 
-    async function init() {
-      setError(null);
-      setLoading(true);
-
-      const session = await getSession();
-      if (cancelled) return;
-
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      setToken(session.accessToken);
-
-      if (!id) {
-        setLoading(false);
-        return;
-      }
-
+  /**
+   * T-14 — shared by the initial load AND `onRefresh` (passed to
+   * `RegistrationDetailPanel` for after a successful approve/reject/
+   * dismiss). Deliberately does not touch `loading`: a post-mutation
+   * refresh must not re-show `ReviewFallback`, which would unmount the
+   * panel — and any dialog/result banner it owns — mid-interaction.
+   *
+   * `shouldApply` is re-checked immediately after the `await`, before
+   * EVERY state write (success and error alike) — the cancellation gate
+   * T-13 shipped as two inline `if (cancelled) return;` checks, now
+   * parameterised so the caller decides what "stale" means.
+   */
+  const loadDetail = useCallback(
+    async (regId: string, accessToken: string, shouldApply: () => boolean) => {
       try {
-        const data = await adminGetRegistration(id, session.accessToken);
-        if (cancelled) return;
+        const data = await adminGetRegistration(regId, accessToken);
+        if (!shouldApply()) return;
         setDetail(data);
+        setError(null);
       } catch (err) {
-        if (cancelled) return;
+        if (!shouldApply()) return;
         if (err instanceof AuthFailureError) {
-          router.push('/login');
+          handleAuthFailure();
           return;
         }
         if (err instanceof ApiError && err.status === 404) {
@@ -146,6 +165,38 @@ function ReviewView() {
         } else {
           setError(err instanceof Error ? err.message : 'Failed to load registration.');
         }
+      }
+    },
+    [handleAuthFailure]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      setError(null);
+      setLoading(true);
+
+      // react-doctor no-loading-flag-reset-outside-finally: a single
+      // try/finally, not `setLoading(false)` sprinkled after every exit
+      // point (pre-existing gap from T-13, closed here since this effect
+      // was already being rewritten for T-14). This also covers a `get
+      // Session()` throw itself, which the prior scattered-reset shape did
+      // not — `loading` would have stayed stuck true with no recovery path.
+      try {
+        const session = await getSession();
+        if (cancelled) return;
+
+        if (!session) {
+          handleAuthFailure();
+          return;
+        }
+
+        setToken(session.accessToken);
+
+        if (!id) return;
+
+        await loadDetail(id, session.accessToken, () => !cancelled);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -155,7 +206,12 @@ function ReviewView() {
     return () => {
       cancelled = true;
     };
-  }, [id, router]);
+  }, [id, handleAuthFailure, loadDetail]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!id || !token) return;
+    await loadDetail(id, token, () => true);
+  }, [id, token, loadDetail]);
 
   if (loading) {
     return <ReviewFallback />;
@@ -194,7 +250,12 @@ function ReviewView() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <RegistrationDetailPanel detail={detail} />
+      <RegistrationDetailPanel
+        detail={detail}
+        token={token}
+        onRefresh={handleRefresh}
+        onAuthFailure={handleAuthFailure}
+      />
     </div>
   );
 }

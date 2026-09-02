@@ -69,6 +69,10 @@ import Link from 'next/link';
 
 import type { AdminRegistrationListRow, RegistrationStatus } from '@/lib/api/registrations-admin';
 import { roleLabel, type TraderType } from '@/lib/content/roles';
+import {
+  REGISTRATION_STATUS_LABEL,
+  REGISTRATION_STATUS_BADGE_CLASSES,
+} from '@/lib/content/registration-status';
 
 // ---------------------------------------------------------------------------
 // Breakpoint — single source; see the measured `md` decision in the
@@ -126,52 +130,22 @@ function formatDate(iso: string): string {
 }
 
 /**
- * Status badge label/tokens — reuses the `ConsentBadge` token pairing from
- * `ActorsTable.tsx` (`highlight-tint`/`success` for a settled-good state,
- * `danger-soft`/`danger` for a settled-negative state, `border`/`muted` for
- * a neutral/waiting state) rather than inventing a new palette.
- *
- * `AWAITING_APPLICANT`/`WITHDRAWN` are handled defensively (the type is the
- * full `RegistrationStatus` union) but are never actually produced by this
- * chunk's data or reachable via the page's segment control (FR-9 scenario 1).
+ * Status badge label/tokens — `@/lib/content/registration-status`'s total
+ * `Record<RegistrationStatus, …>` maps (T-14, carried forward from T-13's
+ * review, A-78/A-79). `AWAITING_APPLICANT`/`WITHDRAWN` are covered
+ * defensively (the type is the full `RegistrationStatus` union) but are
+ * never actually produced by this chunk's data or reachable via the page's
+ * segment control (FR-9 scenario 1).
  */
-function statusLabel(status: RegistrationStatus): string {
-  switch (status) {
-    case 'PENDING_REVIEW':
-      return 'Pending review';
-    case 'APPROVED':
-      return 'Approved';
-    case 'REJECTED':
-      return 'Rejected';
-    case 'AWAITING_APPLICANT':
-      return 'Awaiting applicant';
-    case 'WITHDRAWN':
-      return 'Withdrawn';
-    default:
-      return status;
-  }
-}
-
-function statusBadgeClasses(status: RegistrationStatus): string {
-  switch (status) {
-    case 'APPROVED':
-      return 'bg-highlight-tint text-success';
-    case 'REJECTED':
-      return 'bg-danger-soft text-danger';
-    default:
-      return 'bg-border text-muted';
-  }
-}
-
 function StatusBadge({ status }: { status: RegistrationStatus }) {
   return (
     <span
       className={[
         'inline-flex items-center self-start rounded-full px-2 py-0.5 text-xs font-medium',
-        statusBadgeClasses(status),
+        REGISTRATION_STATUS_BADGE_CLASSES[status],
       ].join(' ')}
     >
-      {statusLabel(status)}
+      {REGISTRATION_STATUS_LABEL[status]}
     </span>
   );
 }

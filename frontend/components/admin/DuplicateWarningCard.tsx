@@ -2,15 +2,28 @@
 'use client';
 
 /**
- * DuplicateWarningCard — read-time duplicate-candidate warning (FR-11
- * scenario 1).
+ * DuplicateWarningCard — duplicate-candidate warning with per-candidate
+ * dismissal (FR-11 scenarios 1-2).
  *
- * **Display only in this task.** FR-11 is explicit that detection "MUST
- * NOT block, reject, merge, or auto-approve" — this card never pre-selects
- * rejection and offers no action here. The per-candidate dismissal control
+ * FR-11 is explicit that detection "MUST NOT block, reject, merge, or
+ * auto-approve" — this card never pre-selects rejection; dismissing a
+ * candidate only records that the reviewer judged it NOT a duplicate
  * (FR-11 scenario 1's "allow the reviewer to record that a candidate is not
- * a duplicate") is T-14's wiring into this same file; T-13 covers naming
- * the candidates so a reviewer can judge them.
+ * a duplicate"). T-13 covered naming the candidates so a reviewer can judge
+ * them; T-14 wires the dismiss control itself.
+ *
+ * **Per candidate, never row-level (FR-11 scenario 2).** `onDismiss` is
+ * called with ONE candidate's `actorId` at a time — dismissing one
+ * candidate must never suppress the others. The caller (`Registration
+ * DetailPanel.tsx`) re-fetches the registration after a successful
+ * dismissal rather than assuming the response carries the refreshed list
+ * (`registrations-admin.ts`'s `DismissDuplicateResult` is minimal by
+ * design — see that file's doc comment).
+ *
+ * `onDismiss` is optional so this card still renders read-only wherever a
+ * caller has no token/mutation path available (mirrors `DuplicateWarning
+ * CardProps` staying backward-compatible with T-13's original read-only
+ * usage) — omitting it renders no dismiss control at all.
  *
  * Candidates carry `{ actorId, traderId, traderName, matchedOn }` — no
  * `phone`/`email` VALUES ever cross the wire here (`duplicate-detection.
@@ -52,6 +65,14 @@ const MATCH_ATTRIBUTE_LABEL: Record<DuplicateMatchAttribute, string> = {
 export interface DuplicateWarningCardProps {
   /** Open (non-dismissed) candidates for this registration — `AdminRegistrationDetail.duplicateCandidates`. */
   candidates: DuplicateCandidate[];
+  /**
+   * Called with a single candidate's `actorId` when the reviewer marks it
+   * as not a duplicate (FR-11 scenario 1/2). Omit to render read-only (no
+   * dismiss control), matching this card's original T-13 usage.
+   */
+  onDismiss?: (candidateActorId: string) => void;
+  /** `actorId` of the candidate currently being dismissed, if any — disables just that candidate's button while in flight. */
+  dismissingId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +92,11 @@ function matchedOnLabel(matchedOn: DuplicateMatchAttribute[]): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function DuplicateWarningCard({ candidates }: DuplicateWarningCardProps) {
+export function DuplicateWarningCard({
+  candidates,
+  onDismiss,
+  dismissingId = null,
+}: DuplicateWarningCardProps) {
   const count = candidates.length;
 
   if (count === 0) {
@@ -104,20 +129,42 @@ export function DuplicateWarningCard({ candidates }: DuplicateWarningCardProps) 
       </p>
 
       <ul role="list" className="mt-3 space-y-2">
-        {candidates.map((candidate) => (
-          <li
-            key={candidate.actorId}
-            role="listitem"
-            className="rounded-md border border-border bg-surface p-3"
-          >
-            <p className="text-sm font-medium text-fg">{candidate.traderName}</p>
-            <p className="text-xs text-muted">
-              Existing record <span className="font-medium text-fg">{candidate.traderId}</span>
-              {' — matched on '}
-              <span className="font-medium text-fg">{matchedOnLabel(candidate.matchedOn)}</span>
-            </p>
-          </li>
-        ))}
+        {candidates.map((candidate) => {
+          const isDismissing = dismissingId === candidate.actorId;
+          return (
+            <li
+              key={candidate.actorId}
+              role="listitem"
+              className="flex items-start justify-between gap-3 rounded-md border border-border bg-surface p-3"
+            >
+              <div>
+                <p className="text-sm font-medium text-fg">{candidate.traderName}</p>
+                <p className="text-xs text-muted">
+                  Existing record <span className="font-medium text-fg">{candidate.traderId}</span>
+                  {' — matched on '}
+                  <span className="font-medium text-fg">{matchedOnLabel(candidate.matchedOn)}</span>
+                </p>
+              </div>
+              {onDismiss && (
+                <button
+                  type="button"
+                  onClick={() => onDismiss(candidate.actorId)}
+                  disabled={isDismissing}
+                  aria-busy={isDismissing}
+                  aria-label={`Mark ${candidate.traderName} as not a duplicate`}
+                  className={[
+                    'shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-fg',
+                    'transition-colors hover:bg-surface-alt',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                  ].join(' ')}
+                >
+                  {isDismissing ? 'Marking…' : 'Not a duplicate'}
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

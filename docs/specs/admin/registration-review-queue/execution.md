@@ -1885,3 +1885,146 @@ Both false statements in **T-12's entry** are retracted in place, with the mecha
 #### Decisions made
 
 - **The Leader's own error is recorded above at length rather than quietly fixed**, because the failure mode — accepting a plausible correction without reading the artefact, then propagating it into a brief — is exactly what this spec's KZ-008 discipline exists to catch, and the Leader is not exempt from it.
+
+### T-14 — Decision surfaces: approve via `AcknowledgeDialog`, `RejectDialog`, dismissal wiring
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** → **xhigh** · Skills: `shadcn-ui`, `tailwind-design-system`, `react-doctor` |
+| Reviewer | `akili-reviewer` (opus, T3) — lens-checklist; acknowledgement gate + token semantics primary |
+| Review rounds consumed | **2** (running total: **28** of 35) |
+| Requirements covered | FR-11 scenario 2 (UI limb) · FR-12 scenario 3 · FR-13 scenario 1 (UI limb) · NFR-5 · NFR-6 (**see the NFR-6 finding below**) · `design.md` §7.4 |
+
+#### Files changed
+New: `components/admin/RejectDialog.tsx` + test (15 tests), `lib/content/registration-status.ts`.
+Modified: `RegistrationDetailPanel.tsx` + test (26 tests), `DuplicateWarningCard.tsx` + test, `RegistrationsTable.tsx`, `review/page.tsx` + test.
+
+---
+
+## ⚠️ A SPEC DEFECT — NFR-6 fails at the rendered DOM, and T-14's contract is unsatisfiable as written
+
+`design.md` §7.4 rejects `ConfirmDialog` **"twice over"**: it is for destructive confirms, **and** *"it hardcodes its confirm button as `bg-danger` — a red destructive button on a publish action, contradicting this project's rule that `danger` means destructive."*
+
+**Verified at source by the Implementer, the Leader, and the Reviewer independently:**
+
+| File | Confirm-button class |
+|---|---|
+| `ConfirmDialog.tsx:245` | `'rounded-md bg-danger px-4 py-2 text-sm font-medium text-primary-fg'` |
+| `AcknowledgeDialog.tsx:379` | `'rounded-md bg-danger px-4 py-2 text-sm font-medium text-primary-fg'` |
+
+**Byte-identical**, and both also carry `focus-visible:ring-danger`. **The design's second reason for rejecting `ConfirmDialog` applies verbatim to the replacement it mandates.**
+
+**It is worse than §7.4.** `requirements.md` **FR-12 scenario 3** carries the same false clause — *"`ConfirmDialog` **additionally** hardcodes its confirm button as `bg-danger`"* — and **the word "additionally" is what makes it false**, asserting a contrast that does not exist. **The defect sits in `requirements.md` as well as `design.md`; T-16's sweep must hit both or KZ-004 fires.**
+
+**NFR-6 fails at the rendered-DOM level.** Its measure is explicit: *"`danger` is reserved for destructive semantics and MUST NOT style the publish action."* The publish action's confirm button renders `bg-danger`. **Every line T-14 authored complies** — the violation arrives through a component the requirement itself **mandates**. T-14's Done-when clause *"`danger` used for rejection only"* is therefore **unsatisfiable as written**; no in-scope edit closes it.
+
+**Disposition: recorded against T-16 and escalated to the user; it does not gate T-14.** Both remediations lie outside T-14's `Files` list and touch a component shared by **three shipped call sites across two archived specs** (bulk unlock, import commit, `ActorForm`). Editing it under T-14 would be exactly the unreviewed cross-spec collateral the Reviewer role exists to prevent; failing T-14 would return a task no in-scope edit can close.
+
+**The decision itself survives intact** — `frontend/CLAUDE.md`'s *"required before any `consentStatus = GRANTED` submit"* is untouched and decisive on its own. **Only half the rationale falls.**
+
+**Three things T-16 must carry, or the disposition fails:**
+1. The prose fix in **both** documents.
+2. **The visible outcome, escalated — not closed by the prose fix.** Amending §7.4 to say *"AcknowledgeDialog also renders `bg-danger`"* makes the docs true and **leaves the red publish button shipped**, converting a live NFR-6 violation into a documented one. Cheapest option for the user: a backwards-compatible **`tone?: 'danger' | 'primary'`** prop on `AcknowledgeDialog` defaulting to `'danger'`, so the three existing call sites render byte-identically and only the approve site opts into `bg-primary`.
+3. **A note that the green token test does not prove NFR-6.** The passing assertion is scoped to the *trigger* buttons. Nobody should later read that green as coverage of the dialog confirm.
+
+---
+
+## The falsifying input was partially vacuous — discovered by running it
+
+The Implementer ran **two** variants and reported both:
+
+| Variant | Result |
+|---|---|
+| **A — props-preserving swap** (`import { ConfirmDialog as AcknowledgeDialog }`, same props) | **1 of 26** reddened — the import-identity grep only. **The rendering-based typed-input assertion did NOT redden.** |
+| **B — the realistic misuse** (swap **and** drop `acknowledgementText`, as `ConfirmDialog` is invoked at most of its other call sites) | **7 of 26** reddened, including the primary typed-gate assertion |
+
+**The Reviewer confirmed Variant A by line-for-line source comparison, not by trusting the report:** with `acknowledgementText` supplied and `provenance` omitted, the two components render **identical DOM** — same panel classes, same `aria-describedby` composition, same label `Type “…” to confirm`, same input attributes including `aria-invalid`, **byte-identical hint** (`'Confirm is disabled until the acknowledgement is entered exactly.'`), same error block, same button classes, equivalent disabled predicate. The only non-rendering difference is `cancelRef` focus.
+
+**So the task's stated falsifying input — *"assert the approve path renders `AcknowledgeDialog`'s typed input; the swap must redden"* — is imprecise.** Variant B is the honest form for the rendering assertion; the import-identity grep is the honest form for the props-preserving case. **Fifth instance of this spec's stated verification proving imprecise — recorded for T-16.**
+
+---
+
+## ATTEMPT 1 — three FAIL issues
+
+### Issue 1 — a regression introduced while claiming to close a gap
+
+**T-14 deleted two `if (cancelled) return;` guards T-13 had shipped.** Leader-verified against the committed version: T-13 had **four** `cancelled` checks; attempt 1 had **two**, and the two guarding the **data write** were gone.
+
+> `setDetail(data)` / `setError(...)` ran **unconditionally after the await**, with no cancellation token, no `AbortController`, no generation counter. On a soft navigation between two review URLs, **both fetches race and the later-resolving one wins — the panel displays registration A under `?id=B`.**
+
+**The effect's own comment claimed the rewrite *closed* a pre-existing gap. It closed the `loading`-reset gap and opened a stale-response gap in the same edit.** Violated `.agents/reviewer.md` § *Stability & Integrity: are unrelated code blocks preserved?* — shipped behaviour removed **without disclosure**.
+
+### Issue 2 — an ungated clause plus a false coverage claim
+FR-12 scenario 3's *"the modal states what approval will do"* was implemented correctly but **asserted nowhere** — deleting the sentence reddened nothing — while the test header **claimed the coverage existed**. L-3's "no third option" rule: name the mutation or declare the gap.
+
+### Issue 3 — the test header contradicted its own inline comment (KZ-008)
+The header claimed `ConfirmDialog` *"renders a differently-worded hint"* and that the swap reddens the rendering assertion. **Both false**, and the file's **own inline comment stated the truth correctly and at length.** The file documented the spec's most consequential gate **twice, contradictorily, with the false version first.**
+
+---
+
+## ATTEMPT 2 — all three fixed, with mutation proofs
+
+### Fix 1 — cancellation restored, and proven
+
+`loadDetail(regId, accessToken, shouldApply: () => boolean)` re-checks the predicate after the await. **The Reviewer verified all three post-await write paths are gated** — success, and the `catch` guard sits **before** the `AuthFailureError` branch, so a stale 401's `router.push('/login')` is gated too.
+
+**Mutation proof (guards removed, param retained):**
+```
+FAIL app/(admin)/admin/registrations/review/page.test.tsx
+  ● RegistrationReviewPage › T-14: a stale response cannot overwrite a newer one after id changes mid-flight
+    expect(element).toHaveTextContent()
+    Expected element to have text content: REG-2026-0200
+    Received: REG-2026-0184
+Tests: 1 failed, 6 passed, 7 total
+```
+
+**The test is a genuine two-in-flight, out-of-order exercise**, not a simulation — the Reviewer traced it: both promises are never-auto-resolving deferreds, the test `waitFor`s proof that **both** fetches were issued before resolving anything, then resolves **B first, A second**.
+
+**And the attempt-1 `loading`-reset fix survives alongside it.** The Reviewer noted the `!cancelled` conditional is **load-bearing, not defensive noise**: without it, a cancelled instance's `finally` would flip `loading` false while the new id's fetch is in flight, **flashing registration A's panel under `?id=B` — the same bug, one frame wide.**
+
+### Fix 2 — the clause is now gated, and the scoping is what makes it meaningful
+The new assertion is **`within(dialog)`-scoped**, which matters: `DecisionPanel` carries a **near-identical sentence**, so an unscoped query would have thrown on multiple matches and a lazily-scoped one **could have been satisfied by the panel copy while the dialog said nothing.** Scoped to the `role="dialog"` node, only the `AcknowledgeDialog` description can satisfy it. Mutation proof: deleting the disclosure clause reddened it; reverted → 26/26.
+
+### Fix 3 — the header verified true against both dialogs' source
+Rewritten to state that a props-preserving swap is **rendering-indistinguishable** and caught **only** by the import-identity grep. The Reviewer verified the secondary claim too: of five `ConfirmDialog` call sites, **three omit `acknowledgementText`**, so *"most of its other call sites"* is accurate.
+
+---
+
+## The five carried obligations — all landed, all verified
+
+| # | Obligation | Verification |
+|---|---|---|
+| **A-71** | Total `Record<RejectionReasonCode, string>` | Proven by `TS2741` on removing a member. **But see A-83 — the protection A-71 promised does not actually exist.** |
+| **A-62** | The hand-duplicated reason list documented as ungated | Reviewer checked **all five code/label pairs byte-for-byte against `REJECTION_REASONS_SOURCE`, ordering included** |
+| **A-78** | Shared status vocabulary | `lib/content/registration-status.ts` consumed by **both** `RegistrationsTable` and `RegistrationDetailPanel` |
+| **A-79** | Exhaustive, no `default:` | Both maps are total `Record<RegistrationStatus, string>` |
+| **A-80** | Five unasserted payload fields | All five now covered |
+
+## Auditability — "several" was not good enough
+
+Told that an unenumerated dismissal set cannot be audited (**KZ-008 extends to evidence artefacts**), the Implementer enumerated **nine** `react-doctor` dismissals with file, line and reason — and **flagged two new findings in its own code** as judged false positives rather than dismissing them silently.
+
+**The Reviewer confirmed both judgments correct**, tracing the second in detail: after `approveRegistration` resolves, the dialog closes *before* `await onRefresh()`, so the trigger is clickable while `approveLoading` is still true — but the dialog receives `loading={approveLoading}`, and both the `disabled` attribute and an internal `if (!canConfirm || loading) return;` guard block a second call. **No newer request exists for that `finally` to stomp.**
+
+**The one provenance claim the Reviewer could not check (read-only tools), the Leader verified:** `role="list"`/`role="listitem"` **are** present in T-13's committed `DuplicateWarningCard.tsx` (lines 106, 110) — carried, not introduced by T-14. Dismissal correct.
+
+## Final verification — Leader-run
+
+`RejectDialog` 15/15 · `RegistrationDetailPanel` 26/26 · `review/page` 7/7 · full frontend **108 suites / 1,607 tests** (baseline 107/1,568) · build **27/27 static** · `tsc` only the one pre-existing unrelated error · lint clean.
+
+## ADVISORY (recorded, non-gating)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-83** | **A-71's promised protection does not exist.** A total `Record<RejectionReasonCode, string>` catches a union member **added** (`TS2741`) or a map member **removed** — but **not widening to `string`**, which was A-71's *actual* concern: `Record<string, string>` is satisfied by any object literal, and `REJECTION_REASON_ORDER`'s `as RejectionReasonCode[]` cast erases the remainder. T-14 built exactly what was asked; **the false claim is inherited from T-11's review.** | **FORWARD POINTER → T-16.** **Sixth** instance of stated-verification imprecision. |
+| **A-84** | **`handleRefresh`'s `() => true` leaves a narrow hole, and its comment justifies it wrongly in both halves.** A competing request *can* exist (navigating `?id=A` → `?id=B` while a post-mutation refresh for A is in flight — the refresh wins if it resolves later, **writing A's detail under `?id=B`: Fix 1's bug through the other door**). And `cancelled` never becomes true for a settled-and-current effect, so gating on it would drop **precisely** the refreshes that should be dropped. Window is genuinely narrow (no in-app link between review URLs; requires browser back/forward inside one GET's latency). | Recorded. The Reviewer declined to gate but noted *"a comment supplying an incorrect justification for the one remaining hole is the same defect in miniature."* Remediation: promote `cancelled` to a ref/generation counter and gate on it, **or** replace the rationale with the honest version. |
+| **A-85** | **The import-identity grep is spelling-specific** — `/from ['"]\.\/ConfirmDialog['"]/` matches the relative form only, while `ActorsTable.tsx` in the same directory imports it as `@/components/admin/ConfirmDialog`. A props-preserving swap written that way evades **both** the grep and every rendering assertion. | Recorded. Widen to `/from ['"](\.\/\|@\/components\/admin\/)ConfirmDialog['"]/`. |
+| **A-86** | **The `jest-axe clean (NFR-5)` header claim is narrower than it reads.** The axe test renders the default fixture, whose `duplicateCandidates` is `[]` — so the `<ul role="list">`/dismiss-button markup **and both dialogs are never axe-scanned**. Also `DuplicateWarningCard.tsx:1` still tags `@sdd-spec … (T-13)` though its body attributes the dismiss control to T-14 (compare `RegistrationDetailPanel.tsx:1`, correctly `(T-13, T-14)`). | Recorded. An axe case over the populated + open-dialog state would make the claim true. |
+| A-87 | Fix 2's regex does not pin the destination (*"to the public directory"*); a sentence trimmed at "coordinates" would still pass. Low materiality — FR-12's clause as quoted stops there. Also: a failed post-mutation refresh replaces the whole panel with `NotFoundState`, **erasing the `role="status"` "approved and published" announcement** on the one irreversible path in the system. | Recorded. Routing refresh failures to the panel's own `announcementError` would close the second half. |
+
+## Decisions made
+- **The NFR-6 / `bg-danger` defect was not gated on T-14** — no in-scope edit closes it, and the fix touches a component shared by three shipped call sites across two archived specs. Escalated to the user and carried to T-16.
+- **A second review round was spent on attempt 2** despite strong mutation evidence, because attempt 1 had introduced a genuine regression in shipped behaviour and a self-inspection would not have been an independent check of the fix.

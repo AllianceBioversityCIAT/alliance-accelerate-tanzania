@@ -12,12 +12,19 @@
  *     candidates (the backend's `MAX_CANDIDATES_PER_REGISTRATION`), the
  *     count renders "5+", not a bare "5".
  *   - Below the cap (e.g. 3), the count renders the exact number.
- *   - No dismiss control anywhere — read-only in this task; T-14 wires it.
- *   - jest-axe clean (NFR-5).
+ *   - No dismiss control renders when `onDismiss` is omitted (read-only —
+ *     the original T-13 shape, still supported).
+ *   - **T-14 — per-candidate dismiss wiring (FR-11 scenario 1/2)**: with
+ *     `onDismiss` supplied, one "Not a duplicate" button per candidate,
+ *     each calling `onDismiss` with THAT candidate's `actorId` only —
+ *     dismissing one must never be able to affect another (never row-
+ *     level/index-based).
+ *   - `dismissingId` disables only the matching candidate's button.
+ *   - jest-axe clean (NFR-5), including with dismiss buttons rendered.
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -81,14 +88,75 @@ describe('DuplicateWarningCard', () => {
     expect(screen.queryByText('5 possible duplicates found')).not.toBeInTheDocument();
   });
 
-  it('renders no dismiss control — read-only in this task', () => {
+  it('renders no dismiss control when onDismiss is omitted (read-only)', () => {
     const { container } = render(<DuplicateWarningCard candidates={[buildCandidate({})]} />);
     expect(container.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('T-14 — renders one dismiss button per candidate when onDismiss is supplied', () => {
+    const candidates = [
+      buildCandidate({ actorId: 'actor-1', traderName: 'Meru Agro Cooperative Society' }),
+      buildCandidate({ actorId: 'actor-2', traderName: 'Arusha Seeds Ltd' }),
+    ];
+    render(<DuplicateWarningCard candidates={candidates} onDismiss={jest.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: 'Mark Meru Agro Cooperative Society as not a duplicate' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Mark Arusha Seeds Ltd as not a duplicate' })
+    ).toBeInTheDocument();
+  });
+
+  it("T-14 — dismissing one candidate calls onDismiss with THAT candidate's actorId only", () => {
+    const onDismiss = jest.fn();
+    const candidates = [
+      buildCandidate({ actorId: 'actor-1', traderName: 'Meru Agro Cooperative Society' }),
+      buildCandidate({ actorId: 'actor-2', traderName: 'Arusha Seeds Ltd' }),
+    ];
+    render(<DuplicateWarningCard candidates={candidates} onDismiss={onDismiss} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Mark Arusha Seeds Ltd as not a duplicate' })
+    );
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onDismiss).toHaveBeenCalledWith('actor-2');
+  });
+
+  it("T-14 — dismissingId disables only the matching candidate's button, never the others", () => {
+    const candidates = [
+      buildCandidate({ actorId: 'actor-1', traderName: 'Meru Agro Cooperative Society' }),
+      buildCandidate({ actorId: 'actor-2', traderName: 'Arusha Seeds Ltd' }),
+    ];
+    render(
+      <DuplicateWarningCard candidates={candidates} onDismiss={jest.fn()} dismissingId="actor-1" />
+    );
+
+    // The aria-label (not the visible "Marking…" text) is this button's
+    // accessible name, since aria-label takes precedence over text content.
+    expect(
+      screen.getByRole('button', { name: 'Mark Meru Agro Cooperative Society as not a duplicate' })
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Mark Arusha Seeds Ltd as not a duplicate' })
+    ).toBeEnabled();
   });
 
   it('has no jest-axe violations', async () => {
     const { container } = render(
       <DuplicateWarningCard candidates={[buildCandidate({}), buildCandidate({ actorId: 'actor-2' })]} />,
+    );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('has no jest-axe violations with dismiss buttons rendered', async () => {
+    const { container } = render(
+      <DuplicateWarningCard
+        candidates={[buildCandidate({}), buildCandidate({ actorId: 'actor-2' })]}
+        onDismiss={jest.fn()}
+      />,
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();
