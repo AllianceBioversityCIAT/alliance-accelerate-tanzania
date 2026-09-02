@@ -31,6 +31,8 @@
   /admin/actors/[id]/edit Edit actor (validated form)
   /admin/import           CSV bulk import
   /admin/export           Filtered CSV export
+  /admin/registrations    Adjudication queue for self-registration submissions (Admin only)
+  /admin/registrations/review?id=  Registration detail — approve/reject/dismiss-duplicate (Admin only)
   /admin/users            User & role management (Admin only)
 /login                    Cognito-backed sign-in (Staff/Admin)
 ```
@@ -58,6 +60,8 @@
 | Actor Form | Staff / Admin | Sectioned, validated create/edit form incl. GPS + PII fields. |
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
 | Export | Staff / Admin | Filter builder, role-aware scope notice, download button. |
+| Admin Registrations Queue | Admin | Dense, URL-synced table (cards on mobile) of self-registration submissions — reference, applicant, type, region, submitted date, duplicate count, status; segmented by `PENDING_REVIEW` / `APPROVED` / `REJECTED` only. |
+| Admin Registration Detail | Admin | Reference code header, full submitted payload with the two non-publishable fields marked as review-only context, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
@@ -69,7 +73,7 @@
   - **No "Home" entry, and no brand descriptor**, both removed 2026-08-31. The brand lockup is itself the link to `/` and its `aria-label` names it as home, so a "Home" item duplicated an adjacent control; the "Tanzania Seed Registry" descriptor beside the logo cost ~196px of a row that has only 1216px to spend.
   - **Why `lg` and not `md`.** Measured in a real browser, not estimated: the row's min-content width was **1270px** against a container ceiling of **1216px** — `max-w-7xl` caps usable width, so it never grows with the viewport and there is no screen wide enough. The bar overflowed at **every** width ≥768 (+526px at 768, +278px at 1024, +22px at 1280), spilling into the page gutter above that. After the fix the row needs 935px at 1024 (**41px slack**) and 1015px at 1280+ (**201px slack**). Recorded in `docs/specs/contact/contact-channels/execution.md`, T-10 DC-9 closure.
   - **Adding a nav entry is not free.** The 1216px ceiling is fixed. Before adding one, measure the row's min-content width rather than assuming headroom exists — this bar was already over budget with six entries and nobody noticed.
-- **Admin shell:** left sidebar (Actors · Import · Export · Users) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile.
+- **Admin shell:** left sidebar (Users · Actors · Registrations) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile. **Registrations** is a single `NAV_ITEMS` entry (`{ label: 'Registrations', href: '/admin/registrations', enabled: true }`) with no separate role field — the shell's `RequireRole allow={['Admin']}` already keeps `Staff` from ever seeing the sidebar, so every entry in it is implicitly Admin-only.
 - **Cross-links:** Directory rows link to profiles; profiles link to the map; map popups link to profiles. One consistent breadcrumb pattern in Admin.
 
 ## 6. Layout Patterns

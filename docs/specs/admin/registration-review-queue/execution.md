@@ -2117,3 +2117,111 @@ The `case 'DELETE': case 'BULK_DELETE':` fallthrough was correctly expanded into
 #### Decisions made
 - **The Leader rewrote this task's `tsc` gate before dispatch**, after T-11's review established the baseline is red. The error-set diff proved strictly stronger than the exit-status check the task specified — it names the file and code, and catches renames.
 - **The Leader's own "green untouched suite proves the values" inference was wrong**, was corrected by the Reviewer, and was closed by an actual `git diff`. Recorded rather than quietly fixed.
+
+### T-16 — Amend the baseline documents
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **medium** → **xhigh** · Skills: `software-architect`, `cognitive-doc-design` |
+| Reviewer | `akili-reviewer` (opus, T3) — documentary accuracy (KZ-008), the only gate |
+| Review rounds consumed | **2** (running total: **31** of 35) |
+| Requirements covered | `requirements.md` §4.2 · `design.md` §9 ADR-011 · `judgment.md` B3 |
+
+#### ⚠️ THIS TASK HAD NO VERIFICATION COMMAND — and none was invented
+
+`tasks.md`: *"manual review at the HITL pause — **there is no command.** Say so; do not invent one"* and *"Falsifying input: **none exists.** Documentary conformance has no automated gate in this repo, and claiming one would be the **false-gate pattern this spec repeatedly refuses.** This task's evidence is a human read."*
+
+Both the Implementer and the Reviewer stated this explicitly and neither ran or credited one. **The Reviewer was the human read**, re-resolving each claim against shipped source.
+
+#### Files amended
+`docs/trd/trd.md` — §2, §4, §8, **§12.5 (ADR-011)**, §13 (B3) · `docs/ux-ui/design.md` — §2 IA, §4 screens, §5 nav · spec `design.md` — §7.4, §10, §12 (R-13), §13 · spec `requirements.md` — FR-12 s3, NFR-11, §8 (DC-36) · plus two comment/string-only source touches.
+
+---
+
+#### ATTEMPT 1 — `FAIL`, and the failure is the spec's own recurring shape
+
+**Issue 1 — §7.4 described a gate that does not exist.** It claimed *"the passing token-conformance test… is scoped to grepping for hardcoded hex/colour literals in new files."* **No such test exists.** The passing token test is a *rendering* assertion. The conclusion was sound, but **as written a reader concludes nothing asserts `danger` semantics anywhere** — false, and worse than the gap it recorded.
+
+**Issue 2 — an amended line asserted a sidebar the code does not have.** `docs/ux-ui/design.md:76` read *"(Actors · **Import · Export** · Registrations · Users)"* — **five** entries. `AdminSidebar.tsx` ships **three**; Import/Export were removed 2026-07-10.
+
+**The edit inserted `Registrations` into that parenthetical without re-resolving its siblings.** The appended sentence was exact; **the defect was the container it went into.** That is **KZ-004** — *a correction closes only when the superseded value is gone everywhere* — **committed inside the task whose disqualifying clause is "re-resolve every factual claim against the shipped code at the moment of writing."**
+
+**This is the fourth time in this spec a correction introduced a fresh false claim** (T-3 attempt 2, T-8 attempt 2, T-12's report, T-16 attempt 1).
+
+**Issue 3 (promoted from advisory) — `"zero rows ⇒ 409"` would have made a reader ship the wrong status.** Leader-verified: a zero-row count is followed by a **diagnostic `findUnique`** returning **404** when the id does not exist, **409** only when it does. §8's phrasing is true *of the race it describes*; **§4's was not**, and §4 is what an implementer reads.
+
+#### ATTEMPT 2 — all corrected, and the Reviewer re-resolved every sub-claim
+
+| Correction | Verified at source |
+|---|---|
+| §7.4 now names the real test | `RegistrationDetailPanel.test.tsx:505` — asserts danger on the Reject **trigger** (`:508`), absence on the Approve **trigger** (`:509–511`), `bg-danger` on `RejectDialog`'s confirm (`:514–519`), and **never renders `AcknowledgeDialog`** within that describe |
+| Sidebar | `(Users · Actors · Registrations)` — matches `NAV_ITEMS` order **verbatim** |
+| §4's approve row | *"zero rows ⇒ `409` when the row exists, `404` when it does not, DD-22"* |
+| Kaizen citation | `design.md:437` → **"§10's DD-21 reversion-challenge row"** — a symbolic anchor, satisfying **KZ-009**, which the same table asserts two rows above |
+| `trd.md:191` | *"two reads… and three writes…"* — matches §4's five rows exactly (two were `GET`s) |
+
+**Two passages were deliberately left unchanged, and the Reviewer verified the reasoning rather than the edit** — the more valuable audit, since a justification for *not* changing something is the quietest way to leave a falsehood standing:
+- **`trd.md:185` (reject)** states no status code of its own, so it genuinely **inherits** approve's corrected split — and the code bears it (`:958–968` mirrors approve's `:726–738`).
+- **`trd.md:225` (§8)** is bounded head and tail by its scope (*"close the **double-adjudication race**"* … *"no window in which a **second request** can race"*). **In that race the row necessarily exists**, so `409` is the only outcome. True as scoped.
+
+#### ADR-011 — entered `Accepted`
+Substance and sentence order match `design.md` §9; the Decision/Status/Consequence split matches ADR-001–010; **all four sub-claims verified true of the shipped service.**
+
+#### B3 — resolved: cite QA-3 alone
+QA-12's actor is an **anonymous visitor** on a closed set of **four public paths** this spec does not touch; its five routes are Admin-gated with exactly QA-3's `401`/`403` shape. Widening QA-12 would blur public-surface containment with admin-endpoint authorization.
+
+**And the resolution records the actual source of the ambiguity**, so B3 is not re-opened: ADR-010 ties QA-12 to `pii-boundary.spec.ts` as a *mechanism*, and this spec extends that **same file** to prove QA-3 — **one test file now serves two distinct QA scenarios.**
+
+#### A deliberate omission, upheld
+The Implementer **declined** an optional note that `pii-boundary.spec.ts`'s bidirectional key-equality is an accidental partial tripwire for the module-scoping residual. The Reviewer verified the mechanism and agreed: that tripwire fires only if the controller **moves out** while its fixture entries stay — **a different event from the one §2 warns about** (a route added *elsewhere*, invisible to both sides of the equality). Documenting a tripwire that does not cover the warned-about risk *"would have invited precisely the under-weighting the paragraph exists to prevent."*
+
+---
+
+## FINAL BUDGET RE-MEASURE — required by `tasks.md`, and the Reviewer caught that it was outstanding
+
+| Signal | Final | Budget | Halt |
+|---|---:|---:|---:|
+| Tasks | **16/16** | 16 | 16 |
+| Review rounds | **31** | ~35 | 35 |
+| **Code LOC** | **13,310** (7,331 backend + 5,979 frontend) | ~8,200 | **~9,200** |
+| Docs LOC | 2,183 | — | — |
+| Commits | 16 | — | — |
+
+**The LOC halt threshold was exceeded and stayed exceeded — final code LOC is 45% over the halt and 62% over budget.** Escalated at T-12 with a projection of 12,000–13,000; the actual is 13,310, at the top of that range. **The user elected to continue (option 1) with the overage on the record.** Recorded here at the close because `tasks.md` requires it at T-4/T-8/T-12/T-16 precisely so a breach *"never measured"* cannot disarm the tripwire retroactively — and this is the task whose own brief forbids that.
+
+**Diagnosis, unchanged from T-12:** the estimate was wrong about *verification density*, not about the work. Nearly every task shipped more test than implementation, and those gates found defects every green suite had certified.
+
+## FINAL TEST STATE — measured honestly, including a failure I chased down
+
+| Suite | Result |
+|---|---|
+| Frontend | **108 suites / 1,609 tests green** |
+| Frontend build | Static export OK, `✓ Exporting (2/2)` |
+| Backend | **75 suites / 988 tests** — green on **4 of 6** full runs |
+
+**The backend suite fails intermittently, and it is not this spec's doing.** Rather than report a green run, the Leader ran it six times and isolated the cause:
+
+| Evidence | Finding |
+|---|---|
+| Failing suite | `src/test/admin-actors.e2e.spec.ts` — **8 tests, 34.3 s** (timeout-scale, not assertion-scale) |
+| Touched by this spec? | **No** — zero lines in the diff since `07f4ca9` |
+| In isolation | **28/28 in 1.26 s** — a **26× degradation** under full-suite load |
+| Provenance | Last modified by `ea7a4cc` and `0158dc0`, both **prior** specs |
+
+**This is A-42 with a name and hard numbers**: a pre-existing, load-induced timeout in an app-booting suite, unrelated to this spec's changes. It warrants its own bugfix ticket alongside the `tsc --noEmit` baseline error (A-73) — both are repo-health items this spec **surfaced but did not cause**, and neither was folded in.
+
+#### ADVISORY
+
+| # | Finding | Disposition |
+|---|---|---|
+| A-91 | **§8's `409` clause could seal its scope in six words.** True of the race it describes, but it names a mechanism (`updateMany` → `count === 0`) that in code branches on a follow-up `findUnique`. A reader arriving at §8 without §4 could carry away *"409 always"*. Suggested: *"…zero affected rows is the refusal (`409` here, since the row exists; an unknown id is an honest `404` — §4, DD-22)"*. | Recorded. Not a defect — the sentence is scoped and accurate. |
+| A-92 | **Pre-existing IA drift in `docs/ux-ui/design.md` §2 (lines 31–33)**, deliberately not touched: `/admin/actors/[id]/edit` (a `[param]` segment `frontend/CLAUDE.md` forbids; ships as `?id=`), `/admin/import` (ships as `/admin/actors/import`), `/admin/export` (no page exists). | **Its own `bugfix/` ticket.** Correctly out of scope. |
+| A-93 | **`admin-actors.e2e.spec.ts` load-induced flakiness** (above), and **A-73's `tsc --noEmit` baseline error**. | Two repo-health bugfix tickets. Surfaced, not caused, by this spec. |
+
+#### Decisions made
+- **A second review round was spent on attempt 2** despite three precisely-dictated corrections, because this is the **permanent constitutional record** and the spec has four instances of a correction introducing a fresh false claim. The Reviewer re-resolved nine sub-claims in the rewritten §7.4 alone.
+- **The final budget re-measure was performed before the checkbox flipped**, as `tasks.md` requires — the Reviewer flagged it as outstanding.
+- **The intermittent backend failure was chased to a named suite with numbers** rather than reported as "flaky" or omitted from a green summary.

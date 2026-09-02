@@ -1,7 +1,7 @@
 # Tasks — Registration Review Queue & Approve-to-Publish
 
 - Spec path: `docs/specs/admin/registration-review-queue/`
-- Status: **Approved 2026-09-01 — in execution**
+- Status: **COMPLETE 2026-09-01 — 16/16 tasks, all Reviewer-PASSed. Awaiting the Phase-3 HITL pause (DC-16 human check) before archive.**
 - Traces: `requirements.md` FR-9…FR-14, FR-16 · `design.md` §4–§9, DD-15…DD-23
 - Depth: **Full** · Approval Mode: **gated**, relaxed to **pause-per-phase** by the user 2026-09-01 (HALT / Pivot / budget tripwire / FATAL_FAIL still stop immediately)
 - Design reviewed: `judgment.md` — **APPROVED**, 1 fix round used, 1 remaining
@@ -231,7 +231,7 @@ So every task below carries three fields beyond the template's, and the Implemen
 
 ## Phase E — Constitutional
 
-- [ ] **T-16 Amend the baseline documents** (deps: T-10, T-14, T-15)
+- [x] **T-16 Amend the baseline documents** (deps: T-10, T-14, T-15)
       **Carried forward from T-10's review (`execution.md` A-67, A-68):** (1) **the release gate is module-scoped by construction** — a registrations route added to a *different* module is invisible to a derivation rooted at `MODULE_METADATA.CONTROLLERS`, and the suite would go green while those routes shipped uncovered. Today the only defence is DD-15's placement decision and a module JSDoc; **no test enforces it.** Since §2/§4 are being amended anyway, that constraint belongs in the TRD, not only in a test-file comment. (2) `pii-boundary.spec.ts`'s scan-loop `it` title still routes readers to `execution.md → T-13`; the current-generation probe pair lives under **T-10** and supersedes it.
       **⚠️ CARRIED FORWARD FROM T-15'S REVIEW — `design.md:437` (§10's reversion-challenge table) is WRONG TWICE (`execution.md` T-15).** (1) *"`undefined` becomes the literal `"undefined"` in `className`"* — false; `Array.prototype.join` renders `undefined` as the **empty string** (Leader-verified: `['base', undefined].join(' ')` → `"base "`). **Following this literally would have shipped a gate that cannot fail**, and the Implementer caught it by running the code. (2) *"a backend enum member added later without a frontend edit now fails the build"* — **also false**: with no frontend edit the union is unchanged, `tsc` is clean, and the badge is unstyled exactly as before. The compile error fires only when the **union** is widened without the map. **Fix BOTH clauses or the correction re-ships half the falsehood.** §7.5 and §9's DD-21 are accurate and need no change.
       **Also carried (`execution.md` A-88):** `ActorHistoryPanel.tsx`'s new docblock repeats claim (2), and **NFR-11's measure is not literally met** — it asks for a test that *derives* the union against the backend enum; the delivered test hardcodes it frontend-side. Backend-only enum drift — the exact defect T-15 closed — **remains ungated**. Either document it as ungated (the A-62 posture) or record the derivation as follow-up work.
