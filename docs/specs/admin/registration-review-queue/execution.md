@@ -2028,3 +2028,92 @@ Told that an unenumerated dismissal set cannot be audited (**KZ-008 extends to e
 ## Decisions made
 - **The NFR-6 / `bg-danger` defect was not gated on T-14** — no in-scope edit closes it, and the fix touches a component shared by three shipped call sites across two archived specs. Escalated to the user and carried to T-16.
 - **A second review round was spent on attempt 2** despite strong mutation evidence, because attempt 1 had introduced a genuine regression in shipped behaviour and a self-inspection would not have been an independent check of the fix.
+
+### T-15 — Audit-action taxonomy end-to-end (FR-16)
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (first attempt) |
+| Date | 2026-09-01 |
+| Implementer attempts | **1** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** · Skills: `vercel-react-best-practices`, `react-doctor` |
+| Reviewer | `akili-reviewer` (opus, T3) — type fidelity (NFR-11) primary |
+| Review rounds consumed | **1** (running total: **29** of 35) |
+| Requirements covered | FR-16 scenarios 1, 2 · NFR-11 (**see A-88**) · `design.md` §7.5, DD-21 |
+
+#### The defect this closed was live in the repo
+- `actors-admin.ts:203` had **five** members; the backend enum has **eight**. `IMPORT` shipped 2026-07-10 and was missing frontend-side for an entire spec cycle.
+- `actionBadgeClasses` had **no `default`**, so an `IMPORT` row — which the backend **already emits** — rendered with no colour token at all.
+
+#### Both gates demonstrably fail — the strongest part of the submission
+
+**The pre-change run was free**, because the defect ships today; no mutation was needed:
+```
+FAIL components/admin/ActorHistoryPanel.test.tsx
+  ● ... assigns a real, non-empty badge class to every action in the union — including IMPORT and the two registration actions
+    expect(received).toMatch(expected)
+    Expected pattern: /\bbg-\S+/
+    Received string:  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium "
+  ● ... gives REGISTRATION_APPROVE a real snapshot summary, not the generic "Snapshot" fallback
+    expect(element).not.toBeInTheDocument()
+    ... found <button ...>Snapshot<span aria-hidden="true">▸</span></button> instead
+Tests: 2 failed, 10 passed, 12 total
+```
+After the fix: **12/12**. That received string — base classes plus a trailing space, no `bg-` token — **is what a user sees today** on any `IMPORT` row.
+
+**The `tsc` gate, rewritten by the Leader because the task's version was vacuous** (`tsc --noEmit` already exits non-zero from a prior spec's `TS2556`, so exit status carries zero information). Error-set diff instead — removing `IMPORT` from the `Record` produced exactly one new line:
+```
+components/admin/ActorHistoryPanel.tsx(86,7): error TS2741: Property 'IMPORT' is missing in type '{ CREATE: string; ... }' but required in type 'Record<"CREATE" | ... | "REGISTRATION_REJECT", string>'.
+```
+Restored → matched the baseline **byte-for-byte**. The Reviewer confirmed it **also catches renames**, from both sides: renaming a `Record` key trips missing-member *and* excess-property checks; renaming a *union* member surfaces the mirror error **and** invalidates the test's `ALL_EIGHT_ACTIONS` literal.
+
+#### ⚠️ THE SPEC WAS WRONG, AND FOLLOWING IT LITERALLY WOULD HAVE SHIPPED A VACUOUS GATE
+
+`design.md:437` (§10's reversion-challenge table) states the call site *"joins the result into a class string, so `undefined` becomes the literal `"undefined"` in `className`."*
+
+**False.** ECMA-262 `Array.prototype.join`: *"If element is undefined or null, let next be the empty String."* **Leader-verified:** `['base', undefined].join(' ')` → `"base "`.
+
+**The Implementer's first draft asserted `not.toMatch(/undefined/)` — which passes against the *pre-fix* code too**, since that literal never appears. It would have been a green test certifying a live defect: **KZ-002, born from the spec's own false premise.** It caught this **by running the code**, and rewrote the assertion to require a `bg-` token, which genuinely reddens pre-fix.
+
+The Reviewer confirmed the rewritten gate cannot be satisfied incidentally — the base class string contains no `bg-` substring — and that **§7.5 and §9's DD-21 are accurate** (they say "renders an unstyled badge", never "the literal undefined"). **The falsehood is confined to §10.**
+
+**But §10's row is wrong TWICE, and the second error is more consequential.** The same cell also claims *"a backend enum member added later without a frontend edit now **fails the build**."* **Also false** — with no frontend edit the union is unchanged, the `Record` is total over it, `tsc` is clean, and the ninth action arrives at runtime as an unmapped key → unstyled badge, **identical to pre-change behaviour**. The compile error fires only when the **union** is widened without the map: it protects against a half-done frontend mirror, **never against an un-mirrored backend enum**. **T-16 must fix both clauses or the correction re-ships half the falsehood.**
+
+#### Conformance verified at source
+
+| Check | Finding |
+|---|---|
+| Eight members, exact | `schema.prisma:86-95` and `actors-admin.ts:203-211` — **same spelling, same order, no `string`** |
+| `actionBadgeClasses` total | `Record<AuditEntry['action'], string>`, no fallback at the call site — a missing member is unrepresentable |
+| `SnapshotDetails` **kept** its `default` | Confirmed. One case added; `UPDATE`/`BULK_CONSENT`/`IMPORT`/`REGISTRATION_REJECT` left to the default. **The Implementer did not "helpfully" convert the second map** — §7.5 says doing so would be *wrong, not merely unnecessary* |
+| The new case is **reachable, not dead code** | `logRegistrationApprove` writes `buildSnapshot(actor)` → `{ kind: 'snapshot' }`, so `isSnapshot` narrows true and `SnapshotDetails` genuinely renders for `REGISTRATION_APPROVE` |
+| `REGISTRATION_REJECT` gets no case | Correct — its row carries `actorId` = a **registration** id, and the read path filters on `actorId`, so it can never reach the panel. Asserted backend-side in T-2 |
+| Tokens | All three new pairs reuse grounds **already asserted against threshold** in `contrast.test.ts`'s `REACHABLE` matrix — **zero new contrast ground introduced**. And the two registration values are **byte-identical to this spec's own `REGISTRATION_STATUS_BADGE_CLASSES`** from T-11/T-13, so the history badge matches the queue chip. **`danger` on rejection is §7.7's explicit instruction** — not the T-14 defect inverted |
+
+#### The Leader's own inference was wrong, and the Reviewer caught it
+
+I had reasoned that a green untouched 362-line suite would prove the five pre-existing badge values mapped across unchanged. **It would not** — that suite asserts labels, summaries, ARIA and identity, but **no `className` anywhere**, so green is compatible with any value having changed. The Reviewer said so plainly and routed the check to me.
+
+**Leader-verified by `git diff` against the committed version — all five mapped byte-for-byte:**
+
+| Action | Pre-change `switch` | Post-change `Record` |
+|---|---|---|
+| `CREATE` | `bg-highlight-tint text-success` | identical |
+| `UPDATE` | `bg-primary-soft text-primary` | identical |
+| `DELETE` | `bg-danger-soft text-danger` *(fallthrough)* | identical |
+| `BULK_DELETE` | `bg-danger-soft text-danger` *(fallthrough)* | identical |
+| `BULK_CONSENT` | `bg-surface-alt text-warning` | identical |
+
+The `case 'DELETE': case 'BULK_DELETE':` fallthrough was correctly expanded into **two explicit keys with the same value**. Test file: **0 deletions**, 105 additions.
+
+#### ADVISORY (recorded, non-gating)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-88** | **The `Record` docblock over-claims the gate's reach, in the very file the gate protects.** It says *"Adding a ninth backend action without adding it here is a compile error"* — but the frontend has **no link to `ActorAuditAction`**, so a backend-only addition produces no frontend error at all. **That is exactly the drift that produced this task**, and it remains **ungated after T-15**. Inherited from `design.md:437`. **NFR-11's measure is not literally met** — it asks for a test that *derives or asserts the union against the backend's enum member list*; the delivered test hardcodes eight members frontend-side. **`tasks.md` did not ask for the derivation, so the gap is between the requirement and its decomposition, not in the Implementer's work.** | **FORWARD POINTER → T-16.** **Seventh** stated-verification imprecision. Remediation: either make the link real (the frontend Jest suite runs in Node and can parse `schema.prisma`, closing backend-only drift; a type-level `Exact<>` assertion would additionally close A-83's widening hole), **or** adopt the A-62 posture and document the mirror as ungated. |
+| **A-89** | **Both new comments cite a `design.md` that resolves to the wrong spec.** Neither file gained a second `@sdd-spec` line, so both still declare only `admin/actor-crud-audit (T-10)` — **whose `design.md` has no DD-21**. A reader following the file's own tag finds nothing. The repo convention is unambiguous and **this spec applied it three tasks ago** (`AdminSidebar.tsx`, `RegistrationDetailPanel.tsx (T-13, T-14)`). Additionally, the test comment attributes the `join` falsehood to *"§9's DD-21 row"* — **it lives in §10's reversion-challenge table.** A correction that mis-cites the location of what it corrects is the KZ-008 pattern at recurrence ×3. | Recorded. Remediation is **additions-only**, so it does not disturb the 0-deletions evidence. |
+| A-90 | T-15 shifted the lines `contrast.test.ts` cites at `ActorHistoryPanel.tsx` (`:80` → `:87`, `:87` → `:91`, `:182`/`:212` → `:190`/`:221`). `citedAt` is documentation, not an assertion, so nothing reddens and the `grounds` arrays stay correct — but the artefact no longer bears the claim at the named lines (**KZ-009**: cite symbols, not line numbers). | Recorded. |
+
+#### Decisions made
+- **The Leader rewrote this task's `tsc` gate before dispatch**, after T-11's review established the baseline is red. The error-set diff proved strictly stronger than the exit-status check the task specified — it names the file and code, and catches renames.
+- **The Leader's own "green untouched suite proves the values" inference was wrong**, was corrected by the Reviewer, and was closed by an actual `git diff`. Recorded rather than quietly fixed.
