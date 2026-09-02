@@ -102,7 +102,7 @@ All 18 items below were applied on the default branch in `chore/akili-kaizen-syn
 
 **One item could not be discharged as written — see `## Digest cap collision` below.**
 
-### Digest cap collision (open, needs a decision)
+### Digest cap collision — **RESOLVED 2026-09-02**
 
 `docs/specs/kaizen-log.md` carries a hard **10-row cap** on `## Active Lessons`, and it is full. The 4 `digest-update` items applied cleanly because they are edits to existing rows. But **L-1, L-2 and L-3 are new lessons with no row**, and their `standardization` targets were applied to the template documents only.
 

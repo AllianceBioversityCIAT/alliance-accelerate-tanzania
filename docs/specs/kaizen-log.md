@@ -2,8 +2,28 @@
 
 Continuous-improvement record for this project, updated automatically by
 `/akili-archive` (Kaizen Retrospective, powered by the `kaizen` skill).
-Other AKILI commands read only the `## Active Lessons` table below —
-keep it at 10 rows or fewer.
+Other AKILI commands read only the `## Active Lessons` table below.
+
+**Budget: keep `## Active Lessons` under ~8 KB.** This was a 10-**row** cap until
+2026-09-02, which was the wrong unit: the table sat at exactly 10 rows from
+2026-08-08 to 2026-09-02 while growing 3,851 → 5,310 bytes (+38%), because a
+recurrence legitimately updates an existing row instead of adding one. A row
+count therefore cannot bound what this table costs. For scale: at 10 rows it is
+~4% of the constitutional baseline every command already reads, and `trd.md`
+alone is 7× the whole digest — so this budget is about the table staying
+**readable**, not about tokens.
+
+**When it does not fit, retire to `## Entries` — never delete — the rows that are
+`Applied` *and* have never recurred.** Those lessons are durably encoded in the
+document named in `Standardized In`, so the row has become a pointer. Two kinds
+of row are never retired: a `Recorded`/pending row (its row is the only place the
+lesson exists) and a row carrying recurrences (**the recurrence count *is* the
+evidence** that standardizing was not enough). Note what this rules out: every
+naive policy — oldest first, largest first — would evict KZ-002, which is both
+the oldest recurring row and the largest, and is the single most informative row
+in the table. Retiring on `Applied`-and-never-recurred is also not free: it cannot
+distinguish "the standardization held" from "the row is what held it", and if the
+row was load-bearing the lesson lapses silently. Prefer raising the budget.
 
 ## Active Lessons
 
@@ -18,7 +38,10 @@ keep it at 10 rows or fewer.
 | KZ-007 | **Constraint sets are conjunctive.** Satisfying each member individually can still break the set; review must reason about **interaction**, since no test covers a defect that lives between two correct constraints | actors/public-self-registration | High | Product | *pending* | Recorded |
 | KZ-008 | **An assertion about an artefact is a defect when the artefact does not bear it** — and it recurs at every level of its own correction. **Recurrence ×2 (2026-08-08): now extended to evidence artefacts** — capture manifests, README provenance claims, and `execution.md` status tables, not only code comments. **Recurrence ×3 (2026-09-01): 11 instances in one spec, 4 blocking.** Two were *corrections that introduced a fresh false claim* — including one where the Reviewer's own suggested wording, transcribed verbatim, was falsified by a second fix folded into the same brief | actors/public-self-registration · enhancement/form-elevation-ux · enhancement/usage-analytics | High | Product + Methodology | `docs/specs/general-setup/task.md` § Testing & Verification | Applied |
 | KZ-009 | **`file:line` is a self-decaying anchor.** Persistent documents cite a symbol, a unique class/literal string, or a section title; bare line numbers belong only in transient agent reports | enhancement/form-elevation-ux | Medium | Product + Methodology | `docs/specs/general-setup/requirements.md` § Writing Standards | Applied |
-| KZ-010 | The Concurrency Protocol names the rule (one AKILI session per checkout) but enforces nothing — two branches modified the same forms for 13+ commits each, undetected until a user compared two screenshots | enhancement/searchable-region-select | High | Product + Methodology | `CLAUDE.md` § Concurrency protocol | Applied |
+| KZ-010 | The Concurrency Protocol names the rule (one AKILI session per checkout) but enforces nothing — two branches modified the same forms for 13+ commits each, undetected until a user compared two screenshots. **Recurrence (2026-09-02): the same rule went unrun again, this time over a shared counter** — ADR-011 was allocated on a spec branch and, 9 h later, on `main`, because the pre-flight check was skipped. Allocating from the trunk does not make an id free; it only decides who pays the renumbering (a 14-citation sweep, on the branch) | enhancement/searchable-region-select · enhancement/usage-analytics | High | Product + Methodology | `CLAUDE.md` § Concurrency protocol | Applied |
+| KZ-011 | **No gate verifies that the spec is TRUE** — every gate asks *does the code match the spec?* A requirement internally consistent and externally false passes all of them, and reaches code and visitor-facing copy. Claims about a third party, the harness, or the codebase must cite where they were verified. A `Verify` clause is itself a claim about the harness; an accepted-risk list is a claim about rendered reality — measure it, never reason it | enhancement/usage-analytics | High | Product + Methodology | `docs/specs/general-setup/requirements.md` § Writing Standards | Applied |
+| KZ-012 | **`author ≠ auditor` holds on reading, collapses on execution** — every red/green in a completion report was produced by the agent that wrote the code. The Reviewer must mark the boundary of what reading established: an A/B whose control cannot be inspected is uncorroborated; a count not recomputable from the diff is reported, not verified | enhancement/usage-analytics | High | Methodology | `.agents/reviewer.md` § You Audit Reading, Not Execution | Applied |
+| KZ-013 | **Sweep every clause the task owns, not only the one just named** — each clause gets either (A) the mutation that reddens a *named* test or (B) a declared unevaluable gap; *"structurally covered"* counts only as (B). Otherwise review is whack-a-mole. Measured: 3 and 3 attempts under fix-the-named-clause, **2** then **1** once swept from attempt 1 | enhancement/usage-analytics | Medium | Methodology | `docs/specs/general-setup/task.md` § Testing & Verification | Applied |
 
 ## Entries
 
