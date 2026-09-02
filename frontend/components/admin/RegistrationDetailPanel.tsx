@@ -563,6 +563,12 @@ export function RegistrationDetailPanel({
         }
         acknowledgementText={APPROVAL_ACKNOWLEDGEMENT_TEXT}
         confirmLabel="Approve"
+        // R-13: approving PUBLISHES — a constructive act, not a destructive
+        // one. `danger` is reserved for destructive semantics
+        // (`docs/ux-ui/design.md` §7; NFR-6 states it MUST NOT style the
+        // publish action), and this is the registry's only private-to-public
+        // path. The typed-acknowledgement gate is orthogonal to tone.
+        tone="primary"
         onConfirm={handleApproveConfirm}
         onCancel={closeDialog}
         loading={approveLoading}

@@ -78,6 +78,21 @@ interface AcknowledgeDialogProps {
   /** Inline error from the failed mutation. */
   error?: string;
   /**
+   * Semantic tone of the confirm button. **Defaults to `'danger'`** so every
+   * pre-existing call site renders byte-identically to before this prop
+   * existed.
+   *
+   * Pass `'primary'` when the gated action is **constructive** — publishing,
+   * creating, granting. `docs/ux-ui/design.md` §7 reserves `danger` for
+   * destructive semantics, and `requirements.md` NFR-6 states it "MUST NOT
+   * style the publish action": a red destructive button on the registry's
+   * only private-to-public path told the reviewer the opposite of what the
+   * action does. That was R-13, and this prop is its remediation — the
+   * typed-acknowledgement gate is orthogonal to whether the outcome is
+   * destructive.
+   */
+  tone?: 'danger' | 'primary';
+  /**
    * T-10 — opt-in batch consent-method + consent-date inputs (design.md §5).
    * Rendered ONLY when supplied; also gates the confirm button so a batch
    * unlock cannot be confirmed without both. Omitted at every call site but
@@ -101,6 +116,16 @@ const PROVENANCE_METHOD_OPTIONS: { value: ConsentMethod; label: string }[] = [
 
 // ---------------------------------------------------------------------------
 // Component
+/**
+ * A **total** `Record` rather than a ternary, matching `design.md` DD-21's
+ * reasoning: a future third tone becomes a compile error here instead of
+ * silently rendering an unstyled button.
+ */
+const CONFIRM_TONE_CLASSES: Record<NonNullable<AcknowledgeDialogProps['tone']>, string> = {
+  danger: 'bg-danger focus-visible:ring-danger',
+  primary: 'bg-primary hover:bg-primary-hover focus-visible:ring-primary',
+};
+
 // ---------------------------------------------------------------------------
 
 export function AcknowledgeDialog({
@@ -113,6 +138,7 @@ export function AcknowledgeDialog({
   onCancel,
   loading = false,
   error,
+  tone = 'danger',
   provenance,
 }: AcknowledgeDialogProps) {
   const uid           = useId();
@@ -376,9 +402,10 @@ export function AcknowledgeDialog({
             disabled={!canConfirm || loading}
             aria-busy={loading}
             className={[
-              'rounded-md bg-danger px-4 py-2 text-sm font-medium text-primary-fg',
+              'rounded-md px-4 py-2 text-sm font-medium text-primary-fg',
+              CONFIRM_TONE_CLASSES[tone],
               'transition-colors hover:opacity-90',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
               'disabled:cursor-not-allowed disabled:opacity-50',
             ].join(' ')}
           >

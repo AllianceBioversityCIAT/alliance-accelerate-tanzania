@@ -2333,3 +2333,61 @@ Backend **75 suites / 988 tests** · frontend **108 suites / 1,609 tests** · bu
 **Scoped to `RejectDialog` alone.** `AcknowledgeDialog` and `ConfirmDialog` share the same `max-w-sm` but are consumed by three call sites across two archived specs (`ActorForm`, the actors page, the import page). Widening them would be the same unreviewed cross-spec collateral that kept R-13 out of T-14. `RejectDialog` is this spec's own new component, so it is the one safe to change.
 
 No test asserted the width. Frontend **108 suites / 1,609 tests** green.
+
+### R-13 RESOLVED — the publish action is no longer red, 2026-09-02
+
+Post-spec, at the user's request during the DC-16 review, once the Leader pointed out **where** the button was: not in the Reject dialog they had already seen, but behind the **Approve** trigger, and only at full saturation after typing `I confirm consent is on file` (before that it renders under `disabled:opacity-50`, which is why it had gone unnoticed).
+
+**The fix, exactly as R-13 had named it.** `AcknowledgeDialog` gained `tone?: 'danger' | 'primary'`, **defaulting to `'danger'`** so every pre-existing call site renders byte-identically to before the prop existed. Resolved through a **total `Record<NonNullable<…['tone']>, string>`** rather than a ternary — DD-21's pattern, so a future third tone is a compile error instead of an unstyled button.
+
+Only this spec's approve call site passes `tone="primary"`.
+
+**The three pre-existing call sites pass no `tone` at all** — verified by grep — and their suites confirm nothing moved:
+
+| Call site | Suite |
+|---|---|
+| `AcknowledgeDialog` itself | **19/19** |
+| `ActorForm` | **40/40** |
+| actors page (bulk unlock) | **32/32** |
+| actors import page (commit) | **19/19** |
+| `RegistrationDetailPanel` (the changed one) | **27/27** |
+
+**Contrast improved as a side effect, measured not assumed:**
+
+| | Ratio |
+|---|---:|
+| Before — white on `bg-danger` | 6.54:1 |
+| **After — white on `bg-primary`** | **8.31:1** |
+| …on `hover:bg-primary-hover` | 11.47:1 |
+
+**And the gate the T-14 review said was missing now exists.** That review found the token test *"never renders `AcknowledgeDialog` and never inspects its confirm"* — which is exactly why `bg-danger` shipped on the publish action with a green suite. `RegistrationDetailPanel.test.tsx` now opens the approve dialog and asserts its confirm carries `bg-primary` and **not** `bg-danger`.
+
+**Verified to discriminate**, because a gate that cannot fail is not a gate — removing `tone="primary"` reddens it:
+
+```
+● RegistrationDetailPanel › token compliance — danger on rejection only › R-13 — the approve dialog confirm button carries bg-primary, never bg-danger
+
+    expect(element).toHaveClass("bg-primary")
+    Expected the element to have class:  bg-primary
+    Received:
+      rounded-md px-4 py-2 text-sm font-medium text-primary-fg bg-danger focus-visible:ring-danger …
+```
+
+Restored → 27/27. Frontend **108 suites / 1,610 tests**, build static-export OK, `tsc` unchanged.
+
+**Documents swept both directions (KZ-004):** `design.md` §12's R-13 row now records the resolution and its evidence; `requirements.md` FR-12 scenario 3's T-16 correction note now states that **NFR-6 holds at the rendered DOM and an assertion pins it**. §7.4's byte-identity finding stays as the historical record of why the prop exists.
+
+---
+
+## DC-16 — ALL THREE ITEMS CLOSED
+
+| Item | Status |
+|---|---|
+| Focus order · focus visibility · responsive split | ✅ user-verified |
+| **A-76** — `PENDING_REVIEW` chip at 4.42:1 | ✅ **closed** — amber, 4.90:1, and moved from ungated to gated |
+| **A-63** — `Ineligible actor type` asserting an undefined policy | ✅ **closed** — `Not a seed-system actor`, a fact about the submission |
+| **R-13** — red destructive button on the only publish action | ✅ **closed** — `tone="primary"`, 8.31:1, with a discriminating assertion |
+
+**Nothing is outstanding for the human check.** The spec is ready for `/akili-archive` once the throwaway harness is deleted (`rm -rf frontend/app/dc16-check`).
+
+Three repo-health items remain, all **surfaced but not caused** by this spec, each needing its own ticket: the red `tsc --noEmit` baseline (A-73), `admin-actors.e2e.spec.ts`'s load-induced timeouts (A-93), and `docs/ux-ui/design.md` §2's pre-existing IA drift (A-92).

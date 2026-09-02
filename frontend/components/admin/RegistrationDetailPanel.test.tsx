@@ -518,5 +518,19 @@ describe('RegistrationDetailPanel', () => {
       fireEvent.change(within(dialog).getByLabelText(/reason/i), { target: { value: 'OTHER' } });
       expect(within(dialog).getByRole('button', { name: 'Reject' })).toHaveClass('bg-danger');
     });
+
+    // R-13 — the gap the T-14 review named: the assertions above cover the
+    // TRIGGERS and the reject dialog, but nothing inspected the APPROVE
+    // dialog's confirm, which is where `bg-danger` was actually shipping on
+    // the registry's only publish action. NFR-6: `danger` MUST NOT style the
+    // publish action.
+    it('R-13 — the approve dialog confirm button carries bg-primary, never bg-danger', () => {
+      renderPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      const dialog = screen.getByRole('dialog');
+      const confirm = within(dialog).getByRole('button', { name: 'Approve' });
+      expect(confirm).toHaveClass('bg-primary');
+      expect(confirm).not.toHaveClass('bg-danger');
+    });
   });
 });
