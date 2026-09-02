@@ -1459,3 +1459,141 @@ This is structural, not a defect in this task.
 
 - **Declining to edit `pii-boundary.spec.ts` was upheld** — the gate was already complete, and churn on a hard release gate is a real risk (DD-16). The Reviewer verified completeness independently rather than accepting the claim.
 - **The Leader ran the A-53 mutation itself** to satisfy L-2's verbatim-evidence rule, and recorded the layered type/runtime result the Implementer's summary had not conveyed.
+
+### T-11 — `lib/api/registrations-admin.ts` — typed client
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 2) |
+| Date | 2026-09-01 |
+| Implementer attempts | **2** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **medium** → **high** · Skills: `vercel-react-best-practices` |
+| Reviewer | `akili-reviewer` (opus, T3) — lens-checklist, **type fidelity (NFR-11) primary** |
+| Review rounds consumed | **1** (running total: **24** of 35) |
+| Requirements covered | FR-9…FR-13 (wire contracts) · NFR-11 · `frontend/CLAUDE.md` API conventions |
+
+#### Files changed
+New: `frontend/lib/api/registrations-admin.ts`, `registrations-admin.test.ts` (37 tests).
+Modified (attempt 2): `frontend/lib/api/registrations.ts` (+8, the relocated rationale).
+
+---
+
+#### The mirroring is exact — verified type by type, not asserted
+
+The Reviewer walked **all thirteen** mirrored types against their backend sources: **no union loosened, no optionality flipped, no field added, dropped, or renamed.** Highlights it checked rather than assumed:
+
+- `AdminRegistrationPayload` preserves the serializer's **`| null` (not `?:`)** treatment across all six nullable leaves — correctly mirroring the *output* type, not the raw input type.
+- `AdminConsentRecord.acceptedAtQualifier` is the single fixed literal `'RECORDED_AT_SUBMISSION'`, not `string`.
+- `ActivityTrailEvent` is a **genuine discriminated union** — five separately-exported interfaces with literal `type` discriminants, narrowing verified to work.
+- `AdjudicatedTrailEvent.status` correctly stays the narrower `'APPROVED' | 'REJECTED'` rather than widening to `RegistrationStatus`.
+
+**The three carried wire facts all landed**, including the subtlest one: `dismissedBySub` is correctly left **non-nullable** (it comes from the validated JWT) while `dismissedByEmail`, `reviewedBySub` and `reviewedByEmail` are `string | null` — the T-6/T-7 FAIL fix survived the crossing.
+
+#### The falsification is a real gate in four directions
+
+The `never`-assertion consumer (`describeRegistrationStatus` → `assertNeverRegistrationStatus(x: never)`) was purpose-built and **declared as such**, since T-12/T-13 do not exist yet. The Reviewer judged it legitimate rather than self-serving, and catches:
+
+| Mutation | Detected by |
+|---|---|
+| Union widened to `string` | `TS2345` at the `never` call site |
+| Member removed | `TS2678` non-comparable case + the typed array literal |
+| Member renamed | Both, simultaneously |
+| Member added | `default` narrows to the new literal → `TS2345` |
+
+**Why the two-command Verify exists:** `next/jest` uses SWC, which strips types without checking them, so `npm test` **structurally cannot** catch this defect class. That is the whole point of the task.
+
+#### Wire assertions are real, with an honest caveat now recorded in the file
+
+Genuinely non-echo: URL and querystring construction, `method`, `Authorization: Bearer`, and — the strongest part — the **serialized request body**, parsed out of the actual `RequestInit.body`. Error mapping is asserted by value against envelopes the Reviewer checked **verbatim against the service source** (`'Acknowledgement text does not match the required confirmation.'`, `Registration ${id} has already been adjudicated`, `Duplicate candidate ${x} not found for registration ${y}`).
+
+The caveat, which attempt 2 wrote into the file: `expect(result).toEqual(LIST_RESPONSE)` and the `not.toHaveProperty` negatives **are** pass-through echoes at runtime — `apiFetch` returns `response.json()` untouched. Their real enforcement is `tsc`'s excess/missing-property check on the **type-annotated fixture literals**. A legitimate gate, but a different one than the header originally claimed.
+
+**Commended by the Reviewer as exemplary KZ-002 honesty:** the file's own comment explaining that `status: 200` is a *fixture value*, not a behavioural proof, because `apiFetch` branches on `response.ok` rather than the numeric code — so the real pin is `@HttpCode(200)` on the controller.
+
+---
+
+#### ATTEMPT 1 — `FAIL` on two narrow items
+
+**Issue 1 — `RegistrationStatus` was declared twice in `frontend/lib/api/`.** `registrations.ts` (chunk 3a's public lookup client) already exported a **byte-identical** union. TypeScript is structural, so nothing broke — *which is exactly the problem*: a future divergence would produce **no compile error anywhere**, only a silent mismatch, and only the new copy was protected by the exhaustive-switch harness.
+
+**It contradicted the file's own reasoning 200 lines earlier**, where `AdminActor` is *imported* rather than redeclared *"so the two clients cannot drift on one wire shape."* The principle was applied to one type and not the other, and only the compliant half was disclosed. Repo precedent is single-declaration plus cross-module type import — `RegistrationSource` and `ConsentMethod` each exist exactly once in the whole frontend.
+
+**Issue 2a — a doc claim the file refutes 150 lines later (KZ-008).** The header said `AWAITING_APPLICANT`/`WITHDRAWN` are values *"`list`'s `status` filter accepts and **`AdjudicatedTrailEvent`**/list rows may echo."* The `AdjudicatedTrailEvent` limb is **false** — line 196 of the same file declares `status: 'APPROVED' | 'REJECTED'` — and structurally unreachable, since `buildActivityTrail` only emits an `ADJUDICATED` event for those two statuses. **Leader-verified against both lines.**
+
+**Issue 2b — the test header overclaimed** *"not mock echoes"* for assertions that are pass-through echoes (above).
+
+#### ATTEMPT 2 — all three fixed, and the fix made the gate stronger
+
+`registrations-admin.ts` now does `import type { RegistrationStatus } from './registrations'` + `export type { RegistrationStatus }`, so there is **one home** and T-12/T-13 have one import site. The still-accurate rationale moved onto the surviving declaration, with the false clause **replaced rather than edited** — the corrected text now states explicitly that `AdjudicatedTrailEvent.status` is *"a narrower `'APPROVED' | 'REJECTED'` sub-union, not this type."*
+
+**The re-run falsification proves the fix did more than deduplicate.** Widening the now-shared union reddens **two** consumers:
+
+```
+components/register/StatusLookupForm.tsx(126,13): error TS2322: Type 'string' is not assignable to type 'never'.
+lib/api/registrations-admin.test.ts(802,44): error TS2345: Argument of type 'string' is not assignable to parameter of type 'never'.
+```
+
+The first is a **real chunk-3a component**. Before the fix, the 3a copy had no consumer that would redden. **The exhaustive-switch harness now guards both clients** — which is precisely what the single-declaration rule buys.
+
+**Leader-verified:** one `export type RegistrationStatus` remains (`registrations.ts:167`); the re-export sits at `registrations-admin.ts:42/54`; the false clause is gone.
+
+---
+
+#### `tsc --noEmit` — the Done-when is NOT satisfiable as written, and the honest record is stronger
+
+**`npx tsc --noEmit` is already red on `main`, and has been since a prior spec's commit.** The Leader established this by **removing T-11's two files and re-running**:
+
+```
+app/(admin)/admin/actors/page.test.tsx(45,64): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+```
+
+Introduced by `0158dc0` (`actors/registration-source-and-consent` T-8): `useSearchParams: (...args: unknown[]) => mockUseSearchParams(...args)` spreads into a zero-parameter `jest.fn()`. Outside T-11's change set; T-11 neither caused nor worsened it.
+
+**Recorded disposition (Reviewer-directed):** do **not** mark the Done-when satisfied as literally worded, and do not let "tsc clean" stand. The honest form:
+
+> `tsc --noEmit` reports **zero errors attributable to T-11**. The baseline is red with exactly one pre-existing error (`app/(admin)/admin/actors/page.test.tsx:45`, TS2556, from `0158dc0`); **the error set with T-11's files added is identical to the error set with them removed.**
+
+The Reviewer noted this error-set diff is **strictly stronger evidence** than an exit-status check: *"a green baseline plus a green run proves only that the combination is clean, not that T-11 contributed nothing."*
+
+**FORWARD POINTER → T-16:** amend the Done-when wording in `tasks.md`; do not silently reinterpret it.
+**The baseline itself belongs in its own bugfix task** — one line — and **must not be folded into T-15**, which would mix an unrelated fix into the diff T-15's own gate is measured against.
+
+#### ⚠️ T-15's GATE IS CURRENTLY VACUOUS — the most important finding of this task
+
+**T-15's falsifying input reads *"remove one member from the `Record` → `tsc --noEmit` must fail."*** Since `tsc --noEmit` **already** exits non-zero on this checkout, the exit status carries **zero information** about the mutation — it reports failure both before and after. **A gate that returns the same result whether or not the defect is present is not a gate.** That is KZ-002's exact shape, arriving inside the task whose falsifying input was written to prevent it.
+
+**T-15 must use an error-set diff, not an exit-status check:**
+1. Capture the baseline: `npx tsc --noEmit 2>&1 | sort > /tmp/tsc-before.txt`, and record its contents verbatim (today: exactly one line).
+2. Apply the mutation, re-run to `/tmp/tsc-after.txt`, `diff` the two.
+3. **The gate is: the diff is non-empty AND the new error names the expected file and code** — `TS2741`/`TS2739` ("Property `<MEMBER>` is missing in type…") in `ActorHistoryPanel.tsx`. Assert on the **content** of the new error; an unrelated new error would otherwise pass a bare "diff is non-empty" check.
+4. The post-change run must equal the baseline **exactly** — zero new entries.
+
+The Reviewer's wider point stands regardless of the red baseline: *"even against a green baseline, '`tsc` must fail' would not have proven the failure came from the intended place."* Apply the same discipline to T-15's other falsifying input (the pre-change `IMPORT` run), quoting the jest assertion failure verbatim.
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent registrations-admin` | **37/37** |
+| `npm test -- --silent` (full frontend) | **99 suites / 1,515 tests** (baseline 98/1,478) |
+| `npx tsc --noEmit` | **The one pre-existing baseline error, and no other** |
+| `npm run lint` | No errors; four pre-existing `<img>` warnings in unrelated files |
+
+#### Two disclosures — both upheld
+
+| Disclosure | Ruling |
+|---|---|
+| **`RegistrationApproveResult.actor` imports `AdminActor`** rather than redeclaring it | **Right call.** The backend's own `RegistrationApproveResult.actor` *is* `AdminActor` imported from the actors serializer — redeclaring would create a second mirror of a 24-field type the backend treats as one. `import type` erases at runtime, and `AcknowledgeDialog.tsx` sets the cross-module precedent. |
+| **`region`/`traderType` typed `string`**, not the canonical vocabularies | **Upheld, and on stronger grounds than argued.** `AdminRegistrationListQueryDto` declares `region?: string`/`traderType?: string`; the vocabulary lives in the `@IsIn(CANONICAL_REGIONS)` **validator**, not the type. So `string` is an **exact** mirror of the declared contract, not a concession to consistency. |
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-71** | **The falsification harness covers one union of six.** `RejectionReasonCode`, `DuplicateMatchAttribute`, `AdminRegistrationListSort`, `acceptedAtQualifier` and the `ActivityTrailEvent` discriminant have no `never`-assertion consumer. Typed fixtures catch *narrowing* and *renaming* on those, but **not widening to `string`** — a `string`-typed field accepts any literal. | **FORWARD POINTER → T-14.** Building `RejectDialog`'s labels as a **total `Record<RejectionReasonCode, string>`** converts the widening gap into a compile error for free — the same pattern T-15 uses for `actionBadgeClasses`. |
+| **A-72** | **Path interpolation is unencoded** — `${BASE}/${id}` on all four `:id` routes, no `encodeURIComponent`. Identical to the exemplar; ids are cuids; the caller is an authenticated admin with their own token, so no privilege boundary is crossed. **But T-13 sources `id` from `?id=` in the URL**, so a crafted value containing `../` would be normalised by the URL parser and redirect the request to a different endpoint. | Recorded. Worth `encodeURIComponent` across both clients as a **separate hygiene task**. |
+| **A-73** | The pre-existing `tsc` baseline error (`0158dc0`). | **Own bugfix task.** Explicitly **not** to be folded into T-15. |
+
+#### Decisions made
+
+- **No review round spent on attempt 2.** All three fixes were dictated verbatim by the Reviewer with exact remediation text; no type or behaviour changed; and the re-run falsification is **self-verifying and strictly stronger than before** (it now reddens a real 3a component as well as the harness). The Leader verified all three at source. Recorded so a missing round reads as a decision, not an oversight. Budget was also a factor: 11 rounds remained for five tasks at that point.
