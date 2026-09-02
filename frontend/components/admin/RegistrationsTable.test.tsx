@@ -77,6 +77,18 @@ const ROW_REJECTED_WITH_DUPES: AdminRegistrationListRow = {
   duplicateCandidateCount: 3,
 };
 
+/** R6 — a SATURATED row: `duplicateCandidateCount` at the backend cap (`min(open, 5)`), where the true open-candidate count could be higher. */
+const ROW_SATURATED_DUPES: AdminRegistrationListRow = {
+  id: 'reg-4',
+  reference: 'REG-2026-0004',
+  applicant: 'Arusha Seeds Ltd',
+  traderType: 'seed_company',
+  region: 'Arusha',
+  submittedAt: '2026-03-10T00:00:00.000Z',
+  status: 'PENDING_REVIEW',
+  duplicateCandidateCount: 5,
+};
+
 const ROWS = [ROW_PENDING, ROW_APPROVED, ROW_REJECTED_WITH_DUPES];
 
 // ---------------------------------------------------------------------------
@@ -127,6 +139,17 @@ describe('RegistrationsTable', () => {
     expect(within(table).getAllByText('—').length).toBeGreaterThanOrEqual(2);
     expect(within(table).getByText('3 possible duplicates')).toBeInTheDocument();
   });
+
+  it(
+    'R6 — renders "5+ possible duplicates" for a SATURATED row, never a bare "5 possible ' +
+      'duplicates" (the queue flag must agree with DuplicateWarningCard\'s "5+" at the same cap)',
+    () => {
+      render(<RegistrationsTable rows={[ROW_SATURATED_DUPES]} />);
+      const table = screen.getByRole('table', { name: 'Registrations' });
+      expect(within(table).getByText('5+ possible duplicates')).toBeInTheDocument();
+      expect(within(table).queryByText('5 possible duplicates')).not.toBeInTheDocument();
+    },
+  );
 
   it('renders a status badge with a human label for each of the three producible statuses', () => {
     render(<RegistrationsTable rows={ROWS} />);

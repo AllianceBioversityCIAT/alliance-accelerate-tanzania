@@ -31,8 +31,12 @@
  * attribute matched (phone / email / traderName / gps) without disclosing
  * WHAT matched — do not invent fields beyond that shape.
  *
- * "5+" cap (carried from T-5's review, A-35): the backend caps surfaced
- * candidates at `MAX_CANDIDATES_PER_REGISTRATION = 5`
+ * "5+" cap (carried from T-5's review, A-35; **R6 remediation moved the
+ * label function to `lib/content/duplicate-candidates.ts`** so this card and
+ * `RegistrationsTable.tsx`'s queue flag share ONE definition and cannot
+ * drift apart again — see that module's doc for why the prior fix landed on
+ * this card only and left the queue flag under-reporting): the backend caps
+ * surfaced candidates at `MAX_CANDIDATES_PER_REGISTRATION = 5`
  * (`duplicate-detection.service.ts`). At exactly 5 candidates the true
  * count could be higher — FR-11 scenario 1's "names the number of
  * candidates" would under-report at >=6 if a bare "5" were rendered, so the
@@ -42,13 +46,11 @@
  */
 
 import type { DuplicateCandidate, DuplicateMatchAttribute } from '@/lib/api/registrations-admin';
+import { candidateCountLabel } from '@/lib/content/duplicate-candidates';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Mirrors `MAX_CANDIDATES_PER_REGISTRATION` in `duplicate-detection.service.ts` — the point past which the true count is unknown. */
-const CANDIDATE_CAP = 5;
 
 /** Human-readable label for each `DuplicateMatchAttribute` — total, so a widened union is a compile error. */
 const MATCH_ATTRIBUTE_LABEL: Record<DuplicateMatchAttribute, string> = {
@@ -71,18 +73,27 @@ export interface DuplicateWarningCardProps {
    * dismiss control), matching this card's original T-13 usage.
    */
   onDismiss?: (candidateActorId: string) => void;
-  /** `actorId` of the candidate currently being dismissed, if any — disables just that candidate's button while in flight. */
+  /**
+   * `actorId` of the candidate currently being dismissed, if any.
+   *
+   * **R4 remediation.** Disables EVERY dismiss button while any one
+   * candidate's request is in flight, not just that candidate's own — a
+   * per-candidate-only disable left every OTHER button clickable during an
+   * in-flight request, and `dismissDuplicate`'s pre-fix read-modify-write
+   * could lose whichever of two concurrent dismissals landed second (see
+   * `admin-registrations.service.ts`'s `dismissDuplicate` doc, R4). The
+   * backend fix (a bounded-retry compare-and-set) makes concurrent
+   * dismissals safe on the server; this stays as defense in depth so a
+   * reviewer cannot fire a second request from this screen at all while the
+   * first is outstanding. `aria-busy` still marks only the candidate whose
+   * request is actually in flight.
+   */
   dismissingId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function candidateCountLabel(count: number): string {
-  if (count >= CANDIDATE_CAP) return `${CANDIDATE_CAP}+`;
-  return String(count);
-}
 
 function matchedOnLabel(matchedOn: DuplicateMatchAttribute[]): string {
   return matchedOn.map((attr) => MATCH_ATTRIBUTE_LABEL[attr]).join(', ');
@@ -149,7 +160,7 @@ export function DuplicateWarningCard({
                 <button
                   type="button"
                   onClick={() => onDismiss(candidate.actorId)}
-                  disabled={isDismissing}
+                  disabled={dismissingId !== null}
                   aria-busy={isDismissing}
                   aria-label={`Mark ${candidate.traderName} as not a duplicate`}
                   className={[

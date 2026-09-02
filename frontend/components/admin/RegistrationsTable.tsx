@@ -73,6 +73,7 @@ import {
   REGISTRATION_STATUS_LABEL,
   REGISTRATION_STATUS_BADGE_CLASSES,
 } from '@/lib/content/registration-status';
+import { candidateCountLabel } from '@/lib/content/duplicate-candidates';
 
 // ---------------------------------------------------------------------------
 // Breakpoint — single source; see the measured `md` decision in the
@@ -155,6 +156,18 @@ function StatusBadge({ status }: { status: RegistrationStatus }) {
  * corresponding flag so a reviewer can spot it before opening"). A count of
  * zero renders a muted dash, matching `ActorsTable.tsx`'s `formatPhone`-style
  * treatment of an absent value rather than an empty cell.
+ *
+ * **R6 remediation.** `AdminRegistrationListRow.duplicateCandidateCount` is
+ * `min(open, CANDIDATE_CAP)` (`backend/src/registrations/
+ * admin-registrations.service.ts`'s `list` — see that method's JSDoc) — a
+ * saturated row's true count could be higher than what this component
+ * receives. This previously rendered the bare number regardless
+ * (`{count} possible duplicates`), so a saturated registration read "5
+ * possible duplicates" here and "5+" on the detail screen — two surfaces
+ * disagreeing about the SAME registration. `candidateCountLabel` (`lib/
+ * content/duplicate-candidates.ts`) is the single definition both this flag
+ * and `DuplicateWarningCard`'s heading now share, so the two cannot drift
+ * apart again.
  */
 function DuplicatesFlag({ count }: { count: number }) {
   if (count <= 0) {
@@ -167,7 +180,7 @@ function DuplicatesFlag({ count }: { count: number }) {
         'bg-warning/10 text-warning',
       ].join(' ')}
     >
-      {count} possible {count === 1 ? 'duplicate' : 'duplicates'}
+      {candidateCountLabel(count)} possible {count === 1 ? 'duplicate' : 'duplicates'}
     </span>
   );
 }

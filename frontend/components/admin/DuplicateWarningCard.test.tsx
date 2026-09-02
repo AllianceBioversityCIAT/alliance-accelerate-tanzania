@@ -19,7 +19,11 @@
  *     each calling `onDismiss` with THAT candidate's `actorId` only —
  *     dismissing one must never be able to affect another (never row-
  *     level/index-based).
- *   - `dismissingId` disables only the matching candidate's button.
+ *   - **R4 remediation** — `dismissingId` disables EVERY dismiss button
+ *     while any one candidate is in flight (not just that candidate's own),
+ *     so a reviewer cannot fire a second concurrent dismissal from this
+ *     screen; `aria-busy` still marks only the candidate actually in
+ *     flight.
  *   - jest-axe clean (NFR-5), including with dismiss buttons rendered.
  */
 
@@ -124,7 +128,7 @@ describe('DuplicateWarningCard', () => {
     expect(onDismiss).toHaveBeenCalledWith('actor-2');
   });
 
-  it("T-14 — dismissingId disables only the matching candidate's button, never the others", () => {
+  it('R4 — dismissingId disables EVERY dismiss button, not just the matching candidate\'s', () => {
     const candidates = [
       buildCandidate({ actorId: 'actor-1', traderName: 'Meru Agro Cooperative Society' }),
       buildCandidate({ actorId: 'actor-2', traderName: 'Arusha Seeds Ltd' }),
@@ -135,9 +139,34 @@ describe('DuplicateWarningCard', () => {
 
     // The aria-label (not the visible "Marking…" text) is this button's
     // accessible name, since aria-label takes precedence over text content.
+    const inFlightButton = screen.getByRole('button', {
+      name: 'Mark Meru Agro Cooperative Society as not a duplicate',
+    });
+    const otherButton = screen.getByRole('button', {
+      name: 'Mark Arusha Seeds Ltd as not a duplicate',
+    });
+
+    // Both disabled — R4's UI mitigation is a blanket lock while ANY
+    // dismissal is in flight, not a per-candidate one.
+    expect(inFlightButton).toBeDisabled();
+    expect(otherButton).toBeDisabled();
+
+    // aria-busy still discriminates: only the candidate actually in flight
+    // is announced as busy.
+    expect(inFlightButton).toHaveAttribute('aria-busy', 'true');
+    expect(otherButton).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('R4 — with no dismissal in flight, every dismiss button stays enabled', () => {
+    const candidates = [
+      buildCandidate({ actorId: 'actor-1', traderName: 'Meru Agro Cooperative Society' }),
+      buildCandidate({ actorId: 'actor-2', traderName: 'Arusha Seeds Ltd' }),
+    ];
+    render(<DuplicateWarningCard candidates={candidates} onDismiss={jest.fn()} dismissingId={null} />);
+
     expect(
       screen.getByRole('button', { name: 'Mark Meru Agro Cooperative Society as not a duplicate' })
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.getByRole('button', { name: 'Mark Arusha Seeds Ltd as not a duplicate' })
     ).toBeEnabled();

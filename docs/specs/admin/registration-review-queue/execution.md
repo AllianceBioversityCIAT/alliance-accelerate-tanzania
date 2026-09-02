@@ -2430,3 +2430,159 @@ citation already frozen in `docs/specs/archive/2026-09-01-enhancement--usage-ana
 "ADR-011 — entered `Accepted`" among them — were authored when this decision
 carried the id 011 and have been renumbered in place to 012. The decision's
 content never changed; only its index did, and only because `main` got there first.
+
+---
+
+## Post-validation remediation — R4–R7 (code)
+
+`/akili-validate` raised four code WARNs. All four are closed. R4, R6 and R7 passed
+their first review round; R5 took the full three-attempt ceiling, exhausted it, and
+was closed by a user-authorised Leader-inline edit.
+
+### R4 — `dismissDuplicate` lost update · **PASS, attempt 1**
+
+Rewritten from a blind read-modify-write to a bounded-retry compare-and-set
+(`updateMany` with `where` pinning the exact value the attempt read;
+`MAX_DISMISS_DUPLICATE_ATTEMPTS = 3`; exhaustion raises `409`), bringing the one
+write that abandoned the module's discipline back in line with `approve`/`reject`.
+UI mitigation: all dismiss buttons disable while any dismissal is in flight,
+`aria-busy` still scoped to the one in flight.
+
+**Implementer's pre-fix red, verbatim:**
+
+```
+expect(received).toHaveLength(expected)
+Expected length: 2
+Received length: 1
+Received array:  [{"actorId": "actor-B", ...}]
+```
+
+**The disclosed caveat, and how it was discharged.** The Implementer reported the
+JSON `equals` predicate as verified against in-memory mocks only. That is precisely
+the gap that let T-4's MySQL JSON path (`region` vs `$.region`) pass every test and
+still 500 in production, so the Leader ran it against the live MySQL instance:
+
+| Case | Rows | Meaning |
+|---|---|---|
+| `equals: Prisma.DbNull` on a stored NULL | 1 | the first dismissal can land |
+| `equals: <value just read>` | 1 | an uncontended append can land |
+| `equals: <stale value>` | **0** | **the race is closed** |
+
+Had the third matched 1, the fix would fix nothing; had all three matched 0, every
+dismissal would 409 after three retries — a worse defect than the one being fixed.
+The mechanism is real on MySQL, not only on mocks.
+
+Reviewer additionally confirmed the concurrency test **discriminates**: the race
+block's `update` double is wired to an unconditional overwrite, so the test drives
+the pre-fix code path rather than merely erroring on a renamed mock.
+
+### R6 — queue flag under-reported a saturated count · **PASS, attempt 1**
+
+New `frontend/lib/content/duplicate-candidates.ts` owns `CANDIDATE_CAP` and
+`candidateCountLabel`; both surfaces import it. Backend JSDoc corrected to
+`min(open, 5)`. Pre-fix red: `Unable to find an element with the text: 5+ possible
+duplicates`.
+
+Reviewer adjudicated the Leader's concern that the module recreates frontend↔backend
+drift one layer up: **it does not.** Copy count went from 2 to 1; the residual
+frontend↔backend copy pre-existed and was relocated, not created. The residual drift
+is directionally safe — `duplicateCandidateCount` arrives already capped, so a stale
+frontend cap can only under-report, never over-report. Both docblocks now name each
+other.
+
+### R7 — `SAFE_ID_PATTERN` comment/regex mismatch · **PASS, attempt 1**
+
+`i` flag dropped, matching the documented contract. Two independent assertions redden
+pre-fix.
+
+### R5 — failed refresh destroyed the approval confirmation · **three attempts, then HALT**
+
+| Attempt | Outcome |
+|---|---|
+| 1 | **FAIL** — gate change correct and kept, but the refresh failure was reported to nobody, and the justifying comment asserted a false invariant |
+| 2 | **FAIL** — inline alert correct; one comment clause stated a mechanism the platform does not provide |
+| 3 | **FAIL** — items 1–4 verified clean; a *new* false causal claim entered in the test-comment paragraph the attempt authored |
+
+**Attempt 1's two defects.** `loadDetail`'s catch sets `error` without rethrowing, so
+`await onRefresh()` resolves *successfully* and the panel's purpose-built
+`announcementError` is never reached; `error` was rendered only inside the
+now-unreachable `!detail` branch. Net effect on the system's one irreversible path: a
+`role="status"` "approved and published" banner above a stale `PENDING_REVIEW` badge
+and an **enabled** Approve/Reject panel, with no signal. The Reviewer found the
+enabled panel; the Leader had only found the silent staleness.
+
+Second defect: the comment claimed `!detail` means "the initial load failed". It does
+not — the mount effect is keyed on `id` and never calls `setDetail(null)`, so a failed
+load for a new `?id=` would render the *previous* registration's data under a
+`DecisionPanel` bound to the wrong record. Latent, not live (no in-app affordance
+produces `?id=`→`?id=`), but the over-claim gated.
+
+**Attempt 2** landed the alert and narrowed the comment — the Reviewer endorsed
+choosing narration over `setDetail(null)`, since this file's `next/navigation` mock
+returns a fresh router per render and clearing `detail` there would blank the panel on
+spurious re-fires, breaking the very guarantee R5 protects. But one clause claimed
+`ReviewLink` is "a `next/link` **full navigation**". `next/link` is a **soft**
+client-side navigation, and stays soft under `output: 'export'`; `ReviewView` remounts
+because the *route* changes. The Reviewer's argument for gating it is the one worth
+keeping: **this comment is the only guard that exists** — no code guard, no test —
+against a `DecisionPanel` bound to the wrong registration, and its discriminator was
+inverted for the most likely way the trap gets introduced (a prev/next control on this
+page, written as a same-route `next/link`, which would *not* remount).
+
+**Attempt 3** landed the corrected mechanism verbatim, including the load-bearing
+sentence *"a `next/link` is not itself the safety property — the route change is"*,
+and withdrew a further over-claim (that the alert copy stays honest for *both* causes
+— for the latent cause the panel would show a **different** registration, which "out
+of date" understates). Verification confirmed items 1–4 true of shipped code.
+
+**But attempt 3 introduced a fresh false claim in the paragraph it authored** — the
+fifth such instance in this run, inside the attempt whose sole purpose was correcting
+false comments. The A4 hoist rationale asserted an unobserved mechanism as fact:
+
+- It claimed a fresh-object-per-call fixture kept a render loop alive. The
+  Implementer's own report records **15 of 15 green pre-fix runs on exactly that
+  shape**.
+- It claimed other tests survive because `setDetail` bails out on referential
+  identity. False — they survive because every DOM assertion in the file is inside
+  `waitFor`. The loop is driven by the `useRouter` mock returning a fresh object per
+  render, which the **immediately preceding paragraph states correctly**. Two adjacent
+  paragraphs gave two different causes for the same loop; only the one the change did
+  *not* address was operative.
+- The Implementer's report stated the in-code comment disclosed the non-reproduction.
+  **The Leader grepped the comment: no such disclosure existed.** A completion report
+  asserting about its own artefact something the artefact does not bear.
+
+**HALT and user adjudication.** The three-attempt ceiling was exhausted, so the Leader
+did not self-authorise a fix. Presented to the user, who chose **deletion over
+rewriting** — the reasoning being that after five corrections that introduced fresh
+false claims, the lowest-risk correction is the one that removes text rather than
+adding it. The `waitFor` is what actually provides robustness (Reviewer-verified as
+discriminating and honestly justified); the hoist closed nothing, since
+`loadDetail`'s success path calls `setError(null)` regardless of referential
+stability.
+
+Leader-inline edit, user-authorised: the hoist and its entire rationale deleted, the
+mock restored to building its own fixture, and the `waitFor` justification rewritten
+over what is actually known — including an explicit record that the flake was never
+reproduced and why the hoist was removed.
+
+**Leader verification after deletion:** the R5 test **10 runs, 10 green**. With the
+Implementer's 15/15 on the un-hoisted shape, that is 25 observations and zero flakes —
+the hoist was not load-bearing.
+
+### Final gates
+
+| Gate | Result |
+|---|---|
+| `backend` tests | **990/990, 75 suites** (quiet tree, 6.3 s) |
+| `backend` lint (`npx … --quiet`) · build | clean · clean |
+| `frontend` tests | **1614/1614, 108 suites** |
+| `frontend` lint · build | 0 errors · static export 27/27 |
+| `frontend` `tsc --noEmit` | error set unchanged — the single pre-existing A-73 error |
+
+**A-93 reproduced a third time, by the Leader's own error.** Running the frontend
+build and the backend suite in one command produced **8 failures at 36.8 s**; the same
+suite alone on a quiet tree gave **990/990 in 6.3 s**. This is the concurrency
+protocol's "a measurement taken while another worker is active is not a slow
+measurement, it is a **wrong** one" — demonstrated by violating it. Clean evidence for
+the A-93 ticket.

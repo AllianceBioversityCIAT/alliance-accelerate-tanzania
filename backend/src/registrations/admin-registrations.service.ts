@@ -106,7 +106,18 @@ export interface AdminRegistrationListRow {
   region: string;
   submittedAt: Date;
   status: RegistrationStatus;
-  /** Open (non-dismissed) duplicate candidates for this registration (FR-11 scenario 1). */
+  /**
+   * Open (non-dismissed) duplicate candidates for this registration (FR-11
+   * scenario 1). **`min(open, 5)`** — capped at
+   * `MAX_CANDIDATES_PER_REGISTRATION` (`duplicate-detection.service.ts`), the
+   * SAME cap the detail screen's candidate list saturates at. A saturated
+   * row's true open-candidate count may be higher than this value; the
+   * frontend renders that case as "5+", never a bare "5" (R6 remediation —
+   * `frontend/lib/content/duplicate-candidates.ts`'s `candidateCountLabel`,
+   * shared by `RegistrationsTable.tsx`'s queue flag and
+   * `DuplicateWarningCard.tsx`'s heading so the two surfaces cannot report
+   * different numbers for the same registration).
+   */
   duplicateCandidateCount: number;
 }
 
@@ -122,6 +133,14 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 /** NFR-9 — `pageSize` is capped server-side regardless of what the client sends. */
 const MAX_PAGE_SIZE = 100;
+/**
+ * R4 remediation — bounded retry count for `dismissDuplicate`'s
+ * compare-and-set write, mirroring {@link MAX_REFERENCE_ALLOCATION_ATTEMPTS}'s
+ * precedent (`registration-reference.util.ts`): a concurrent dismissal is
+ * expected to be rare and to resolve within one or two retries, never an
+ * unbounded loop.
+ */
+const MAX_DISMISS_DUPLICATE_ATTEMPTS = 3;
 
 /**
  * The subset of `RegistrationPayloadDto` this list projects, plus the two
@@ -524,12 +543,40 @@ export class AdminRegistrationsService {
    * `candidateActorId` is not a duplicate for this registration (FR-11
    * scenario 2).
    *
-   * **Appends, never overwrites** (DC-31): the existing
-   * `duplicateDismissals` array (or `[]` if the column is `null`) is read,
-   * the new entry is pushed onto it, and the WHOLE array is written back —
-   * so dismissing one candidate can never suppress a previously-dismissed
-   * one, which is what a row-level write (e.g. `data: {
-   * duplicateDismissals: [newEntry] }`) would do.
+   * **Appends, never row-level-overwrites** (DC-31): a successful write
+   * pushes one new entry onto the array it read (or `[]` if the column was
+   * `null`) — never replaces the whole column with just the new entry,
+   * which is what `data: { duplicateDismissals: [newEntry] }` would do. A
+   * row-level write of that shape would make dismissing candidate B erase
+   * candidate A's earlier entry outright; this method never performs one.
+   *
+   * **Corrected (post-validation remediation R4).** The paragraph above
+   * describes what ONE write does to the array it was given — it does not,
+   * by itself, make two CONCURRENT dismissals of DIFFERENT candidates safe.
+   * The original version of this method read the row, built the merged
+   * array in application memory, and wrote the whole array back with a
+   * plain `update` carrying no predicate on the value it had read: a
+   * textbook read-modify-write race. Two overlapping dismissals can both
+   * read the SAME base array; the second write to land then overwrites the
+   * first, and the first candidate's entry — though it WAS correctly
+   * appended in memory by its own request — is never persisted. Appending
+   * in memory does not prevent the write itself from being lost.
+   *
+   * The write is now a bounded-retry **conditional update** — the same
+   * compare-and-set discipline `approve` (step 1, `:updateMany({ where: {
+   * id, status: PENDING_REVIEW } })`) and `reject` (identical construction)
+   * already use for the adjudication columns, brought here for
+   * `duplicateDismissals`: each attempt appends in memory exactly as
+   * before, then writes via `updateMany({ where: { id, duplicateDismissals:
+   * <the exact value this attempt read> }, data: { duplicateDismissals:
+   * <appended> } })`. `count === 1` means no concurrent writer moved the
+   * column between this attempt's read and its write, so the append landed
+   * cleanly. `count === 0` means a concurrent write landed first — the
+   * column changed under us — and the attempt retries with a FRESH read,
+   * up to {@link MAX_DISMISS_DUPLICATE_ATTEMPTS} times, so a losing attempt
+   * re-appends onto the winner's array rather than silently dropping its
+   * own entry. Exhausting the retry budget raises a `409`, never a silent
+   * loss and never an unbounded loop.
    *
    * **The candidate is validated against the `Actor` table, not against
    * `DuplicateDetectionService`.** `design.md` §5's contract row makes
@@ -550,28 +597,38 @@ export class AdminRegistrationsService {
    * it was T-6's FAIL Issue 2 (`execution.md`), and this column feeds the
    * same activity trail that defect was found in.
    *
-   * `dismissedAt` is `new Date().toISOString()` — always `Z`-suffixed.
-   * `ActivityTrailEvent`'s `DUPLICATE_DISMISSED` entry (`serializers/
-   * activity-trail.serializer.ts`) reads this value back RAW from the JSON
-   * column and sorts the whole trail with `localeCompare`; an
-   * offset-bearing instant (`…+03:00`) would both mis-order that event and
-   * diverge in wire format from the other four trail events, which are all
-   * `.toISOString()` (carried forward from T-6's `execution.md` A-37).
+   * `dismissedAt` is `new Date().toISOString()` — always `Z`-suffixed, taken
+   * fresh on EACH attempt (not once before the retry loop), so a dismissal
+   * that only succeeds on a retry is timestamped at the moment it actually
+   * committed, not the moment it was first attempted. `ActivityTrailEvent`'s
+   * `DUPLICATE_DISMISSED` entry (`serializers/activity-trail.serializer.ts`)
+   * reads this value back RAW from the JSON column and sorts the whole
+   * trail with `localeCompare`; an offset-bearing instant (`…+03:00`) would
+   * both mis-order that event and diverge in wire format from the other
+   * four trail events, which are all `.toISOString()` (carried forward from
+   * T-6's `execution.md` A-37).
    *
    * Returns `{ registration: { id, reference, status } }` — a minimal
    * confirmation, not the full detail projection: building the full detail
    * (`toAdminRegistrationDetail`) requires the SAME `DuplicateDetectionService`
-   * call this method deliberately avoids on the write path. The updated
-   * candidate list and the new `DUPLICATE_DISMISSED` trail entry are visible
-   * on the next `GET /admin/registrations/:id` — the read path, where
-   * consulting detection is the intended, documented behaviour.
+   * call this method deliberately avoids on the write path. **Sourced from
+   * the read that won the compare-and-set, not from the write itself** —
+   * `updateMany` returns only `{ count }`, never row data, and `id`/
+   * `reference`/`status` cannot change across a dismissal in any case. The
+   * updated candidate list and the new `DUPLICATE_DISMISSED` trail entry are
+   * visible on the next `GET /admin/registrations/:id` — the read path,
+   * where consulting detection is the intended, documented behaviour.
    */
   async dismissDuplicate(
     id: string,
     candidateActorId: string,
     actingSub: string,
   ): Promise<DismissDuplicateResult> {
-    const row = await this.prisma.registration.findUnique({
+    // The FIRST read — establishes the 404 (unknown registration) before
+    // anything else runs, exactly like the pre-fix version. Reassigned
+    // below on a retry (never re-declared), so the loop always appends onto
+    // the freshest snapshot of the column.
+    let row = await this.prisma.registration.findUnique({
       where: { id },
       select: { id: true, reference: true, status: true, duplicateDismissals: true },
     });
@@ -593,25 +650,68 @@ export class AdminRegistrationsService {
 
     const dismissedByEmail = await this.actingAdminResolver.resolve(actingSub);
 
-    const existingDismissals: unknown[] = Array.isArray(row.duplicateDismissals)
-      ? row.duplicateDismissals
-      : [];
-    const newEntry: DuplicateDismissalEntryWrite = {
-      actorId: candidateActorId,
-      dismissedBySub: actingSub,
-      dismissedByEmail,
-      dismissedAt: new Date().toISOString(),
-    };
+    for (let attempt = 1; attempt <= MAX_DISMISS_DUPLICATE_ATTEMPTS; attempt += 1) {
+      if (attempt > 1) {
+        // A previous attempt's compare-and-set predicate matched zero rows
+        // — a concurrent dismissal committed between that attempt's read
+        // and its write. Re-read before retrying so this attempt appends
+        // onto the CURRENT array, never the stale one that just lost.
+        const refreshed = await this.prisma.registration.findUnique({
+          where: { id },
+          select: { id: true, reference: true, status: true, duplicateDismissals: true },
+        });
+        if (!refreshed) {
+          throw new NotFoundException(`Registration ${id} not found`);
+        }
+        row = refreshed;
+      }
 
-    const updated = await this.prisma.registration.update({
-      where: { id },
-      data: { duplicateDismissals: [...existingDismissals, newEntry] as Prisma.InputJsonValue },
-      select: { id: true, reference: true, status: true },
-    });
+      const existingDismissals: unknown[] = Array.isArray(row.duplicateDismissals)
+        ? row.duplicateDismissals
+        : [];
+      const newEntry: DuplicateDismissalEntryWrite = {
+        actorId: candidateActorId,
+        dismissedBySub: actingSub,
+        dismissedByEmail,
+        dismissedAt: new Date().toISOString(),
+      };
 
-    return {
-      registration: { id: updated.id, reference: updated.reference, status: updated.status },
-    };
+      // The compare-and-set predicate: write only if the column still holds
+      // EXACTLY the value this attempt just read. A stored SQL NULL is
+      // `Prisma.DbNull` here, never `Prisma.JsonNull` (the JSON literal
+      // `null`) — this column is only ever a real SQL NULL or a real array,
+      // so DbNull is the correct predicate for the "never dismissed yet"
+      // case.
+      const updated = await this.prisma.registration.updateMany({
+        where: {
+          id,
+          duplicateDismissals: {
+            equals:
+              row.duplicateDismissals === null
+                ? Prisma.DbNull
+                : (row.duplicateDismissals as Prisma.InputJsonValue),
+          },
+        },
+        data: {
+          duplicateDismissals: [...existingDismissals, newEntry] as Prisma.InputJsonValue,
+        },
+      });
+
+      if (updated.count === 1) {
+        return {
+          registration: { id: row.id, reference: row.reference, status: row.status },
+        };
+      }
+      // count === 0 — retry with a fresh read (loop continues).
+    }
+
+    // Retry budget exhausted — a `409`, matching the module's other
+    // "recoverable conflict" responses (design.md §5), never a silent loss
+    // of this dismissal and never an unbounded loop.
+    throw new ConflictException(
+      `Registration ${id} duplicateDismissals kept changing concurrently after ` +
+        `${MAX_DISMISS_DUPLICATE_ATTEMPTS} attempts`,
+    );
   }
 
   /**

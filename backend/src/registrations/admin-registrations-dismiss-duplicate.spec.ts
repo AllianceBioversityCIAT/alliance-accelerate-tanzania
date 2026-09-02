@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { RegistrationStatus } from '@prisma/client';
+import { Prisma, RegistrationStatus } from '@prisma/client';
 import { AdminRegistrationsController } from './admin-registrations.controller';
 import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
@@ -19,12 +19,22 @@ import { ActingAdminResolver } from '../actors/acting-admin.resolver';
  * Prisma, mirroring `admin-registrations.service.spec.ts`'s own style) and
  * `AdminRegistrationsController.dismissDuplicate` (mocked service, mirroring
  * `admin-registrations.controller.spec.ts`'s own style).
+ *
+ * **R4 remediation (post-validation).** `dismissDuplicate` was rewritten
+ * from a plain read-modify-write (`prisma.registration.update`, no
+ * predicate on the value read) to a bounded-retry compare-and-set
+ * (`prisma.registration.updateMany`, `where` pinning the exact value this
+ * attempt read) — see that method's own doc comment in
+ * `admin-registrations.service.ts` for the full account of the defect and
+ * the fix. Every test below that asserts on the persistence call now
+ * targets `updateMany`, not `update`; a standalone `describe` block near
+ * the end of this file is the NEW concurrency proof this remediation added.
  */
 
 interface MockPrisma {
   registration: {
     findUnique: jest.Mock;
-    update: jest.Mock;
+    updateMany: jest.Mock;
   };
   actor: {
     findMany: jest.Mock;
@@ -93,7 +103,10 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
     prisma = {
       registration: {
         findUnique: jest.fn(),
-        update: jest.fn(),
+        // R4 — the compare-and-set write. Defaults to a first-attempt
+        // success ({ count: 1 }); the concurrency `describe` block below
+        // overrides this with real compare-and-set semantics.
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       actor: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -124,7 +137,7 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       service.dismissDuplicate('reg-missing', 'actor-1', 'admin-sub'),
     ).rejects.toThrow('Registration reg-missing not found');
     expect(prisma.actor.findUnique).not.toHaveBeenCalled();
-    expect(prisma.registration.update).not.toHaveBeenCalled();
+    expect(prisma.registration.updateMany).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundException (404) when candidateActorId names no existing Actor row — the second limb of the §5 404 contract', async () => {
@@ -138,7 +151,7 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       where: { id: 'actor-does-not-exist' },
       select: { id: true },
     });
-    expect(prisma.registration.update).not.toHaveBeenCalled();
+    expect(prisma.registration.updateMany).not.toHaveBeenCalled();
   });
 
   it(
@@ -148,12 +161,11 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
       prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
       actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
-      prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
       await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
 
-      expect(prisma.registration.update).toHaveBeenCalledTimes(1);
-      const data = prisma.registration.update.mock.calls[0][0].data;
+      expect(prisma.registration.updateMany).toHaveBeenCalledTimes(1);
+      const data = prisma.registration.updateMany.mock.calls[0][0].data;
       expect(data.duplicateDismissals).toHaveLength(1);
       expect(data.duplicateDismissals[0]).toMatchObject({ actorId: 'actor-1' });
     },
@@ -168,11 +180,10 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       prisma.registration.findUnique.mockResolvedValueOnce(dismissBaseRow());
       prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
       actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
-      prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
       await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
 
-      const writtenDismissals = prisma.registration.update.mock.calls[0][0].data
+      const writtenDismissals = prisma.registration.updateMany.mock.calls[0][0].data
         .duplicateDismissals as unknown[];
       expect(writtenDismissals).toHaveLength(1);
 
@@ -209,11 +220,10 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       );
       prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
       actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
-      prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
       await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
 
-      const data = prisma.registration.update.mock.calls[0][0].data;
+      const data = prisma.registration.updateMany.mock.calls[0][0].data;
       expect(data.duplicateDismissals).toHaveLength(2);
       expect(data.duplicateDismissals[0]).toEqual(priorEntry);
       expect(data.duplicateDismissals[1]).toMatchObject({ actorId: 'actor-1' });
@@ -225,12 +235,11 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
       prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
       actingAdminResolver.resolve.mockResolvedValue('resolved-admin@example.com');
-      prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
       await service.dismissDuplicate('reg-1', 'actor-1', 'cognito-sub-xyz');
 
       expect(actingAdminResolver.resolve).toHaveBeenCalledWith('cognito-sub-xyz');
-      const entry = prisma.registration.update.mock.calls[0][0].data.duplicateDismissals[0];
+      const entry = prisma.registration.updateMany.mock.calls[0][0].data.duplicateDismissals[0];
       expect(entry.dismissedBySub).toBe('cognito-sub-xyz');
       expect(entry.dismissedByEmail).toBe('resolved-admin@example.com');
     });
@@ -242,11 +251,10 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
         prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
         prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
         actingAdminResolver.resolve.mockResolvedValue(null);
-        prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
         await service.dismissDuplicate('reg-1', 'actor-1', 'cognito-sub-xyz');
 
-        const entry = prisma.registration.update.mock.calls[0][0].data.duplicateDismissals[0];
+        const entry = prisma.registration.updateMany.mock.calls[0][0].data.duplicateDismissals[0];
         expect(entry.dismissedByEmail).toBeNull();
         expect(entry.dismissedByEmail).not.toBe('');
       },
@@ -257,13 +265,12 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
     prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
     prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
     actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
-    prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
     const before = new Date();
     await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
     const after = new Date();
 
-    const entry = prisma.registration.update.mock.calls[0][0].data.duplicateDismissals[0];
+    const entry = prisma.registration.updateMany.mock.calls[0][0].data.duplicateDismissals[0];
     expect(entry.dismissedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     const parsed = new Date(entry.dismissedAt).getTime();
     expect(parsed).toBeGreaterThanOrEqual(before.getTime());
@@ -281,11 +288,10 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
       prisma.registration.findUnique.mockResolvedValueOnce(dismissBaseRow());
       prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
       actingAdminResolver.resolve.mockResolvedValue(null);
-      prisma.registration.update.mockResolvedValue(dismissBaseRow());
 
       await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
 
-      const writtenDismissals = prisma.registration.update.mock.calls[0][0].data
+      const writtenDismissals = prisma.registration.updateMany.mock.calls[0][0].data
         .duplicateDismissals as unknown[];
       expect(writtenDismissals).toHaveLength(1);
 
@@ -304,26 +310,185 @@ describe('AdminRegistrationsService.dismissDuplicate (T-7, FR-11 scenario 2, moc
     },
   );
 
-  it('resolves { registration: { id, reference, status } } from the UPDATED row', async () => {
-    prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
-    prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
-    actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
-    prisma.registration.update.mockResolvedValue({
-      id: 'reg-1',
-      reference: 'REG-2026-0001',
-      status: RegistrationStatus.PENDING_REVIEW,
-    });
-
-    const result = await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
-
-    expect(result).toEqual({
-      registration: {
+  it(
+    'resolves { registration: { id, reference, status } } from the row READ before the ' +
+      'compare-and-set write, never from the write itself (R4 — updateMany returns only a ' +
+      'count, never row data; id/reference/status cannot change across a dismissal)',
+    async () => {
+      prisma.registration.findUnique.mockResolvedValue({
         id: 'reg-1',
         reference: 'REG-2026-0001',
         status: RegistrationStatus.PENDING_REVIEW,
+        duplicateDismissals: null,
+      });
+      prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
+      actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
+
+      const result = await service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1');
+
+      expect(result).toEqual({
+        registration: {
+          id: 'reg-1',
+          reference: 'REG-2026-0001',
+          status: RegistrationStatus.PENDING_REVIEW,
+        },
+      });
+    },
+  );
+
+  it(
+    'R4 — exhausting the retry budget raises a 409, never a silent loss and never an ' +
+      'unbounded loop',
+    async () => {
+      prisma.registration.findUnique.mockResolvedValue(dismissBaseRow());
+      prisma.actor.findUnique.mockResolvedValue({ id: 'actor-1' });
+      actingAdminResolver.resolve.mockResolvedValue('admin@example.com');
+      // Every attempt's compare-and-set predicate loses — simulates a
+      // registration under sustained concurrent write pressure.
+      prisma.registration.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.dismissDuplicate('reg-1', 'actor-1', 'admin-sub-1'),
+      ).rejects.toThrow(/kept changing concurrently/);
+
+      // Bounded: findUnique is called once up front (the 404 check) plus
+      // once per retry attempt after the first (MAX_DISMISS_DUPLICATE_
+      // ATTEMPTS - 1 extra re-reads), and updateMany exactly
+      // MAX_DISMISS_DUPLICATE_ATTEMPTS times — never runs away.
+      expect(prisma.registration.updateMany).toHaveBeenCalledTimes(3);
+      expect(prisma.registration.findUnique).toHaveBeenCalledTimes(3);
+    },
+  );
+});
+
+/**
+ * R4 remediation — the required concurrency proof (post-validation WARN
+ * R4): two dismissals of DIFFERENT candidates, interleaved so both read the
+ * SAME base `duplicateDismissals` array, must not lose either entry.
+ *
+ * **Why this uses its own hand-rolled Prisma double instead of jest.fn()
+ * return-value sequencing.** The other tests in this file mock Prisma calls
+ * with fixed/sequenced return values, which can only prove what a SINGLE
+ * request does. A lost update is a property of TWO requests racing against
+ * shared mutable state — proving it (and proving the fix) requires a fake
+ * that actually behaves like the row it is standing in for: `findUnique`
+ * always reads the CURRENT value, and the write methods actually mutate it.
+ * `update` is wired to an UNCONDITIONAL overwrite — exactly what a real
+ * `UPDATE Registration SET duplicateDismissals = ? WHERE id = ?` with no
+ * predicate on the prior value does — which is what lets this SAME test run
+ * against the pre-fix `dismissDuplicate` (which called `.update`) and
+ * genuinely reproduce the lost update, rather than merely erroring on a
+ * renamed mock method. `updateMany` is wired to the real compare-and-set
+ * semantics the fix depends on: a write only lands when the column still
+ * holds exactly the value this attempt read.
+ *
+ * Two `dismissDuplicate` calls are started via `Promise.all` with NO
+ * intervening `await` — both begin executing synchronously up to their own
+ * first awaited Prisma call, so they interleave in lockstep through their
+ * identical sequence of awaited reads (registration existence check, actor
+ * existence check, email resolution) and arrive at their first write
+ * attempt in the SAME microtask round, each having read the row before
+ * either had written to it.
+ */
+describe('R4 — CONCURRENCY: two overlapping dismissals of DIFFERENT candidates', () => {
+  interface RaceMockPrisma {
+    registration: {
+      findUnique: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    actor: {
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
+    };
+  }
+
+  function buildRacePrisma(stateHolder: { stored: unknown[] | null }): RaceMockPrisma {
+    return {
+      registration: {
+        findUnique: jest.fn(async () => ({
+          id: 'reg-1',
+          reference: 'REG-2026-0001',
+          status: RegistrationStatus.PENDING_REVIEW,
+          duplicateDismissals: stateHolder.stored,
+        })),
+        // Pre-fix shape (`.update`) — an UNCONDITIONAL overwrite, matching
+        // a real MySQL UPDATE with no predicate on the prior value. This is
+        // what makes this same test able to redden against the ORIGINAL
+        // dismissDuplicate.
+        update: jest.fn(
+          async ({ data }: { data: { duplicateDismissals: unknown[] } }) => {
+            stateHolder.stored = data.duplicateDismissals;
+            return {
+              id: 'reg-1',
+              reference: 'REG-2026-0001',
+              status: RegistrationStatus.PENDING_REVIEW,
+            };
+          },
+        ),
+        // Post-fix shape (`.updateMany`) — a real compare-and-set: `count:
+        // 0` whenever the column no longer holds exactly what THIS attempt
+        // read.
+        updateMany: jest.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { duplicateDismissals: { equals: unknown } };
+            data: { duplicateDismissals: unknown[] };
+          }) => {
+            const predicateValue = where.duplicateDismissals.equals;
+            // `Prisma.DbNull` is a singleton class instance (identity
+            // comparison), representing "the column is a real SQL NULL" —
+            // never `=== null` itself, and never JSON-serializable.
+            const currentMatches =
+              predicateValue === Prisma.DbNull
+                ? stateHolder.stored === null
+                : JSON.stringify(stateHolder.stored) === JSON.stringify(predicateValue);
+            if (!currentMatches) return { count: 0 };
+            stateHolder.stored = data.duplicateDismissals;
+            return { count: 1 };
+          },
+        ),
       },
-    });
-  });
+      actor: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
+      },
+    };
+  }
+
+  it(
+    'both entries survive when the writes interleave so both requests read the SAME base ' +
+      'array — reddens against the pre-fix read-modify-write (see this task\'s report for the ' +
+      'verbatim pre-fix failure output)',
+    async () => {
+      const stateHolder: { stored: unknown[] | null } = { stored: null };
+      const racePrisma = buildRacePrisma(stateHolder);
+      const raceResolver = { resolve: jest.fn().mockResolvedValue('admin@example.com') };
+      const raceDuplicateDetection = new DuplicateDetectionService(racePrisma as unknown as never);
+      const raceService = new AdminRegistrationsService(
+        racePrisma as unknown as never,
+        raceDuplicateDetection,
+        raceResolver as unknown as ActingAdminResolver,
+        { logRegistrationApprove: jest.fn() } as unknown as never,
+        { sendApproval: jest.fn() } as unknown as never,
+      );
+
+      const [resultA, resultB] = await Promise.all([
+        raceService.dismissDuplicate('reg-1', 'actor-A', 'admin-sub-A'),
+        raceService.dismissDuplicate('reg-1', 'actor-B', 'admin-sub-B'),
+      ]);
+
+      expect(resultA.registration.id).toBe('reg-1');
+      expect(resultB.registration.id).toBe('reg-1');
+
+      expect(stateHolder.stored).not.toBeNull();
+      const finalDismissals = stateHolder.stored as Array<{ actorId: string }>;
+      expect(finalDismissals).toHaveLength(2);
+      expect(finalDismissals.map((e) => e.actorId).sort()).toEqual(['actor-A', 'actor-B']);
+    },
+  );
 });
 
 describe('AdminRegistrationsController.dismissDuplicate (T-7, mocked service)', () => {

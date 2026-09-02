@@ -8,7 +8,7 @@
 | Validated | 2026-09-02 |
 | Branch | `registration-review` |
 | Phase | `/akili-validate` (T3 Auditor) |
-| Verdict | **NOT archive-ready** — 1 FAIL, 17 WARN, 1 integration blocker |
+| Verdict | **Archive-ready** — the FAIL, the integration blocker and all four code WARNs are closed (2026-09-02). Remaining WARNs are accepted and ticketed |
 | Method | Leader ran Phases 1–3 (measurement) inline on a quiet tree; Phases 4–6 delegated to three independent read-only auditors, findings spot-verified at source by the Leader before acceptance |
 
 **Independence note.** The code was authored by Implementers (T2) and audited during execution by Reviewers (T3), so `author ≠ auditor` holds for the implementation. The spec's amendments to `docs/trd/trd.md`, `docs/ux-ui/design.md`, `tasks.md` and `execution.md` were written by the orchestrating Leader — the same role writing this report. Those amendments were therefore delegated to an independent auditor with an explicit instruction to treat them as unverified. **The single FAIL in this report was found by that auditor, in the Leader's own writing.** This is the structural reason the delegation was not collapsed.
@@ -211,18 +211,61 @@ Also on `main` and absent here: `9ff8869 fix(infra): widen the Lambda's SES reso
 
 `A-73` (frontend `tsc` red on `main`, one line) · `A-93` (`admin-actors.e2e.spec.ts` load flakiness, quantified in §5.1) · `npm run test:e2e` pointing at a missing config (§5.2) · `A-92` (IA drift in `docs/ux-ui/design.md` §2) · the §7.2 advisories, of which the **activity-trail timezone designator** and the **missing CloudWatch alarm** are the two with real operational weight · `A-28`'s unmade decision on `q`/`page` bounds · the `akili-reviewer` wrapper's missing `skill` tool (§1) · the incomplete `A-nn` sequence (§7.3) · the two ungated `bg-border text-muted` pairings that become reachable in chunk 4 — a live trap for `admin/registration-info-requests`.
 
+## 11a. Remediation Status — 2026-09-02
+
+Everything the user scoped as "blockers + code" is closed. Detail in `execution.md`
+§"Post-validation remediation".
+
+| # | Item | Status |
+|---|---|---|
+| R1 | `design.md` §7.1's false gate claim | **Closed.** Restated over the three gates that exist; correction closure applied forward and backward (§13 cited the claim as a lesson applied — it now records that the lesson's instance became its counter-example) |
+| R2 | 10 commits behind `main`, conflicting baselines | **Closed.** `docs/ux-ui/design.md` auto-merged additively. `trd.md` was **not** an additive conflict: both branches had allocated **ADR-011 to different decisions**. `main` is the trunk and its ADR-011 is deployed and cited from an archived spec, so this spec's decision became **ADR-012**; 14 citations swept forward, backward grep confirms only `main`'s row and the frozen archived citation survive as ADR-011 |
+| R3 | Stale DC-16 HITL instruction | **Closed.** Repointed at the chip that exists, with its automated coverage named; records the live chunk-4 trap (the two unreachable statuses still carry the ungated pairing) |
+| R4 | `dismissDuplicate` lost update | **Closed.** Bounded-retry compare-and-set. **Verified against live MySQL**, not only mocks — `equals: <stale value>` matches 0 rows, which is what closes the race |
+| R5 | Failed refresh destroyed the approval confirmation | **Closed after three attempts and a HALT.** Behaviour correct from attempt 2; attempts 1–3 each shipped a false comment claim, and the loop was closed by user-authorised deletion rather than another rewrite |
+| R6 | Queue under-reported saturated duplicates | **Closed.** Shared label module; backend JSDoc corrected to `min(open, 5)` |
+| R7 | `SAFE_ID_PATTERN` comment/regex mismatch | **Closed.** `i` flag dropped |
+
+**Still open, accepted and ticketed** — none blocks archive: the five document sweeps
+(R8–R12), the five test-gap closures (R13–R17), and every item in §11's defer list
+(A-73, A-93, the broken `test:e2e` script, A-92, the §7.2 advisories, A-28's unmade
+decision, the `akili-reviewer` wrapper's missing `skill` tool, the incomplete `A-nn`
+sequence, and the chunk-4 contrast trap).
+
+### The finding worth carrying into `/akili-archive`
+
+**Corrections fail more often than the code they correct — five times in this run.**
+T-8's docblock inverted causality while fixing a defect; the Leader's own `jest-axe`
+"correction" flagged a true statement as false; T-16 shipped two false claims inside
+the anti-false-claim task; R5 attempt 2 replaced a false invariant with a false
+mechanism; R5 attempt 3 introduced a new false causal claim in the paragraph whose
+purpose was correcting false claims.
+
+The pattern has a shape worth naming as a Kaizen lesson: **the patch is a
+higher-defect-density surface than the diff it patches, and review attention is
+allocated the other way round.** Its practical corollary is the one the user chose at
+the HALT: where a correction can be made by *deleting* the false text rather than
+replacing it, deletion is the lower-risk correction — it cannot introduce a sixth
+instance.
+
 ## 12. Archive Readiness Recommendation
 
-**Not yet.** Two items genuinely block, and both are cheap:
+**Ready.** Both blockers are closed and all four code WARNs are remediated with
+independent review at every step.
 
-- **R1** — archiving freezes the audit trail, and the trail currently contains a false claim that certifies itself as verified. That is the one defect class this spec spent sixteen tasks hunting; freezing an instance of it into the permanent record is the wrong ending.
-- **R2** — the branch's baseline amendments are not in `main`, and the merge conflicts on both documents. Archiving a spec whose constitutional amendments are still unintegrated records an outcome that has not happened.
+- **R1** — the audit trail no longer contains a false claim that certifies itself as
+  verified.
+- **R2** — the baseline amendments are integrated with `main`, and the ADR id
+  collision is resolved in the direction that preserves an already-frozen citation.
 
-R3–R7 are recommended before archive: R4 is the only write in the module that abandons the spec's own concurrency discipline, and R5 lands on the single irreversible path in the system. R8–R12 are five accepted obligations that were never swept; they are the difference between an audit trail and a set of good intentions. R13–R17 are five constraints currently held by something other than a test, four of which cost one line each.
+The two release gates the constitution names — the PII boundary and admin
+authorization — were the strongest work in the spec before remediation and are
+untouched by it. Requirement coverage carries no FAIL. Final gates: backend
+**990/990**, frontend **1614/1614**, static export **27/27**, `tsc` error set unchanged.
 
-Nothing here impugns the delivered product. The PII boundary and the authorization gate — the two things the constitution says must never fail — are the strongest work in the spec.
-
-Once R1 and R2 are closed:
+The remaining WARNs are recorded above with owners and cost, and the run's most
+valuable output is arguably not any single fix but the correction-density finding in
+§11a, which belongs in `docs/specs/kaizen-log.md`.
 
 ```text
 /akili-archive admin/registration-review-queue

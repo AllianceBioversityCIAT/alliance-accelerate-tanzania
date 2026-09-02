@@ -10,12 +10,19 @@
  *     network call.** `adminGetRegistration` must never be invoked for it,
  *     proving the guard runs ahead of the client, not merely alongside it.
  *   - A legitimate cuid-shaped id IS passed through unchanged.
+ *   - **R7 — an uppercase-admitting id (`SAFE_ID_PATTERN` without the `i`
+ *     flag) is rejected before any network call**, matching the corrected
+ *     doc comment's "lowercase alphanumeric only" contract.
  *   - A 404 from the API renders "Registration not found."
+ *   - **R5 — a refresh that fails AFTER a successful mutation must not
+ *     erase the success announcement or replace the panel with a "not
+ *     found" state** (`RegistrationDetailPanel` is faked for this whole
+ *     file — see that mock's own doc comment for why).
  *   - An unauthenticated session redirects to /login.
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation
@@ -79,6 +86,41 @@ jest.mock('@/lib/api/registrations-admin', () => {
     adminGetRegistration: (...args: unknown[]) => mockAdminGetRegistration(...args),
   };
 });
+
+// ---------------------------------------------------------------------------
+// Mock @/components/admin/RegistrationDetailPanel.
+//
+// This page's own tests exist to prove ITS render-gating/data-delivery
+// logic (`ReviewView`), not `RegistrationDetailPanel`'s internal approve/
+// reject/dismiss mutation wiring — that is `RegistrationDetailPanel.
+// test.tsx`'s territory. **Deliberately NOT scoped via `jest.resetModules()`
+// + a fresh `require`** — this repo already found empirically
+// (`components/analytics/GoogleAnalytics.test.tsx`'s file-level doc
+// comment) that `jest.resetModules()` can break React's module identity
+// mid-suite, so this mock is a plain top-level `jest.mock`, applying to
+// every test in this file, matching the OTHER child-module mocks above.
+//
+// The fake keeps the ONE shape the pre-existing tests below actually read —
+// `<h1>{detail.reference}</h1>` — and adds a `role="status"` success
+// announcement plus a `onRefresh`-triggering button (R5's test uses these;
+// no other test in this file does).
+// ---------------------------------------------------------------------------
+
+jest.mock('@/components/admin/RegistrationDetailPanel', () => ({
+  RegistrationDetailPanel: ({
+    detail,
+    onRefresh,
+  }: {
+    detail: { reference: string };
+    onRefresh: () => Promise<void>;
+  }) => (
+    <div>
+      <h1>{detail.reference}</h1>
+      <div role="status">{detail.reference} approved and published to the public directory.</div>
+      <button onClick={() => onRefresh()}>Trigger refresh</button>
+    </div>
+  ),
+}));
 
 import RegistrationReviewPage from './page';
 import { ApiError } from '@/lib/api/client';
@@ -155,6 +197,20 @@ describe('RegistrationReviewPage', () => {
     expect(mockAdminGetRegistration).not.toHaveBeenCalled();
   });
 
+  it(
+    'R7: rejects an uppercase-admitting id before any network call — SAFE_ID_PATTERN carries ' +
+      "no case-insensitive `i` flag, matching its own doc comment's \"lowercase alphanumeric only\" contract",
+    async () => {
+      mockSearchParams = new URLSearchParams({ id: 'CLX1234567890ABCDEFGHIJK' });
+      render(<RegistrationReviewPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Missing registration id')).toBeInTheDocument();
+      });
+      expect(mockAdminGetRegistration).not.toHaveBeenCalled();
+    },
+  );
+
   it('passes a legitimate cuid-shaped id through unchanged', async () => {
     mockAdminGetRegistration.mockResolvedValue(buildDetail());
     render(<RegistrationReviewPage />);
@@ -172,6 +228,104 @@ describe('RegistrationReviewPage', () => {
       expect(screen.getByText('Registration not found.')).toBeInTheDocument();
     });
   });
+
+  /**
+   * R5 — a refresh that fails AFTER a successful mutation must not destroy
+   * the confirmation of the registry's one irreversible action.
+   *
+   * This exercises `ReviewView`'s own render-gating logic (the `if
+   * (!detail)` check, page.tsx) rather than re-driving `RegistrationDetail
+   * Panel`'s real approve dialog/mutation wiring — that flow is
+   * `RegistrationDetailPanel.test.tsx`'s territory. The fake panel (mocked
+   * for this whole file, see the mock's own doc comment above) stands in
+   * for "approve succeeded, the panel is showing its `role=\"status\"`
+   * success announcement" and exposes `onRefresh` via a button — the SAME
+   * prop the real panel's `handleApproveConfirm` calls immediately after a
+   * successful approve.
+   */
+  it(
+    'R5: a refresh that fails after a successful approve must not erase the success ' +
+      'announcement or render "not found"',
+    async () => {
+      // A flag-driven implementation (rather than `mockResolvedValueOnce` /
+      // `mockRejectedValueOnce` sequencing) so this test does not depend on
+      // the EXACT number of times `adminGetRegistration` gets called — this
+      // mock's own `useRouter()` returns a fresh object every render (`()
+      // => ({ push: mockRouterPush })`), which makes `handleAuthFailure` /
+      // `loadDetail` unstable across renders and the mount effect re-fire
+      // more than once in this harness even for one logical "load". That is
+      // a pre-existing property of this test file's `next/navigation` mock,
+      // not a page.tsx defect, and not this remediation's concern — every
+      // call before the flag flips succeeds identically; every call after
+      // fails identically.
+      let refreshShouldFail = false;
+      mockAdminGetRegistration.mockImplementation(async () => {
+        if (refreshShouldFail) {
+          throw new ApiError(500, 'Refresh failed');
+        }
+        return buildDetail();
+      });
+
+      render(<RegistrationReviewPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent(
+          'REG-2026-0184 approved and published to the public directory.',
+        );
+      });
+
+      const callsBeforeRefresh = mockAdminGetRegistration.mock.calls.length;
+      // The post-approve refresh (`onRefresh`) now FAILS.
+      refreshShouldFail = true;
+      fireEvent.click(screen.getByText('Trigger refresh'));
+
+      await waitFor(() => {
+        expect(mockAdminGetRegistration.mock.calls.length).toBeGreaterThan(callsBeforeRefresh);
+      });
+
+      // The success announcement survives — the panel is still mounted.
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent(
+          'REG-2026-0184 approved and published to the public directory.',
+        );
+      });
+      // The whole-view "not found" fallback must NOT have replaced it.
+      expect(screen.queryByText('Registration not found')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('Could not load the requested registration.'),
+      ).not.toBeInTheDocument();
+
+      // Reviewer issue 2 — the failed refresh must not go unreported: an
+      // inline alert (matching RegistrationDetailPanel.tsx's own
+      // `announcementError` treatment) tells the reviewer the data below
+      // may be stale, since `error` used to be write-only state once
+      // `detail` was already populated.
+      //
+      // Wrapped in `waitFor` because the alert's render is one state update
+      // behind the click (`onRefresh` → `loadDetail`'s rejected promise →
+      // `setError`), so asserting synchronously would rely on timing rather
+      // than on the update having happened. This is what makes the
+      // assertion robust — every DOM assertion in this file is inside a
+      // `waitFor` for the same reason (see the mount-effect note above: this
+      // file's `useRouter` mock returns a fresh object per render, so the
+      // effect re-fires on every render).
+      //
+      // A prior attempt also hoisted the success fixture to one stable
+      // object identity here, on the theory that a fresh object per call
+      // kept a render loop alive and could clear `error` between the click
+      // and this assertion. That was removed: the flake was never
+      // reproduced (15 of 15 runs passed on the un-hoisted shape), the
+      // effect re-fires because of the `useRouter` mock rather than the
+      // fixture's identity, and `loadDetail`'s success path calls
+      // `setError(null)` regardless of whether the payload is referentially
+      // stable — so the hoist did not close the race it described.
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Could not load the latest details for this registration. The information below may be out of date.',
+        );
+      });
+    },
+  );
 
   it('redirects to /login when there is no session', async () => {
     mockGetSession.mockResolvedValue(null);
