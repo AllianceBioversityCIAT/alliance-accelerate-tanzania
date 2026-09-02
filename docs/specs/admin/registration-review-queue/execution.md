@@ -2266,3 +2266,28 @@ Recorded here rather than inside a task entry, because the spec was already clos
 **Harness note.** The DC-16 check needed **no backend, no database and no Cognito login** — all five components take plain props, exactly as `design.md` §14 and KZ-003 predicted (*"this check must not be deferred on auth grounds"*). A throwaway `frontend/app/dc16-check/` page rendered both screens with realistic fixtures. **It is not part of the deliverable and must be deleted** (`rm -rf frontend/app/dc16-check`).
 
 **One harness artefact worth recording, since it briefly looked like a defect:** the first fixture used `traderType: 'agrodealer'` / `'processor'`, which are **not canonical types**, so they rendered as raw strings beside a correctly-labelled `'seed_company'`. That was the fixture's fault, not the component's — the backend validates `traderType` against the canonical ten on the write path, so an unknown type cannot reach the queue from a real submission. Fixture corrected to `cooperative`/`offtaker`, which label correctly. Same for a `duplicateCandidateCount: 6` fixture: the server caps at 5, so 6 cannot occur.
+
+### A-76 CLOSED — `PENDING_REVIEW` chip re-toned, 2026-09-02
+
+The user judged the measured 4.42:1 chip visually wrong as well as sub-threshold, and asked for an amber. Resolved to **`bg-surface-alt text-warning`** in `lib/content/registration-status.ts`.
+
+**Measured, not estimated** — and the first measurement was wrong, which is why the recommendation changed:
+
+| Option | Ratio | Note |
+|---|---:|---|
+| **`bg-surface-alt text-warning`** (chosen) | **4.90:1** | Opaque — does not vary with the surface behind it |
+| `bg-warning/10 text-warning` | 4.86 on `surface` · **4.64 on the warm `bg` canvas** | **Semi-transparent: contrast depends on what is behind it** |
+| `bg-border text-muted` (previous) | **4.42:1** | ❌ below the 4.5:1 AA floor at 12px |
+
+**An in-browser reading initially reported the translucent option at 5.56:1** — wrong, because `getComputedStyle` returns the *ancestor's* colour for a semi-transparent background rather than the composited one. Compositing 10% `#8F5E10` over each ground by hand gives 4.86/4.64. **Reporting the 5.56 would have recommended the weaker option on a measurement artefact.**
+
+**Three reasons the opaque token is the better fix, beyond clearing the threshold:**
+1. **It is predictable** — the translucent option's contrast shifts with the surface, and this chip renders over both `surface` (table rows) and `bg` (cards).
+2. **It moves the pairing from ungated to gated.** `bg-border text-muted` sits **outside** `contrast.test.ts`'s matrix entirely (`border` is not one of its nine grounds), so nothing asserted it. `warning × surface-alt` **is** in the `REACHABLE` matrix — already asserted, and already used by `ActorHistoryPanel`'s `BULK_CONSENT` badge. `contrast` suite: **129/129**.
+3. **The semantics were wrong before, not just the contrast.** `bg-border text-muted` is this repo's *neutral/inactive/skipped* pairing — `ActorsTable`'s default arm, `ImportPreviewTable`'s `skipped-*`, `UsersTable`'s inactive. `PENDING_REVIEW` **demands action**; it was borrowing an inactive token. Amber completes the triad with `APPROVED` (green) and `REJECTED` (red).
+
+**Scope was one edit, not the five sites A-76 anticipated.** T-14's shared `REGISTRATION_STATUS_BADGE_CLASSES` module means one change covers the queue **and** the detail panel. The other four call sites keep `bg-border text-muted` because they use it for genuinely neutral states — **the token was never wrong there.** `AWAITING_APPLICANT`/`WITHDRAWN` also stay neutral, correctly: those are inactive states.
+
+Verified rendered in-browser: the table chip resolves to `…bg-surface-alt text-warning`. `RegistrationsTable` 9/9 · `RegistrationDetailPanel` 26/26 · `contrast` 129/129.
+
+**A-76 is closed. The remaining DC-16 items are R-13 (the red publish button) and the `Ineligible actor type` label — both still open for the user.**

@@ -40,7 +40,7 @@ export const REGISTRATION_STATUS_LABEL: Record<RegistrationStatus, string> = {
  * palette.
  */
 export const REGISTRATION_STATUS_BADGE_CLASSES: Record<RegistrationStatus, string> = {
-  PENDING_REVIEW: 'bg-border text-muted',
+  PENDING_REVIEW: 'bg-surface-alt text-warning',
   APPROVED: 'bg-highlight-tint text-success',
   REJECTED: 'bg-danger-soft text-danger',
   AWAITING_APPLICANT: 'bg-border text-muted',
