@@ -260,11 +260,36 @@ fresh false claim, and the one written while correcting other authors' false cla
 
 | Item | Why deferred |
 |---|---|
-| **A-93** — `admin-actors.e2e.spec.ts` load-induced timeouts | Genuine investigation, not a one-line fix. **Reproduced three times**, the last by running a build and a suite in one command: 8 failures at 36.8 s, then 990/990 in 6.3 s alone |
-| **A-94 (new)** — `app/(admin)/admin/actors/import/page.test.tsx` › *"renders nothing when the report carries no breakdown"* fails roughly **1 run in 8** | Found during this batch's verification. Pre-existing: last touched by `import-export/partner-profile-onboarding`, untouched by this spec. A frontend sibling to A-93 |
-| **A-28** — `q` has no `@MaxLength` and unescaped LIKE metacharacters; `page` has no `@Max` | Needs a product decision on bounds, not a fix. Admin-only, so not exploitable |
-| **A-92** — IA drift in `docs/ux-ui/design.md` §2 | Belongs to the actors/import surface, not this spec |
 | §7.2 advisories · the chunk-4 contrast trap · the `akili-reviewer` wrapper's missing `skill` tool · the incomplete `A-nn` sequence | Recorded above; none is a defect in shipped behaviour |
+
+### Third batch — the four remaining tickets, all closed (2026-09-02)
+
+The user challenged the deferral a second time. Every one of these had been filed as
+needing investigation or a product decision; **all four were closed the same day, and
+two of them refuted their own ticket.**
+
+| Ticket | Filed as | What it actually was |
+|---|---|---|
+| **A-92** | "IA drift, belongs to another surface" | Three documented admin routes that do not ship. Corrected against the tree; `/admin/export` removed outright with the §3 flow and §4 inventory row that documented the same unbuilt screen. `/dashboard` — a shipped public route absent from both tables — added |
+| **A-28** | "needs a product decision on bounds" | Not a decision. Half 1's premise was **false** (`?page=99999999` returns a clean empty page, no 500) but a real defect sat one magnitude further out: `skip` exceeding a 64-bit signed integer makes Prisma throw client-side. Closed by clamping `skip` to the row count, which an `@Max` could not have done without turning FR-9 scenario 4's empty page into a 400. Half 2 was real and worse: `?q=%` matched **every row** |
+| **A-93** | "genuine investigation" | Ten minutes with `--detectOpenHandles`: no leak, no timers, just the default 5 s timeout against app-booting suites under CPU starvation. `testTimeout: 20000`, demonstrated **under load** — 7 timeout failures before, 1003/1003 in 10.6 s after, same spinners running |
+| **A-94** | "genuine hunt, no diagnosis" | Twenty minutes. Not load-related — ~1 in 12 **in isolation**. The mount effect's token had not committed when `selectFile` fired, so `processFile` early-returned and the preview table never rendered. Fixed in the shared helper by awaiting the same promise the component awaits. 50 runs, zero failures |
+
+**The pattern is the finding, and it is the Leader's.** Three times in one session the
+Leader filed cheap, tractable work as accepted debt, and three times the user pushed
+back and was right. A-28's ticket was *wrong on its facts* and only re-verification
+caught it; A-93 and A-94 each needed one diagnostic command nobody had run. **A ticket
+costs more to carry than most of these cost to fix, and "needs investigation" is a
+claim about the work that deserves the same evidence as any other claim.**
+
+**Still genuinely open** — recorded, none blocking:
+
+| Item | Weight |
+|---|---|
+| **§7.2, Reliability** — `ActivityTrail.tsx` renders UTC with no timezone designator while `ConsentRecordCard` shows one on the same data | Real: a reviewer in EAT misreads every entry by three hours, on the surface whose stated purpose is an auditable trail. One line, matching the sibling component |
+| **§7.2, Observability** — no CloudWatch metric filter or alarm on the mail dispatch failure, and no persisted marker on `Registration` | Real: from the database an operator cannot tell an approved applicant was never notified. Infra work, not a one-liner |
+| The remaining §7.2 advisories · the chunk-4 contrast trap · the incomplete `A-nn` sequence | Recorded; no defect in shipped behaviour |
+| **The `akili-reviewer` wrapper exposes no `skill` tool** | Methodology gap, not a code defect — every Reviewer this session audited without the stack skills it was assigned. Belongs in `/akili-archive`'s Kaizen pass |
 
 ### The finding worth carrying into `/akili-archive`
 

@@ -2586,3 +2586,35 @@ suite alone on a quiet tree gave **990/990 in 6.3 s**. This is the concurrency
 protocol's "a measurement taken while another worker is active is not a slow
 measurement, it is a **wrong** one" — demonstrated by violating it. Clean evidence for
 the A-93 ticket.
+
+---
+
+## Concurrency incident — 2026-09-02, during A-94
+
+Recorded because the protocol exists for exactly this and it went undetected for
+several minutes.
+
+Mid-task, `git reflog` showed this shared checkout moving
+`registration-review → main → tracking-tools → main → reset`, with **no checkout
+command from either the Leader or the Implementer**. Another session was operating on
+the same working copy. `CLAUDE.md`'s concurrency protocol requires additional
+concurrent sessions to use `git worktree`; none was created (KZ-010).
+
+**No work was lost** — `registration-review` held all seven validation commits
+throughout, and the loose A-94 edit survived in the working tree and was additionally
+saved as a patch outside git before anything was touched.
+
+**What the incident cost, and what caught it.** The Implementer noticed the moving
+tree, discarded its first measurements, and re-ran once `git status`/`branch` held
+stable across a check — which is the only reason its numbers were usable. But its
+final verification still ran on `main` (**98 suites / 1,478 tests**), not on this
+branch (**108 / 1,619**), and its `tsc` therefore reported the A-73 error this branch
+had already fixed. **A measurement taken on the wrong branch is not a slow
+measurement, it is a wrong one** — the same shape as the protocol's warning about
+measuring beside an active worker. Every gate was re-run on `registration-review`
+before the commit landed.
+
+The user confirmed the other session had finished and moved the change back to this
+branch. Resolved without loss, but the Leader did not detect it independently: it
+surfaced only because a subordinate agent thought to check `reflog` and reported an
+anomaly it was not asked to look for.
