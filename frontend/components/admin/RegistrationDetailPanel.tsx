@@ -179,7 +179,7 @@ function ReviewContextBadge() {
   );
 }
 
-function SubmittedDetailsTable({ detail }: { detail: AdminRegistrationDetail }) {
+function SubmittedDetailsTable({ detail }: Readonly<{ detail: AdminRegistrationDetail }>) {
   const rows = buildPayloadRows(detail);
 
   return (
@@ -220,7 +220,7 @@ function SubmittedDetailsTable({ detail }: { detail: AdminRegistrationDetail }) 
   );
 }
 
-function LocationCard({ payload }: { payload: AdminRegistrationPayload }) {
+function LocationCard({ payload }: Readonly<{ payload: AdminRegistrationPayload }>) {
   const hasCoordinates = payload.gpsLatitude !== null && payload.gpsLongitude !== null;
 
   return (
@@ -297,7 +297,7 @@ interface DecisionPanelProps {
   onRejectClick: () => void;
 }
 
-function DecisionPanel({ detail, onApproveClick, onRejectClick }: DecisionPanelProps) {
+function DecisionPanel({ detail, onApproveClick, onRejectClick }: Readonly<DecisionPanelProps>) {
   if (detail.status !== 'PENDING_REVIEW') {
     return (
       <section aria-labelledby="decision-heading" className="rounded-md border border-border bg-surface p-4 shadow-sm">
@@ -376,7 +376,7 @@ export function RegistrationDetailPanel({
   token,
   onRefresh,
   onAuthFailure,
-}: RegistrationDetailPanelProps) {
+}: Readonly<RegistrationDetailPanelProps>) {
   const [activeDialog, setActiveDialog] = useState<'approve' | 'reject' | null>(null);
   // react-doctor no-unowned-async-error-clear: approve and reject each own
   // an INDEPENDENT loading/error pair rather than sharing one. Only one

@@ -124,7 +124,10 @@ function sortParam(params: URLSearchParams): AdminRegistrationListSort {
 // DirectorySearch reused with different copy).
 // ---------------------------------------------------------------------------
 
-function ApplicantSearch({ value, onSearch }: { value: string; onSearch: (term: string) => void }) {
+function ApplicantSearch({
+  value,
+  onSearch,
+}: Readonly<{ value: string; onSearch: (term: string) => void }>) {
   const [draft, setDraft] = useState(value);
   const prevValueRef = useRef(value);
 
@@ -174,11 +177,11 @@ function StatusSegments({
   value,
   onChange,
   disabled,
-}: {
+}: Readonly<{
   value: RegistrationStatus;
   onChange: (next: RegistrationStatus) => void;
   disabled: boolean;
-}) {
+}>) {
   return (
     <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-1">
       {STATUS_SEGMENTS.map((segment) => {

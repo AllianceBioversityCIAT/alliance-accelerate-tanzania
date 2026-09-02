@@ -138,7 +138,7 @@ function formatDate(iso: string): string {
  * never actually produced by this chunk's data or reachable via the page's
  * segment control (FR-9 scenario 1).
  */
-function StatusBadge({ status }: { status: RegistrationStatus }) {
+function StatusBadge({ status }: Readonly<{ status: RegistrationStatus }>) {
   return (
     <span
       className={[
@@ -169,7 +169,7 @@ function StatusBadge({ status }: { status: RegistrationStatus }) {
  * and `DuplicateWarningCard`'s heading now share, so the two cannot drift
  * apart again.
  */
-function DuplicatesFlag({ count }: { count: number }) {
+function DuplicatesFlag({ count }: Readonly<{ count: number }>) {
   if (count <= 0) {
     return <span className="text-muted">—</span>;
   }
@@ -185,7 +185,7 @@ function DuplicatesFlag({ count }: { count: number }) {
   );
 }
 
-function ReviewLink({ id, reference }: { id: string; reference: string }) {
+function ReviewLink({ id, reference }: Readonly<{ id: string; reference: string }>) {
   return (
     <Link
       href={`/admin/registrations/review?id=${id}`}
@@ -205,7 +205,7 @@ function ReviewLink({ id, reference }: { id: string; reference: string }) {
 // Mobile card
 // ---------------------------------------------------------------------------
 
-function RegistrationCard({ row }: { row: AdminRegistrationListRow }) {
+function RegistrationCard({ row }: Readonly<{ row: AdminRegistrationListRow }>) {
   return (
     <article
       aria-label={row.reference}
@@ -245,7 +245,7 @@ function RegistrationCard({ row }: { row: AdminRegistrationListRow }) {
 // Component
 // ---------------------------------------------------------------------------
 
-export function RegistrationsTable({ rows }: RegistrationsTableProps) {
+export function RegistrationsTable({ rows }: Readonly<RegistrationsTableProps>) {
   return (
     <div className="flex flex-col gap-3">
       {/* ── Desktop table ──────────────────────────────────────────────── */}

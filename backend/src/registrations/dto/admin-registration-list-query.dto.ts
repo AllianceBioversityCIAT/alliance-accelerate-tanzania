@@ -64,15 +64,15 @@ export class AdminRegistrationListQueryDto {
   q?: string;
 
   @IsOptional()
-  @IsIn(CANONICAL_REGIONS as readonly string[])
+  @IsIn(CANONICAL_REGIONS)
   region?: string;
 
   @IsOptional()
-  @IsIn(TRADER_TYPES as readonly string[])
+  @IsIn(TRADER_TYPES)
   traderType?: string;
 
   @IsOptional()
-  @IsIn(SORT_VALUES as readonly string[])
+  @IsIn(SORT_VALUES)
   sort?: AdminRegistrationListSort;
 
   @IsOptional()

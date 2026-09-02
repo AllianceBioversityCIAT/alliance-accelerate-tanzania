@@ -114,7 +114,7 @@ interface NotFoundStateProps {
   description?: string;
 }
 
-function NotFoundState({ title = 'Registration not found', description }: NotFoundStateProps) {
+function NotFoundState({ title = 'Registration not found', description }: Readonly<NotFoundStateProps>) {
   return (
     <div className="flex flex-col items-center gap-4 rounded-md border border-border bg-surface py-16 px-4 text-center">
       <p className="text-base font-semibold text-fg">{title}</p>

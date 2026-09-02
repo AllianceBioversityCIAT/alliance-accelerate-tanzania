@@ -23,7 +23,7 @@ export function FilterSelect({
   onChange,
   disabled = false,
   placeholder = 'All',
-}: FilterSelectProps) {
+}: Readonly<FilterSelectProps>) {
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium text-fg">

@@ -93,7 +93,7 @@ export interface ActivityTrailProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ActivityTrail({ events }: ActivityTrailProps) {
+export function ActivityTrail({ events }: Readonly<ActivityTrailProps>) {
   return (
     <section
       aria-labelledby="activity-trail-heading"

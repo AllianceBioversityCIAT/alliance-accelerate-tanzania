@@ -125,7 +125,7 @@ export function RejectDialog({
   onCancel,
   loading = false,
   error,
-}: RejectDialogProps) {
+}: Readonly<RejectDialogProps>) {
   const uid          = useId();
   const titleId      = `${uid}-title`;
   const descId       = `${uid}-desc`;
@@ -161,6 +161,12 @@ export function RejectDialog({
 
   if (!open) return null;
 
+  // S4624: built outside the JSX template rather than nesting a ternary
+  // template literal inside `aria-describedby`'s. Produces the identical
+  // string the nested form did: `descId noticeId` with `errorId` appended
+  // (space-separated) only when `error` is truthy.
+  const describedByIds = [descId, noticeId, error ? errorId : undefined].filter(Boolean).join(' ');
+
   return (
     <>
       {/* ── Backdrop ──────────────────────────────────────────────────────── */}
@@ -176,7 +182,7 @@ export function RejectDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={`${descId} ${noticeId}${error ? ` ${errorId}` : ''}`}
+        aria-describedby={describedByIds}
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
@@ -206,8 +212,7 @@ export function RejectDialog({
         {/* Reason select — required (FR-13 scenario 1) */}
         <div className="mt-4 flex flex-col gap-1.5">
           <label htmlFor={reasonId} className="text-sm font-medium text-fg">
-            Reason
-            <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
+            Reason<span aria-hidden="true" className="ml-0.5 text-danger">*</span>
           </label>
           <select
             ref={reasonRef}

@@ -107,7 +107,7 @@ export function DuplicateWarningCard({
   candidates,
   onDismiss,
   dismissingId = null,
-}: DuplicateWarningCardProps) {
+}: Readonly<DuplicateWarningCardProps>) {
   const count = candidates.length;
 
   if (count === 0) {

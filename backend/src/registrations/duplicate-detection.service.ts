@@ -212,6 +212,42 @@ export class DuplicateDetectionService {
   }
 }
 
+/**
+ * The four §6.5 attribute comparisons for one (registration, actor) pair,
+ * isolated purely to keep `matchOne`'s per-actor loop body flat — each
+ * comparison stays exactly as independently guarded as before. Split out
+ * for SonarCloud S3776 (Cognitive Complexity); no matching behavior changes.
+ */
+function computeMatchedOn(
+  normalizedPhone: string | null,
+  normalizedEmail: string | null,
+  normalizedTraderName: string,
+  input: DuplicateDetectionInput,
+  actor: NormalizedActorRow,
+): DuplicateMatchAttribute[] {
+  const matchedOn: DuplicateMatchAttribute[] = [];
+  if (normalizedPhone && actor.normalizedPhone && normalizedPhone === actor.normalizedPhone) {
+    matchedOn.push('phone');
+  }
+  if (normalizedEmail && actor.normalizedEmail && normalizedEmail === actor.normalizedEmail) {
+    matchedOn.push('email');
+  }
+  if (normalizedTraderName && normalizedTraderName === actor.normalizedTraderName) {
+    matchedOn.push('traderName');
+  }
+  if (
+    isWithinBoundingBox(
+      input.gpsLatitude,
+      input.gpsLongitude,
+      actor.gpsLatitude,
+      actor.gpsLongitude,
+    )
+  ) {
+    matchedOn.push('gps');
+  }
+  return matchedOn;
+}
+
 /** Match one registration's normalized inputs against the pre-normalized actor batch. */
 function matchOne(
   input: DuplicateDetectionInput,
@@ -230,26 +266,13 @@ function matchOne(
     // never merely deprioritized.
     if (input.publishedActorId && actor.id === input.publishedActorId) continue;
 
-    const matchedOn: DuplicateMatchAttribute[] = [];
-    if (normalizedPhone && actor.normalizedPhone && normalizedPhone === actor.normalizedPhone) {
-      matchedOn.push('phone');
-    }
-    if (normalizedEmail && actor.normalizedEmail && normalizedEmail === actor.normalizedEmail) {
-      matchedOn.push('email');
-    }
-    if (normalizedTraderName && normalizedTraderName === actor.normalizedTraderName) {
-      matchedOn.push('traderName');
-    }
-    if (
-      isWithinBoundingBox(
-        input.gpsLatitude,
-        input.gpsLongitude,
-        actor.gpsLatitude,
-        actor.gpsLongitude,
-      )
-    ) {
-      matchedOn.push('gps');
-    }
+    const matchedOn = computeMatchedOn(
+      normalizedPhone,
+      normalizedEmail,
+      normalizedTraderName,
+      input,
+      actor,
+    );
 
     if (matchedOn.length > 0) {
       candidates.push({

@@ -61,7 +61,7 @@ export function DialogFooter({
   confirmDisabled,
   confirmLabel,
   tone = 'danger',
-}: DialogFooterProps) {
+}: Readonly<DialogFooterProps>) {
   return (
     <>
       {/* Inline error live region */}

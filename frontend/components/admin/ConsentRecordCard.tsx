@@ -87,7 +87,7 @@ export interface ConsentRecordCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ConsentRecordCard({ consent }: ConsentRecordCardProps) {
+export function ConsentRecordCard({ consent }: Readonly<ConsentRecordCardProps>) {
   const qualifierLabel = ACCEPTED_AT_QUALIFIER_LABEL[consent.acceptedAtQualifier];
 
   return (

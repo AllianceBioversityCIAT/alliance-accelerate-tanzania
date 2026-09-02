@@ -26,7 +26,7 @@ export function PaginationControls({
   loading,
   onPrevPage,
   onNextPage,
-}: PaginationControlsProps) {
+}: Readonly<PaginationControlsProps>) {
   return (
     <div className="flex items-center gap-2">
       <button
