@@ -58,6 +58,7 @@ import { useEffect, useRef, useCallback, useId, useState } from 'react';
 
 import type { RejectionReasonCode } from '@/lib/api/registrations-admin';
 import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
+import { DialogFooter } from '@/components/admin/DialogFooter';
 
 // ---------------------------------------------------------------------------
 // Reason vocabulary — A-71 / A-62 (see file-level doc comment above)
@@ -256,49 +257,15 @@ export function RejectDialog({
           />
         </div>
 
-        {/* Inline error live region */}
-        {error && (
-          <p
-            id={errorId}
-            role="alert"
-            aria-live="assertive"
-            className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-          >
-            {error}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={loading}
-            className={[
-              'rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
-              'transition-colors hover:bg-surface-alt',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!canConfirm || loading}
-            aria-busy={loading}
-            className={[
-              'rounded-md bg-danger px-4 py-2 text-sm font-medium text-primary-fg',
-              'transition-colors hover:opacity-90',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            {loading ? 'Please wait…' : 'Reject'}
-          </button>
-        </div>
+        <DialogFooter
+          error={error}
+          errorId={errorId}
+          onCancel={onCancel}
+          loading={loading}
+          onConfirm={handleConfirm}
+          confirmDisabled={!canConfirm || loading}
+          confirmLabel="Reject"
+        />
       </div>
     </>
   );

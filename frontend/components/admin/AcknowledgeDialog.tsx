@@ -34,6 +34,7 @@ import { useEffect, useRef, useCallback, useId, useState } from 'react';
 
 import type { ConsentMethod } from '@/lib/api/actors-admin';
 import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
+import { DialogFooter } from '@/components/admin/DialogFooter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,16 +118,6 @@ const PROVENANCE_METHOD_OPTIONS: { value: ConsentMethod; label: string }[] = [
 
 // ---------------------------------------------------------------------------
 // Component
-/**
- * A **total** `Record` rather than a ternary, matching `design.md` DD-21's
- * reasoning: a future third tone becomes a compile error here instead of
- * silently rendering an unstyled button.
- */
-const CONFIRM_TONE_CLASSES: Record<NonNullable<AcknowledgeDialogProps['tone']>, string> = {
-  danger: 'bg-danger focus-visible:ring-danger',
-  primary: 'bg-primary hover:bg-primary-hover focus-visible:ring-primary',
-};
-
 // ---------------------------------------------------------------------------
 
 export function AcknowledgeDialog({
@@ -331,50 +322,16 @@ export function AcknowledgeDialog({
           </p>
         </div>
 
-        {/* Inline error live region */}
-        {error && (
-          <p
-            id={errorId}
-            role="alert"
-            aria-live="assertive"
-            className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-          >
-            {error}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={loading}
-            className={[
-              'rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
-              'transition-colors hover:bg-surface-alt',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!canConfirm || loading}
-            aria-busy={loading}
-            className={[
-              'rounded-md px-4 py-2 text-sm font-medium text-primary-fg',
-              CONFIRM_TONE_CLASSES[tone],
-              'transition-colors hover:opacity-90',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            {loading ? 'Please wait…' : confirmLabel}
-          </button>
-        </div>
+        <DialogFooter
+          error={error}
+          errorId={errorId}
+          onCancel={onCancel}
+          loading={loading}
+          onConfirm={handleConfirm}
+          confirmDisabled={!canConfirm || loading}
+          confirmLabel={confirmLabel}
+          tone={tone}
+        />
       </div>
     </>
   );

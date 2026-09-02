@@ -6,6 +6,11 @@ import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { ActorAuditService } from '../actors/actor-audit.service';
 import { DUPLICATE_OF_EXISTING_RECORD_REASON_CODE } from './rejection-reasons';
+import {
+  createCommitOrderTracker,
+  createTxRegistrationFindUniqueMock,
+  createTxRegistrationUpdateManyMock,
+} from '../test/admin-registrations-harness';
 
 /**
  * T-9 — `POST /admin/registrations/:id/reject` (FR-11 scenario 3, FR-13
@@ -86,22 +91,13 @@ function buildRejectTx(registrationRow = rejectionRegistrationRow()) {
   let registration: Record<string, unknown> = { ...registrationRow };
 
   const registrationDelegate = {
-    updateMany: jest.fn(
-      async (args: {
-        where: { id: string; status: RegistrationStatus };
-        data: Record<string, unknown>;
-      }) => {
-        if (args.where.id !== registration.id || registration.status !== args.where.status) {
-          return { count: 0 };
-        }
-        registration = { ...registration, ...args.data };
-        return { count: 1 };
+    updateMany: createTxRegistrationUpdateManyMock(
+      () => registration,
+      (next) => {
+        registration = next;
       },
     ),
-    findUnique: jest.fn(async (args: { where: { id: string } }) => {
-      if (args.where.id !== registration.id) return null;
-      return { ...registration };
-    }),
+    findUnique: createTxRegistrationFindUniqueMock(() => registration),
   };
 
   const actorDelegate = {
@@ -329,14 +325,7 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
     it('sendRejection is called with the submitter email and reference, AFTER the transaction resolves', async () => {
       const tx = buildRejectTx();
       wireRejectTransaction(tx);
-      const callOrder: string[] = [];
-      (prisma.$transaction as jest.Mock).mockImplementationOnce(
-        async (cb: (tx: unknown) => unknown) => {
-          const result = await cb(tx);
-          callOrder.push('transaction-committed');
-          return result;
-        },
-      );
+      const callOrder = createCommitOrderTracker(prisma, tx);
       mailService.sendRejection.mockImplementationOnce(async () => {
         callOrder.push('notification-dispatched');
       });

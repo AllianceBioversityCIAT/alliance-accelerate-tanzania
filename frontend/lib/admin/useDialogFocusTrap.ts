@@ -27,6 +27,19 @@
  *     carrying the `disabled` attribute.
  *   - No-op when the dialog currently has zero focusable elements.
  *
+ * A fifth call site, `CreateUserDialog.tsx`, needs Escape to do something
+ * other than call `onCancel()` directly: once a user has just been created
+ * it is showing a one-time temporary-password handoff, and Escape there
+ * must dismiss the handoff *and* refresh the caller's list (`onSuccess()`),
+ * not treat the dialog as cancelled. The optional second parameter,
+ * `onEscape`, exists for exactly that — it defaults to `onCancel` so the
+ * other four call sites (whose Escape behaviour is genuinely just
+ * `onCancel()`) do not need to pass it or change at all:
+ *
+ *   const { dialogRef, onKeyDown } = useDialogFocusTrap(onCancel, () => {
+ *     if (created) { setCreated(null); onSuccess(); } else { onCancel(); }
+ *   });
+ *
  * Deliberately NOT included: focus-restore-on-close (returning focus to the
  * element that opened the dialog once it closes). All four call sites lack
  * this today and it is a recorded, real defect — but adding it here would
@@ -47,11 +60,17 @@ export interface DialogFocusTrap<T extends HTMLElement = HTMLDivElement> {
 
 /**
  * @param onCancel Called (after `preventDefault`) when the dialog is open
- *   and the user presses `Escape`. Callers pass their own cancel handler —
- *   this hook has no opinion on what "cancel" does.
+ *   and the user presses `Escape` — unless `onEscape` is supplied. Callers
+ *   pass their own cancel handler — this hook has no opinion on what
+ *   "cancel" does.
+ * @param onEscape Optional override for what `Escape` does. Defaults to
+ *   `onCancel`, which is the behaviour every call site except
+ *   `CreateUserDialog` wants — pass this only when Escape must do something
+ *   other than a plain cancel (see the file header for that case).
  */
 export function useDialogFocusTrap<T extends HTMLElement = HTMLDivElement>(
-  onCancel: () => void
+  onCancel: () => void,
+  onEscape: () => void = onCancel
 ): DialogFocusTrap<T> {
   const dialogRef = useRef<T>(null);
 
@@ -59,7 +78,7 @@ export function useDialogFocusTrap<T extends HTMLElement = HTMLDivElement>(
     (e: KeyboardEvent<T>) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onCancel();
+        onEscape();
         return;
       }
 
@@ -91,7 +110,7 @@ export function useDialogFocusTrap<T extends HTMLElement = HTMLDivElement>(
         }
       }
     },
-    [onCancel]
+    [onEscape]
   );
 
   return { dialogRef, onKeyDown };

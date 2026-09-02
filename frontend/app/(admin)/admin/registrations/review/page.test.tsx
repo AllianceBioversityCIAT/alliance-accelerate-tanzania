@@ -52,24 +52,12 @@ const TOKEN = 'test-access-token';
 // Mock @/lib/api/client (ApiError/AuthFailureError — real behaviour)
 // ---------------------------------------------------------------------------
 
+// `ApiError` / `AuthFailureError` below live in the sibling
+// `../test-support` module, shared with `../page.test.tsx` — see that
+// module's doc comment for why a plain `require(...)` call (not an
+// outer-scope reference) is what the jest hoist plugin allows here.
 jest.mock('@/lib/api/client', () => {
-  class ApiError extends Error {
-    readonly status: number;
-    readonly details?: unknown;
-    constructor(status: number, message: string, details?: unknown) {
-      super(message);
-      this.name = 'ApiError';
-      this.status = status;
-      this.details = details;
-    }
-  }
-  class AuthFailureError extends Error {
-    readonly status = 401;
-    constructor(msg = 'Session expired') {
-      super(msg);
-      this.name = 'AuthFailureError';
-    }
-  }
+  const { ApiError, AuthFailureError } = require('../test-support');
   return { ApiError, AuthFailureError };
 });
 
@@ -80,11 +68,10 @@ jest.mock('@/lib/api/client', () => {
 const mockAdminGetRegistration = jest.fn();
 
 jest.mock('@/lib/api/registrations-admin', () => {
-  const actual = jest.requireActual('@/lib/api/registrations-admin');
-  return {
-    ...actual,
+  const { withRealExportsExcept } = require('../test-support');
+  return withRealExportsExcept('@/lib/api/registrations-admin', {
     adminGetRegistration: (...args: unknown[]) => mockAdminGetRegistration(...args),
-  };
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -160,6 +147,20 @@ function buildDetail(overrides: Partial<AdminRegistrationDetail> = {}): AdminReg
   };
 }
 
+/** The "id gets rejected before any network call, and the page falls back
+ * to the missing-id state" shape shared by the no-id, A-72 (`../`) and R7
+ * (uppercase) cases below — only the search-param init differs between
+ * them. */
+async function expectMissingIdRejection(searchParamsInit: ConstructorParameters<typeof URLSearchParams>[0]) {
+  mockSearchParams = new URLSearchParams(searchParamsInit);
+  render(<RegistrationReviewPage />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Missing registration id')).toBeInTheDocument();
+  });
+  expect(mockAdminGetRegistration).not.toHaveBeenCalled();
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetSession.mockResolvedValue({ role: 'Admin', user: { name: 'Admin' }, accessToken: TOKEN });
@@ -178,36 +179,18 @@ describe('RegistrationReviewPage', () => {
   });
 
   it('shows a missing-id state when no id is supplied, without calling the API', async () => {
-    mockSearchParams = new URLSearchParams();
-    render(<RegistrationReviewPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Missing registration id')).toBeInTheDocument();
-    });
-    expect(mockAdminGetRegistration).not.toHaveBeenCalled();
+    await expectMissingIdRejection(undefined);
   });
 
   it('A-72: rejects a crafted id containing "../" before any network call', async () => {
-    mockSearchParams = new URLSearchParams({ id: '../../etc/passwd' });
-    render(<RegistrationReviewPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Missing registration id')).toBeInTheDocument();
-    });
-    expect(mockAdminGetRegistration).not.toHaveBeenCalled();
+    await expectMissingIdRejection({ id: '../../etc/passwd' });
   });
 
   it(
     'R7: rejects an uppercase-admitting id before any network call — SAFE_ID_PATTERN carries ' +
       "no case-insensitive `i` flag, matching its own doc comment's \"lowercase alphanumeric only\" contract",
     async () => {
-      mockSearchParams = new URLSearchParams({ id: 'CLX1234567890ABCDEFGHIJK' });
-      render(<RegistrationReviewPage />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Missing registration id')).toBeInTheDocument();
-      });
-      expect(mockAdminGetRegistration).not.toHaveBeenCalled();
+      await expectMissingIdRejection({ id: 'CLX1234567890ABCDEFGHIJK' });
     },
   );
 

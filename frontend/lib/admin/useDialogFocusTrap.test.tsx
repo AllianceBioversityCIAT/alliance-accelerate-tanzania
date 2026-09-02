@@ -11,6 +11,10 @@
  * the hook, so it protects all four call sites — present and future — from
  * a single place, matching the hook's own reason for existing.
  *
+ * A fifth call site, `CreateUserDialog.tsx`, needs Escape to do something
+ * other than `onCancel()` — see the hook's file header for why. The
+ * `onEscape` coverage below asserts that override path directly.
+ *
  * Renders a real component that uses the hook (not a mock) — the selector
  * string only means something evaluated against real DOM.
  */
@@ -27,12 +31,14 @@ import { useDialogFocusTrap } from './useDialogFocusTrap';
 
 function TrapHarness({
   onCancel,
+  onEscape,
   children,
 }: {
   onCancel: () => void;
+  onEscape?: () => void;
   children?: React.ReactNode;
 }) {
-  const { dialogRef, onKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel);
+  const { dialogRef, onKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel, onEscape);
   return (
     <div ref={dialogRef} role="dialog" aria-modal="true" onKeyDown={onKeyDown}>
       {children}
@@ -55,6 +61,30 @@ function keyDownOn(
   return event;
 }
 
+/**
+ * Renders the harness with three focusable buttons (First / Middle / Last)
+ * and returns the rendered dialog plus each button — the shared setup for
+ * every Tab-cycling assertion below (wrap forward, wrap backward, no-op in
+ * the middle), so each test only states what it does differently.
+ */
+function renderThreeButtons(onCancel: () => void = jest.fn()) {
+  render(
+    <TrapHarness onCancel={onCancel}>
+      <button>First</button>
+      <button>Middle</button>
+      <button>Last</button>
+    </TrapHarness>,
+  );
+
+  return {
+    onCancel,
+    dialog: screen.getByRole('dialog'),
+    first: screen.getByRole('button', { name: 'First' }),
+    middle: screen.getByRole('button', { name: 'Middle' }),
+    last: screen.getByRole('button', { name: 'Last' }),
+  };
+}
+
 describe('useDialogFocusTrap', () => {
   it('Escape calls onCancel once and calls preventDefault', () => {
     const onCancel = jest.fn();
@@ -72,19 +102,25 @@ describe('useDialogFocusTrap', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('Tab on the last focusable element wraps to the first', () => {
+  it('an onEscape override runs instead of onCancel on Escape', () => {
     const onCancel = jest.fn();
+    const onEscape = jest.fn();
     render(
-      <TrapHarness onCancel={onCancel}>
+      <TrapHarness onCancel={onCancel} onEscape={onEscape}>
         <button>First</button>
-        <button>Middle</button>
-        <button>Last</button>
       </TrapHarness>,
     );
 
     const dialog = screen.getByRole('dialog');
-    const first = screen.getByRole('button', { name: 'First' });
-    const last = screen.getByRole('button', { name: 'Last' });
+    const event = keyDownOn(dialog, { key: 'Escape' });
+
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('Tab on the last focusable element wraps to the first', () => {
+    const { dialog, first, last, onCancel } = renderThreeButtons();
 
     last.focus();
     expect(document.activeElement).toBe(last);
@@ -97,18 +133,7 @@ describe('useDialogFocusTrap', () => {
   });
 
   it('Shift+Tab on the first focusable element wraps to the last', () => {
-    const onCancel = jest.fn();
-    render(
-      <TrapHarness onCancel={onCancel}>
-        <button>First</button>
-        <button>Middle</button>
-        <button>Last</button>
-      </TrapHarness>,
-    );
-
-    const dialog = screen.getByRole('dialog');
-    const first = screen.getByRole('button', { name: 'First' });
-    const last = screen.getByRole('button', { name: 'Last' });
+    const { dialog, first, last } = renderThreeButtons();
 
     first.focus();
     expect(document.activeElement).toBe(first);
@@ -120,17 +145,7 @@ describe('useDialogFocusTrap', () => {
   });
 
   it('Tab in the middle does nothing special — default is left alone', () => {
-    const onCancel = jest.fn();
-    render(
-      <TrapHarness onCancel={onCancel}>
-        <button>First</button>
-        <button>Middle</button>
-        <button>Last</button>
-      </TrapHarness>,
-    );
-
-    const dialog = screen.getByRole('dialog');
-    const middle = screen.getByRole('button', { name: 'Middle' });
+    const { dialog, middle } = renderThreeButtons();
 
     middle.focus();
     expect(document.activeElement).toBe(middle);

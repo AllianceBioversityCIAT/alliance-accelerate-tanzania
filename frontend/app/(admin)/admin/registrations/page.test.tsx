@@ -65,12 +65,15 @@ jest.mock('@/lib/auth/auth-client', () => ({
 
 const mockAdminListRegistrations = jest.fn();
 
+// `withRealExportsExcept` / the fake `AuthFailureError` below live in the
+// sibling `./test-support` module, shared with `review/page.test.tsx` —
+// see that module's doc comment for why a plain `require(...)` call (not an
+// outer-scope reference) is what the jest hoist plugin allows here.
 jest.mock('@/lib/api/registrations-admin', () => {
-  const actual = jest.requireActual('@/lib/api/registrations-admin');
-  return {
-    ...actual,
+  const { withRealExportsExcept } = require('./test-support');
+  return withRealExportsExcept('@/lib/api/registrations-admin', {
     adminListRegistrations: (...args: unknown[]) => mockAdminListRegistrations(...args),
-  };
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -78,13 +81,7 @@ jest.mock('@/lib/api/registrations-admin', () => {
 // ---------------------------------------------------------------------------
 
 jest.mock('@/lib/api/client', () => {
-  class AuthFailureError extends Error {
-    readonly status = 401;
-    constructor(msg = 'Session expired') {
-      super(msg);
-      this.name = 'AuthFailureError';
-    }
-  }
+  const { AuthFailureError } = require('./test-support');
   return { AuthFailureError };
 });
 
@@ -149,6 +146,35 @@ function mockListSplitByStatus(mainResult: AdminRegistrationList, probeResult: A
   });
 }
 
+/** The `renderPage(); await waitFor(<initial list call landed>)` arrange
+ * step every populated-render test starts with — folded into one helper
+ * (returns the `render()` result so callers that need `container`, e.g.
+ * the a11y test, still can). */
+async function renderAndWaitForList() {
+  const utils = renderPage();
+  await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+  return utils;
+}
+
+/** The R16 URL-sync shape shared by the sort/region/traderType tests below:
+ * render, wait for the initial list call, change one labelled control, then
+ * assert the pushed URL contains the expected `key=value` fragment. */
+async function expectFieldChangePushesUrlParam(
+  labelText: string,
+  newValue: string,
+  expectedParamFragment: string,
+) {
+  await renderAndWaitForList();
+
+  fireEvent.change(screen.getByLabelText(labelText), { target: { value: newValue } });
+
+  await waitFor(() =>
+    expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining(expectedParamFragment), {
+      scroll: false,
+    }),
+  );
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseSearchParams.mockReturnValue(new URLSearchParams());
@@ -162,9 +188,7 @@ beforeEach(() => {
 
 describe('RegistrationsPage', () => {
   it('loads with the default segment (PENDING_REVIEW) and default sort (oldest)', async () => {
-    renderPage();
-
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    await renderAndWaitForList();
 
     expect(mockAdminListRegistrations).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'PENDING_REVIEW', page: 1, pageSize: 25 }),
@@ -183,8 +207,7 @@ describe('RegistrationsPage', () => {
   });
 
   it('renders exactly three status segments, and none named Awaiting or Withdrawn', async () => {
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    await renderAndWaitForList();
 
     const group = screen.getByRole('group', { name: 'Filter by status' });
     const segments = within(group).getAllByRole('button');
@@ -196,8 +219,7 @@ describe('RegistrationsPage', () => {
   });
 
   it('pushes the status query param onto the URL when a segment is selected (URL sync)', async () => {
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    await renderAndWaitForList();
 
     fireEvent.click(within(screen.getByRole('group', { name: 'Filter by status' })).getByRole('button', { name: 'Approved' }));
 
@@ -213,8 +235,7 @@ describe('RegistrationsPage', () => {
 
   it('pushes the search term onto the URL after the debounce (URL sync)', async () => {
     jest.useFakeTimers({ legacyFakeTimers: false });
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    await renderAndWaitForList();
 
     fireEvent.change(screen.getByLabelText('Search registrations by applicant name'), {
       target: { value: 'Meru' },
@@ -236,51 +257,22 @@ describe('RegistrationsPage', () => {
   // `sort` from page.tsx's `handleSortChange` pushParams call left this
   // whole suite green (verified below, reverted).
   it('R16 — pushes the sort query param onto the URL when the sort control changes (URL sync)', async () => {
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
-
-    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'newest' } });
-
-    await waitFor(() =>
-      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('sort=newest'), {
-        scroll: false,
-      }),
-    );
+    await expectFieldChangePushesUrlParam('Sort order', 'newest', 'sort=newest');
   });
 
   // R16 — region/traderType were checked alongside sort and found equally
   // unasserted for URL sync; added here too.
   it('R16 — pushes the region query param onto the URL when the region filter changes (URL sync)', async () => {
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
-
-    fireEvent.change(screen.getByLabelText('Region'), { target: { value: 'Arusha' } });
-
-    await waitFor(() =>
-      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('region=Arusha'), {
-        scroll: false,
-      }),
-    );
+    await expectFieldChangePushesUrlParam('Region', 'Arusha', 'region=Arusha');
   });
 
   it('R16 — pushes the traderType query param onto the URL when the type filter changes (URL sync)', async () => {
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
-
-    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'seed_company' } });
-
-    await waitFor(() =>
-      expect(mockRouterReplace).toHaveBeenCalledWith(
-        expect.stringContaining('traderType=seed_company'),
-        { scroll: false },
-      ),
-    );
+    await expectFieldChangePushesUrlParam('Type', 'seed_company', 'traderType=seed_company');
   });
 
   it('pushes the page param when Next is clicked (URL sync, pagination)', async () => {
     mockAdminListRegistrations.mockResolvedValue({ ...LIST_RESULT, total: 60 });
-    renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    await renderAndWaitForList();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Next page' }));
 
@@ -347,8 +339,7 @@ describe('RegistrationsPage', () => {
   });
 
   it('has no accessibility violations jest-axe can evaluate (NFR-5; DC-16 covers contrast/focus separately)', async () => {
-    const { container } = renderPage();
-    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+    const { container } = await renderAndWaitForList();
     await waitFor(() => expect(screen.getAllByText('REG-2026-0001').length).toBeGreaterThan(0));
 
     const results = await axe(container);
