@@ -33,6 +33,7 @@
 import { useEffect, useRef, useCallback, useId, useState } from 'react';
 
 import type { ConsentMethod } from '@/lib/api/actors-admin';
+import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -152,7 +153,6 @@ export function AcknowledgeDialog({
   const provenanceHintId = `${uid}-provenance-hint`;
 
   const inputRef      = useRef<HTMLInputElement>(null);
-  const dialogRef     = useRef<HTMLDivElement>(null);
   const [value,       setValue]       = useState('');
 
   const acknowledged = value === acknowledgementText;
@@ -174,44 +174,7 @@ export function AcknowledgeDialog({
   }, [open]);
 
   // Keyboard: Escape → cancel; Tab / Shift+Tab → cycle within dialog.
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-        return;
-      }
-
-      if (e.key !== 'Tab') return;
-
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last  = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [onCancel]
-  );
+  const { dialogRef, onKeyDown: handleKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel);
 
   const handleConfirm = useCallback(() => {
     if (!canConfirm || loading) return;

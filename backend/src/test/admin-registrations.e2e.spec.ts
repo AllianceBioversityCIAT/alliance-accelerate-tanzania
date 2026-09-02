@@ -1,10 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, RegistrationStatus } from '@prisma/client';
 import request from 'supertest';
@@ -12,10 +6,15 @@ import { AppModule } from '../app.module';
 import { createValidationPipe } from '../common/validation-pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AuthUser } from '../auth/auth.types';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { MailService } from '../mail/mail.service';
 import { APPROVAL_ACKNOWLEDGEMENT_TEXT } from '../registrations/admin-registrations.service';
+import {
+  admin,
+  createRegistrationUpdateManyMock,
+  createRegistrationUpdateMock,
+  TestJwtAuthGuard,
+} from './admin-registrations-harness';
 
 /**
  * T-8 — End-to-end test for `POST /api/v1/admin/registrations/:id/approve`
@@ -51,32 +50,6 @@ import { APPROVAL_ACKNOWLEDGEMENT_TEXT } from '../registrations/admin-registrati
  * distinguishable from a top-level bypass.
  */
 
-/** Pull the token out of an `Authorization: Bearer <token>` header. */
-function extractBearer(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const [scheme, token] = header.split(' ');
-  return scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
-}
-
-const TOKEN_USERS: Record<string, AuthUser> = {
-  'admin-token': { sub: 'admin-sub-1', username: 'admin-user', groups: ['admin'], role: 'Admin' },
-  'staff-token': { sub: 'staff-sub-1', username: 'staff-user', groups: ['staff'], role: 'Staff' },
-};
-
-@Injectable()
-class TestJwtAuthGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest();
-    const token = extractBearer(req.headers?.authorization);
-    if (!token || !TOKEN_USERS[token]) {
-      throw new UnauthorizedException('Invalid token');
-    }
-    req.user = TOKEN_USERS[token];
-    return true;
-  }
-}
-
-const admin = { Authorization: 'Bearer admin-token' };
 const staff = { Authorization: 'Bearer staff-token' };
 
 /** Fixed 3-crop catalog, matching `admin-actors-crud.e2e.spec.ts`'s convention. */
@@ -157,32 +130,22 @@ function buildPrismaMock(initialRegistrations: Record<string, unknown>[]) {
     // never call `list()`.
     findMany: jest.fn(async () => registrations.map((r) => ({ ...r }))),
     count: jest.fn(async () => registrations.length),
-    updateMany: jest.fn(
-      async (args: {
-        where: { id: string; status: RegistrationStatus };
-        data: Record<string, unknown>;
-      }) => {
-        let count = 0;
-        registrations = registrations.map((r) => {
-          if (r.id === args.where.id && r.status === args.where.status) {
-            count += 1;
-            return { ...r, ...args.data };
-          }
-          return r;
-        });
-        return { count };
+    updateMany: createRegistrationUpdateManyMock(
+      () => registrations,
+      (next) => {
+        registrations = next;
       },
     ),
     findUnique: jest.fn(async (args: { where: { id: string }; select?: unknown }) => {
       const found = registrations.find((r) => r.id === args.where.id);
       return found ? { ...found } : null;
     }),
-    update: jest.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
-      registrations = registrations.map((r) =>
-        r.id === args.where.id ? { ...r, ...args.data } : r,
-      );
-      return { ...registrations.find((r) => r.id === args.where.id) };
-    }),
+    update: createRegistrationUpdateMock(
+      () => registrations,
+      (next) => {
+        registrations = next;
+      },
+    ),
   };
 
   const actorDelegate = {

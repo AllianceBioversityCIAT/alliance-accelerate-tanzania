@@ -60,10 +60,13 @@ import {
 import { AuthFailureError } from '@/lib/api/client';
 
 import { RegistrationsTable } from '@/components/admin/RegistrationsTable';
+import { FilterSelect } from '@/components/admin/FilterSelect';
+import { PaginationControls } from '@/components/admin/PaginationControls';
 import Skeleton from '@/components/ui/Skeleton';
 
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
+import { param, pageParam, pageSizeParam } from '@/lib/url-params';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -88,30 +91,12 @@ const DEFAULT_STATUS: RegistrationStatus = 'PENDING_REVIEW';
 const DEFAULT_SORT: AdminRegistrationListSort = 'oldest';
 
 // ---------------------------------------------------------------------------
-// URL param helpers — mirrors app/(admin)/admin/actors/page.tsx
+// URL param helpers
 // ---------------------------------------------------------------------------
-
-/** Read a non-empty string param from URLSearchParams, else undefined. */
-function param(params: URLSearchParams, key: string): string | undefined {
-  const v = params.get(key);
-  return v && v.trim() !== '' ? v : undefined;
-}
-
-/** Read a positive integer page param; falls back to 1 on invalid/missing input. */
-function pageParam(params: URLSearchParams): number {
-  const raw = params.get('page');
-  if (!raw) return 1;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 1;
-}
-
-/** Read pageSize param; falls back to the default unless it is one of the allowed sizes. */
-function pageSizeParam(params: URLSearchParams): number {
-  const raw = params.get('pageSize');
-  if (!raw) return DEFAULT_PAGE_SIZE;
-  const n = parseInt(raw, 10);
-  return PAGE_SIZE_OPTIONS.includes(n) ? n : DEFAULT_PAGE_SIZE;
-}
+//
+// `param`/`pageParam`/`pageSizeParam` live in `@/lib/url-params` (shared with
+// app/(admin)/admin/actors/page.tsx). `statusParam`/`sortParam` below are
+// registrations-only and stay local.
 
 /**
  * Read the `status` segment param. An unrecognized or missing value — a
@@ -176,58 +161,6 @@ function ApplicantSearch({ value, onSearch }: { value: string; onSearch: (term: 
         autoComplete="off"
         spellCheck={false}
       />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Filter select primitive — mirrors app/(admin)/admin/actors/page.tsx
-// ---------------------------------------------------------------------------
-
-interface FilterSelectProps {
-  id: string;
-  label: string;
-  value: string | undefined;
-  options: { value: string; label: string }[];
-  onChange: (value: string | undefined) => void;
-  disabled?: boolean;
-  placeholder?: string;
-}
-
-function FilterSelect({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-  disabled = false,
-  placeholder = 'All',
-}: FilterSelectProps) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-fg">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || undefined)}
-        disabled={disabled}
-        aria-label={label}
-        className={[
-          'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          'border-border',
-        ].join(' ')}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }
@@ -338,7 +271,7 @@ function RegistrationsView() {
   const traderType = param(searchParams, 'traderType');
   const sort = sortParam(searchParams);
   const page = pageParam(searchParams);
-  const pageSize = pageSizeParam(searchParams);
+  const pageSize = pageSizeParam(searchParams, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS);
 
   const filters: AdminRegistrationListQuery = {
     status,
@@ -719,40 +652,13 @@ function RegistrationsView() {
               Showing <span className="font-medium text-fg">{rows.length}</span> of{' '}
               <span className="font-medium text-fg">{total}</span> registrations
             </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrevPage}
-                disabled={page <= 1 || loading}
-                aria-label="Previous page"
-                className={[
-                  'rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg',
-                  'transition-colors hover:bg-surface-alt',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                ].join(' ')}
-              >
-                Previous
-              </button>
-              <span className="px-2">
-                Page <span className="font-medium text-fg">{page}</span> of{' '}
-                <span className="font-medium text-fg">{totalPages}</span>
-              </span>
-              <button
-                type="button"
-                onClick={handleNextPage}
-                disabled={page >= totalPages || loading}
-                aria-label="Next page"
-                className={[
-                  'rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg',
-                  'transition-colors hover:bg-surface-alt',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                ].join(' ')}
-              >
-                Next
-              </button>
-            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              loading={loading}
+              onPrevPage={handlePrevPage}
+              onNextPage={handleNextPage}
+            />
           </div>
         </>
       )}

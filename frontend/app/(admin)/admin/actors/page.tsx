@@ -71,11 +71,14 @@ import { ActorsTable } from '@/components/admin/ActorsTable';
 import { BulkActionBar } from '@/components/admin/BulkActionBar';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { AcknowledgeDialog } from '@/components/admin/AcknowledgeDialog';
+import { FilterSelect } from '@/components/admin/FilterSelect';
+import { PaginationControls } from '@/components/admin/PaginationControls';
 import Skeleton from '@/components/ui/Skeleton';
 import Button from '@/components/ui/Button';
 
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
+import { param, pageParam, pageSizeParam } from '@/lib/url-params';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -110,30 +113,14 @@ const CONSENT_METHOD_OPTIONS: { value: AdminActorListQuery['consentMethod']; lab
 ];
 
 // ---------------------------------------------------------------------------
-// URL param helpers (T-8) — mirrors components/directory/DirectoryView.tsx
+// URL param helpers (T-8)
 // ---------------------------------------------------------------------------
-
-/** Read a non-empty string param from URLSearchParams, else undefined. */
-function param(params: URLSearchParams, key: string): string | undefined {
-  const v = params.get(key);
-  return v && v.trim() !== '' ? v : undefined;
-}
-
-/** Read a positive integer page param; falls back to 1 on invalid/missing input. */
-function pageParam(params: URLSearchParams): number {
-  const raw = params.get('page');
-  if (!raw) return 1;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 1;
-}
-
-/** Read pageSize param; falls back to the default unless it is one of the allowed sizes. */
-function pageSizeParam(params: URLSearchParams): number {
-  const raw = params.get('pageSize');
-  if (!raw) return DEFAULT_PAGE_SIZE;
-  const n = parseInt(raw, 10);
-  return PAGE_SIZE_OPTIONS.includes(n) ? n : DEFAULT_PAGE_SIZE;
-}
+//
+// `param`/`pageParam`/`pageSizeParam` live in `@/lib/url-params` (shared with
+// app/(admin)/admin/registrations/page.tsx; components/directory/DirectoryView.tsx
+// still carries its own local copies — out of scope for this extraction).
+// `enumParam` below is actors-only (registrations has no enum-valued filters
+// of this shape) and stays local.
 
 /**
  * Read an enum-valued filter param, but only accept it if it matches one of
@@ -152,58 +139,6 @@ function enumParam<T extends string>(
   const raw = param(params, key);
   if (raw == null) return undefined;
   return options.some((o) => o.value === raw) ? (raw as T) : undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Filter select primitive
-// ---------------------------------------------------------------------------
-
-interface FilterSelectProps {
-  id: string;
-  label: string;
-  value: string | undefined;
-  options: { value: string; label: string }[];
-  onChange: (value: string | undefined) => void;
-  disabled?: boolean;
-  placeholder?: string;
-}
-
-function FilterSelect({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-  disabled = false,
-  placeholder = 'All',
-}: FilterSelectProps) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-fg">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || undefined)}
-        disabled={disabled}
-        aria-label={label}
-        className={[
-          'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          'border-border',
-        ].join(' ')}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +227,7 @@ function ActorsView() {
   const registrationSource = enumParam(searchParams, 'registrationSource', SOURCE_OPTIONS);
   const consentMethod = enumParam(searchParams, 'consentMethod', CONSENT_METHOD_OPTIONS);
   const page = pageParam(searchParams);
-  const pageSize = pageSizeParam(searchParams);
+  const pageSize = pageSizeParam(searchParams, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS);
 
   const filters: AdminActorListQuery = {
     ...(region ? { region } : {}),
@@ -876,40 +811,13 @@ function ActorsView() {
               Showing <span className="font-medium text-fg">{actors.length}</span> of{' '}
               <span className="font-medium text-fg">{total}</span> actors
             </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrevPage}
-                disabled={page <= 1 || loading}
-                aria-label="Previous page"
-                className={[
-                  'rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg',
-                  'transition-colors hover:bg-surface-alt',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                ].join(' ')}
-              >
-                Previous
-              </button>
-              <span className="px-2">
-                Page <span className="font-medium text-fg">{page}</span> of{' '}
-                <span className="font-medium text-fg">{totalPages}</span>
-              </span>
-              <button
-                type="button"
-                onClick={handleNextPage}
-                disabled={page >= totalPages || loading}
-                aria-label="Next page"
-                className={[
-                  'rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg',
-                  'transition-colors hover:bg-surface-alt',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                ].join(' ')}
-              >
-                Next
-              </button>
-            </div>
+            <PaginationControls
+              page={page}
+              totalPages={totalPages}
+              loading={loading}
+              onPrevPage={handlePrevPage}
+              onNextPage={handleNextPage}
+            />
           </div>
         </>
       )}

@@ -57,6 +57,7 @@
 import { useEffect, useRef, useCallback, useId, useState } from 'react';
 
 import type { RejectionReasonCode } from '@/lib/api/registrations-admin';
+import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
 
 // ---------------------------------------------------------------------------
 // Reason vocabulary — A-71 / A-62 (see file-level doc comment above)
@@ -134,7 +135,6 @@ export function RejectDialog({
   const errorId      = `${uid}-error`;
 
   const reasonRef  = useRef<HTMLSelectElement>(null);
-  const dialogRef  = useRef<HTMLDivElement>(null);
   const [reason, setReason] = useState<RejectionReasonCode | ''>('');
   const [note,   setNote]   = useState('');
 
@@ -151,44 +151,7 @@ export function RejectDialog({
   }, [open]);
 
   // Keyboard: Escape → cancel; Tab / Shift+Tab → cycle within dialog.
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-        return;
-      }
-
-      if (e.key !== 'Tab') return;
-
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last  = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [onCancel]
-  );
+  const { dialogRef, onKeyDown: handleKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel);
 
   const handleConfirm = useCallback(() => {
     if (!canConfirm || loading) return;
