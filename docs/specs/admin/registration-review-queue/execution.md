@@ -2225,3 +2225,44 @@ The Implementer **declined** an optional note that `pii-boundary.spec.ts`'s bidi
 - **A second review round was spent on attempt 2** despite three precisely-dictated corrections, because this is the **permanent constitutional record** and the spec has four instances of a correction introducing a fresh false claim. The Reviewer re-resolved nine sub-claims in the rewritten §7.4 alone.
 - **The final budget re-measure was performed before the checkbox flipped**, as `tasks.md` requires — the Reviewer flagged it as outstanding.
 - **The intermittent backend failure was chased to a named suite with numbers** rather than reported as "flaky" or omitted from a green summary.
+
+---
+
+## POST-SPEC ADJUSTMENT — 2026-09-02, at the DC-16 review
+
+Recorded here rather than inside a task entry, because the spec was already closed at 16/16.
+
+**Applicant-column clamp narrowed at the user's request during the DC-16 human check.** `RegistrationsTable.tsx`'s `APPLICANT_NAME_CLAMP_CLASS` went from `max-w-xs` (320px) to **`max-w-56` (224px)** — verified to emit real CSS (`max-width: 224px`, rendered 224px), and on Tailwind's spacing scale rather than an arbitrary value, so NFR-6's token discipline holds. No test asserted the old class on this component (the one that does, `ActorsTable.test.tsx:515`, is a different component and was not touched). `RegistrationsTable` 9/9 and the queue page 11/11 stayed green.
+
+**T-12's breakpoint measurement was re-run rather than assumed still valid.** The change only shrinks `tableContent`; the container and the frozen Reference column are untouched, so the decision moves further into safety:
+
+| @768px | T-12 (recorded) | After this change |
+|---|---:|---:|
+| frozen sticky | 140px | **140px** (unchanged) |
+| **scrollable strip** | **341px** | **356px** |
+| table content | 1232px | **1136px** |
+
+**The `md` decision stands with more margin, not less** — still far from the 94px that forced `ActorsTable` to `lg`.
+
+### DC-16 human check — partially completed at this session
+
+| Property | Result |
+|---|---|
+| **Focus order** | ✅ Checked by the user via keyboard traversal on both screens — pass |
+| **Responsive split** | ✅ Checked across 768px — pass |
+| **Contrast** | ⚠️ **Measured in-browser rather than eyeballed** (see below) |
+
+**Contrast measured with real computed styles at 12px:**
+
+| Chip | Ratio | AA (4.5:1) |
+|---|---:|---|
+| **`Pending review`** (`bg-border text-muted`) | **4.42:1** | ❌ **fails** |
+| `Rejected` | 5.28:1 | ✅ |
+| `Approved` | 5.54:1 | ✅ |
+| `N possible duplicates` | 5.56:1 | ✅ |
+
+**This confirms A-76 empirically** (the review estimated ≈4.45:1; measured 4.42:1). It is the only one of the four below threshold, and it is the chip every pending registration carries — the default queue view. **Repo-wide pre-existing**: byte-identical in `ActorsTable`, `UsersTable`, `ImportPreviewTable` and `AdminSidebar`, so remediation is a five-site change, not one. **Not this spec's drift; still open for the user's decision.**
+
+**Harness note.** The DC-16 check needed **no backend, no database and no Cognito login** — all five components take plain props, exactly as `design.md` §14 and KZ-003 predicted (*"this check must not be deferred on auth grounds"*). A throwaway `frontend/app/dc16-check/` page rendered both screens with realistic fixtures. **It is not part of the deliverable and must be deleted** (`rm -rf frontend/app/dc16-check`).
+
+**One harness artefact worth recording, since it briefly looked like a defect:** the first fixture used `traderType: 'agrodealer'` / `'processor'`, which are **not canonical types**, so they rendered as raw strings beside a correctly-labelled `'seed_company'`. That was the fixture's fault, not the component's — the backend validates `traderType` against the canonical ten on the write path, so an unknown type cannot reach the queue from a real submission. Fixture corrected to `cooperative`/`offtaker`, which label correctly. Same for a `duplicateCandidateCount: 6` fixture: the server caps at 5, so 6 cannot occur.

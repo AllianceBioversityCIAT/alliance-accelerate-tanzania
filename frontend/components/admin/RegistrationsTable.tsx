@@ -102,7 +102,7 @@ const STICKY_REFERENCE_TD = [
  * obeys the clamp because its min-content *contribution* — not the cell's
  * — is what gets bounded.
  */
-const APPLICANT_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
+const APPLICANT_NAME_CLAMP_CLASS = 'block max-w-56 truncate';
 
 // ---------------------------------------------------------------------------
 // Types
