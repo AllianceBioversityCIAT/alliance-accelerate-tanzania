@@ -258,7 +258,7 @@ Derived, never authored: *submitted* (`createdAt`), *email verified* (`emailVeri
 
 | Method | Envelope | Why |
 |---|---|---|
-| `logRegistrationApprove` | **Full snapshot of the created actor**, identical in shape to `logCreate`'s | It *is* a create, with a distinct provenance and authority. Reusing the shape means `SnapshotDetails` renders it with no new narrowing branch |
+| `logRegistrationApprove` | **Full snapshot of the created actor**, identical in shape to `logCreate`'s — **plus `acknowledged: true`**, the one column beyond `action` where this row differs from a plain create (DEC-1) | It *is* a create, with a distinct provenance and authority. Reusing the shape means `SnapshotDetails` renders it with no new narrowing branch. The flag records that a human typed the consent acknowledgement before the publication: `assertAcknowledgement` gates the write server-side, so the audit row can assert it as fact rather than as a client claim. Written at `backend/src/actors/actor-audit.service.ts` in `logRegistrationApprove`. *(Added by validation R8 — DEC-1 bound T-16 to record this here and the sweep never ran, so the design authority described this row as shape-identical to `logCreate`'s while the code wrote a column `logCreate` does not.)* |
 | `logRegistrationReject` | **Snapshot-shaped** over the registration's reviewable facts — reference, submitted organisation name, structured reason | There is no actor to snapshot. Snapshot-shaped rather than a third envelope, so it stays legible to any future reader without widening the panel's type narrowing |
 
 > **A gap this creates, stated rather than left implicit.** A `REGISTRATION_REJECT` row is written with `actorId` = the registration id, and the only surface that renders audit rows filters on `actorId`. **No current UI can display a rejection row**, so its envelope shape is unobservable and **no test can gate its rendering** — only its persistence. The shape is pinned for legibility and for whatever surface chunk 4 adds, not because a gate proves it.
@@ -334,6 +334,8 @@ Two edits, and the second is the one that changes the failure mode:
 *(Named because FR-16's title is "widened **end-to-end**": a reader who finds a second, untouched `switch` must be able to tell a decision from an omission. Judgment Day A2.)*
 
 **The type gate needs its own command.** `next/jest` uses SWC and does **no type checking** (`frontend/CLAUDE.md`), so `npm test` alone cannot catch a missing `Record` member. The verification is `npx tsc --noEmit`, alongside a runtime test that iterates the union and asserts every member yields a non-empty class and a label.
+
+> ⚠️ **This gate was disarmed for the whole of execution, and the substitution is recorded only here (validation R12).** `npx tsc --noEmit` already exited non-zero on this checkout — one pre-existing error in `app/(admin)/admin/actors/page.test.tsx`, red on `main` since `0158dc0` and unrelated to this spec (ticket A-73). **Its exit status therefore carried zero information: it reported failure both before and after any mutation, which is a gate that cannot fail.** T-15 substituted a sound method — diffing the *error set* rather than reading the exit status, which produced exactly one new line when a member was removed from the `Record`. Anyone re-running DC-27 as written must diff the error set, **unless the baseline is green**, in which case the exit status is meaningful again. A-73 was fixed during validation remediation to restore that baseline.
 
 ### 7.6 Sidebar
 
@@ -467,7 +469,7 @@ The proposal inherited a split arithmetic — revision 2 estimated the *combined
 | Frontend code | ~2,200 | `ActorsTable.tsx` **743**, `ActorForm.tsx` **959**, `AcknowledgeDialog.tsx` **391**, `actors-admin.ts` **666** |
 | Frontend tests | ~2,200 | `ActorsTable.test.tsx` **599**, `ActorForm.test.tsx` **838**, `actors-admin.test.ts` **827** |
 | Docs + amendments | ~250 | TRD §2/§4/§8/§12.5 (ADR-012)/§13 · `docs/ux-ui/design.md` §2/§4/§5 |
-| **Total LOC** | **~8,200** | Sum of the rows above (8,150), rounded up |
+| **Total LOC** | **~8,200** *(estimate — actual was **13,310**)* | Sum of the rows above (8,150), rounded up. **The estimate was wrong by 62%**; see the note under this table |
 | **Review rounds** | **~35** | 16 × **2.17/task** — 3a's demonstrated rate. Metric defined below |
 
 **Define the metric before quoting a number — conflating two of them is how this section was wrong in draft.** 3a's archive reports *"**11 rework rounds**, ~50 Reviewer lens reports"* in one sentence. Those are **two different metrics**, and only one of them was ever budgeted:
@@ -483,7 +485,17 @@ The proposal inherited a split arithmetic — revision 2 estimated the *combined
 
 *(This section asserted the opposite in draft — that 3a's budget over-predicted by 3.4× — by comparing the 37-review-round budget against the 11-rework-round actual. Judgment Day A1; the inverted ratio had set this spec's tripwire at 10, low enough to fire on ordinary progress.)*
 
-**Depth `Full` is confirmed.** ~8,200 LOC over 16 tasks, one irreversible write path, five endpoints and a release-gate edit is not `Standard` work. The estimate matching the declared depth is the expected outcome and needs no action.
+**Depth `Full` is confirmed.** ~8,200 LOC *(estimate; actual 13,310 — see the note below)* over 16 tasks, one irreversible write path, five endpoints and a release-gate edit is not `Standard` work. The estimate matching the declared depth is the expected outcome and needs no action.
+
+> **What actually happened (recorded by validation R11, corrected by its Reviewer).** Final code LOC was **13,310** (7,331 backend + 5,979 frontend) — **62% over this estimate and 45% over the halt threshold below.**
+>
+> The tripwire fired and was acted on: the breach was detected at the **T-12** re-measure — already ~10,256, over the halt, and 25% over budget by then — escalated, and the user elected to continue with the overage on the record (`execution.md:1764`, `:2193`).
+>
+> **But the cadence itself was only half kept, and that is the more useful finding.** `tasks.md` mandates a re-measure at the close of T-4, T-8, T-12 and T-16. `execution.md` records LOC measurements at **T-12 and T-16 only** — there is no T-4 or T-8 entry — and the final one was outstanding until a Reviewer flagged it (`execution.md:2226`). So the tripwire caught the breach **late, not early**: eight tasks of drift went unmeasured, and by the first measurement the halt was already exceeded. The line below — *"the running total is re-measured at every fourth task, not only when someone remembers"* — is the rule this run wrote for itself and then half-followed.
+>
+> *(An earlier version of this note claimed the cadence was kept and that "nothing about the process failed". That was false against `execution.md`, and it was written by the Leader while correcting other authors' false claims — the sixth instance in this run of a correction introducing a fresh false claim. Caught by the R8–R17 review round.)*
+>
+> What also failed is this table, which remained the spec's most-read sizing statement while carrying a number the spec's own audit trail falsifies. The estimate is left in place and annotated rather than rewritten, because an estimate silently corrected after the fact teaches nothing about estimating.
 
 > **Tripwires for `/akili-execute` — any one halts for the user:** more than **16 tasks**, more than **~9,200 LOC**, or more than **35 review rounds** (PASS or FAIL, as defined above). Per usage-analytics' *"the tripwire fired correctly twice and was then forgotten"* — **a breach that is never measured disarms the tripwire retroactively.** The running total is re-measured at every fourth task, not only when someone remembers.
 
@@ -536,4 +548,4 @@ Cited next to the decision each shaped, per the command's requirement. The three
 
 **Execution-shaped evidence** (usage-analytics L-2): the throwaway-route discrimination proof, the pre-change redness of the audit-union test, the breakpoint measurement, and the intermediate green run of §10. A reading Reviewer can only audit the *account* of these. Each should be re-run by a Tester on a different model, or its verbatim output recorded in `execution.md` — not summarised.
 
-**Not gated, recorded:** real transaction rollback (DC-24) · duplicate-detection recall (DC-34) · the reviewer's judgement (DC-33) · email deliverability (DC-18, inherited) · index usage (DC-25).
+**Not gated, recorded:** real transaction rollback (DC-24) · duplicate-detection recall (DC-34) · the reviewer's judgement (DC-33) · email deliverability (DC-18, inherited) · index usage (DC-25) · **backend-only audit-action enum drift (DC-36)** — a member added on the backend that the frontend union has not learned still renders an unstyled badge with a clean `tsc`; the total `Record` catches a *frontend* edit, never a *backend* addition.

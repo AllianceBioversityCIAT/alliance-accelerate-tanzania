@@ -231,6 +231,52 @@ describe('RegistrationsPage', () => {
     jest.useRealTimers();
   });
 
+  // R16 — requirements.md:125 requires filter, SORT and page state all stay
+  // in the URL; only status/q/page were previously asserted here. Stripping
+  // `sort` from page.tsx's `handleSortChange` pushParams call left this
+  // whole suite green (verified below, reverted).
+  it('R16 — pushes the sort query param onto the URL when the sort control changes (URL sync)', async () => {
+    renderPage();
+    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'newest' } });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('sort=newest'), {
+        scroll: false,
+      }),
+    );
+  });
+
+  // R16 — region/traderType were checked alongside sort and found equally
+  // unasserted for URL sync; added here too.
+  it('R16 — pushes the region query param onto the URL when the region filter changes (URL sync)', async () => {
+    renderPage();
+    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText('Region'), { target: { value: 'Arusha' } });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('region=Arusha'), {
+        scroll: false,
+      }),
+    );
+  });
+
+  it('R16 — pushes the traderType query param onto the URL when the type filter changes (URL sync)', async () => {
+    renderPage();
+    await waitFor(() => expect(mockAdminListRegistrations).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'seed_company' } });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        expect.stringContaining('traderType=seed_company'),
+        { scroll: false },
+      ),
+    );
+  });
+
   it('pushes the page param when Next is clicked (URL sync, pagination)', async () => {
     mockAdminListRegistrations.mockResolvedValue({ ...LIST_RESULT, total: 60 });
     renderPage();

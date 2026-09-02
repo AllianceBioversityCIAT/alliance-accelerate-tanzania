@@ -42,7 +42,7 @@ jest.mock('next/navigation', () => ({
   // filters via useSearchParams(). Defaults to an empty URLSearchParams so
   // every pre-existing suite in this file keeps behaving exactly as before;
   // the T-8 filter/URL-sync tests below reconfigure it per test.
-  useSearchParams: (...args: unknown[]) => mockUseSearchParams(...args),
+  useSearchParams: () => mockUseSearchParams(),
 }));
 
 // Prevent jsdom from attempting real navigation when row Edit links are clicked.

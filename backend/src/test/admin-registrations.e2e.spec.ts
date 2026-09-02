@@ -596,4 +596,20 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
       expect(res.text).not.toContain('duplicateDismissals');
     },
   );
+
+  // R13 — `@Max(MAX_PAGE_SIZE)` on `AdminRegistrationListQueryDto.pageSize`
+  // (`dto/admin-registration-list-query.dto.ts`) was previously exercised
+  // ONLY by a service-level test that bypasses the validation pipe entirely
+  // (`admin-registrations.service.spec.ts`'s "caps pageSize at the max"
+  // test calls the service directly and asserts its own `Math.min` clamp —
+  // deleting `@Max` leaves that test green). This drives the real HTTP →
+  // ValidationPipe path, the only place `@Max` can actually be exercised.
+  it('400s a pageSize above the cap (NFR-9, @Max(MAX_PAGE_SIZE) over real HTTP)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/admin/registrations?pageSize=101')
+      .set(admin)
+      .expect(400);
+
+    expect(Array.isArray(res.body.details)).toBe(true);
+  });
 });

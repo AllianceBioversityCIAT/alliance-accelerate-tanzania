@@ -304,6 +304,25 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
       expect(tx.registration.updateMany).toHaveBeenCalledTimes(1);
       expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
     });
+
+    // R15 — mirrors `admin-registrations.service.spec.ts`'s approve-path
+    // fix. Checked first, per the Leader's brief: this path was EQUALLY
+    // unpinned — "every write lands on the tx delegate" above asserts only
+    // call COUNT, never the predicate's shape, so `buildRejectTx`'s own
+    // status re-derivation was the only thing catching a dropped `status`
+    // key, same as approve's gap.
+    it("R15 — the conditional update's where clause is exactly { id, status: PENDING_REVIEW }, by value", async () => {
+      const tx = buildRejectTx();
+      wireRejectTransaction(tx);
+
+      await service.reject('reg-reject-1', REASON as never, ACTING_SUB);
+
+      expect(tx.registration.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'reg-reject-1', status: RegistrationStatus.PENDING_REVIEW },
+        }),
+      );
+    });
   });
 
   describe('FR-14 scenarios 1, 2 — the notification is dispatched AFTER commit, never inside it, and works with email disabled', () => {

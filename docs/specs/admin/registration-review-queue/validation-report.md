@@ -226,11 +226,45 @@ Everything the user scoped as "blockers + code" is closed. Detail in `execution.
 | R6 | Queue under-reported saturated duplicates | **Closed.** Shared label module; backend JSDoc corrected to `min(open, 5)` |
 | R7 | `SAFE_ID_PATTERN` comment/regex mismatch | **Closed.** `i` flag dropped |
 
-**Still open, accepted and ticketed** — none blocks archive: the five document sweeps
-(R8–R12), the five test-gap closures (R13–R17), and every item in §11's defer list
-(A-73, A-93, the broken `test:e2e` script, A-92, the §7.2 advisories, A-28's unmade
-decision, the `akili-reviewer` wrapper's missing `skill` tool, the incomplete `A-nn`
-sequence, and the chunk-4 contrast trap).
+### Second batch — R8–R17, A-73 and the dead e2e gate (2026-09-02)
+
+Closed after the user challenged the first batch's scoping: ten of these were
+one-line or one-edit items filed as "accepted debt", and a ticket costs more to carry
+than any of them cost to fix.
+
+| # | Item | Status |
+|---|---|---|
+| R8 | `design.md` §6.7 silent on `acknowledged: true` | **Closed** — DEC-1's fourth binding item, finally discharged |
+| R9 | `trd.md` §2 understated its own protection | **Closed** — narrowed to the risk that is real (a route on a *different* module) |
+| R10 | DC-36 in no index | **Closed** — added to both |
+| R11 | `design.md` §11's budget figures | **Closed** — estimate annotated in-cell, not silently rewritten |
+| R12 | The `tsc` gate documented as if it worked | **Closed** — the disarming and T-15's error-set substitution now recorded in both authorities |
+| R13 | `@Max(MAX_PAGE_SIZE)` never exercised | **Closed** — supertest at `?pageSize=101`; reddens at `expected 400, got 200` with `@Max` removed |
+| R14 | "must NOT prevent approval" ungated | **Closed** — both sides; the frontend fixture now carries two open candidates |
+| R15 | The `where` shape gated by a mock artifact | **Closed** — pinned on approve **and reject**, which was found equally unpinned |
+| R16 | The `sort` URL push unasserted | **Closed** — `region` and `traderType` were equally unasserted; all three now pinned, and `tasks.md`'s dropped word restored |
+| R17 | `NavItem`'s shape held by a JSDoc | **Closed** — source-text assertion (the interface is file-private and SWC-erased) |
+| A-73 | `tsc --noEmit` red on `main` | **Closed.** `npx tsc --noEmit` now exits **0** — which re-arms the type gate R12 documents as disarmed |
+| — | `npm run test:e2e` pointing at a missing config | **Closed** — script and `CLAUDE.md` row removed together. The 16 `*.e2e.spec.ts` files already run under `npm test` |
+
+**One FAIL in this batch, and it was the Leader's.** R11's note asserted that the LOC
+tripwire "was re-measured at the mandated cadence" and that "nothing about the process
+failed". `execution.md` records LOC measurements at **T-12 and T-16 only** — the
+mandated cadence is T-4/T-8/T-12/T-16 — and the final one was outstanding until a
+Reviewer flagged it. By the first measurement the total was already ~10,256, over the
+halt. So the tripwire caught the breach **late**, and eight tasks of drift went
+unmeasured. Corrected; the sixth instance in this run of a correction introducing a
+fresh false claim, and the one written while correcting other authors' false claims.
+
+**Still open, accepted and ticketed** — none blocks archive:
+
+| Item | Why deferred |
+|---|---|
+| **A-93** — `admin-actors.e2e.spec.ts` load-induced timeouts | Genuine investigation, not a one-line fix. **Reproduced three times**, the last by running a build and a suite in one command: 8 failures at 36.8 s, then 990/990 in 6.3 s alone |
+| **A-94 (new)** — `app/(admin)/admin/actors/import/page.test.tsx` › *"renders nothing when the report carries no breakdown"* fails roughly **1 run in 8** | Found during this batch's verification. Pre-existing: last touched by `import-export/partner-profile-onboarding`, untouched by this spec. A frontend sibling to A-93 |
+| **A-28** — `q` has no `@MaxLength` and unescaped LIKE metacharacters; `page` has no `@Max` | Needs a product decision on bounds, not a fix. Admin-only, so not exploitable |
+| **A-92** — IA drift in `docs/ux-ui/design.md` §2 | Belongs to the actors/import surface, not this spec |
+| §7.2 advisories · the chunk-4 contrast trap · the `akili-reviewer` wrapper's missing `skill` tool · the incomplete `A-nn` sequence | Recorded above; none is a defect in shipped behaviour |
 
 ### The finding worth carrying into `/akili-archive`
 

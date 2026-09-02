@@ -240,6 +240,19 @@ describe('RegistrationDetailPanel', () => {
       expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
     });
 
+    // R14 — FR-11 scenario 1's "BUT it must NOT prevent approval" clause:
+    // duplicate detection warns, it never gates. Two OPEN candidates must
+    // not disable the Approve trigger.
+    it('R14 — the Approve trigger stays enabled with two open duplicate candidates present', () => {
+      renderPanel({
+        duplicateCandidates: [
+          { actorId: 'actor-1', traderId: 'TZ-A-0001', traderName: 'Meru Agro Cooperative Society', matchedOn: ['phone'] },
+          { actorId: 'actor-2', traderId: 'TZ-B-0002', traderName: 'Arusha Seeds Ltd', matchedOn: ['email'] },
+        ],
+      });
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    });
+
     it('hides Approve and Reject once APPROVED', () => {
       renderPanel({ status: 'APPROVED' });
       expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();

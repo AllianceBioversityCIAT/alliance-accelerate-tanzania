@@ -746,6 +746,23 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
 
         expect(actingAdminResolver.resolve).toHaveBeenCalledWith(ACTING_SUB);
       });
+
+      // R14 — FR-11 scenario 1's "BUT it must NOT prevent approval" clause.
+      // Detection reads the OUTER `prisma.actor.findMany` (this describe
+      // block's own mock, injected into the real `DuplicateDetectionService`
+      // at construction — see `beforeEach` above); `approve`'s own writes
+      // land on the SEPARATE `tx` delegate set `buildTx()` returns. An
+      // approve that started consulting detection would call the outer
+      // mock, not `tx` — so this assertion is the only one in this file
+      // that can catch it.
+      it('R14 — approve never consults DuplicateDetectionService: zero calls to the outer prisma.actor.findMany', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(prisma.actor.findMany).not.toHaveBeenCalled();
+      });
     });
 
     describe('Scenario: The publishable subset is exactly this, and nothing else (§6.3/DD-18 — the projection gate)', () => {
@@ -914,6 +931,26 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         await expect(
           service.approve('reg-does-not-exist', ACKNOWLEDGEMENT as never, ACTING_SUB),
         ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      // R15 — pins the conditional update's PREDICATE SHAPE by value. Both
+      // `buildTx`'s and `buildPrismaMock`'s `updateMany` implementations
+      // happen to compare `status` themselves, so dropping `status` from the
+      // real `where` clause is caught today only because the mock re-derives
+      // the same check — not because any assertion pins what the CODE sends.
+      // This test would still pass against a mock; it pins the call args
+      // directly instead.
+      it('R15 — the conditional update\'s where clause is exactly { id, status: PENDING_REVIEW }, by value', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(tx.registration.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'reg-approve-1', status: RegistrationStatus.PENDING_REVIEW },
+          }),
+        );
       });
     });
 
