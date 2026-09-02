@@ -215,7 +215,7 @@ export function RejectDialog({
         aria-describedby={`${descId} ${noticeId}${error ? ` ${errorId}` : ''}`}
         onKeyDown={handleKeyDown}
         className={[
-          'fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
           'rounded-md bg-surface p-6 shadow-lg border border-border',
         ].join(' ')}
       >

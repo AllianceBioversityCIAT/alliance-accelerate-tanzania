@@ -2325,3 +2325,11 @@ Backend **75 suites / 988 tests** · frontend **108 suites / 1,609 tests** · bu
 **Two of the three open items are now closed** (A-76 the chip, A-63 the label). **R-13 — the red `bg-danger` confirm button on the publish action — remains open** for the user, with the `tone?: 'danger' \| 'primary'` remediation named and deliberately not implemented under a task with no verification command.
 
 **The spec is ready for `/akili-archive`.** The throwaway harness (`frontend/app/dc16-check/`) must be deleted first — it is not part of the deliverable.
+
+### POST-SPEC — `RejectDialog` widened, 2026-09-02
+
+`max-w-sm` (384px) → **`max-w-md`** (448px), at the user's request during the DC-16 review. `RejectDialog` carries more content than its siblings — a description, an irreversibility notice, a required select and an optional textarea — so it was the most cramped of the three at the shared width.
+
+**Scoped to `RejectDialog` alone.** `AcknowledgeDialog` and `ConfirmDialog` share the same `max-w-sm` but are consumed by three call sites across two archived specs (`ActorForm`, the actors page, the import page). Widening them would be the same unreviewed cross-spec collateral that kept R-13 out of T-14. `RejectDialog` is this spec's own new component, so it is the one safe to change.
+
+No test asserted the width. Frontend **108 suites / 1,609 tests** green.
