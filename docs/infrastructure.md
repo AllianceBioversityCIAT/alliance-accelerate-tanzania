@@ -69,6 +69,7 @@ Full runbook: `infra/README.md`.
 - **API CORS:** locked to the CloudFront origin via the `AllowedOrigin` parameter (`set-cors.sh` applies it post-deploy, once the distribution domain is known).
 - **Database reachability:** RDS sits behind a security group admitting the Lambda's SG plus a parameterized `DevCidr` for operator access. It is never publicly open.
 - **Secrets:** DB credentials in Secrets Manager; Cognito and runtime config injected as Lambda environment variables from stack outputs. Nothing secret is committed — `.env` files are local-only and `.env.example` carries placeholders.
+- **Frontend build-time config (a separate channel from the above).** The static export has no runtime environment: `deploy-frontend.sh` bakes **four** `NEXT_PUBLIC_*` values into the bundle at build time — API base URL, Cognito user-pool Id, Cognito client Id, and the GA4 measurement Id. Three resolve from CloudFormation stack outputs; **`GA_MEASUREMENT_ID` is the first frontend build value that does not**, and defaults in-script instead. That is deliberate, not drift: a GA4 measurement ID ships in the page source of every visitor, so it is public by construction and does not belong in SSM/Secrets Manager, which `docs/trd/trd.md` §8 reserves for DB credentials and Cognito config. Because these are baked, changing any of them requires a **rebuild and redeploy** — not a variable update.
 - **Authorization:** Cognito JWT validated in NestJS guards; RBAC by group (`admin`, `staff`, else `Public`). **PII and consent gating are enforced server-side in the data layer and serializer** — see `docs/trd/trd.md` §8. Network controls are not the PII boundary.
 - **Lambda ↔ RDS concurrency:** the connection strategy must stay safe under Lambda concurrency (constrained pool today; RDS Proxy is the recommended path if concurrency grows) — `docs/trd/trd.md` §11.
 
@@ -78,7 +79,7 @@ Full runbook: `infra/README.md`.
 2. **SAM only.** No Terraform, CDK, or console-clicked resources — a resource that exists only in the console is invisible to the next deploy and will be destroyed or duplicated.
 3. **Stack order is `10` → `20` → `30`.** `20` consumes `10`'s exports; `30`'s origin is wired into `20`'s CORS afterwards.
 4. **Static export only.** The frontend must remain a pure static artifact — introducing Next.js SSR/ISR/route handlers breaks S3/CloudFront hosting outright.
-5. **No secrets in git.** Secrets Manager or SSM; `.env` stays local.
+5. **No secrets in git.** Secrets Manager or SSM; `.env` stays local. **The converse is also a rule:** a value that is public by construction — anything baked into the client bundle and therefore readable by every visitor — must *not* be put in Secrets Manager or SSM. Doing so implies a confidentiality it does not have and adds a deploy dependency for nothing. The GA4 measurement Id is the current instance (§4).
 6. **Tag propagation** via `samconfig.toml` — do not strip the `Project` tag.
 
 ## 6. Local Environment

@@ -127,7 +127,7 @@ The `A-nn` advisory sequence in `execution.md` is **not complete**: `A-14`, `A-2
 
 ## 8. Design Conformance
 
-Every constitutional amendment this spec made was verified true against shipped code: `trd.md` §4's five endpoint entries, the `zero rows ⇒ 409 / 404` split (on **both** approve and reject), §8's adjudication-authority paragraph, §12.5's ADR-011 (status `Accepted`, all four sub-claims true), §13's B3 resolution, and `docs/ux-ui/design.md` §2/§4/§5 — including the sidebar parenthetical, which matches `AdminSidebar.tsx:18-22` byte for byte. Delivered behaviour stays inside the approved scope and non-goals; nothing in scope was silently dropped.
+Every constitutional amendment this spec made was verified true against shipped code: `trd.md` §4's five endpoint entries, the `zero rows ⇒ 409 / 404` split (on **both** approve and reject), §8's adjudication-authority paragraph, §12.5's ADR-012 (status `Accepted`, all four sub-claims true), §13's B3 resolution, and `docs/ux-ui/design.md` §2/§4/§5 — including the sidebar parenthetical, which matches `AdminSidebar.tsx:18-22` byte for byte. Delivered behaviour stays inside the approved scope and non-goals; nothing in scope was silently dropped.
 
 ### 8.1 FAIL — `design.md` §7.1 names a gate that does not exist, and self-certifies as verified
 

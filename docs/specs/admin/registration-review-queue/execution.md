@@ -992,7 +992,7 @@ DC-31's own text in `requirements.md` describes the **second**; the task's `Fals
 | Implementer | `akili-implementer` (sonnet, T2) · Effort **max** → **high** → **high** · Skills: `nestjs-expert`, `tdd`, `error-handling-patterns` |
 | Reviewers | Attempt 1: **three** parallel lens Reviewers — transaction/conformance, projection/PII-adversarial, carried-obligations/honesty. Attempt 2: 1 focused. Attempt 3: **none** (see the recorded decision below). All `akili-reviewer` (opus, T3). |
 | Review rounds consumed | **4** (running total: **20** of 35) |
-| Requirements covered | FR-12 scenarios 1–6 · FR-14 scenario 1 · NFR-2, NFR-3 · `design.md` §6.2, §6.3, DD-17, DD-18, DD-23, ADR-011 |
+| Requirements covered | FR-12 scenarios 1–6 · FR-14 scenario 1 · NFR-2, NFR-3 · `design.md` §6.2, §6.3, DD-17, DD-18, DD-23, ADR-012 |
 
 **This is the spec's irreversible surface — the system's only path from private submitted data to public record. There is no un-publish.** `tasks.md` PR 3: *"Review this one hardest — isolating it is the point."* Three lens Reviewers at attempt 1 was that.
 
@@ -2128,7 +2128,7 @@ The `case 'DELETE': case 'BULK_DELETE':` fallthrough was correctly expanded into
 | Implementer | `akili-implementer` (sonnet, T2) · Effort **medium** → **xhigh** · Skills: `software-architect`, `cognitive-doc-design` |
 | Reviewer | `akili-reviewer` (opus, T3) — documentary accuracy (KZ-008), the only gate |
 | Review rounds consumed | **2** (running total: **31** of 35) |
-| Requirements covered | `requirements.md` §4.2 · `design.md` §9 ADR-011 · `judgment.md` B3 |
+| Requirements covered | `requirements.md` §4.2 · `design.md` §9 ADR-012 · `judgment.md` B3 |
 
 #### ⚠️ THIS TASK HAD NO VERIFICATION COMMAND — and none was invented
 
@@ -2137,7 +2137,7 @@ The `case 'DELETE': case 'BULK_DELETE':` fallthrough was correctly expanded into
 Both the Implementer and the Reviewer stated this explicitly and neither ran or credited one. **The Reviewer was the human read**, re-resolving each claim against shipped source.
 
 #### Files amended
-`docs/trd/trd.md` — §2, §4, §8, **§12.5 (ADR-011)**, §13 (B3) · `docs/ux-ui/design.md` — §2 IA, §4 screens, §5 nav · spec `design.md` — §7.4, §10, §12 (R-13), §13 · spec `requirements.md` — FR-12 s3, NFR-11, §8 (DC-36) · plus two comment/string-only source touches.
+`docs/trd/trd.md` — §2, §4, §8, **§12.5 (ADR-012)**, §13 (B3) · `docs/ux-ui/design.md` — §2 IA, §4 screens, §5 nav · spec `design.md` — §7.4, §10, §12 (R-13), §13 · spec `requirements.md` — FR-12 s3, NFR-11, §8 (DC-36) · plus two comment/string-only source touches.
 
 ---
 
@@ -2167,7 +2167,7 @@ Both the Implementer and the Reviewer stated this explicitly and neither ran or 
 - **`trd.md:185` (reject)** states no status code of its own, so it genuinely **inherits** approve's corrected split — and the code bears it (`:958–968` mirrors approve's `:726–738`).
 - **`trd.md:225` (§8)** is bounded head and tail by its scope (*"close the **double-adjudication race**"* … *"no window in which a **second request** can race"*). **In that race the row necessarily exists**, so `409` is the only outcome. True as scoped.
 
-#### ADR-011 — entered `Accepted`
+#### ADR-012 — entered `Accepted`
 Substance and sentence order match `design.md` §9; the Decision/Status/Consequence split matches ADR-001–010; **all four sub-claims verified true of the shipped service.**
 
 #### B3 — resolved: cite QA-3 alone
@@ -2391,3 +2391,42 @@ Restored → 27/27. Frontend **108 suites / 1,610 tests**, build static-export O
 **Nothing is outstanding for the human check.** The spec is ready for `/akili-archive` once the throwaway harness is deleted (`rm -rf frontend/app/dc16-check`).
 
 Three repo-health items remain, all **surfaced but not caused** by this spec, each needing its own ticket: the red `tsc --noEmit` baseline (A-73), `admin-actors.e2e.spec.ts`'s load-induced timeouts (A-93), and `docs/ux-ui/design.md` §2's pre-existing IA drift (A-92).
+
+---
+
+## Post-validation — R2: `main` integration and the ADR renumber
+
+`/akili-validate` recorded the branch as 10 commits behind `main` with a conflict
+on the two baseline documents this spec amended. Integrated on 2026-09-02.
+
+`docs/ux-ui/design.md` auto-merged cleanly — `main`'s analytics/consent rows and
+this spec's registration rows are additive in §2/§4/§5, exactly as the validation
+report predicted.
+
+`docs/trd/trd.md` did **not** conflict additively. Both branches allocated the
+**same ADR id to different decisions**:
+
+| Side | ADR-011 as written |
+|---|---|
+| `main` (`b17f9c6`, usage-analytics kaizen sync) | Client-side analytics consent-gated by non-injection, contained by layout placement |
+| this branch (T-16) | Approve-to-publish is a single-transaction, compare-and-set, human-acknowledged act |
+
+Both decisions stand; the id could not. **`main` is the trunk and its ADR-011 was
+already integrated and deployed, so this spec's decision was renumbered to
+ADR-012.** The unmerged branch yields — the alternative would have invalidated a
+citation already frozen in `docs/specs/archive/2026-09-01-enhancement--usage-analytics/design.md:278`.
+
+**Correction closure applied** (both directions):
+
+- **Forward** — every citation of this spec's decision renumbered: `docs/trd/trd.md`
+  §4 (line 184), §4's containment paragraph (191), §8 (226) and the §12.5 row itself;
+  plus `design.md` (3), `execution.md` (4), `tasks.md` (3), `validation-report.md` (1).
+- **Backward** — grepped for surviving `ADR-011` references across `docs/`,
+  `backend/` and `frontend/`. Exactly two remain, both correct: `trd.md:350`
+  (`main`'s own row) and the archived usage-analytics spec's citation of it, which
+  is a frozen record and was deliberately not touched.
+
+**Reading the trail above.** Entries written before this section — T-16's
+"ADR-011 — entered `Accepted`" among them — were authored when this decision
+carried the id 011 and have been renumbered in place to 012. The decision's
+content never changed; only its index did, and only because `main` got there first.

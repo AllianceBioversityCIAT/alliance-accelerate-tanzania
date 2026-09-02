@@ -152,14 +152,34 @@ Resources:
                 - "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${PoolId}"
                 - PoolId: !ImportValue
                     Fn::Sub: "${DataAuthStackName}-UserPoolId"
-            # T3-A1 - registration email verification (mail.service.ts uses
-            # SendEmailCommand only, never SendRawEmailCommand). Scoped to the
-            # single verified SES identity - the account is still in the SES
-            # sandbox, so this can only deliver to other verified addresses.
+            # Registration OTP + contact form (mail.service.ts uses SendEmailCommand
+            # only, never SendRawEmailCommand).
+            #
+            # ⚠️  DO NOT narrow this back to a single identity ARN without testing
+            # a real send from the deployed Lambda. It was
+            # `identity/j.cadavid@cgiar.org` until 2026-09-01, and that produced
+            # `AccessDenied` on EVERY send from this role — silently breaking the
+            # registration OTP from 2026-08-25 (fire-and-forget swallowed it, so
+            # nobody noticed for five weeks) and visibly breaking the contact form
+            # the day it shipped, which is how it was found.
+            #
+            # What was ruled out, with evidence: the role policy was correct and
+            # complete; the role carries no permissions boundary; it is not a
+            # blanket SCP (an IAM user in the same account could send from the
+            # same identity throughout); and it is not the display-name `Source`
+            # added by contact/contact-channels T-1 (the failures predate it and
+            # the old code sent a bare address).
+            #
+            # The only remaining difference was this resource. Widening it to
+            # `identity/*` fixed both paths immediately. WHY the specific ARN is
+            # refused is NOT established — CloudTrail's denial record would settle
+            # it and was not available. Recorded as an empirical fact, not an
+            # explanation. Still scoped: SES identities only, this account, this
+            # region.
             - Effect: Allow
               Action:
                 - ses:SendEmail
-              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/j.cadavid@cgiar.org"
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
       Events:
         # Explicit methods (NOT `ANY`) so that OPTIONS matches NO route and API
         # Gateway's CorsConfiguration auto-answers CORS preflight with 204. With a
