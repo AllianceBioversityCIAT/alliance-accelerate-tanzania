@@ -10,7 +10,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 ## Design tokens (zero tolerance)
 
 - Only semantic token classes from `tailwind.config.ts` / docs/ux-ui/design.md §7 (`bg-surface`, `text-fg`, `text-muted`, `border-border`, `bg-primary-soft`, `text-danger`, `bg-danger-soft`, `bg-highlight-tint`, …). No hex, no `rgb()`, no arbitrary values (`bg-[#…]`). Opacity modifiers on tokens (`bg-warning/10`, `border-danger/30`) are acceptable precedent. Reviewers grep for violations — so should you.
-- **Elevation ladder (`docs/ux-ui/design.md` §7) — four rungs, all with real consumers:** `xs` chips + inputs at rest · `sm` cards + stat tiles · `md` raised cards + table containers · `lg` dialogs, popovers, map rail. Keep every rung consumed — a token defined with zero consumers is drift (`--shadow-lg` sat at zero until 2026-08-08). ⚠️ **The ladder is ordered geometrically, not by alpha:** `xs` deliberately carries a *higher* alpha (`.12`) than `sm` (`.07`) because it must register across a 2 px footprint — do not "correct" that inversion. Separately, `--color-surface` on `--color-bg` is only **1.05:1**, so `border border-border`, not the shadow, is what carries a section boundary under WCAG 1.4.11.
+- **Elevation ladder (`docs/ux-ui/design.md` §7) — four rungs, all with real consumers:** `xs` chips + inputs at rest · `sm` cards + stat tiles · `md` raised cards + table containers · `lg` dialogs, popovers, map rail, consent banner. Keep every rung consumed — a token defined with zero consumers is drift (`--shadow-lg` sat at zero until 2026-08-08). ⚠️ **The ladder is ordered geometrically, not by alpha:** `xs` deliberately carries a *higher* alpha (`.12`) than `sm` (`.07`) because it must register across a 2 px footprint — do not "correct" that inversion. Separately, `--color-surface` on `--color-bg` is only **1.05:1**, so `border border-border`, not the shadow, is what carries a section boundary under WCAG 1.4.11.
 - **Form sections: card treatment on a wrapping `<div>`, `<fieldset>` semantic-only** (`border-0 p-0 m-0`). A `<legend>` that straddles a bordered fieldset renders as a tab that breaks the card's corner radius. ⚠️ Never "fix" that with `float-left w-full` — it broke the `/register` grid and shipped to Dev **with contrast, lint and build all green**; none of those gates evaluates layout, so any change to flow, positioning or spacing needs a rendered capture at 375/768/1440 before deploy.
 
 ## API client conventions (`lib/api/`)
@@ -19,6 +19,12 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 - **Types mirror backend contracts EXACTLY** — exact string-literal unions, matching optionality (e.g. `ImportReport` in `actors-admin.ts` vs `backend/src/actors/actor-import.types.ts`). Loosening a union to `string` or flipping optionality has FAILed reviews before.
 - List endpoints cap `pageSize` at **100** (400 above it) — clamp client-side.
 - Verify data-loading UI against the **live API**, not only mocks — mock-vs-live drift has shipped bugs (the `details` envelope, W-1).
+
+## Public shell patterns (`app/(public)/`)
+
+- **`app/(public)/layout.tsx` stays a server component.** It composes `ConsentProvider` → `PublicShellFrame` → `ConsentBanner` → `GoogleAnalytics`. Analytics is mounted *here*, which is what makes the `(admin)` exclusion structural rather than a runtime pathname check — do not hoist any of it to the root `app/layout.tsx`.
+- **`components/shell/PublicShellFrame.tsx` is the `(public)` shell's client seam.** It exists to reserve the consent banner's **live-measured** height: it reads the banner's `getBoundingClientRect().height` (border box — `contentRect` drops the border) via `ResizeObserver` and applies it as `padding-bottom` on the `flex min-h-screen flex-col` column. It finds the banner by its accessible name, `section[aria-label="Cookie consent"]`, so renaming that label breaks the clearance silently — see `docs/ux-ui/design.md` §6's footer-clearance rule.
+- **Consent gating is on the value, not the banner's visibility.** `GoogleAnalytics` renders on `consent === 'granted'`; gating on `showBanner` would load analytics for a visitor who rejected. Absence of a stored choice always resolves to `'undecided'`, never to granted.
 
 ## Admin shell patterns (`app/(admin)/`)
 
