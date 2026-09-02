@@ -46,8 +46,8 @@ const REJECTION_REASONS_SOURCE = [
     label: 'Incomplete or invalid information',
   },
   {
-    code: 'INELIGIBLE_ACTOR_TYPE',
-    label: 'Ineligible actor type for this registry',
+    code: 'NOT_A_SEED_SYSTEM_ACTOR',
+    label: 'Not a seed-system actor',
   },
   {
     code: 'UNABLE_TO_VERIFY_CONTACT_DETAILS',

@@ -2291,3 +2291,37 @@ The user judged the measured 4.42:1 chip visually wrong as well as sub-threshold
 Verified rendered in-browser: the table chip resolves to `…bg-surface-alt text-warning`. `RegistrationsTable` 9/9 · `RegistrationDetailPanel` 26/26 · `contrast` 129/129.
 
 **A-76 is closed. The remaining DC-16 items are R-13 (the red publish button) and the `Ineligible actor type` label — both still open for the user.**
+
+### A-63 CLOSED — the `Ineligible actor type` reason re-labelled, 2026-09-02
+
+The user chose **option 2 — re-label to something factual** — after the Leader laid out why the original was a governance problem rather than a wording one.
+
+**The finding, sharpened before the decision.** Four of the five reasons describe **the submission** — a duplicate, incomplete information, unverifiable contact details, other. *"Ineligible actor type for this registry"* was the only one asserting a **policy about the applicant's category**, and:
+
+1. **Neither the PRD nor the TRD defines eligibility.** A grep for `eligib`/`ineligib` across both returns **zero** matches. FR-11 requires the structured code be stored *"so duplicates are countable later"* — so the registry would have accumulated an auditable count of rejections for ineligibility **against criteria it has never published**.
+2. **The form cannot express an ineligible type.** `registration-create.dto.ts` validates `traderType` with `@IsIn(TRADER_TYPES)` — the ten canonical types, **all legitimate registry members**. An applicant *cannot* submit an ineligible type. So the reason was either **unreachable** (a dead option in a five-item select) or **mislabelled** — a reviewer using it to mean *"this is not a seed-system actor at all"*, which is a different claim about a different field.
+
+**Resolution:** `INELIGIBLE_ACTOR_TYPE` / *"Ineligible actor type for this registry"* → **`NOT_A_SEED_SYSTEM_ACTOR` / "Not a seed-system actor"**. That states a fact about the submission and applies no undefined policy.
+
+**The code was renamed as well as the label, which required a judgment call against a written rule.** `rejection-reasons.ts`'s own docblock says a code *"is added here, never renamed or removed"* — but its stated justification is that *"a reason CODE **already written** to a `Registration.rejectionReason` column must keep resolving to a real reason forever."*
+
+**Leader-verified before deciding:** `Registration` holds **0 rows** and `groupBy(['rejectionReason'])` returns **`[]`** — no stored value exists to orphan. **The invariant the rule protects is not engaged, so this is precisely the window in which the rule's own logic permits a rename; after deployment it would not be.** Leaving the code as `INELIGIBLE_ACTOR_TYPE` under a factual label would have created a code/label contradiction — its own KZ-008 smell.
+
+**Five sites swept, and the rename is gated.** Backend `rejection-reasons.ts` · frontend `RejectionReasonCode` union · `RejectDialog`'s total `Record` · two pipe-message strings in `registrations-admin.test.ts` · and **`RejectDialog.test.tsx:59`, which pins all five option labels by exact array equality** — so the rename could not have been left half-done silently. (Contrary to A-61's read, the *frontend* does pin the labels; A-61's gap is on the backend's own spec.) Repo-wide grep for the old code and label: **zero** outside `execution.md`, which quotes them as history.
+
+Backend **75 suites / 988 tests** · frontend **108 suites / 1,609 tests** · build static-export OK · `tsc` unchanged.
+
+---
+
+## DC-16 HUMAN CHECK — COMPLETE
+
+| Property | Result |
+|---|---|
+| Focus order | ✅ user-verified by keyboard traversal, both screens |
+| Focus visibility | ✅ user-verified |
+| Responsive split at 768px | ✅ user-verified |
+| Contrast | ✅ **measured**, not eyeballed — A-76 found and closed |
+
+**Two of the three open items are now closed** (A-76 the chip, A-63 the label). **R-13 — the red `bg-danger` confirm button on the publish action — remains open** for the user, with the `tone?: 'danger' \| 'primary'` remediation named and deliberately not implemented under a task with no verification command.
+
+**The spec is ready for `/akili-archive`.** The throwaway harness (`frontend/app/dc16-check/`) must be deleted first — it is not part of the deliverable.

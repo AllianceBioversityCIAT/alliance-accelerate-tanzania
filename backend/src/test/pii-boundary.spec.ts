@@ -1539,7 +1539,9 @@ describe(
           'route added anywhere in RegistrationsModule with no matching entry fails HERE, by name, ' +
           "rather than being silently skipped (RA7 + Reviewer's bidirectional fold-in); the two " +
           'throwaway-route proofs (same controller, then a second controller) are recorded in ' +
-          "execution.md → T-13, not kept in this file",
+          "`admin/registration-review-queue` execution.md → T-10 (the current-generation pair, run " +
+          'with a real admin controller present — supersedes the original pair under ' +
+          "`actors/public-self-registration` execution.md → T-13), not kept in this file",
         () => {
           // Bidirectional (Reviewer fold-in): this single assertion catches
           // BOTH a derived route with no fixture (RA7's original concern)

@@ -73,7 +73,7 @@ import type { RejectionReasonCode } from '@/lib/api/registrations-admin';
 const REJECTION_REASON_LABEL: Record<RejectionReasonCode, string> = {
   DUPLICATE_OF_EXISTING_RECORD: 'Duplicate of an existing registry record',
   INCOMPLETE_OR_INVALID_INFORMATION: 'Incomplete or invalid information',
-  INELIGIBLE_ACTOR_TYPE: 'Ineligible actor type for this registry',
+  NOT_A_SEED_SYSTEM_ACTOR: 'Not a seed-system actor',
   UNABLE_TO_VERIFY_CONTACT_DETAILS: 'Unable to verify contact details',
   OTHER: 'Other',
 };

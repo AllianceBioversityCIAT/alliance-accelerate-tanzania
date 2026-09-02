@@ -78,10 +78,15 @@ function isSnapshot(changes: unknown): changes is SnapshotChanges {
  * Badge color classes for every `AuditEntry['action']` member.
  *
  * A TOTAL `Record`, not a `switch` with a `default` — matches the
- * `ROLE_BG_CLASS`/`ROLE_CSS_VAR` precedent in `RoleBadge.tsx`. Adding a
- * ninth backend action without adding it here is a **compile error**
- * (`tsc --noEmit`), not a silently unstyled badge (`design.md` DD-21,
- * FR-16).
+ * `ROLE_BG_CLASS`/`ROLE_CSS_VAR` precedent in `RoleBadge.tsx`. This map has
+ * no link to the backend `ActorAuditAction` enum, so a backend-only ninth
+ * action (added to Prisma's schema with no frontend edit) still compiles
+ * clean and simply renders unstyled — the same silent drift `IMPORT` had
+ * before this map existed (`design.md` DD-21, FR-16; corrected at T-16,
+ * `execution.md` A-88, since this docblock previously claimed a backend-only
+ * addition fails the build). What **is** a compile error: widening
+ * `AuditEntry['action']` itself — a ninth member added to the *frontend*
+ * union — with no matching entry added here (`tsc --noEmit`).
  */
 const actionBadgeClasses: Record<AuditEntry['action'], string> = {
   CREATE: 'bg-highlight-tint text-success',

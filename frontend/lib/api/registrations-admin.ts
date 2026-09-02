@@ -234,7 +234,7 @@ export interface AdminRegistrationDetail {
 export type RejectionReasonCode =
   | 'DUPLICATE_OF_EXISTING_RECORD'
   | 'INCOMPLETE_OR_INVALID_INFORMATION'
-  | 'INELIGIBLE_ACTOR_TYPE'
+  | 'NOT_A_SEED_SYSTEM_ACTOR'
   | 'UNABLE_TO_VERIFY_CONTACT_DETAILS'
   | 'OTHER';
 

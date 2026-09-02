@@ -654,7 +654,7 @@ describe('rejectRegistration()', () => {
       statusCode: 400,
       message: 'Bad Request Exception',
       error: 'Bad Request',
-      details: [{ field: 'reason', message: 'reason must be one of the following values: DUPLICATE_OF_EXISTING_RECORD, INCOMPLETE_OR_INVALID_INFORMATION, INELIGIBLE_ACTOR_TYPE, UNABLE_TO_VERIFY_CONTACT_DETAILS, OTHER' }],
+      details: [{ field: 'reason', message: 'reason must be one of the following values: DUPLICATE_OF_EXISTING_RECORD, INCOMPLETE_OR_INVALID_INFORMATION, NOT_A_SEED_SYSTEM_ACTOR, UNABLE_TO_VERIFY_CONTACT_DETAILS, OTHER' }],
     });
 
     const attempt = rejectRegistration(REGISTRATION_ID, { reason: 'OTHER' }, TOKEN);
@@ -666,7 +666,7 @@ describe('rejectRegistration()', () => {
         {
           field: 'reason',
           message:
-            'reason must be one of the following values: DUPLICATE_OF_EXISTING_RECORD, INCOMPLETE_OR_INVALID_INFORMATION, INELIGIBLE_ACTOR_TYPE, UNABLE_TO_VERIFY_CONTACT_DETAILS, OTHER',
+            'reason must be one of the following values: DUPLICATE_OF_EXISTING_RECORD, INCOMPLETE_OR_INVALID_INFORMATION, NOT_A_SEED_SYSTEM_ACTOR, UNABLE_TO_VERIFY_CONTACT_DETAILS, OTHER',
         },
       ]);
     });

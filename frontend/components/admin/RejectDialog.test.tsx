@@ -56,7 +56,7 @@ describe('RejectDialog', () => {
       'Select a reason…',
       'Duplicate of an existing registry record',
       'Incomplete or invalid information',
-      'Ineligible actor type for this registry',
+      'Not a seed-system actor',
       'Unable to verify contact details',
       'Other',
     ]);
