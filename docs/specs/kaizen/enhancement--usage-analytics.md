@@ -94,9 +94,21 @@ T-4 also produced **four** discrimination probes unprompted where one was requir
 - **The budget tripwire fired correctly twice and was then forgotten.** The last budget table is T-4's; nothing after re-measured, and a 68-line error made the running total look smaller. A breach that is never measured **disarms the tripwire retroactively** — arguably a mechanism gap, but it is KZ-005 in substance, so it is queued as a digest update rather than a fourth lesson.
 - **Measurement artefacts lived only in a session scratchpad** and were the sole evidence for a residual the spec accepts. Transcribed into `execution.md` before archive on the validator's advice.
 
-## Pending Items
+## Pending Items — **APPLIED 2026-09-02**
 
-All items below await the **apply phase on the default branch**. Nothing outside this spec's own folder and this file was written.
+All 18 items below were applied on the default branch in `chore/akili-kaizen-sync-usage-analytics`, branched from `main` at `4dede21`. Nothing outside this spec's own folder and this file had been written before that.
+
+**Note on the earlier report of "11 pending".** That figure counted only the document syncs (`guide-sync` 2 + `factual-sweep` 7 + `trd-adr` 2) and silently omitted the 3 `standardization` and 4 `digest-update` items — two of which are the High-severity methodology fixes. The true count was **18**. This is KZ-005 in its own kaizen file: a figure quoted without cross-checking the section that contains it.
+
+**One item could not be discharged as written — see `## Digest cap collision` below.**
+
+### Digest cap collision (open, needs a decision)
+
+`docs/specs/kaizen-log.md` carries a hard **10-row cap** on `## Active Lessons`, and it is full. The 4 `digest-update` items applied cleanly because they are edits to existing rows. But **L-1, L-2 and L-3 are new lessons with no row**, and their `standardization` targets were applied to the template documents only.
+
+The consequence is precise and worth stating: *"nothing in the methodology verifies that the spec is true"* — the single highest-severity finding of this spec — now lives in `general-setup/requirements.md`, which `/akili-specify` reads, but **not** in the digest table that every other AKILI command reads. Same for L-2 in `.agents/reviewer.md`.
+
+Resolving it means either evicting rows (KZ-006 and KZ-007 are still `Recorded`/`*pending*`, so eviction would drop unapplied lessons), raising the cap, or accepting that template-only application is sufficient. That is a judgment call about a shared file affecting every future spec, so it is **not** taken here.
 
 ### Kind: `guide-sync`
 
@@ -128,9 +140,9 @@ All items below await the **apply phase on the default branch**. Nothing outside
 
 | Lesson | Target | Proposed edit (1–3 lines) | Status | Severity |
 |---|---|---|---|---|
-| **L-1** | `docs/specs/general-setup/requirements.md` § Writing Standards | *A requirement's factual claims about a third-party system, the test harness, or the codebase are load-bearing exactly as its behavioural clauses are, and no gate checks them. Any such claim must cite where it was verified, or be marked unverified. A `Verify` clause is itself a claim about the harness: state the mutation and confirm the test's render path can reach it.* | pending | High |
-| **L-2** | `.agents/reviewer.md` | *You audit by reading. Every red/green result in a completion report was produced by the agent that wrote the code — you can judge whether a claimed split reconciles against the source, and you must, but you cannot re-run it. Where a claim rests on a measurement whose **control** you cannot inspect, say so rather than crediting it.* | pending | High |
-| **L-3** | `docs/specs/general-setup/task.md` § Testing & Verification | *A task brief states every clause the task owns and requires each be marked either (A) with the concrete mutation that reddens a named test, or (B) an unevaluable gap with its structural reason. "Structurally covered" is acceptable only as (B).* | pending | Medium |
+| **L-1** | `docs/specs/general-setup/requirements.md` § Writing Standards | *A requirement's factual claims about a third-party system, the test harness, or the codebase are load-bearing exactly as its behavioural clauses are, and no gate checks them. Any such claim must cite where it was verified, or be marked unverified. A `Verify` clause is itself a claim about the harness: state the mutation and confirm the test's render path can reach it.* | **applied** | High |
+| **L-2** | `.agents/reviewer.md` | *You audit by reading. Every red/green result in a completion report was produced by the agent that wrote the code — you can judge whether a claimed split reconciles against the source, and you must, but you cannot re-run it. Where a claim rests on a measurement whose **control** you cannot inspect, say so rather than crediting it.* | **applied** | High |
+| **L-3** | `docs/specs/general-setup/task.md` § Testing & Verification | *A task brief states every clause the task owns and requires each be marked either (A) with the concrete mutation that reddens a named test, or (B) an unevaluable gap with its structural reason. "Structurally covered" is acceptable only as (B).* | **applied** | Medium |
 
 ### Kind: `digest-update`
 

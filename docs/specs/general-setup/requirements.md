@@ -26,6 +26,19 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
   statements elsewhere in the same spec before it is published; a count that contradicts a sentence in a
   sibling document is a defect detectable without re-measuring.
 
+- **A requirement's factual claims are load-bearing, and no gate checks them (L-1, `enhancement/usage-analytics`).**
+  Every AKILI gate verifies one direction: *does the code match the spec?* Nothing asks whether the spec is
+  **true**. A requirement that is internally consistent and externally false passes every gate the methodology
+  has — and reaches code, and visitor-facing copy, unchallenged. So: any assertion about a **third-party system**,
+  the **test harness**, or the **codebase** must cite where it was verified, or be explicitly marked unverified.
+  Two corollaries, both from real defects:
+  - **A `Verify` clause is itself a claim about the harness.** State the mutation that should redden the test *and*
+    confirm the test's render path can actually reach it. A falsifying-input clause naming a mutation the harness
+    cannot observe proves nothing while reading as rigour.
+  - **An accepted-risk or accepted-limitation list is a claim about rendered reality.** Write it from a measurement,
+    never from reasoning. One such list went 1 → 3 → 10 across two corrections; every correction came from measuring,
+    none from re-reading.
+
 - **Cite stable anchors, not line numbers (KZ-009).** `file:line` decays on its own — every edit above the
   cited line falsifies it, including edits made by the same task. In any persistent document, anchor citations
   to a **symbol, a unique class or literal string, or a section title**, and use bare line numbers only in

@@ -24,7 +24,9 @@
 /register/status          Status lookup by reference + email — status and reviewer note only
 /contact                  Public contact form — relays to the current Cognito `admin` group,
                            no sign-in required
-/privacy                  Privacy notice — static content
+/privacy                  Privacy notice — contact submissions + analytics cookies; carries one
+                           interactive client island (ConsentChoiceControl) to change a prior
+                           consent choice
 /admin                    Admin/Staff console (auth-gated)
   /admin/actors           Actor management table (CRUD)
   /admin/actors/new       Create actor (validated form)
@@ -37,7 +39,8 @@
 
 ## 3. Primary User Flows
 
-- **Explore (Public):** Landing → see metrics → Directory (search/filter/paginate) → Actor profile (PII hidden) → optionally jump to Map centered on that actor.
+- **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (PII hidden) → optionally jump to Map centered on that actor.
+  - The consent banner **overlays** the landing page, it does not gate it: every public route stays reachable while the decision is pending, and the choice persists so the banner is not shown again.
 - **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
 - **Bulk seed (Admin):** Login → Admin → Import → upload CSV → preview mapping + validation summary → confirm → per-row result report.
@@ -61,7 +64,7 @@
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
-| Privacy | Public | Static notice: what a contact submission collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything. |
+| Privacy | Public | Two subjects. **Contact submissions:** what one collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything. **Analytics cookies:** the four signals GA4 collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and a control to change a prior consent choice. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load. |
 
 ## 5. Navigation Model
 
@@ -79,6 +82,8 @@
 - **Directory:** card grid on mobile, table on `md+`.
 - **Forms:** single-column on mobile, two-column section grid on `lg+`; grouped fieldsets (Identity · Location/GPS · Commercial · Contact/PII).
 - **Map page:** filter rail (left/collapsible) + map canvas; result count and active-filter chips above the map.
+- **Consent overlay bar:** until the visitor has chosen, the public shell carries a persistent `fixed bottom-0 inset-x-0` bar above all page content — `z-[1100]`, which clears the map legend's `z-[1000]`. It is the only fixed bottom overlay in the system.
+  - **Footer-clearance rule — measure, never estimate.** A fixed bottom overlay must have its **live** height reserved by the shell: `PublicShellFrame` reads the banner's *border-box* height via `ResizeObserver` and applies it as `padding-bottom` on the shell column. Reserving a hardcoded or reasoned-about height is what produced the occlusion defect this rule exists to prevent — the accepted-occlusion set went 1 → 3 → 10 across two corrections, and every correction came from measuring a rendered page, never from re-reading the design. Use `contentRect` and you lose the border.
 
 ## 7. Design Tokens
 
@@ -175,7 +180,7 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 ## 8. Component Inventory
 
-Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **PII block** (gated reveal / restricted chip) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton.
+Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **PII block** (gated reveal / restricted chip) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6).
 
 > Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, PII block, Map popup, Import result) on top.
 
