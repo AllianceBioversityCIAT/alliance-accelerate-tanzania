@@ -258,6 +258,105 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       expect(res.page).toBe(5);
     });
 
+    describe('A-28 half 1 — page has no @Max; skip is clamped to total instead', () => {
+      it(
+        'clamps skip to total when page is astronomically far beyond the result set, never ' +
+          'passing the raw (page-1)*pageSize product to Prisma — reddens against the pre-fix ' +
+          'code, which sent skip=1999999960',
+        async () => {
+          prisma.registration.findMany.mockResolvedValue([]);
+          prisma.registration.count.mockResolvedValue(3);
+
+          const res = await service.list({ page: 99999999, pageSize: 20 } as never);
+
+          const args = prisma.registration.findMany.mock.calls[0][0];
+          expect(args.skip).toBe(3); // clamped to total, never (99999999 - 1) * 20
+          expect(res.data).toEqual([]);
+          expect(res.total).toBe(3);
+          expect(res.page).toBe(99999999);
+        },
+      );
+
+      it('does not clamp skip when the requested page is within the result set (unaffected pagination)', async () => {
+        prisma.registration.findMany.mockResolvedValue([fixtureRow()]);
+        prisma.registration.count.mockResolvedValue(42);
+
+        await service.list({ page: 3, pageSize: 5 } as never);
+
+        expect(prisma.registration.findMany.mock.calls[0][0].skip).toBe(10); // (3 - 1) * 5, well under total=42
+      });
+
+      it('queries count() before findMany() so the clamp has a real total to clamp against', async () => {
+        const callOrder: string[] = [];
+        prisma.registration.findMany.mockImplementation(async () => {
+          callOrder.push('findMany');
+          return [];
+        });
+        prisma.registration.count.mockImplementation(async () => {
+          callOrder.push('count');
+          return 0;
+        });
+
+        await service.list({} as never);
+
+        expect(callOrder).toEqual(['count', 'findMany']);
+      });
+    });
+
+    describe('A-28 half 2 — q escapes LIKE metacharacters before reaching Prisma', () => {
+      it(
+        'escapes a bare "%" so it cannot match every row — reddens against the pre-fix code, ' +
+          'which passed the raw "%" straight through to string_contains',
+        async () => {
+          prisma.registration.findMany.mockResolvedValue([]);
+          prisma.registration.count.mockResolvedValue(0);
+
+          await service.list({ q: '%' } as never);
+
+          const where = prisma.registration.findMany.mock.calls[0][0].where;
+          expect(where).toEqual({
+            AND: [{ payload: { path: '$.traderName', string_contains: '\\%' } }],
+          });
+        },
+      );
+
+      it('escapes "_" the same way as "%"', async () => {
+        prisma.registration.findMany.mockResolvedValue([]);
+        prisma.registration.count.mockResolvedValue(0);
+
+        await service.list({ q: '_' } as never);
+
+        const where = prisma.registration.findMany.mock.calls[0][0].where;
+        expect(where).toEqual({
+          AND: [{ payload: { path: '$.traderName', string_contains: '\\_' } }],
+        });
+      });
+
+      it('escapes a literal backslash first, so it is not re-escaped by the %/_ passes', async () => {
+        prisma.registration.findMany.mockResolvedValue([]);
+        prisma.registration.count.mockResolvedValue(0);
+
+        await service.list({ q: '\\%' } as never);
+
+        const where = prisma.registration.findMany.mock.calls[0][0].where;
+        expect(where).toEqual({
+          AND: [{ payload: { path: '$.traderName', string_contains: '\\\\\\%' } }],
+        });
+      });
+
+      it('leaves an ordinary search term (no metacharacters) unchanged — no existing test relied on wildcard semantics', async () => {
+        prisma.registration.findMany.mockResolvedValue([]);
+        prisma.registration.count.mockResolvedValue(0);
+
+        await service.list({ q: 'Meru' } as never);
+
+        const where = prisma.registration.findMany.mock.calls[0][0].where;
+        expect(where).toEqual({
+          AND: [{ payload: { path: '$.traderName', string_contains: 'Meru' } }],
+        });
+      });
+    });
+
     describe('select — the PII containment is a property of the query (T-4 advisory A-25)', () => {
       it('selects only the fields the row projection and duplicate detection need — never the whole row', async () => {
         prisma.registration.findMany.mockResolvedValue([]);

@@ -612,4 +612,24 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
 
     expect(Array.isArray(res.body.details)).toBe(true);
   });
+
+  // A-28 half 2 — `@MaxLength(200)` on `q`
+  // (`dto/admin-registration-list-query.dto.ts`), same "drive the real
+  // HTTP → ValidationPipe path" discipline as the pageSize test above.
+  it('400s a q beyond the 200-char cap (A-28 half 2, @MaxLength(200) over real HTTP)', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/admin/registrations?q=${'x'.repeat(201)}`)
+      .set(admin)
+      .expect(400);
+
+    expect(Array.isArray(res.body.details)).toBe(true);
+    expect(res.body.details.some((d: { field: string }) => d.field === 'q')).toBe(true);
+  });
+
+  it('200s a q at exactly the 200-char cap', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/admin/registrations?q=${'x'.repeat(200)}`)
+      .set(admin)
+      .expect(200);
+  });
 });

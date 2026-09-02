@@ -216,6 +216,25 @@ function extractDismissedActorIds(value: Prisma.JsonValue | null): string[] {
     .filter((actorId): actorId is string => typeof actorId === 'string');
 }
 
+/**
+ * A-28 half 2 — escape MySQL LIKE metacharacters (`%`, `_`) — and the
+ * escape character itself (`\`) — so `list()`'s `q` filter matches its
+ * value LITERALLY. Prisma's JSON `string_contains` path filter compiles to
+ * a MySQL `LIKE '%<value>%'` expression under the hood and does NOT escape
+ * `%`/`_` in the value itself; without this, `?q=%` matches every row (any
+ * string contains the empty string bounded by two wildcards) and `?q=50%`
+ * matches anything containing "50", not the literal text "50%" — verified
+ * against a real local MySQL instance (this task's execution notes).
+ * MySQL's default LIKE `ESCAPE` character is `\`, so prefixing each of
+ * `\`, `%`, `_` with one is sufficient — no session/connector configuration
+ * needed. Order matters: backslash must be escaped FIRST, or the
+ * backslashes this function itself inserts for `%`/`_` would be re-escaped
+ * on a second pass.
+ */
+function escapeLikeMetacharacters(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 /** Build one registration row's `DuplicateDetectionService` comparison input. */
 function toDuplicateDetectionInput(row: QueueSourceRow): DuplicateDetectionInput {
   const payload = row.payload as QueueRowPayload;
@@ -435,7 +454,12 @@ export class AdminRegistrationsService {
       conditions.push({ payload: { path: '$.traderType', equals: q.traderType } });
     }
     if (q.q) {
-      conditions.push({ payload: { path: '$.traderName', string_contains: q.q } });
+      // A-28 half 2 — escaped at this Prisma boundary, not in the DTO: the
+      // DTO validates (length), it does not transform for storage
+      // semantics. See escapeLikeMetacharacters's doc above.
+      conditions.push({
+        payload: { path: '$.traderName', string_contains: escapeLikeMetacharacters(q.q) },
+      });
     }
 
     const where: Prisma.RegistrationWhereInput =
@@ -444,28 +468,42 @@ export class AdminRegistrationsService {
       createdAt: q.sort === 'newest' ? 'desc' : 'asc',
     };
 
-    const [rows, total] = await Promise.all([
-      this.prisma.registration.findMany({
-        where,
-        orderBy,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        select: {
-          id: true,
-          reference: true,
-          payload: true,
-          createdAt: true,
-          status: true,
-          submitterEmail: true,
-          duplicateDismissals: true,
-          // A-33 — see the class doc above: without this, an APPROVED row
-          // matches the actor it itself created on every detection
-          // attribute.
-          publishedActorId: true,
-        },
-      }),
-      this.prisma.registration.count({ where }),
-    ]);
+    // A-28 half 1 — `page` carries no `@Max` by design (FR-9 scenario 4: a
+    // page beyond the result set is an EMPTY page, not an error). Verified
+    // against a real local MySQL instance that `?page=99999999` already
+    // returns a clean empty page — the ticket's "likely 500" was an
+    // unverified guess and was WRONG at that magnitude. But at
+    // sufficiently extreme magnitudes (an unclamped `skip` beyond a 64-bit
+    // signed integer, ~9.2e18) Prisma's query builder throws
+    // `PrismaClientValidationError` client-side before any query reaches
+    // MySQL — a genuine, if rarely reachable, 500. `total` is known first
+    // (sequencing this ahead of `findMany`, no longer run concurrently
+    // with it) so `skip` can be clamped to it: a page beyond the result
+    // set can now NEVER produce a `skip` larger than the table's own real,
+    // JS-safe row count, closing the unbounded-input class of defect at
+    // any magnitude without an arbitrary numeric cap on `page` itself.
+    const total = await this.prisma.registration.count({ where });
+    const skip = Math.min((page - 1) * pageSize, total);
+
+    const rows = await this.prisma.registration.findMany({
+      where,
+      orderBy,
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        reference: true,
+        payload: true,
+        createdAt: true,
+        status: true,
+        submitterEmail: true,
+        duplicateDismissals: true,
+        // A-33 — see the class doc above: without this, an APPROVED row
+        // matches the actor it itself created on every detection
+        // attribute.
+        publishedActorId: true,
+      },
+    });
 
     const sourceRows = rows as QueueSourceRow[];
     const duplicateCounts = await this.duplicateDetection.detectForBatch(

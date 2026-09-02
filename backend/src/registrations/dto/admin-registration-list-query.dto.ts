@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { RegistrationStatus } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 
@@ -48,9 +48,19 @@ export class AdminRegistrationListQueryDto {
   @IsIn(Object.values(RegistrationStatus))
   status?: RegistrationStatus;
 
-  /** Free-text match against the applicant's organisation name (payload.traderName). */
+  /**
+   * Free-text match against the applicant's organisation name
+   * (payload.traderName). `@MaxLength(200)` mirrors `note`'s discipline on
+   * `RegistrationRejectDto`/`ActorCreateDto` (`@MaxLength(2000)`) — a
+   * sensible upper bound for a name-search box, tighter here because `q` is
+   * a single search term, not free-form prose (A-28 half 2). The `%`/`_`
+   * LIKE-metacharacter escape happens at the Prisma boundary in
+   * `admin-registrations.service.ts`'s `list()`, not here — this decorator
+   * only bounds length; it does not transform the value.
+   */
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   q?: string;
 
   @IsOptional()

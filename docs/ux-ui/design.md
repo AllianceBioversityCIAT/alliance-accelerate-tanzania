@@ -18,6 +18,10 @@
 /directory                Searchable, paginated actor directory (list/table)
 /profile?id=              Actor profile page (public-safe by default)
 /map                      Seed Maps — interactive geospatial view + filters
+/dashboard                Discovery Dashboard — KPIs + filtered actor view, with a CSV
+                           download of the current view (public columns only: traderName,
+                           region, district, traderType, capacityTons, crops — no PII).
+                           NOT the admin export: no role-aware scope, no filter builder.
 /register                 Public self-registration form (Identity · Location · Crops & capacity ·
                            Contact · Data protection & consent) + in-flow OTP verification step
 /register/submitted       Receipt — reference code (?ref=), save-and-lookup instructions
@@ -27,17 +31,42 @@
 /privacy                  Privacy notice — contact submissions + analytics cookies; carries one
                            interactive client island (ConsentChoiceControl) to change a prior
                            consent choice
-/admin                    Admin/Staff console (auth-gated)
+/admin                    Admin/Staff console — a route PREFIX, not a page: there is
+                          no /admin index. The brand mark links to /admin/actors.
   /admin/actors           Actor management table (CRUD)
   /admin/actors/new       Create actor (validated form)
-  /admin/actors/[id]/edit Edit actor (validated form)
-  /admin/import           CSV bulk import
-  /admin/export           Filtered CSV export
+  /admin/actors/edit?id=  Edit actor (validated form). Query param, never a [param]
+                          segment — the static export forbids dynamic segments
+                          (frontend/CLAUDE.md), and the tree contains none.
+  /admin/actors/import    CSV bulk import
   /admin/registrations    Adjudication queue for self-registration submissions (Admin only)
   /admin/registrations/review?id=  Registration detail — approve/reject/dismiss-duplicate (Admin only)
   /admin/users            User & role management (Admin only)
 /login                    Cognito-backed sign-in (Staff/Admin)
 ```
+
+> **Not built (A-92, corrected 2026-09-02).** This block previously listed
+> `/admin/actors/[id]/edit`, `/admin/import` and `/admin/export`. The first two ship
+> at different paths — `?id=` rather than a `[param]` segment (which
+> `frontend/CLAUDE.md` forbids outright, and of which the tree contains **zero**), and
+> `/admin/actors/import` rather than `/admin/import`.
+>
+> **No `/admin/export` screen exists** — no page under `frontend/app/(admin)/`, and no
+> export route on any backend controller. **A role-aware, PII-scoped admin export is
+> unbuilt.** Listing it here as though it shipped is what sent agents looking for files
+> nobody wrote, so the row was removed rather than annotated — together with §3's
+> "Compliant share" flow and §4's Export screen row, which documented the same unbuilt
+> screen. When an admin export is built it gets re-entered in all three places.
+>
+> ⚠️ **CSV export is NOT absent from the codebase, and an earlier version of this note
+> said it was.** `frontend/lib/dashboard/csv.ts`'s `buildDashboardCsv`, surfaced by
+> `components/dashboard/DownloadViewButton.tsx` on `/dashboard`, is shipped and tested.
+> It is a **different artefact**: public audience, a PII-free column allowlist, no
+> role-aware scope and no filter builder — so it does not replace the admin export and
+> the removed rows must not be repointed at it. *(The false claim was written while
+> correcting other false claims, on the strength of a **case-sensitive** grep that could
+> not match `buildDashboardCsv`. A universal negative — "this exists nowhere" — needs a
+> stronger search than a positive one; caught by the A-92 review round.)*
 
 ## 3. Primary User Flows
 
@@ -46,7 +75,6 @@
 - **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
 - **Bulk seed (Admin):** Login → Admin → Import → upload CSV → preview mapping + validation summary → confirm → per-row result report.
-- **Compliant share (Admin/Staff):** Admin → Export → choose filters + scope → download CSV (PII included/excluded per role).
 
 ## 4. Screen Inventory
 
@@ -56,13 +84,13 @@
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
 | Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; PII block gated by role. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
+| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a PII-free CSV of the current filter (`lib/dashboard/csv.ts`). Public audience — distinct from the unbuilt role-aware admin export. |
 | Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |
 | Registration Receipt | Public | The reference code as selectable text (never an image), a copy action, a save-this instruction, a link to status lookup — nothing else, since the submit response carries only the reference. |
 | Registration Status | Public | Lookup by reference + email; renders status and the reviewer's note only. Byte-identical result for an unknown reference, a mismatched email, or a lockout. |
 | Admin Actors | Staff / Admin | Dense data table with row actions (edit; delete = Admin). |
 | Actor Form | Staff / Admin | Sectioned, validated create/edit form incl. GPS + PII fields. |
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
-| Export | Staff / Admin | Filter builder, role-aware scope notice, download button. |
 | Admin Registrations Queue | Admin | Dense, URL-synced table (cards on mobile) of self-registration submissions — reference, applicant, type, region, submitted date, duplicate count, status; segmented by `PENDING_REVIEW` / `APPROVED` / `REJECTED` only. |
 | Admin Registration Detail | Admin | Reference code header, full submitted payload with the two non-publishable fields marked as review-only context, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
 | Users | Admin | User list, role assignment. |
