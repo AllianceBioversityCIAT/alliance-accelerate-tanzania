@@ -1702,7 +1702,7 @@ Worth recording, because it is the discipline this spec has spent eleven tasks t
 The Reviewer found **two** confident claims in the attempt-2 report that the artefacts do not bear (**KZ-008**):
 
 1. `AdminSidebar.tsx`'s modification described as *"pre-existing… not touched by me"* — it is **T-12's own** work; the file carries `// @sdd-spec admin/registration-review-queue (T-12)` and the `Registrations` entry.
-2. The DC-16 statement claimed *"this repo's `jest-axe` config disables `cat.color` entirely"* — **no such config exists**; there is no `configureAxe` anywhere in `frontend/`.
+2. ~~The DC-16 statement claimed *"this repo's `jest-axe` config disables `cat.color` entirely"* — **no such config exists**; there is no `configureAxe` anywhere in `frontend/`.~~ **RETRACTED at T-13 — this "correction" was itself wrong. See the T-13 entry's *Mechanism settled* section.** The Implementer's claim was **true**: `jest-axe`'s exported `axe` **is** `configureAxe()` (`node_modules/jest-axe/index.js:197`), which unconditionally disables every `cat.color` rule globally. "There is no `configureAxe` call in `frontend/`" and "the whole `cat.color` set is disabled" are **both true simultaneously** — the library calls it for you. Only item 1 (the `AdminSidebar.tsx` mis-attribution) stands.
 
 Both were in a **report**, not in code. The conclusion of the DC-16 statement was right; the mechanism was misattributed.
 
@@ -1710,7 +1710,9 @@ Both were in a **report**, not in code. The conclusion of the DC-16 statement wa
 
 **Contrast is *not* wholly ungated** — the original statement understated coverage in the safe direction. `frontend/lib/contrast.test.ts` is a **real automated contrast gate** running inside `npm test`, asserting ≥4.5:1 for most ink×ground token pairs this page uses.
 
-What is genuinely ungated: **pairs outside its fixed matrix**, plus **focus order and focus visibility**. The real mechanism is that jsdom's axe `color-contrast` rule reports **`incomplete`**, and `toHaveNoViolations` does not fail on `incomplete`.
+What is genuinely ungated: **pairs outside its fixed matrix**, plus **focus order and focus visibility**.
+
+> **⚠️ MECHANISM CORRECTED AT T-13.** The sentence originally here — *"the real mechanism is that jsdom's axe `color-contrast` rule reports `incomplete`, and `toHaveNoViolations` does not fail on `incomplete`"* — **is wrong**. The rule does not run at all: `jest-axe` exports `axe: configureAxe()`, and `configureAxe` pushes every `cat.color` rule as `enabled: false` into a **global** `axeCore.configure(...)` at module-export time. `design.md` §14 stated this correctly from the start, citing the file. The conclusion (contrast is not evaluated here) is unchanged; the mechanism was misstated. See the T-13 entry.
 
 #### 📋 FOR THE DC-16 HUMAN CHECK — a specific number, not a general instruction
 
@@ -1746,3 +1748,140 @@ The Reviewer computed the one pairing on this screen with a concrete reason to l
 - **The Leader ran the breakpoint measurement**, not the Implementer — the task assigns the obligation but the capability (headless Chrome via CDP) sat with the Leader. The Implementer's job was to make it measurable and not pre-empt the decision, which it did.
 - **Attempt 2 is not counted as a rework attempt** against the 3-attempt ceiling: it applied the Leader's measurement rather than responding to a FAIL. The ceiling binds to spec-conformance FAILs.
 - **No review round spent on attempt 3.** The two fixes were dictated verbatim by the Reviewer with an in-repo precedent cited by `file:line`; the falsification was re-run and shown to survive; and the Leader verified every changed line at source plus the full suite, build, `tsc` and lint. Recorded so a missing round reads as a decision, not an oversight — budget was also a factor (9 rounds remaining for four tasks).
+
+---
+
+## BUDGET TRIPWIRE — fired at T-12's close, escalated, user elected to continue
+
+**Date:** 2026-09-01 · **Decision:** the user, at the T-12 gate
+
+| Signal | At T-12 | Budget | Halt |
+|---|---:|---:|---:|
+| Tasks | 12/16 | 16 | 16 |
+| Review rounds | 25/35 | ~35 | 35 |
+| **LOC** | **~10,256** (7,328 backend + 2,928 frontend) | **~8,200** | **~9,200** |
+
+**The LOC halt threshold is exceeded** — ~10,256 against ~9,200, and 25% over the ~8,200 budget. `tasks.md` requires this be measured at T-4/T-8/T-12/T-16 precisely so a breach cannot be *"disarmed retroactively"* by never being measured (`usage-analytics`: *"the tripwire fired correctly twice and was then forgotten"*).
+
+**Escalated to the user rather than continued on assumption**, per the rule that exceeding a budget is **information, not failure**, and that the cost of a mis-sized spec is only recoverable while it is still running. Projection presented: ~12,000–13,000 at completion, with T-13 and T-14 the remaining substantial UI tasks.
+
+**Leader's diagnosis of the cause.** The estimate was not wrong about the *work*; it was wrong about the *verification density*. Nearly every task shipped more test than implementation — T-8's spec file alone is **+582** against **+455** of service; T-9 added four test files. That is this spec's own methodology operating as designed: by-value sweeps over every column, three-candidate fixtures, write→read seam round-trips, end-to-end module-crossing proofs with a real no-op transport. **Those gates found four defects that every green test had certified** (T-4's MySQL JSON-path 500, T-6's ungated `404` and fabricated reviewer identity, T-7's cross-task null-email drop). The overage is not scope creep.
+
+**Options presented:** (1) continue as planned, accepting ~12–13k; (2) trim T-13/T-14 test depth, saving ~1,500 lines at the cost of exactly the coverage that has been catching things; (3) ship T-15 early and pause at a clean boundary.
+
+**User elected option 1 — continue as planned.** Recorded here so the breach is a decision on the record rather than an unremarked drift.
+
+### T-13 — Detail page + `RegistrationDetailPanel`, `ConsentRecordCard`, `ActivityTrail`, `DuplicateWarningCard`
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (first attempt) |
+| Date | 2026-09-01 |
+| Implementer attempts | **1** |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** · Skills: `tailwind-design-system`, `shadcn-ui`, `react-doctor`, `frontend-design` |
+| Reviewer | `akili-reviewer` (opus, T3) — lens-checklist; DC-23's human half + tokens primary |
+| Review rounds consumed | **1** (running total: **26** of 35) |
+| Requirements covered | FR-10 scenarios 1, 2, 3 · FR-11 scenario 1 · NFR-5, NFR-6, NFR-7 · `design.md` §7.1, §7.3 |
+
+#### Files changed
+Ten new files: `app/(admin)/admin/registrations/review/page.tsx` + test, and `components/admin/{RegistrationDetailPanel,ConsentRecordCard,ActivityTrail,DuplicateWarningCard}.tsx` + tests. **No existing file touched** — no regression surface.
+
+---
+
+## ⚠️ MECHANISM SETTLED — and a Leader error, recorded plainly
+
+**The Leader was wrong, propagated the error into a task brief, and flagged a true statement as false. This is the most important thing in this entry.**
+
+### What happened
+
+1. T-12's Implementer wrote that *"this repo's `jest-axe` config disables `cat.color` entirely."*
+2. T-12's **Reviewer "corrected" it**, asserting no `configureAxe` exists and that the real mechanism is `color-contrast` reporting **`incomplete`** under jsdom.
+3. **The Leader accepted that correction without reading the library**, recorded it in T-12's entry, and **wrote it into T-13's brief as an instruction**: *"There is no `configureAxe` in this repo — do not claim one."*
+4. T-13's Implementer restated the original (correct) claim anyway. **The Leader then flagged that true statement to T-13's Reviewer as a false claim to settle.**
+5. T-13's Reviewer **read `node_modules/jest-axe/index.js`** and settled it against the source.
+
+### The truth, verified by the Leader at source
+
+```js
+const AXE_RULES_COLOR = axeCore.getRules(["cat.color"]);
+// Color contrast checking doesnt work in a jsdom environment.
+// So we need to identify them and disable them by default.
+const defaultRules = AXE_RULES_COLOR.map(({ ruleId: id }) => ({ id, enabled: false }));
+axeCore.configure({ rules: [...defaultRules, ...rules], ...otherGlobalOptions });
+...
+module.exports = { configureAxe, axe: configureAxe(), toHaveNoViolations };
+```
+
+**`jest-axe`'s exported `axe` *is* `configureAxe()`.** The library calls it at module-export time, pushing every `cat.color` rule as `enabled: false` into a **global** `axeCore.configure(...)`. So importing `{ axe } from 'jest-axe'` disables `color-contrast` process-wide before any test body runs.
+
+**The rule does not run at all — it never reaches `incomplete`.** "Incomplete under jsdom" is what you would see calling `axe-core` **directly**; it is not what happens here.
+
+### The Leader's reasoning error, named precisely
+
+`grep -rn "configureAxe"` over `frontend/` returned **zero**, and the Leader treated that as **refutation**. It was not. *"There is no `configureAxe` call in `frontend/`"* and *"the whole `cat.color` set is disabled"* are **both true simultaneously** — the library calls it for you. **Absence of a call site was consistent with both readings, and was read as evidence for one.**
+
+### The spec was right all along
+
+`design.md` **§14** states the mechanism correctly **and cites the exact file**: *"`jest-axe` disables the whole `cat.color` rule set by default (verified in `node_modules/jest-axe/index.js`: `AXE_RULES_COLOR` mapped to `enabled: false`), so a green axe result says nothing whatever about contrast."*
+
+**The Implementer was restating its own spec. The drift was entirely in the corrections.** The Reviewer also found the wrong `incomplete` story has since been written into **at least six source files** (`register-a11y.test.tsx:36`, `SearchableSelect.tsx:126`, `lib/contrast.ts:7`, …) — so this misconception predates and outlives this spec.
+
+And the 3a comment the Leader suspected as the source (*"`cat.forms` is enabled by default, unlike `cat.color`"*) **is the one accurate line** — true as a statement about the effective rule set under `jest-axe`, which is the only rule set any test here sees.
+
+### Corrections applied (KZ-004 two-direction sweep)
+
+Both false statements in **T-12's entry** are retracted in place, with the mechanism corrected and pointers to this section. The superseded claim was grepped across `execution.md`; both occurrences are fixed.
+
+### What this changes for DC-16 — it is slightly *worse* than previously recorded
+
+**`color-contrast` does not run under `jest-axe` at all.** A green axe result says **nothing whatever** about contrast — not "reports incomplete", not "partially covered". Exactly what §14 always said, and precisely why the human check is non-negotiable.
+
+---
+
+#### THE PRIMARY GATE — the human half of DC-23
+
+`REVIEW_CONTEXT_FIELDS` is a single `ReadonlySet<keyof AdminRegistrationPayload>` = `{contactPerson, otherCrops}`, and the badge renders from `.has(row.key)` — **one decision point, so rows and marking cannot drift apart.** Copy: *"Review context — will not be published"*, reinforced by an `sr-only` `<caption>` explaining these fields *"have no corresponding column on the public directory record and will never appear there."*
+
+**The assertion counts the right thing.** It uses an **exact string**, so the longer `<caption>` text is not matched and the count is exactly the two badges — the reported `Expected length: 2 / Received length: 1` is a genuine mutation signal, not a caption artefact. And it is **not only a count**: further assertions place the badge **inside** `contactPerson`'s and `otherCrops`' rows and **absent** from `traderName`'s, so *a badge moved to the wrong row also reddens*.
+
+**Why this matters:** T-8 built the machine half — those fields cannot be published, and a by-value sweep proves it. T-13 stops a reviewer **approving in the belief that a contact person's name will appear on the public profile.**
+
+#### Other conformance (all PASS, Reviewer-verified at source)
+
+| Clause | Finding |
+|---|---|
+| **Every submitted field displayed** | All 14 payload members accounted for — 12 in the table, GPS in the location card, plus `submitterEmail`. Nothing dropped. |
+| **Timezone designator** | `Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', timeZoneName: 'short' })` emits a literal `UTC`, asserted on the rendered `<time>` textContent, **not on the prop**. |
+| **Recorded-at-submission qualifier** | Data-driven from `acceptedAtQualifier` through a **genuinely total** `Record<…, string>` — widening the backend union makes the object literal a `tsc` error at the declaration site. Copy matches `schema.prisma`'s own comment: an **upper bound**, not an attested moment. Overstates nothing. |
+| **Trail read-only** | No form control, asserted over a fixture carrying **all five** union members. `describeEvent` is an exhaustive `switch` **with no `default`**, so a sixth member is a compile error. |
+| **`null` identity survived** | `resolveIdentity` returns `'identity unknown'` and **can never return `''`** — it tests truthiness, so `''` falls through exactly as `null` does. Asserted with an **anchored** regex `/^Approved by identity unknown$/`, which is what makes it real rather than a substring an `''` bug would also satisfy. The T-6/T-7 FAIL fix survived into the presentation layer. |
+| **`DuplicateWarningCard`** | No invented fields — the render touches only `actorId`, `traderId`, `traderName`, `matchedOn`; **no `phone`/`email` value can appear because the type carries none.** Explicit *"a warning, not a verdict"* copy. |
+| **A-35 "5+" cap discharged** | `CANDIDATE_CAP = 5` mirrors the backend's `MAX_CANDIDATES_PER_REGISTRATION`. The test asserts **both directions** — `'5+ possible duplicates found'` present **and** the bare `'5 possible duplicates found'` absent, exactly what A-35 asked for. |
+| **NFR-7 — real evidence** | No `[id]` directory anywhere (glob-verified); `useSearchParams()` confined to a component reachable only through `<Suspense>`; build emits `○ /admin/registrations/review`. |
+| **A-72 guard** | `SAFE_ID_PATTERN = /^[a-z0-9]+$/i` judged **against a real Prisma `cuid()`**, which emits lowercase base-36 only — so the pattern is a **strict superset of the real id space and rejects no legitimate id**, while blocking `../` **before** the network call (asserted by `adminGetRegistration` never being invoked). A guard that rejected valid ids would have been worse than the traversal. |
+| **Tokens (NFR-6)** | Zero hex, zero `rgb()`, zero arbitrary values across all five components. `danger` used **only** on the `REJECTED` badge — no `danger` on any publish-adjacent affordance. |
+
+#### The three disclosures — all upheld
+
+- **GPS only in the location card:** §7.3 assigns coordinates their own presentation; FR-10 requires every field *displayed*, not displayed *in the table*. Duplicating them would be the drift risk.
+- **`submitterEmail` unmarked:** correct — FR-12 maps it to `Actor.email` → published. Marking it review-context *"would be an affirmatively false statement to the reviewer."* The test pins the negative.
+- **OpenStreetMap link:** reasonable; matches the repo's Leaflet/OSM provider, with `rel="noopener noreferrer"` and a visible focus ring.
+
+#### Final verification — Leader-run
+
+`RegistrationDetailPanel` 7/7 · `ConsentRecordCard` 4/4 · `ActivityTrail` 6/6 · `DuplicateWarningCard` 7/7 · `review/page` 6/6 · full frontend **107 suites / 1,568 tests** (baseline 102/1,538) · build emits the route as **static** · `tsc` shows only the one pre-existing unrelated error · lint clean · `react-doctor` 87/100 with **all five warnings in T-12's files, none in T-13's**.
+
+#### ADVISORY (recorded, non-gating)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-77** | **KZ-008 shading:** `ConsentRecordCard.tsx` cites *"the same pattern `ActorHistoryPanel.tsx`'s `actionBadgeClasses` — DD-21 — uses"*. That artefact **does not bear the claim today** — it is still a `switch`; the DD-21 conversion is **T-15's** work. The precedent true *now* is the one DD-21 itself names: `RoleBadge.tsx`'s `ROLE_BG_CLASS`. | Recorded. **Self-closes when T-15 lands** — but must be **re-resolved at archive** (KZ-008's *"again before the record is frozen"*). |
+| **A-78** | `statusLabel`/`statusBadgeClasses` in `RegistrationDetailPanel.tsx` are **byte-equivalent copies** of the same functions in `RegistrationsTable.tsx`. Two independent copies of the status vocabulary will drift. | **FORWARD POINTER → T-14**, which already reopens this file. A shared module (the `lib/content/roles.ts` precedent) closes it. |
+| **A-79** | Both copies use `default:` rather than exhaustiveness, so a sixth `RegistrationStatus` degrades silently — the inverse of the discipline applied in the three sibling files. Inherited from T-12's accepted pattern. | Recorded; convert alongside A-78. |
+| **A-80** | `RegistrationDetailPanel.test.tsx` asserts values for **7 of 14** payload fields; `traderType`, `sex`, `region`, `crops`, `capacityTons` render but are unasserted, so a dropped row among those would not redden. | **FORWARD POINTER → T-14** (cheap to close while the file is open). |
+| A-81 | At the cap the card reads "5+ possible duplicates found" above exactly five rows with no explanation of the "+" — honest, but readable as a rendering bug. One clause ("showing the first 5") resolves it. | Recorded. |
+| A-82 | An id failing `SAFE_ID_PATTERN` renders *"Missing registration id"*, slightly misleading for a present-but-malformed id. Defensive path only, unreachable from any in-app link. | Recorded. |
+
+#### Decisions made
+
+- **The Leader's own error is recorded above at length rather than quietly fixed**, because the failure mode — accepting a plausible correction without reading the artefact, then propagating it into a brief — is exactly what this spec's KZ-008 discipline exists to catch, and the Leader is not exempt from it.
