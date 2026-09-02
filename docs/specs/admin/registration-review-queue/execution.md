@@ -1597,3 +1597,152 @@ The Reviewer's wider point stands regardless of the red baseline: *"even against
 #### Decisions made
 
 - **No review round spent on attempt 2.** All three fixes were dictated verbatim by the Reviewer with exact remediation text; no type or behaviour changed; and the re-run falsification is **self-verifying and strictly stronger than before** (it now reddens a real 3a component as well as the harness). The Leader verified all three at source. Recorded so a missing round reads as a decision, not an oversight. Budget was also a factor: 11 rounds remained for five tasks at that point.
+
+### T-12 — Queue page + `RegistrationsTable` + sidebar entry
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (on attempt 3) |
+| Date | 2026-09-01 |
+| Implementer attempts | **3** — attempt 1 built at the `lg` starting position; attempt 2 applied the Leader's measurement (**not** a FAIL response); attempt 3 fixed the review's two FAIL issues |
+| Implementer | `akili-implementer` (sonnet, T2) · Effort **high** → **high** → **xhigh** · Skills: `tailwind-design-system`, `shadcn-ui`, `react-doctor`, `frontend-design` |
+| Reviewer | `akili-reviewer` (opus, T3) — lens-checklist, tokens + absence assertions primary |
+| Review rounds consumed | **1** (running total: **25** of 35) |
+| Requirements covered | FR-9 scenarios 1, 2, 4, 5 · NFR-5, NFR-6, NFR-7 · `design.md` §7.2, §7.6 |
+
+#### Files changed
+New: `app/(admin)/admin/registrations/page.tsx` + `page.test.tsx`, `components/admin/RegistrationsTable.tsx` + `.test.tsx`, `components/admin/AdminSidebar.test.tsx`.
+Modified: `components/admin/AdminSidebar.tsx` (the `NAV_ITEMS` entry).
+
+---
+
+#### THE BREAKPOINT — measured, and the measurement changed the answer
+
+`design.md` §7.2 refuses to choose: *"Eight columns with one sticky sits between those two exemplars, and this design **does not pretend to know which side**."* It names choosing by argument as **`usage-analytics` L-1 defect #4** repeating — an accepted-set written from reasoning that went 1 → 3 → 10 across two corrections, *"both times found by measuring, never by re-reading."*
+
+The Implementer built at the `lg` starting position and **correctly declined to decide**, making the table measurable instead. **The Leader ran the measurement** — headless Chrome via CDP at 768×900, against a 70-char worst-case applicant name, reproducing the archived `ActorsTable` method:
+
+```
+{"viewport":768,"container":481,"tableContent":1232,"frozenSticky":140,"scrollableStrip":341,"hiddenContent":751,"frozenPct":29}
+```
+
+| | **RegistrationsTable (measured)** | `ActorsTable` precedent |
+|---|---:|---:|
+| container | **481px** | 494px |
+| frozen sticky | **140px (29%)** | ~400px (**81%**) |
+| **scrollable strip** | **341px** | **94px** |
+| hidden content | 751px | 1036px |
+
+**Decision: `md`.** 341px is **3.6× the 94px** that forced `ActorsTable` to `lg`.
+
+**The structural reason matters more than the ratio, and it is what went into the source comment.** This table's sticky column is **Reference** — a format-bounded `REG-YYYY-NNNN` code, measured at 140px. `ActorsTable`'s sticky column was `traderName`, an **unbounded** 55–60 character cooperative name that froze ~400px of a 494px container. **A reference code cannot grow with the data, so the failure mode that forced `ActorsTable` to `lg` is structurally impossible here.**
+
+**Had this been reasoned rather than measured, "eight columns is close to nine, so use `lg`" is the plausible conclusion** — and it would have pushed tablet users onto cards for no reason. The Reviewer confirmed the record is *"faithful and structural… that would stop a re-litigation."*
+
+The **skeleton moved to `md` too** (`page.tsx:285`, `:310`) — §7.2 warns it *"moves to the same breakpoint or it flashes the wrong shape."* No stray `lg:` gating remains in the table; the card view renders all eight columns, so nothing is lost below `md`.
+
+---
+
+#### What the Reviewer confirmed (attempt 2 state)
+
+| Check | Finding |
+|---|---|
+| **Absence assertions** | Genuine, covering **both** forbidden segments and the flag: `toHaveLength(3)` *plus* the exact label array, `queryByText(/awaiting/i)`, `queryByText(/withdrawn/i)`, `queryByText(/no email/i)`, and a type-level `'email' in ROW_PENDING === false`. |
+| **Defence in depth the Implementer did not claim** | `statusParam()` falls back to `PENDING_REVIEW` for any unrecognised value, so a hand-edited `?status=AWAITING_APPLICANT` **never reaches the API** even though the backend DTO still validates the full enum. *"The absence is enforced on the URL-read side, not only at render. That is the right shape."* |
+| **Token discipline (NFR-6)** | Zero hex, zero arbitrary values. Sticky column uses opaque token backgrounds + `shadow-sticky-edge`, **never `border-r`**, with `max-w-xs truncate` on a **block-level child** not the `<td>` (the documented no-op trap). The badge triple is **byte-identical** to `ActorsTable`'s, so the claimed reuse is real. |
+| **Empty-state probe** | **Sound, not fabricated** — the Reviewer verified at source that `list()` applies no default status filter, so `{pageSize:1}` genuinely measures the global total. The `systemEmpty: boolean \| null` tri-state falls back to the filtered message on probe failure. **It also avoids the R-7 defect `actors/page.tsx` still has**, which infers *"The registry is currently empty"* from filter count alone. |
+| **Static export (NFR-7)** | Structurally confirmed — `useSearchParams` confined to a component reachable only through `<Suspense>`; no dynamic segment, no route handler. Build emits `/admin/registrations` as `○ (static)`. |
+| **Scope adjudication** | The added `region`/`traderType`/`q` filters and sort control are **in scope, not creep** — `design.md` §7.1's route table names exactly those params, and FR-9 calls the queue *"filterable, sortable"*. |
+| **Sidebar** | `NavItem` shape verbatim unchanged, no role field. The diff's column realignment is **forced** (`'Registrations'` is longer than the existing labels) — acceptable, not churn. |
+
+---
+
+#### ATTEMPT 3 — two FAIL issues
+
+##### Issue 1 — `role="tablist"` without the tab widget's contract (NFR-5)
+
+`StatusSegments` applied `role="tablist"` / `role="tab"` / `aria-selected` with **no `aria-controls`, no `role="tabpanel"`, no roving `tabindex`, no arrow-key handling.**
+
+> A screen-reader user is told *"tab, 1 of 3, selected"* and will press arrow keys, which do nothing; there is no panel for the tab to control.
+
+**This is the spec's own recurring shape — a presence without the behaviour it promises (KZ-002) — applied to an ARIA role instead of a segment.** And it was **invisible to every gate that ran**: axe's `aria-required-children`/`aria-required-parent` are both satisfied, and **no axe rule requires `aria-controls` on a tab**, so the green `jest-axe` result was expected and said nothing. Precisely the DC-16 blind spot.
+
+It also broke in-repo precedent: this was the repository's **first and only** `role="tablist"`. The established pattern for a segmented control expressing selected state is **`aria-pressed`** (`ConsentChoiceControl.tsx:83,91`; `ActorListItem.tsx:50`); the only other `aria-selected` sits inside a genuine `role="listbox"`.
+
+**Fixed** to `role="group"` + `aria-pressed={active}` — the honest contract for a control that **filters a list in place** rather than switching panels. **Leader-verified**: no `role="tab"`/`role="tablist"`/`aria-selected` remains; `role="group"` at line 250, `aria-pressed` at 257, matching the cited precedent.
+
+**The falsification was re-run and survived the rewrite** — this mattered, because a falsifying input that stops working because its assertion was rewritten is worse than the original defect:
+
+```
+FAIL app/(admin)/admin/registrations/page.test.tsx
+  ● RegistrationsPage › renders exactly three status segments, and none named Awaiting or Withdrawn
+    expect(received).toHaveLength(expected)
+    Expected length: 3
+    Received length: 4
+    Tests: 1 failed, 10 passed, 11 total
+```
+Reverted → 11/11. The assertion is intact at `page.test.tsx:185`.
+
+##### Issue 2 — the test file recorded the wrong breakpoint
+
+`RegistrationsTable.test.tsx:16` read *"Table (lg+) and card (<lg)"* while the component is gated at `md`. **A maintainer opening the paired test file — the natural first stop when changing the table — would read `lg`** and be handed exactly the contradiction §7.2 exists to prevent. §7.2's obligation is not only *measure* but **record the number**; a sibling file asserting the opposite degrades that record to a coin flip between two documents.
+
+Fixed to `md`, with a note that **jsdom applies no breakpoints**, so the split is not verified by that render and lives in the component's class constants.
+
+---
+
+#### The Implementer caught its own KZ-008 defect mid-task
+
+Worth recording, because it is the discipline this spec has spent eleven tasks trying to instil, self-applied:
+
+> *"my first draft of this note claimed the split 'is asserted structurally, via the `TABLE_VISIBLE_CLASS`/`CARDS_VISIBLE_CLASS` constants' — I checked the test body before finalizing and found no such assertion exists (only row-count/rendering checks), so I corrected the note to say the split is **not** verified by this file. Flagging this myself since it's exactly the KZ-008 failure mode named in this task."*
+
+#### Two reporting errors — the same failure mode, named as a pattern
+
+The Reviewer found **two** confident claims in the attempt-2 report that the artefacts do not bear (**KZ-008**):
+
+1. `AdminSidebar.tsx`'s modification described as *"pre-existing… not touched by me"* — it is **T-12's own** work; the file carries `// @sdd-spec admin/registration-review-queue (T-12)` and the `Registrations` entry.
+2. The DC-16 statement claimed *"this repo's `jest-axe` config disables `cat.color` entirely"* — **no such config exists**; there is no `configureAxe` anywhere in `frontend/`.
+
+Both were in a **report**, not in code. The conclusion of the DC-16 statement was right; the mechanism was misattributed.
+
+#### The corrected DC-16 statement
+
+**Contrast is *not* wholly ungated** — the original statement understated coverage in the safe direction. `frontend/lib/contrast.test.ts` is a **real automated contrast gate** running inside `npm test`, asserting ≥4.5:1 for most ink×ground token pairs this page uses.
+
+What is genuinely ungated: **pairs outside its fixed matrix**, plus **focus order and focus visibility**. The real mechanism is that jsdom's axe `color-contrast` rule reports **`incomplete`**, and `toHaveNoViolations` does not fail on `incomplete`.
+
+#### 📋 FOR THE DC-16 HUMAN CHECK — a specific number, not a general instruction
+
+The Reviewer computed the one pairing on this screen with a concrete reason to look:
+
+> **`PENDING_REVIEW` chip — `bg-border text-muted` at `text-xs` (12px) — computes to ≈4.45:1**, marginally under the 4.5:1 AA floor for small text. It is the dominant chip on the queue.
+
+**No gate sees it**: `border` is not one of `contrast.test.ts`'s nine `GROUNDS`, so the pair falls outside the 7×9 matrix entirely. It is **byte-identical in `ActorsTable.tsx:208`, `UsersTable.tsx:283`, `ImportPreviewTable.tsx:75` and `AdminSidebar.tsx:72`** — a **repo-wide pre-existing condition, not T-12 drift**, and the Reviewer explicitly declined to gate on it.
+
+**Give the human check this number rather than "verify contrast."**
+
+#### Final verification — Leader-run on a quiet tree
+
+| Command | Result |
+|---|---|
+| `npm test -- --silent RegistrationsTable` | **9/9** |
+| `npm test -- --silent 'registrations/page'` | **11/11** |
+| `npm test -- --silent` (full frontend) | **102 suites / 1,538 tests** (baseline 99/1,515) |
+| `npm run build` | Static export OK — 26/26 pages, `/admin/registrations` `○ (static)` |
+| `npx tsc --noEmit` | **Only** the one pre-existing unrelated error |
+| `npm run lint` · `react-doctor` | Clean · **96/100, no issues** |
+
+#### ADVISORY (recorded, non-gating, **not** convertible into new tasks)
+
+| # | Finding | Disposition |
+|---|---|---|
+| **A-74** | **The empty-state probe swallows `AuthFailureError`.** Its inner `catch { setSystemEmpty(null); }` catches everything, so a token expiring between the main call and the probe shows *"No registrations match this view"* instead of routing to `/login`. Self-correcting on the next filter change. A narrow re-throw of `AuthFailureError` closes it. | Recorded. |
+| **A-75** | **`lib/contrast.test.ts`'s promotion-rule ledger has drifted, and T-12 is now the third site.** `text-muted` on `bg-danger-soft` sits in that harness's `UNREACHABLE` set, whose PROMOTION RULE says a component introducing the pair should move it to `REACHABLE` with a `file:line` citation. **Pre-existing** at `actors/page.tsx:813` and `actors/import/page.tsx:547`. (Computed ≈4.70:1 — it passes AA, it is simply unregistered.) | Recorded. Worth a separate ticket. |
+| **A-76** | **The `PENDING_REVIEW` chip's ≈4.45:1** (above). Repo-wide pre-existing, byte-identical in four other components. | **Routed to the DC-16 human check** with the specific number. |
+
+#### Decisions made
+
+- **The Leader ran the breakpoint measurement**, not the Implementer — the task assigns the obligation but the capability (headless Chrome via CDP) sat with the Leader. The Implementer's job was to make it measurable and not pre-empt the decision, which it did.
+- **Attempt 2 is not counted as a rework attempt** against the 3-attempt ceiling: it applied the Leader's measurement rather than responding to a FAIL. The ceiling binds to spec-conformance FAILs.
+- **No review round spent on attempt 3.** The two fixes were dictated verbatim by the Reviewer with an in-repo precedent cited by `file:line`; the falsification was re-run and shown to survive; and the Leader verified every changed line at source plus the full suite, build, `tsc` and lint. Recorded so a missing round reads as a decision, not an oversight — budget was also a factor (9 rounds remaining for four tasks).

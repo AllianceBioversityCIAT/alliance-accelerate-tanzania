@@ -178,7 +178,7 @@ So every task below carries three fields beyond the template's, and the Implemen
       Disqualifying: tests that assert against mocks only. `frontend/CLAUDE.md` records mock-vs-live drift shipping bugs; assert real wire shapes — URL, method, body, error mapping.
       Done when: five calls typed, unions exact, `tsc --noEmit` clean, wire shapes asserted.
 
-- [ ] **T-12 Queue page + `RegistrationsTable` + sidebar entry** (deps: T-11)
+- [x] **T-12 Queue page + `RegistrationsTable` + sidebar entry** (deps: T-11)
       Scope: `/admin/registrations`, URL-synced state, oldest-first, dual table/card rendering, sticky reference column with opaque background and `shadow-sticky-edge`, three segments only, empty-state discrimination. One `NAV_ITEMS` entry.
       Traces: FR-9 scenarios 1, 2, 4, 5 · NFR-5, NFR-6, NFR-7 · `design.md` §7.2, §7.6
       Files: `app/(admin)/admin/registrations/page.tsx` + test, `components/admin/RegistrationsTable.tsx` + test, `components/admin/AdminSidebar.tsx`
@@ -342,7 +342,7 @@ Repeated here so no reader mistakes silence for coverage.
 
 | # | Gap | Substitute |
 |---|---|---|
-| **DC-16** | Contrast, focus order, focus visibility on both new screens | **Human check at the Phase-3 HITL pause**, real browser. `jest-axe` disables `cat.color` entirely. KZ-003: these components take plain props — **never defer this on auth grounds.** |
+| **DC-16** | Contrast, focus order, focus visibility on both new screens. **Specific number from T-12's review:** the `PENDING_REVIEW` chip (`bg-border text-muted`, 12px) computes to **≈4.45:1**, marginally under the 4.5:1 AA floor for small text, and no gate sees it (`border` is not one of `contrast.test.ts`'s nine grounds). Repo-wide pre-existing — byte-identical in `ActorsTable`, `UsersTable`, `ImportPreviewTable`, `AdminSidebar`. **Check this pairing specifically.** | **Human check at the Phase-3 HITL pause**, real browser. `jest-axe` disables `cat.color` entirely. KZ-003: these components take plain props — **never defer this on auth grounds.** |
 | **DC-24** | Real transaction rollback | Structural assertion only. A DB-backed harness would close it; out of scope. |
 | **DC-25** | Queue index *usage* | `where`/`orderBy` shape asserted; `EXPLAIN` needs real MySQL. |
 | **DC-33** | The reviewer's judgement | Ungateable. Procedural substitutes only (typed acknowledgement, full payload, duplicate warning, audit). |
