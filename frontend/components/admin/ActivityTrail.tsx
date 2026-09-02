@@ -55,6 +55,7 @@ function formatOccurredAt(iso: string): string {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'UTC',
+      timeZoneName: 'short',
     }).format(new Date(iso));
   } catch {
     return iso;

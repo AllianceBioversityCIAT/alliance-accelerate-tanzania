@@ -286,7 +286,7 @@ claim about the work that deserves the same evidence as any other claim.**
 
 | Item | Weight |
 |---|---|
-| **§7.2, Reliability** — `ActivityTrail.tsx` renders UTC with no timezone designator while `ConsentRecordCard` shows one on the same data | Real: a reviewer in EAT misreads every entry by three hours, on the surface whose stated purpose is an auditable trail. One line, matching the sibling component |
+| ~~**§7.2, Reliability** — `ActivityTrail.tsx`'s missing timezone designator~~ | **Closed 2026-09-02.** `timeZoneName: 'short'` added, byte-identical to `ConsentRecordCard`'s treatment. Gated: no test asserted the trail's timestamp format at all, so shipping the one-liner alone would have closed the defect and left the behaviour ungated — the pattern this validation spent the day closing. The new assertion pins every `<time>` element **and** their count, so it cannot pass vacuously. Pre-fix red: `Received string: "01 Jun 2026, 09:00"` |
 | **§7.2, Observability** — no CloudWatch metric filter or alarm on the mail dispatch failure, and no persisted marker on `Registration` | Real: from the database an operator cannot tell an approved applicant was never notified. Infra work, not a one-liner |
 | The remaining §7.2 advisories · the chunk-4 contrast trap · the incomplete `A-nn` sequence | Recorded; no defect in shipped behaviour |
 | **The `akili-reviewer` wrapper exposes no `skill` tool** | Methodology gap, not a code defect — every Reviewer this session audited without the stack skills it was assigned. Belongs in `/akili-archive`'s Kaizen pass |
@@ -306,6 +306,30 @@ allocated the other way round.** Its practical corollary is the one the user cho
 the HALT: where a correction can be made by *deleting* the false text rather than
 replacing it, deletion is the lower-risk correction — it cannot introduce a sixth
 instance.
+
+### What was never executed, stated rather than left to inference
+
+The user elected not to run the full local flow before archiving. That is a reasonable
+call against 1,620 frontend tests, 1,003 backend tests and a completed DC-16 human
+check — but it leaves one thing verified by reasoning rather than by execution, and
+this report names it rather than letting its absence be inferred:
+
+**The public-submission → admin-queue seam was never executed end to end.** There is
+e2e coverage on both sides (`registrations-submit/verify/lookup/throttle` on the
+public side, `admin-registrations` and `admin-registrations-reject` on the admin side)
+but **no test crosses the handover.** What was done instead: the Leader compared the
+seeded fixture payload field-by-field against `buildStoredPayload`'s fifteen keys
+(including the `schemaVersion` marker the first fixture attempt omitted) and confirmed
+the initial status and submitter address are carried. That is a Leader-authored
+comparison over Leader-authored data, not a run of the real form.
+
+Two things also blocked a genuine local run and are recorded for whoever tries next:
+`COGNITO_USER_POOL_ID`/`COGNITO_CLIENT_ID` are deliberately commented out in
+`backend/.env` (a 2026-08-31 mail-delivery test) and absent from
+`frontend/.env.local`, so every authenticated request 401s; and with
+`MAIL_TRANSPORT=no-op` the OTP is unrecoverable — `EmailVerification.codeHash` is
+HMAC-SHA-256 and the plaintext is never stored or logged — so the public form cannot
+be completed without switching to `ses`.
 
 ## 12. Archive Readiness Recommendation
 

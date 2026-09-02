@@ -12,6 +12,9 @@
  *   - Null reviewer/dismisser identities render "identity unknown", never
  *     an empty string (carried-forward T-6/T-7 fix).
  *   - Empty trail renders a neutral empty state, not an empty writable form.
+ *   - Every rendered trail entry's timestamp carries an explicit timezone
+ *     designator ("UTC") — matches `ConsentRecordCard`'s treatment of the
+ *     same kind of UTC instant on the same screen (advisory closed 2026-09).
  *   - jest-axe clean (NFR-5).
  */
 
@@ -79,6 +82,15 @@ describe('ActivityTrail', () => {
   it('renders an empty state for no events', () => {
     render(<ActivityTrail events={[]} />);
     expect(screen.getByText('No activity recorded.')).toBeInTheDocument();
+  });
+
+  it('renders every trail entry timestamp with an explicit timezone designator', () => {
+    const { container } = render(<ActivityTrail events={ALL_EVENTS} />);
+    const times = Array.from(container.querySelectorAll('time'));
+    expect(times).toHaveLength(ALL_EVENTS.length);
+    times.forEach((time) => {
+      expect(time.textContent).toMatch(/UTC/);
+    });
   });
 
   it('has no jest-axe violations', async () => {
