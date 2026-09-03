@@ -31,22 +31,46 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
 }
 
 export const handler: Handler = async (event, context) => {
-  // `serverless-http` sets `callbackWaitsForEmptyEventLoop = false`, which
-  // freezes the container the instant the response is written. That silently
-  // killed the registration OTP: `RegistrationsService` dispatches mail
-  // fire-and-forget ON PURPOSE — awaiting SES would make response latency an
-  // oracle for whether an address was recently used, which FR-4 (requirements
-  // .md:245) forbids as a hard `AND IT MUST` — so the in-flight SES call was
-  // frozen mid-request and lost, with its own `.catch()` never running either.
-  // Observed in production, not theorised: CloudWatch carried three
-  // `mail send attempt` lines and ZERO `mail send outcome` lines, which is
-  // exactly the attempt-without-outcome signature T-8's review named as the
-  // detection channel for this failure.
+  // A Lambda execution environment may freeze the instant its invocation
+  // settles, and this line sets `callbackWaitsForEmptyEventLoop = true` so
+  // Lambda waits for the event loop to drain first — the backstop for any
+  // pending work a handler leaves in flight when it returns.
   //
-  // Restoring the default delays the FREEZE, not the RESPONSE: the `202` is
-  // still written immediately and the caller sees identical latency, so the
-  // timing property FR-4 protects is untouched. The cost is billed duration
-  // until the event loop drains — a few hundred ms on requests that send mail.
+  // This silently killed the registration OTP (`fix/otp-mail-lambda-freeze`,
+  // 2026-09-03): `RegistrationsService.requestVerificationCode` used to
+  // dispatch `MailService.sendVerificationCode` fire-and-forget ON PURPOSE
+  // — awaiting SES would have made response latency an oracle for whether
+  // an address was recently used, which FR-4 (requirements.md:245) forbids
+  // as a hard `AND IT MUST` — so the in-flight SES call was frozen mid-request
+  // and lost, with its own `.catch()` never running either. Observed in
+  // production, not theorised: CloudWatch carried a `mail send attempt` line
+  // and ZERO matching `mail send outcome` lines, the exact
+  // attempt-without-outcome signature `MailService.dispatch`'s two-line log
+  // shape is built to make visible.
+  //
+  // **This line alone did not fix that.** It was added 2026-08-07 as the
+  // intended mitigation and stayed silently ineffective for the OTP path
+  // until this fix — this handler is `async`, and the Node Lambda runtime
+  // settles an `async` handler's invocation when its RETURNED PROMISE
+  // resolves, not via the legacy `context.done`/callback mechanism this flag
+  // governs, so it never got a chance to hold the freeze back for
+  // promise-based work still pending after `return`. (Strong inference from
+  // the observed behaviour and Lambda's documented async-handler completion
+  // model, not something instrumented and confirmed line-by-line — an
+  // earlier revision of this comment instead blamed `serverless-http` for
+  // setting the flag to `false`; grepping the installed package shows it
+  // never touches `callbackWaitsForEmptyEventLoop` at all, so that claim was
+  // wrong and is corrected here rather than repeated.)
+  //
+  // The OTP path's actual fix is at the source: `requestVerificationCode`
+  // now AWAITS the send inside its own try/catch (padding both branches to
+  // a constant-time floor to keep FR-4's timing property — see that
+  // method's class doc), so the freeze this comment describes can no
+  // longer drop it. This flag remains load-bearing regardless:
+  // `AdminRegistrationsService`'s approval/rejection notices and
+  // `RegistrationsService.submitRegistration`'s receipt email are still
+  // dispatched fire-and-forget by design (DD-9), and depend on this flag to
+  // survive a freeze after their own `202`/response is written.
   context.callbackWaitsForEmptyEventLoop = true;
 
   if (!cachedHandler) {
