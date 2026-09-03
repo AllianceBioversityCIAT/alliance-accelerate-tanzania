@@ -20,79 +20,85 @@
  * other accepted address (design.md §3.1 decision 1; requirements.md FR-4's
  * "Code request and successful verification" scenario).
  *
- * **The timing residue T-7 flagged, and what this method does about it.**
- * `issueCode` throws BEFORE creating an `EmailVerification` row and before
- * any mail is sent, so a naive `await issueCode(); await mail.send(...)`
- * shape would make the capped path measurably faster than the uncapped one
- * — the response latency itself becomes an oracle for "a code was recently
- * requested for this address", reintroducing C-3's oracle through timing
- * rather than status. The dominant cost on the uncapped path is not the one
- * extra `EmailVerification.create` row — it is `MailService.sendVerificationCode`,
- * which round-trips to SES (or the no-op transport). This method does NOT
- * await that call: it is dispatched and its outcome is only logged, never
- * awaited or rethrown. That removes the one cost that scales with an
- * external network call from the response-time budget of BOTH branches —
- * the capped branch was already not paying it, so removing it from the
- * uncapped branch is what actually equalises the two, rather than trying to
- * add equivalent artificial latency to the capped branch (which would need
- * to track SES's variable RTT to stay accurate, and would slow down the
- * common case for every applicant to do it).
+ * **Superseded by `fix/otp-mail-lambda-freeze` (2026-09-03) — the send is
+ * now AWAITED, not fire-and-forget.** This method used to dispatch
+ * `MailService.sendVerificationCode` without awaiting it, reasoning (see
+ * the paragraphs this replaces, in `git log -p` for this file) that
+ * awaiting the send would make the accepted path measurably slower than
+ * the rate-limited early return, reopening FR-4's oracle through timing.
+ * That reasoning about the ORACLE was correct; what it missed was a worse
+ * failure mode of NOT awaiting. CloudWatch on the deployed Dev Lambda
+ * (`accelerate-tz-dev-backend-api`, 2026-09-03) showed `MailService`'s
+ * ATTEMPT line with NO matching outcome line on every verification-code
+ * send — `202` returned ~20 ms after the attempt, well inside the window a
+ * frozen Lambda execution environment can stop mid-flight. **This is
+ * exactly the failure this docblock's earlier revision predicted as a
+ * named, accepted risk** ("the Lambda freeze can drop the send entirely,
+ * silently") and it materialised in production: `lambda.ts`'s
+ * `context.callbackWaitsForEmptyEventLoop = true` (added 2026-08-07 as the
+ * intended mitigation) did not prevent it, because this handler is
+ * `async` — Lambda settles the invocation when the RETURNED PROMISE
+ * resolves, not via the callback that flag governs (see `lambda.ts` for
+ * the corrected account of why). SES permissions were also broken until
+ * shortly before this fix; fixing them turned a loud, fast `AccessDenied`
+ * (logged inside the pre-freeze window) into this silent one — the freeze
+ * was always there, masked by an unrelated failure until it wasn't.
  *
- * **What is NOT closed, stated honestly — reasoned, not measured.** The
- * uncapped path still performs one extra `await` — `EmailVerification.create`
- * inside `issueCode` — that the capped path does not reach. That is a real
- * residue: one additional Prisma round-trip on a shared connection pool, not
- * a network call to a third party. **This is a reasoned bound, not a wall-
- * clock measurement**: an earlier revision of this file and of
- * `registrations-verify.e2e.spec.ts` claimed the gap was "measured" via a
- * paired capped/uncapped timing comparison, but that comparison mocked
- * `issueCode` itself and injected the identical artificial delay into both
- * branches — which proves the mock's own construction, not this endpoint's
- * behaviour, and was corrected (rework attempt 2) rather than kept. What
- * genuinely IS proven, deterministically, by
- * `registrations-verify.e2e.spec.ts`: the response does not wait on mail —
- * a mail-send promise that is never resolved during the test still lets the
- * request complete. Whether the remaining one-write residue is "small" is
- * therefore an engineering judgement (one local Prisma round-trip vs. an SES
- * network call), not a number this suite can honestly claim to have
- * measured. Closing that last increment would require either making
- * `issueCode` itself not await its own write (T-7's method, out of this
- * task's file list and a correctness trade-off that is T-7's to make, not
- * this endpoint's to force) or padding every response to a fixed floor
- * (rejected here: it would tax every applicant's common-case latency to
- * hide a residue reasoned to be much smaller than the SES call it replaces,
- * without a load-bearing measurement to size it precisely).
+ * **The fix: await the send inside this method's own try/catch, and pay
+ * for FR-4's timing property with a measured floor instead of with never
+ * awaiting.** `sendVerificationCode` is now on this method's awaited
+ * chain, so Lambda cannot freeze the container mid-send — the invocation
+ * (and the HTTP response) does not settle until the send has, one way or
+ * the other. That reopens the oracle the original fire-and-forget design
+ * existed to close: absent a compensating change, the accepted path would
+ * again run measurably slower than the rate-limited one, because only the
+ * accepted path pays the SES round trip. {@link
+ * VERIFICATION_CODE_RESPONSE_FLOOR_MS} is that compensating change — BOTH
+ * the rate-limited early return and the send-awaited return pad to the
+ * same fixed floor, measured from this method's own entry, before the
+ * method resolves (see {@link padToVerificationCodeResponseFloor} below).
  *
- * **A second, more severe residue: the Lambda freeze can drop the send
- * entirely, silently.** `serverless-http` resolves the HTTP response as soon
- * as this method's returned promise settles — which, by design above, is
- * BEFORE the fire-and-forget `sendVerificationCode(...)` call has finished.
- * Lambda is permitted to freeze the execution environment immediately after
- * the response is written; a frozen environment does not run pending
- * microtasks, so if the container is not re-invoked before the freeze, the
- * in-flight SES call — and this method's own `.catch()` — may never
- * complete or run at all. No failure line is ever logged for that send.
- * This compounds the fragility FR-4's own accepted-cost paragraph already
- * signs off on (`requirements.md` §6 FR-4: "the one place email is
- * load-bearing", with "no in-band fallback") — a freeze-dropped send fails
- * exactly the same way a real SES failure does, but WITHOUT the outcome
- * line design.md §4.10 relies on for diagnosability. *(Corrected rework
- * attempt 3: an earlier revision of this paragraph cited that accepted-cost
- * paragraph as "R-1", a risk-register ID that does not resolve anywhere —
- * `requirements.md` §12 is Dependencies & Assumptions and enumerates only
- * `DEP-*`/`A-*`; this spec has no R-register at all. The substance above is
- * unchanged and accurate; only the dangling ID is removed.)* It is accepted
- * here for the same timing reason the rest of
- * this residue is — awaiting the send to guarantee its outcome is logged
- * would restore the latency oracle this method exists to remove. **There is
- * a real, if partial, detection channel already in place though nobody has
- * wired an alarm to it**: `MailService.dispatch` (`mail.service.ts`) logs
- * its ATTEMPT line synchronously, before its first `await` — so that line
- * survives a freeze that drops everything after it. An attempt line with no
- * matching outcome line, accumulating in CloudWatch, is a countable signal
- * for a systemic mail outage (freezes dropping sends, not just this one
- * verification-code path). Recording that here so it can be built into an
- * alarm later; nothing in this task wires one.
+ * **How the floor value was picked — evidence, not taste.** The one real
+ * number this incident produced is the deployed endpoint's own observed
+ * handler latency: CloudWatch, 2026-09-03, `latencyMs 498.9` for a request
+ * whose mail send never got far enough to spend any of that time — so
+ * ~500 ms is this endpoint's baseline SYNCHRONOUS cost (validation,
+ * `issueCode`'s Prisma write, hashing) with the SES call still
+ * outstanding when the container froze. `VERIFICATION_CODE_RESPONSE_FLOOR_MS`
+ * is set to 900 ms: comfortably above that ~500 ms baseline, so the floor
+ * is reachable without the common case growing sluggish, and — the
+ * property that actually matters for FR-4 — comfortably above a plausible
+ * SES `SendEmail` round trip from a Lambda in the same region (typically
+ * well under 500 ms once the SDK client and its TLS session are warm; a
+ * cold client can add a further few hundred ms for the handshake, which
+ * 900 ms still covers). **This is a reasoned engineering bound picked from
+ * the one real latency figure this incident produced, NOT a measured
+ * p95/p99 of this endpoint's own SES calls** — no such measurement exists
+ * yet. Saying so plainly, rather than implying a rigor the number doesn't
+ * have, continues this file's existing discipline (an earlier revision of
+ * this same docblock was corrected — rework attempt 2 — for claiming a
+ * "measured" timing gap that a mocked test had actually only asserted by
+ * construction).
+ *
+ * **The residual limitation, stated honestly: the floor is typical-case,
+ * not absolute.** If a real send ever takes LONGER than
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` — an SES throttle, a cold TLS
+ * handshake stacked with network jitter, a partial AWS outage — this
+ * method's response for THAT request runs slower than the rate-limited
+ * path's, and the timing oracle FR-4 forbids reopens for that tail.
+ * Raising the floor further would shrink the tail at the cost of taxing
+ * every applicant's common case, the same trade-off this docblock's
+ * earlier revision already reasoned through for a smaller residue.
+ * Closing the tail completely needs the send off the request's critical
+ * path entirely — e.g. an outbox row written synchronously and a worker
+ * that sends it, so the `202` never waits on SES at all — which is why a
+ * queue-based fix is being tracked separately rather than attempted here.
+ * This fix's job was to stop the SILENT DROP (the production bug), and it
+ * does that unconditionally; the residual timing tail is a smaller,
+ * pre-existing class of risk FR-4 already accepts in degree (its own
+ * "Code request and successful verification" scenario already tolerates
+ * SES's variable RTT as part of "the same response shape and timing
+ * characteristics"), not a new one this fix introduces.
  */
 import {
   BadRequestException,
@@ -375,6 +381,48 @@ function lookupAttemptWindowStart(now: Date): Date {
   return new Date(Math.floor(now.getTime() / LOOKUP_ATTEMPT_WINDOW_MS) * LOOKUP_ATTEMPT_WINDOW_MS);
 }
 
+/**
+ * `fix/otp-mail-lambda-freeze` — the constant-time floor {@link
+ * RegistrationsService.requestVerificationCode} pads BOTH its branches to,
+ * measured from the method's own entry. See that method's class doc for
+ * the full evidence trail; in short: 900 ms sits comfortably above this
+ * endpoint's own observed ~500 ms synchronous baseline (CloudWatch,
+ * 2026-09-03, `latencyMs 498.9`) and comfortably above a plausible
+ * same-region SES `SendEmail` round trip (warm client: well under 500 ms;
+ * a cold TLS handshake can still add a few hundred ms, which 900 ms still
+ * covers). A reasoned bound from the one real number this incident
+ * produced — NOT a measured p95/p99 of this endpoint's own SES calls.
+ */
+export const VERIFICATION_CODE_RESPONSE_FLOOR_MS = 900;
+
+/**
+ * Sleep for exactly `ms`. The one primitive {@link
+ * padToVerificationCodeResponseFloor} needs and the one thing under test's
+ * fake timers actually intercept — kept as its own function so the padding
+ * logic below reads as "compute the remainder, then wait it out".
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Pads out to {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS}, measured from
+ * `startedAtMs` (a `Date.now()` snapshot taken at the top of {@link
+ * RegistrationsService.requestVerificationCode}). A no-op once the floor
+ * has already elapsed — this only ever ADDS latency, never removes it, and
+ * never on the branch that throws an unexpected (non-cap) error, which is
+ * explicitly outside the byte-identity surface this floor protects (see
+ * that method's own comment at its `throw err;`).
+ */
+async function padToVerificationCodeResponseFloor(startedAtMs: number): Promise<void> {
+  const remainingMs = VERIFICATION_CODE_RESPONSE_FLOOR_MS - (Date.now() - startedAtMs);
+  if (remainingMs > 0) {
+    await delay(remainingMs);
+  }
+}
+
 @Injectable()
 export class RegistrationsService {
   private readonly logger = new Logger(RegistrationsService.name);
@@ -390,8 +438,15 @@ export class RegistrationsService {
    * silently (design.md §3.1 decision 1). A malformed email never reaches
    * here at all: `RegistrationVerifyDto`'s `@IsEmail()` rejects it in the
    * pipe, before the controller method runs.
+   *
+   * `fix/otp-mail-lambda-freeze` — `startedAtMs` anchors {@link
+   * padToVerificationCodeResponseFloor} for EVERY exit this method has;
+   * see the class doc above for why the send is now awaited and why both
+   * branches pad to the same floor.
    */
   async requestVerificationCode(rawEmail: string): Promise<void> {
+    const startedAtMs = Date.now();
+
     let issued: { code: string };
     try {
       issued = await this.emailVerificationService.issueCode(rawEmail);
@@ -399,40 +454,59 @@ export class RegistrationsService {
       if (err instanceof EmailVerificationSendLimitExceededError) {
         // The cap's entire observable effect: no code is sent. The caller
         // gets back exactly the same 202/empty response as every other
-        // accepted address (see the class doc's timing note above).
+        // accepted address, in comparable time (see the class doc's
+        // timing note above) — the pad below is what makes "comparable
+        // time" true now that the accepted branch below awaits its send.
+        await padToVerificationCodeResponseFloor(startedAtMs);
         return;
       }
+      // Deliberately NOT padded: an unexpected (non-cap) failure here is
+      // infrastructure trouble, not part of the byte-identity/timing
+      // surface FR-4 governs (that surface covers only "known address",
+      // "unknown address" and "over-cap address" — never "the database is
+      // unavailable"). Padding this exit would hide a real outage behind
+      // an artificial delay for no timing benefit this method claims.
       throw err;
     }
 
-    // Deliberately NOT awaited (see class doc): the SES/no-op round trip
-    // must never be part of the response-time budget this endpoint returns
-    // in, on EITHER branch. Failure is logged, never surfaced to the caller
-    // — a 202 has already been decided, and this is a fire-and-forget
-    // notification, not a write this request's correctness depends on.
+    // Awaited (fix/otp-mail-lambda-freeze — see the class doc for the
+    // production incident this reverses): the SES/no-op round trip is now
+    // part of this method's own awaited chain, so Lambda cannot freeze the
+    // container mid-send. Failure is still only logged, never surfaced to
+    // the caller — a 202 has already been decided, and a notification
+    // failure must never turn into a caller-visible error (design.md
+    // DD-9) — but it is no longer fire-and-forget: the method does not
+    // return until the send has settled, one way or the other.
     //
-    // Rework attempt 2 (FAIL 1): this used to log `err.message` — but
-    // `MailService.dispatch` rethrows a transport failure UNCHANGED
-    // (`mail.service.ts`, deliberate — DD-9), and the AWS SDK's own
-    // `MessageRejected` error (thrown, in this repo's documented SES-sandbox
-    // configuration, for every unverified destination address —
-    // `ses-mail.transport.ts`, `backend/CLAUDE.md`) puts the destination
-    // address VERBATIM in its `message`. That made this the only
-    // `logger.*` call in `backend/src` that interpolates an unbounded
-    // value, and would have written the applicant's email to CloudWatch —
-    // a PII leak on an unauthenticated public path (design.md §4.10/§6.3:
-    // "Never logged: … email addresses"). It was also redundant:
-    // `MailService.dispatch` already logs a bounded
+    // Rework attempt 2 (FAIL 1) — preserved intent, unchanged: this used
+    // to log `err.message` — but `MailService.dispatch` rethrows a
+    // transport failure UNCHANGED (`mail.service.ts`, deliberate — DD-9),
+    // and the AWS SDK's own `MessageRejected` error (thrown, in this
+    // repo's documented SES-sandbox configuration, for every unverified
+    // destination address — `ses-mail.transport.ts`, `backend/CLAUDE.md`)
+    // puts the destination address VERBATIM in its `message`. That made
+    // this the only `logger.*` call in `backend/src` that interpolates an
+    // unbounded value, and would have written the applicant's email to
+    // CloudWatch — a PII leak on an unauthenticated public path
+    // (design.md §4.10/§6.3: "Never logged: … email addresses"). It was
+    // also redundant: `MailService.dispatch` already logs a bounded
     // `kind=verification-code reference=n/a status=failed` outcome line
     // before rethrowing. Logging only the error's CLASS NAME below (an SDK
     // discriminator like `MessageRejected`/`AccessDenied`/`TimeoutError`,
     // never its message) adds operationally-useful detail without
     // reintroducing the leak — see `registrations.service.spec.ts` for the
-    // regression test asserting the emitted line never contains the address.
-    void this.mailService.sendVerificationCode(rawEmail, issued.code).catch((err: unknown) => {
+    // regression test asserting the emitted line never contains the
+    // address. That test is unchanged by this rework: it only moved from
+    // observing a `.catch()` callback to observing a `catch` block, the
+    // logged line itself is identical.
+    try {
+      await this.mailService.sendVerificationCode(rawEmail, issued.code);
+    } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(`verification code send failed: errorType=${errorType}`);
-    });
+    }
+
+    await padToVerificationCodeResponseFloor(startedAtMs);
   }
 
   /**

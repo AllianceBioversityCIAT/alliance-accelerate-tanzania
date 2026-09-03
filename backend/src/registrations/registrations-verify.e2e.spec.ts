@@ -37,9 +37,21 @@
  * equal by definition — it measured the mock, not the endpoint — and it also
  * shared this file's one `app` instance/throttle counter with every other
  * test, silently turning several of its own samples into 429s the loop never
- * checked. See `RegistrationsService`'s doc comment for what is actually
- * proven (the response does not wait on mail — deterministically, below) and
- * what is reasoned rather than measured (the size of the remaining residue).
+ * checked.
+ *
+ * **`fix/otp-mail-lambda-freeze` (2026-09-03) superseded the paragraph above
+ * this one.** This file used to additionally claim the response "does not
+ * wait on mail" — true of the ORIGINAL fire-and-forget design, and exactly
+ * the property that design's own silent-drop production bug traced back to
+ * (`RegistrationsService`'s class doc has the incident). The send is now
+ * awaited, and `VERIFICATION_CODE_RESPONSE_FLOOR_MS` pads BOTH branches to
+ * the same fixed real-time floor to keep FR-4's timing property. **The two
+ * tests in "the timing mitigation" describe block below prove the CURRENT
+ * shape at the HTTP layer**: the response no longer arrives before the mail
+ * dispatch settles, and the rate-limited and accepted paths take comparably
+ * long real wall-clock time (a real-HTTP companion to the unit suite's
+ * deterministic, fake-timer proof of the exact same properties in
+ * `registrations.service.spec.ts`).
  */
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -52,6 +64,7 @@ import {
   EmailVerificationService,
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
+import { VERIFICATION_CODE_RESPONSE_FLOOR_MS } from './registrations.service';
 
 const VERIFY_PATH = '/api/v1/registrations/verify';
 
@@ -70,13 +83,24 @@ describe('POST /registrations/verify (T-8)', () => {
   // below (shared `RegistrationsThrottleGuard` counter, 20/60s, keyed per
   // caller): 3 (byte-identity) + 3 (zero-rows) + 2 (mail dispatched / not
   // dispatched) + 1 (malformed 400) + 1 (malformed envelope) + 1 (over-191
-  // length) + 1 (slow-mail timing) = 12. Recount by grepping this file for
-  // `request(app.getHttpServer())` call sites before trusting this number —
-  // attempt 2's comment understated this same total (rework attempt 3).
-  // Comfortably under the 20 limit — no separate app instance needed per
-  // `registrations-throttle.e2e.spec.ts`'s pattern, but every request below
-  // asserts its own status precisely so a silent throttle regression here
-  // would fail loudly rather than pass on an unchecked assumption (FAIL 4).
+  // length) + 1 (slow-mail await proof) + 2 (rate-limited/accepted
+  // comparable-window proof) = 14. `fix/otp-mail-lambda-freeze` added the
+  // last 2 (the timing describe block used to be a single request). Recount
+  // by grepping this file for `request(app.getHttpServer())` call sites
+  // before trusting this number — attempt 2's comment understated this same
+  // total (rework attempt 3). Comfortably under the 20 limit — no separate
+  // app instance needed per `registrations-throttle.e2e.spec.ts`'s pattern,
+  // but every request below asserts its own status precisely so a silent
+  // throttle regression here would fail loudly rather than pass on an
+  // unchecked assumption (FAIL 4).
+  //
+  // **Real wall-clock cost, not throttle budget:** every request that
+  // reaches `RegistrationsService.requestVerificationCode` now pays
+  // `VERIFICATION_CODE_RESPONSE_FLOOR_MS` (900 ms) of real time before
+  // responding — this file uses the app's real HTTP stack, not the unit
+  // suite's fake timers, so that time is genuinely spent. ~11 padded
+  // requests × 900 ms is a few seconds added to this file's run, well
+  // inside `testTimeout: 20000` per test (`package.json`).
   beforeAll(async () => {
     issueCodeMock = jest.fn();
     sendMock = jest.fn().mockResolvedValue(undefined);
@@ -247,29 +271,88 @@ describe('POST /registrations/verify (T-8)', () => {
     );
   });
 
-  describe('the timing mitigation (T-7\'s carried risk: response latency as an oracle)', () => {
-    it(
-      'returns 202 WITHOUT waiting for a mail dispatch that never settles — this is the ' +
-        'DETERMINISTIC proof the response does not await MailService, not a wall-clock inference. ' +
-        '(Rework attempt 2: the previous version of this file additionally claimed a measured ' +
-        'capped-vs-uncapped timing gap; that comparison mocked issueCode with an identical injected ' +
-        'delay on both branches, which proved the mock equal by construction, not the endpoint — ' +
-        'removed rather than kept. See RegistrationsService\'s doc comment for what remains reasoned, ' +
-        'not measured.)',
-      async () => {
-        issueCodeMock.mockResolvedValueOnce({ code: '333333', expiresAt: new Date() });
-        // Never resolved during this test. If the handler awaited the mail
-        // dispatch, `request(...)` below would hang past the suite's own
-        // timeout — it would not merely run slower.
-        sendMock.mockReturnValueOnce(new Promise<void>(() => {}));
+  describe(
+    "the timing mitigation (T-7's carried risk: response latency as an oracle) — " +
+      'fix/otp-mail-lambda-freeze: the send is now AWAITED, and the timing property is restored ' +
+      'by a constant-time floor instead of by never awaiting',
+    () => {
+      it(
+        'does not return 202 until the mail dispatch settles — the send is genuinely awaited now, ' +
+          'not fire-and-forget. (This describe block used to assert the OPPOSITE — "returns 202 ' +
+          'WITHOUT waiting for a mail dispatch that never settles" — which was the shape of the ' +
+          'production bug: Lambda could freeze the container before that fire-and-forget promise ' +
+          "settled, silently dropping the OTP. See RegistrationsService's class doc for the incident.)",
+        async () => {
+          issueCodeMock.mockResolvedValueOnce({ code: '333333', expiresAt: new Date() });
+          let sendSettled = false;
+          sendMock.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+              // Resolved from a real macrotask, well before the response
+              // floor would elapse on its own — this proves ORDERING
+              // (send-settles-before-response), not merely that the
+              // response eventually arrives.
+              setTimeout(() => {
+                sendSettled = true;
+                resolve();
+              }, 10);
+            }),
+          );
 
-        const res = await request(app.getHttpServer())
-          .post(VERIFY_PATH)
-          .send({ email: 'slow-mail@example.com' });
+          const res = await request(app.getHttpServer())
+            .post(VERIFY_PATH)
+            .send({ email: 'slow-mail@example.com' });
 
-        expect(res.status).toBe(202);
-        expect(res.text).toBe('');
-      },
-    );
-  });
+          expect(res.status).toBe(202);
+          expect(res.text).toBe('');
+          // Deterministic given the ordering above: if the response could
+          // arrive before the send settles (the old, buggy shape), this
+          // would be reachable with `sendSettled` still false. It cannot be
+          // — the controller `await`s this method (registrations.controller.ts),
+          // and this method now `await`s the send before it can resolve.
+          expect(sendSettled).toBe(true);
+        },
+      );
+
+      it(
+        'pads the rate-limited and the accepted path to a comparable real wall-clock window — ' +
+          'neither one exits early, and the accepted path (which now pays a real, awaited mail ' +
+          'dispatch) does not run measurably longer than the rate-limited one',
+        async () => {
+          issueCodeMock.mockRejectedValueOnce(new EmailVerificationSendLimitExceededError());
+          const rateLimitedStartedAt = Date.now();
+          const rateLimited = await request(app.getHttpServer())
+            .post(VERIFY_PATH)
+            .send({ email: 'capped-timing@example.com' });
+          const rateLimitedElapsedMs = Date.now() - rateLimitedStartedAt;
+          expect(rateLimited.status).toBe(202);
+
+          issueCodeMock.mockResolvedValueOnce({ code: '444444', expiresAt: new Date() });
+          const acceptedStartedAt = Date.now();
+          const accepted = await request(app.getHttpServer())
+            .post(VERIFY_PATH)
+            .send({ email: 'accepted-timing@example.com' });
+          const acceptedElapsedMs = Date.now() - acceptedStartedAt;
+          expect(accepted.status).toBe(202);
+
+          // Both must reach (approximately) the floor — a small negative
+          // slack absorbs scheduler granularity rather than an exact `>=`,
+          // which would be the one way this specific assertion could flake.
+          const slackMs = 25;
+          expect(rateLimitedElapsedMs).toBeGreaterThanOrEqual(
+            VERIFICATION_CODE_RESPONSE_FLOOR_MS - slackMs,
+          );
+          expect(acceptedElapsedMs).toBeGreaterThanOrEqual(
+            VERIFICATION_CODE_RESPONSE_FLOOR_MS - slackMs,
+          );
+
+          // "Comparable", not identical — a real HTTP round trip carries
+          // scheduler/GC jitter the unit suite's fake timers do not. A wide
+          // but still meaningful bound: within 300 ms of each other, versus
+          // the multi-second gap an UNPADDED SES round trip could otherwise
+          // add to only the accepted path (the exact oracle FR-4 forbids).
+          expect(Math.abs(rateLimitedElapsedMs - acceptedElapsedMs)).toBeLessThan(300);
+        },
+      );
+    },
+  );
 });

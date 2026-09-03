@@ -1,4 +1,5 @@
 // @sdd-spec actors/public-self-registration (T-8)
+// @sdd-spec fix/otp-mail-lambda-freeze
 /**
  * `RegistrationsService.requestVerificationCode` unit tests (FR-4, FR-8,
  * design.md §3.1 decision 1).
@@ -6,9 +7,21 @@
  * Both collaborators are mocked — `EmailVerificationService.issueCode`'s own
  * correctness (V-1…V-6) is T-7's suite; `MailService`'s send/log behaviour is
  * T-3's. This suite's job is the ONE thing T-8 adds: does the cap's domain
- * error get swallowed into an identical success, and is the mail dispatch
- * kept out of the awaited path (the timing mitigation the Leader's brief
- * demands be proven, not asserted).
+ * error get swallowed into an identical success, in comparable time.
+ *
+ * **`fix/otp-mail-lambda-freeze` (2026-09-03) rewrote this describe block.**
+ * The method used to dispatch mail fire-and-forget; production dropped the
+ * send silently because Lambda can freeze the container before a
+ * fire-and-forget promise settles (see `registrations.service.ts`'s class
+ * doc and `lambda.ts` for the full incident). The fix awaits the send and
+ * pads BOTH the rate-limited and accepted branches to
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS`, so every test in this block that
+ * exercises `requestVerificationCode` now runs through that pad. Real
+ * timers would make that a genuine ~900 ms of wall-clock cost PER TEST —
+ * this describe block therefore runs under Jest's modern fake timers
+ * (`beforeEach`/`afterEach` below), and every test either advances fake
+ * time past the floor with `jest.advanceTimersByTimeAsync` or asserts
+ * against a promise that has deliberately not been allowed to do so yet.
  */
 import { createHmac } from 'node:crypto';
 import {
@@ -24,7 +37,11 @@ import {
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { LOOKUP_MAX_ATTEMPTS_PER_WINDOW, RegistrationsService } from './registrations.service';
+import {
+  LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
+  RegistrationsService,
+  VERIFICATION_CODE_RESPONSE_FLOOR_MS,
+} from './registrations.service';
 import { CONSENT_POLICY_VERSION } from './consent-policy';
 import * as ConsentPolicy from './consent-policy';
 import {
@@ -66,7 +83,22 @@ describe('RegistrationsService.requestVerificationCode', () => {
       mailService as unknown as MailService,
       {} as unknown as PrismaService,
     );
+    // `fix/otp-mail-lambda-freeze` — every path through this method now
+    // pads to `VERIFICATION_CODE_RESPONSE_FLOOR_MS`; fake timers keep that
+    // deterministic and fast instead of costing real wall-clock time on
+    // every test in this block.
+    jest.useFakeTimers();
   });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** Advances fake time past the floor and returns once `promise` has settled. */
+  async function settleAfterFloor(promise: Promise<void>): Promise<void> {
+    await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS);
+    await promise;
+  }
 
   describe('the under-cap path', () => {
     it('issues a code and dispatches it by mail to the submitted address', async () => {
@@ -75,8 +107,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
         expiresAt: new Date(),
       });
 
-      await service.requestVerificationCode('Applicant@Example.com');
-      await tick();
+      await settleAfterFloor(service.requestVerificationCode('Applicant@Example.com'));
 
       expect(emailVerificationService.issueCode).toHaveBeenCalledWith('Applicant@Example.com');
       expect(mailService.sendVerificationCode).toHaveBeenCalledWith(
@@ -85,26 +116,44 @@ describe('RegistrationsService.requestVerificationCode', () => {
       );
     });
 
-    it('resolves without waiting for the mail dispatch to settle (the timing mitigation)', async () => {
-      emailVerificationService.issueCode.mockResolvedValue({
-        code: '123456',
-        expiresAt: new Date(),
-      });
-      // A send that never resolves within this test's lifetime — if
-      // `requestVerificationCode` awaited it, this test would time out.
-      let resolveSend!: () => void;
-      mailService.sendVerificationCode.mockReturnValue(
-        new Promise<void>((resolve) => {
-          resolveSend = resolve;
-        }),
-      );
+    it(
+      'does not resolve until the mail dispatch settles — the send is now awaited ' +
+        '(fix/otp-mail-lambda-freeze: this used to be the fire-and-forget mitigation test; ' +
+        'that behaviour was the production bug, and this test now proves its opposite)',
+      async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '123456',
+          expiresAt: new Date(),
+        });
+        // A send that stays pending until `resolveSend()` is called below.
+        let resolveSend!: () => void;
+        mailService.sendVerificationCode.mockReturnValue(
+          new Promise<void>((resolve) => {
+            resolveSend = resolve;
+          }),
+        );
 
-      await service.requestVerificationCode('slow-mail@example.com');
+        let settled = false;
+        const promise = service
+          .requestVerificationCode('slow-mail@example.com')
+          .then(() => {
+            settled = true;
+          });
 
-      // Reaching this line at all — with the send promise still pending —
-      // is the proof. Clean up so the suite doesn't leak an open handle.
-      resolveSend();
-    });
+        // Advancing fake time by many multiples of the floor proves nothing
+        // on its own — a fire-and-forget implementation would ALSO settle
+        // once its own (much shorter) pad elapsed, floor or no floor. What
+        // proves the send is genuinely awaited is that the method stays
+        // unsettled no matter how far time is advanced, for as long as the
+        // send promise itself is unresolved.
+        await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS * 10);
+        expect(settled).toBe(false);
+
+        resolveSend();
+        await settleAfterFloor(promise);
+        expect(settled).toBe(true);
+      },
+    );
 
     it('never throws when the mail dispatch itself fails — logged, not surfaced', async () => {
       emailVerificationService.issueCode.mockResolvedValue({
@@ -113,8 +162,8 @@ describe('RegistrationsService.requestVerificationCode', () => {
       });
       mailService.sendVerificationCode.mockRejectedValue(new Error('SES unavailable'));
 
-      await expect(service.requestVerificationCode('anyone@example.com')).resolves.toBeUndefined();
-      await tick(); // let the rejected fire-and-forget promise's .catch run
+      const promise = service.requestVerificationCode('anyone@example.com');
+      await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
     });
   });
 
@@ -146,8 +195,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
         sesLikeError.name = 'MessageRejected';
         mailService.sendVerificationCode.mockRejectedValue(sesLikeError);
 
-        await service.requestVerificationCode(applicantEmail);
-        await tick();
+        await settleAfterFloor(service.requestVerificationCode(applicantEmail));
 
         expect(errorSpy).toHaveBeenCalledTimes(1);
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
@@ -164,8 +212,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
       });
       mailService.sendVerificationCode.mockRejectedValue('applicant@example.com: rejected');
 
-      await service.requestVerificationCode('applicant@example.com');
-      await tick();
+      await settleAfterFloor(service.requestVerificationCode('applicant@example.com'));
 
       expect(errorSpy).toHaveBeenCalledTimes(1);
       const [emittedLine] = errorSpy.mock.calls[0] as [string];
@@ -180,9 +227,8 @@ describe('RegistrationsService.requestVerificationCode', () => {
         new EmailVerificationSendLimitExceededError(),
       );
 
-      await expect(
-        service.requestVerificationCode('over-cap@example.com'),
-      ).resolves.toBeUndefined();
+      const promise = service.requestVerificationCode('over-cap@example.com');
+      await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
     });
 
     it('never dispatches mail when the cap is exceeded — nothing was issued to send', async () => {
@@ -190,8 +236,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
         new EmailVerificationSendLimitExceededError(),
       );
 
-      await service.requestVerificationCode('over-cap@example.com');
-      await tick();
+      await settleAfterFloor(service.requestVerificationCode('over-cap@example.com'));
 
       expect(mailService.sendVerificationCode).not.toHaveBeenCalled();
     });
@@ -206,6 +251,58 @@ describe('RegistrationsService.requestVerificationCode', () => {
       await expect(service.requestVerificationCode('anyone@example.com')).rejects.toThrow(boom);
     });
   });
+
+  describe(
+    'the constant-time floor (fix/otp-mail-lambda-freeze) — the rate-limited and accepted ' +
+      'paths return in the SAME padded window, restoring the timing property the await broke',
+    () => {
+      it(
+        'neither path resolves before the floor elapses, and both resolve the instant it does',
+        async () => {
+          // Rate-limited branch: `issueCode` rejects on its own first
+          // `await`, well before the floor — nothing else in this branch
+          // takes any time.
+          emailVerificationService.issueCode.mockRejectedValue(
+            new EmailVerificationSendLimitExceededError(),
+          );
+          let rateLimitedSettled = false;
+          const rateLimited = service
+            .requestVerificationCode('capped@example.com')
+            .then(() => {
+              rateLimitedSettled = true;
+            });
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS - 1);
+          expect(rateLimitedSettled).toBe(false);
+          await jest.advanceTimersByTimeAsync(1);
+          expect(rateLimitedSettled).toBe(true);
+          await rateLimited;
+
+          // Accepted branch: `issueCode` AND the mail send both resolve
+          // promptly — the send is real, awaited work now, not skipped —
+          // yet the method pays exactly the same floor as the rate-limited
+          // branch above, not floor-plus-send-time.
+          emailVerificationService.issueCode.mockResolvedValue({
+            code: '654321',
+            expiresAt: new Date(),
+          });
+          mailService.sendVerificationCode.mockResolvedValue(undefined);
+          let acceptedSettled = false;
+          const accepted = service
+            .requestVerificationCode('accepted@example.com')
+            .then(() => {
+              acceptedSettled = true;
+            });
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS - 1);
+          expect(acceptedSettled).toBe(false);
+          await jest.advanceTimersByTimeAsync(1);
+          expect(acceptedSettled).toBe(true);
+          await accepted;
+        },
+      );
+    },
+  );
 });
 
 // @sdd-spec actors/public-self-registration (T-10)
