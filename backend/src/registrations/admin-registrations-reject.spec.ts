@@ -339,6 +339,41 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
       expect(callOrder).toEqual(['transaction-committed', 'notification-dispatched']);
     });
 
+    it(
+      'does not resolve until the mail dispatch settles — the send is now awaited ' +
+        '(fix/otp-mail-lambda-freeze: reject() used to dispatch sendRejection fire-and-forget, ' +
+        'which a Lambda freeze can silently drop mid-flight in production; this test proves the ' +
+        'opposite — reject() stays unsettled for as long as the send itself is pending)',
+      async () => {
+        const tx = buildRejectTx();
+        wireRejectTransaction(tx);
+        let resolveSend!: () => void;
+        mailService.sendRejection.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            resolveSend = resolve;
+          }),
+        );
+
+        let settled = false;
+        const promise = service
+          .reject('reg-reject-1', REASON as never, ACTING_SUB)
+          .then(() => {
+            settled = true;
+          });
+
+        // Drain every already-queued microtask (setImmediate only runs
+        // after the microtask queue is empty) — a fire-and-forget dispatch
+        // would have let reject() fully resolve by now, however many
+        // `await`s its transaction chain has.
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+
+        resolveSend();
+        await promise;
+        expect(settled).toBe(true);
+      },
+    );
+
     it('a notification failure does not reject reject() — fire-and-forget, logged by error class name only', async () => {
       const tx = buildRejectTx();
       wireRejectTransaction(tx);

@@ -833,9 +833,20 @@ export class AdminRegistrationsService {
    * **After commit, never inside it (DD-9):** the approval email. Dispatched
    * via {@link dispatchApprovalEmail} using the `submitterEmail`/`reference`
    * returned FROM the (already-committed) transaction result — never from a
-   * variable captured mid-transaction — fire-and-forget, its own failure
-   * logged by error CLASS NAME only (never the address), exactly mirroring
-   * `RegistrationsService.dispatchReceiptEmail`'s already-reviewed pattern.
+   * variable captured mid-transaction. **`fix/otp-mail-lambda-freeze`
+   * (2026-09-03) — AWAITED, not fire-and-forget**, for the same production
+   * reason `RegistrationsService.requestVerificationCode` was: Lambda can
+   * freeze the execution environment the instant this method's returned
+   * promise settles, and a fire-and-forget send in flight at that instant
+   * is silently dropped with no outcome line ever logged. Unlike that
+   * method, this one carries no timing requirement — an authenticated
+   * admin acting on a registration they can already see learns nothing
+   * from response latency — so awaiting adds no constant-time floor, only
+   * the `await`. The send's own failure is still only logged, by error
+   * CLASS NAME only (never the address), and never rethrown: it must not
+   * fail this method or suggest anything rolled back (FR-14) — the
+   * registration is already adjudicated and, on this path, the actor
+   * already published.
    */
   async approve(
     id: string,
@@ -1003,9 +1014,10 @@ export class AdminRegistrationsService {
     );
 
     // DD-9 / FR-14 scenario 1 — dispatched only AFTER the transaction above
-    // has committed, never awaited, using values returned FROM that
-    // (already-committed) result.
-    this.dispatchApprovalEmail(submitterEmail, registration.reference);
+    // has committed, using values returned FROM that (already-committed)
+    // result. `fix/otp-mail-lambda-freeze` — now AWAITED (see this
+    // method's class doc above); the send's own failure stays non-fatal.
+    await this.dispatchApprovalEmail(submitterEmail, registration.reference);
 
     return { registration, actor };
   }
@@ -1046,9 +1058,13 @@ export class AdminRegistrationsService {
    * any actor's history.
    *
    * **After commit, never inside it (DD-9):** the rejection notification —
-   * same placement, same fire-and-forget shape, same error-class-name-only
-   * logging as `dispatchApprovalEmail` (FR-14 scenario 1's "a send failure
-   * does not roll back an adjudication", which binds this path identically).
+   * same placement, same error-class-name-only logging, and — since
+   * `fix/otp-mail-lambda-freeze` (2026-09-03) — same AWAITED shape as
+   * `dispatchApprovalEmail` (see that method's class doc for why fire-
+   * and-forget was a production bug, not a mitigation). FR-14 scenario 1's
+   * "a send failure does not roll back an adjudication" still binds this
+   * path identically: the send is awaited, but its failure is only
+   * logged, never rethrown.
    *
    * **FR-13 scenario 2 — the note reaches the applicant through 3a's public
    * lookup, independent of email (NFR-10).** This method writes `reviewNote`
@@ -1131,10 +1147,11 @@ export class AdminRegistrationsService {
       };
     });
 
-    // DD-9 / FR-14 scenarios 1, 2 — dispatched only AFTER commit, never
-    // awaited, using the value returned FROM that (already-committed)
-    // result — same placement discipline as approve's dispatchApprovalEmail.
-    this.dispatchRejectionEmail(submitterEmail, registration.reference);
+    // DD-9 / FR-14 scenarios 1, 2 — dispatched only AFTER commit, using the
+    // value returned FROM that (already-committed) result — same placement
+    // discipline as approve's dispatchApprovalEmail. `fix/otp-mail-lambda-
+    // freeze` — now AWAITED; the send's own failure stays non-fatal.
+    await this.dispatchRejectionEmail(submitterEmail, registration.reference);
 
     return { registration };
   }
@@ -1198,33 +1215,52 @@ export class AdminRegistrationsService {
 
   /**
    * DD-9 / FR-14 scenario 1: dispatched only after the caller's transaction
-   * has committed, never awaited, and a failure is logged by the error's
-   * CLASS NAME only — mirrors `RegistrationsService.dispatchReceiptEmail`'s
-   * identical, already-reviewed pattern (a transport failure can embed the
-   * destination address verbatim in its message).
+   * has committed, and a failure is logged by the error's CLASS NAME
+   * only — never the destination address, which the AWS SDK's own
+   * `MessageRejected` puts verbatim in its message (a transport failure
+   * from `MailService.dispatch` rethrows unchanged — DD-9).
+   *
+   * **`fix/otp-mail-lambda-freeze` (2026-09-03) — AWAITED, not
+   * fire-and-forget.** This used to be `void this.mailService.sendApproval(
+   * ...).catch(...)`, mirroring `RegistrationsService.dispatchReceiptEmail`'s
+   * still-fire-and-forget shape. That shape is the same production bug
+   * `RegistrationsService.requestVerificationCode` had (see that method's
+   * class doc): Lambda can freeze the container the instant the caller's
+   * returned promise settles, dropping an in-flight SES call with no
+   * outcome line ever logged. Awaiting closes that here. Unlike the OTP
+   * fix, no constant-time floor is added — an authenticated admin acting
+   * on a registration they can already see learns nothing from this
+   * method's latency, so there is no oracle to protect against. The catch
+   * below is unchanged: still non-fatal, still class-name-only.
    */
-  private dispatchApprovalEmail(to: string, reference: string): void {
-    void this.mailService.sendApproval(to, reference).catch((err: unknown) => {
+  private async dispatchApprovalEmail(to: string, reference: string): Promise<void> {
+    try {
+      await this.mailService.sendApproval(to, reference);
+    } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration approval notification send failed: errorType=${errorType} reference=${reference}`,
       );
-    });
+    }
   }
 
   /**
    * DD-9 / FR-14 scenarios 1, 2: dispatched only after the caller's
-   * transaction has committed, never awaited, and a failure is logged by
-   * the error's CLASS NAME only — mirrors `dispatchApprovalEmail`'s
-   * identical, already-reviewed pattern (a transport failure can embed the
-   * destination address verbatim in its message).
+   * transaction has committed, and a failure is logged by the error's
+   * CLASS NAME only — mirrors `dispatchApprovalEmail`'s identical pattern
+   * (a transport failure can embed the destination address verbatim in
+   * its message). `fix/otp-mail-lambda-freeze` (2026-09-03) — AWAITED, not
+   * fire-and-forget, for the same production reason documented on
+   * `dispatchApprovalEmail` above; no constant-time floor here either.
    */
-  private dispatchRejectionEmail(to: string, reference: string): void {
-    void this.mailService.sendRejection(to, reference).catch((err: unknown) => {
+  private async dispatchRejectionEmail(to: string, reference: string): Promise<void> {
+    try {
+      await this.mailService.sendRejection(to, reference);
+    } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration rejection notification send failed: errorType=${errorType} reference=${reference}`,
       );
-    });
+    }
   }
 }
