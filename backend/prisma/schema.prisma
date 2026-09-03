@@ -90,6 +90,8 @@ enum ActorAuditAction {
   BULK_CONSENT
   BULK_DELETE
   IMPORT
+  REGISTRATION_APPROVE
+  REGISTRATION_REJECT
 }
 
 model ActorAuditLog {

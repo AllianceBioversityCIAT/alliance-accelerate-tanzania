@@ -15,7 +15,12 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { ActorAuditAction, ActorAuditLog, Prisma } from '@prisma/client';
+import {
+  ActorAuditAction,
+  ActorAuditLog,
+  Prisma,
+  Registration,
+} from '@prisma/client';
 import { AdminActor } from './admin-actor.serializer';
 
 /** Acting admin identity snapshotted into each audit row. */
@@ -357,6 +362,130 @@ export class ActorAuditService {
         return row;
       }),
     });
+  }
+
+  /**
+   * Record a `REGISTRATION_APPROVE` audit entry (FR-16, FR-12 audit clause,
+   * design.md §6.7, DD-6).
+   *
+   * `logCreate` cannot be reused: it hardcodes `action: CREATE` and takes no
+   * action parameter. This is additive, not a refactor of `logCreate`.
+   *
+   * The `changes` envelope is pinned **identical in shape to `logCreate`'s**
+   * — a full snapshot of the created actor — because approval *is* a create,
+   * just with a distinct provenance and authority (a self-registration
+   * adjudicated by an Admin, rather than a direct admin create). Reusing the
+   * exact shape means `SnapshotDetails` on the frontend renders it with no
+   * new narrowing branch, and it satisfies `ActorHistoryPanel`'s `isSnapshot`
+   * check the same way `logCreate`'s does.
+   *
+   * `reference` (the originating registration's human-readable reference,
+   * e.g. `REG-2026-0184`) is accepted for parity with the pinned call-site
+   * signature (design.md §6.2 step 7) and with {@link logRegistrationReject},
+   * but is deliberately NOT duplicated into the envelope: FR-12 requires
+   * `actor.consentReference` to already equal it by the time this is called,
+   * and `consentReference` is already an `AUDITABLE_FIELDS` member captured
+   * by {@link buildSnapshot} — adding it again would invent a field outside
+   * §6.7's pinned table rather than reuse `logCreate`'s shape.
+   *
+   * **DEC-1 (Leader decision, user-approved at the Phase A gate,
+   * `admin/registration-review-queue` T-8).** This row sets
+   * `acknowledged: true` — the typed consent-acknowledgement flag
+   * `logBulkConsent`/`logImport` already persist. FR-12's approve gate *is*
+   * a typed consent acknowledgement, re-validated server-side
+   * (`AdminRegistrationsService.assertAcknowledgement`), so the spec's most
+   * consequential consent write records its own gate. This is ADDITIVE to
+   * the pinned envelope: `acknowledged` is a separate top-level column
+   * §6.7 never addresses, and the `changes` value above is UNCHANGED —
+   * still `logCreate`'s exact snapshot shape.
+   */
+  async logRegistrationApprove(
+    tx: Prisma.TransactionClient,
+    actor: AdminActor,
+    acting: ActingAdmin,
+    _reference: string,
+  ): Promise<ActorAuditLog> {
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: actor.id,
+        traderId: actor.traderId,
+        traderName: actor.traderName,
+        action: ActorAuditAction.REGISTRATION_APPROVE,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+        // DEC-1 — additive; the `changes` envelope above is untouched.
+        acknowledged: true,
+      },
+    });
+  }
+
+  /**
+   * Record a `REGISTRATION_REJECT` audit entry (FR-16, FR-13 audit clause,
+   * design.md §6.7, DD-6).
+   *
+   * There is no actor to snapshot — rejection creates nothing (FR-13). The
+   * envelope is instead **snapshot-shaped** over the registration's
+   * reviewable facts: the reference, the submitted organisation name, and
+   * the structured rejection reason. Snapshot-shaped rather than a third
+   * envelope kind, so it stays legible to `ActorHistoryPanel`'s existing
+   * `isSnapshot` narrowing without widening it.
+   *
+   * The row's top-level identity columns deliberately do NOT name a real
+   * actor: `actorId` = the **registration** id, `traderId` = the reference,
+   * `traderName` = the submitted organisation name. `ActorAuditLog.actorId`
+   * is deliberately FK-less (design.md §6.7), so this bends no constraint —
+   * and because the actor-history read path filters on `actorId` against a
+   * real `Actor` row, a rejection row's registration-id `actorId` can never
+   * match any actor's history query. That is the carried-forward FR-16
+   * clause (`BUT a REGISTRATION_REJECT row must NOT appear in any actor's
+   * history`), asserted here at the persistence layer since no UI can ever
+   * render this row to assert it against.
+   */
+  async logRegistrationReject(
+    tx: Prisma.TransactionClient,
+    registration: Pick<Registration, 'id' | 'reference' | 'payload' | 'rejectionReason'>,
+    acting: ActingAdmin,
+  ): Promise<ActorAuditLog> {
+    const traderName = this.extractSubmittedTraderName(registration.payload);
+
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: registration.id,
+        traderId: registration.reference,
+        traderName,
+        action: ActorAuditAction.REGISTRATION_REJECT,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: {
+            reference: registration.reference,
+            traderName,
+            reason: registration.rejectionReason ?? null,
+          },
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * Read `traderName` out of a registration's untyped JSON `payload`
+   * (`RegistrationPayloadDto`'s field, §6.3's projection table). Defensive
+   * only: a real registration always carries this field by the time it
+   * reaches adjudication (FR-2), but `payload` is stored as `Prisma.JsonValue`
+   * with no compile-time shape.
+   */
+  private extractSubmittedTraderName(payload: Prisma.JsonValue): string {
+    if (
+      payload !== null &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      typeof (payload as Record<string, unknown>).traderName === 'string'
+    ) {
+      return (payload as Record<string, unknown>).traderName as string;
+    }
+    return '';
   }
 
   private buildSnapshot(actor: AdminActor): SnapshotEnvelope {

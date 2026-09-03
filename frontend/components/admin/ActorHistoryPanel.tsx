@@ -74,19 +74,30 @@ function isSnapshot(changes: unknown): changes is SnapshotChanges {
   );
 }
 
-function actionBadgeClasses(action: AuditEntry['action']): string {
-  switch (action) {
-    case 'CREATE':
-      return 'bg-highlight-tint text-success';
-    case 'UPDATE':
-      return 'bg-primary-soft text-primary';
-    case 'DELETE':
-    case 'BULK_DELETE':
-      return 'bg-danger-soft text-danger';
-    case 'BULK_CONSENT':
-      return 'bg-surface-alt text-warning';
-  }
-}
+/**
+ * Badge color classes for every `AuditEntry['action']` member.
+ *
+ * A TOTAL `Record`, not a `switch` with a `default` — matches the
+ * `ROLE_BG_CLASS`/`ROLE_CSS_VAR` precedent in `RoleBadge.tsx`. This map has
+ * no link to the backend `ActorAuditAction` enum, so a backend-only ninth
+ * action (added to Prisma's schema with no frontend edit) still compiles
+ * clean and simply renders unstyled — the same silent drift `IMPORT` had
+ * before this map existed (`design.md` DD-21, FR-16; corrected at T-16,
+ * `execution.md` A-88, since this docblock previously claimed a backend-only
+ * addition fails the build). What **is** a compile error: widening
+ * `AuditEntry['action']` itself — a ninth member added to the *frontend*
+ * union — with no matching entry added here (`tsc --noEmit`).
+ */
+const actionBadgeClasses: Record<AuditEntry['action'], string> = {
+  CREATE: 'bg-highlight-tint text-success',
+  UPDATE: 'bg-primary-soft text-primary',
+  DELETE: 'bg-danger-soft text-danger',
+  BULK_DELETE: 'bg-danger-soft text-danger',
+  BULK_CONSENT: 'bg-surface-alt text-warning',
+  IMPORT: 'bg-primary-soft text-primary',
+  REGISTRATION_APPROVE: 'bg-highlight-tint text-success',
+  REGISTRATION_REJECT: 'bg-danger-soft text-danger',
+};
 
 function actionLabel(action: AuditEntry['action']): string {
   return action.replace(/_/g, ' ');
@@ -117,7 +128,7 @@ function ActionBadge({ action }: { action: AuditEntry['action'] }) {
     <span
       className={[
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        actionBadgeClasses(action),
+        actionBadgeClasses[action],
       ].join(' ')}
     >
       {actionLabel(action)}
@@ -166,6 +177,9 @@ function SnapshotDetails({
       break;
     case 'BULK_DELETE':
       summary = 'Bulk deleted — final snapshot';
+      break;
+    case 'REGISTRATION_APPROVE':
+      summary = 'Approved — actor published';
       break;
     default:
       summary = 'Snapshot';

@@ -200,7 +200,15 @@ export interface AuditEntry {
   actorId: string;
   traderId: string;
   traderName: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BULK_CONSENT' | 'BULK_DELETE';
+  action:
+    | 'CREATE'
+    | 'UPDATE'
+    | 'DELETE'
+    | 'BULK_CONSENT'
+    | 'BULK_DELETE'
+    | 'IMPORT'
+    | 'REGISTRATION_APPROVE'
+    | 'REGISTRATION_REJECT';
   actingSub: string;
   actingEmail: string | null;
   changes: unknown;

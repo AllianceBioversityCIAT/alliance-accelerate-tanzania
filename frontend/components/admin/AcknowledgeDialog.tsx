@@ -33,6 +33,8 @@
 import { useEffect, useRef, useCallback, useId, useState } from 'react';
 
 import type { ConsentMethod } from '@/lib/api/actors-admin';
+import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
+import { DialogFooter } from '@/components/admin/DialogFooter';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +80,21 @@ interface AcknowledgeDialogProps {
   /** Inline error from the failed mutation. */
   error?: string;
   /**
+   * Semantic tone of the confirm button. **Defaults to `'danger'`** so every
+   * pre-existing call site renders byte-identically to before this prop
+   * existed.
+   *
+   * Pass `'primary'` when the gated action is **constructive** — publishing,
+   * creating, granting. `docs/ux-ui/design.md` §7 reserves `danger` for
+   * destructive semantics, and `requirements.md` NFR-6 states it "MUST NOT
+   * style the publish action": a red destructive button on the registry's
+   * only private-to-public path told the reviewer the opposite of what the
+   * action does. That was R-13, and this prop is its remediation — the
+   * typed-acknowledgement gate is orthogonal to whether the outcome is
+   * destructive.
+   */
+  tone?: 'danger' | 'primary';
+  /**
    * T-10 — opt-in batch consent-method + consent-date inputs (design.md §5).
    * Rendered ONLY when supplied; also gates the confirm button so a batch
    * unlock cannot be confirmed without both. Omitted at every call site but
@@ -113,6 +130,7 @@ export function AcknowledgeDialog({
   onCancel,
   loading = false,
   error,
+  tone = 'danger',
   provenance,
 }: AcknowledgeDialogProps) {
   const uid           = useId();
@@ -126,7 +144,6 @@ export function AcknowledgeDialog({
   const provenanceHintId = `${uid}-provenance-hint`;
 
   const inputRef      = useRef<HTMLInputElement>(null);
-  const dialogRef     = useRef<HTMLDivElement>(null);
   const [value,       setValue]       = useState('');
 
   const acknowledged = value === acknowledgementText;
@@ -148,44 +165,7 @@ export function AcknowledgeDialog({
   }, [open]);
 
   // Keyboard: Escape → cancel; Tab / Shift+Tab → cycle within dialog.
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-        return;
-      }
-
-      if (e.key !== 'Tab') return;
-
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last  = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [onCancel]
-  );
+  const { dialogRef, onKeyDown: handleKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel);
 
   const handleConfirm = useCallback(() => {
     if (!canConfirm || loading) return;
@@ -342,49 +322,16 @@ export function AcknowledgeDialog({
           </p>
         </div>
 
-        {/* Inline error live region */}
-        {error && (
-          <p
-            id={errorId}
-            role="alert"
-            aria-live="assertive"
-            className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-          >
-            {error}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="mt-5 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={loading}
-            className={[
-              'rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
-              'transition-colors hover:bg-surface-alt',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!canConfirm || loading}
-            aria-busy={loading}
-            className={[
-              'rounded-md bg-danger px-4 py-2 text-sm font-medium text-primary-fg',
-              'transition-colors hover:opacity-90',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            ].join(' ')}
-          >
-            {loading ? 'Please wait…' : confirmLabel}
-          </button>
-        </div>
+        <DialogFooter
+          error={error}
+          errorId={errorId}
+          onCancel={onCancel}
+          loading={loading}
+          onConfirm={handleConfirm}
+          confirmDisabled={!canConfirm || loading}
+          confirmLabel={confirmLabel}
+          tone={tone}
+        />
       </div>
     </>
   );

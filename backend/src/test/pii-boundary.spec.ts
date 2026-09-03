@@ -1,6 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { Logger, RequestMethod } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+  RequestMethod,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA, MODULE_METADATA } from '@nestjs/common/constants';
 import {
   ConsentMethod,
@@ -25,6 +32,8 @@ import { REGISTRATIONS_THROTTLE_LIMIT } from '../registrations/registrations-thr
 import { RegistrationsModule } from '../registrations/registrations.module';
 import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import { CONTACT_CATEGORIES } from '../contact/contact-categories';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthUser } from '../auth/auth.types';
 
 /**
  * `actors/registration-source-and-consent` T-9 — End-to-end PII-boundary +
@@ -1080,6 +1089,62 @@ function buildRegistrationPrismaMock(
   } as unknown as Partial<PrismaService>;
 }
 
+/**
+ * `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+ * `FIXTURE_MAP` entry (below) needs a real `JwtAuthGuard` override so
+ * `sendAnonymous`/`sendStaff` can exercise the actual guard stack over
+ * HTTP, exactly as `admin-actors-crud.e2e.spec.ts` already does for the
+ * `admin/actors` surface. Copied from that file's module-scope
+ * `TestJwtAuthGuard`/`TOKEN_USERS` verbatim (not re-derived) — see this
+ * file's JSDoc contract block above `FIXTURE_MAP` for why.
+ */
+const TOKEN_USERS: Record<string, AuthUser> = {
+  'admin-token': {
+    sub: 'admin-sub',
+    username: 'admin-user',
+    groups: ['admin'],
+    role: 'Admin',
+  },
+  'staff-token': {
+    sub: 'staff-sub',
+    username: 'staff-user',
+    groups: ['staff'],
+    role: 'Staff',
+  },
+  'public-token': {
+    sub: 'public-sub',
+    username: 'public-user',
+    groups: [],
+    role: 'Public',
+  },
+};
+
+/** Pull the token out of an `Authorization: Bearer <token>` header. */
+function extractBearer(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  const [scheme, token] = header.split(' ');
+  return scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
+}
+
+/**
+ * Test guard replacing Cognito JWT verification. Maps known Bearer tokens
+ * to fixed `req.user` identities; a missing or unknown token throws `401` —
+ * the same shape a real, unauthenticated `Authorization` header failure
+ * takes in production (`JwtAuthGuard`).
+ */
+@Injectable()
+class TestJwtAuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    const token = extractBearer(req.headers?.authorization);
+    if (!token || !TOKEN_USERS[token]) {
+      throw new UnauthorizedException('Invalid token');
+    }
+    req.user = TOKEN_USERS[token];
+    return true;
+  }
+}
+
 describe(
   'PII boundary (HTTP e2e) — registrations module (T-13, release gate: FR-8, NFR-1, DC-1, DC-2)',
   () => {
@@ -1115,7 +1180,20 @@ describe(
         .useValue({
           sendVerificationCode: sendVerificationCodeMock,
           sendReceipt: sendReceiptMock,
+          // `admin/registration-review-queue` T-8's `approve` route calls
+          // `sendApproval` — never reached by any assertion in this file
+          // (every admin-entry request here is rejected by the guard stack
+          // before the controller method runs), but the DI graph still
+          // needs the method to exist on this override.
+          sendApproval: jest.fn().mockResolvedValue(undefined),
         } as unknown as MailService)
+        // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+        // FIXTURE_MAP entry needs a real guard stack over HTTP so
+        // `sendAnonymous`/`sendStaff` actually exercise `JwtAuthGuard` +
+        // `RolesGuard`, not the always-401 real Cognito verifier this test
+        // process has no JWKS reachable for.
+        .overrideGuard(JwtAuthGuard)
+        .useValue(new TestJwtAuthGuard())
         .compile();
 
       app = moduleRef.createNestApplication<NestExpressApplication>();
@@ -1153,22 +1231,307 @@ describe(
     );
 
     describe('every registered public route has a fixture (RA7 — the totality assertion)', () => {
-      const FIXTURE_MAP: Record<string, () => request.Test> = {
-        [routeKey('GET', '/api/v1/registrations/consent-policy')]: () =>
-          request(app.getHttpServer()).get('/api/v1/registrations/consent-policy'),
-        [routeKey('POST', '/api/v1/registrations/verify')]: () =>
-          request(app.getHttpServer())
-            .post('/api/v1/registrations/verify')
-            .send({ email: 'route-scan-probe@example.com' }),
-        [routeKey('POST', '/api/v1/registrations')]: () =>
-          request(app.getHttpServer()).post('/api/v1/registrations').send(submitBodyFixture()),
-        [routeKey('POST', '/api/v1/registrations/lookup')]: () =>
-          request(app.getHttpServer())
-            .post('/api/v1/registrations/lookup')
-            .send({
-              reference: APPROVED_REGISTRATION_ROW.reference,
-              email: APPROVED_REGISTRATION_ROW.submitterEmail,
-            }),
+      /**
+       * **The `FIXTURE_MAP` entry shape (DD-16) — a discriminant, never an
+       * exemption flag.** Every entry still asserts a LEAK is impossible;
+       * `access` changes WHAT is asserted, never WHETHER a route is
+       * asserted. The bidirectional totality test below reads `Object.keys`
+       * only, so it is unaffected by which variant an entry is — a route
+       * with no entry at all still fails there, by name, regardless of
+       * `access`.
+       *
+       * - `{ access: 'public', send }` — a route reachable with no
+       *   authentication that MUST leak nothing to anyone. `send()` is
+       *   called once; the response MUST be a 2xx and MUST be PII-clean
+       *   (`expectRegistrationResponseClean`). This is every entry today.
+       * - `{ access: 'admin', sendAnonymous, sendStaff }` — a route that
+       *   legitimately returns PII, but ONLY to an authenticated `Admin`.
+       *   The assertion is still a leak assertion, aimed at every caller
+       *   who is NOT that Admin:
+       *   - `sendAnonymous()` — the identical request with no
+       *     `Authorization` header — MUST resolve `401`.
+       *   - `sendStaff()` — the identical request authenticated as a
+       *     `Staff` (not `Admin`) principal — MUST resolve `403`.
+       *   - BOTH responses are run through `expectRegistrationResponseClean`,
+       *     which two-layer scans the body: a forbidden-KEY scan
+       *     (`REGISTRATION_FORBIDDEN_KEYS` — includes `payload`, `id`,
+       *     `submitterEmail`, `reviewedByEmail`) and a fixed-VALUE sweep
+       *     (`REGISTRATION_LEAKABLE_VALUES`). For a `401`/`403` this is
+       *     BELT AND SUSPENDERS with the status assertion, not a
+       *     substitute for it: a guard that fails open, or 403s late after
+       *     partially building a body, is still caught here — but caught
+       *     principally by the KEY scan, because every PII field this
+       *     module can leak (`payload`, `submitterEmail`, `id`,
+       *     `reviewedByEmail`, …) is a forbidden KEY, not merely a fixed
+       *     VALUE. **Know the limitation:** `REGISTRATION_LEAKABLE_VALUES`
+       *     is a fixed list drawn from THIS FILE's own fixtures. A route
+       *     that reads a row a later task adds to the Prisma mock — one
+       *     whose values are not in that fixed list — would leak that
+       *     row's VALUES undetected by the value sweep; only the KEY scan
+       *     would still catch it, and only for keys already forbidden
+       *     above. Do not describe this coverage as value-leak-proof
+       *     against arbitrary future rows; it is not.
+       *
+       * **The admin-entry contract, for T-4…T-9 — copy one of the two
+       * shapes above verbatim; do not invent a third.** Adding the FIRST
+       * `access: 'admin'` entry to this map also requires overriding
+       * `JwtAuthGuard` in the OUTER `describe`'s `beforeAll` — the one at
+       * this file's `describe('PII boundary (HTTP e2e) — registrations
+       * module (T-13, release gate: FR-8, NFR-1, DC-1, DC-2)')` block
+       * that builds `app` via
+       * `Test.createTestingModule({ imports: [AppModule] })…compile()` —
+       * NOT the sibling top-level `describe('PII boundary (HTTP e2e) —
+       * registrations module, 429 isolation (T-13, B28)')` further below
+       * in this file, which also builds an app the same way but is a
+       * different block, and NOT this nested `describe('every registered
+       * public route has a fixture …')`, which has no `beforeAll` of its
+       * own and shares the outer block's `app`. Chain
+       * `.overrideGuard(JwtAuthGuard).useValue(new TestJwtAuthGuard())`
+       * onto that same `Test.createTestingModule(...)` call, mapping
+       * fixed bearer tokens to `Admin` / `Staff` / no identity —
+       * `admin-actors-crud.e2e.spec.ts`'s `TestJwtAuthGuard` class and
+       * `TOKEN_USERS` map (both MODULE-scope declarations in that file,
+       * not contents of its `beforeAll` — what lives in that `beforeAll`
+       * is the `.overrideGuard(...)` chain itself) are the exemplar to
+       * copy, not re-derive. `sendStaff()` sends
+       * `Authorization: Bearer staff-token`; `sendAnonymous()` sends no
+       * `Authorization` header at all. Do **not** add an
+       * `Admin`-authenticated request builder to an entry here — a 200
+       * response containing real PII to a legitimately-authorized Admin is
+       * this spec's INTENDED behaviour, asserted by that task's own
+       * feature test (e.g. T-6's registration-detail test), not by this
+       * release gate, whose job stops at proving the boundary holds
+       * against everyone who is not supposed to see it.
+       *
+       * **The sender-to-key binding is NOT enforced by the map's shape —
+       * you must get it right by hand.** Nothing here checks that
+       * `sendAnonymous`/`sendStaff` actually issue a request against the
+       * route their entry is keyed under; a `FixtureEntry` is just two
+       * closures next to a string key. Nothing enforces the match for
+       * `public` entries either — a `public` entry keyed `/verify` that
+       * sends to `/lookup` would also pass green (all four current
+       * entries do match, verified by re-reading each key against its
+       * closure). The true distinction a parameterized `:id`-scoped key
+       * loses is COMPARABILITY: none of the four existing `public` routes
+       * are parameterized, so a literal key CAN be checked by eye against
+       * a sender's literal URL; a parameterized key can never equal its
+       * sender's concrete URL, so that eyeball check is unavailable for
+       * it. `design.md` §5 adds four `:id`-scoped sibling routes — three
+       * writes (`POST /api/v1/admin/registrations/:id/approve`,
+       * `/reject`, `/dismiss-duplicate`) plus one read
+       * (`GET /api/v1/admin/registrations/:id`); a fifth route,
+       * `GET /api/v1/admin/registrations`, is not `:id`-scoped. All three
+       * writes share an identical unauthorized/under-privileged shape
+       * (`401` anonymous / `403` Staff), so they are mutually
+       * substitutable by copy-paste: an entry keyed `.../:id/reject`
+       * whose `sendAnonymous`/
+       * `sendStaff` actually `POST` to `.../:id/approve` returns `401`/
+       * `403` identically and **passes green while `reject` itself is
+       * never exercised** — a plausible copy-paste outcome, not sabotage.
+       * **`sendAnonymous`/`sendStaff` MUST target the exact route this
+       * entry's key names; a request sent to a wrong sibling path also
+       * returns `401`/`403` and will pass green without proving anything
+       * about the route it claims to cover.** When adding a `:id`-scoped
+       * entry, re-read the key string against the URL literal in both
+       * closures before trusting the test.
+       *
+       * **Why `toBe(401)` (not `expect([401, 403]).toContain(...)`) is the
+       * exact, load-bearing assertion for `sendAnonymous()`.** It is the
+       * only check in this file that detects `@UseGuards` order
+       * inversion. `@UseGuards(RolesGuard, JwtAuthGuard)` — guards
+       * reversed from the correct `@UseGuards(JwtAuthGuard, RolesGuard)`
+       * — makes an anonymous caller hit `RolesGuard` first with
+       * `req.user === undefined`, which resolves `403`, not `401`.
+       * Loosening this to `expect([401, 403]).toContain(anonRes.status)`
+       * would make that exact inversion pass. Do not relax it merely
+       * because a future controller returns `403` to an anonymous caller
+       * under some other guard arrangement — that is the bug this
+       * assertion exists to catch, not a false positive to accommodate.
+       *
+       * The scan loop's missing-entry branch (below) is unconditional and
+       * reads `access` only AFTER confirming an entry exists at all — a
+       * route with no entry still `throw`s, never `continue`s, regardless
+       * of which variant a future entry would have used (R-10).
+       */
+      type FixtureEntry =
+        | { access: 'public'; send: () => request.Test }
+        | { access: 'admin'; sendAnonymous: () => request.Test; sendStaff: () => request.Test };
+
+      const FIXTURE_MAP: Record<string, FixtureEntry> = {
+        [routeKey('GET', '/api/v1/registrations/consent-policy')]: {
+          access: 'public',
+          send: () => request(app.getHttpServer()).get('/api/v1/registrations/consent-policy'),
+        },
+        [routeKey('POST', '/api/v1/registrations/verify')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer())
+              .post('/api/v1/registrations/verify')
+              .send({ email: 'route-scan-probe@example.com' }),
+        },
+        [routeKey('POST', '/api/v1/registrations')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer()).post('/api/v1/registrations').send(submitBodyFixture()),
+        },
+        [routeKey('POST', '/api/v1/registrations/lookup')]: {
+          access: 'public',
+          send: () =>
+            request(app.getHttpServer())
+              .post('/api/v1/registrations/lookup')
+              .send({
+                reference: APPROVED_REGISTRATION_ROW.reference,
+                email: APPROVED_REGISTRATION_ROW.submitterEmail,
+              }),
+        },
+        // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
+        // entry (FR-9 scenario 3). Not `:id`-scoped, so its key IS its
+        // sender's literal URL — verified by eye against both closures below.
+        [routeKey('GET', '/api/v1/admin/registrations')]: {
+          access: 'admin',
+          sendAnonymous: () => request(app.getHttpServer()).get('/api/v1/admin/registrations'),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .get('/api/v1/admin/registrations')
+              .set('Authorization', 'Bearer staff-token'),
+        },
+        // `admin/registration-review-queue` T-6 — the FIRST `:id`-SCOPED
+        // `FIXTURE_MAP` entry. Its key, `GET /api/v1/admin/registrations/:id`,
+        // is the raw decorator path Nest itself derives (`@Get(':id')`) — it
+        // can NEVER equal a sender's concrete probe URL, so the usual
+        // key-vs-URL eyeball check does not apply here (see the admin-entry
+        // contract JSDoc above). Checked by hand instead: both closures below
+        // target `/api/v1/admin/registrations/<a single path segment>` — the
+        // SAME controller/method as the collection route above, one path
+        // segment deeper, and there is no sibling static route under this
+        // controller (e.g. no `/bulk`) that a single-segment id could
+        // collide with. The probe id's value is irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone `AdminRegistrationsService
+        // .getById`'s Prisma lookup — ever runs, so no Prisma mock support
+        // for this id is needed (proven separately, and more pointedly, by
+        // the 403-indistinguishability test below, which uses a REAL fixture
+        // id for exactly this reason).
+        [routeKey('GET', '/api/v1/admin/registrations/:id')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer()).get(
+              '/api/v1/admin/registrations/admin-registrations-detail-route-scan-probe-id',
+            ),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .get('/api/v1/admin/registrations/admin-registrations-detail-route-scan-probe-id')
+              .set('Authorization', 'Bearer staff-token'),
+        },
+        // `admin/registration-review-queue` T-7 — the THIRD `access: 'admin'`
+        // entry, and the FIRST WRITE (`POST`) route in this map. Its key,
+        // `POST /api/v1/admin/registrations/:id/dismiss-duplicate`, is the
+        // raw decorator path (`@Post(':id/dismiss-duplicate')`) — never a
+        // sender's concrete URL — so it is checked by hand, per the
+        // admin-entry contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/dismiss-duplicate`,
+        // the SAME controller as the two entries above, one literal segment
+        // deeper than the `:id` detail route — re-read against T-8/T-9's
+        // sibling write routes (`/:id/approve`, `/:id/reject`) once they
+        // land, since all three share an identical 401/403 shape and are
+        // mutually substitutable by copy-paste (the exact trap this file's
+        // contract JSDoc names). The probe id and body are irrelevant to
+        // this test: `sendAnonymous`/`sendStaff` are both rejected by the
+        // guard stack before the controller method — let alone
+        // `AdminRegistrationsService.dismissDuplicate`'s Prisma lookups —
+        // ever run, so no Prisma mock support for either probe value is
+        // needed. A body is still sent (matching
+        // `RegistrationDismissDuplicateDto`'s shape) so a future guard-order
+        // regression that let a request reach the validation pipe would not
+        // ALSO surface as an unrelated `400` masking the real assertion.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/dismiss-duplicate')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-dismiss-duplicate-route-scan-probe-id/dismiss-duplicate',
+              )
+              .send({ candidateActorId: 'route-scan-probe-candidate-actor-id' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-dismiss-duplicate-route-scan-probe-id/dismiss-duplicate',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ candidateActorId: 'route-scan-probe-candidate-actor-id' }),
+        },
+        // `admin/registration-review-queue` T-8 — the FOURTH `access: 'admin'`
+        // entry, and the SECOND WRITE (`POST`) route in this map. Its key,
+        // `POST /api/v1/admin/registrations/:id/approve`, is the raw
+        // decorator path (`@Post(':id/approve')`) — never a sender's
+        // concrete URL — so it is checked by hand, per the admin-entry
+        // contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/approve`,
+        // ONE literal segment deeper than the `:id` detail route, and
+        // DISTINCT from `/:id/dismiss-duplicate`/`/:id/reject`'s literal
+        // segment — re-read against `/:id/reject` once T-9 lands them both
+        // share the identical 401/403 shape and are mutually substitutable
+        // by copy-paste (the exact trap this file's contract JSDoc names).
+        // The probe id and body are irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone
+        // `AdminRegistrationsService.approve`'s Prisma transaction — ever
+        // runs, so no Prisma mock support for either probe value is needed.
+        // A body IS still sent (matching `RegistrationApproveDto`'s shape)
+        // for the same reason T-7's entry does.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/approve')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-approve-route-scan-probe-id/approve',
+              )
+              .send({ acknowledgement: 'route-scan-probe-acknowledgement' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-approve-route-scan-probe-id/approve',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ acknowledgement: 'route-scan-probe-acknowledgement' }),
+        },
+        // `admin/registration-review-queue` T-9 — the FIFTH and FINAL
+        // `access: 'admin'` entry, and the THIRD WRITE (`POST`) route in
+        // this map. Its key, `POST /api/v1/admin/registrations/:id/reject`,
+        // is the raw decorator path (`@Post(':id/reject')`) — never a
+        // sender's concrete URL — so it is checked by hand, per the
+        // admin-entry contract JSDoc above: both closures below target
+        // `/api/v1/admin/registrations/<a single path segment>/reject`, ONE
+        // literal segment deeper than the `:id` detail route, and DISTINCT
+        // from `/:id/approve`'s and `/:id/dismiss-duplicate`'s literal
+        // segments — re-read against BOTH of those siblings by hand before
+        // trusting this entry (the exact copy-paste trap the contract JSDoc
+        // names: `approve` is a sibling on an identical shape and returns
+        // identical `401`/`403`, so a URL pointed at `/approve` under this
+        // key's closures would pass green while `reject` itself went
+        // untested). The probe id and body are irrelevant to this test:
+        // `sendAnonymous`/`sendStaff` are both rejected by the guard stack
+        // before the controller method — let alone
+        // `AdminRegistrationsService.reject`'s Prisma transaction — ever
+        // runs, so no Prisma mock support for either probe value is needed.
+        // A body IS still sent (matching `RegistrationRejectDto`'s shape)
+        // for the same reason T-7's and T-8's entries do.
+        [routeKey('POST', '/api/v1/admin/registrations/:id/reject')]: {
+          access: 'admin',
+          sendAnonymous: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-reject-route-scan-probe-id/reject',
+              )
+              .send({ reason: 'DUPLICATE_OF_EXISTING_RECORD' }),
+          sendStaff: () =>
+            request(app.getHttpServer())
+              .post(
+                '/api/v1/admin/registrations/admin-registrations-reject-route-scan-probe-id/reject',
+              )
+              .set('Authorization', 'Bearer staff-token')
+              .send({ reason: 'DUPLICATE_OF_EXISTING_RECORD' }),
+        },
       };
 
       it(
@@ -1176,7 +1539,9 @@ describe(
           'route added anywhere in RegistrationsModule with no matching entry fails HERE, by name, ' +
           "rather than being silently skipped (RA7 + Reviewer's bidirectional fold-in); the two " +
           'throwaway-route proofs (same controller, then a second controller) are recorded in ' +
-          "execution.md → T-13, not kept in this file",
+          "`admin/registration-review-queue` execution.md → T-10 (the current-generation pair, run " +
+          'with a real admin controller present — supersedes the original pair under ' +
+          "`actors/public-self-registration` execution.md → T-13), not kept in this file",
         () => {
           // Bidirectional (Reviewer fold-in): this single assertion catches
           // BOTH a derived route with no fixture (RA7's original concern)
@@ -1192,27 +1557,89 @@ describe(
 
       it(
         "every discovered route's fixture response is PII-clean (FR-8 scenario 1, DC-1) — 1 request " +
-          'per route, 4 requests total against this describe block\'s own throttle bucket',
+          'per public route (4) + 2 requests per admin route (anonymous + Staff; 5 admin routes = 10), ' +
+          '14 requests total, of which only the 4 public requests hit this describe block\'s own ' +
+          'throttle bucket — the admin routes carry no throttle guard at all (`design.md` §6.1), so ' +
+          'that count is informational, not a limit check (A-38: corrected from an earlier revision ' +
+          'that mis-stated ALL requests as hitting the bucket; `admin/registration-review-queue` T-9 ' +
+          'brought the admin route count from four to the full five this module\'s design specifies)',
         async () => {
           for (const route of routes) {
             const key = routeKey(route.method, route.path);
-            const send = FIXTURE_MAP[key];
+            const entry = FIXTURE_MAP[key];
             // The totality test above is the actual gate for a MISSING
             // entry; this throws rather than silently skipping so the
             // anti-pattern cannot hide by moving to this SECOND consumer of
-            // the same map (RA7).
-            if (!send) {
+            // the same map (RA7). Unconditional and discriminant-independent
+            // — `access` is never consulted until an entry is known to exist
+            // (R-10, DD-16).
+            if (!entry) {
               throw new Error(
                 `RA7: no FIXTURE_MAP entry for ${key} — the totality test above should have caught this first.`,
               );
             }
-            const res = await send();
-            expect([200, 201, 202]).toContain(res.status);
-            expectRegistrationResponseClean(res);
+            if (entry.access === 'public') {
+              const res = await entry.send();
+              expect([200, 201, 202]).toContain(res.status);
+              expectRegistrationResponseClean(res);
+            } else {
+              // Admin-entry contract (DD-16) — exercised for real starting
+              // T-4, the first task to add an `access: 'admin'` entry. Still
+              // a LEAK assertion: an anonymous caller gets 401, a Staff
+              // caller gets 403, and neither response body carries a fixture
+              // value.
+              const anonRes = await entry.sendAnonymous();
+              expect(anonRes.status).toBe(401);
+              expectRegistrationResponseClean(anonRes);
+              const staffRes = await entry.sendStaff();
+              expect(staffRes.status).toBe(403);
+              expectRegistrationResponseClean(staffRes);
+            }
           }
         },
       );
     });
+
+    describe(
+      'GET /api/v1/admin/registrations/:id — 403 is indistinguishable between a real id and an ' +
+        'invented one (FR-9 scenario 3, REASSIGNED to T-6 on 2026-09-01: T-4 owns no `:id` route, ' +
+        'so the mutation had no referent there — see tasks.md T-6\'s clause sweep)',
+      () => {
+        it(
+          'a Staff caller gets a BYTE-IDENTICAL 403 body for a REAL registration id (the APPROVED ' +
+            'fixture row) and an INVENTED one — and neither resolves 404, proving the RolesGuard ' +
+            'rejects before AdminRegistrationsService.getById ever runs its Prisma lookup ' +
+            '(DD-22: a 404 is honest ONLY for an authenticated Admin, never surfaced to Staff)',
+          async () => {
+            const realIdRes = await request(app.getHttpServer())
+              .get(`/api/v1/admin/registrations/${APPROVED_REGISTRATION_ROW.id}`)
+              .set('Authorization', 'Bearer staff-token');
+            const inventedIdRes = await request(app.getHttpServer())
+              .get('/api/v1/admin/registrations/this-id-was-never-created-by-anything')
+              .set('Authorization', 'Bearer staff-token');
+
+            expect(realIdRes.status).toBe(403);
+            expect(inventedIdRes.status).toBe(403);
+            // Byte-identical, not merely "both 403" — the actual FR-9
+            // no-leak clause. `toEqual` on the parsed `res.body` only proves
+            // the two objects have the same keys/values — it is blind to key
+            // order, whitespace, and headers, so it alone is not a
+            // byte-identical check. `res.text` is the raw response body
+            // string, so comparing it IS the byte-identical check for the
+            // JSON body (headers are out of scope for this assertion). The
+            // `.text` sweep is the strong half of this pair: it is what
+            // would catch a per-id value (e.g. an echoed id) leaking into
+            // the error body even if `toEqual` missed it via key reordering.
+            expect(realIdRes.body).toEqual(inventedIdRes.body);
+            expect(realIdRes.text).toEqual(inventedIdRes.text);
+            expect(realIdRes.status).not.toBe(404);
+            expect(inventedIdRes.status).not.toBe(404);
+            expectRegistrationResponseClean(realIdRes);
+            expectRegistrationResponseClean(inventedIdRes);
+          },
+        );
+      },
+    );
 
     describe('approved and rejected registrations stay non-public (FR-8 scenario 3)', () => {
       it(

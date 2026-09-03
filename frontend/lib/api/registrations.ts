@@ -155,6 +155,14 @@ export async function submitRegistration(
  * starts emitting one of the other two members is a compile-time-safe
  * addition here, not a silent runtime mismatch against a union this file
  * quietly narrowed.
+ *
+ * Re-exported (not redeclared) from `registrations-admin.ts` (chunk 4's
+ * admin queue client) so the two clients cannot drift on one wire shape —
+ * same principle as that file's `AdminActor` import. Chunk 4's admin `list`
+ * route's `status` filter accepts, and its list rows may echo, all five
+ * members — `AWAITING_APPLICANT`/`WITHDRAWN` included. (`AdjudicatedTrailEvent.status`
+ * there is a narrower `'APPROVED' | 'REJECTED'` sub-union, not this type —
+ * an adjudication event is only ever produced for those two statuses.)
  */
 export type RegistrationStatus =
   | 'PENDING_REVIEW'

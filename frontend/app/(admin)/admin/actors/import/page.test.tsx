@@ -118,13 +118,26 @@ function xlsxFile(name = 'actors.xlsx'): File {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Render the page and flush the getSession effect so the token is set. */
+/**
+ * Render the page and flush the getSession effect so the token is set.
+ *
+ * Awaits the SAME promise the component's mount effect awaits (rather than
+ * flushing a fixed number of microtask ticks), so this is deterministic, not
+ * a guess: `init()` (page.tsx) calls `getSession()` and registers its
+ * `.then` continuation (which calls `setToken`) on `sessionPromise` during
+ * the synchronous `render()` call, before this function's own `await
+ * sessionPromise` below registers a second `.then` on the same promise.
+ * Promise reactions run in FIFO registration order, so `setToken` is
+ * guaranteed to commit before this function returns control to the test —
+ * closing the race where `selectFile()` could fire while `token` was still
+ * null (A-94).
+ */
 async function renderReady() {
-  mockGetSession.mockResolvedValue(FAKE_SESSION);
+  const sessionPromise = Promise.resolve(FAKE_SESSION);
+  mockGetSession.mockReturnValue(sessionPromise);
   render(<ActorImportPage />);
-  await waitFor(() => expect(mockGetSession).toHaveBeenCalled());
   await act(async () => {
-    await Promise.resolve();
+    await sessionPromise;
   });
 }
 

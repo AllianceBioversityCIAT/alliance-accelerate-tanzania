@@ -38,9 +38,10 @@ Agents run these on every task, so the canonical form is the **failure-only** va
 | Package | Verify | Lint | Build |
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
-| `backend/` (e2e) | `cd backend && npm run test:e2e -- --silent` | — | — |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
 | `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) | — | — |
+
+The 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` — there is no separate e2e command. There used to be a `test:e2e` script; it pointed at a `test/jest-e2e.json` that does not exist, so it could not execute at all, and this table listed it as a gate anyway. **A gate that cannot run cannot fail** (KZ-002). Removed, script and row together, during `admin/registration-review-queue`'s validation.
 
 **Asymmetry rule — this is not a quiet-everything rule.** Suppress passing noise only. **Failures always print complete and verbatim**: an agent reporting a failure must paste the full output, because that output *is* the evidence a Reviewer audits. Note `npm run lint` in `backend/` runs `eslint --fix`, which **mutates** files; agents verifying a diff must use the `npx eslint … --quiet` form above so the lint pass never edits the change under review.
 

@@ -360,3 +360,108 @@ describe('ActorHistoryPanel — identity fallback', () => {
     expect(screen.queryByText('null')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Audit-action taxonomy totality (FR-16 / T-15)
+//
+// `actionBadgeClasses` must be a TOTAL Record<AuditEntry['action'], string> —
+// every member of the eight-member union renders a real, styled badge class.
+// Before T-15, the union only declared five members and the badge classifier
+// was a `switch` with no `default`, so an unlisted action (e.g. the
+// already-shipped `IMPORT`) fell through with no matching case and the
+// function implicitly returned `undefined`. NOTE (KZ-008 re-resolution
+// against the artefact): design.md §9's DD-21 row describes this as the call
+// site's `.join(' ')` turning that `undefined` into the *literal string*
+// "undefined" in `className` — that is not what `Array.prototype.join`
+// does. Per spec, `join` converts `null`/`undefined` elements to the empty
+// string, so the observable defect is an *unstyled* badge (missing its
+// `bg-…`/`text-…` classes, base layout classes still present), not a
+// className containing the text "undefined". The assertion below targets
+// the actual defect (no `bg-` token class present) rather than the
+// mis-described one. These entries are typed as `AuditEntry['action']`
+// deliberately, even though today's narrower declaration only has five
+// members — SWC (`next/jest`) does not type-check, so this test exercises
+// the *runtime* classifier gap that `tsc --noEmit` cannot (design.md §7.5).
+// ---------------------------------------------------------------------------
+
+describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
+  const ALL_EIGHT_ACTIONS: AuditEntry['action'][] = [
+    'CREATE',
+    'UPDATE',
+    'DELETE',
+    'BULK_CONSENT',
+    'BULK_DELETE',
+    'IMPORT',
+    'REGISTRATION_APPROVE',
+    'REGISTRATION_REJECT',
+  ];
+
+  it('assigns a real, non-empty badge class to every action in the union — including IMPORT and the two registration actions', async () => {
+    const entries: AuditEntry[] = ALL_EIGHT_ACTIONS.map((action, index) => ({
+      id: `audit-total-${index}`,
+      actorId: ACTOR_ID,
+      traderId: 'T-001',
+      traderName: 'Mbeya Seeds Ltd',
+      action,
+      actingSub: `cognito-sub-total-${index}`,
+      actingEmail: null,
+      changes: { kind: 'snapshot', values: { region: 'Mbeya' } },
+      acknowledged: null,
+      createdAt: '2024-06-05T00:00:00.000Z',
+    }));
+
+    mockGetActorHistory.mockResolvedValue({
+      data: entries,
+      page: 1,
+      pageSize: 20,
+      total: entries.length,
+    });
+    renderPanel();
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem')).toHaveLength(entries.length),
+    );
+
+    for (const action of ALL_EIGHT_ACTIONS) {
+      const label = action.replace(/_/g, ' ');
+      const badge = screen.getByText(label);
+      // The pre-T-15 `switch` with no `default` returns `undefined` for an
+      // unlisted action; `Array.prototype.join` drops it as an empty
+      // string, so the badge keeps its base layout classes but loses its
+      // color token classes entirely — no `bg-` class survives (DD-21).
+      expect(badge.className).toMatch(/\bbg-\S+/);
+    }
+  });
+
+  it('gives REGISTRATION_APPROVE a real snapshot summary, not the generic "Snapshot" fallback', async () => {
+    const entry: AuditEntry = {
+      id: 'audit-registration-approve',
+      actorId: ACTOR_ID,
+      traderId: 'T-001',
+      traderName: 'Mbeya Seeds Ltd',
+      action: 'REGISTRATION_APPROVE',
+      actingSub: 'cognito-sub-approve',
+      actingEmail: 'reviewer@example.com',
+      changes: { kind: 'snapshot', values: { region: 'Mbeya' } },
+      acknowledged: null,
+      createdAt: '2024-06-06T00:00:00.000Z',
+    };
+
+    mockGetActorHistory.mockResolvedValue({
+      data: [entry],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(
+      screen.queryByRole('button', { name: 'Snapshot' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /approved/i }),
+    ).toBeInTheDocument();
+  });
+});

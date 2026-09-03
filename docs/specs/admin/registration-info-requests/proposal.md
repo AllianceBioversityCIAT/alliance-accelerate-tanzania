@@ -11,7 +11,7 @@
 | **Approval Mode** | **gated** |
 | Status | Draft — awaiting approval |
 | Parent epic | [`epic/hybrid-actor-registration`](../../epic/hybrid-actor-registration/proposal.md) — chunk **4 of 4** |
-| **Depends on** | `actors/public-self-registration` (chunk 3) |
+| **Depends on** | `actors/public-self-registration` (chunk 3) — archived 2026-08-06 to `docs/specs/archive/2026-08-06-actors--public-self-registration/` |
 | **Parallel-safe** | no |
 | Suggested depth | **Lite** (one new round-trip on an existing module; no new entity, no new public surface class) |
 
@@ -151,7 +151,7 @@ Option C is the honest baseline — it is what ships without this chunk, and it 
 ## 13. Visual Reference
 
 - **Source:** Client-supplied mockup strip (approximate; copy provisional).
-- **Location:** `../../actors/public-self-registration/mockup/self-registration-flow.png` — the right-hand panels.
+- **Location:** `../../archive/2026-08-06-actors--public-self-registration/mockup/self-registration-flow.png` — the right-hand panels.
 - **Covers:** the *Request more information* modal (field checkboxes + message to the applicant), the amber "Information requested" result banner, and the applicant's return-via-emailed-link screen (*"A reviewer needs two things"* → fill the flagged fields → *Request for review*), including the withdraw affordance.
 - **Not covered:** the reference-code path into the same revision screen (the mockup assumes email) and the revision-diff view at review — both are additions this proposal makes over the mockup, and both need design attention during `/akili-specify`.
 
