@@ -73,7 +73,7 @@
       Falsifying input: removing `phone` from `PUBLICLY_DISCLOSED_FIELDS` must redden a named test.
       Skills: `tdd`, `nestjs-expert`
 
-- [ ] **T-7** Split the serializer into list and detail projections  (deps: T-1, T-6)
+- [x] **T-7** Split the serializer into list and detail projections  (deps: T-1, T-6)
       Scope: `toPublicListItem` and `toPublicDetail`, both explicit literal picks; `PublicActorListItem` / `PublicActorDetail`; correct the controller's return-type annotations.
       Traces: FR-1, FR-9 · design.md §7.2, §6, DD-3 · D-1b
       Files: `backend/src/common/role-aware.serializer.ts`, `backend/src/actors/actors.controller.ts`, `…actors.controller.spec.ts`
@@ -83,10 +83,12 @@
       Falsifying input: adding a field to the entity and to neither projection must leave it absent from both outputs.
       Skills: `tdd`, `nestjs-expert`
 
-- [ ] **T-8** Wire `ActorsService.findPublic` to the list projection  (deps: T-7)
-      Scope: `findPublic` maps through `toPublicListItem`; `findOnePublic` through `toPublicDetail`. The consent pin and `include` stay untouched.
+- [ ] **T-8** Wire `ActorsService` to both projections and remove T-7's scaffolding  (deps: T-7)
+      Scope: `findPublic` maps through `toPublicListItem`; `findOnePublic` through `toPublicDetail`. The consent pin and `include` stay untouched. **Then delete every piece of T-7's interim bridge** — see the removal clause below.
       Traces: FR-1, FR-2, FR-9, NFR-1 · design.md §2, DD-9
-      Files: `backend/src/actors/actors.service.ts`, `…actors.service.spec.ts`
+      Files: `backend/src/actors/actors.service.ts`, `…actors.service.spec.ts`, **`backend/src/actors/actors.controller.ts`** (delete the `as PublicActorDetail` cast), **`backend/src/common/role-aware.serializer.ts`** (delete the deprecated `toPublic` and `PublicActor` exports)
+      **Removal clause — added 2026-09-04 after T-7's review; this is not optional and nothing automated will notice if it is skipped.** T-7 left a compile bridge so the tree would build without touching this file: `toPublic`/`PublicActor` aliased to the **list** shape, and `return actor as PublicActorDetail` in the controller. That cast is a type-level falsehood while it stands, and it is **actively dangerous during this task**: if you wire `findPublic` but forget `findOnePublic`, **the cast keeps the tree compiling and suppresses the exact TS error that would have caught the omission.** ESLint here is non-type-aware by design (`eslint.config.mjs`), so `no-unnecessary-type-assertion` will not flag it either. Delete the cast *first*, then wire — let the compiler tell you when you are done.
+      Also delete the `toPublic`/`PublicActor` aliases: no other task owned their removal, and a spec that closes with a third live name for the list shape is exactly the convergence hazard D-4 exists to prevent. Note T-9 may still edit loops that call `toPublic`; coordinate by sequence, not by leaving the alias alive.
       Verify: `cd backend && npm test -- --silent actors.service`
       Done when: list and detail return their respective shapes; **no `select` is introduced**; the `consentStatus: GRANTED` `WHERE` clause is byte-identical to before.
       Disqualifier: any diff touching the `where` object in this task is out of scope and must be reported, not absorbed.

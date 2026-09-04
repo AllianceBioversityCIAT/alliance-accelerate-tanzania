@@ -461,3 +461,52 @@ A wrong instruction planted in the file T-9's Implementer reads first. Replaced 
 **Verification:** `npm test -- --silent pii-consent --runInBand` → 11 tests · `npx eslint "{src,test}/**/*.ts" --quiet` clean · full `--runInBand` → 75 suites / **1039** tests.
 
 ---
+
+### T-7 — Split the serializer into list and detail projections
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-1, FR-9 · design.md §6, §7.2, DD-3, DD-6, DD-9 · D-1b |
+| Files changed | `role-aware.serializer.ts` (+160/-…), `role-aware.serializer.spec.ts`, `actors.controller.ts`, `actors.controller.spec.ts` · +259/-58 |
+
+`PublicActorListItem` (10 keys) and `PublicActorDetail extends PublicActorListItem` (+5 contact-block keys). Both projections are explicit literal picks — **no spread anywhere on the projection path**, verified by the Reviewer. `toPublicDetail` composes by calling `toPublicListItem` and copying each field **by name**, so a field added to either interface fails to compile in the literal that omits it: the two shapes cannot drift silently, and the guard is the type system rather than a convention.
+
+**Verification:** targeted 16/16 · `npm run build` clean · eslint clean · full `--runInBand` → 75 suites / **1041** tests.
+
+#### The interim type falsehood — ruled acceptable, and why the reasoning matters
+
+To keep the tree compiling without touching `actors.service.ts` (T-8's file), T-7 aliased `toPublic`/`PublicActor` to the **list** projection and bridged the controller with `return actor as PublicActorDetail`. **`findOnePublic` is therefore annotated with five fields it does not emit at runtime.** The type is false, and a comment does not make it true.
+
+The Reviewer ruled it **acceptable interim engineering, not a FAIL**, on grounds worth preserving:
+
+1. **It is not the KZ-008 class.** KZ-008's harm is a claim *nobody can check*, indistinguishable from a true one. This claim is stated false at the site in six lines, names the mechanism, names the successor task, and says explicitly that it does not add the contact block at runtime. Every load-bearing statement reconciled against source. That is the discipline working, not failing.
+2. **The contradiction is the spec's, not the Implementer's.** `design.md` §4 prescribes the annotation verbatim and T-7's Done-when repeats it, while T-7's Files list excludes `actors.service.ts` and T-8 owns the wiring. **Those two constraints cannot both be satisfied by a truthful type.** An escape hatch was forced the moment the spec was written this way.
+3. **The alias direction was the right trade, and it is not a close call.** Aliasing to `toPublicDetail` would have made the *list* endpoint serialize `phone`, `email`, `position`, `marketLocation` for every actor at up to 100 per page — the exact bulk-exposure breach FR-9 and DD-3 exist to prevent, committed to the mainline. The Reviewer: *"'Fails visibly' is the right tiebreak when the competing options are equally safe. It is not a licence to commit the defect in order to trigger the alarm. **Redness bought by shipping the leak is not a safety property; it is the leak with a bell on it.**"*
+   Worse, that red would have been **indistinguishable** from the red the spec legitimately expects after T-8 — so an agent arriving mid-spec would have had a documented reason to "fix" it by inverting the gate, cementing the list leak behind a green suite.
+4. **Blast radius, honestly stated:** nothing but T-8 protects a consumer trusting the annotation. No test drives service→controller→wire for presence until T-11; the existing detail-path assertion points the *wrong way* (asserts absence) so it cannot guard; the controller unit test mocks the service; ESLint is non-type-aware by design. The exposed consumer is **T-13**, whose dependency edge is `T-7 → T-13`, not `T-8 → T-13`. Failure mode is benign: T-14 renders em-dashes — under-delivery visible on first page load, no disclosure.
+
+#### "No suite broke" — the Reviewer's reading, which is sharper than the Implementer's
+
+**Correct but incomplete.** `pii-boundary.spec.ts`'s still-green detail-path absence assertion is **positive corroboration**, not absence of evidence: had the cast been anything other than a runtime no-op, it would be red. It points the same way as reading `actors.service.ts`.
+
+**But T-7 was not behaviour-neutral.** Because the service still calls the alias, `sex` and `otherCrops` are now **live on the wire for both public routes**. That is a real widening of the public contract and nothing reddened — `sex` left `FORBIDDEN_KEYS` when T-6 emptied `PII_ALLOWLIST`, and neither field has a value in `LEAKABLE_PII_VALUES`. Nothing *should* have reddened (both are intended list-set members under FR-9/A-1), so it is not a defect — **but the widening is unguarded until T-11.** Recorded rather than left implicit.
+
+#### Leader action taken — T-8's scope amended (Reviewer advisories 1 and 2)
+
+The Reviewer found that **no task owned removing T-7's scaffolding**, and that the scaffolding is *actively dangerous during T-8*:
+
+> Once T-8 lands, `return actor as PublicActorDetail` silently degrades to a redundant upcast that nothing flags. **Worse: if T-8 wires `findPublic` but forgets `findOnePublic`, the cast keeps the tree compiling — it suppresses precisely the TS error that would have caught it instantly.** For a design whose stated virtue is "structural, not disciplinary" (DD-6), a comment has replaced a compiler check.
+
+And separately: `role-aware.serializer.ts` appears in **no task after T-7**, so the deprecated `toPublic`/`PublicActor` aliases would have survived to spec close — leaving a third live name for the list shape, which is the convergence hazard **D-4** was rewritten to prevent.
+
+**T-8's Files list and Done-when are amended** to require deleting the cast *first* (so the compiler reports when the wiring is complete) and removing both aliases. **This is scope clarification, not widening:** T-7's own JSDoc already says *"Remove this export once T-8 lands"*, and a wiring task that leaves a deprecated alias behind has not finished wiring. Recorded explicitly because the Advisory-Never-Becomes-A-Task rule deserves an argued exception, not a silent one.
+
+#### ADVISORY (non-gating, recorded not actioned)
+
+- **A3:** `actors.controller.spec.ts`'s new header states in the present tense that the detail route returns the contact block, **without** the interim caveat its production sibling carries. Legitimate for a mocked unit test; as prose it is the same false claim minus the disclaimer.
+- **A4 — for the retrospective, not this Implementer:** T-7's Done-when required an annotation T-7 was structurally forbidden to make true. **Annotations should move in the task that makes them true.** Never split a type from its runtime across a task boundary on a PII surface. This is a decomposition lesson and it is mine.
+
+---
