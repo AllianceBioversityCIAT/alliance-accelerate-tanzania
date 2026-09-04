@@ -287,6 +287,87 @@ describe('ActorImportService', () => {
     });
   });
 
+  // T-4 (public-profile-disclosure) — Contact Person and Other Crops (v3,
+  // FR-5). The parser is a SECOND writer of these two columns (T-1's
+  // Reviewer): `contactPerson` is bound to 120 chars (matching
+  // `ActorCreateDto`/`RegistrationPayloadDto`, not just the `VARCHAR(191)`
+  // column), `otherCrops` to 300 chars (`Actor.otherCrops VARCHAR(300)`).
+  describe('Contact Person and Other Crops (v3, T-4 public-profile-disclosure)', () => {
+    it('round-trips both new fields end to end on a v3 row', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          contactPerson: 'Jane Mwangi',
+          otherCrops: 'Sesame, Sunflower',
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.contactPerson).toBe('Jane Mwangi');
+      expect(created.otherCrops).toBe('Sesame, Sunflower');
+    });
+
+    it('leaves both fields unwritten when the cells are blank', async () => {
+      const b64 = await buildWorkbook([validRow()]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created).not.toHaveProperty('contactPerson');
+      expect(created).not.toHaveProperty('otherCrops');
+    });
+
+    it('rejects a Contact Person cell over 120 characters with a field-level error', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ contactPerson: 'A'.repeat(121) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('contactPerson');
+    });
+
+    it('accepts a Contact Person cell at exactly 120 characters', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ contactPerson: 'A'.repeat(120) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('create');
+    });
+
+    it('rejects an Other Crops cell over 300 characters with a field-level error', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ otherCrops: 'B'.repeat(301) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('otherCrops');
+    });
+
+    it('accepts an Other Crops cell at exactly 300 characters', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ otherCrops: 'B'.repeat(300) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('create');
+    });
+  });
+
   describe('GPS handling (DR-5)', () => {
     it('clears all GPS and warns when latitude/longitude is out of range, without failing the row', async () => {
       const b64 = await buildWorkbook([

@@ -39,7 +39,7 @@
       Falsifying input: `position: payload.position ?? payload.contactPerson` must redden a named test; so must the unconditional `position: payload.contactPerson`.
       Skills: `nestjs-expert`, `tdd`
 
-- [ ] **T-4** Import template v3 — two columns, version bump, regenerated workbook  (deps: T-1)
+- [x] **T-4** Import template v3 — two columns, version bump, regenerated workbook  (deps: T-1)
       Scope: append both columns to `TEMPLATE_COLUMNS`; `TEMPLATE_VERSION` `v2` → `v3`; regenerate the committed workbook byte-stably; map both cells in the parser; pin the required-flag map by value.
       Traces: FR-5 (both scenarios, incl. the allowed-value-list and required/optional clauses) · design.md §7.4 · D-5, D-13
       Files: `backend/src/common/template-columns.ts`, `…template-columns.spec.ts`, `backend/src/actors/actor-import.service.ts`, `…actor-import.service.spec.ts`, `backend/scripts/generate-import-template.ts`, `backend/src/common/generate-template.spec.ts`, `frontend/public/templates/actor-import-template.xlsx`

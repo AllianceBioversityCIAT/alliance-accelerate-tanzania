@@ -342,3 +342,66 @@ Every claim in the replacement text was verified independently against the file 
 - **A5 → folded into T-20:** the bare `design.md` citations in this DTO file point at an *archived* document while the same JSDoc names a live spec folder two lines above. Resolves correctly today; qualifying them as `public-self-registration design.md §4.6` during T-20's sweep of this file's neighbours retires the ambiguity at no cost.
 
 ---
+
+### T-4 — Import template v3
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-5 both scenarios, all four clauses · design.md §7.4 · D-5, D-13 |
+| Files changed | 6 · +269 lines · `TEMPLATE_VERSION` v2 → v3, workbook regenerated (10864 → 10984 bytes) |
+
+#### The bounds — where the T-1 obligation finally landed
+
+`contactPerson` ≤ **120**, `otherCrops` ≤ **300**, both in `validateRow`, both following the `consentReference` ≤255 precedent exactly (field-level `ImportRowError`, scalar left `undefined` so `buildCreateData` drops it rather than truncating). Reviewer cross-checked all four declarations:
+
+| Field | Parser | Column | `ActorCreateDto` |
+|---|---|---|---|
+| `contactPerson` | 120 | `VARCHAR(191)` | `@MaxLength(120)` |
+| `otherCrops` | 300 | `@db.VarChar(300)` | `@MaxLength(300)` |
+
+**T-1's Reviewer recorded that the `contactPerson` half had been "carried forward nowhere". This was its only possible landing site, and it landed.** Had the T-4 brief omitted it, it would have been lost for good — no test could have found it, because error 1406 is unreachable in a harness with no `new PrismaClient(`.
+
+#### Two behaviours worth recording as precedent
+
+**1. A real falsifying-input check, not a traced one.** The Implementer flipped `district`'s `required` flag to `true`, observed the D-13 pin redden, and reverted. **This is the first task in the spec to *demonstrate* rather than *reason about* its gate's discrimination** — the standard KZ-002 actually asks for. The Reviewer independently confirmed the pin would redden (`toEqual` over a 26-entry `{field: boolean}` map is recursive value equality, so a flipped boolean, a removed column, and an unpinned added column all redden), while correctly noting it cannot confirm the flip/revert was performed — that remains the Implementer's account, consistent with the source.
+
+**2. It changed nothing where nothing needed changing, and said why.** FR-5's second scenario requires the stale-template message to *name the action*. The Implementer read it before touching it and found the message already reads *"This template is out of date (found {v}, current is v3). Please re-download the import template from the 'Download template' link on this page and try again."* — added by an earlier spec, pinned by two named tests, referencing a UI element it verified exists. The Reviewer confirmed all three claims and one more the Implementer did not: the version check runs **before** `locateDataSheet`, so a real v2 workbook still gets the specific message rather than a generic header-mismatch 400. **Reporting "no change needed" was the correct outcome**; a cosmetic edit would have been easier and worse.
+
+#### Clause sweep (KZ-013) — all four FR-5 clauses owned
+
+Round-trip through `tx.actor.create.mock.calls[0][0].data` (a genuine parse → validate → scalar → Prisma `data` path, not a header assertion); required-flag pin by value; "no allowed-value list **is** the agreement" proved **by value** in `generate-template.spec.ts` (`Required: No`, `Allowed values: —`, both asserted as strings, so a flipped flag or an added list reddens); field-names-only error path unchanged, still guarded by the pre-existing PII canaries.
+
+**Verification:** `npm run generate:template` → 10984 bytes · `npm test -- --silent "template|import" --runInBand` → 8 suites / 149 tests · `npx eslint … --quiet` clean · full `--runInBand` → 75 suites / **1036** tests (was 1023 → +13).
+
+**Scope:** exactly the declared files. `generate-import-template.ts` appears in T-4's `Files:` list but needed **no** edit — it derives headers, Instructions rows, widths and dropdowns entirely from `TEMPLATE_COLUMNS`. Reviewer verified this is a correct omission, not a miss.
+
+#### ADVISORY (non-gating)
+
+- **A2 — the format hint's bound is not tied to the parser's.** `format: '… (max 120 chars)'` is asserted only by `toBeTruthy()`. Changing the parser bound to 150 would leave the Instructions sheet saying "max 120" with nothing reddening. **Pre-existing pattern** (`consentReference`'s hint has the same shape), so not a regression. Recorded, not actioned.
+- **A3 — wording drift for T-19's operator read:** the error quotes the `"Download template"` link; the rendered label is `Download template (.xlsx)`.
+- **A1** — the "published once consent is `GRANTED`" comments are future-tense-in-fact; identical to the soft spot already recorded at T-2. No new defect.
+
+#### Flake — second occurrence, and it lands on the file T-11/T-12 depend on
+
+An earlier full-suite run timed out (20s) in `src/test/pii-boundary.spec.ts` — **untouched by this diff** — under sandbox load; isolated re-run passed in 2.8s, full re-run clean. The Implementer reported it rather than only reporting the green.
+
+The Reviewer agreed it is environmental on four corroborants: the file is untouched, the failure was a *timeout* not an assertion, it passed isolated and on re-run, and T-2 already recorded identical parallel-worker contention. **This is the second hit on `pii-boundary.spec.ts` specifically — the exact file T-11 rewrites and T-12 mutates.** The standing `--runInBand` mandate for those tasks is now confirmed as necessary rather than precautionary.
+
+---
+
+## Milestone — PR 1 (data phase) complete
+
+T-1, T-2, T-3, T-4 closed, plus T-5 (sequenced early as T-11's prerequisite). **5 of 20 tasks.**
+
+| Metric | Budgeted | Actual so far |
+|---|---|---|
+| Review rounds | ~29 total | **7** across 5 tasks (1.4/task) |
+| Backend tests | — | 1007 → **1036** (+29) |
+| Frontend tests | — | **1632** |
+
+Two FAILs, both on the same defect class — a claim asserted about a file nobody opened. Both caught by review, neither by a suite.
+
+---

@@ -166,6 +166,19 @@ interface ActorScalarData {
   consentObtainedAt?: string;
   /** T-6 — free-text pointer to the consent evidence (FR-2); optional. */
   consentReference?: string;
+  /**
+   * T-4 (public-profile-disclosure) — named natural person, published
+   * deliberately once consent is GRANTED. Bound to 120 chars in
+   * `validateRow`, matching `ActorCreateDto.contactPerson` (the column
+   * itself is `VARCHAR(191)`, but 120 keeps every intake path identical).
+   */
+  contactPerson?: string;
+  /**
+   * T-4 (public-profile-disclosure) — actor-declared free text, published.
+   * Bound to 300 chars in `validateRow`, matching the `Actor.otherCrops`
+   * `VARCHAR(300)` column.
+   */
+  otherCrops?: string;
 }
 
 /** Mutable per-row working state threaded through the pipeline phases. */
@@ -589,6 +602,40 @@ export class ActorImportService {
       }
     }
 
+    // Contact Person — optional named natural person, published deliberately
+    // once consent is GRANTED (public-profile-disclosure FR-4/FR-5). Bound to
+    // 120 chars to match `ActorCreateDto.contactPerson` — the column is
+    // `VARCHAR(191)`, but 120 keeps every intake path identical. Follows the
+    // Consent Reference precedent above: a second import-path writer, so it
+    // gets its own bound rather than trusting the column to reject silently.
+    let contactPerson: string | undefined;
+    if (cells.contactPerson) {
+      if (cells.contactPerson.length > 120) {
+        errors.push({
+          field: 'contactPerson',
+          message: 'Contact Person must be 120 characters or fewer.',
+        });
+      } else {
+        contactPerson = cells.contactPerson;
+      }
+    }
+
+    // Other Crops — optional actor-declared free text, published
+    // (public-profile-disclosure FR-4/FR-5). Bound to 300 chars to match the
+    // `Actor.otherCrops` `VARCHAR(300)` column — an unbounded cell here would
+    // hit MySQL error 1406 on commit rather than fail this one row cleanly.
+    let otherCrops: string | undefined;
+    if (cells.otherCrops) {
+      if (cells.otherCrops.length > 300) {
+        errors.push({
+          field: 'otherCrops',
+          message: 'Other Crops must be 300 characters or fewer.',
+        });
+      } else {
+        otherCrops = cells.otherCrops;
+      }
+    }
+
     // Crops — three YES/NO columns → crop-name list (DR-3).
     const cropNames = this.resolveCrops(cells, errors);
 
@@ -625,6 +672,8 @@ export class ActorImportService {
           consentMethod,
           consentObtainedAt,
           consentReference,
+          contactPerson,
+          otherCrops,
         },
         cropNames,
         consentGranted: consentStatus === ConsentStatus.GRANTED,
