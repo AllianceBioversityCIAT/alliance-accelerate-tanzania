@@ -58,23 +58,6 @@ export interface PublicActorDetail extends PublicActorListItem {
 }
 
 /**
- * @deprecated T-7 — a thin alias kept ONLY so `ActorsService`
- * (`actors.service.ts`, T-8's file) keeps compiling, and its current tests
- * keep passing, until T-8 wires `findPublic`/`findOnePublic` to
- * {@link toPublicListItem}/{@link toPublicDetail} directly. `ActorsService`
- * today calls a single serializer function for BOTH routes, so whichever
- * shape this alias names applies to both at runtime.
- * {@link PublicActorListItem} is chosen (not the detail shape) because it is
- * the shape closest to CURRENT production behaviour: it adds only the two
- * FR-9 list fields (`sex`, `otherCrops`) and discloses no contact-block
- * field on either route, so this task alone does not newly leak the contact
- * block onto the list path. The trade-off, left for T-8 to close: the detail
- * route does not yet return the contact block FR-1 requires. Remove this
- * export, and {@link toPublic} below, once T-8 lands.
- */
-export type PublicActor = PublicActorListItem;
-
-/**
  * The Actor shape the projections ACCEPT as input — a full actor, including
  * every field either projection may read. Declared here precisely because
  * the projections' job is to RECEIVE the full row and provably pick only
@@ -179,12 +162,6 @@ export function toPublicDetail(actor: SerializableActor): PublicActorDetail {
     marketLocation: actor.marketLocation ?? null,
   };
 }
-
-/**
- * @deprecated T-7 — see {@link PublicActor}'s doc for why this alias exists
- * and when it goes away.
- */
-export const toPublic = toPublicListItem;
 
 /**
  * Map an actor's crop relation rows to a `string[]` of crop names. A missing or

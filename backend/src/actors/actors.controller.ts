@@ -20,9 +20,9 @@ import { PublicActorDetail } from '../common/role-aware.serializer';
  * the service already projects through the role-aware serializer (DD-2).
  *
  * `findOnePublic` is annotated {@link PublicActorDetail} — the published set
- * (FR-1) — not the list shape: `PublicActorList`'s `PublicActor` items are
- * the list set (FR-9), a different, narrower contract (R2-3,
- * `actors/public-profile-disclosure` design.md §9).
+ * (FR-1) — not the list shape: `PublicActorList`'s items are
+ * `PublicActorListItem`, the list set (FR-9), a different, narrower contract
+ * (R2-3, `actors/public-profile-disclosure` design.md §9).
  */
 @Controller('actors')
 export class ActorsController {
@@ -41,12 +41,6 @@ export class ActorsController {
     if (!actor) {
       throw new NotFoundException(`Actor ${id} not found`);
     }
-    // T-8 TODO: `ActorsService.findOnePublic` still returns the deprecated
-    // `PublicActor` (= `PublicActorListItem`) alias — see that alias's doc
-    // in `role-aware.serializer.ts`. This cast is a compile bridge, valid
-    // only because `PublicActorDetail extends PublicActorListItem`; it does
-    // NOT add the contact block at runtime. It becomes a plain, cast-free
-    // return once T-8 wires this call to `toPublicDetail`.
-    return actor as PublicActorDetail;
+    return actor;
   }
 }

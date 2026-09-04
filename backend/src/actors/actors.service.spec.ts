@@ -1,16 +1,24 @@
 import { ConsentStatus } from '@prisma/client';
 import { ActorsService } from './actors.service';
 import { ListQueryDto } from './dto/list-query.dto';
-import { PII_ALLOWLIST } from '../common/pii-consent.policy';
+import {
+  CONTACT_BLOCK_FIELDS,
+  PII_ALLOWLIST,
+} from '../common/pii-consent.policy';
 
 /**
- * T-5 — ActorsService unit tests with a MOCKED PrismaService (no DB).
+ * T-5/T-8 — ActorsService unit tests with a MOCKED PrismaService (no DB).
  *
  * These assert the SECURITY-critical contract at the API layer (NFR-1, defense
- * in depth — independent of the T-4 serializer's own tests):
- *   - consent is enforced in the prisma WHERE (`GRANTED`), not serializer-only;
+ * in depth — independent of the T-7 serializer's own tests):
+ *   - consent is enforced in the prisma WHERE (`GRANTED`), not serializer-only —
+ *     this is also the standing falsifying-input check for the consent pin:
+ *     removing it reddens the two tests marked below (NFR-2's spirit at this
+ *     layer; the release gate itself is `pii-boundary.spec.ts`, T-11/T-12);
  *   - region/role/crop filters + pagination translate into the prisma call args;
- *   - every returned item is PII-stripped even when the source row carries PII;
+ *   - `findPublic` returns the LIST set — no contact-block key, by key (FR-9);
+ *   - `findOnePublic` returns the PUBLISHED set — the full contact block, by
+ *     value (FR-1);
  *   - findOnePublic returns null for absent OR non-consented ids (→ 404).
  *
  * Live HTTP e2e against a real MySQL is a tracked DEFERRED step (no reachable DB
@@ -20,7 +28,9 @@ import { PII_ALLOWLIST } from '../common/pii-consent.policy';
 /**
  * A fully-populated Prisma-shaped Actor row WITH PII set, used to prove the API
  * layer strips it. `crops` carries the included `crop` relation the serializer
- * reads. Fields are the schema columns (Decimals as numbers — toPublic coerces).
+ * reads. Fields are the schema columns (Decimals as numbers — the serializer
+ * coerces). `contactPerson` (T-1/FR-4) is populated so the detail-shape test
+ * below has a real value to assert, not a default `null`.
  */
 function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -32,6 +42,7 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     traderType: 'seed_company',
     // PII — populated on purpose; MUST NOT appear in any public output.
     sex: 'M',
+    contactPerson: 'Grace Mushi',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
     phone: '+255700000000',
@@ -80,6 +91,10 @@ describe('ActorsService (mocked Prisma)', () => {
   });
 
   describe('findPublic', () => {
+    // T-8 falsifying input (NFR-1) — deleting the `consentStatus: GRANTED`
+    // line from `findPublic`'s WHERE reddens BOTH assertions below: the
+    // literal `.toBe(ConsentStatus.GRANTED)` checks have nothing else that
+    // could make them pass.
     it('enforces consent = GRANTED in the prisma WHERE (not serializer-only)', async () => {
       prisma.actor.findMany.mockResolvedValue([]);
       prisma.actor.count.mockResolvedValue(0);
@@ -261,6 +276,18 @@ describe('ActorsService (mocked Prisma)', () => {
         gps: { lat: -3.3869, long: 36.683 },
       });
     });
+
+    it('carries NO contact-block key — the list set is the published set minus the contact block (FR-9)', async () => {
+      prisma.actor.findMany.mockResolvedValue([fixtureActor()]);
+      prisma.actor.count.mockResolvedValue(1);
+
+      const res = await service.findPublic({} as ListQueryDto);
+
+      const item = res.data[0] as unknown as Record<string, unknown>;
+      for (const key of CONTACT_BLOCK_FIELDS) {
+        expect(item).not.toHaveProperty(key);
+      }
+    });
   });
 
   describe('findOnePublic', () => {
@@ -276,12 +303,33 @@ describe('ActorsService (mocked Prisma)', () => {
       expect(actor).toMatchObject({ id: 'actor-1', gps: { lat: -3.3869, long: 36.683 } });
     });
 
+    it('carries the FULL contact block by value for a GRANTED id (FR-1)', async () => {
+      prisma.actor.findUnique.mockResolvedValue(fixtureActor());
+
+      const actor = await service.findOnePublic('actor-1');
+
+      // By value, not only by key — the same discipline `pii-boundary.spec.ts`
+      // uses, so a projection that carries the KEYS with wrong/blank values
+      // would still fail this.
+      expect(actor).toMatchObject({
+        contactPerson: 'Grace Mushi',
+        position: 'Director',
+        phone: '+255700000000',
+        email: 'director@example.com',
+        marketLocation: 'Arusha Central Market',
+      });
+    });
+
     it('returns null when the id is absent (→ 404)', async () => {
       prisma.actor.findUnique.mockResolvedValue(null);
 
       expect(await service.findOnePublic('missing')).toBeNull();
     });
 
+    // T-8 falsifying input (NFR-1) — removing the `isPublic` re-check from
+    // `findOnePublic` reddens this and the UNKNOWN test below: with no
+    // consent gate, `fixtureActor({ consentStatus: DENIED })` would project
+    // and return non-null instead of `null`.
     it('returns null for a non-consented (non-public) id (→ 404)', async () => {
       prisma.actor.findUnique.mockResolvedValue(
         fixtureActor({ consentStatus: ConsentStatus.DENIED }),

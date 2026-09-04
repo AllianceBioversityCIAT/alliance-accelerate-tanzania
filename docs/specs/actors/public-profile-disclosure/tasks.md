@@ -83,7 +83,7 @@
       Falsifying input: adding a field to the entity and to neither projection must leave it absent from both outputs.
       Skills: `tdd`, `nestjs-expert`
 
-- [ ] **T-8** Wire `ActorsService` to both projections and remove T-7's scaffolding  (deps: T-7)
+- [x] **T-8** Wire `ActorsService` to both projections and remove T-7's scaffolding  (deps: T-7)
       Scope: `findPublic` maps through `toPublicListItem`; `findOnePublic` through `toPublicDetail`. The consent pin and `include` stay untouched. **Then delete every piece of T-7's interim bridge** — see the removal clause below.
       Traces: FR-1, FR-2, FR-9, NFR-1 · design.md §2, DD-9
       Files: `backend/src/actors/actors.service.ts`, `…actors.service.spec.ts`, **`backend/src/actors/actors.controller.ts`** (delete the `as PublicActorDetail` cast), **`backend/src/common/role-aware.serializer.ts`** (delete the deprecated `toPublic` and `PublicActor` exports)

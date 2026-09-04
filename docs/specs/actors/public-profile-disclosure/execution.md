@@ -510,3 +510,61 @@ And separately: `role-aware.serializer.ts` appears in **no task after T-7**, so 
 - **A4 — for the retrospective, not this Implementer:** T-7's Done-when required an annotation T-7 was structurally forbidden to make true. **Annotations should move in the task that makes them true.** Never split a type from its runtime across a task boundary on a PII surface. This is a decomposition lesson and it is mine.
 
 ---
+
+### T-8 — Wire `ActorsService` to both projections and remove T-7's scaffolding
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-1, FR-2, FR-9, NFR-1 · design.md §2, §6, DD-3, DD-9 |
+| Files changed | `actors.service.ts`, `actors.service.spec.ts`, `actors.controller.ts`, `role-aware.serializer.ts` · +88/-60 |
+
+**FR-1 landed on the wire.** `GET /api/v1/actors/:id` returns the contact block for a `GRANTED` actor for the first time in this spec.
+
+#### The tree is deliberately RED — and that is the point
+
+Full suite: **2 suites failed, 73 passed · 1 test failed, 1029 passed.**
+
+| Suite | Why | Owner |
+|---|---|---|
+| `role-aware.serializer.spec.ts` | **TS2305** — imports the `toPublic`/`PublicActor` this task deleted | **T-9** |
+| `pii-boundary.spec.ts` | detail-path value sweep fails on `'+255700000000'` | **T-11** |
+
+The brief told the Implementer that a **green `pii-boundary` would be the alarming outcome** — it would mean the detail path was not returning what the wiring claimed. The red arrived where it should. This is the first task in the spec where green was defined as the suspicious signal, and the inversion held.
+
+**The Reviewer bounded the red by reading, two independent ways:** only one file imports the deleted symbols (grep), and `GET /actors/:id` is driven over HTTP by exactly one spec file and within it by one body-inspecting test. **No third suite has a mechanism to break.** And the failure genuinely demonstrates FR-1: `'+255700000000'` is `fixtureActor()`'s `phone`, reachable only through `toPublicDetail`.
+
+#### Removal clause discharged, and the ordering became moot
+
+Cast, `toPublic`, and `PublicActor` are all gone (verified at HEAD, not from the diff). The Implementer reports deleting the cast **first**, which is unverifiable from a diff — but the Reviewer made a better observation: **the end state makes the ordering moot.** With the cast gone and `findOnePublic` typed `Promise<PublicActorDetail | null>`, `toPublicListItem` is no longer assignable there, so the omission the clause feared is now a compile error rather than a silent pass. The guard the cast was suppressing is restored.
+
+#### NFR-1 — verified independently
+
+The `where` object sits in **no diff hunk**. `consentStatus: ConsentStatus.GRANTED` untouched, `include: CROPS_INCLUDE` on both reads, the string `select` absent from the file, `isPublic` re-check intact. DD-9 and the Disqualifier both hold.
+
+**The consent-pin falsifying input was under-claimed, not over-claimed.** The Implementer annotated three pre-existing tests rather than writing new ones; the Reviewer found removing the pin reddens **at least five** assertions, and removing the `isPublic` re-check reddens two more. Both halves of the pin are owned by standing tests. Annotating rather than duplicating was correct — new tests would have been copies.
+
+#### A fact T-11 needs — why the by-KEY checks stayed green
+
+`FORBIDDEN_KEYS` = `[...PII_ALLOWLIST(empty), ...NEVER_PUBLIC_FIELDS]`, and **no contact-block member is in `NEVER_PUBLIC_FIELDS`**. So:
+
+> **`FORBIDDEN_KEYS` can never catch a contact-block leak onto the list path — and widening it to do so would break the detail path.**
+
+`pii-consent.policy.ts`'s polarity block predicted this outcome in advance. **T-11's list assertion needs its own `CONTACT_BLOCK_FIELDS` key sweep plus a value sweep** — it cannot reuse the existing machinery.
+
+#### FORWARD POINTER TO T-11 — must be copied into its brief
+
+**`contactPerson` and `otherCrops` have no fixture value anywhere in the gate.** `pii-boundary.spec.ts`'s `fixtureActor()` sets neither, and T-5's DD-10 distinctness overrides enumerate six fields (`sex, position, marketLocation, technicalSupport, phone, email`) — **omitting both new columns**.
+
+T-11 must assert presence-by-value on detail and absence-by-value for non-granted actors. For the spec's **most sensitive newly-published field** it would have `null` on both sides — **unfalsifiable in exactly the way T-5's Disqualifier warns about**, and the same shape as J-7, which cost a task to find.
+
+**No scope change is required: T-11's own Disqualifier already owns this** — *"if T-5 was skipped or partially applied, the non-granted assertions cannot fail and this task is NOT complete regardless of suite colour. Check the fixtures before claiming this task."* T-5 **was** partially applied. T-11 populates both fields in the fixtures as part of making its assertions falsifiable.
+
+#### ADVISORY (non-gating)
+
+- **A1 → routed to T-9:** `actors.service.spec.ts` carries `it('returns a PII-stripped actor for a GRANTED id')`. True before T-8, **false after** — the detail path now returns `phone`/`email` deliberately. A future reader sees a green test named "PII-stripped" on the detail path and concludes the opposite of FR-1. T-9 already owns re-pointing that file's `FORBIDDEN_KEYS`; retitle there.
+- **A3 → routed to T-9:** two dangling prose references to the now-deleted `toPublic` — `admin-actor.serializer.ts` and `public-registration.serializer.ts`. Correctly out of T-8's file list and correctly reported. No task owned them; T-9 is the adjacent file with the same alias.
+
+---

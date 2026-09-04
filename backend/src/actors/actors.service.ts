@@ -3,28 +3,34 @@ import { ConsentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListQueryDto } from './dto/list-query.dto';
 import {
-  PublicActor,
-  toPublic,
+  PublicActorDetail,
+  PublicActorListItem,
+  toPublicDetail,
+  toPublicListItem,
 } from '../common/role-aware.serializer';
 import { isPublic } from '../common/pii-consent.policy';
 
 /**
- * T-5 — Public Actors read service (FR-6, NFR-1, NFR-6).
+ * T-5/T-8 — Public Actors read service (FR-1, FR-9, NFR-1, NFR-6).
  *
- * The two public read paths for the directory/map. Both enforce consent at the
- * QUERY (a `consentStatus = GRANTED` WHERE / guard) — never relying on the
- * serializer alone — and map every row through {@link toPublic} so no raw Prisma
- * entity (and thus no PII) can reach a controller (DD-1/DD-2, NFR-1, defense in
- * depth). The `crops.crop` relation is always included so the serializer can
- * project crop names.
+ * The two public read paths for the directory/map/profile. Both enforce consent
+ * at the QUERY (a `consentStatus = GRANTED` WHERE / guard) — never relying on
+ * the serializer alone. `findPublic` maps every row through
+ * {@link toPublicListItem} (the LIST set, FR-9 — never the contact block);
+ * `findOnePublic` maps through {@link toPublicDetail} (the PUBLISHED set,
+ * FR-1 — the list set plus the contact block) so no raw Prisma entity (and
+ * thus no PII) can reach a controller (DD-1/DD-2, NFR-1, defense in depth).
+ * The `crops.crop` relation is always included so the serializer can project
+ * crop names. No Prisma `select` is introduced (DD-9) — both reads fetch
+ * whole rows via `include` and the serializer is the sole projection gate.
  *
  * Design refs: spec design.md §4, §6, §7; detailed-design §4 (envelope
- * `{ data, page, pageSize, total }`). Requirements: FR-6, NFR-1, NFR-6.
+ * `{ data, page, pageSize, total }`). Requirements: FR-1, FR-9, NFR-1, NFR-6.
  */
 
 /** Public paginated list envelope (detailed-design §4) — shared response shape. */
 export interface PublicActorList {
-  data: PublicActor[];
+  data: PublicActorListItem[];
   page: number;
   pageSize: number;
   total: number;
@@ -34,7 +40,7 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-/** The `crops.crop` include reused by both reads so names resolve in toPublic. */
+/** The `crops.crop` include reused by both reads so names resolve in the serializer. */
 const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
 } satisfies Prisma.ActorInclude;
@@ -50,7 +56,8 @@ export class ActorsService {
    * query, not just the serializer); optional `region`, `role` (→ `traderType`)
    * and `crop` (→ CropsOnActors relation by crop name) narrow it. Pagination is
    * clamped to sane defaults and a capped page size. Every row is projected
-   * through {@link toPublic}; `total` counts the same filtered GRANTED set.
+   * through {@link toPublicListItem}; `total` counts the same filtered
+   * GRANTED set.
    */
   async findPublic(query: ListQueryDto): Promise<PublicActorList> {
     const page = query.page ?? DEFAULT_PAGE;
@@ -93,7 +100,7 @@ export class ActorsService {
     ]);
 
     return {
-      data: rows.map((row) => toPublic(row)),
+      data: rows.map((row) => toPublicListItem(row)),
       page,
       pageSize,
       total,
@@ -101,13 +108,15 @@ export class ActorsService {
   }
 
   /**
-   * Single public actor by id (FR-6). Returns `null` when the id is absent OR
-   * the actor is not public (consent ≠ GRANTED) — the controller maps `null` to
-   * a 404 so a non-consented actor is indistinguishable from a missing one.
-   * Consent is re-checked here via {@link isPublic} (defense in depth) before
-   * the row is ever projected.
+   * Single public actor by id (FR-1, FR-6). Returns `null` when the id is
+   * absent OR the actor is not public (consent ≠ GRANTED) — the controller
+   * maps `null` to a 404 so a non-consented actor is indistinguishable from a
+   * missing one. Consent is re-checked here via {@link isPublic} (defense in
+   * depth) before the row is ever projected. Maps through
+   * {@link toPublicDetail} — the published set, contact block included
+   * (FR-1) — never the list projection.
    */
-  async findOnePublic(id: string): Promise<PublicActor | null> {
+  async findOnePublic(id: string): Promise<PublicActorDetail | null> {
     const actor = await this.prisma.actor.findUnique({
       where: { id },
       include: CROPS_INCLUDE,
@@ -115,6 +124,6 @@ export class ActorsService {
 
     if (!actor || !isPublic(actor)) return null;
 
-    return toPublic(actor);
+    return toPublicDetail(actor);
   }
 }
