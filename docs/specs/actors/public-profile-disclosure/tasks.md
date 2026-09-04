@@ -9,7 +9,7 @@
 
 ## Phase A — Data and write paths (irreversible first, alone)
 
-- [ ] **T-1** Add `contactPerson` and `otherCrops` columns to `Actor`  (deps: none)
+- [x] **T-1** Add `contactPerson` and `otherCrops` columns to `Actor`  (deps: none)
       Scope: Prisma model + one additive migration. No serializer, API, or UI change.
       Traces: FR-4, NFR-5 · design.md §5
       Files: `backend/prisma/schema.prisma`, `backend/prisma/migrations/<ts>_add_contact_person_other_crops/`

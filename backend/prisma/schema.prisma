@@ -42,6 +42,8 @@ model Actor {
   district           String?
   traderType         String
   sex                String?
+  otherCrops         String?            @db.VarChar(300)
+  contactPerson      String?
   position           String?
   marketLocation     String?
   capacityTons       Decimal?           @db.Decimal(10, 2)
