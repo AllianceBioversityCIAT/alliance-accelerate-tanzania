@@ -13,7 +13,10 @@ import { createValidationPipe } from '../common/validation-pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/auth.types';
-import { PII_ALLOWLIST } from '../common/pii-consent.policy';
+import {
+  CONTACT_BLOCK_FIELDS,
+  NEVER_PUBLIC_FIELDS,
+} from '../common/pii-consent.policy';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 
 /**
@@ -29,15 +32,21 @@ import { ActingAdminResolver } from '../actors/acting-admin.resolver';
  */
 
 /**
- * The complete set of keys that must NEVER appear anywhere in a public response:
- * the PII allowlist plus the non-public columns the public serializer accepts
- * but never emits. Mirrors pii-boundary.spec.ts exactly.
+ * The complete set of keys that must NEVER appear in the PUBLIC LIST response
+ * scanned below (`GET /api/v1/actors`): {@link NEVER_PUBLIC_FIELDS} (admin-only
+ * metadata, absent on every public path) UNION {@link CONTACT_BLOCK_FIELDS}
+ * (absent on the list path specifically, FR-9 — those fields ARE required
+ * present on the detail path, so this union is deliberately NOT reused there).
+ * This used to be `[...PII_ALLOWLIST, 'traderId', 'gpsAltitude',
+ * 'gpsAccuracy']`; `actors/public-profile-disclosure` T-6 emptied
+ * `PII_ALLOWLIST` and moved `technicalSupport` into `NEVER_PUBLIC_FIELDS` —
+ * T-9 re-points this constant so that coverage (and the contact-block
+ * coverage `PII_ALLOWLIST` used to also carry) is restored rather than
+ * silently dropped (D-1c).
  */
 const FORBIDDEN_KEYS: readonly string[] = [
-  ...PII_ALLOWLIST,
-  'traderId',
-  'gpsAltitude',
-  'gpsAccuracy',
+  ...NEVER_PUBLIC_FIELDS,
+  ...CONTACT_BLOCK_FIELDS,
 ];
 
 /** A fully Prisma-shaped Actor row with EVERY PII field + full GPS populated. */

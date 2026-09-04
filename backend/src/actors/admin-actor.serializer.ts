@@ -6,7 +6,8 @@ import { SerializableCropLink } from '../common/role-aware.serializer';
 /**
  * T-1 — Admin-only actor projection.
  *
- * Unlike `toPublic()` in `src/common/role-aware.serializer.ts`, this serializer
+ * Unlike `toPublicListItem()`/`toPublicDetail()` in
+ * `src/common/role-aware.serializer.ts`, this serializer
  * emits every Actor column including PII (`phone`, `email`, `sex`, `position`,
  * `marketLocation`, `technicalSupport`) and the current `consentStatus`. It is
  * the ONLY serializer that exposes non-consented actor data, and it is only

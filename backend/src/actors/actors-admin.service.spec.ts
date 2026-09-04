@@ -7,7 +7,10 @@ import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { ActorsAdminService } from './actors-admin.service';
 import { ActorAuditService } from './actor-audit.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
-import { PII_ALLOWLIST } from '../common/pii-consent.policy';
+import {
+  CONTACT_BLOCK_FIELDS,
+  NEVER_PUBLIC_FIELDS,
+} from '../common/pii-consent.policy';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
@@ -29,6 +32,31 @@ import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
 
 const ACTING_SUB = 'admin-sub';
 const ACTING_EMAIL = 'admin@example.com';
+
+/**
+ * T-9 (D-1c) — every field the Admin projection MUST retain that a `Public`
+ * response never carries: {@link CONTACT_BLOCK_FIELDS} (withheld from the
+ * public LIST path, FR-9) UNION {@link NEVER_PUBLIC_FIELDS} (withheld from
+ * EVERY public path, including `technicalSupport` and the admin-only
+ * operational columns). This is the Admin-side mirror of the same union the
+ * public e2e suites use as an ABSENCE check — here it is a PRESENCE check
+ * instead (FR-3's `BUT` — the Admin projection is the one place
+ * `technicalSupport` still surfaces).
+ *
+ * Re-points the loop below, which used to iterate `PII_ALLOWLIST` (emptied by
+ * `actors/public-profile-disclosure` T-6, DD-2) and is *a* standing proof that
+ * the Admin projection still returns PII (FR-3) — not the only one:
+ * `src/test/admin-actors.e2e.spec.ts` additionally asserts `sex`, `phone`,
+ * `email`, `position`, `marketLocation` and `technicalSupport` BY VALUE on an
+ * Admin response. (That spec's own Done-when called this loop "the only
+ * proof"; the claim was copied here verbatim and is corrected in both places
+ * — T-9 review, 2026-09-04.) `PUBLICLY_DISCLOSED_FIELDS`
+ * is deliberately NOT used here even though it is `PII_ALLOWLIST`'s closer
+ * historical analogue: it omits `technicalSupport` (which moved to
+ * `NEVER_PUBLIC_FIELDS` instead) and using it alone would repeat T-6's exact
+ * defect of dropping that field's coverage rather than moving it.
+ */
+const ADMIN_RETAINED_FIELDS = [...CONTACT_BLOCK_FIELDS, ...NEVER_PUBLIC_FIELDS];
 
 /**
  * A fully-populated Prisma-shaped Actor row WITH PII set, used to prove the
@@ -279,7 +307,12 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
       expect(res.data).toHaveLength(1);
       const item = res.data[0];
-      for (const key of PII_ALLOWLIST) {
+      // Guards the loop itself against silently going vacuous again the way
+      // PII_ALLOWLIST did under T-6 (D-1c) — an accidentally emptied
+      // ADMIN_RETAINED_FIELDS would fail HERE, by name, instead of the loop
+      // below asserting nothing and staying green.
+      expect(ADMIN_RETAINED_FIELDS.length).toBeGreaterThan(0);
+      for (const key of ADMIN_RETAINED_FIELDS) {
         expect(item).toHaveProperty(key);
       }
       expect(item).toMatchObject({

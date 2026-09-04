@@ -97,14 +97,14 @@
 
 ## Phase D — The sweep and the gate
 
-- [ ] **T-9** Re-point all seven `PII_ALLOWLIST` iteration sites  (deps: T-6)
+- [x] **T-9** Re-point all seven `PII_ALLOWLIST` iteration sites  (deps: T-6)
       Scope: every site that spreads or loops over `PII_ALLOWLIST` moves to a non-empty constant. Six of the seven do not import `NEVER_PUBLIC_FIELDS` — relocating `technicalSupport` must **move** their coverage, not delete it.
       Traces: NFR-2 · design.md RV-2, DD-1 · **D-1c**
       Files: `backend/src/common/role-aware.serializer.spec.ts`, `backend/src/actors/actors.service.spec.ts`, `backend/src/actors/actors-admin.service.spec.ts`, `backend/src/test/{admin-actors,admin-actors-crud,admin-actor-import}.e2e.spec.ts`, `backend/src/test/pii-boundary.spec.ts`
       Verify: `cd backend && grep -rn "PII_ALLOWLIST" src && npm test -- --silent`
-      Done when: the grep shows **no surviving iteration site** — only the policy module and its by-value pin reference the empty constant. `actors-admin.service.spec.ts`'s Admin-PII loop, the only proof the Admin projection still returns PII, iterates a non-empty constant.
+      Done when: the grep shows **no surviving iteration site** — only the policy module and its by-value pin reference the empty constant. `actors-admin.service.spec.ts`'s Admin-PII loop iterates a non-empty constant. *(Corrected 2026-09-04: this clause called that loop **"the only proof"** the Admin projection still returns PII. That was false — `admin-actors.e2e.spec.ts` asserts `sex`, `phone`, `email`, `position`, `marketLocation` and `technicalSupport` by value on an Admin response. The Implementer copied the false claim verbatim into the code's JSDoc, so the spec's error propagated into the artefact. The loop is **a** proof, not the only one.)*
       Disqualifier: a green full suite is **not** evidence here — these suites go green precisely by asserting nothing. The evidence is the grep output plus, for each re-pointed loop, a named mutation that reddens it.
-      Falsifying input: emptying the replacement constant must redden each of the seven sites.
+      Falsifying input: **corrected 2026-09-04 during execution — the original clause was wrong.** It read *"emptying the replacement constant must redden each of the seven sites"*, which is false: emptying a constant makes its loop iterate zero times and **pass**. That is D-1c itself, not its detection. The correct falsifying input is a **real defect in the projection** — leak a `CONTACT_BLOCK_FIELDS` member onto the list path, leak a `NEVER_PUBLIC_FIELDS` member onto detail, or drop a retained field from the Admin projection — each of which must redden the site that guards it.
       Skills: `tdd`
 
 - [ ] **T-10** Split `LEAKABLE_PII_VALUES` into its three directions  (deps: T-5, T-6)

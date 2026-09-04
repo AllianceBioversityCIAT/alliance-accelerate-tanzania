@@ -18,10 +18,7 @@ import {
 import request from 'supertest';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  NEVER_PUBLIC_FIELDS,
-  PII_ALLOWLIST,
-} from '../common/pii-consent.policy';
+import { NEVER_PUBLIC_FIELDS } from '../common/pii-consent.policy';
 import { createValidationPipe } from '../common/validation-pipe';
 import { configureBodyParser } from '../common/body-parser.config';
 import { configurePayloadCap } from '../common/payload-cap.config';
@@ -88,18 +85,22 @@ import { AuthUser } from '../auth/auth.types';
  */
 
 /**
- * The complete set of keys that must NEVER appear anywhere in a public response:
- * the UNION of {@link PII_ALLOWLIST} (personally identifiable fields) and
- * {@link NEVER_PUBLIC_FIELDS} (admin-only operational fields that are not PII —
- * `traderId`/`gpsAltitude`/`gpsAccuracy` plus `registration-source-and-consent`
- * T-7's registration-source and consent-provenance fields, DD-6). Iterating
- * the union — rather than a hand-maintained literal list — means a field
- * added to either constant is automatically covered here with no second edit.
+ * The complete set of keys that must NEVER appear anywhere in a public
+ * response: {@link NEVER_PUBLIC_FIELDS} (admin-only operational fields that
+ * are not actor-declared PII — `traderId`/`gpsAltitude`/`gpsAccuracy` plus
+ * `registration-source-and-consent` T-7's registration-source and
+ * consent-provenance fields, plus `technicalSupport`, DD-6). This used to be
+ * the union with `PII_ALLOWLIST`; `actors/public-profile-disclosure` T-6
+ * emptied that constant (disclosure moved to `PUBLICLY_DISCLOSED_FIELDS` /
+ * `CONTACT_BLOCK_FIELDS`, both PRESENCE sets on the GRANTED detail path and
+ * therefore never foldable into this ABSENCE set — see `NEVER_PUBLIC_FIELDS`'s
+ * doc in `pii-consent.policy.ts` for the three-way polarity), so T-9 dropped
+ * the now-empty share of the union rather than iterating a no-op spread.
+ * Iterating the constant directly — rather than a hand-maintained literal
+ * list — means a field added to it is automatically covered here with no
+ * second edit.
  */
-const FORBIDDEN_KEYS: readonly string[] = [
-  ...PII_ALLOWLIST,
-  ...NEVER_PUBLIC_FIELDS,
-];
+const FORBIDDEN_KEYS: readonly string[] = [...NEVER_PUBLIC_FIELDS];
 
 /** A fully Prisma-shaped Actor row with EVERY PII field + full GPS populated. */
 function fixtureActor(

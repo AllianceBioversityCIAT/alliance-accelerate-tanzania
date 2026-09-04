@@ -3,7 +3,8 @@
  * T-11 — literal-pick serializer for `POST /registrations/lookup` (FR-6,
  * FR-8, `design.md` §6.2's containment guarantee, layer 1).
  *
- * Mirrors `common/role-aware.serializer.ts`'s `toPublic()` and
+ * Mirrors `common/role-aware.serializer.ts`'s `toPublicListItem()`/
+ * `toPublicDetail()` and
  * `actors/admin-actor.serializer.ts`'s `toAdminActor()`: the output is built
  * by EXPLICIT field pick, never a spread, so a `Registration` column added
  * to the schema later cannot leak into a public response by omission — it

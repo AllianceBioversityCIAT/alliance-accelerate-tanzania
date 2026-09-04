@@ -568,3 +568,67 @@ T-11 must assert presence-by-value on detail and absence-by-value for non-grante
 - **A3 → routed to T-9:** two dangling prose references to the now-deleted `toPublic` — `admin-actor.serializer.ts` and `public-registration.serializer.ts`. Correctly out of T-8's file list and correctly reported. No task owned them; T-9 is the adjacent file with the same alias.
 
 ---
+
+### T-9 — Re-point all seven `PII_ALLOWLIST` iteration sites
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 1 (agent crashed twice mid-task; see below) |
+| Requirements covered | NFR-2 · design.md RV-2, DD-1 · **D-1c** |
+| Files changed | 9 · +189/-90 |
+
+#### Process incident — the agent died twice, leaving live PII leaks in the tree
+
+The Implementer crashed on an API error (machine sleep), was resumed, then stalled (600s no progress). **Both times it left deliberate PII-leak mutations in the working tree** — the second pair cast-bypassed with `as unknown as` so they reached runtime. The Leader found and reverted both, and verified both serializers byte-identical to their pre-mutation state.
+
+The re-pointing work itself landed complete. What was missing was the **mutation evidence**, which T-9's Disqualifier makes the whole point of the task. **The Leader ran it** on a quiet tree and reverted. There is therefore no Implementer completion report and no `Not Done` field — declared to the Reviewer, which audited accordingly.
+
+#### The mutation table — "does the site catch a real defect?"
+
+Two leaks injected simultaneously into `role-aware.serializer.ts`: `phone` (contact block) onto the **list** path, `technicalSupport` (never-public) onto **detail**.
+
+| # | Site | Caught the injected defect? |
+|---|---|---|
+| 1 | `pii-boundary.spec.ts` | ✅ |
+| 2 | `role-aware.serializer.spec.ts` | ✅ |
+| 3 | `actors.service.spec.ts` | ✅ |
+| 4 | `admin-actors.e2e.spec.ts` | ✅ |
+| 5 | `admin-actors-crud.e2e.spec.ts` | ✅ |
+| 6 | `admin-actor-import.e2e.spec.ts` | ✅ |
+| 7 | `actors-admin.service.spec.ts` | ✅ — **but only under the opposite mutation** |
+
+Site 7 correctly did **not** react to a public-path leak: its loop asserts the *Admin* projection **contains** PII, so it needs a defect in the other direction. Dropping `phone` from `toAdminActor` at runtime reddened it precisely: `expect(item).toHaveProperty("phone")`.
+
+**All seven discriminate.** The Reviewer reconciled every claimed failure line-for-line against the re-pointed assertions, without re-running.
+
+#### Two findings from running the mutations by hand
+
+1. **The type system caught two of three mutations before any test could.** The first attempts failed with `TS2353` — you cannot add a never-public field to a projection, nor drop a retained field from the Admin projection, without also editing the interface. Reaching runtime required `as unknown as`. **The explicit-pick projection with a typed return is a stronger guard than the suites that test it**, and the mutation a distracted developer would actually write does not compile.
+2. **The 1720-second suite was caused by the leaks, not by the machine.** With mutations reverted the full suite runs in **18.5s**. Relevant because T-11/T-12 depend on trustworthy measurement — the environment is sound.
+
+#### Reviewer verdict: `STATUS: PASS`
+
+> All seven sites now iterate non-empty constants with the correct three-way polarity — no presence set folded into an absence check, contact-block absence applied to list paths only, and `technicalSupport` coverage moved rather than dropped.
+
+**The polarity trap was not taken.** `PUBLICLY_DISCLOSED_FIELDS` is folded into no absence check anywhere. The Reviewer traced every `expectNoPiiKeys`/`collectForbiddenValues` call in the three admin e2e files and confirmed they run **only** on list responses, so the 13-field union is never applied where FR-1 requires the contact block present.
+
+**No eighth site.** `PII_ALLOWLIST` is imported only by the policy module's own by-value pin and its honestly-titled vacuous disjointness test.
+
+#### Three spec defects the Leader found in its OWN text during this task
+
+1. **T-9's `Falsifying input` was backwards.** It read *"emptying the replacement constant must redden each of the seven sites."* **False** — emptying a constant makes its loop iterate zero times and **pass**. That is D-1c itself, not its detection. I had written the defect as the test for the defect. Corrected in `tasks.md` to name real projection defects.
+2. **T-9's `Done-when` called the Admin loop "the only proof" the Admin projection returns PII.** False — `admin-actors.e2e.spec.ts` asserts six of those fields **by value** on an Admin response. Corrected.
+3. **That false claim propagated into the code.** The Implementer copied it verbatim into the JSDoc of `actors-admin.service.spec.ts`. **A false claim in a spec becomes a false claim in an artefact** — KZ-008 with the spec as the origin rather than the author. Corrected in both places; suite re-verified green (44/44).
+
+#### ADVISORY (non-gating)
+
+- **`ADMIN_RETAINED_FIELDS` omits `sex` and `otherCrops`.** The pre-T-6 constant did assert `sex` present on the Admin projection. Not a real coverage loss (`admin-actors.e2e.spec.ts` asserts it by value), and T-9's owned clause — FR-3's `BUT` for `technicalSupport` — **is** covered. `[...PUBLICLY_DISCLOSED_FIELDS, ...NEVER_PUBLIC_FIELDS]` would have been correct polarity and strictly wider. Recorded, not actioned.
+- `admin-actor.serializer.ts`'s contrast sentence still lists `phone, email, sex, position, marketLocation` as distinguishing it from the public serializer — **all of which `toPublicDetail` now emits**. Only "every Actor column" and "the ONLY serializer that exposes non-consented data" remain true distinctions.
+- `role-aware.serializer.spec.ts` has a `{@link PII_ALLOWLIST}` whose symbol is no longer imported, so the link does not resolve.
+- **Reconfirmed for T-11:** `fixtureActor` sets neither `contactPerson` nor `otherCrops`, so `contactPerson` has no by-key or by-value coverage. T-11's presence assertions need those fixture values to be falsifiable.
+
+**Verification (Leader-run):** full suite `--runInBand` → **1042 passed, 1 failed (1043)**, 18.5s. The single failure is `pii-boundary.spec.ts`'s detail-path value sweep — T-11's to invert, correctly left red.
+
+---

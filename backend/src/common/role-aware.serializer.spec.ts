@@ -1,27 +1,38 @@
 import { ConsentStatus, Prisma } from '@prisma/client';
-import { PII_ALLOWLIST } from './pii-consent.policy';
+import { CONTACT_BLOCK_FIELDS } from './pii-consent.policy';
 import {
-  PublicActor,
+  PublicActorListItem,
   SerializableActor,
-  toPublic,
   toPublicDetail,
   toPublicListItem,
 } from './role-aware.serializer';
 
 /**
- * T-4/T-7 — Unit tests for the role-aware serializer (DD-2): the only public
- * exit. T-7 (`actors/public-profile-disclosure`) split the single projection
- * this file originally tested into two — {@link toPublicListItem} (FR-9, the
- * list set) and {@link toPublicDetail} (FR-1, the published set) — and this
- * file's key-set assertions were rewritten accordingly. `toPublic` survives
- * as a deprecated alias of {@link toPublicListItem} (see its doc in
- * `role-aware.serializer.ts`) so the tests below that call it unchanged
- * still exercise real production code until T-8 removes it.
+ * T-4/T-7/T-9 — Unit tests for the role-aware serializer (DD-2): the only
+ * public exit. T-7 (`actors/public-profile-disclosure`) split the single
+ * projection this file originally tested into two — {@link toPublicListItem}
+ * (FR-9, the list set) and {@link toPublicDetail} (FR-1, the published set) —
+ * and this file's key-set assertions were rewritten accordingly. `toPublic`
+ * survived T-7 as a deprecated alias of {@link toPublicListItem} (see its
+ * doc, since removed, in `role-aware.serializer.ts`) so the tests that used
+ * to call it kept exercising real production code — until T-8 removed the
+ * alias, which left every `toPublic(...)` call below referring to a deleted
+ * export (a TS2305 compile error). T-9 re-points every one of those calls to
+ * {@link toPublicListItem}, the function `toPublic` aliased, so each test
+ * keeps exercising exactly the production path it always did.
  *
- * The two `for (const piiField of PII_ALLOWLIST)` loops below are
- * DELIBERATELY left vacuous: T-6 emptied {@link PII_ALLOWLIST} (see its own
- * doc), and re-pointing those loops to a non-empty constant is T-9's task,
- * not this one's.
+ * T-9 also re-points the two `for (const field of ...)` loop assertions that
+ * used to iterate {@link PII_ALLOWLIST}: T-6 emptied that constant (see its
+ * own doc in `pii-consent.policy.ts`), which made both loops iterate zero
+ * elements and assert nothing while still reporting green (D-1c). Both now
+ * iterate {@link CONTACT_BLOCK_FIELDS} instead — the list path (what
+ * `toPublicListItem` computes) withholds that set unconditionally, by key,
+ * regardless of consent (FR-9); `PUBLICLY_DISCLOSED_FIELDS` is deliberately
+ * NOT used here even though it was `PII_ALLOWLIST`'s closer historical
+ * analogue, because it is a PRESENCE set for the detail path and folding it
+ * into an absence check on the list output would be self-contradictory (see
+ * `NEVER_PUBLIC_FIELDS`'s doc in `pii-consent.policy.ts` for the three-way
+ * polarity this file must respect).
  */
 
 /**
@@ -68,7 +79,7 @@ const fullActor = (
 });
 
 /** Read the serialized output as a bag of keys for absence assertions. */
-const asRecord = (a: PublicActor): Record<string, unknown> =>
+const asRecord = (a: PublicActorListItem): Record<string, unknown> =>
   a as unknown as Record<string, unknown>;
 
 describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () => {
@@ -129,15 +140,20 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
     }
   });
 
-  it('strips EVERY PII_ALLOWLIST field from the output (loop assertion)', () => {
-    const result = asRecord(toPublic(fullActor()));
-    for (const piiField of PII_ALLOWLIST) {
-      expect(result).not.toHaveProperty(piiField);
+  it('strips EVERY CONTACT_BLOCK_FIELDS field from the list output (loop assertion)', () => {
+    // Guards the loop itself against silently going vacuous again the way
+    // PII_ALLOWLIST did under T-6 (D-1c) — an accidentally emptied
+    // CONTACT_BLOCK_FIELDS would fail HERE, by name, instead of the loop
+    // below asserting nothing and staying green.
+    expect(CONTACT_BLOCK_FIELDS.length).toBeGreaterThan(0);
+    const result = asRecord(toPublicListItem(fullActor()));
+    for (const contactField of CONTACT_BLOCK_FIELDS) {
+      expect(result).not.toHaveProperty(contactField);
     }
   });
 
   it('never exposes traderId, gpsAltitude, or gpsAccuracy', () => {
-    const result = asRecord(toPublic(fullActor()));
+    const result = asRecord(toPublicListItem(fullActor()));
     expect(result).not.toHaveProperty('traderId');
     expect(result).not.toHaveProperty('gpsAltitude');
     expect(result).not.toHaveProperty('gpsAccuracy');
@@ -145,8 +161,8 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
   });
 
   it('passes through the allowed public scalar fields', () => {
-    const result = toPublic(fullActor());
-    expect(result).toMatchObject<Partial<PublicActor>>({
+    const result = toPublicListItem(fullActor());
+    expect(result).toMatchObject<Partial<PublicActorListItem>>({
       id: 'ckactor1',
       traderName: 'Mbeya Seed Traders Ltd',
       region: 'Mbeya',
@@ -157,51 +173,58 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
   });
 });
 
-describe('toPublic — consent-gated GPS (FR-5/DD-3)', () => {
+describe('toPublicListItem — consent-gated GPS (FR-5/DD-3)', () => {
   it('includes exact gps {lat,long} ONLY when consent is GRANTED', () => {
-    expect(toPublic(fullActor({ consentStatus: ConsentStatus.GRANTED })).gps).toEqual(
-      { lat: -8.9094, long: 33.4607 },
-    );
+    expect(
+      toPublicListItem(fullActor({ consentStatus: ConsentStatus.GRANTED })).gps,
+    ).toEqual({ lat: -8.9094, long: 33.4607 });
   });
 
   it('returns gps: null for UNKNOWN and DENIED even with GPS populated', () => {
-    expect(toPublic(fullActor({ consentStatus: ConsentStatus.UNKNOWN })).gps).toBeNull();
-    expect(toPublic(fullActor({ consentStatus: ConsentStatus.DENIED })).gps).toBeNull();
+    expect(
+      toPublicListItem(fullActor({ consentStatus: ConsentStatus.UNKNOWN })).gps,
+    ).toBeNull();
+    expect(
+      toPublicListItem(fullActor({ consentStatus: ConsentStatus.DENIED })).gps,
+    ).toBeNull();
   });
 
-  it('a non-granted actor with all PII populated leaks neither PII nor exact GPS', () => {
-    const projected = toPublic(fullActor({ consentStatus: ConsentStatus.DENIED }));
+  it('a non-granted actor with all PII populated leaks neither the contact block nor exact GPS', () => {
+    expect(CONTACT_BLOCK_FIELDS.length).toBeGreaterThan(0);
+    const projected = toPublicListItem(
+      fullActor({ consentStatus: ConsentStatus.DENIED }),
+    );
     const result = asRecord(projected);
-    for (const piiField of PII_ALLOWLIST) {
-      expect(result).not.toHaveProperty(piiField);
+    for (const contactField of CONTACT_BLOCK_FIELDS) {
+      expect(result).not.toHaveProperty(contactField);
     }
     expect(projected.gps).toBeNull();
   });
 });
 
-describe('toPublic — crops mapping', () => {
+describe('toPublicListItem — crops mapping', () => {
   it('maps the crop relation to a string[] of names', () => {
-    expect(toPublic(fullActor()).crops).toEqual(['sorghum', 'groundnut']);
+    expect(toPublicListItem(fullActor()).crops).toEqual(['sorghum', 'groundnut']);
   });
 
   it('yields [] for a missing or empty crop relation', () => {
-    expect(toPublic(fullActor({ crops: undefined })).crops).toEqual([]);
-    expect(toPublic(fullActor({ crops: null })).crops).toEqual([]);
-    expect(toPublic(fullActor({ crops: [] })).crops).toEqual([]);
+    expect(toPublicListItem(fullActor({ crops: undefined })).crops).toEqual([]);
+    expect(toPublicListItem(fullActor({ crops: null })).crops).toEqual([]);
+    expect(toPublicListItem(fullActor({ crops: [] })).crops).toEqual([]);
   });
 
   it('drops relation rows without a resolvable crop name', () => {
     expect(
-      toPublic(
+      toPublicListItem(
         fullActor({ crops: [{ crop: { name: 'sorghum' } }, { crop: null }] }),
       ).crops,
     ).toEqual(['sorghum']);
   });
 });
 
-describe('toPublic — district/capacity nullability', () => {
+describe('toPublicListItem — district/capacity nullability', () => {
   it('normalizes missing district and capacity to null', () => {
-    const result = toPublic(
+    const result = toPublicListItem(
       fullActor({ district: undefined, capacityTons: undefined }),
     );
     expect(result.district).toBeNull();

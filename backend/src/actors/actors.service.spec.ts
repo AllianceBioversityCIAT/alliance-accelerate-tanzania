@@ -3,7 +3,7 @@ import { ActorsService } from './actors.service';
 import { ListQueryDto } from './dto/list-query.dto';
 import {
   CONTACT_BLOCK_FIELDS,
-  PII_ALLOWLIST,
+  NEVER_PUBLIC_FIELDS,
 } from '../common/pii-consent.policy';
 
 /**
@@ -61,13 +61,18 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-/** Non-public columns that must never appear in a public response (NFR-1). */
-const FORBIDDEN_KEYS = [
-  ...PII_ALLOWLIST,
-  'traderId',
-  'gpsAltitude',
-  'gpsAccuracy',
-];
+/**
+ * Non-public columns that must never appear in a public response (NFR-1) —
+ * {@link NEVER_PUBLIC_FIELDS} already names `traderId`/`gpsAltitude`/
+ * `gpsAccuracy` plus `technicalSupport` and the registration-source/consent
+ * provenance columns, so no hand-maintained literal list is needed. This used
+ * to be `[...PII_ALLOWLIST, 'traderId', 'gpsAltitude', 'gpsAccuracy']`;
+ * `actors/public-profile-disclosure` T-6 emptied `PII_ALLOWLIST` (disclosure
+ * moved to `PUBLICLY_DISCLOSED_FIELDS`/`CONTACT_BLOCK_FIELDS`) and moved
+ * `technicalSupport` here — T-9 re-points this constant so that move is
+ * actually covered again instead of silently dropped (D-1c).
+ */
+const FORBIDDEN_KEYS = [...NEVER_PUBLIC_FIELDS];
 
 describe('ActorsService (mocked Prisma)', () => {
   let service: ActorsService;
@@ -291,7 +296,15 @@ describe('ActorsService (mocked Prisma)', () => {
   });
 
   describe('findOnePublic', () => {
-    it('returns a PII-stripped actor for a GRANTED id', async () => {
+    // Retitled T-9 (D-1c carry-over from T-8's review): this used to be
+    // titled "returns a PII-stripped actor for a GRANTED id", which FR-1
+    // made false — a GRANTED detail response deliberately carries phone/
+    // email/contactPerson/position/marketLocation (proved by the very next
+    // test below). What this test actually still proves is narrower: the
+    // never-public admin metadata (traderId/gpsAltitude/gpsAccuracy/
+    // technicalSupport/registration-source & consent-provenance columns)
+    // stays stripped even on the published detail path.
+    it('strips admin-only never-public metadata from a GRANTED id, even though it carries PII by design (FR-1/FR-3)', async () => {
       prisma.actor.findUnique.mockResolvedValue(fixtureActor());
 
       const actor = await service.findOnePublic('actor-1');
