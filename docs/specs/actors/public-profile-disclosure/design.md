@@ -277,14 +277,16 @@ Revised after dual review. Revision 1's figures (13 tasks / ~950 LOC / ~18 round
 
 | Metric | Revision 1 | Revision 2 | **Revision 3** |
 |---|---|---|---|
-| Tasks | 13 | 17 | **19** |
-| Net LOC | ~950 | ~1,600 | **~2,000** (band 1,700–2,400) |
-| Review rounds | ~18 | ~24 | **~28** |
+| Tasks | 13 | 17 | 19 → **20** |
+| Net LOC | ~950 | ~1,600 | ~2,000 → **~2,080** (band 1,700–2,400) |
+| Review rounds | ~18 | ~24 | ~28 → **~29** |
 
 Revision 2's figures were still computed against an undercounted tree (R2-6): its own preamble said "ten files plus roughly a dozen" while the tree carried far more. Rebased here against the measured 40 line-items, plus DD-10's fixture work and the four files from R2-3.
 
 The dominant lines are the seven-file vacuity sweep, `pii-boundary.spec.ts` (2,069 lines) with the `LEAKABLE_PII_VALUES` split, `actor-import.service.spec.ts` (1,069), `ActorForm.tsx` (959), and the two profile suites (334 + 273) that currently assert the *opposite* of FR-6.
 
 **Tripwire:** exceeding these stops the Leader and escalates. Revision 1's tripwire was worded to misread a scoping miss as an implementation deviation; it now reads — *if the gate work alone exceeds ~450 LOC, check first whether a file outside §4 is being edited, and only then whether DD-1 was worked around.*
+
+**Budget amendment, 2026-09-04 (T-20).** Approved by Daniela Gómez during execution after the T-3 Reviewer's KZ-004 forward sweep found **six live sites** asserting that `contactPerson`/`otherCrops` are review-context-only and unpublished — including a rendered admin badge with four tests pinning it, and **applicant-facing helper text in the public registration form** promising non-publication of a required field. No task owned any of them; §4's inventory listed none; T-17's sweep targets a different string. Recorded here rather than absorbed silently, per the budget-tripwire rule.
 
 **Depth re-check:** confirms **Full**.

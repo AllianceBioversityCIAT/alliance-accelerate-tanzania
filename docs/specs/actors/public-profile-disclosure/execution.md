@@ -265,3 +265,80 @@ Jest's **default parallel workers produce spurious timeouts in this sandbox**: t
 **T-11 and T-12 MUST run under `--runInBand`.** A spurious red in the task that demonstrates the gate can fail would be the worst possible false negative in this spec.
 
 ---
+
+### Scope amendment — T-20 added (2026-09-04)
+
+**Approved by Daniela Gómez** after the T-3 Reviewer performed a KZ-004 forward sweep and found the superseded claim alive at **six sites, not the two that had been flagged**:
+
+| # | Site | Severity |
+|---|---|---|
+| 1 | `admin-registration.serializer.ts` — two field JSDocs **plus the module JSDoc** (unflagged) | low |
+| 2 | `frontend/lib/api/registrations-admin.ts` — three references | low |
+| 3 | `RegistrationDetailPanel.tsx` — a **rendered badge**: "Review context — will not be published" | medium |
+| 4 | `RegistrationDetailPanel.test.tsx` — **four green assertions pinning that badge** | medium |
+| 5 | `RegistrationForm.tsx` — **applicant-facing helper text**: "Review context — not published to the public directory" | **high** |
+
+**Site 5 is why this became a task rather than a note.** It is not a stale comment: it is a **notice made to a data subject at the moment of collection**, about a field the form marks *required*. The public registration form promises the applicant that their contact person will not appear in the public directory. This spec publishes it.
+
+The Reviewer's reasoning for refusing to let T-3 fix a subset is recorded because it is the general rule, not a one-off: **correcting only the backend half would leave code asserting "published" while an admin screen renders "will not be published" under four green tests — KZ-004's reverse direction, the failure the sweep rule exists to prevent.** Partial correction here is worse than none.
+
+**Budget:** 19 → 20 tasks, ~2,000 → ~2,080 LOC, ~28 → ~29 rounds. Recorded per the tripwire rule rather than absorbed.
+
+**Escalated, NOT solved by T-20 — for NFR-7's owner (programme/legal).** T-20 corrects the text going forward. It does not address **applicants who already registered under the old promise**. Whether their `contactPerson` may be published at all, or whether they must be re-consulted, is a programme decision. This is the **third** member of the NFR-7 conversation, alongside the placeholder consent policy and the `submitterEmail` purpose gap — and it is the most concrete of the three, because unlike those it is a specific sentence shown to specific people about a specific field.
+
+### T-3 — Publish `contactPerson`/`otherCrops` on approval, DD-18 reversal recorded
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 2 of 3) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 2 — attempt 1 FAIL (new false claim in the replacement comment), attempt 2 PASS |
+| Requirements covered | FR-4 both scenarios · design.md §7.3, DD-5, RV-3 · D-10, D-12 |
+| Files changed | `admin-registrations.service.ts`, `…service.spec.ts`, `dto/registration-create.dto.ts`, `test/admin-registrations.e2e.spec.ts` |
+| Effort | **xhigh** (Leader deviation from the spec's `medium` — reverses a compile-time security guard), bumped to **max** on rework |
+
+#### What this task actually did
+
+It **removed a compile-time security guard on purpose.** `RegistrationApprovalPayload`'s omission of `contactPerson` made `position: payload.position ?? payload.contactPerson` a compile error. That member now exists, so the type can no longer stop `contactPerson` being read into the wrong slot. Design §11 RV-3 accepts this as **a genuine, weaker substitute — not an equal swap**, and the rewritten JSDoc says so in those terms.
+
+#### The five escaping variants — each verified discriminating BY THE REVIEWER, not by tracing
+
+The Implementer was candid that it validated the tests *"by tracing each mutation's data flow … not by hand-mutating and reverting"* — reasoning, not demonstration. The Reviewer re-derived each independently against the production code and the mock's storage semantics:
+
+| Variant | Verdict |
+|---|---|
+| `position: payload.position ?? payload.contactPerson` | discriminates, for the claimed reason |
+| `traderName: … ?? payload.contactPerson` | discriminates — but the input is **unreachable** (see below) |
+| `marketLocation: … ?? payload.contactPerson` | discriminates, for the claimed reason |
+| reverse `contactPerson: … ?? payload.position` | discriminates, for the claimed reason |
+| unconditional clobber `position: payload.contactPerson` | discriminates, for the claimed reason |
+
+**The green run is load-bearing here, unusually.** Four of the five tests assert `null`/`undefined` on a field the *default* fixture populates. Had the fixture overrides not reached `approve()`, those four would be red today. Green therefore demonstrates the override path is live — the one premise tracing alone could not establish.
+
+On `traderName`: the state asserted (`undefined`) is **unreachable** through any validated payload (`@MinLength(1)`; non-nullable column). The Reviewer's ruling is that this cuts both ways — *no* reachable input could exercise that mutation, so an unreachable fixture is the only possible standing test for it. Low value, not weak coverage. Annotated in the test name on rework so a reader does not mistake `toBeUndefined()` for a supported contract.
+
+#### Attempt 1 — Reviewer `STATUS: FAIL`
+
+**The correction introduced a fresh false claim — KZ-008's third instance in this spec, and the same defect class the task existed to close, recurring inside its own remedy.** The replacement JSDoc asserted in the present tense that the detail endpoint *"discloses"* both fields to `Public`. False at HEAD: `toPublic` returns exactly eight keys (`id, traderName, region, district, traderType, capacityTons, crops, gps`) and names neither field. Publication does not arrive until T-7/T-8.
+
+Two consecutive attempts at this one comment asserted something about `role-aware.serializer.ts` **without opening it**. The rework brief made opening it a precondition.
+
+#### Attempt 2 — Reviewer `STATUS: PASS`
+
+Every claim in the replacement text was verified independently against the file it names: approval writes both fields; the attribution string is the one DD-5 *prescribes* verbatim; the future tense is correct (Leader and Reviewer both re-read `toPublic`); `toPublicDetail` is genuinely T-7's deliverable per `tasks.md`/§7.2; and the `design.md §4.6 step 3` citation resolves — **the Leader's suspicion that it was a decaying anchor was wrong**. It points at the archived `public-self-registration` design, whose §4.6 step 3 reads *"`contactPerson` and `otherCrops` are not carried — and `contactPerson` must not land on `Actor.position`"*, exactly the claim being superseded, and the file already had a uniform convention that bare `design.md` means that document.
+
+**Verification:** `npm test -- --silent admin-registrations --runInBand` → 6 suites / 120 tests · `npx eslint "{src,test}/**/*.ts" --quiet` clean · full suite `--runInBand` → 75 suites / **1023** tests (was 1018 → +5).
+
+#### Scope deviations, both adjudicated and accepted
+
+1. **`backend/src/test/admin-registrations.e2e.spec.ts`** edited though absent from T-3's `Files:` list and from design §4. Justified: its approve happy-path asserted `not.toContain('Grace Mushi')`, which this task's production change makes false, and the file *matches T-3's own verify pattern* — leaving it would have planted a known-red test inside the specified gate. The replacement asserts per-slot by value over a real HTTP response. **§4 closed-set amendment recorded.**
+2. **Admin list-endpoint assertions left untouched.** The Implementer claimed `GET /admin/registrations` never returns payload data. The Reviewer **verified** it rather than accepting it: `toAdminRegistrationListRow` is an eight-key literal pick (`id, reference, applicant, traderType, region, submittedAt, status, duplicateCandidateCount`) — no payload field reaches the wire, so those assertions remain true *and* discriminating.
+
+#### ADVISORY (non-gating)
+
+- **A2:** the new gate test's comment claims a cross-wire "would make one of these `.toBe(...)` calls fail" — true for the 18 slots it enumerates, not for `traderId` (covered by the P2002 test) or the five provenance columns (covered by a sibling describe). No coverage hole; a slightly over-broad comment.
+- **A3:** the old whole-object `not.toContain('Grace Mushi')` sweep caught a cross-wire into *any* slot, including unnamed ones. That construction is gone — the value is now legitimately present. A strictly stronger replacement exists and was not used (assert the value occurs **exactly once** in the serialized actor). The delivered form does match RV-3's specified remedy. **Recorded, not actioned.**
+- **A4:** `AUDITABLE_FIELDS` still omits both fields, so `logRegistrationApprove`'s snapshot now records two fewer columns than `approve()` writes. Before this diff there was nothing to omit; after it, the audit record of a published actor is incomplete. Already routed to a separate proposal.
+- **A5 → folded into T-20:** the bare `design.md` citations in this DTO file point at an *archived* document while the same JSDoc names a live spec folder two lines above. Resolves correctly today; qualifying them as `public-self-registration design.md §4.6` during T-20's sweep of this file's neighbours retires the ambiguity at no cost.
+
+---

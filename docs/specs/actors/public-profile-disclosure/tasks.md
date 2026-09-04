@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/actors/public-profile-disclosure/`
 - Traces: `requirements.md` FR-1…FR-9 / NFR-1…NFR-7 · `design.md` §1–§16 · `judgment.md` (terminal: ESCALATED, corrections applied)
-- Budget (design §16): **19 tasks · ~2,000 net LOC (band 1,700–2,400) · ~28 review rounds**
+- Budget (design §16): **19 tasks · ~2,000 net LOC (band 1,700–2,400) · ~28 review rounds** → **amended 2026-09-04 to 20 tasks / ~2,080 LOC / ~29 rounds** (T-20 added on user approval; see T-20's rationale)
 - Commits: `[SPEC:actors/public-profile-disclosure] <message>`
 
 > **Sequencing rule that is not negotiable.** T-5 (fixture distinctness, DD-10) runs **before** T-11 (gate inversion). The inverted gate's non-granted assertions are unfalsifiable until the fixtures differ — inverting first produces a green suite that proves nothing, which is the exact defect this spec exists to avoid.
@@ -29,7 +29,7 @@
       Falsifying input: submitting a `contactPerson` and reading back `null`.
       Skills: `nestjs-expert`, `shadcn-ui`
 
-- [ ] **T-3** Publish `contactPerson`/`otherCrops` on approval, with the DD-18 reversal recorded  (deps: T-1)
+- [x] **T-3** Publish `contactPerson`/`otherCrops` on approval, with the DD-18 reversal recorded  (deps: T-1)
       Scope: extend `RegistrationApprovalPayload` and the `approve()` literal pick; **rewrite** the DD-18 rationale to record who authorised publishing `contactPerson`, when, and under which spec; add per-slot assertions and a standing mutation test.
       Traces: FR-4 (both scenarios, incl. the `position` and no-derive clauses) · design.md §7.3, DD-5, RV-3 · D-10, D-12
       Files: `backend/src/registrations/admin-registrations.service.ts`, `…service.spec.ts`, `backend/src/registrations/dto/registration-create.dto.ts`
@@ -210,6 +210,23 @@
       Falsifying input: a contrast pair below 4.5:1 must be reported, not rounded.
       Skills: `ui-ux-pro-max`
 
+- [ ] **T-20** Close the "will not be published" promise across all six sites  (deps: T-7)
+      Scope: retire every surviving statement that `contactPerson`/`otherCrops` are review-context-only and unpublished. Six live sites, enumerated by the T-3 Reviewer's forward sweep (KZ-004):
+        1. `backend/src/registrations/serializers/admin-registration.serializer.ts` — two field JSDocs **and** the module JSDoc
+        2. `frontend/lib/api/registrations-admin.ts` — three references
+        3. `frontend/components/admin/RegistrationDetailPanel.tsx` — a **rendered badge** reading "Review context — will not be published"
+        4. `frontend/components/admin/RegistrationDetailPanel.test.tsx` — **four assertions pinning that badge**
+        5. `frontend/components/register/RegistrationForm.tsx` — **applicant-facing helper text**: "Review context — not published to the public directory"
+      Traces: FR-4, FR-8 · design.md DD-5 · KZ-004 (forward sweep), KZ-008
+      Files: the five above
+      Verify: `grep -rn "review context\|will not be published\|not published to the public" backend/src frontend --include=*.ts --include=*.tsx -i` then inspect every hit
+      Done when: zero surviving statements that either field is unpublished, outside `docs/specs/archive/`; the admin badge and its four tests reflect the new behaviour; the applicant-facing helper text states what is actually published.
+      Disqualifier: fixing the backend half alone is **worse than fixing nothing** — it leaves code asserting "published" while an admin screen renders "will not be published" under four green tests. All five files move together or none do.
+      Falsifying input: any surviving hit in the Verify grep outside the archive.
+      Skills: `cognitive-doc-design`, `ui-ux-pro-max`
+      **Why this task exists.** Site 5 is not a stale comment — it is a **notice made to a data subject at the moment of collection**, about a field the form marks *required*. The public registration form currently promises the applicant that their contact person will not appear in the public directory, and this spec publishes it. Added 2026-09-04 on Daniela Gómez's explicit approval after the T-3 Reviewer's sweep found it; **no task previously owned any of these sites** and T-17's sweep targets a different string, so it would not have caught them.
+      **Explicitly NOT in this task — escalated instead.** T-20 corrects the text going forward. It does **not** address applicants **who already registered under the old promise**. Whether their `contactPerson` may be published, or whether they must be re-consulted, is a programme/legal decision, not an implementation one. Recorded against NFR-7, which already owns the consent-wording gap and the email-purpose gap — this is the third member of that same conversation.
+
 ## Dependency Graph
 
 ```
@@ -226,6 +243,7 @@ T-7 → T-13 → T-14 → T-15
 T-11 ┐
 T-16 ┴→ T-17 → T-18
 T-14 → T-19
+T-7  → T-20
 ```
 
 T-1, T-5 and T-6 are the three roots and may run concurrently. T-5 has no code dependency on T-11 but **must be sequenced before it**.

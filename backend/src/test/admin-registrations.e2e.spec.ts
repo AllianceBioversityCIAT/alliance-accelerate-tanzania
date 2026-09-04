@@ -68,7 +68,9 @@ function registrationFixture(overrides: Partial<Record<string, unknown>> = {}): 
     payload: {
       traderName: 'Meru Agro-Processing & Seeds',
       traderType: 'seed_company',
-      contactPerson: 'Grace Mushi — DO NOT PUBLISH',
+      // public-profile-disclosure FR-4 — contactPerson/otherCrops are now
+      // PUBLISHED deliberately on approve(); no longer "DO NOT PUBLISH".
+      contactPerson: 'Grace Mushi',
       position: 'Director',
       district: 'Arusha Urban',
       marketLocation: 'Arusha Central Market',
@@ -77,7 +79,7 @@ function registrationFixture(overrides: Partial<Record<string, unknown>> = {}): 
       gpsLatitude: -3.3869,
       gpsLongitude: 36.683,
       crops: ['sorghum', 'common_bean'],
-      otherCrops: 'Sunflower — DO NOT PUBLISH',
+      otherCrops: 'Sunflower',
       capacityTons: 120,
       phone: '+255700000000',
     },
@@ -332,8 +334,11 @@ describe('Admin registrations approve e2e (HTTP + in-memory Prisma) — T-8, FR-
       expect(actor.technicalSupport).toBeNull();
       expect(actor.gpsAltitude).toBeNull();
       expect(actor.gpsAccuracy).toBeNull();
-      expect(JSON.stringify(actor)).not.toContain('Grace Mushi');
-      expect(JSON.stringify(actor)).not.toContain('Sunflower');
+      // public-profile-disclosure FR-4 — DD-18 reversed: contactPerson and
+      // otherCrops are now published deliberately, over the real HTTP
+      // response, each landing in its own column.
+      expect(actor.contactPerson).toBe('Grace Mushi');
+      expect(actor.otherCrops).toBe('Sunflower');
       // NFR-2 — provenance carried verbatim from the stored acceptance.
       expect(actor.registrationSource).toBe('SELF_REGISTERED');
       expect(actor.consentStatus).toBe('GRANTED');

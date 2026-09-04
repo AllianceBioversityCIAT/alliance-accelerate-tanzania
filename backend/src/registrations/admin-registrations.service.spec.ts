@@ -687,7 +687,13 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         payload: {
           traderName: 'Meru Agro-Processing & Seeds',
           traderType: 'seed_company',
-          contactPerson: 'Grace Mushi — DO NOT PUBLISH',
+          // public-profile-disclosure FR-4 — contactPerson and otherCrops
+          // are now PUBLISHED deliberately. Kept as distinctive values
+          // (distinct from every other field, incl. `position`) so a value
+          // landing in the wrong column is unmistakable in a failure
+          // message — the same discipline this fixture already applies to
+          // every other field.
+          contactPerson: 'Grace Mushi',
           position: 'Director',
           district: 'Arusha Urban',
           marketLocation: 'Arusha Central Market',
@@ -696,7 +702,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           gpsLatitude: -3.3869,
           gpsLongitude: 36.683,
           crops: ['sorghum', 'common_bean'],
-          otherCrops: 'Sunflower — DO NOT PUBLISH',
+          otherCrops: 'Sunflower',
           capacityTons: 120,
           phone: '+255700000000',
         },
@@ -863,75 +869,194 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       });
     });
 
-    describe('Scenario: The publishable subset is exactly this, and nothing else (§6.3/DD-18 — the projection gate)', () => {
-      it(
-        'DISQUALIFYING GATE — asserts fixture VALUES absent from EVERY column of the created actor, ' +
-          'never field names (a renamed target must still fail this)',
-        async () => {
-          const tx = buildTx();
-          wireTransaction(tx);
+    describe(
+      'Scenario: The publishable subset is exactly this, and nothing else ' +
+        '(§6.3/DD-18 — the projection gate; DD-18 REVERSED by ' +
+        'public-profile-disclosure FR-4 for contactPerson/otherCrops)',
+      () => {
+        it(
+          'DISQUALIFYING GATE — every published field, INCLUDING the newly-published ' +
+            'contactPerson and otherCrops, lands in its OWN column of the created actor ' +
+            '(every fixture value is distinct, so a value in the wrong slot fails the ' +
+            "OTHER field's assertion, not just its own)",
+          async () => {
+            const tx = buildTx();
+            wireTransaction(tx);
 
-          const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+            const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
 
-          // The two review-context values, which must land NOWHERE in the
-          // created actor — checked as raw VALUES across the whole
-          // serialized object, not by absence of a key name.
-          const serializedActor = JSON.stringify(result.actor);
-          expect(serializedActor).not.toContain('Grace Mushi');
-          expect(serializedActor).not.toContain('Sunflower');
+            // public-profile-disclosure FR-4 — contactPerson and otherCrops
+            // are now published deliberately, each landing on its OWN
+            // Actor column. (Formerly this gate asserted their ABSENCE —
+            // that assertion is what DD-18's reversal makes false; see the
+            // rewritten class-level JSDoc on RegistrationApprovalPayload.)
+            expect(result.actor.contactPerson).toBe('Grace Mushi');
+            expect(result.actor.otherCrops).toBe('Sunflower');
 
-          // Same sweep, one layer earlier: the pre-serialization `tx.actor.create`
-          // input, BEFORE `toAdminActor` runs. `capacityTons`/`gpsAltitude`/
-          // `gpsAccuracy` pass through `toNullableNumber` on the way OUT of
-          // `toAdminActor`, which coerces a non-numeric string to `null` — a
-          // text value mis-mapped onto one of those columns would vanish
-          // before `serializedActor` above ever saw it. Sweeping the create
-          // input closes that blind spot on the other side of the serializer.
-          const serializedCreateInput = JSON.stringify(tx.getCreatedActors()[0]);
-          expect(serializedCreateInput).not.toContain('Grace Mushi');
-          expect(serializedCreateInput).not.toContain('Sunflower');
+            // Same sweep, one layer earlier: the pre-serialization
+            // `tx.actor.create` input, BEFORE `toAdminActor` runs — proves
+            // the literal pick itself writes both values, not that the
+            // serializer backfills them from somewhere else.
+            const serializedCreateInput = JSON.stringify(tx.getCreatedActors()[0]);
+            expect(serializedCreateInput).toContain('Grace Mushi');
+            expect(serializedCreateInput).toContain('Sunflower');
 
-          // The three columns with no payload source stay null.
-          expect(result.actor.technicalSupport).toBeNull();
-          expect(result.actor.gpsAltitude).toBeNull();
-          expect(result.actor.gpsAccuracy).toBeNull();
+            // The three columns with no payload source stay null.
+            expect(result.actor.technicalSupport).toBeNull();
+            expect(result.actor.gpsAltitude).toBeNull();
+            expect(result.actor.gpsAccuracy).toBeNull();
 
-          // Actor.email comes from Registration.submitterEmail, not the payload.
-          expect(result.actor.email).toBe('director@example.com');
+            // Actor.email comes from Registration.submitterEmail, not the payload.
+            expect(result.actor.email).toBe('director@example.com');
 
-          // Every published field lands where FR-12's projection table says.
-          expect(result.actor.traderName).toBe('Meru Agro-Processing & Seeds');
-          expect(result.actor.traderType).toBe('seed_company');
-          expect(result.actor.position).toBe('Director');
-          expect(result.actor.district).toBe('Arusha Urban');
-          expect(result.actor.marketLocation).toBe('Arusha Central Market');
-          expect(result.actor.sex).toBe('F');
-          expect(result.actor.region).toBe('Arusha');
-          expect(result.actor.gpsLatitude).toBe(-3.3869);
-          expect(result.actor.gpsLongitude).toBe(36.683);
-          expect(result.actor.capacityTons).toBe(120);
-          expect(result.actor.phone).toBe('+255700000000');
-          expect(result.actor.crops.sort()).toEqual(['common_bean', 'sorghum']);
-        },
-      );
+            // Every published field lands where FR-12's projection table
+            // says — and because every value below (incl. contactPerson/
+            // otherCrops above) is distinct, these assertions collectively
+            // prove no field's value leaked into a DIFFERENT slot: a
+            // cross-wired assignment would make one of these `.toBe(...)`
+            // calls fail.
+            expect(result.actor.traderName).toBe('Meru Agro-Processing & Seeds');
+            expect(result.actor.traderType).toBe('seed_company');
+            expect(result.actor.position).toBe('Director');
+            expect(result.actor.district).toBe('Arusha Urban');
+            expect(result.actor.marketLocation).toBe('Arusha Central Market');
+            expect(result.actor.sex).toBe('F');
+            expect(result.actor.region).toBe('Arusha');
+            expect(result.actor.gpsLatitude).toBe(-3.3869);
+            expect(result.actor.gpsLongitude).toBe(36.683);
+            expect(result.actor.capacityTons).toBe(120);
+            expect(result.actor.phone).toBe('+255700000000');
+            expect(result.actor.crops.sort()).toEqual(['common_bean', 'sorghum']);
+          },
+        );
+      },
+    );
 
-      // The `contactPerson` → `Actor.position` falsifying mutation (the
-      // spec's single most valuable falsification) was performed BY HAND
-      // against `admin-registrations.service.ts`'s `approve` step 3 —
-      // temporarily changing `position: payload.position ?? null,` to
-      // `position: (payload as unknown as { contactPerson?: string })
-      // .contactPerson,`. The cast is required because
-      // `RegistrationApprovalPayload` deliberately has no `contactPerson`
-      // member (see that interface's JSDoc) — the realistic one-liner
-      // `payload.contactPerson` does not compile on its own. THIS describe block's
-      // "DISQUALIFYING GATE" test was re-run against the mutation, its
-      // failure output recorded VERBATIM, and the source reverted. Not kept
-      // as a standing test (a permanently mutated line would itself be the
-      // defect this gate exists to catch) — the transcript is in the
-      // completion report / execution.md, per this repo's established
-      // convention for manual falsification proofs (see e.g.
-      // `pii-boundary.spec.ts`'s T-13 RA7 throwaway-route proofs).
-    });
+    describe(
+      'Scenario: contactPerson never leaks via a plausible one-line fallback ' +
+        '(FR-4 negative clause, D-10, D-12, design.md §11 RV-3)',
+      () => {
+        /**
+         * RV-3 — the DD-18 compile barrier used to block `payload.contactPerson`
+         * from EVERY slot of the literal pick at once. Adding `contactPerson`
+         * to `RegistrationApprovalPayload` (public-profile-disclosure FR-4)
+         * removes that barrier, so each of the five escaping variants named in
+         * design.md §11 RV-3 / Judgment Day J-4 gets its OWN standing test
+         * below — none of these is a hand-run, reverted experiment (KZ-002).
+         * Each test's payload omits exactly the field its variant would have
+         * defaulted FROM, so the fallback — if it existed — would fire and
+         * the assertion would redden.
+         */
+
+        it(
+          'falsifies `position: payload.position ?? payload.contactPerson` — ' +
+            'an omitted position stays null, never falls back to contactPerson',
+          async () => {
+            const tx = buildTx(
+              approvalRegistrationRow({
+                payload: { ...approvalRegistrationRow().payload, position: undefined },
+              }),
+            );
+            wireTransaction(tx);
+
+            const result = await service.approve(
+              'reg-approve-1',
+              ACKNOWLEDGEMENT as never,
+              ACTING_SUB,
+            );
+
+            expect(result.actor.position).toBeNull();
+            expect(result.actor.contactPerson).toBe('Grace Mushi');
+          },
+        );
+
+        it(
+          'falsifies `traderName: payload.traderName ?? payload.contactPerson` — ' +
+            'an absent traderName is never backfilled from contactPerson ' +
+            '(no validated payload can produce this state — `@MinLength(1)` on the ' +
+            'DTO and the non-nullable column both forbid it — so `toBeUndefined()` ' +
+            'here documents the mutation-kill mechanics, not a supported contract)',
+          async () => {
+            const tx = buildTx(
+              approvalRegistrationRow({
+                payload: { ...approvalRegistrationRow().payload, traderName: undefined },
+              }),
+            );
+            wireTransaction(tx);
+
+            const result = await service.approve(
+              'reg-approve-1',
+              ACKNOWLEDGEMENT as never,
+              ACTING_SUB,
+            );
+
+            expect(result.actor.traderName).toBeUndefined();
+            expect(result.actor.traderName).not.toBe('Grace Mushi');
+          },
+        );
+
+        it(
+          'falsifies `marketLocation: payload.marketLocation ?? payload.contactPerson` — ' +
+            'an omitted marketLocation stays null, never falls back to contactPerson',
+          async () => {
+            const tx = buildTx(
+              approvalRegistrationRow({
+                payload: { ...approvalRegistrationRow().payload, marketLocation: undefined },
+              }),
+            );
+            wireTransaction(tx);
+
+            const result = await service.approve(
+              'reg-approve-1',
+              ACKNOWLEDGEMENT as never,
+              ACTING_SUB,
+            );
+
+            expect(result.actor.marketLocation).toBeNull();
+          },
+        );
+
+        it(
+          'falsifies the reverse adjacency `contactPerson: payload.contactPerson ?? payload.position` — ' +
+            'an omitted contactPerson is never backfilled from position',
+          async () => {
+            const tx = buildTx(
+              approvalRegistrationRow({
+                payload: { ...approvalRegistrationRow().payload, contactPerson: undefined },
+              }),
+            );
+            wireTransaction(tx);
+
+            const result = await service.approve(
+              'reg-approve-1',
+              ACKNOWLEDGEMENT as never,
+              ACTING_SUB,
+            );
+
+            expect(result.actor.contactPerson).toBeNull();
+            expect(result.actor.position).toBe('Director');
+          },
+        );
+
+        it(
+          'falsifies the unconditional clobber `position: payload.contactPerson` — ' +
+            'position keeps its OWN value even though contactPerson is populated too',
+          async () => {
+            const tx = buildTx();
+            wireTransaction(tx);
+
+            const result = await service.approve(
+              'reg-approve-1',
+              ACKNOWLEDGEMENT as never,
+              ACTING_SUB,
+            );
+
+            expect(result.actor.position).toBe('Director');
+            expect(result.actor.position).not.toBe(result.actor.contactPerson);
+          },
+        );
+      },
+    );
 
     describe('Scenario: The acknowledgement gate is real (server-side, FR-12 scenario 3)', () => {
       it('400s a request whose acknowledgement is misspelled, with a field-scoped detail', async () => {

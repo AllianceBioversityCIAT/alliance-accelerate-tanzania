@@ -315,18 +315,35 @@ export function deriveTraderIdFromReference(reference: string): string {
  * across a module boundary for a single read-only shape both files already
  * derive independently from the SAME source of truth, `RegistrationPayloadDto`.
  *
- * Do not replace this with `RawRegistrationPayload`: its
- * `contactPerson`/`otherCrops` members are exactly what would make the
- * DD-18 adjacency mistake COMPILE. This type's omission of them is what
- * makes it a compile error instead. `RegistrationApprovalPayload`
- * deliberately omits them so the realistic one-liner
- * `position: payload.position ?? payload.contactPerson` cannot compile —
- * that is a load-bearing safety property of this type's shape, not an
- * oversight to "fix" by unifying the two interfaces.
+ * **DD-18, reversed by `actors/public-profile-disclosure` FR-4 — authorised
+ * by Daniela Gómez, 2026-09-03/04.** Until that spec, this type deliberately
+ * OMITTED `contactPerson`/`otherCrops`, which made the realistic one-liner
+ * `position: payload.position ?? payload.contactPerson` a COMPILE ERROR —
+ * the adjacency between `contactPerson` and `position` in
+ * `RegistrationPayloadDto` made that fallback a plausible, easy mistake, and
+ * the missing member was the guard against it. `public-profile-disclosure`
+ * FR-4 makes publishing `contactPerson` (and `otherCrops`) the **intended**
+ * behaviour — every actor-supplied field becomes public once consent is
+ * granted — so this type now carries both, and `approve()`'s literal pick
+ * writes them to their own `Actor` columns.
+ *
+ * **This removes a compile-time guard and does not replace it with an
+ * equally strong one (`design.md` §11 RV-3, accepted explicitly as a
+ * genuine, weaker substitute — not an equal swap).** The type system can no
+ * longer stop `contactPerson` from being read into the WRONG slot; that
+ * burden now falls entirely on the per-slot assertions and the standing
+ * mutation test in `admin-registrations.service.spec.ts`. The one guard
+ * that *is* still load-bearing, and is NOT weakened by this change:
+ * **`position` MUST be read only from `payload.position`, never falling
+ * back to `payload.contactPerson`.** A future reader must not "simplify"
+ * this type back toward `RawRegistrationPayload` without re-reading this
+ * note — the shapes now coincide, but the reasoning that once kept them
+ * apart is preserved here as history, not silently dropped.
  */
 interface RegistrationApprovalPayload {
   traderName: string;
   traderType: string;
+  contactPerson: string;
   position?: string | null;
   district?: string | null;
   marketLocation?: string | null;
@@ -335,6 +352,7 @@ interface RegistrationApprovalPayload {
   gpsLatitude?: number | null;
   gpsLongitude?: number | null;
   crops: string[];
+  otherCrops?: string | null;
   capacityTons: number;
   phone: string;
 }
@@ -776,20 +794,27 @@ export class AdminRegistrationsService {
    *    exists at all.
    * 2. **Derive `traderId`** ({@link deriveTraderIdFromReference}, DD-23) —
    *    pure, no I/O, placed before any write that could fail on it.
-   * 3. **Project the publishable subset** (§6.3/DD-18) — an EXPLICIT
+   * 3. **Project the publishable subset** (§6.3, DD-18 — REVERSED by
+   *    `actors/public-profile-disclosure` FR-4, see
+   *    {@link RegistrationApprovalPayload}'s class doc) — an EXPLICIT
    *    LITERAL PICK, never a spread, never a loop over payload keys.
-   *    `contactPerson` and `otherCrops` go nowhere (no `Actor` column
-   *    exists for either); `technicalSupport`/`gpsAltitude`/`gpsAccuracy`
-   *    are left `null` (the payload has no source for them — inventing a
-   *    value would publish something no applicant supplied); `Actor.email`
-   *    comes from `Registration.submitterEmail` (the OTP-verified address),
-   *    never from the payload, which carries no email field at all.
+   *    `contactPerson` and `otherCrops` now DO have `Actor` columns and are
+   *    written to them (`public-profile-disclosure` FR-4 — every
+   *    actor-supplied field is published once consent is granted);
+   *    `technicalSupport`/`gpsAltitude`/`gpsAccuracy` are left `null` (the
+   *    payload has no source for them — inventing a value would publish
+   *    something no applicant supplied); `Actor.email` comes from
+   *    `Registration.submitterEmail` (the OTP-verified address), never from
+   *    the payload, which carries no email field at all.
    *    **The trap this guards against is adjacency, not similarity:**
    *    `contactPerson` and `position` are neighbouring `RegistrationPayloadDto`
    *    fields, so "fall back to `contactPerson` when `position` is absent"
-   *    is a one-line, plausible-looking change that publishes a named
-   *    natural person to the public directory. `position` is read ONLY
-   *    from `payload.position`, never from `payload.contactPerson`.
+   *    is a one-line, plausible-looking change that would publish a named
+   *    natural person into the WRONG field. `position` is read ONLY from
+   *    `payload.position`, never from `payload.contactPerson` — the one
+   *    guard `public-profile-disclosure` FR-4 explicitly keeps, now enforced
+   *    by the per-slot tests in `admin-registrations.service.spec.ts` rather
+   *    than by the compiler.
    * 4. **`isConsentProvenanceSatisfied` — drift protection, NOT a gate.**
    *    With all four provenance values below set to satisfying constants
    *    and `consentObtainedAt` sourced from a non-nullable column, this call
@@ -910,6 +935,13 @@ export class AdminRegistrationsService {
           traderId,
           traderName: payload.traderName,
           traderType: payload.traderType,
+          // public-profile-disclosure FR-4 — published deliberately. NEVER a
+          // fallback source for `position` (see this method's class doc and
+          // RegistrationApprovalPayload's).
+          contactPerson: payload.contactPerson,
+          // §6.3 — position reads ONLY from payload.position, never from
+          // payload.contactPerson. This is the one guard DD-18's reversal
+          // explicitly keeps.
           position: payload.position ?? null,
           district: payload.district ?? null,
           marketLocation: payload.marketLocation ?? null,
@@ -919,6 +951,8 @@ export class AdminRegistrationsService {
           gpsLongitude: payload.gpsLongitude ?? null,
           capacityTons: payload.capacityTons,
           phone: payload.phone,
+          // public-profile-disclosure FR-4 — published deliberately.
+          otherCrops: payload.otherCrops ?? null,
           // §6.3 — NOT payload.email: the payload carries no email field at
           // all. This is the OTP-verified submitter address.
           email: row.submitterEmail,
