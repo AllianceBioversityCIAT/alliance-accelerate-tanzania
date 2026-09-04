@@ -177,6 +177,18 @@ const ACTORS: Record<string, unknown>[] = [
     traderType: 'offtaker',
     consentStatus: ConsentStatus.UNKNOWN,
     crops: [{ crop: { name: 'sorghum' } }],
+    // `public-profile-disclosure` DD-10 — without these overrides this
+    // fixture inherits `fixtureActor()`'s defaults BYTE-IDENTICAL to the
+    // GRANTED fixtures, which makes "this actor's PII is absent" pass
+    // vacuously (a GRANTED row legitimately supplies the same string). Own
+    // values, tied to this actor's region/type so a failure message is
+    // unmistakably this row and not `actor-denied-1`.
+    sex: 'F',
+    position: 'Iringa Offtake Coordinator',
+    marketLocation: 'Iringa Municipal Market',
+    technicalSupport: 'Needs solar dryer',
+    phone: '+255711111111',
+    email: 'iringa.offtaker@example.com',
   }),
   fixtureActor({
     id: 'actor-denied-1',
@@ -186,6 +198,16 @@ const ACTORS: Record<string, unknown>[] = [
     traderType: 'informal_trader',
     consentStatus: ConsentStatus.DENIED,
     crops: [{ crop: { name: 'groundnut' } }],
+    // `public-profile-disclosure` DD-10 — same rationale as `actor-unknown-1`
+    // above: own PII values, distinct from every GRANTED fixture AND from
+    // `actor-unknown-1`, so a by-value non-granted-absence assertion is
+    // actually falsifiable rather than trivially true.
+    sex: 'Other',
+    position: 'Tanga Market Trader',
+    marketLocation: 'Tanga Central Market',
+    technicalSupport: 'Needs weighing scale',
+    phone: '+255722222222',
+    email: 'tanga.trader@example.com',
   }),
 ];
 
