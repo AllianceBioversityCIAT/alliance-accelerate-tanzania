@@ -107,7 +107,7 @@
       Falsifying input: **corrected 2026-09-04 during execution — the original clause was wrong.** It read *"emptying the replacement constant must redden each of the seven sites"*, which is false: emptying a constant makes its loop iterate zero times and **pass**. That is D-1c itself, not its detection. The correct falsifying input is a **real defect in the projection** — leak a `CONTACT_BLOCK_FIELDS` member onto the list path, leak a `NEVER_PUBLIC_FIELDS` member onto detail, or drop a retained field from the Admin projection — each of which must redden the site that guards it.
       Skills: `tdd`
 
-- [ ] **T-10** Split `LEAKABLE_PII_VALUES` into its three directions  (deps: T-5, T-6)
+- [x] **T-10** Split `LEAKABLE_PII_VALUES` into its three directions  (deps: T-5, T-6)
       Scope: replace the single mixed array with detail-only / never-public groups per DD-4's table. **All eleven members must be assigned.**
       Traces: FR-1, FR-2, FR-3, FR-9 · design.md DD-4
       Files: `backend/src/test/pii-boundary.spec.ts`

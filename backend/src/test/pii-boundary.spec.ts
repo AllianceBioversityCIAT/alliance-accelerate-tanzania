@@ -80,7 +80,9 @@ import { AuthUser } from '../auth/auth.types';
  * four public paths — a structurally different table with its own forbidden
  * key/value sets (`REGISTRATION_FORBIDDEN_KEYS`,
  * `REGISTRATION_LEAKABLE_VALUES` below), so it does not reuse
- * `FORBIDDEN_KEYS`/`LEAKABLE_PII_VALUES`, which describe `Actor` only. See
+ * `FORBIDDEN_KEYS`/`DETAIL_ONLY_LEAKABLE_VALUES`/`NEVER_PUBLIC_LEAKABLE_VALUES`
+ * (T-10 split the latter out of the former single `LEAKABLE_PII_VALUES`),
+ * which describe `Actor` only. See
  * `design.md` §6.2/DD-2, `requirements.md` FR-8/NFR-1.
  */
 
@@ -113,10 +115,17 @@ function fixtureActor(
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
-    // PII — populated on purpose; MUST NOT surface in any public response.
+    // T-10/DD-4 — every direction populated on purpose, by value: the
+    // detail-only contact block (phone/email/position/marketLocation/
+    // contactPerson), the public-everywhere pair (sex/otherCrops), and the
+    // never-public technicalSupport. None of these is "MUST NOT surface" any
+    // more (that was true before FR-1 inverted disclosure) — what MUST hold
+    // per field is recorded where each one is swept, not restated here.
     sex: 'M',
+    otherCrops: 'Sesame, chia',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
+    contactPerson: 'Amina Juma',
     technicalSupport: 'Needs cold storage',
     phone: '+255700000000',
     email: 'director@example.com',
@@ -185,8 +194,10 @@ const ACTORS: Record<string, unknown>[] = [
     // values, tied to this actor's region/type so a failure message is
     // unmistakably this row and not `actor-denied-1`.
     sex: 'F',
+    otherCrops: 'Bambara groundnut',
     position: 'Iringa Offtake Coordinator',
     marketLocation: 'Iringa Municipal Market',
+    contactPerson: 'Halima Mrisho',
     technicalSupport: 'Needs solar dryer',
     phone: '+255711111111',
     email: 'iringa.offtaker@example.com',
@@ -204,8 +215,10 @@ const ACTORS: Record<string, unknown>[] = [
     // `actor-unknown-1`, so a by-value non-granted-absence assertion is
     // actually falsifiable rather than trivially true.
     sex: 'Other',
+    otherCrops: 'Cassava',
     position: 'Tanga Market Trader',
     marketLocation: 'Tanga Central Market',
+    contactPerson: 'Juma Kombo',
     technicalSupport: 'Needs weighing scale',
     phone: '+255722222222',
     email: 'tanga.trader@example.com',
@@ -329,25 +342,81 @@ function collectForbiddenValues(
 }
 
 /**
- * The exact PII/never-public *values* seeded into the GRANTED fixtures (must
- * never appear). `registration-source-and-consent` T-7's provenance values
- * are deliberately non-default (`SELF_REGISTERED`/`SIGNED_FORM`/a real date/a
- * reference string) — a
- * default-valued check (`TEAM_MANAGED`, `NOT_RECORDED`, `null`) would pass
- * vacuously since most live rows carry exactly those defaults today.
+ * T-10/design.md §12 DD-4 — `LEAKABLE_PII_VALUES` used to sweep these
+ * fixture values under ONE expectation ("absent everywhere"). After FR-1
+ * that is no longer true: DD-4's table gives them THREE different
+ * expectations depending on the path, so one array split into two, each
+ * swept where its own expectation actually holds. Every fixture value is
+ * assigned below, exactly once — an unassigned member is exactly how
+ * `technicalSupport` would get dropped instead of moved (this task's
+ * disqualifier). The membership rule governs throughout this file; no count
+ * of "how many" is recorded, because that count is exactly what T-10 found
+ * stale once `contactPerson` gained a fixture value — see
+ * `DETAIL_ONLY_LEAKABLE_VALUES.length + NEVER_PUBLIC_LEAKABLE_VALUES.length`
+ * for the current total, computed rather than typed.
+ *
+ * **Detail-only** — every {@link CONTACT_BLOCK_FIELDS} member's fixture
+ * value. The membership rule governs; the enumeration below is a snapshot
+ * (design.md §12 DD-4) — a hard count goes stale the moment
+ * `CONTACT_BLOCK_FIELDS` gains a field, which is exactly what happened when
+ * T-10 gave `contactPerson` a fixture value. MUST be present on
+ * `GET /api/v1/actors/:id` for the GRANTED fixture (FR-1) and MUST be
+ * absent from the list path (FR-9) and `/metrics` (DD-4's table — FR-9
+ * covers only the list's withholding of the contact block, not `/metrics`).
+ * The detail-path PRESENCE half of that contract is
+ * `public-profile-disclosure` T-11's inversion — NOT asserted by this
+ * array's own detail-path use below, which checks only the ABSENCE half
+ * that already holds today.
  */
-const LEAKABLE_PII_VALUES = [
-  '+255700000000',
-  'director@example.com',
-  'Director',
-  'Arusha Central Market',
-  'Needs cold storage',
-  'TZ-SEED-0001',
+const DETAIL_ONLY_LEAKABLE_VALUES = [
+  '+255700000000', // phone
+  'director@example.com', // email
+  'Director', // position
+  'Arusha Central Market', // marketLocation
+  'Amina Juma', // contactPerson
+];
+
+/**
+ * **Never public** — MUST be absent from EVERY public path: list,
+ * detail, AND `/metrics` alike (FR-1's `BUT it must NOT contain
+ * technicalSupport, traderId, …` clause, plus FR-3 — not FR-2), so — unlike
+ * {@link DETAIL_ONLY_LEAKABLE_VALUES} — this group needs only one polarity
+ * wherever it is used. `'Needs cold storage'` (technicalSupport) is a MEMBER
+ * HERE, not dropped: it moved WITH `technicalSupport` into
+ * `NEVER_PUBLIC_FIELDS` (T-6/FR-3), so its leakable value moves with it.
+ * `registration-source-and-consent` T-7's provenance values remain
+ * deliberately non-default (`SELF_REGISTERED`/`SIGNED_FORM`/a real date/a
+ * reference string) — a default-valued check (`TEAM_MANAGED`,
+ * `NOT_RECORDED`, `null`) would pass vacuously since most live rows carry
+ * exactly those defaults today.
+ */
+const NEVER_PUBLIC_LEAKABLE_VALUES = [
+  'Needs cold storage', // technicalSupport
+  'TZ-SEED-0001', // traderId
   '1400', // gpsAltitude
   'SELF_REGISTERED', // registrationSource — non-default
   'SIGNED_FORM', // consentMethod — non-default
   '2026-02-14', // consentObtainedAt — non-default (ISO date fragment)
   'CONSENT-REF-SIGNED-9931', // consentReference — non-default
+];
+
+/**
+ * The list path and `/metrics` share ONE expectation for both groups above —
+ * absence, by value — which is DD-4's table read straight down its List and
+ * `/metrics` columns: the detail-only group is absent there because FR-9
+ * withholds the contact block from the list (and `/metrics` never carries
+ * actor-identifying fields at all); the never-public group is absent there
+ * because it is never public anywhere — see {@link NEVER_PUBLIC_LEAKABLE_VALUES}'s
+ * doc comment above for the citation (FR-1's `BUT` clause plus FR-3, not
+ * FR-2). Kept as one union so both call
+ * sites sweep the full
+ * `DETAIL_ONLY_LEAKABLE_VALUES.length + NEVER_PUBLIC_LEAKABLE_VALUES.length`
+ * combined set, per this task's "Done when" — computed, not typed, so it
+ * cannot go stale the way the count itself once did.
+ */
+const LIST_AND_METRICS_LEAKABLE_VALUES: readonly string[] = [
+  ...DETAIL_ONLY_LEAKABLE_VALUES,
+  ...NEVER_PUBLIC_LEAKABLE_VALUES,
 ];
 
 // T11-A1 — the lookup route pseudonymises the caller IP with an HMAC under
@@ -423,7 +492,10 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       const wire = JSON.parse(JSON.stringify(res.body));
       expectNoPiiKeys(wire);
       expect(collectForbiddenValues(wire)).toHaveLength(0);
-      for (const piiValue of LEAKABLE_PII_VALUES) {
+      // T-10/DD-4 — the list path is where BOTH groups' absence expectation
+      // agrees, so it sweeps the full LIST_AND_METRICS_LEAKABLE_VALUES union
+      // (both groups' combined length, computed rather than typed here).
+      for (const piiValue of LIST_AND_METRICS_LEAKABLE_VALUES) {
         expect(JSON.stringify(wire)).not.toContain(piiValue);
       }
     });
@@ -452,7 +524,18 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       const wire = JSON.parse(JSON.stringify(res.body));
       expectNoPiiKeys(wire);
       expect(collectForbiddenValues(wire)).toHaveLength(0);
-      for (const forbiddenValue of LEAKABLE_PII_VALUES) {
+      // T-10/DD-4 — the detail path's absence expectation covers ONLY the
+      // never-public group now: the detail-only group (every
+      // CONTACT_BLOCK_FIELDS member's fixture value — phone/email/
+      // position/marketLocation/contactPerson) is REQUIRED PRESENT here by
+      // FR-1, so sweeping it for absence would assert the opposite of the
+      // spec. Inverting this to a presence check is
+      // `public-profile-disclosure` T-11's job, not this task's — this
+      // narrowing is the correct re-point, not a quiet deletion of coverage
+      // (those values moved to `DETAIL_ONLY_LEAKABLE_VALUES`, used by the
+      // list/`/metrics` sweeps above/below, where their absence still
+      // holds).
+      for (const forbiddenValue of NEVER_PUBLIC_LEAKABLE_VALUES) {
         expect(JSON.stringify(wire)).not.toContain(forbiddenValue);
       }
       expect(wire.id).toBe('actor-granted-1');
@@ -488,7 +571,10 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       const wire = JSON.parse(JSON.stringify(res.body));
       expectNoPiiKeys(wire);
       expect(collectForbiddenValues(wire)).toHaveLength(0);
-      for (const forbiddenValue of LEAKABLE_PII_VALUES) {
+      // T-10/DD-4 — `/metrics` agrees with the list path: both groups are
+      // absent, so this sweeps the same full LIST_AND_METRICS_LEAKABLE_VALUES
+      // union too.
+      for (const forbiddenValue of LIST_AND_METRICS_LEAKABLE_VALUES) {
         expect(JSON.stringify(wire)).not.toContain(forbiddenValue);
       }
     });
@@ -546,7 +632,8 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
  * DD-2). Two sibling top-level `describe` blocks below, deliberately NOT
  * nested inside the `registration-source-and-consent` T-9 block above — see
  * that block's own doc comment for why `Registration` gets its OWN key/value
- * sets rather than reusing `FORBIDDEN_KEYS`/`LEAKABLE_PII_VALUES`.
+ * sets rather than reusing `FORBIDDEN_KEYS`/`DETAIL_ONLY_LEAKABLE_VALUES`/
+ * `NEVER_PUBLIC_LEAKABLE_VALUES`.
  *
  * **C-9 / DD-2 — the iteration set is DERIVED from the runtime route table,
  * never compared to one.** {@link getRegisteredRoutes} reads Nest's OWN

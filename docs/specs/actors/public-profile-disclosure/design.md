@@ -217,9 +217,11 @@ That constant holds **eleven** values under one expectation. After this change t
 
 | Group | Members | Detail | List | `/metrics` |
 |---|---|---|---|---|
-| **Detail-only** | `'+255700000000'` (phone) · `'director@example.com'` (email) · `'Director'` (position) · `'Arusha Central Market'` (marketLocation) | present | **absent** | absent |
+| **Detail-only** | *the fixture value of every `CONTACT_BLOCK_FIELDS` member.* At design time that was four — `'+255700000000'` (phone) · `'director@example.com'` (email) · `'Director'` (position) · `'Arusha Central Market'` (marketLocation) — because `contactPerson` had **no fixture value at all**. T-10 gave it one, so the group is **five**. | present | **absent** | absent |
 | **Public everywhere** | *(none today — `sex` and `otherCrops` have no fixture value in this array)* | — | — | — |
 | **Never public** | `'Needs cold storage'` (technicalSupport) · `'TZ-SEED-0001'` (traderId) · `'1400'` (gpsAltitude) · `'SELF_REGISTERED'` · `'SIGNED_FORM'` · `'2026-02-14'` · `'CONSENT-REF-SIGNED-9931'` | absent | absent | absent |
+
+**The membership rule governs; the enumeration is a snapshot.** This table lists fixture *values*, and a value exists only once some fixture sets it — so the counts move as fixtures gain fields, while the rule ("every contact-block member's fixture value") does not. Same discipline as FR-8's document table: **the rule is the authority, the list is a convenience.** `otherCrops` is deliberately in no group — it ships on both list and detail for a `GRANTED` actor, so it has no absence direction anywhere.
 
 **Correction, 2026-09-04 (R2-1).** Revision 2 of this decision placed `'Arusha Central Market'` in the detail-only group while FR-7's table still had `marketLocation` in the list set — the constant and the requirement pointed opposite ways, and an implementer following the constant would have "fixed" the resulting failure by dropping `marketLocation` from `toPublicListItem`. Resolved by the A-1 decision: `marketLocation` **joins the contact block**, so the constant and the requirement now agree. *(Judge A F-5 / R2-1, both orchestrator-verified.)*
 

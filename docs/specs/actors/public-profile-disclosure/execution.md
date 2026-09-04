@@ -632,3 +632,52 @@ Site 7 correctly did **not** react to a public-path leak: its loop asserts the *
 **Verification (Leader-run):** full suite `--runInBand` → **1042 passed, 1 failed (1043)**, 18.5s. The single failure is `pii-boundary.spec.ts`'s detail-path value sweep — T-11's to invert, correctly left red.
 
 ---
+
+### T-10 — Split `LEAKABLE_PII_VALUES` into its three directions
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 3 of 3 — the last before HALT) · auto-approved |
+| Date | 2026-09-04 |
+| Implementer attempts | **3** — FAIL, FAIL, PASS |
+| Requirements covered | FR-1, FR-2, FR-3, FR-9 · design.md DD-4 |
+| Files changed | `backend/src/test/pii-boundary.spec.ts` |
+
+**Final shape:** `DETAIL_ONLY_LEAKABLE_VALUES` (the 5 `CONTACT_BLOCK_FIELDS` fixture values) · `NEVER_PUBLIC_LEAKABLE_VALUES` (7) · a derived union for list and `/metrics`. Directions: list → union · detail → never-public only · `/metrics` → union. No typed count survives anywhere; both totals are `.length + .length` expressions.
+
+**`pii-boundary.spec.ts` went red → green**, and the explanation was verified rather than accepted: the four detail-only values left the *detail* loop because their absence there is no longer the correct expectation. No polarity flipped, nothing deleted. **T-11 still owns the presence half.**
+
+**The `contactPerson` fixture gap is closed.** `fixtureActor()` now sets `contactPerson`/`otherCrops`, and the non-granted rows got DD-10-distinct values. The most sensitive field this spec publishes finally has a value to test with.
+
+#### One defect, three instances, all in this task
+
+| # | Instance |
+|---|---|
+| 1 | The report said `contactPerson` was folded into `DETAIL_ONLY_LEAKABLE_VALUES`. **It was not.** A `contactPerson` leak onto the list reddened nothing — absent from `FORBIDDEN_KEYS` by key and from every sweep by value. |
+| 2 | The membership rule stated **three times in two incompatible forms** — a rule against a stale count. |
+| 3 | The FR-2 citation corrected at line 382 and left wrong at line 411 — **in the same diff**, 25 lines away. |
+
+**Each fix was correct where it looked and blind where it did not.** The defect is not carelessness; it is that correcting a cited site *without sweeping for siblings* reliably produces it. The only countermeasure that worked was making the sweep part of the instruction — *"grep the whole file for `FR-2` and read every hit in context"* — rather than relying on diligence.
+
+**What actually closed it (Reviewer's words):** *"this is the first attempt in T-10 where the fix was produced by re-deriving the premise from the source instead of trusting a prior summary, and that method, not the wording, is what addresses the cause."*
+
+Two behaviours worth keeping:
+
+- **It verified a premise instead of copying it.** Told not to trust the prior Reviewer's summary, it checked and found the array is **not** "all-`actor-granted-1`": 5 of 7 members are inherited byte-identical by the non-granted fixtures. Only `technicalSupport` and `traderId` are overridden on both — and the final Reviewer sharpened it further, noting `'Needs cold storage'` is not granted-1-exclusive either, since `actor-granted-2`/`-3` inherit it.
+- **It deleted the imprecise premise rather than rewriting it.** The FR-2 exemption rests on *which actor's response is under test*, not on value-exclusivity — so the premise was never load-bearing. Faced with a sentence that had proven hard to write correctly and was not needed, removing it beat composing a fourth version.
+
+**And it cross-referenced instead of restating.** The union comment now points at `NEVER_PUBLIC_LEAKABLE_VALUES`' doc for the citation. **A reference cannot drift from its target; a second copy can, and did, twice.**
+
+#### Leader corrections in parallel
+
+`design.md` DD-4's Detail-only row updated from four values to the **rule** — *every `CONTACT_BLOCK_FIELDS` member's fixture value* — with the same principle FR-8 already carries: **the rule governs, the enumeration is a snapshot.** Third time in this spec a list has fallen behind its own rule (FR-8's documents, DD-4's values, these counts), and all three times the fix was to state the rule and derive the number.
+
+#### CARRIED TO T-11 — a fourth instance, in another file
+
+`backend/src/common/pii-consent.policy.ts` still says the contact-block `/metrics` value-absence is *"enforced today by `LEAKABLE_PII_VALUES`"* — **a constant T-10 just split out of existence.** Written by T-6, correctly out of T-10's scope, flagged by the final Reviewer.
+
+It matters more than its size: **that module is the file every subsequent task reads first**, and a wrong forward reference in it has already caused one FAIL (T-6's polarity instruction, which would have told T-9 to fold a presence set into an absence check). T-11 fixes the reference.
+
+**Verification:** `pii-boundary --runInBand` → 25/25 · eslint clean · full suite → 75 suites / **1043** tests.
+
+---
