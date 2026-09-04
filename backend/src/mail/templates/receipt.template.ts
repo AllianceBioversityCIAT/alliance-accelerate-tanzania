@@ -18,7 +18,8 @@ export function buildReceiptMessage(to: string, reference: string): MailMessage 
     text:
       'Thank you for registering with ACCELERATE Tanzania.\n\n' +
       `Your reference is ${reference}. Keep it — you can use it together with ` +
-      'this email address to check your submission\'s status at any time.\n\n' +
+      'this email address to check your submission\'s status at any time at ' +
+      'https://d3idqvvg0xa1r7.cloudfront.net/register/status/\n\n' +
       'An ACCELERATE Tanzania reviewer will check your submission. You do not ' +
       'need to take any further action.',
   };
