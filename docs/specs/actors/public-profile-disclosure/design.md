@@ -113,10 +113,16 @@ Absent optional values serialize as `null`, never omitted. **The list/detail dif
 
 | Constant | Meaning | Non-empty after this change? |
 |---|---|---|
-| `PUBLICLY_DISCLOSED_FIELDS` | Must appear on the **detail** path for a `GRANTED` actor | yes |
+| `PUBLICLY_DISCLOSED_FIELDS` | **Every field whose public disclosure this revision introduces** — see the rule below | yes |
 | `CONTACT_BLOCK_FIELDS` | Subset of the above; must **never** appear on the **list** path | yes |
 | `NEVER_PUBLIC_FIELDS` | Must never appear on any public path (now including `technicalSupport`) | yes |
 | `PII_ALLOWLIST` | Retained, **empty**, reserved for legal re-restriction (DD-2) | no — deliberately |
+
+**The rule for `PUBLICLY_DISCLOSED_FIELDS`, recorded 2026-09-04 after T-6's review.** Membership is *every field whose public disclosure this revision introduces* — currently `phone`, `email`, `sex`, `position`, `marketLocation`, `contactPerson`, `otherCrops`.
+
+Revision 3 of this design stated the meaning as *"must appear on the detail path for a `GRANTED` actor"*, which reads as FR-1's whole published set. **That reading is not verbatim implementable as a field-name array**: FR-1's set contains *"exact GPS"*, which is not a response field name (`gps: {lat, long}`), and `crops`, a relation array. T-6's Implementer therefore adopted a narrower reading defined **by history** — *the old `PII_ALLOWLIST`, minus `technicalSupport`, plus `contactPerson`* — and a rule phrased as an edit to a retired constant has no slot for `otherCrops`, a column that did not exist before T-1. The field was left in no constant at all, inside the very task written to guarantee nothing is asserted by an empty iteration.
+
+**A definition by history cannot classify anything that arrives after it.** The rule is therefore stated by policy, so a future author adding a column can tell from the policy module alone where it belongs. *(T-6 review; the ambiguity was the design's, the omission was the task's — both are closed here.)*
 
 Every one of these gets a **by-value pin** in `pii-consent.policy.spec.ts`, including the empty one. A constant that silently changes size is the defect class this whole revision exists to close.
 

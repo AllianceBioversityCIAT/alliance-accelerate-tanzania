@@ -241,9 +241,9 @@ Two proposal claims did not survive verification and are corrected here. The pro
 - THEN the exported columns are unchanged from the declared export set
 - AND IT MUST be covered by an assertion that **names the contact block explicitly** and fails if any member appears in the output — the one test standing between a type widening and a silent bulk leak
 
-### FR-8: All six constitutional documents state the new policy
+### FR-8: All **seven** constitutional documents state the new policy
 
-- **Description:** Every document asserting that `phone`/`email` are withheld from `Public` MUST be updated in the same change.
+- **Description:** Every document asserting that `phone`/`email` are withheld from `Public` MUST be updated in the same change. **The table below is the enumeration; the scenario's sweep is the authority.** Where they disagree, the sweep wins — as it did on 2026-09-04, when it surfaced a seventh document (`backend/CLAUDE.md`) this table had missed.
 - **Rationale / Source:** `proposal.md` R-3. A partial change leaves the repo self-contradictory and the next `/akili-audit` reverts it as drift.
 - **PII/RBAC impact:** Documentation of the boundary, not the boundary itself.
 
@@ -255,6 +255,7 @@ Two proposal claims did not survive verification and are corrected here. The pro
 | 4 | `docs/ux-ui/design.md` | principle 3, DD-2, the *PII block* component entry; `--color-restricted-bg` **stays** (§2.1) |
 | 5 | `docs/specs/general-setup/requirements.md` | the closing *Conventions reminder* line |
 | 6 | `docs/specs/general-setup/design.md` / `task.md` | the PII-allowlist instructions, which must still make sense with an empty allowlist |
+| **7** | **`backend/CLAUDE.md`** | the `## PII & RBAC` claim that *"PII fields (`phone`, `email`, `sex`, `position`, `marketLocation`, `technicalSupport`) exit ONLY through Admin-gated routes/serializers"* — **false after T-7/T-8**. Found by T-6's Reviewer; **no task owned it**, because this table listed only the root `CLAUDE.md`. *The requirement's own sweep scenario already covered it — the enumeration undercounted, not the requirement.* |
 
 #### Scenario: No surviving contradiction
 
@@ -387,7 +388,7 @@ TRD §3's field table gains two rows; TRD §8's PII set becomes empty with the c
 | FR-5 | Import template carries the two new columns at v3 | D-5, D-9, D-13 |
 | FR-6 | The public profile renders the full record | D-8, D-14 |
 | FR-7 | The public CSV exports the list set | D-1, D-1b, D-15 |
-| FR-8 | All six constitutional documents state the new policy | D-7 |
+| FR-8 | All seven constitutional documents state the new policy | D-7 |
 | **FR-9** | **The list endpoint withholds the contact block** | **D-1b** |
 | NFR-1 | Consent enforced at the query | D-2 |
 | NFR-2 | The inverted gate MUST be able to fail | D-3, **D-1c** |

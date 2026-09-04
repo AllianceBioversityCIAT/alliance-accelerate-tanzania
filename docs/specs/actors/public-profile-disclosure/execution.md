@@ -405,3 +405,59 @@ T-1, T-2, T-3, T-4 closed, plus T-5 (sequenced early as T-11's prerequisite). **
 Two FAILs, both on the same defect class — a claim asserted about a file nobody opened. Both caught by review, neither by a suite.
 
 ---
+
+### T-6 — Restructure the policy constants and pin every one by value
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 3 of 3 — the last before HALT) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | **3** — FAIL, FAIL, PASS |
+| Requirements covered | FR-1, FR-3, FR-9 · design.md §7.1, DD-1, DD-2 · D-1c |
+| Files changed | `pii-consent.policy.ts` (+197/-52), `pii-consent.policy.spec.ts` (+91) |
+| Effort | xhigh → max (bumped on each rework) |
+
+#### Final state
+
+| Constant | Members |
+|---|---|
+| `PII_ALLOWLIST` | `[]` — retained, documented, pinned |
+| `PUBLICLY_DISCLOSED_FIELDS` | `phone, email, sex, position, marketLocation, contactPerson, otherCrops` |
+| `CONTACT_BLOCK_FIELDS` | `contactPerson, position, phone, email, marketLocation` |
+| `NEVER_PUBLIC_FIELDS` | `traderId, gpsAltitude, gpsAccuracy, registrationSource, consentMethod, consentObtainedAt, consentReference, technicalSupport` |
+
+All four pinned by value (`toEqual` against a literal — length- and order-sensitive, so an added, removed **or reordered** member reddens). Falsifying-input check performed for real in attempt 1: deleting `'phone'` reddened two named tests.
+
+**The expected non-result held throughout: zero suites turned red.** That is D-1c manifesting, not correctness. The seven sites now assert nothing, silently, and remain untouched — verified by `git diff --stat` returning empty for all seven. **That list is T-9's work order.**
+
+#### Three attempts, one defect, two signs
+
+| Attempt | The membership rule was stated… | Failure |
+|---|---|---|
+| 1 | **by history** — *"the old allowlist, minus `technicalSupport`, plus `contactPerson`"* | **Under**-inclusive. A rule phrased as an edit to a retired constant has no slot for a column created by T-1 → `otherCrops` belonged to **no constant at all**, inside the very task written to guarantee nothing is asserted by an empty iteration. |
+| 2 | correctly by policy, **and then again** by FR-1 intersection | **Over**-inclusive. *"FR-1's set intersected with literal Actor scalar field names"* admits `traderName`, `traderType`, `region`, `district`, `capacityTons` — twelve members, not seven — and revived the reading design §7.1 had just rejected. |
+| 3 | **once**, by policy; every restatement deleted | PASS. |
+
+**The defect was never the wording. It was restating the rule at all.** Each reformulation was a fresh chance to be wrong and both chances were taken. Attempt 3's brief changed from *"write a correct definition"* to *"delete the second one and do not replace it"*, plus a self-check before reporting: grep your own diff for sentences that define membership — **there must be exactly one**.
+
+**Root-cause note.** Three different model instances wrote this JSDoc; two failed the same way. That is a signal about the task's shape, not the workers' competence: T-6 asked a code comment to *carry* a normative definition, and a definition that lives in two places is a definition that can disagree with itself — the same single-source-of-truth discipline this whole spec enforces on code, applied to the prose describing it. **Recorded for Kaizen.**
+
+#### A second defect attempt 1 introduced, caught before it propagated
+
+The rewritten `NEVER_PUBLIC_FIELDS` JSDoc told T-9 to re-point the iteration to *"this set plus `PUBLICLY_DISCLOSED_FIELDS`"*. That iteration is `FORBIDDEN_KEYS`, an **absence** set applied to list, detail **and** `/metrics`. Following the instruction would have forbidden `phone`, `email`, `position`, `marketLocation`, `contactPerson` on the detail path — **precisely the fields FR-1 requires present there.**
+
+A wrong instruction planted in the file T-9's Implementer reads first. Replaced with an explicit three-polarity block (absence-everywhere / absence-on-list / presence-on-detail), and attempt 3 refined it further with a by-key vs by-value distinction for `/metrics` that the Reviewer verified against DD-4's table and `LEAKABLE_PII_VALUES`' actual call sites.
+
+#### Leader corrections made in parallel — these were mine, not the Implementer's
+
+1. **`design.md` §7.1 was ambiguous.** Its Meaning column read *"must appear on the detail path for a `GRANTED` actor"*, which reads as FR-1's whole published set — **and that set is not verbatim implementable as a field-name array**: it names *"exact GPS"* (not a field name; `gps: {lat, long}`, computed by `publicGps`) and `crops` (a relation array). Faced with an unimplementable rule the Implementer substituted one by history. The adopted rule is now recorded in §7.1 **by policy**: *every field whose public disclosure this revision introduces.* **The ambiguity was the design's; the omission was the task's.**
+2. **FR-8 undercounted.** It enumerated **six** constitutional documents; `backend/CLAUDE.md`'s `## PII & RBAC` section claims those fields *"exit ONLY through Admin-gated routes/serializers"*, which T-7/T-8 falsify — and it binds every future agent working in `backend/`. Corrected to **seven**, with T-17's scope widened to match. **This was not scope creep:** FR-8's own scenario ("zero surviving statements … when the repository is swept") already covered the file; only the enumeration was short. Recorded in FR-8 as an explicit principle — **the table enumerates, the sweep is the authority.**
+
+#### ADVISORY (non-gating, recorded not actioned)
+
+- **A1:** the JSDoc opener still paraphrases the runtime contract in wording close to the ambiguous revision-3 phrasing. The Reviewer judged it subordinate — every proposition in it is **true of all seven members**, unlike attempt 2's false equality — and offered a belt-and-braces clause. **Not actioned:** T-6 is complete, and widening a closed task to absorb an advisory is forbidden.
+- **A2:** the polarity bullet's *"ONLY BY KEY on the list path"* is silent on by-value absence on the list path, which FR-9 does require. The complete statement sits 55 lines above in the same file, so it is not self-contradictory — but the two read in tension out of context.
+
+**Verification:** `npm test -- --silent pii-consent --runInBand` → 11 tests · `npx eslint "{src,test}/**/*.ts" --quiet` clean · full `--runInBand` → 75 suites / **1039** tests.
+
+---

@@ -63,7 +63,7 @@
 
 ## Phase C — Policy and projections
 
-- [ ] **T-6** Restructure the policy constants and pin every one by value  (deps: none)
+- [x] **T-6** Restructure the policy constants and pin every one by value  (deps: none)
       Scope: `PII_ALLOWLIST` → empty (retained, documented); add `PUBLICLY_DISCLOSED_FIELDS` and `CONTACT_BLOCK_FIELDS`; relocate `technicalSupport` into `NEVER_PUBLIC_FIELDS` with its reason; by-value pin on **all four** constants including the empty one.
       Traces: FR-1, FR-3, FR-9 · design.md §7.1, DD-1, DD-2 · D-1c
       Files: `backend/src/common/pii-consent.policy.ts`, `…pii-consent.policy.spec.ts`
@@ -180,8 +180,8 @@
 
 ## Phase F — Constitution and human verification
 
-- [ ] **T-17** Update the six constitutional documents in one commit  (deps: T-11, T-16)
-      Scope: `CLAUDE.md`, `docs/prd.md`, `docs/trd/trd.md`, `docs/ux-ui/design.md`, `docs/specs/general-setup/requirements.md`, `docs/specs/general-setup/design.md`+`task.md`. The TRD gains the list/detail asymmetry in its endpoint table.
+- [ ] **T-17** Update the seven constitutional documents in one commit  (deps: T-11, T-16)
+      Scope: `CLAUDE.md`, **`backend/CLAUDE.md`**, `docs/prd.md`, `docs/trd/trd.md`, `docs/ux-ui/design.md`, `docs/specs/general-setup/requirements.md`, `docs/specs/general-setup/design.md`+`task.md`. `backend/CLAUDE.md` was added 2026-09-04 — its `## PII & RBAC` section claims those fields exit only through Admin routes, which T-7/T-8 falsify. It binds every future agent working in `backend/`, and FR-8's original table missed it. The TRD gains the list/detail asymmetry in its endpoint table.
       Traces: FR-8 · design.md §4, §6 · D-7
       Files: the six above
       Verify: `grep -rn "phone.*email" CLAUDE.md docs/prd.md docs/trd/trd.md docs/ux-ui/design.md docs/specs/general-setup/` and inspect every hit
