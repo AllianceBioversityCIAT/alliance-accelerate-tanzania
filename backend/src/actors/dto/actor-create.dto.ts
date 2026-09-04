@@ -61,6 +61,17 @@ export class ActorCreateDto {
   @IsIn(TRADER_TYPES as readonly string[])
   traderType!: string;
 
+  /**
+   * Named natural person, published deliberately once consent is `GRANTED`
+   * (`actors/public-profile-disclosure` FR-4). Bound to match
+   * `RegistrationPayloadDto.contactPerson` — the column is `VARCHAR(191)`, so
+   * 120 leaves headroom and keeps both intake paths identical.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  contactPerson?: string;
+
   /** PII — gating happens later (T-4); shape is validated here. */
   @IsOptional()
   @IsIn(SEX_VALUES as readonly string[])
@@ -79,6 +90,12 @@ export class ActorCreateDto {
   @IsNumber()
   @Min(0)
   capacityTons?: number;
+
+  /** Actor-declared free text, published (FR-4). Matches the `VARCHAR(300)` column. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  otherCrops?: string;
 
   @IsOptional()
   @IsString()

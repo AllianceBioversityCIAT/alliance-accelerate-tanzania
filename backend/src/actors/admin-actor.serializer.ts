@@ -24,10 +24,14 @@ export interface AdminActor {
   region: string;
   district: string | null;
   traderType: string;
+  /** Published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
+  contactPerson: string | null;
   sex: string | null;
   position: string | null;
   marketLocation: string | null;
   capacityTons: number | null;
+  /** Actor-declared free text, published (FR-4). */
+  otherCrops: string | null;
   technicalSupport: string | null;
   phone: string | null;
   email: string | null;
@@ -57,10 +61,12 @@ interface AdminActorInput {
   region: string;
   district?: string | null;
   traderType: string;
+  contactPerson?: string | null;
   sex?: string | null;
   position?: string | null;
   marketLocation?: string | null;
   capacityTons?: Prisma.Decimal | number | string | null;
+  otherCrops?: string | null;
   technicalSupport?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -92,10 +98,12 @@ export function toAdminActor(actor: AdminActorInput): AdminActor {
     region: actor.region,
     district: actor.district ?? null,
     traderType: actor.traderType,
+    contactPerson: actor.contactPerson ?? null,
     sex: actor.sex ?? null,
     position: actor.position ?? null,
     marketLocation: actor.marketLocation ?? null,
     capacityTons: toNullableNumber(actor.capacityTons),
+    otherCrops: actor.otherCrops ?? null,
     technicalSupport: actor.technicalSupport ?? null,
     phone: actor.phone ?? null,
     email: actor.email ?? null,

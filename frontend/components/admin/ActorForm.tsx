@@ -125,6 +125,13 @@ interface FormValues {
   technicalSupport: string;
   phone: string;
   email: string;
+  /**
+   * Named natural person, published deliberately once consent is `GRANTED`
+   * (`actors/public-profile-disclosure` FR-4).
+   */
+  contactPerson: string;
+  /** Actor-declared free text, published (FR-4). */
+  otherCrops: string;
   crops: string[];
   consentStatus: string;
   /**
@@ -177,6 +184,8 @@ function toFormValues(actor?: AdminActor): FormValues {
       technicalSupport: '',
       phone: '',
       email: '',
+      contactPerson: '',
+      otherCrops: '',
       crops: [],
       consentStatus: '',
       registrationSource: 'TEAM_MANAGED',
@@ -202,6 +211,8 @@ function toFormValues(actor?: AdminActor): FormValues {
     technicalSupport: actor.technicalSupport ?? '',
     phone: actor.phone ?? '',
     email: actor.email ?? '',
+    contactPerson: actor.contactPerson ?? '',
+    otherCrops: actor.otherCrops ?? '',
     crops: actor.crops ?? [],
     consentStatus: actor.consentStatus,
     registrationSource: actor.registrationSource,
@@ -418,10 +429,12 @@ function buildDto(
     // as "changed" and re-trigger the FR-3 guard server-side on an unrelated edit).
     consentReference: values.consentReference.trim() || null,
     district: values.district.trim() || null,
+    contactPerson: values.contactPerson.trim() || null,
     sex: values.sex || null,
     position: values.position.trim() || null,
     marketLocation: values.marketLocation.trim() || null,
     capacityTons: values.capacityTons.trim() ? Number(values.capacityTons) : null,
+    otherCrops: values.otherCrops.trim() || null,
     technicalSupport: values.technicalSupport.trim() || null,
     phone: values.phone.trim() || null,
     email: values.email.trim() || null,
@@ -704,6 +717,7 @@ export default function ActorForm({
     type: 'text' | 'email' | 'number' | 'date' = 'text',
     required = false,
     hint?: string,
+    maxLength?: number,
   ) => {
     const id = fieldId(field);
     const error = errors[field];
@@ -716,6 +730,7 @@ export default function ActorForm({
           value={value}
           onChange={(e) => setField(field, e.target.value as FormValues[typeof field])}
           disabled={loading}
+          maxLength={maxLength}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={inputClasses(!!error)}
@@ -724,7 +739,12 @@ export default function ActorForm({
     );
   };
 
-  const renderTextarea = (field: keyof FormValues, label: string, required = false) => {
+  const renderTextarea = (
+    field: keyof FormValues,
+    label: string,
+    required = false,
+    maxLength?: number,
+  ) => {
     const id = fieldId(field);
     const error = errors[field];
     const value = values[field] as string;
@@ -736,6 +756,7 @@ export default function ActorForm({
           onChange={(e) => setField(field, e.target.value as FormValues[typeof field])}
           disabled={loading}
           rows={3}
+          maxLength={maxLength}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={inputClasses(!!error)}
@@ -873,6 +894,7 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput('contactPerson', 'Contact person', 'text', false, undefined, 120)}
               {renderInput('phone', 'Phone')}
               {renderInput('email', 'Email', 'email')}
             </div>
@@ -904,6 +926,16 @@ export default function ActorForm({
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput(
+                'otherCrops',
+                'Other crop(s)',
+                'text',
+                false,
+                undefined,
+                300,
+              )}
             </div>
           </fieldset>
         </div>

@@ -19,7 +19,7 @@
       Falsifying input: a migration that alters an existing column fails the SQL inspection.
       Skills: —
 
-- [ ] **T-2** Surface both columns to the Admin projection and form  (deps: T-1)
+- [x] **T-2** Surface both columns to the Admin projection and form  (deps: T-1)
       Scope: `AdminActor` + `toAdminActor`, the admin create/update DTOs, and `ActorForm`'s two new optional inputs.
       Traces: FR-4 · design.md §7.3, §4
       Files: `backend/src/actors/admin-actor.serializer.ts`, `backend/src/actors/dto/{actor-create,admin-actor-create,admin-actor-update}.dto.ts`, `frontend/components/admin/ActorForm.tsx`, `frontend/lib/api/actors-admin.ts`

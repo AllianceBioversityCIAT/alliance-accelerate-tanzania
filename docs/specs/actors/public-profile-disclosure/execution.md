@@ -7,7 +7,7 @@
 | Spec path | `docs/specs/actors/public-profile-disclosure/` |
 | Branch | `public-profile` |
 | Execution started | 2026-09-04 |
-| Approval Mode | **gated** (inherited from `proposal.md`) |
+| Approval Mode | **gated** (inherited) → **pre-approved** from T-2 onward, granted by Daniela Gómez 2026-09-04 after T-1/T-5 closed. Routine PASS gates auto-pass and are logged `auto-approved (pre-approved mode)`. **Exceptions always stop**: HALT, FATAL_FAIL, Pivot, budget tripwire, and T-19's human visual check. |
 | Budget (design §16) | 19 tasks · ~2,000 net LOC (band 1,700–2,400) · ~28 review rounds |
 | Triad | Leader (this session) → `akili-implementer` → `akili-reviewer` (wrapper-bound models; author ≠ auditor enforced by configuration) |
 
@@ -197,5 +197,71 @@ The nearest guard is `registration-create.dto.spec.ts`, which pins `{ field: 'ot
 #### Leader notes
 
 **The pre-existing unbounded-`@MaxLength` exposure on `ActorCreateDto` is NOT this spec's to fix.** Four fields (`district`, `position`, `marketLocation`, `phone`) can already overflow their `VARCHAR(191)` columns through the admin path. That is a real defect, found while reviewing this task, and it is **out of scope** — no requirement backs it, no budget line covers it, and `/akili-execute`'s *Advisory Never Becomes A Task* rule forbids minting work from an advisory. Recorded here so it is not lost; it earns a proposal of its own or nothing.
+
+---
+
+### T-2 — Surface both columns to the Admin projection and form
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved (pre-approved mode) |
+| Date | 2026-09-04 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-4 · design.md §7.3, §4 |
+| Files changed | 14 (5 declared + 1 justified production deviation + 8 type ripples) · +303 lines |
+
+#### Process incident — Leader misread a pause as a stall
+
+The Implementer emitted a task-notification mid-run saying only *"Waiting on the backend test run."* The Leader read that as a stall, inspected the tree, **ran the verification itself** on a quiet tree, and briefed the Reviewer that the code was *unattested by its author*. The agent then resumed and delivered a full report. The Leader issued a mid-review correction to the Reviewer.
+
+**Cost: none to the verdict.** The Reviewer stated it had already re-derived every credited claim from source and that nothing in its verdict rested on the Implementer's account — the report served as corroboration *of the author*, not of the code. **Kaizen signal:** a notification firing on a pause is indistinguishable from one firing on an abandonment; the Leader should inspect before characterising, which it did, but should not have narrated the conclusion before the agent's lifecycle was settled.
+
+#### What landed
+
+| Field | Bound | Where |
+|---|---|---|
+| `contactPerson` | `@MaxLength(120)` | `ActorCreateDto` — matches `RegistrationPayloadDto`; column is `VARCHAR(191)`, so 71 chars of headroom |
+| `otherCrops` | `@MaxLength(300)` | same — matches both the `VARCHAR(300)` column and the public intake DTO |
+
+The four pre-existing unbounded fields (`district`, `position`, `marketLocation`, `phone`) were **not** touched, per instruction.
+
+**Verification (Leader-run, quiet tree):** backend `admin-actor` 4 suites / 128 tests · backend full 75 suites / **1018** tests (was 1007 → 11 added) · `npx eslint "{src,test}/**/*.ts" --quiet` exit 0 · frontend `ActorForm|actors-admin` 103 tests · frontend full 109 suites / **1632** tests. Implementer additionally ran `npx tsc --noEmit` clean in both packages.
+
+#### Reviewer verdict: `STATUS: PASS`
+
+> The two mandatory bounds landed and provably reach the update path; the four forbidden fields were not touched; the Disqualifier and the Falsifying input are each discharged by standing, discriminating tests; and the two undeclared production lines are necessary rather than creep.
+
+**The update path was verified by reading, not assumed.** `AdminActorCreateDto extends ActorCreateDto` (plain `extends`, decorators inherited) and `AdminActorUpdateDto extends PartialType(AdminActorCreateDto)`, which copies validation metadata. Two independent corroborations: a pre-existing test proves `PartialType` carries decorators through this exact class chain, and the new inherited-`@MaxLength` test is **discriminating** — if `PartialType` dropped it, a 121-character string would validate clean and redden the test.
+
+**Disqualifier discharged with nine populated round-trips**, counted by the Reviewer and reconciling exactly with 1007 → 1018. The two e2e round-trips are load-bearing and discriminating: the mock's `create` stores `{...args.data}` verbatim, so deleting `'contactPerson'` from `SCALAR_FIELDS` makes the GET body `null` and reddens the test. Only one of eleven is a `null`-only test, and it is supplementary.
+
+#### Leader-required record — §4 closed-set amendment (Reviewer advisory 2)
+
+`design.md` §4 declares its file list a **closed set**: *"if the implementation needs a file that is absent, that is a budget-tripwire event (§16), not a silent addition."* §4 lists `actors-admin.service.spec.ts` but **not** `actors-admin.service.ts`.
+
+**Amendment recorded here, as §4 requires.** `backend/src/actors/actors-admin.service.ts` joins the closed set. The addition was **necessary, not creep**, verified by the Reviewer against source rather than accepted from the report: `SCALAR_FIELDS` is consumed only by `buildScalarData()`, which supplies the `data` argument to both `tx.actor.create` and `tx.actor.update`. Omit the two entries and the DTO validates the fields while the write silently drops them — *literally T-2's named Falsifying input*. Budget consequence: **+2 LOC, none material.**
+
+#### KZ-002 — what 1018 green tests establish, and what they cannot
+
+They **do** establish that `class-validator` rejects 121/301 and accepts 120/300, that both fields traverse DTO → `SCALAR_FIELDS` → Prisma `data` → stored row → `toAdminActor` → HTTP body on create *and* update, and that the 400 envelope names the right field.
+
+They **cannot** establish anything about the database. There is still no `new PrismaClient(` under `backend/src`; the e2e harness overrides `PrismaService` with an in-memory object that stores whatever it is handed. **No test in this repository has ever written a 300-character `otherCrops` to MySQL.** Error 1406 remains unreachable in the harness. That the bounds fit their columns rests *only* on reading `schema.prisma`. **Had the T-1 migration never been applied, all 1018 tests would still be green.**
+
+#### Positive finding worth preserving
+
+Widening the `Actor` entity did **not** leak either column to the `Public` role. `toPublic` builds by explicit literal pick, so the new columns are absent from every public path **by construction** — the exact property DD-9 states and T-7's Falsifying input is designed to preserve. The design's central safety property held under its first real test.
+
+#### ADVISORY (non-gating)
+
+1. **`AUDITABLE_FIELDS` gap — routed as a proposal, NOT a task.** `actor-audit.service.ts`'s `AUDITABLE_FIELDS` was not extended, so neither field appears in any `ActorAuditLog` record. The Reviewer sharpened the consequence well beyond "invisible in `/history`": `logUpdate` returns `null` on an empty diff, so **an admin edit whose only change is `contactPerson` writes no audit row whatsoever** — a published natural person's name can be changed or erased with zero trace. `logDelete`/`logBulkDelete` snapshots lose it too. No new PII surface is created (the audit JSON is admin-only and already carries `phone`/`email`), so PII-adjacency is not an argument against closing it. **Out of scope: no FR/NFR here mentions audit, `actor-audit.service.ts` is absent from §4, and auditability belongs to `admin/actor-crud-audit`.** Ripples to T-3 and T-4, which will write these columns into an envelope that omits them.
+2. **`renderTextarea`'s new `maxLength` parameter has zero callers.** `otherCrops` uses `renderInput`; the only `renderTextarea` call site (`technicalSupport`) passes nothing — and that is the one textarea with a real server bound. Untested dead capability. **Recorded, not actioned** — widening a task to absorb an advisory is forbidden.
+3. **KZ-008 soft spots.** (a) `"Published once consent is GRANTED (FR-4)"` describes the spec's end state; as of this diff nothing publishes either field — publication arrives at T-7/T-11. Traceable rather than false, but future-tense would be honest. (b) `ActorForm.test.tsx`'s block header claims every test sets a non-empty value; its fourth test deliberately sets none.
+4. **No rendered capture exists for the admin form change.** `frontend/CLAUDE.md` asks for 375/768/1440 captures on flow/positioning/spacing changes; this adds a third item to a two-column Contact grid (unbalanced final row) and a new half-width input under the Crops checkboxes. **Recorded as an unverified gap — T-19 is NOT widened to absorb it**, per the Advisory-Never-Becomes-A-Task rule. T-19's scope remains the public profile.
+
+#### Carried forward to T-11 / T-12 — environmental, and it matters
+
+Jest's **default parallel workers produce spurious timeouts in this sandbox**: the Implementer saw 12 failures in `admin-actors.e2e.spec.ts`, a file this task never touched, with the "worker failed to exit gracefully" warning; the same file alone (28/28) and the full pattern under `--runInBand` (128/128) were green. The Reviewer confirmed this is falsifiable rather than merely plausible — the diff adds no testing module, no app bootstrap, no timer, no socket, so **no resource in it could leak**. It is three Nest apps contending.
+
+**T-11 and T-12 MUST run under `--runInBand`.** A spurious red in the task that demonstrates the gate can fail would be the worst possible false negative in this spec.
 
 ---

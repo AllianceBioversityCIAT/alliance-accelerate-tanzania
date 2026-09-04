@@ -1382,6 +1382,95 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
     );
   });
 
+  // `actors/public-profile-disclosure` T-2 — mirrors the "Registration source
+  // & consent provenance" block above exactly (R-1 precedent): a populated
+  // round-trip is the only thing that proves SCALAR_FIELDS carries a new
+  // field into the write, not just that the DTO validates it or the 201/200
+  // echoes it back. Disqualifier: submitting a contactPerson and reading
+  // back null.
+  describe('Contact person and other crops (FR-4)', () => {
+    it('round-trips both fields on create — write then read back', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        contactPerson: 'Neema Shirima',
+        otherCrops: 'Sesame trial plot',
+      };
+
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(createRes.body.contactPerson).toBe('Neema Shirima');
+      expect(createRes.body.otherCrops).toBe('Sesame trial plot');
+
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${createRes.body.id}`)
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.contactPerson).toBe('Neema Shirima');
+      expect(getRes.body.otherCrops).toBe('Sesame trial plot');
+    });
+
+    it('round-trips both fields on update — write then read back', async () => {
+      const patchRes = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({
+          contactPerson: 'Amina Hassan',
+          otherCrops: 'Cassava',
+        })
+        .expect(200);
+
+      expect(patchRes.body.contactPerson).toBe('Amina Hassan');
+      expect(patchRes.body.otherCrops).toBe('Cassava');
+
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.contactPerson).toBe('Amina Hassan');
+      expect(getRes.body.otherCrops).toBe('Cassava');
+    });
+
+    it('defaults both fields to null when never set', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.contactPerson).toBeNull();
+      expect(res.body.otherCrops).toBeNull();
+    });
+
+    it('rejects a contactPerson over 120 characters — field-level 400', async () => {
+      const payload = { ...validCreatePayload(), contactPerson: 'x'.repeat(121) };
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('contactPerson');
+    });
+
+    it('rejects an otherCrops over 300 characters — field-level 400', async () => {
+      const payload = { ...validCreatePayload(), otherCrops: 'x'.repeat(301) };
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('otherCrops');
+    });
+  });
+
   describe('Public read + PII boundary regression', () => {
     it('GET /api/v1/actors returns only GRANTED actors', async () => {
       const res = await request(app.getHttpServer())
