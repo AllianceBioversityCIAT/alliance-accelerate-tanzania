@@ -1203,3 +1203,76 @@ Both errors share one root: **measuring without first verifying how the measurem
 **Verification:** backend **1052/1052** (`--runInBand`) · frontend **1637/1637** · `tsc --noEmit` clean · backend lint clean · `bash -n infra/scripts/smoke.sh` OK (**not executed** — it targets deployed infrastructure) · `git status --porcelain docs/specs/archive/` empty · ADR-003 diffed against `HEAD`: identical, intact for T-18.
 
 ---
+
+### T-18 — ADR-013, superseding ADR-003 in part
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 2) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-8 · design.md DD-8 |
+| Files changed | 1 file · +4/-3 |
+| Decided by | **Daniela Gómez**, 2026-09-07 |
+
+**Provenance lives here, not in the TRD.** My brief asked for *"Accepted, dated 2026-09-07, decided by Daniela Gómez"* in the ADR row **and** told the Implementer to match the house format and invent nothing. Those instructions were in genuine conflict: the table has four columns — ID / Decision / Status / Consequence — and **not one of the twelve existing ADRs carries a date or a decider.**
+
+The Implementer kept the format, omitted the provenance, and **flagged the contradiction instead of silently picking a side**. The Reviewer endorsed it: adding provenance to row 13 alone would make it the only dated row, which reads as an inconsistency rather than a record — and `git log -- docs/trd/trd.md` already carries date and author at higher fidelity. If the TRD should carry provenance, that is a table-wide migration with a backfill, not a T-18 side effect. Recorded here, which is where the decision trail lives.
+
+#### The number: the check is the gate, the number is its output
+
+KZ-010 pre-flight run across **all 20 local and remote refs**, not just `main`: highest ADR anywhere is **ADR-012**; **no ref holds 013**; and `feat/receipt-status-url`'s ADR-012 is byte-identical to `main`'s, so no latent collision is waiting to land.
+
+I gave the Implementer the allocated number and told it not to re-derive. **It re-derived anyway.** Technically disobedient, and correct: re-verification costs minutes, and this repo already paid for an ADR collision once — ADR-011 allocated twice fifteen hours apart, neither allocation wrong under the written rule, costing a 14-citation forward sweep.
+
+#### Getting the supersession scope right was the whole task
+
+**Only half of ADR-003 fell**, and the halves are easy to swap:
+
+- **Retained — the tactic.** Public output is still an explicit allowlist literal pick, never spread-plus-delete. Both projections are object literals naming every field; `toPublicDetail` composes the list item **by name**. Unchanged, and now carrying more weight than before.
+- **Superseded — the criterion.** ADR-003 made **field identity** the boundary. That is gone; the boundary is **consent plus path**.
+
+An ADR declaring ADR-003 dead in whole would invite a future reader to remove the explicit pick — the one thing stopping a newly added column from leaking by default. Recorded as `Superseded in part by ADR-013` on ADR-003, `retained in part` on QA-1's tactic citation, and (Leader-inline, one word, disclosed) `Supersedes ADR-003 in part` on ADR-013's own opener, so a status-column skimmer and a careful reader get the same answer.
+
+#### Instance sixteen, in the ADR that records the spec
+
+Attempt 1 wrote *"not only exact GPS **as ADR-003 assumed**"*. ADR-003 says nothing about GPS — I verified its full text. That proposition is **ADR-004**'s (*"exact GPS only for `GRANTED`"*), which is still `Accepted` and which this diff does not supersede.
+
+Two costs: it misstated what ADR-003 lost, and it was **refutable from a cell two lines above it in the same table**. Meanwhile the thing that genuinely widened — consent's field-level effect no longer confined to GPS — was left attributed to no ADR at all.
+
+> Sixteenth instance of *a claim written without re-reading the artefact it claims about* — inside the ADR recording the spec whose dominant defect is exactly that.
+
+Fixed by reattributing to ADR-004 and giving ADR-004 a forward pointer in its Consequence cell. The Reviewer verified the reattribution is true not just of ADR-004 **as written** but of the pre-spec **system**: sweeping every `isPublic`/`consentStatus` consumer, exactly **one** field-level consent gate existed (`publicGps`); every other check is row-level. ADR-004 correctly stays `Accepted` — ADR-013 widens what its gate unlocks without contradicting either of its propositions.
+
+#### The sentence that mattered most was the one nobody asked for
+
+ADR-013 explained that the literal pick survives but not **why**. It gave the drift argument and skipped the load-bearing one: **an explicit pick makes a newly added schema column default to not-public.**
+
+Without it, a reader holding *"consent is the boundary, not field identity"* next to *"`PII_ALLOWLIST` is empty with zero runtime consumers"* has a clean route to *"why are we hand-maintaining a literal pick?"* — and that pick is the only thing standing between the next column and a default leak. Added, sourced from the serializer's own docblock. The Reviewer judged the route closed: three independent reasons now, plus the replacement forbidden by name.
+
+#### A revisit trigger the system can actually observe
+
+Other decisions in this document state revisit triggers. ADR-013 stated its cost — a scripted caller can still page `GET /actors/:id` per id, with no rate limit — without a threshold for acting on it.
+
+I authorised adding one **and authorised refusing**: if no honest, checkable trigger existed, say so and add nothing, because an invented trigger is worse than none.
+
+The Implementer went looking. `infra/` has no WAF, no API Gateway access logging, no metric filter or alarm; `schema.prisma` has no read counter; the throttler guards sit only on registrations and contact. A *"when logs show X requests"* trigger would name telemetry that does not exist.
+
+The Reviewer confirmed the gap and found it **wider than reported**: `RequestContextMiddleware` is scoped `forRoutes(RegistrationsController, AdminRegistrationsController)` and `forRoutes(ContactController)` — never `'*'`. So `GET /actors/:id` volume is not merely un-aggregated, it is **unlogged**.
+
+Substituted trigger — field sensitivity, not traffic: *if `PUBLICLY_DISCLOSED_FIELDS` grows to include a materially more sensitive category (financial, health), the accepted-cost framing was priced against today's field set and must be re-priced.* It watches a 7-element array in a release-gated file, so it fires in a reviewed diff rather than on a dashboard nobody built. The Reviewer judged it **more observable than the concurrency triggers already in the document**, which depend on the same missing telemetry.
+
+#### A claim I relayed without opening
+
+My brief asserted *"ADR-001 and ADR-008 state explicit revisit triggers"*. I took that from the previous Reviewer and passed it on unread. **ADR-008 carries none.** The Implementer checked and corrected me; I verified it was right.
+
+The final Reviewer then found the precedent thinner than *either* of us had it: sweeping all twelve, **ADR-001 is the only ADR with a revisit clause** — ADR-002 and ADR-004 are explicitly anti-revisit, the rest silent. The convention is real document-wide (§12.4's RDS Proxy and event-bus rows, QA-8's *"Explicit trigger:"*), but inside the ADR index it was 1 of 12, not 2.
+
+Same family as the sixteen, arriving by relay rather than authorship — which is the harder version to catch, because a claim that has already passed one reader looks verified.
+
+#### Advisory carried, not converted
+
+ADR-004's pointer says `GRANTED` *"unlocks the actor's full disclosed field set on the detail read"* — true of observable behaviour, but the mechanism is the row-level `WHERE` plus the indistinguishable 404 plus `toPublicDetail`'s wider pick, **not** a per-field consent check. ADR-013's own consequence cell states the mechanism, so a reader following the pointer is not misled.
+
+**Verification:** docs-only, zero executable surface — no suite would change colour whichever way these lines read, and the Reviewer said so rather than reporting a green run as evidence. ADR-003's and ADR-004's **decision text** diffed against `HEAD`: byte-identical, only status/consequence cells moved. `git status --porcelain`: only `docs/trd/trd.md`. Nine claims about named artefacts checked against the rows they name; zero false.
+
+---

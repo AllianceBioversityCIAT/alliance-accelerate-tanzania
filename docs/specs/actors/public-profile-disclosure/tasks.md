@@ -192,7 +192,7 @@
       Falsifying input: a surviving old-policy statement must appear in the grep.
       Skills: `cognitive-doc-design`
 
-- [ ] **T-18** Write the superseding ADR and flip ADR-003  (deps: T-17)
+- [x] **T-18** Write the superseding ADR and flip ADR-003  (deps: T-17)
       Scope: a new ADR recording consent-as-the-boundary **plus** the list/detail split; ADR-003 marked `superseded` (never rewritten in place).
       Traces: FR-8 · design.md DD-8
       Files: `docs/trd/trd.md`
