@@ -7,16 +7,26 @@
  *   - **The reference code is present in the header** — FR-10 scenario 1's
  *     "must show the reference code, so the reviewer can quote it in any
  *     out-of-band contact."
- *   - **The human half of DC-23** — `contactPerson` and `otherCrops` each
- *     carry the "Review context — will not be published" marking, while an
- *     ordinary publishable field (`traderName`) does NOT. Exactly two
- *     markings render, never more, never fewer.
  *   - **A-80 (carried from T-13's review) — every submitted field's VALUE
  *     is asserted, not just 7 of 14.** `traderType`, `sex`, `region`,
  *     `crops`, `capacityTons` are now asserted alongside the original
  *     seven, so a dropped row among ANY payload field would redden.
- *   - The submitted email (`Registration.submitterEmail`) renders and is
- *     NOT marked review context — it IS published (FR-12: -> Actor.email).
+ *   - The submitted email (`Registration.submitterEmail`) renders in the
+ *     table as a `<tr>` — asserted here only as a rendered row, not as
+ *     anything about publication. It publishes via FR-12's projection
+ *     (`-> Actor.email`), which is why it belongs among these rows at all,
+ *     but that fact is not what this file's assertion covers.
+ *   - **T-20**: this file previously also asserted a
+ *     `'Review context — will not be published'` badge rendered on exactly
+ *     `contactPerson`/`otherCrops`, and NOT on `traderName` (the human half
+ *     of DC-23, `admin/registration-review-queue`) — asserting those two
+ *     rows would never publish. That badge is deleted from the component
+ *     (see `RegistrationDetailPanel.tsx`) because its predicate — "fields
+ *     with no `Actor` column" — went empty once
+ *     `actors/public-profile-disclosure` T-1 gave both fields one; the
+ *     badge's claim (that 2 of 13 rows will never publish) is now false,
+ *     since all 13 publish. No replacement per-row assertion is needed
+ *     here for the same reason.
  *   - The location card renders raw coordinates and a map link when both
  *     are present, and a "no coordinates" state when both are null.
  *   - Composes `DuplicateWarningCard`, `ConsentRecordCard`, `ActivityTrail`
@@ -153,26 +163,7 @@ describe('RegistrationDetailPanel', () => {
     expect(heading).toHaveTextContent('REG-2026-0184');
   });
 
-  it('marks contactPerson and otherCrops as review context, and marks nothing else', () => {
-    renderPanel();
-
-    const badges = screen.getAllByText('Review context — will not be published');
-    expect(badges).toHaveLength(2);
-
-    const contactRow = screen.getByText('Jane Mushi').closest('tr');
-    const otherCropsRow = screen.getByText('Sesame').closest('tr');
-    const traderNameRow = screen.getByText('Meru Agro Cooperative Society').closest('tr');
-
-    expect(contactRow).not.toBeNull();
-    expect(otherCropsRow).not.toBeNull();
-    expect(traderNameRow).not.toBeNull();
-
-    expect(within(contactRow as HTMLElement).queryByText('Review context — will not be published')).toBeInTheDocument();
-    expect(within(otherCropsRow as HTMLElement).queryByText('Review context — will not be published')).toBeInTheDocument();
-    expect(within(traderNameRow as HTMLElement).queryByText('Review context — will not be published')).not.toBeInTheDocument();
-  });
-
-  it('renders every submitted field value, including the submitted email as published (not review context)', () => {
+  it('renders every submitted field value, including the submitted email', () => {
     renderPanel();
 
     expect(screen.getByText('Meru Agro Cooperative Society')).toBeInTheDocument();
@@ -185,7 +176,6 @@ describe('RegistrationDetailPanel', () => {
 
     const emailRow = screen.getByText('jane.mushi@example.com').closest('tr');
     expect(emailRow).not.toBeNull();
-    expect(within(emailRow as HTMLElement).queryByText('Review context — will not be published')).not.toBeInTheDocument();
   });
 
   it('A-80 — asserts the five previously-unasserted payload field VALUES (traderType, sex, region, crops, capacityTons)', () => {

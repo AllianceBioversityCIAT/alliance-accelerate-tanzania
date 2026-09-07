@@ -143,9 +143,10 @@ export class RegistrationPayloadDto {
    * Published on approval (`actors/public-profile-disclosure` FR-4,
    * authorised by Daniela Gómez, 2026-09-03/04) — no longer "review context
    * only". `AdminRegistrationsService.approve` writes this to `Actor.
-   * contactPerson`, which the detail endpoint will disclose to `Public` for a
-   * `GRANTED` actor once T-7's `toPublicDetail` lands (FR-1). Superseded
-   * design.md §4.6 step 3's original claim.
+   * contactPerson`, which the detail endpoint discloses to `Public` for a
+   * `GRANTED` actor now that `toPublicDetail` (T-7) is live (FR-1).
+   * Supersedes `public-self-registration design.md` §4.6 step 3's original
+   * claim.
    */
   @IsString()
   @MinLength(1)
@@ -200,9 +201,10 @@ export class RegistrationPayloadDto {
    * Published on approval (`actors/public-profile-disclosure` FR-4,
    * authorised by Daniela Gómez, 2026-09-03/04) — no longer "review context
    * only". `AdminRegistrationsService.approve` writes this to `Actor.
-   * otherCrops`, which the detail endpoint will disclose to `Public` for a
-   * `GRANTED` actor once T-7's `toPublicDetail` lands (FR-1). Superseded
-   * design.md §4.6 step 3's original claim.
+   * otherCrops`, which the detail endpoint discloses to `Public` for a
+   * `GRANTED` actor now that `toPublicDetail` (T-7) is live (FR-1).
+   * Supersedes `public-self-registration design.md` §4.6 step 3's original
+   * claim.
    */
   @IsOptional()
   @IsString()

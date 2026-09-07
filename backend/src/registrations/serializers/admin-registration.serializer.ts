@@ -11,13 +11,18 @@ import {
  * §5's `GET /api/v1/admin/registrations/:id` contract row, §7.3).
  *
  * Unlike `AdminRegistrationListRow` (`admin-registrations.service.ts`), this
- * is the ONE surface that renders the full submitted payload — including the
- * two fields with no `Actor` column (`contactPerson`, `otherCrops`), which
- * FR-10 scenario 1 requires shown but marked as review context that will not
- * be published. **That marking is a FRONTEND concern (T-13)** — this
- * serializer's job stops at returning every submitted field, literal-picked
- * (no spread), so no field is silently added or dropped between the DTO and
- * the wire.
+ * is the ONE surface that renders the full submitted payload — including
+ * `contactPerson` and `otherCrops`. Both are written to
+ * `Actor.contactPerson`/`Actor.otherCrops` on approval and published to the
+ * `Public` role once the resulting actor's `consentStatus` is `GRANTED`
+ * (`actors/public-profile-disclosure` FR-4, FR-1) — approval sets that
+ * status unconditionally, so publication follows immediately. **Explaining
+ * this to the reviewer is a FRONTEND concern (T-13/T-20)** — the frontend
+ * carries no per-field marking; `SubmittedDetailsTable`'s caption
+ * (`RegistrationDetailPanel.tsx`) explains publication table-wide instead.
+ * This serializer's job stops at returning every submitted field,
+ * literal-picked (no spread), so no field is silently added or dropped
+ * between the DTO and the wire.
  *
  * Admin-only. Never reachable by `Public` or `Staff` (guarded at the
  * controller class level, same stack every admin route in this module uses).
@@ -33,7 +38,7 @@ import {
 export interface AdminRegistrationPayload {
   traderName: string;
   traderType: string;
-  /** Review context only — no `Actor` column exists (FR-12's projection table). */
+  /** Persisted to `Actor.contactPerson` on approval; published to `Public` once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string;
   position: string | null;
   district: string | null;
@@ -43,7 +48,7 @@ export interface AdminRegistrationPayload {
   gpsLatitude: number | null;
   gpsLongitude: number | null;
   crops: string[];
-  /** Review context only — no `Actor` column exists (FR-12's projection table). */
+  /** Persisted to `Actor.otherCrops` on approval; published to `Public` once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   otherCrops: string | null;
   capacityTons: number;
   phone: string;

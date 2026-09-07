@@ -795,7 +795,7 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
             )}
           </div>
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderInput('otherCrops', 'Other crop(s)', 'text', false, 'Review context — not published to the public directory')}
+            {renderInput('otherCrops', 'Other crop(s)', 'text', false, 'Shown on your public profile once your registration is approved')}
             {renderInput('capacityTons', 'Capacity (tons)', 'number', true)}
           </div>
         </fieldset>
@@ -806,7 +806,7 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
         <fieldset className="border-0 p-0 m-0">
           <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderInput('contactPerson', 'Contact person', 'text', true, 'Review context — not published to the public directory')}
+            {renderInput('contactPerson', 'Contact person', 'text', true, 'Shown on your public profile once your registration is approved')}
             {renderInput('position', 'Position')}
             {renderSelect('sex', 'Sex', SEX_OPTIONS)}
             {renderInput('phone', 'Phone', 'text', true)}

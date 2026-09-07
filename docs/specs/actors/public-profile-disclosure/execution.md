@@ -1045,3 +1045,75 @@ Proportionality call on a third, comment-only attempt — both are non-blocking 
 **Verification:** `npm test -- --silent csv` → 37 passed / 37 total · lint clean · `tsc --noEmit` clean.
 
 ---
+
+### T-20 — Close the "will not be published" promise across all six sites
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 3 of 3 — the rework ceiling) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-4, FR-8 · design.md DD-5 · KZ-004 (forward sweep), KZ-008 |
+| Files changed | 7 files · +106/-95 |
+| Ran in parallel with | T-16 (disjoint paths, confirmed by both Reviewers) |
+
+Five of the six sites moved in attempt 1 and were never re-opened. The sixth — the admin badge — took all three attempts, and neither of the two FAILs was in the badge logic.
+
+#### Leader-directed deviation from the written task
+
+**`tasks.md` T-20 says *"the admin badge and its four tests reflect the new behaviour"*. I directed the badge be DELETED, not relabelled.** Recording this rather than quietly satisfying a different Done-when than the one written.
+
+Attempt 1 did exactly what the task said: relabelled `ReviewContextBadge` → `PublishedOnApprovalBadge`, text `"Review context — will not be published"` → `"Published to the public directory"`, and updated the assertions. The Reviewer FAILed it on a fact the task's author (me) had not checked:
+
+> the table has **13 rows**, and **all 13 are members of `PublicActorDetail`**.
+
+A badge in a table is a *discriminating* marker — that convention is its entire information value, and it is what made the original badge work. The relabelled badge marked 2 of 13 members of a set with a label naming the property all 13 share. Worse, the code did not merely leave the false inference available, it **asserted** it: the caption explained only the marked fields, and the test pinned `toHaveLength(2)` under the name *"and marks nothing else"*.
+
+**Concrete harm:** an admin adjudicating reads `Phone` and `Email` as *not* published — precisely the two fields FR-8 exists to stop this repo claiming are withheld from `Public`. T-20 exists because a false publication claim survived in a rendered surface; attempt 1 relocated it from the applicant's screen to the reviewer's.
+
+**Why deletion is the closure and not an evasion.** These two fields were special because they had **no `Actor` column**. T-1 gave them one. FR-10 scenario 1's marking clause is predicated on *"fields with no `Actor` column"* — a predicate that T-1 emptied. FR-10 therefore requires no marking on these fields at all; its *"every submitted field is displayed"* half is untouched and still satisfied. There is no durable distinction left for any label to carry, so no relabelling could have been true.
+
+Two consequential corrections to the task text, left in place as the historical record rather than edited: the *Done-when* presupposes a relabelled badge, and site 4's *"four assertions"* became two retired ones.
+
+#### The second FAIL — instance fourteen, inside the sentences meant to close one through thirteen
+
+Attempt 2's mechanical work was clean and the Reviewer could not break it. What failed was **the record of what had been removed**.
+
+`git show HEAD` (I verified this myself before adjudicating) shows the committed pre-image was `ReviewContextBadge` / `REVIEW_CONTEXT_FIELDS` rendering `"Review context — will not be published"` — an assertion those two rows would **never** publish. Attempt 2's durable comments named `PublishedOnApprovalBadge` / `PUBLISHED_ON_APPROVAL_FIELDS` — **attempt 1's rejected symbols, which exist nowhere in this repository** — and described the badge as having *claimed* publication for two rows.
+
+Two defects in one paragraph, and the second is the worse:
+
+1. It writes a **rejected, never-committed design** into the repository's account of its own history as fact.
+2. It **inverts the polarity**. A future reader concludes the pre-T-20 code *over*-claimed publication — the exact inverse of the false promise T-20 closes, and the inverse of the FR-8 defect class.
+
+These are not decorative comments: they are the durable record of why FR-10's marking clause is spent and why DC-23's human half was retired without replacement.
+
+> **Fourteenth instance of this spec's dominant family, located in the very sentences designated to close the first thirteen.**
+
+#### What fixed it was mechanical, as it has been every time
+
+Attempt 3's brief carried no exhortation to be careful. It carried a procedure: for every sentence describing what was removed, run `git show HEAD:<path> | grep '<the symbol you are about to name>'` — nothing returned means you are naming something that was never there — then check **polarity separately from name**, because a right name with a wrong direction is still the defect. Then self-grep the finished diff for the two forbidden symbols.
+
+Result: 0 hits (I re-ran it myself), comment-only diff confirmed by inspecting every non-comment `+` line, suite unchanged at 54 tests.
+
+#### What the final review established by reading
+
+Every new claim checked against live source rather than the diff's own prose: the `toPublicListItem`/`toPublicDetail` split (`otherCrops` via the list set, `contactPerson` via the contact block), `approve()`'s unconditional `GRANTED`, the consent gate in both public read paths, the verbatim FR-10 clause, the superseded §4.6 step 3 text, T-1's two schema columns, and the note's own corrected location. **No instance fifteen.**
+
+**Resting on the Implementer's account:** the green suite/lint/build. Attempt 3 changes only comment text, so the only executable-surface risk was a stale import — cleared by reading (`within` still used at 18 sites).
+
+#### Authorized addition, and one thing deliberately not done
+
+`RegistrationForm.test.tsx` asserted **nothing** about the applicant hint — the site that motivated the entire task could silently regress. I authorized a pin. The Implementer did not use two literal `getByText` calls as I suggested: both fields render byte-identical text, so they would collide. It used `getAllByText` length 2 **plus** a per-field `toHaveAccessibleDescription`. The Reviewer worked both falsification cases — delete the `otherCrops` hint, or move it onto the wrong field — and each reddens on the per-field assertion. **Not the count-only pattern this spec has hit before.**
+
+**Not done, on purpose:** the Reviewer suggested the hint could name the third party more strongly (*"This person's name will be visible to anyone"*). True, and a real improvement — but it is a disclosure decision on a required field collecting someone else's name. **NFR-7's owner (programme/legal) decides it, not this task.**
+
+#### Advisories carried, not converted to work
+
+1. Two comments attribute publication to `toPublicDetail` alone; `otherCrops` is **also** published by the list endpoint via `toPublicListItem` (FR-9). True but understates the surface by one endpoint.
+2. `RegistrationDetailPanel.tsx` calls the badge's own span text a "caption" one paragraph above referring to the real `<caption>` element.
+3. The archived spec cited by name without its `docs/specs/archive/…` path.
+4. The test docblock mixes denominators — "7 of 14" (payload fields, A-80) beside "2 of 13" (table rows, T-20); each correct in its own frame, neither naming its frame.
+
+**Verification:** `npm test -- --silent "RegistrationDetailPanel|RegistrationForm"` → 2 suites / **54** tests · `tsc --noEmit` clean · frontend and backend lint clean · residue sweep zero live false claims.
+
+---

@@ -212,7 +212,7 @@
       Falsifying input: a contrast pair below 4.5:1 must be reported, not rounded.
       Skills: `ui-ux-pro-max`
 
-- [ ] **T-20** Close the "will not be published" promise across all six sites  (deps: T-7)
+- [x] **T-20** Close the "will not be published" promise across all six sites  (deps: T-7)
       Scope: retire every surviving statement that `contactPerson`/`otherCrops` are review-context-only and unpublished. Six live sites, enumerated by the T-3 Reviewer's forward sweep (KZ-004):
         1. `backend/src/registrations/serializers/admin-registration.serializer.ts` — two field JSDocs **and** the module JSDoc
         2. `frontend/lib/api/registrations-admin.ts` — three references
