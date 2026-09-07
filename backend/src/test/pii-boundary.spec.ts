@@ -487,7 +487,7 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       expect(bodyText).not.toContain('actor-denied-1');
     });
 
-    it('deep-scan: no PII allowlist key (nor traderId/altitude/accuracy) anywhere', async () => {
+    it('deep-scan: no never-public key or value, and no list/metrics-leakable value, anywhere in the LIST response', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/actors')
         .expect(200);
@@ -528,10 +528,25 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
     // same deep-scan test's `LIST_AND_METRICS_LEAKABLE_VALUES` sweep (it
     // includes every `DETAIL_ONLY_LEAKABLE_VALUES` member, i.e. every
     // CONTACT_BLOCK_FIELDS fixture value) — not repeated here.
-    // Falsifying mutation: add `position: actor.position ?? null,` to
-    // `toPublicListItem` (role-aware.serializer.ts) — the key `position`
-    // then appears on every list item, and `expectNoPiiKeys(wire,
-    // CONTACT_BLOCK_FIELDS)` throws naming it, even before any value check.
+    // Falsifying mutation, NOT type-reachable as literally described (T-17,
+    // per DD-11 — found while re-checking this docblock, not run and left
+    // standing): adding `position: actor.position ?? null,` to the object
+    // literal `toPublicListItem` (role-aware.serializer.ts) returns does NOT
+    // reach this test at all. That function's return type is the explicit
+    // annotation `PublicActorListItem`, which declares no `position` member,
+    // and the literal is returned directly — so TypeScript's excess-property
+    // check on the literal rejects the added line with TS2353 ("Object
+    // literal may only specify known properties, and 'position' does not
+    // exist in type 'PublicActorListItem'") before any test runs. Same
+    // defect family as T-9's/T-13's/T-11's mutations elsewhere in this file.
+    // The type is therefore the guard for `position`'s absence from the list
+    // shape, same as it guards presence on `PublicActorDetail` elsewhere in
+    // this file — not this assertion. What this assertion actually earns its
+    // keep on is the WIRE payload `expectNoPiiKeys` inspects: a leak the type
+    // cannot see, e.g. a future `PublicActorListItem` widening whose literal
+    // is updated to match (a real, compiling code change, not a one-line
+    // mutation), or a key introduced outside the typed literal path
+    // entirely (a raw JSON merge, a debug field, a differently-cased alias).
     it(
       'the contact block is absent from the list BY KEY, not merely by value (FR-9)',
       async () => {

@@ -182,7 +182,7 @@
 
 ## Phase F — Constitution and human verification
 
-- [ ] **T-17** Update the seven constitutional documents in one commit  (deps: T-11, T-16)
+- [x] **T-17** Update the seven constitutional documents in one commit  (deps: T-11, T-16)
       Scope: `CLAUDE.md`, **`backend/CLAUDE.md`**, `docs/prd.md`, `docs/trd/trd.md`, `docs/ux-ui/design.md`, `docs/specs/general-setup/requirements.md`, `docs/specs/general-setup/design.md`+`task.md`. `backend/CLAUDE.md` was added 2026-09-04 — its `## PII & RBAC` section claims those fields exit only through Admin routes, which T-7/T-8 falsify. It binds every future agent working in `backend/`, and FR-8's original table missed it. The TRD gains the list/detail asymmetry in its endpoint table.
       Traces: FR-8 · design.md §4, §6 · D-7
       Files: the six above

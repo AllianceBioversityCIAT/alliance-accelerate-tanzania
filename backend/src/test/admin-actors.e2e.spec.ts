@@ -403,7 +403,11 @@ function collectForbiddenValues(
   return found;
 }
 
-/** The exact PII values seeded into the fixtures (must never appear publicly). */
+/**
+ * The exact PII values seeded into the fixtures — must never appear on the
+ * public LIST path; some are disclosed on the single-actor detail read
+ * (FR-1, `actors/public-profile-disclosure`).
+ */
 const LEAKABLE_PII_VALUES = [
   '+255700000000',
   'director@example.com',
@@ -873,7 +877,7 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
       expect(bodyText).not.toContain('actor-unknown-1');
     });
 
-    it('deep-scan: no PII allowlist key anywhere in public response', async () => {
+    it('deep-scan: no never-public/contact-block key or seeded PII value anywhere in the public LIST response', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/actors')
         .expect(200);

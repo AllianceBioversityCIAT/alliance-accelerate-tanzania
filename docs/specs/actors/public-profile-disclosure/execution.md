@@ -1117,3 +1117,89 @@ Every new claim checked against live source rather than the diff's own prose: th
 **Verification:** `npm test -- --silent "RegistrationDetailPanel|RegistrationForm"` → 2 suites / **54** tests · `tsc --noEmit` clean · frontend and backend lint clean · residue sweep zero live false claims.
 
 ---
+
+### T-17 — Update the constitutional documents in one commit
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 3 of 3) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-8 · design.md §4, §6 · D-7 |
+| Files changed | **21 files** · +125/-73 (task text said seven documents — see the scope note below) |
+| Ran in parallel with | nothing (measurement discipline; see the two bad measurements below) |
+
+The coherence payload: sixteen tasks changed the code, this one makes the repository's account of itself true again. Three attempts, and **each FAIL found something the previous sweep could not see**.
+
+#### Scope: seven documents became twenty-one files, and that is correct
+
+FR-8's Done-when is *"zero surviving statements … outside `docs/specs/archive/`"*, and FR-8 says explicitly that **the table is the enumeration; the scenario's sweep is the authority**. The seven-document list was wrong on the low side — as it had already been once, when `backend/CLAUDE.md` was found missing from the original table.
+
+`tasks.md`'s file list and its *"all six land in one commit"* phrasing now understate the task. Left as written; recorded here rather than edited, so the divergence is visible instead of tidied away.
+
+#### Why three attempts — the sweep failed three different ways
+
+**Attempt 1 swept by grep hit.** Fixed every line the Verify command's fixed six-path grep returned. FAILed on five sites, **three of them within a few lines of a line it had just rewritten** — the surrounding block was never read.
+
+**Attempt 2 swept by vocabulary.** Fixed those, then re-swept with eight phrasings. FAILed again on six survivors, because the old policy is stated in this repo in more vocabularies than any one author enumerates.
+
+**Attempt 3 swept by file class, repo-wide, including `.sh`.** This is what finally worked, and it is the only one of the three whose method did not depend on guessing the vocabulary in advance.
+
+> The lesson is not "sweep harder". It is that **T-17's own Verify command was the defect** — a fixed six-path grep, in a task whose requirement is repo-wide. The gate could not detect what it existed to detect. That is KZ-002 inside the task that was closing KZ-002-class findings elsewhere.
+
+#### What attempt 3 found that nothing else would have
+
+**Four persona contracts told the next agent to revert this spec.** `.agents/reviewer.md` read: *"any read path … that can serialize `phone`/`email` to the `Public` role is an **automatic FAIL**."* `.agents/tester.md` instructed a Tester to assert absence of the exact fields FR-1 now requires present. `/akili-execute` and `/akili-test` load these files. Left alone, the next agent to touch this area would have reverted sixteen tasks **citing its own contract**, and been right to.
+
+`AGENTS.md` and `backend/AGENTS.md` each declare themselves *mirrors* of files attempt 1 and 2 had already fixed — so the diff had created a contradiction between a file and its own declared source.
+
+**The deploy smoke gate would have failed against correct code.** `infra/scripts/smoke.sh` carried `PII_KEYS=(phone email sex position marketLocation)`, fail-closed against the `/actors` list body. `toPublicListItem` now emits `sex`, so the check would report `PII LEAK: key 'sex' present in actors response` on the first deploy. Its comment — *"Mirrors the allowlist enforced in `pii-boundary.spec.ts`"* — was false: that suite's `FORBIDDEN_KEYS` holds none of those five keys.
+
+No test in this repository covers `infra/scripts/`. This surfaces on deploy or not at all — and the likely field outcome is someone disabling the gate to unblock themselves.
+
+**Leader scope decision, recorded:** folded into T-17 though it is not a `phone`/`email` survivor. The false *"Mirrors …"* comment is squarely T-17's class, fixing the comment without the keys would be absurd, and no other task owned it. **A gate that fails on correct code is KZ-002 wearing the opposite sign.**
+
+#### Judgment calls upheld across three audits
+
+- **QA-13's vacuity closed by deletion, not substitution.** The clause *"any `PII_ALLOWLIST` value"* went vacuous when the constant emptied — but the Reviewer verified it was a **category error before** the emptying: that constant enumerates `Actor` columns and the contact relay never touches an `Actor` row. Re-pointing at `NEVER_PUBLIC_FIELDS` would have repeated the error with a different name. The surviving assertion (fixture-value equality plus a spy-captured-at-least-one-call vacuity guard) is a real gate.
+- **`PII_ALLOWLIST` has zero runtime consumers.** Verified independently: every reference in `backend/src` outside its own definition is a comment or a spec file. The three `general-setup/` templates told every future spec that adding a field there **withholds** it. It withholds nothing — re-restriction requires that **plus** removal from both projections. The templates named the set correctly and its *effect* wrongly, which is the "right name, wrong direction" defect this spec has been chasing all along.
+- **`docs/trd/trd.md`'s `"PII — gated"` lines left as-is** — adjudicated honest, not waved through: both halves remain true, and "gated" is the one word in the old vocabulary that survives the inversion intact.
+
+#### The Reviewer corrected the Leader, on request
+
+I had specified that `.agents/{reviewer,tester}.md` name *"list, geo, export or `/metrics`"*. The Implementer first dropped `geo`/`export` after confirming **neither route exists**, then restored them because my brief said so — and flagged the conflict instead of silently choosing.
+
+The Reviewer's verdict: **my wording was wrong, the artefact was not.** A Tester following it does `GET /api/v1/actors/geo`, falls through to `@Get(':id')`, gets a 404, and asserts that 404 lacks thirteen keys — passing forever, exercising nothing.
+
+But deletion was not the fix either: `.agents/tester.md` cites QA-1 by ID and the TRD names those paths, so dropping them trades vacuity for a traceability break. The correct text **marks them unimplemented**. Not blocked, because the naming is unchanged from `HEAD` — attempt 3 preserved a pre-existing condition rather than introducing one. Recorded as an advisory with the remediation sentence.
+
+#### Pre-commit cleanup — three things this diff caused or FR-8 required
+
+1. Two e2e comments claiming seeded values *"must never appear publicly"* — four of them now do, on detail. Assertions untouched (they sweep the list path, where absence is right); only the comment over-claimed.
+2. **A coverage regression this diff introduced:** repointing `smoke.sh` dropped contact-block key coverage on `/metrics`. The script's stated reason ("required present on the detail read") is valid for detail and **not** for `/metrics`, where nothing requires them. Restored — weakening a gate while repairing another gate is the failure mode this spec exists to catch.
+3. One-column ASCII damage in the C4 diagram.
+
+The cleanup also found a survivor I believed closed: `pii-boundary.spec.ts`'s deep-scan test was still titled *"no PII allowlist key"* — naming an **empty** constant, inside the release gate. Asked to use that file as the renaming precedent, the Implementer found the precedent broken, derived the correct name from what the block actually sweeps, and reported the discrepancy rather than copying it.
+
+**Leader-inline fix, disclosed:** I renamed that one title myself. Before renaming I verified `FORBIDDEN_KEYS = [...NEVER_PUBLIC_FIELDS]` (no contact block) rather than inferring it — renaming by assumption, in the diff closing fifteen instances of *asserting without re-reading*, would have been the sixteenth.
+
+#### Two invalid measurements I took, recorded because the trail is worthless without them
+
+**First:** immediately after the rename I ran the gate and got **1 failed / 33 passed**. Re-run: 34/34. Three more: 34/34. Not a failure — **contention**, from measuring too close to a worker that had just reported. `CLAUDE.md`'s concurrency protocol names this exactly: *a measurement taken while another agent is active is not a slow measurement, it is a **wrong** one.*
+
+**Second, worse:** the full backend suite reported **21 failed across 2 suites**, and the failing suite passed on `HEAD` — which reads exactly like a real regression. It was not. `npm test` in `backend/` is bare `jest`: **no `--runInBand`, no `maxWorkers`**, against a backend with four recorded contention incidents. With `--runInBand`: **1052/1052**.
+
+I nearly began "fixing" 21 admin-route tests that were never broken.
+
+Both errors share one root: **measuring without first verifying how the measurement is taken.** And the asymmetry matters — this time the order was false-red then green, so it got investigated. Reversed (a green run that was green by accident) it would have been committed unexamined. One observation of a release gate is not evidence.
+
+#### Routed out — real findings that are not this task's
+
+1. `npm test` without `--runInBand` manufactures false failures; the documented-correct form is in prose only, unenforced by `package.json`.
+2. TRD §4 phantom rows: `/actors/geo`, `/export`, `/crops` — no controller implements any of them.
+3. `npm run test:e2e` cited in five files (`AGENTS.md`, three `.agents/*`, `README.md`); the script does not exist. `CLAUDE.md` records its removal, and this spec's own `judgment.md` J-3 already found the claim false in both halves.
+4. TRD §3 never declared the `contactPerson`/`otherCrops` columns T-1 added, while §3's next paragraph now names both.
+5. `AUDITABLE_FIELDS`: an admin edit whose only change is `contactPerson` writes **no audit row at all**.
+
+**Verification:** backend **1052/1052** (`--runInBand`) · frontend **1637/1637** · `tsc --noEmit` clean · backend lint clean · `bash -n infra/scripts/smoke.sh` OK (**not executed** — it targets deployed infrastructure) · `git status --porcelain docs/specs/archive/` empty · ADR-003 diffed against `HEAD`: identical, intact for T-18.
+
+---

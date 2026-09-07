@@ -59,7 +59,7 @@ For each:
 Performance, security, accessibility (WCAG 2.1 AA), availability, cost. Each measurable (e.g. "p95 < 1s over 1,000 records").
 
 ## 5. Data & Schema Impact
-New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new **PII** field (must be added to the PII allowlist).
+New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new field with disclosure implications and classify it in `backend/src/common/pii-consent.policy.ts` — publicly-disclosed, contact-block, never-public, or, to withhold it from `Public`, declared in `PII_ALLOWLIST` **and** omitted from `PUBLICLY_DISCLOSED_FIELDS` (and `CONTACT_BLOCK_FIELDS`, if applicable) — adding it to `PII_ALLOWLIST` alone withholds nothing: that constant has zero runtime consumers and is a declaration only.
 
 ## 6. Out of Scope
 Explicit non-goals for this spec.
@@ -71,4 +71,4 @@ Upstream specs, AWS resources (note `IBD-DEV` profile), open questions inherited
 Anything needing user/stakeholder confirmation before `/akili-execute`.
 
 ---
-**Conventions reminder:** RBAC roles are `Public` / `Staff` / `Admin`; PII = `phone`, `email` (+ any newly flagged). All AWS commands use `--profile IBD-DEV`.
+**Conventions reminder:** RBAC roles are `Public` / `Staff` / `Admin`. Disclosure to `Public` is governed by consent and the field-partition constants in `backend/src/common/pii-consent.policy.ts` (`PII_ALLOWLIST`, `PUBLICLY_DISCLOSED_FIELDS`, `CONTACT_BLOCK_FIELDS`, `NEVER_PUBLIC_FIELDS`, as of `actors/public-profile-disclosure`) — check that module for the current policy rather than assuming any specific field is withheld from `Public`; classify any newly-introduced field there. All AWS commands use `--profile IBD-DEV`.

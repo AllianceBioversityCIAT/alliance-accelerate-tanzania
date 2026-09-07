@@ -22,7 +22,9 @@
 
 import { apiGet } from './client';
 
-// ── Types (design.md §5, §9, DD-2, DD-6 — PII-safe public shapes) ─────────
+// ── Types (design.md §5, §9, DD-2, DD-6 — role-aware public shapes: the
+// list set is PII-safe; the detail set additionally discloses the contact
+// block for a GRANTED actor, per consent, not blanket exposure) ─────────
 
 /**
  * The LIST set — what `GET /api/v1/actors` returns, and therefore all the
@@ -148,7 +150,8 @@ export async function getActors(query?: ActorsQuery): Promise<PublicActorList | 
 }
 
 /**
- * Fetch a single public-safe actor by id from the API.
+ * Fetch a single actor by id from the API — public detail read, disclosing
+ * the contact block only when that actor consented (`GRANTED`).
  *
  * Returns a typed PublicActorDetail on success — the published set,
  * including the contact block (FR-1, DD-6) — or null on ANY failure,

@@ -161,9 +161,12 @@ export type ContactBlockField = (typeof CONTACT_BLOCK_FIELDS)[number];
  *   absent on `/metrics` (design.md DD-4's "Detail-only" row), enforced
  *   today by `DETAIL_ONLY_LEAKABLE_VALUES` — folded into
  *   `LIST_AND_METRICS_LEAKABLE_VALUES` at the list/`/metrics` call sites —
- *   rather than this constant. (`LEAKABLE_PII_VALUES` no longer exists:
- *   T-10, `pii-boundary.spec.ts`, split it into `DETAIL_ONLY_LEAKABLE_VALUES`
- *   and `NEVER_PUBLIC_LEAKABLE_VALUES`.)
+ *   rather than this constant. (`LEAKABLE_PII_VALUES` no longer exists **in
+ *   `pii-boundary.spec.ts`**: T-10 split it into `DETAIL_ONLY_LEAKABLE_VALUES`
+ *   and `NEVER_PUBLIC_LEAKABLE_VALUES` there. Two other, file-local constants
+ *   of the same name are still live — in `admin-actors.e2e.spec.ts` and
+ *   `admin-actors-crud.e2e.spec.ts` — unrelated to that split and unaffected
+ *   by it; T-17 narrowed this claim after a repo-wide grep found them.)
  * - {@link PUBLICLY_DISCLOSED_FIELDS} — a PRESENCE set, checked on the
  *   detail path only. It must NEVER be folded into an absence check: doing
  *   so would forbid `phone`/`email`/`position`/`marketLocation`/

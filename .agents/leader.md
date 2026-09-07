@@ -56,7 +56,7 @@ Your sole responsibility is to coordinate execution of an approved spec by orche
 
 ## 🧭 Project-Specific Guardrails (must enforce on every task)
 - **AWS profile:** any task touching AWS must use `--profile IBD-DEV`. Reject Implementer work that omits it.
-- **PII protection:** `phone`/`email` must never reach the `Public` role. Read-path tasks must include a PII-omission check before PASS.
+- **PII protection:** consent (`GRANTED`) gates disclosure, not field identity — `phone`/`email` are public on the single-actor detail read only when the actor consented, and must never reach `Public` on any list/bulk path (`/actors`, map, dashboard, CSV export) or when consent is not `GRANTED`. `NEVER_PUBLIC_FIELDS` must never reach `Public` on any path regardless of consent. Read-path tasks must include a PII-boundary check (right fields present on detail, contact block absent from list, never-public fields absent everywhere) before PASS.
 - **Static export:** the Next.js frontend uses static export — flag any introduction of SSR/Next route handlers as drift.
 - **Design tokens:** UI tasks must use tokens from `docs/ux-ui/design.md §7`. Hardcoded colors/geometry are a FAIL.
 - **Stack lock:** Prisma (ORM), Leaflet (maps), Cognito (auth) are mandated — substitutions are drift, escalate via Pivot Protocol.

@@ -7,7 +7,7 @@
 
 1. **Public-first clarity.** The default experience is read-only and instantly legible to a non-technical donor, researcher, or partner. No login wall in front of public data.
 2. **Data integrity over decoration.** This is a registry; correctness, legibility of tabular and geospatial data, and honest empty/error states matter more than ornament.
-3. **Trust through restraint with PII.** PII is never shown speculatively. Protected fields render as an explicit, consistent "restricted" affordance for unauthorized roles — never blank, never fake.
+3. **Consent, not role, gates disclosure — and never speculatively.** A public visitor sees a consenting actor's full profile, contact details included, one actor at a time on that actor's page — never in the directory, map, or CSV, which structurally cannot carry contact data regardless of consent. A field the actor never supplied renders as an em-dash, not blank, not fabricated, and never a "restricted" affordance — there is nothing left on the profile to restrict.
 4. **Map and list are equals.** Spatial and tabular views of the same dataset stay synchronized in language, filters, and terminology.
 5. **Accessible by default.** WCAG 2.1 AA: keyboard navigable, sufficient contrast, labeled controls, respects reduced motion.
 
@@ -16,11 +16,15 @@
 ```
 /                         Landing / Public Registry Portal (metrics + entry points)
 /directory                Searchable, paginated actor directory (list/table)
-/profile?id=              Actor profile page (public-safe by default)
+/profile?id=              Actor profile page — full contact block (contactPerson, position,
+                           phone, email, marketLocation) shown only for a GRANTED actor;
+                           404 for a non-consented or unknown id. Never NEVER_PUBLIC_FIELDS.
 /map                      Seed Maps — interactive geospatial view + filters
 /dashboard                Discovery Dashboard — KPIs + filtered actor view, with a CSV
                            download of the current view (public columns only: traderName,
-                           region, district, traderType, capacityTons, crops — no PII).
+                           region, district, traderType, capacityTons, crops, sex,
+                           otherCrops — never the contact block: contactPerson, position,
+                           phone, email, marketLocation).
                            NOT the admin export: no role-aware scope, no filter builder.
 /register                 Public self-registration form (Identity · Location · Crops & capacity ·
                            Contact · Data protection & consent) + in-flow OTP verification step
@@ -61,16 +65,19 @@
 > ⚠️ **CSV export is NOT absent from the codebase, and an earlier version of this note
 > said it was.** `frontend/lib/dashboard/csv.ts`'s `buildDashboardCsv`, surfaced by
 > `components/dashboard/DownloadViewButton.tsx` on `/dashboard`, is shipped and tested.
-> It is a **different artefact**: public audience, a PII-free column allowlist, no
-> role-aware scope and no filter builder — so it does not replace the admin export and
-> the removed rows must not be repointed at it. *(The false claim was written while
+> It is a **different artefact**: public audience, an explicit public-column allowlist
+> (`traderName`, `region`, `district`, `traderType`, `capacityTons`, `crops`, `sex`,
+> `otherCrops` — the last two are consent-disclosed, not "PII-free" in the old
+> allowlist's terms, but never the contact block: `contactPerson`, `position`, `phone`,
+> `email`, `marketLocation`), no role-aware scope and no filter builder — so it does not
+> replace the admin export and the removed rows must not be repointed at it. *(The false claim was written while
 > correcting other false claims, on the strength of a **case-sensitive** grep that could
 > not match `buildDashboardCsv`. A universal negative — "this exists nowhere" — needs a
 > stronger search than a positive one; caught by the A-92 review round.)*
 
 ## 3. Primary User Flows
 
-- **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (PII hidden) → optionally jump to Map centered on that actor.
+- **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (renders only for a `GRANTED` actor — Contact section included; a non-consented actor's profile route 404s, so the whole page is absent, not the section masked) → optionally jump to Map centered on that actor.
   - The consent banner **overlays** the landing page, it does not gate it: every public route stays reachable while the decision is pending, and the choice persists so the banner is not shown again.
 - **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
@@ -82,9 +89,9 @@
 |---|---|---|
 | Landing | Public | Hero, 3–4 metric stat cards, CTA into Directory & Map, crop legend. |
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
-| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; PII block gated by role. |
+| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
-| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a PII-free CSV of the current filter (`lib/dashboard/csv.ts`). Public audience — distinct from the unbuilt role-aware admin export. |
+| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a CSV of the current filter that never carries an actor's contact block (`lib/dashboard/csv.ts`) — structural, since it is built from the same list projection as the directory and map. Public audience — distinct from the unbuilt role-aware admin export. |
 | Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |
 | Registration Receipt | Public | The reference code as selectable text (never an image), a copy action, a save-this instruction, a link to status lookup — nothing else, since the submit response carries only the reference. |
 | Registration Status | Public | Lookup by reference + email; renders status and the reviewer's note only. Byte-identical result for an unknown reference, a mismatched email, or a lockout. |
@@ -143,7 +150,7 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 --color-warning:        #8F5E10;  /* AA at 12px; intentionally decoupled from --crop-sorghum — see below */
 --color-danger:         #B3261E;
 --color-danger-soft:    #F5E3E2;  /* ~10% danger over white — error banners / badge backgrounds */
---color-restricted-bg:  #F0EBE4;  /* PII restricted chip background, warm neutral */
+--color-restricted-bg:  #F0EBE4;  /* neutral hover/panel surface — Button secondary hover, Hero home panel; name is a carryover from the deleted PII-restricted chip it no longer serves (`actors/public-profile-disclosure` OQ-4) */
 
 /* Crop legend (used by map + chips) — unaffected by --color-warning's move, see below */
 --crop-sorghum:         #C9821B;
@@ -212,9 +219,9 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 ## 8. Component Inventory
 
-Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **PII block** (gated reveal / restricted chip) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6).
+Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **Profile contact section** (`ProfileContact` — always-rendered `<dl>`, em-dash for an unsupplied value; supersedes the deleted always-locked PII block/restricted chip, `actors/public-profile-disclosure` FR-6) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6).
 
-> Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, PII block, Map popup, Import result) on top.
+> Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, Profile contact section, Map popup, Import result) on top.
 
 ## 9. Responsive Behavior
 
@@ -236,7 +243,7 @@ Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + e
 ## 12. Design Decisions
 
 - **DD-1:** Leaflet (not Mapbox/Google) — zero per-load billing for a public donor-funded platform. Crop colors drive marker styling.
-- **DD-2:** PII shows as an explicit "Restricted — sign in to view" chip for unauthorized roles, never as blank space, to make protection legible and intentional.
+- **DD-2:** *(Superseded by `actors/public-profile-disclosure` FR-6 — the always-locked "Restricted — sign in to view" panel is deleted; consent, not role, now gates disclosure, and a consenting actor's contact section always renders.)* A field the actor never supplied still renders its label with an em-dash placeholder rather than being hidden — protection through consent stays legible, but there is no longer a role-gated chip on this surface to make it so.
 - **DD-3:** Directory uses cards-on-mobile / table-on-desktop rather than a horizontally scrolling table on small screens.
 - **DD-4:** Earth + growth palette tied to the three crops, used consistently across chips, legend, and map markers so crop is recognizable everywhere.
 - **DD-5:** Admin uses a persistent left-sidebar shell distinct from the public top-nav, signaling a different mode.

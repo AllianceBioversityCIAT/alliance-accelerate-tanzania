@@ -19,7 +19,7 @@ Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJ
 
 ## Hard constraints
 1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored.
-2. PII (`phone`, `email`) is never exposed to `Public`; enforce server-side.
+2. Consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public only on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path. `NEVER_PUBLIC_FIELDS` stays absolute on every public path regardless of consent. Enforce server-side.
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `docs/ux-ui/design.md §7`; no hardcoded colors/geometry.
 

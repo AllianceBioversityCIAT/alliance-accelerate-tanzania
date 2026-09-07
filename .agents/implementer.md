@@ -27,7 +27,7 @@ Your sole responsibility is to implement the technical scope of the active task 
 ## 🧭 Project-Specific Rules (non-negotiable)
 - **Stack:** Next.js (App Router, TS, Tailwind, static export) · NestJS (TS) on Lambda · Prisma + RDS MySQL · Leaflet maps · AWS Cognito auth. Do not substitute these.
 - **AWS profile:** every AWS CLI command, script, or IaC/Serverless definition MUST include `--profile IBD-DEV`.
-- **PII:** `phone` and `email` must never be serialized to the `Public` role. Read paths must route through the role-aware serializer; never gate PII only in the client.
+- **PII:** consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` serialize to `Public` only on the single-actor detail read (`GET /api/v1/actors/:id`) for a `GRANTED` actor, never on any list/bulk path, and never at all for a non-`GRANTED` actor. `NEVER_PUBLIC_FIELDS` must never be serialized to `Public` on any path regardless of consent. Read paths must route through the role-aware serializer; never gate PII only in the client.
 - **Static export:** do not add Next.js SSR, ISR, or route handlers — server logic belongs in the NestJS API.
 - **Validation:** all writes go through validated DTOs (`class-validator`); GPS ranges and email format enforced.
 - **Commits:** the Leader commits; you focus on a clean, reviewable diff.

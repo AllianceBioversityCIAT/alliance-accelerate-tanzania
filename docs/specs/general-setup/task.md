@@ -50,7 +50,7 @@ carrying every required clause can still be unexecutable. Operator-facing docume
 ## Execution Conventions
 - Commits use the JCSPECS standard: `[SPEC:<spec-path>] <message>`.
 - The Leader maintains an audit trail in `execution.md` (one entry per loop iteration: PASS/FAIL, files, verification evidence).
-- No task may introduce a new PII field without it being declared in `requirements.md` and added to the PII allowlist.
+- No task may introduce a new field with disclosure implications without it being declared in `requirements.md` and classified in `backend/src/common/pii-consent.policy.ts` (publicly-disclosed / contact-block / never-public, or, to withhold it, declared in the retained `PII_ALLOWLIST` **and** omitted from `PUBLICLY_DISCLOSED_FIELDS`/`CONTACT_BLOCK_FIELDS` — `PII_ALLOWLIST` alone has zero runtime consumers and withholds nothing by itself).
 - Tasks touching AWS MUST keep `--profile IBD-DEV`.
 
 ## Example (illustrative)
