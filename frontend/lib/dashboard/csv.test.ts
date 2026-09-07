@@ -1,15 +1,22 @@
 /**
- * Unit tests for lib/dashboard/csv.ts — T-12, FR-9, NFR-1.
- * Spec: dashboard/discovery-dashboard.
+ * Unit tests for lib/dashboard/csv.ts — T-12, FR-9, NFR-1; extended by T-16
+ * for FR-7 (actors/public-profile-disclosure).
  *
  * Covers:
- *   (a) Public columns appear in the header and a sample actor's values appear in the data rows.
+ *   (a) Public columns appear in the header and a sample actor's values appear in the data rows,
+ *       including the FR-7-added `sex`/`otherCrops` columns.
  *   (b) Output NEVER contains "phone" or "email" — even when the actor object
  *       carries stray extra keys (cast to unknown), the allowlist ensures they
  *       are not serialised.
  *   (c) CSV escaping: fields containing commas, double-quotes, and newlines are
  *       correctly quoted and double-quote characters are doubled.
  *   (d) KPI summary values appear in the output.
+ *   (e) Registration source / consent provenance never appears (FR-7, prior spec).
+ *   (f) Contact block (contactPerson/position/phone/email/marketLocation) never
+ *       appears, named explicitly — a *second* guard behind the type system,
+ *       since `PublicActor` has no contact fields at all (design.md D-1b/RV-4).
+ *   (g) Filtered-set fidelity — the CSV carries only the actors it is given,
+ *       no more and no less (design.md D-15).
  */
 
 import { buildDashboardCsv } from './csv';
@@ -87,16 +94,44 @@ describe('buildDashboardCsv — public columns and actor values', () => {
     expect(csv).toContain('sorghum;groundnut');
   });
 
-  it('renders an empty string for null district', () => {
-    const actor = makeActor({ district: null });
+  it('includes sex and otherCrops column headers in the output (FR-7)', () => {
+    const csv = buildDashboardCsv({ actors: [makeActor()], kpis: BASE_KPIS });
+    expect(csv).toContain('sex');
+    expect(csv).toContain('otherCrops');
+  });
+
+  it('serialises sex and otherCrops values from the actor (FR-7)', () => {
+    const actor = makeActor({ sex: 'female', otherCrops: 'Sesame, Cassava' });
     const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
-    // The district column field should be empty — we look for consecutive commas
-    // in the data row after region, indicating an empty district cell.
+    expect(csv).toContain('female');
+    // otherCrops contains a comma so RFC 4180 escaping must quote the field.
+    expect(csv).toContain('"Sesame, Cassava"');
+  });
+
+  it('renders an empty string for null sex/otherCrops', () => {
+    const actor = makeActor({ sex: null, otherCrops: null });
+    const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
     const lines = csv.split('\n');
     const dataLine = lines.find((l) => l.includes(actor.traderName));
     expect(dataLine).toBeDefined();
-    // district is the third column; consecutive commas around it means it's empty.
-    expect(dataLine).toMatch(/[^,]+,[^,]+,,/);
+    // sex and otherCrops are the 7th and 8th (last) columns — a trailing
+    // ",," with nothing after means both are empty.
+    expect(dataLine).toMatch(/,,$/);
+  });
+
+  it('renders an empty string for null district', () => {
+    const actor = makeActor({ district: null });
+    const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
+    const lines = csv.split('\n');
+    const dataLine = lines.find((l) => l.includes(actor.traderName));
+    expect(dataLine).toBeDefined();
+    // Anchor by column index, not comma pattern: a comma-count regex here
+    // reads as satisfied by the unrelated trailing sex/otherCrops empties
+    // (both null by default in makeActor) once those columns exist, which
+    // makes the assertion pass regardless of district's own value.
+    // Columns: traderName, region, district, traderType, capacityTons, crops, sex, otherCrops.
+    const fields = (dataLine as string).split(',');
+    expect(fields[2]).toBe('');
   });
 
   it('renders an empty string for null/undefined capacityTons', () => {
@@ -104,9 +139,13 @@ describe('buildDashboardCsv — public columns and actor values', () => {
     const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
     const lines = csv.split('\n');
     const dataLine = lines.find((l) => l.includes(actor.traderName));
-    // capacityTons is 5th column — not present as a number, present as empty string
     expect(dataLine).toBeDefined();
-    expect(dataLine).toMatch(/,,/); // at least one empty field
+    // Anchor by column index, not comma pattern — see the district test above
+    // for why a bare "look for ,," check is vacuous once trailing empty
+    // columns exist.
+    // Columns: traderName, region, district, traderType, capacityTons, crops, sex, otherCrops.
+    const fields = (dataLine as string).split(',');
+    expect(fields[4]).toBe('');
   });
 
   it('produces multiple data rows when multiple actors are supplied', () => {
@@ -192,6 +231,76 @@ describe('buildDashboardCsv — PII gate (NFR-1)', () => {
       expect(csv).not.toContain(`+25571234567${i}`);
       expect(csv).not.toContain(`actor${i}@example.com`);
     });
+  });
+});
+
+// ── (f) Contact block gate (FR-7 scenario 2, design.md D-1b) ─────────────────
+//
+// `PublicActor` (== `PublicActorListItem`, DD-6) has no contact fields at
+// all, so `actor.phone` etc. is a compile error anywhere this module is
+// used — the primary guard here is the type system (design.md RV-4), not
+// this test. This assertion is a *second*, independent guard: it simulates
+// `PublicActor` widening to carry the contact block (what FR-1 does to the
+// *detail* type) via a cast, and proves the CSV serializer still would not
+// emit it even if the input object carried the values at runtime.
+
+describe('buildDashboardCsv — contact block gate (FR-7 / D-1b)', () => {
+  it('never serialises contactPerson, position, phone, email, or marketLocation, even when present on the actor object', () => {
+    const poisonedActor = {
+      ...makeActor(),
+      contactPerson: 'Jane Contact',
+      position: 'Director',
+      phone: '+255700000000',
+      email: 'director@example.com',
+      marketLocation: 'Arusha Central Market',
+    } as unknown as PublicActor;
+
+    const csv = buildDashboardCsv({ actors: [poisonedActor], kpis: BASE_KPIS });
+
+    // Sentinel values must not appear anywhere in the output.
+    expect(csv).not.toContain('Jane Contact');
+    expect(csv).not.toContain('Director');
+    expect(csv).not.toContain('+255700000000');
+    expect(csv).not.toContain('director@example.com');
+    expect(csv).not.toContain('Arusha Central Market');
+
+    // Nor the key names — named explicitly, not asserted by column count
+    // (a rename of an existing column would pass a count check).
+    expect(csv.toLowerCase()).not.toContain('contactperson');
+    expect(csv.toLowerCase()).not.toContain('position');
+    expect(csv.toLowerCase()).not.toContain('phone');
+    expect(csv.toLowerCase()).not.toContain('email');
+    expect(csv.toLowerCase()).not.toContain('marketlocation');
+  });
+});
+
+// ── (g) Filtered-set fidelity (FR-7's BUT clause, design.md D-15) ────────────
+//
+// The CSV must not carry any actor outside the caller's filtered `GRANTED`
+// set. `buildDashboardCsv` has no data source of its own — it only ever
+// serialises the `actors` array it is given — so this asserts the function
+// introduces nothing extra and drops nothing it was given.
+
+describe('buildDashboardCsv — filtered-set fidelity (D-15)', () => {
+  it('exports exactly the actors it is given — no actor outside that set appears, and none given is dropped', () => {
+    const includedA = makeActor({ id: 'incl-1', traderName: 'Included Actor One' });
+    const includedB = makeActor({ id: 'incl-2', traderName: 'Included Actor Two' });
+    // Represents an actor that exists but was filtered OUT upstream (e.g.
+    // not GRANTED, or outside the current dashboard filter) — it is never
+    // passed to buildDashboardCsv and must not appear in its output.
+    const excludedSentinel = 'Excluded Sentinel Actor Never Passed In';
+
+    const csv = buildDashboardCsv({ actors: [includedA, includedB], kpis: BASE_KPIS });
+
+    expect(csv).toContain('Included Actor One');
+    expect(csv).toContain('Included Actor Two');
+    expect(csv).not.toContain(excludedSentinel);
+
+    // Exactly one data row per actor passed in — no extra rows appear.
+    const lines = csv.split('\n');
+    const headerIdx = lines.findIndex((l) => l.startsWith('traderName'));
+    const dataLines = lines.slice(headerIdx + 1).filter((l) => l !== '');
+    expect(dataLines).toHaveLength(2);
   });
 });
 

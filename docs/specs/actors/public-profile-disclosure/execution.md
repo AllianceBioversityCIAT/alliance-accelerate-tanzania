@@ -1000,3 +1000,48 @@ Why it is bookkeeping and not loss dressed as bookkeeping:
 **Verification:** `npm test -- --silent "Profile|contrast"` → 3 suites / **164** tests · lint clean · `tsc --noEmit` clean.
 
 ---
+
+### T-16 — Extend the public CSV to the list set
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 3) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-7 (both scenarios), FR-9 · design.md §9, DD-3, DD-6, RV-4, A-1 · **D-1b, D-15**, NFR-6 |
+| Files changed | 2 files · +179/-20 |
+| Ran in parallel with | T-15, T-20 |
+
+`PUBLIC_COLUMNS` goes six → **eight** (`sex`, `otherCrops` appended). The five contact-block names are asserted **by name**, not by count — the task's own disqualifier. `csv.test.ts`: **37** tests, reconciled against the file's `it(` blocks by the Reviewer rather than taken from the run summary.
+
+#### Three attempts, three different defects — none of them the CSV logic
+
+**Attempt 1 — the falsifying input did not exercise what it named.** Adding `phone` to `PUBLIC_COLUMNS` crashed the suite on the exhaustive `PublicColumn` switch instead of reddening the named-fields assertion. A crash is a red run, but not *this* gate's red run: the guard demonstrated was the compiler, not the assertion the task asked to falsify. **DD-11 again** — the type owns presence, the test owns nullness — for the fourth time in this spec.
+
+**Attempt 2 — two pre-existing assertions went silently vacuous.** The null-`district` and null-`capacityTons` tests matched on `/,,/`. Appending two always-empty trailing columns satisfies that pattern **regardless of `district`**, so both assertions stopped pinning anything the moment this task landed. Not a defect introduced in the new tests — a defect introduced in the **old** ones, by a change three lines away. Fixed with positional anchors (`fields[2]`, `fields[4]`) plus a demonstrated before-green/after-red pair.
+
+> This is the spec's clearest case of the mechanism the whole exercise exists to catch: **a green suite that stopped asserting, with no failure anywhere to announce it.** Nothing in the run output distinguishes the before state from the after.
+
+**Attempt 3 — the retitled banner still contradicted its own body.** Attempt 2 fixed the title (`NOT THE BULK BOUNDARY — that is FR-9's list projection`) and left a sentence three lines down still claiming the allowlist bounds bulk access. Comment-only fix. The Reviewer enumerated **every sentence** in the header: three now subordinate this module to FR-9's list projection, and **none** asserts the CSV allowlist is the bulk control.
+
+#### What the final review established, and what it did not
+
+Four load-bearing claims verified against source, not against the spec's own prose: `PublicActorListItem` carries no contact field; `PublicActor` is its alias; the contact block exists only on `PublicActorDetail`; and the no-spread prohibition still binds for its own reason (spread-plus-type-widening), independent of bulk volume — `PUBLIC_COLUMNS` is spread as a *column-name array*, which the prohibition explicitly scopes out.
+
+**Boundary the Reviewer drew on itself:** it could not re-run the suite or `tsc`, so "37 passed" and "no executable change" are the Implementer's account corroborated by reading — the `it(` count reconciles, and both changed regions are comment-only by inspection.
+
+#### The residual-risk notes, and why they sit beside the array
+
+Two ways this file can go vacuous again are recorded **at `PUBLIC_COLUMNS`**, not at the assertions, because the trigger for both is *editing that array* and the remedy is an instruction about it: append new nullable columns **after** `otherCrops`, update the fixed indices in lockstep, never widen the regex back.
+
+Note 2 was verified mechanically: a ninth nullable column makes a row end `,female,,`, which `/,,$/` matches while `sex` is non-empty — the same vacuity, at the opposite end of the row.
+
+#### Two wording imprecisions recorded, not blocked
+
+Proportionality call on a third, comment-only attempt — both are non-blocking and neither understates a risk:
+
+1. The `at or before index 2` window **over-states** the danger. Only insertion *at* index 2 leaves `fields[2]` reading the new empty column; at index 0 or 1, `region` shifts into slot 2 and the test **fails loudly**. Error in the safe direction; the prescribed remedy is correct either way.
+2. *"the moment `PublicActor` widens (e.g. FR-1's contact block landing on the detail type)"* offers as an example of `PublicActor` widening an event that already happened (T-13) and did **not** widen it — the alias resolves to the list item. The real risk is **D-4's convergence** ("a future reader harmonises the two shapes"); citing that ID would make it exact. Pre-existing text, accepted by two prior reviews, outside this attempt's edit.
+
+**Verification:** `npm test -- --silent csv` → 37 passed / 37 total · lint clean · `tsc --noEmit` clean.
+
+---

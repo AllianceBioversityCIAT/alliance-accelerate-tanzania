@@ -170,7 +170,7 @@
       Falsifying input: re-rendering the old panel anywhere on the page must redden.
       Skills: `react-doctor`
 
-- [ ] **T-16** Extend the public CSV to the list set  (deps: T-13)
+- [x] **T-16** Extend the public CSV to the list set  (deps: T-13)
       Scope: `PUBLIC_COLUMNS` gains `sex` and `otherCrops`; the header comment is rewritten to state the new reason; add assertions naming the contact block explicitly and checking filtered-set fidelity.
       Traces: FR-7 (both scenarios) · design.md §9, DD-3, A-1 · D-1b, D-15
       Files: `frontend/lib/dashboard/csv.ts`, `frontend/lib/dashboard/csv.test.ts`
