@@ -17,10 +17,13 @@
 //   error       → distinct from not-found (useActor sets error when data is null,
 //                 but we treat both null-data cases as "not found" since the
 //                 backend contract: 404 for missing/non-consented is indistinguishable)
-//   success     → renders all profile sections + RestrictedContactPanel
+//   success     → renders all profile sections + ProfileContact
 //
-// PII contract (NFR-1): useActor returns a PublicActor which has no phone/email.
-// RestrictedContactPanel is ALWAYS rendered for the Public role (FR-6).
+// PII contract (FR-1, T-13): useActor returns a PublicActorDetail, which
+// DOES carry phone/email (plus contactPerson, position, marketLocation) —
+// the detail endpoint is the one surface that discloses the contact block
+// for a GRANTED actor. ProfileContact renders it directly; the always-locked
+// panel this comment used to describe was deleted (FR-6).
 
 import { useSearchParams } from 'next/navigation';
 import { useActor } from '@/lib/api/useActor';
@@ -29,7 +32,7 @@ import ProfileHeader from './ProfileHeader';
 import ProfileLocation from './ProfileLocation';
 import ProfileMarketActivity from './ProfileMarketActivity';
 import ProfileCapacity from './ProfileCapacity';
-import RestrictedContactPanel from './RestrictedContactPanel';
+import ProfileContact from './ProfileContact';
 
 // ── Loading skeleton ───────────────────────────────────────────────────────────
 
@@ -101,8 +104,8 @@ export default function ProfileView() {
       <ProfileLocation actor={data} />
       <ProfileMarketActivity actor={data} />
       <ProfileCapacity actor={data} />
-      {/* Always-locked for Public role (FR-6, NFR-1) */}
-      <RestrictedContactPanel />
+      {/* Real contact & profile data for a GRANTED actor (FR-1, FR-6) */}
+      <ProfileContact actor={data} />
     </article>
   );
 }

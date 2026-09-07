@@ -820,3 +820,44 @@ Only the quantifier over-reaches. **Ninth instance of this spec's dominant famil
 **Verification (Leader-run, quiet tree, `--runInBand` throughout):** gate 34/34 · full suite 75 suites / **1052** tests · eslint clean · `git diff` on `role-aware.serializer.ts` and `actors.service.ts` **empty** — no leftover mutation, independently confirmed by the Reviewer reading the unmutated line on disk.
 
 ---
+
+### T-14 — Replace the restricted panel with the real contact section
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-6 both scenarios · design.md §8, DD-7 · NFR-4 (**not** discharged — see below) |
+| Files changed | 3 — `RestrictedContactPanel.tsx` deleted (90), `ProfileContact.tsx` new (139), `ProfileView.tsx` · +148/-96 |
+| Ran in parallel with | T-12 (backend) |
+
+**The locked panel is gone.** Two sections: **Contact** (contact person, position, phone, email, market location) and **Profile** (sex, other crops).
+
+**FR-6 satisfied for every field, verified as seven of seven** — no `&&`, no ternary, no conditional guard anywhere; every `<dd>` is `{actor.<field> ?? '—'}`. The Reviewer noted this is **stricter than the exemplar it mimics**: `ProfileLocation` *does* conditionally hide its GPS card, so where FR-6 and the exemplar diverge the Implementer correctly followed the requirement.
+
+**Membership correct, and the recorded reason verified rather than merely present.** Contact holds exactly `CONTACT_BLOCK_FIELDS`, byte-identical. `sex`/`otherCrops` in Profile, with a doc-comment whose stated reason the Reviewer cross-checked against **three** independent sources — the glossary, `PUBLICLY_DISCLOSED_FIELDS`' own doc, and `PublicActorListItem`. The anti-harmonising warning aims at the right target.
+
+**DD-7 holds** — no `href`, no `<a`, no `Link` import; the file's only import is `import type { PublicActorDetail }`. **Tokens only**, and the Reviewer confirmed they are *the same* tokens as the exemplar, not near-equivalents. ARIA wiring correct on both sections, ids unique across all five profile sections, heading levels consistent.
+
+**The false PII comment is corrected and the replacement is true** — verified clause by clause against `useActor.ts` and `actors.ts`. Leaving a false PII claim in the file that renders PII would have been this spec's dominant defect in its most pointed form.
+
+#### The red is the correct inversion — adjudicated, not assumed
+
+Nine failures across the two suites reserved for T-15, including **two PII-omission guards asserting the profile renders no phone or email.** The Reviewer ruled plainly: *correct inversion, not an unresolved requirement conflict.* Those guards were written against the **previous** spec's FR-6/NFR-1; this spec supersedes PRD AC-1/AC-6 and redefines NFR-1 as *"consent enforced at the query"* — it no longer asserts field omission. **No surviving requirement demands the profile omit phone/email.**
+
+And the attribution was proven by **what stayed green**: the not-found and loading a11y tests pass, because `ProfileContact` does not render in those states, and the no-form-controls test passes because it has none. The red tracks *whether `ProfileContact` renders* — a broken import would have reddened all three a11y PII tests and every suite. That state-split is the inverse condition the brief asked for.
+
+#### The Disqualifier held — NFR-4 is NOT discharged
+
+The Reviewer stated precisely what the green 26 and the passing `jest-axe` assertions establish: components mount, labels and em-dashes appear in the DOM, ARIA resolves, and no axe rule **jsdom can evaluate** is violated. They establish **nothing** about the rendered result.
+
+> `text-fg`/`text-muted` on `bg-surface-alt` is a contrast pair no assertion in this diff measures — jsdom computes no colour, and axe returns **incomplete**, not pass, for contrast there. Nor is layout tested: seven cards in two `sm:grid-cols-2` grids, the `sm:col-span-2` full-width Market Location row, and how a long email or free-text `otherCrops` behaves in a fixed-padding card at 375 px are all unmeasured.
+
+**D-8 remains open and belongs to T-19**, whose evidence must be a rendered capture or a T6 pass — not this suite.
+
+#### ADVISORY — one for T-16, one for T-15
+
+- **To T-16:** `ProfileContact`'s doc-comment says `sex`/`otherCrops` "ship on the list set **and the CSV too**". The list half is true now; **the CSV half is not** — `PUBLIC_COLUMNS` still holds only six columns. Not a KZ-008 failure (it cites A-1 and self-resolves inside this spec), but **it becomes a false claim if T-16 is dropped.**
+- **To T-15, and it matters:** both PII guards are *substring* matches (`queryByText(/phone/i)`), so they redden on the **"Phone" label** — the sparse-actor case fails even though that fixture has no phone value. **Flipping them to `toBeInTheDocument()` would assert only that a label exists, which is not FR-1 coverage.** T-15's replacements must assert on the disclosed **values**.
+
+---

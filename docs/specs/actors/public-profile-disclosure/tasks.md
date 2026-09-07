@@ -149,7 +149,7 @@
       Falsifying input: referencing `phone` from `DirectoryView` must fail `npm run build`.
       Skills: `vercel-react-best-practices`
 
-- [ ] **T-14** Replace the restricted panel with the real contact section  (deps: T-13)
+- [x] **T-14** Replace the restricted panel with the real contact section  (deps: T-13)
       Scope: delete `RestrictedContactPanel`; add `ProfileContact` (Contact: contact person, position, phone, email, market location · Profile: sex, other crops); swap it into `ProfileView`. Plain text, no `tel:`/`mailto:`.
       Traces: FR-6 (both scenarios) · design.md §8, DD-7 · NFR-4
       Files: `frontend/components/profile/{RestrictedContactPanel.tsx,ProfileContact.tsx,ProfileView.tsx}`
