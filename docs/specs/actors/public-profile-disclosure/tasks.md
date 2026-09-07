@@ -139,7 +139,7 @@
 
 ## Phase E — Frontend
 
-- [ ] **T-13** Split the frontend actor types  (deps: T-7)
+- [x] **T-13** Split the frontend actor types  (deps: T-7)
       Scope: `PublicActorListItem` (with `PublicActor` as its alias, so the 45 consumers compile unchanged) and `PublicActorDetail`; `useActor` returns the detail shape; update the two API test fixtures.
       Traces: FR-1, FR-9 · design.md §9, DD-6 · D-1b
       Files: `frontend/lib/api/actors.ts`, `frontend/lib/api/useActor.ts`, `frontend/lib/api/actors.test.ts`, `frontend/lib/api/useActor.test.ts`

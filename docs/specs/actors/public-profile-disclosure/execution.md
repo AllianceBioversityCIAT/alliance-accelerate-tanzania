@@ -681,3 +681,68 @@ It matters more than its size: **that module is the file every subsequent task r
 **Verification:** `pii-boundary --runInBand` → 25/25 · eslint clean · full suite → 75 suites / **1043** tests.
 
 ---
+
+### T-13 — Split the frontend actor types
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 2 of 3) · auto-approved |
+| Date | 2026-09-07 |
+| Implementer attempts | 2 — FAIL (optionality flip + a mock that only looked type-checked), PASS |
+| Requirements covered | FR-1, FR-9 · design.md §9, DD-6 · D-1b |
+| Files changed | **21** — `actors.ts`, `useActor.ts`, `actors.test.ts`, `useActor.test.ts`, + 17 fixtures · +195/-29 |
+| Ran in parallel with | **T-11** (backend). First parallelised pair in this spec. |
+
+`PublicActorListItem` + `PublicActor` as its alias + `PublicActorDetail extends` it. `useActor`/`getActor` return the detail shape. **DD-6's property demonstrated, not asserted:** inserting `{actor.phone}` into `DirectoryView.tsx` produced
+
+```
+./components/directory/DirectoryView.tsx:328:22
+Type error: Property 'phone' does not exist on type 'PublicActorListItem'.
+```
+
+The Reviewer reconciled those coordinates against the real file — `phone` at line 328 lands at **column 22**, and the error naming `PublicActorListItem` rather than `PublicActor` is the alias resolving through, which is corroboration the run was real rather than transcribed.
+
+#### Attempt 1 FAIL — test convenience was dictating the production contract
+
+The Implementer declared `sex`/`otherCrops` **optional**, diverging from the backend's required-nullable, and flagged it honestly: mirroring literally broke `tsc` in ~15 out-of-scope files, which it read as violating DD-6's "45 consumers compile unchanged".
+
+**The Reviewer refuted the justification with data.** `frontend/CLAUDE.md`'s API-client convention is explicit — *"Types mirror backend contracts EXACTLY … matching optionality. Loosening a union or flipping optionality has FAILed reviews before"* — the named rule with the named precedent. And FR-1 says the opposite of what an optional key asserts: *"MUST NOT be omitted … so the contract shape is identical for every actor."*
+
+Then the decisive finding: **every file that would break is one that *constructs* a `PublicActor` literal, and all of them are `*.test.*`. Zero production files construct one.** DD-6's property is a **read-side** property — the directory/map/dashboard components compile unchanged and lose the *ability* to name contact data. Requiring `sex` touches no read site, so it could not disturb DD-6 at all.
+
+**Leader authorised the scope overrun (4 declared files → 21).** Not scope creep: it is what "mirror the backend contract" actually costs, and the 4-file estimate in `tasks.md` was simply wrong about that price.
+
+**And the reason not to defer was concrete:** an optional key lets a fixture omit a field the backend always sends, so `csv.test.ts`'s `makeActor` would keep producing `sex === undefined` — and **T-16, which adds `sex`/`otherCrops` to `PUBLIC_COLUMNS`, would have asserted its new columns against a shape the API never emits.** The stale-not-red class T-13's own Disqualifier exists to close, handed forward one task. **Verified discharged:** `makeActor` now defaults both keys ahead of `...overrides`.
+
+#### Three counts, one compiler
+
+| Source | Files needing edit |
+|---|---|
+| Implementer (attempt 1) | 15 |
+| Reviewer (by reading) | 16 |
+| **`tsc --noEmit`** | **17** |
+
+The missed file was `app/(public)/map/map-a11y.test.tsx` — **its path contains `(public)`, which a naive path-extraction regex drops.** Neither human enumeration was going to find it, because the error was not in attention but in the mental tool used to enumerate.
+
+The rework brief said explicitly: *do not trust either count; let `tsc` name the set.* **Same lesson as the derived counts in T-10 and the derived rule in T-6: when a mechanism can name the exact set, deducing it is worse than asking it.**
+
+#### Attempt 1's second FAIL — a mock that only looked type-checked
+
+`const { getActor } = require('./actors') as { getActor: jest.MockedFunction<(id: string) => Promise<PublicActorDetail | null>> }`
+
+`require()` is typed `any`, so `as` accepts **any** shape — nothing was checked against the real `getActor`. The comment claimed *"typed explicitly against the real function signature … so they cannot disagree without a compile error."* They could. **The signature was hand-copied, not derived** — a second statement of a contract that already existed, which is the defect that cost three attempts in T-6 and three in T-10, this time in type form.
+
+Fixed by derivation: `jest.MockedFunction<typeof import('./actors').getActor>`.
+
+#### Advisory A satisfied — the file no longer carries two conventions unexplained
+
+`district?`, `capacityTons?`, `gps?` remain optional (sweeping them cascades further and was out of scope). Instead the file now **names them as pre-existing unswept divergences and states the correct convention going forward**, with a prohibition against using the optional-key shape as a model. The Reviewer judged it *directive, not merely a note of inconsistency* — which was the point. A file with two conventions and no explanation is how the next author picks the wrong one.
+
+#### ADVISORY (non-gating, recorded not actioned)
+
+- `actors.ts` — the legacy-divergence comment says "the optional-key shape **above**" while the three optional keys are **below** it. Referent unambiguous (the fields are named), direction word inverted.
+- `useActor.test.ts` — a comment says *"if `getActor`'s signature changes, **this line** reddens."* **A derived type is precisely the thing that cannot redden**; the red appears at the fixture declaration and the `mockResolvedValue` calls. The property claimed of the suite is real; only the line attribution is wrong. **Seventh instance of this spec's dominant family** — recorded, not actioned, because T-13 is closed and widening a closed task is forbidden.
+
+**Verification:** `npx tsc --noEmit` clean · `npm run build` ✓ 27/27 pages · `npm test -- --silent` → **109 suites / 1632 tests** · `npm run lint` clean. **`tsc` is the only one of the four that speaks to this task** — `next/jest` uses SWC and does not typecheck, so 1632 green tests establish that fixtures satisfy assertions, not that any type lines up.
+
+---
