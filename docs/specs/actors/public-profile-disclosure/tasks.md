@@ -127,7 +127,7 @@
       Falsifying input: see T-12 — this task is not verified until T-12 runs.
       Skills: `tdd`
 
-- [ ] **T-12** Demonstrate the gate can fail  (deps: T-11)
+- [x] **T-12** Demonstrate the gate can fail  (deps: T-11)
       Scope: remove the `consentStatus: GRANTED` pin from `findPublic`, run the gate, capture the failure output verbatim, restore the pin, re-run green. Repeat for one contact-block-on-list mutation.
       Traces: **NFR-2** · design.md §10, §15 · D-3
       Files: none committed — evidence only, recorded in `execution.md`
