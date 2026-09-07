@@ -1337,3 +1337,17 @@ This is the first end-to-end confirmation in this spec against a real HTTP serve
 **Local test data note:** the two populated actors exist only in the local disposable database. Nothing was committed, and no seeder was modified — the gap remains as OQ-3 documents it.
 
 ---
+
+### Escalation closed — NFR-7's third member is empty
+
+**2026-09-07, Daniela Gómez:** *"Nadie se ha registrado, el aplicativo no se ha entregado al cliente aún."*
+
+Three tasks (T-3, T-20) and `tasks.md`'s *"Explicitly NOT in this task — escalated instead"* clause carried the same open question forward: **applicants who registered under the old promise** — the public form's *"Review context — not published to the public directory"* notice on a **required** field collecting a third party's name. Whether their `contactPerson` could be published, or whether they had to be re-consulted, was recorded as a programme/legal decision.
+
+**The set is empty.** No registration has been submitted; the application has not been delivered. Nobody was ever shown the old promise, so nobody was misled by it and there is nobody to re-consult.
+
+This closes the third member of NFR-7. **The other two remain open and are unaffected**: the consent-policy text is still `[PLACEHOLDER TEXT — pending legal review, OQ-1]` with `CONSENT_POLICY_VERSION` deliberately un-bumped, and the email-purpose gap is unresolved. Both are legal's, not this spec's.
+
+Worth stating plainly, because it changes what T-20 accomplished: T-20 corrected a false notice **before it was ever shown to a data subject**, rather than after. The same fix landing post-delivery would have been a remediation with a notification question attached.
+
+---
