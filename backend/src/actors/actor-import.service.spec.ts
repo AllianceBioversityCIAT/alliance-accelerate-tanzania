@@ -189,7 +189,7 @@ describe('ActorImportService', () => {
     // legibly, telling the admin to re-download, rather than falling through
     // to the generic "no Data sheet matching" column-mismatch error.
     it('rejects a workbook stamped with a stale template version', async () => {
-      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v2' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
         /out of date.*re-download/i,
@@ -202,7 +202,7 @@ describe('ActorImportService', () => {
     // presence check that only re-proves the old substrings is not evidence
     // for this task).
     it('names the template download location in the stale-template message', async () => {
-      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v2' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
         /link on this page/i,
@@ -314,6 +314,37 @@ describe('ActorImportService', () => {
 
     it('leaves both fields unwritten when the cells are blank', async () => {
       const b64 = await buildWorkbook([validRow()]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created).not.toHaveProperty('contactPerson');
+      expect(created).not.toHaveProperty('otherCrops');
+    });
+
+    // Validation remediation (D-12) — the test above is a vacuous guard
+    // against derivation: EVERY plausible derive-source (position,
+    // marketLocation, sex, traderName) is ALSO blank on `validRow()`, so a
+    // defect like `contactPerson = cells.contactPerson || cells.position`
+    // would leave `contactPerson` unwritten on that row too and the test
+    // above would still pass. This row gives every plausible derive-source a
+    // distinct, non-blank sentinel value while leaving ONLY `contactPerson`
+    // and `otherCrops` blank, so a derive from any of them is now
+    // observable. Requirements FR-4: "AND IT MUST NOT be backfilled,
+    // invented, or derived from any other column."
+    it('does not derive contactPerson or otherCrops from other populated cells (FR-4, D-12)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          traderName: 'Sentinel Trader Name',
+          position: 'Sentinel Position',
+          marketLocation: 'Sentinel Market Location',
+          sex: 'Female',
+          // contactPerson and otherCrops cells intentionally left blank.
+        }),
+      ]);
 
       await service.run(commitDto(b64), 'sub-1');
 

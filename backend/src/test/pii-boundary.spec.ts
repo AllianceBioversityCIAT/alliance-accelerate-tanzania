@@ -558,6 +558,47 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
         expectNoPiiKeys(wire, CONTACT_BLOCK_FIELDS);
       },
     );
+
+    // Validation remediation — FR-9's `BUT it must NOT be circumventable by
+    // a query parameter, a filter, or a page-size value` clause had no test:
+    // every assertion above requests bare `/api/v1/actors`. The structural
+    // argument (`findPublic` maps unconditionally through `toPublicListItem`,
+    // `ListQueryDto` exposes no projection knob, no Prisma `select`) is sound,
+    // but the clause's words are "there is no request shape that widens the
+    // list projection" — this sweeps every filter/pagination shape
+    // `ListQueryDto` actually accepts (`list-query.dto.ts`: crop, search,
+    // role, region, page, pageSize) and re-runs the SAME by-key and by-value
+    // sweeps the bare-request tests above use. `page`/`pageSize` are paired
+    // (2/1) rather than page=2 alone, because with 3 GRANTED fixtures and the
+    // default pageSize 20 a bare page=2 returns zero rows — an assertion over
+    // an empty page would be vacuous, so each shape's non-empty `data` is
+    // asserted explicitly first.
+    it.each([
+      { label: 'region filter', query: { region: 'Arusha' } },
+      { label: 'role filter (traderType)', query: { role: 'seed_company' } },
+      { label: 'crop filter', query: { crop: 'sorghum' } },
+      { label: 'free-text search', query: { search: 'Arusha' } },
+      { label: 'large page size', query: { pageSize: '100' } },
+      { label: 'a later page', query: { page: '2', pageSize: '1' } },
+    ])(
+      'the contact block does not leak via $label (FR-9)',
+      async ({ query }) => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/actors')
+          .query(query)
+          .expect(200);
+
+        // Keep the sweep honest: a filter that returns zero rows would make
+        // every assertion below pass vacuously.
+        expect(res.body.data.length).toBeGreaterThan(0);
+
+        const wire = JSON.parse(JSON.stringify(res.body));
+        expectNoPiiKeys(wire, CONTACT_BLOCK_FIELDS);
+        for (const piiValue of LIST_AND_METRICS_LEAKABLE_VALUES) {
+          expect(JSON.stringify(wire)).not.toContain(piiValue);
+        }
+      },
+    );
   });
 
   // T-11/DD-10 — DIRECTION 3 (FR-2): no field of EITHER non-granted fixture

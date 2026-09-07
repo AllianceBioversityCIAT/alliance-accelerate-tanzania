@@ -40,6 +40,21 @@ const AUDITABLE_FIELDS = [
   'region',
   'district',
   'traderType',
+  // `actors/public-profile-disclosure` T-2 — `contactPerson` and
+  // `otherCrops` joined `AdminActor`/the create/update DTOs as admin-editable,
+  // publicly-disclosable actor data (FR-4), the same standing as every other
+  // scalar above. They belong in THIS constant for exactly the reason the
+  // docblock above gives for every other member: they are actor data, not
+  // row metadata. Before this fix they were silently excluded, so an update
+  // that changed only one of them produced an empty diff and `logUpdate`
+  // wrote NO audit row at all (not a row missing a field) — meaning
+  // `contactPerson`, a third party's name now publicly disclosed and
+  // admin-editable, could be changed or erased with zero trace. `buildSnapshot`
+  // iterates this same constant, so the gap also silently affected
+  // `logCreate`/`logDelete`/`logBulkDelete`/`logImport`/
+  // `logRegistrationApprove` snapshots.
+  'contactPerson',
+  'otherCrops',
   'sex',
   'position',
   'marketLocation',

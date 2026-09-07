@@ -643,7 +643,7 @@ Site 7 correctly did **not** react to a public-path leak: its loop asserts the *
 | Requirements covered | FR-1, FR-2, FR-3, FR-9 · design.md DD-4 |
 | Files changed | `backend/src/test/pii-boundary.spec.ts` |
 
-**Final shape:** `DETAIL_ONLY_LEAKABLE_VALUES` (the 5 `CONTACT_BLOCK_FIELDS` fixture values) · `NEVER_PUBLIC_LEAKABLE_VALUES` (7) · a derived union for list and `/metrics`. Directions: list → union · detail → never-public only · `/metrics` → union. No typed count survives anywhere; both totals are `.length + .length` expressions.
+**Final shape:** `DETAIL_ONLY_LEAKABLE_VALUES` (the 5 `CONTACT_BLOCK_FIELDS` fixture values) · `NEVER_PUBLIC_LEAKABLE_VALUES` (7) · a derived union — **5 + 7 = 12, not the eleven `tasks.md` T-10 asks to assign.** The twelfth is `'Amina Juma'` (`contactPerson`), which T-10 itself added: the old `LEAKABLE_PII_VALUES` predated the column, so the task's count was written against a set that did not yet include it. *Reconciled 2026-09-07 during `/akili-validate` — the entry recorded both halves correctly and never stated that the total had moved, which is the same defect this task's own headline finding is about: a rule stated against a stale count.* for list and `/metrics`. Directions: list → union · detail → never-public only · `/metrics` → union. No typed count survives anywhere; both totals are `.length + .length` expressions.
 
 **`pii-boundary.spec.ts` went red → green**, and the explanation was verified rather than accepted: the four detail-only values left the *detail* loop because their absence there is no longer the correct expectation. No polarity flipped, nothing deleted. **T-11 still owns the presence half.**
 
@@ -921,7 +921,7 @@ The bare literal does not compile, so a cast was needed to reach runtime *(`as u
 
 T-11 reported mutation 2 reddening "the new key sweep **and** the pre-existing value sweep". The summary line showed two failures whose **names both mention keys**, which read as a discrepancy.
 
-It was not. The value sweep lives *inside* an `it` named **`deep-scan: no PII allowlist key (nor traderId/altitude/accuracy) anywhere`** — line 503 is `expect(JSON.stringify(wire)).not.toContain(piiValue)`. **The test asserts more than its name says**, and the name cites `PII_ALLOWLIST`, a constant T-6 emptied.
+It was not. The value sweep lives *inside* an `it` named **`deep-scan: no PII allowlist key (nor traderId/altitude/accuracy) anywhere`** *(renamed by T-17's pre-commit cleanup to `deep-scan: no never-public key or value, and no list/metrics-leakable value, anywhere in the LIST response`, because the old title named `PII_ALLOWLIST` — a constant this spec emptied. Forward pointer added 2026-09-07 during `/akili-validate`: the name quoted above is the one that was live when T-12 ran, and no longer exists in the file.)* — line 503 is `expect(JSON.stringify(wire)).not.toContain(piiValue)`. **The test asserts more than its name says**, and the name cites `PII_ALLOWLIST`, a constant T-6 emptied.
 
 > **Pointer for whoever reads this next — suggested by the T-12 Implementer, and worth heeding.** *"The test asserts more than its name says"* is now the **ninth** instance of this spec's dominant defect family: a claim that does not match the artefact bearing it. See T-3, T-6, T-9, T-10, T-11 and T-13's entries for the others. **Before writing a tenth restatement, read those six.** The countermeasure that has worked every time is mechanical, never attitudinal: make the verification part of the instruction — open the file, grep your own diff, run the mutation, let the compiler name the set.
 
@@ -1015,7 +1015,7 @@ Why it is bookkeeping and not loss dressed as bookkeeping:
 
 #### Three attempts, three different defects — none of them the CSV logic
 
-**Attempt 1 — the falsifying input did not exercise what it named.** Adding `phone` to `PUBLIC_COLUMNS` crashed the suite on the exhaustive `PublicColumn` switch instead of reddening the named-fields assertion. A crash is a red run, but not *this* gate's red run: the guard demonstrated was the compiler, not the assertion the task asked to falsify. **DD-11 again** — the type owns presence, the test owns nullness — for the fourth time in this spec.
+**Attempt 1 — the falsifying input did not exercise what it named.** Adding `phone` to `PUBLIC_COLUMNS` crashed the suite on the exhaustive `PublicColumn` switch<sup>†</sup> instead of reddening the named-fields assertion. A crash is a red run, but not *this* gate's red run: the guard demonstrated was the compiler, not the assertion the task asked to falsify. **DD-11 again** — the type owns presence, the test owns nullness — for the fourth time in this spec.
 
 **Attempt 2 — two pre-existing assertions went silently vacuous.** The null-`district` and null-`capacityTons` tests matched on `/,,/`. Appending two always-empty trailing columns satisfies that pattern **regardless of `district`**, so both assertions stopped pinning anything the moment this task landed. Not a defect introduced in the new tests — a defect introduced in the **old** ones, by a change three lines away. Fixed with positional anchors (`fields[2]`, `fields[4]`) plus a demonstrated before-green/after-red pair.
 
@@ -1043,6 +1043,8 @@ Proportionality call on a third, comment-only attempt — both are non-blocking 
 2. *"the moment `PublicActor` widens (e.g. FR-1's contact block landing on the detail type)"* offers as an example of `PublicActor` widening an event that already happened (T-13) and did **not** widen it — the alias resolves to the list item. The real risk is **D-4's convergence** ("a future reader harmonises the two shapes"); citing that ID would make it exact. Pre-existing text, accepted by two prior reviews, outside this attempt's edit.
 
 **Verification:** `npm test -- --silent csv` → 37 passed / 37 total · lint clean · `tsc --noEmit` clean.
+
+> <sup>†</sup> **Corrected 2026-09-07 during `/akili-validate`.** This paragraph went on to call the guard *"the compiler"*. That is true of a different command than the one that produced the crash: `next/jest` uses **SWC and does not typecheck** (`frontend/CLAUDE.md`, Testing), so under `npm test` the non-exhaustive switch falls through to `undefined` and `escapeField` dereferences it — a **runtime `TypeError`**. `npx tsc --noEmit` would separately reject it (TS2366). The conclusion stands — the falsifying input did not exercise the named-fields assertion — but the mechanism was misattributed.
 
 ---
 
@@ -1321,7 +1323,15 @@ Had any of the three failed, the operator would download, re-upload, and hit the
 
 `npx prisma migrate reset --force` was **refused by Prisma itself**, which requires explicit user consent for a destructive action regardless of the target. I did not seek that consent, because checking first showed the reset was **unnecessary**: `migrate status` reported the schema already current, with 14 actors (12 `GRANTED`) present.
 
-What was actually needed was an additive `UPDATE` on two rows to populate `contactPerson`/`otherCrops` — **no seeder sets either column**, so without it every profile would have rendered seven em-dashes and state 1 above could not have been reviewed at all.
+What was actually needed was an additive `UPDATE` on two rows, writing **seven columns each**: `contactPerson`, `position`, `phone`, `email`, `marketLocation`, `sex`, `otherCrops`.
+
+> **Corrected 2026-09-07 during `/akili-validate`, and recorded rather than silently rewritten.** This paragraph originally read *"an additive `UPDATE` on two rows to populate `contactPerson`/`otherCrops` — **no seeder sets either column**"*. Both halves understated the truth, and an auditor caught it by opening `backend/prisma/seed-data.ts`, which I had not.
+>
+> `SeedActor` declares **no** `sex`, `position`, `marketLocation`, `contactPerson` or `otherCrops` member at all, and types `phone`/`email` as the literal `null` by DD-4 design (*"PII — intentionally null in seed data"*). The seeder populates **none of the seven rows** `ProfileContact` renders — not two. So the two-column `UPDATE` the original text described **could not have produced state 1** (*"all five Contact rows and both Profile rows carrying values"*), nor state 2's long-value case, which names a 64-character position and a long email.
+>
+> **How the error was made, because the mechanism matters more than the correction:** I ran `grep "contactPerson\|otherCrops" prisma/seed*.ts`, got no hits, and wrote a conclusion broader than what the grep established. The grep answered the question I asked; I wrote a claim about the question I had not asked. That is the **seventeenth** instance of this spec's dominant family — *a claim written without re-reading the artefact it claims about* — and it is in my own hand, inside the entry whose evidence is least re-derivable.
+>
+> It matters here more than elsewhere: T-19 is the one task whose evidence is *"a person looked at the screen"*. Its only machine-checkable half is how the reviewed database state was built, and that was the half that was wrong. A future reader following the original recipe would have reproduced a profile with five em-dashes and concluded the rendered review had covered something it had not.
 
 The correct move was not "get consent for the destructive command"; it was **establish that the destructive command was not required**.
 

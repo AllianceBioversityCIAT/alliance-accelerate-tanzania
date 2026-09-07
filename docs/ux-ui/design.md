@@ -99,7 +99,7 @@
 | Actor Form | Staff / Admin | Sectioned, validated create/edit form incl. GPS + PII fields. |
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
 | Admin Registrations Queue | Admin | Dense, URL-synced table (cards on mobile) of self-registration submissions — reference, applicant, type, region, submitted date, duplicate count, status; segmented by `PENDING_REVIEW` / `APPROVED` / `REJECTED` only. |
-| Admin Registration Detail | Admin | Reference code header, full submitted payload with the two non-publishable fields marked as review-only context, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
+| Admin Registration Detail | Admin | Reference code header, full submitted payload — every field on it is copied to the actor record on approval and becomes publicly visible, since approval sets `consentStatus: GRANTED` (`actors/public-profile-disclosure` FR-4); no per-field marking, one table-wide caption, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |

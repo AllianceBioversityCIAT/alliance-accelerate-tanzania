@@ -59,7 +59,7 @@ For each:
 Performance, security, accessibility (WCAG 2.1 AA), availability, cost. Each measurable (e.g. "p95 < 1s over 1,000 records").
 
 ## 5. Data & Schema Impact
-New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new field with disclosure implications and classify it in `backend/src/common/pii-consent.policy.ts` — publicly-disclosed, contact-block, never-public, or, to withhold it from `Public`, declared in `PII_ALLOWLIST` **and** omitted from `PUBLICLY_DISCLOSED_FIELDS` (and `CONTACT_BLOCK_FIELDS`, if applicable) — adding it to `PII_ALLOWLIST` alone withholds nothing: that constant has zero runtime consumers and is a declaration only.
+New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new field with disclosure implications and classify it in `backend/src/common/pii-consent.policy.ts` — publicly-disclosed, contact-block, never-public, or, to withhold it from `Public`, declared in `PII_ALLOWLIST` **and** omitted from `PUBLICLY_DISCLOSED_FIELDS` (and `CONTACT_BLOCK_FIELDS`, if applicable) — adding it to `PII_ALLOWLIST` alone withholds nothing: that constant has zero runtime consumers and is a declaration only. **All three of those constants are declarations that the test suite asserts against — none has a runtime consumer.** The act that actually withholds a field is **not naming it in `toPublicListItem` / `toPublicDetail`** (`backend/src/common/role-aware.serializer.ts`), which build public output by explicit literal pick; `role-aware.serializer.spec.ts` pins both projections' exact key sets, so a field added to a pick reddens there.
 
 ## 6. Out of Scope
 Explicit non-goals for this spec.

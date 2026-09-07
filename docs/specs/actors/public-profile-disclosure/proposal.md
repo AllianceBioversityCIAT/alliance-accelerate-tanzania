@@ -64,7 +64,7 @@ A visitor opening a `GRANTED` actor's profile sees every field that actor suppli
 | **PII policy** | Empty `PII_ALLOWLIST`; move `technicalSupport` into `NEVER_PUBLIC_FIELDS`; extend `PublicActor` + `toPublic`. ~~extend the Prisma `select` in `ActorsService`~~ **[corrected 2026-09-04: there is no `select` — the service uses `include: CROPS_INCLUDE` and fetches every column; the serializer is the sole gate. See `requirements.md` §2.1.]** |
 | **Release gate** | Invert `src/test/pii-boundary.spec.ts` for the now-public fields: assert **presence** when `GRANTED`, **absence** when not. `NEVER_PUBLIC_FIELDS` assertions stay as-is. |
 | **Public profile** | Replace `RestrictedContactPanel` with a real contact section, using the existing `ProfileLocation` `<dl>` pattern and §7 tokens. |
-| **Public CSV** | Extend `PUBLIC_COLUMNS` in `frontend/lib/dashboard/csv.ts` **to the export set only — never the contact block (superseded 2026-09-04, OQ-5)**; rewrite its "never add phone/email" header comment to state the new reason. |
+| **Public CSV** | Extend `PUBLIC_COLUMNS` in `frontend/lib/dashboard/csv.ts` **to the export set only — never the contact block (amended 2026-09-04, OQ-5: the contact block was dropped from the CSV; this clause is the surviving rule, not the superseded one)**; rewrite its "never add phone/email" header comment to state the new reason. |
 | **Docs** | `CLAUDE.md` hard constraint · `docs/prd.md` (US-1, AC-1, AC-6, persona table, the "0 PII fields exposed" success metric) · `docs/trd/trd.md` (both PII-set statements, ADR-003, QA-1, the `/actors` endpoint rows) · `docs/ux-ui/design.md` (principle 3, DD-2, the PII-block component entry, and the fate of `--color-restricted-bg`). |
 
 ### 5.3 Rendering rule
@@ -83,7 +83,7 @@ Every field's label/row is **always** rendered; an empty value shows `—`. This
 
 | Actor / System | Effect |
 |---|---|
-| Public visitor | Sees contact and commercial data on `GRANTED` profiles, one at a time. **Cannot bulk-export the contact block (superseded 2026-09-04).** |
+| Public visitor | Sees contact and commercial data on `GRANTED` profiles, one at a time. **Cannot bulk-export the contact block (amended 2026-09-04 — this is the rule that now holds).** |
 | Registered actor | Everything they submitted becomes public once an admin grants consent. |
 | Admin / Staff | Two new editable fields; must re-download the v3 import template. |
 | `backend/src/common` | `pii-consent.policy.ts`, `role-aware.serializer.ts`, `template-columns.ts` |
@@ -105,7 +105,7 @@ Every field's label/row is **always** rendered; an empty value shows `—`. This
 
 - `Actor` carries `contactPerson` and `otherCrops`; both are written on registration approval and on Excel import.
 - The public actor contract (`GET /api/v1/actors/:id`, `GET /api/v1/actors`) includes `phone`, `email`, `sex`, `position`, `marketLocation`, `contactPerson`, `otherCrops` for `GRANTED` actors.
-- The public dashboard CSV exports those columns **minus the contact block (superseded 2026-09-04, OQ-5)**.
+- The public dashboard CSV exports those columns **minus the contact block (amended 2026-09-04, OQ-5 — the exclusion is current, not superseded)**.
 - The import template carries `Contact Person` and `Other Crops` at `TEMPLATE_VERSION = 'v3'`.
 
 ### MODIFIED

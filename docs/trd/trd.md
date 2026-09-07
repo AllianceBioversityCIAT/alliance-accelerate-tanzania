@@ -84,6 +84,8 @@ Canonical **Actor** entity derived from the existing field dataset. CSV header �
 | `gpslongitude` | `gpsLongitude` | `Decimal?` | Map plotting. Range −180..180. |
 | `gpsaltitude` | `gpsAltitude` | `Decimal?` | |
 | `gpsaccuracy` | `gpsAccuracy` | `Decimal?` | |
+| `contact person` | `contactPerson` | `String?` | Named contact at the organisation. Required on the public registration form; optional on import. Publicly disclosed on the DETAIL read for a `GRANTED` actor (`PUBLICLY_DISCLOSED_FIELDS`, §8) — a third party's name, so see ADR-013. |
+| `other crops` | `otherCrops` | `String?` `@db.VarChar(300)` | Free-text crops beyond the three tracked value chains. Publicly disclosed on BOTH the list and detail reads. |
 | (consent) | `consentStatus` | `ConsentStatus` enum (`GRANTED`/`DENIED`/`UNKNOWN`, default `UNKNOWN`) | Gates public visibility — the public API returns ONLY `GRANTED` actors (`DENIED`/`UNKNOWN` are excluded from every public read and from `/metrics` counts). Enforced in the query, not just the serializer. |
 | (derived) | `crops` | `Crop[]` (M:N) | Sorghum / common bean / groundnut. See PRD OQ-1. |
 | — | `id` | `String @id @default(cuid())` | Internal PK. |
@@ -113,6 +115,8 @@ model Actor {
   technicalSupport String?  @db.Text
   phone            String?   // PII
   email            String?   // PII
+  contactPerson    String?
+  otherCrops       String?  @db.VarChar(300)
   gpsLatitude      Decimal? @db.Decimal(10, 7)
   gpsLongitude     Decimal? @db.Decimal(10, 7)
   gpsAltitude      Decimal? @db.Decimal(10, 2)

@@ -16,13 +16,15 @@
 #                             contain NONE of NEVER_PUBLIC_FIELDS (traderId,
 #                             gpsAltitude, gpsAccuracy, registrationSource,
 #                             consentMethod, consentObtainedAt, consentReference,
-#                             technicalSupport; case-insensitive); the /actors
-#                             LIST body additionally contains NONE of
-#                             CONTACT_BLOCK_FIELDS (contactPerson, position,
-#                             phone, email, marketLocation) — those are REQUIRED
-#                             PRESENT on the single-actor detail read for a
-#                             GRANTED actor (FR-1), so this script never checks
-#                             for their absence there. The /actors body is also
+#                             technicalSupport; case-insensitive); BOTH the
+#                             /actors LIST body AND /metrics additionally
+#                             contain NONE of CONTACT_BLOCK_FIELDS
+#                             (contactPerson, position, phone, email,
+#                             marketLocation) — those are REQUIRED PRESENT only
+#                             on the single-actor DETAIL read for a GRANTED
+#                             actor (FR-1), so they are excluded from that one
+#                             assertion, not from /metrics. This script has no
+#                             detail check today. The /actors body is also
 #                             asserted as the PII-safe list contract
 #                             ({ data:[], page, pageSize, total }). Mirrors
 #                             backend/src/common/pii-consent.policy.ts's

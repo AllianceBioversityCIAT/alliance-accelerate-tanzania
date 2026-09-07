@@ -16,8 +16,12 @@
  *      action).
  *   4. The submitted-details table — every payload field EXCEPT
  *      `gpsLatitude`/`gpsLongitude` (which the location card renders as raw
- *      coordinates). Every row here is published to the public directory on
- *      approval (`approve()` sets `consentStatus: GRANTED` unconditionally)
+ *      coordinates). Every row here is published on approval (`approve()` sets
+ *      `consentStatus: GRANTED` unconditionally) — but NOT all to the same
+ *      surface: the contact block (`contactPerson`, `position`, `phone`,
+ *      `email`, `marketLocation`) reaches only the single-actor PROFILE
+ *      (`GET /api/v1/actors/:id`), never the directory/list, which is where
+ *      the map, dashboard and CSV are built from (FR-9)
  *      — see the caption in `SubmittedDetailsTable` below, and the note
  *      atop the Helpers section (above `cropLabel`/`formatValue`) recording
  *      that this file previously marked two of the thirteen rows as NOT

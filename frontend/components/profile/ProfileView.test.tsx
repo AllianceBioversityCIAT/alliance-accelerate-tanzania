@@ -68,8 +68,8 @@ const ACTOR_FULL: PublicActorDetail = {
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -6.17, long: 35.74 },
-  sex: null,
-  otherCrops: null,
+  sex: 'Female',
+  otherCrops: 'Sesame, Sunflower',
   contactPerson: 'Amina Juma',
   position: 'Director',
   phone: '+255700000000',
@@ -302,6 +302,11 @@ describe('ProfileView', () => {
       expect(screen.getByText(ACTOR_FULL.phone!)).toBeInTheDocument();
       expect(screen.getByText(ACTOR_FULL.email!)).toBeInTheDocument();
       expect(screen.getByText(ACTOR_FULL.marketLocation!)).toBeInTheDocument();
+      // Profile section fields (sex, otherCrops) — list-set members, not
+      // CONTACT_BLOCK_FIELDS, but every published field's label MUST always
+      // render its value too (FR-6).
+      expect(screen.getByText(ACTOR_FULL.sex!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.otherCrops!)).toBeInTheDocument();
     });
 
     it('renders an em-dash for every absent contact field, with no row hidden (FR-6)', () => {
@@ -311,7 +316,11 @@ describe('ProfileView', () => {
       renderProfile();
 
       // Every label still renders — a hidden row would fail these first.
-      const labels = ['Contact Person', 'Position', 'Phone', 'Email', 'Market Location'];
+      // Includes the two Profile-section rows (Sex, Other Crops): they are
+      // NOT CONTACT_BLOCK_FIELDS, but FR-6's "every published field's label
+      // MUST always render" binds them too — and they are the two fields
+      // also published on the list path, the likeliest to be "tidied" away.
+      const labels = ['Contact Person', 'Position', 'Phone', 'Email', 'Market Location', 'Sex', 'Other Crops'];
       for (const label of labels) {
         const labelEl = screen.getByText(label);
         expect(labelEl).toBeInTheDocument();
