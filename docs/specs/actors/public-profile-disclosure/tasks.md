@@ -202,7 +202,7 @@
       Falsifying input: another branch holding the same number must surface in the `git log --all`.
       Skills: `software-architect`
 
-- [ ] **T-19** Human and T6 verification of what no harness can evaluate  (deps: T-4, T-14)
+- [x] **T-19** Human and T6 verification of what no harness can evaluate  (deps: T-4, T-14)
       Scope: (a) rendered profile — contrast, spacing, responsive, both sections; (b) the stale-template message read as an operator would.
       Traces: FR-5, FR-6, NFR-4 · **D-8, D-9** — the two classes with no automated gate
       Files: none — evidence recorded in `execution.md`

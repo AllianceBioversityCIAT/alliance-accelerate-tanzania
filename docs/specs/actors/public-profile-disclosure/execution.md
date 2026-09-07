@@ -1276,3 +1276,64 @@ ADR-004's pointer says `GRANTED` *"unlocks the actor's full disclosed field set 
 **Verification:** docs-only, zero executable surface — no suite would change colour whichever way these lines read, and the Reviewer said so rather than reporting a green run as evidence. ADR-003's and ADR-004's **decision text** diffed against `HEAD`: byte-identical, only status/consequence cells moved. `git status --porcelain`: only `docs/trd/trd.md`. Nine claims about named artefacts checked against the rows they name; zero false.
 
 ---
+
+### T-19 — Human and T6 verification of what no harness can evaluate
+
+| Field | Value |
+|---|---|
+| Status | **PASS** · **human verification, not auto-approved** |
+| Date | 2026-09-07 |
+| Requirements covered | FR-5, FR-6, NFR-4 · **D-8, D-9** — the two classes with no automated gate |
+| Verified by | **Daniela Gómez** (D-8, rendered review) · Leader, mechanically (D-9) |
+| Files changed | none — evidence only |
+
+#### D-8 — the rendered profile: VERIFIED BY HUMAN
+
+Local stack brought up per `docs/infrastructure.md` §6 (native route; MySQL container already running; schema already current, so **no reset was needed** — see the Prisma consent note below). Three states prepared so the review could not be answered by looking at one happy path:
+
+1. **Fully populated** (`AgriConnect Tanzania`) — all five Contact rows and both Profile rows carrying values.
+2. **Deliberately long values** (`Dodoma Drylands`) — a 64-character position, a long hyphenated surname, a long email. The case that breaks a layout if anything does, especially at 375px.
+3. **Entirely empty** (`Highland Seed Growers`) — all seven rows on the em-dash path. This is what every Excel-imported actor shows until re-imported (OQ-3).
+
+**Daniela's verdict: contrast fine, responsive fine, layout fine**, reviewed on the rendered page with a screenshot of the em-dash case attached to the conversation. The em-dash reads as *"no data"*, not as a rendering failure — which was the actual open question behind D-8, since that is the state most public profiles will be in on day one.
+
+**Why this could not have been closed any other way:** `jsdom` computes no colour; `axe` returns *incomplete* for contrast rather than a pass; `contrast.test.ts` is arithmetic over constants parsed from `globals.css` and evaluates no rendered pixel. Citing any of them as a contrast pass is the KZ-002 pattern this task exists to refuse.
+
+#### D-9 — the stale-template message: verified mechanically, and my framing of it was wrong
+
+I asked Daniela whether the message *"reads as useful to an operator"*. She said she did not understand the question — **correctly, because it was not answerable by looking.** It was a vague aesthetic prompt standing in for a mechanical one.
+
+The real question is whether **following the instruction resolves the error, or loops the operator forever**:
+
+> `This template is out of date (found v2, current is v3). Please re-download the import template from the "Download template" link on this page and try again.`
+
+Three things had to hold, all checkable without human eyes, all verified:
+
+1. **The named link exists** — `Download template (.xlsx)` on the import page (`TEMPLATE_HREF = '/templates/actor-import-template.xlsx'`). The message calls it *"Download template"*; the rendered label carries a `(.xlsx)` suffix. Findable, not a mismatch.
+2. **It serves a genuinely v3 template** — unzipped the committed asset and read its XML: `v3` token present, and both **Contact Person** and **Other Crops** columns present.
+3. **The committed asset is in sync with the generator** — re-ran `npm run generate:template`: **no diff**. The byte-stability guard holds.
+
+Had any of the three failed, the operator would download, re-upload, and hit the identical error indefinitely. That is the failure mode D-9 names, and it is closed.
+
+> **Recorded as a Leader error:** I routed a mechanically-checkable question to the human, and kept for the machine the part only a human could judge. The correct split is the inverse. D-9 never needed eyes; D-8 could never have been closed without them.
+
+#### The Prisma consent gate — stopped, as it should have
+
+`npx prisma migrate reset --force` was **refused by Prisma itself**, which requires explicit user consent for a destructive action regardless of the target. I did not seek that consent, because checking first showed the reset was **unnecessary**: `migrate status` reported the schema already current, with 14 actors (12 `GRANTED`) present.
+
+What was actually needed was an additive `UPDATE` on two rows to populate `contactPerson`/`otherCrops` — **no seeder sets either column**, so without it every profile would have rendered seven em-dashes and state 1 above could not have been reviewed at all.
+
+The correct move was not "get consent for the destructive command"; it was **establish that the destructive command was not required**.
+
+#### Verified live, incidentally, while preparing the review
+
+The list/detail asymmetry holds against a running stack, not only in tests:
+
+- `GET /api/v1/actors` → exactly the ten list-set keys. **Contact block absent** (FR-9).
+- `GET /api/v1/actors/:id` → the same ten plus `contactPerson`, `position`, `phone`, `email`, `marketLocation` (FR-1).
+
+This is the first end-to-end confirmation in this spec against a real HTTP server and a real MySQL rather than an in-memory Prisma mock.
+
+**Local test data note:** the two populated actors exist only in the local disposable database. Nothing was committed, and no seeder was modified — the gap remains as OQ-3 documents it.
+
+---
