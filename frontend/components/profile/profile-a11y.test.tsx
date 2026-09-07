@@ -1,9 +1,9 @@
 /**
- * Automated accessibility tests for ProfileView — T-7, NFR-3.
+ * Automated accessibility tests for ProfileView — T-7, T-15, NFR-3.
  *
  * Uses jest-axe to assert WCAG 2.1 AA compliance against the full rendered
  * ProfileView composition: ProfileHeader + ProfileLocation + ProfileMarketActivity
- * + ProfileCapacity + RestrictedContactPanel.
+ * + ProfileCapacity + ProfileContact.
  *
  * Mocks:
  *   - @/lib/api/useActor   — controls hook state without network calls
@@ -18,10 +18,13 @@
  *   (4) Loading state     — loading=true / data=null (skeleton).
  * All must pass axe with toHaveNoViolations().
  *
- * Also asserts (NFR-1 / FR-6):
- *   - No "phone" or "email" substring appears in the rendered Profile
- *     (success state and not-found state).
- *   - RestrictedContactPanel is always present and shows only the locked state.
+ * Also asserts (FR-1, FR-6, D-14):
+ *   - The contact block's disclosed VALUES render for a GRANTED actor in the
+ *     success state (not merely the "phone"/"email" LABELS — a label-only
+ *     match reddens on the label itself and is not FR-1 coverage; see
+ *     ProfileView.test.tsx for the full disclosure/em-dash suite).
+ *   - No "Restricted" affordance survives anywhere on the page, checked at
+ *     the page level (RV-1).
  *
  * Also asserts (NFR-6):
  *   - The profile container carries the max-w-3xl width constraint used to
@@ -43,7 +46,7 @@ expect.extend(toHaveNoViolations);
 // ---------------------------------------------------------------------------
 
 import ProfileView from './ProfileView';
-import type { PublicActor } from '@/lib/api/actors';
+import type { PublicActorDetail } from '@/lib/api/actors';
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be hoisted before dynamic imports resolve
@@ -69,11 +72,18 @@ const { useActor } = require('@/lib/api/useActor') as {
 /* eslint-enable */
 
 // ---------------------------------------------------------------------------
-// Fixtures — PublicActor shapes with no PII (no phone/email)
+// Fixtures — PublicActorDetail shapes. ACTOR_FULL carries a real contact
+// block (contactPerson/position/phone/email/marketLocation, FR-1: the
+// detail endpoint discloses it for a GRANTED actor); ACTOR_SPARSE carries
+// none, for the FR-6 em-dash path.
 // ---------------------------------------------------------------------------
 
-/** Full actor with all optional fields, including 2 crops + GPS. */
-const ACTOR_FULL: PublicActor = {
+/**
+ * Full actor with all optional fields, including 2 crops + GPS, AND the full
+ * contact block (FR-1). Typed PublicActorDetail, mirroring useActor's real
+ * return type (design.md §9 DD-6).
+ */
+const ACTOR_FULL: PublicActorDetail = {
   id: 'actor-full',
   traderName: 'Dodoma Seeds Ltd',
   region: 'Dodoma',
@@ -84,10 +94,15 @@ const ACTOR_FULL: PublicActor = {
   gps: { lat: -6.17, long: 35.74 },
   sex: null,
   otherCrops: null,
+  contactPerson: 'Amina Juma',
+  position: 'Director',
+  phone: '+255700000000',
+  email: 'director@example.com',
+  marketLocation: 'Arusha Central Market',
 };
 
-/** Sparse actor: null district, null capacity, 1 crop, no GPS. */
-const ACTOR_SPARSE: PublicActor = {
+/** Sparse actor: null district, null capacity, 1 crop, no GPS, no contact block (FR-6 em-dash path). */
+const ACTOR_SPARSE: PublicActorDetail = {
   id: 'actor-sparse',
   traderName: 'Mbeya Cooperative',
   region: 'Mbeya',
@@ -98,6 +113,11 @@ const ACTOR_SPARSE: PublicActor = {
   gps: null,
   sex: null,
   otherCrops: null,
+  contactPerson: null,
+  position: null,
+  phone: null,
+  email: null,
+  marketLocation: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -175,24 +195,29 @@ describe('ProfileView — axe accessibility', () => {
 });
 
 // ---------------------------------------------------------------------------
-// PII-omission assertions — no phone/email in the rendered Profile
-// (NFR-1 / FR-6). ProfileView.test.tsx covers the success state; these
-// tests add the not-found state assertion explicitly here.
+// Contact block disclosure (FR-1, FR-6) — asserts VALUES, not labels.
+// ProfileView.test.tsx carries the full disclosure + em-dash suite; this
+// file adds the not-found/loading-state absence checks so the a11y file
+// stays self-contained and runs in isolation. A substring match on the
+// LABEL (`queryByText(/phone/i)`) would redden on the word "Phone" itself
+// and prove nothing about disclosure (T-15 review note, carried from T-14)
+// — so the success-state assertion here matches the actual fixture VALUE.
 // ---------------------------------------------------------------------------
 
-describe('ProfileView — PII omission (NFR-1 / FR-6)', () => {
+describe('ProfileView — contact block disclosure (FR-1, FR-6)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders no "phone" or "email" text in the success state (full actor)', () => {
+  it('renders the disclosed contact VALUES in the success state (full actor)', () => {
     useSearchParams.mockReturnValue({ get: () => 'actor-full' });
     useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
 
     renderProfile();
 
-    expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+    expect(screen.getByText(ACTOR_FULL.contactPerson!)).toBeInTheDocument();
+    expect(screen.getByText(ACTOR_FULL.phone!)).toBeInTheDocument();
+    expect(screen.getByText(ACTOR_FULL.email!)).toBeInTheDocument();
   });
 
   it('renders no "phone" or "email" text in the not-found state', () => {
@@ -217,36 +242,41 @@ describe('ProfileView — PII omission (NFR-1 / FR-6)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// RestrictedContactPanel — always-locked for Public role (FR-6)
+// No "Restricted" affordance survives anywhere on the page (FR-6, D-14)
 // (cross-check alongside ProfileView.test.tsx — duplicates intentional
 // to ensure the a11y file is self-contained and runs in isolation).
+// Page-level: rendered via the same `renderProfile()` helper used by every
+// other test in this file, sweeping the whole tree, not scoped to any one
+// section (RV-1 / D-14 disqualifier).
 // ---------------------------------------------------------------------------
 
-describe('ProfileView — RestrictedContactPanel always-locked (FR-6)', () => {
+describe('ProfileView — no "Restricted" affordance survives anywhere on the page (FR-6, D-14)', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('always renders the locked Contact & Commercial panel heading (full actor)', () => {
+  it('renders no "Restricted" affordance (full actor)', () => {
     useSearchParams.mockReturnValue({ get: () => 'actor-full' });
     useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
 
     renderProfile();
 
+    expect(screen.queryByText(/restricted/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 }),
-    ).toBeInTheDocument();
+      screen.queryByRole('heading', { name: 'Contact & Commercial Data' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders the locked panel for the sparse actor', () => {
+  it('renders no "Restricted" affordance (sparse actor)', () => {
     useSearchParams.mockReturnValue({ get: () => 'actor-sparse' });
     useActor.mockReturnValue({ data: ACTOR_SPARSE, loading: false, error: false });
 
     renderProfile();
 
+    expect(screen.queryByText(/restricted/i)).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 }),
-    ).toBeInTheDocument();
+      screen.queryByRole('heading', { name: 'Contact & Commercial Data' }),
+    ).not.toBeInTheDocument();
   });
 });
 

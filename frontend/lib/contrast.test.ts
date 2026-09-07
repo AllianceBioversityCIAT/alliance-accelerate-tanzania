@@ -274,16 +274,23 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
       'globals.css:102-106 (body { background-color: var(--color-bg); color: var(--color-fg); } — sitewide default) · ' +
       'ui/Button.tsx:49 (secondary variant: "bg-surface text-fg") · ' +
       'shell/Header.tsx:159 (text-fg, hover:bg-surface-alt) · ' +
-      'ui/Button.tsx:49,51 (secondary: text-fg, hover:bg-restricted) + profile/RestrictedContactPanel.tsx:61 (text-fg inside bg-restricted) · ' +
+      'profile/ProfileContact.tsx:59,63 (text-fg value cell inside bg-surface-alt) · ' +
+      'ui/Button.tsx:49,51 (secondary: text-fg, hover:bg-restricted) · ' +
       'admin/CredentialHandoff.tsx:106 ("bg-warning/10 ... text-fg")',
   },
+  // `restricted` dropped 2026-09-07 (T-15, actors/public-profile-disclosure):
+  // its only citation was profile/RestrictedContactPanel.tsx, deleted by
+  // T-14. No surviving site pairs `text-muted` with `bg-restricted` — the
+  // pair moves to the UNREACHABLE block below rather than keeping a
+  // fabricated citation (this suite's own reachability rule: a grounds[]
+  // entry must trace to a real render site).
   muted: {
-    grounds: ['bg', 'surface', 'surface-alt', 'restricted'],
+    grounds: ['bg', 'surface', 'surface-alt'],
     citedAt:
       '(public)/about/page.tsx:81 (text-muted directly inside the bg-bg section opened at :58) · ' +
       'shell/Header.tsx:147 (user-menu dropdown bg-surface, "Signed in ·" text-muted) · ' +
       'admin/UsersTable.tsx:334,347 (thead bg-surface-alt, th text-muted) · ' +
-      'profile/RestrictedContactPanel.tsx:67,73 (text-muted inside bg-restricted)',
+      'profile/ProfileContact.tsx:59,60 (text-muted label cell inside bg-surface-alt)',
   },
   primary: {
     grounds: ['surface', 'primary-soft'],

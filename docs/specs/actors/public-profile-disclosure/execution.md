@@ -952,3 +952,51 @@ From its side: its own mutation vanished un-reverted, a stranger's mutation appe
 The T-12 Reviewer's session snapshot reported HEAD on `registration-review`, not `public-profile`, and correctly refused to let the checkbox flip without confirmation. **Verified by the Leader:** `git branch --show-current` → `public-profile`; `git worktree list` → a single worktree; all spec commits (`bab403f`, `1c6c3be`, `53e5fa2`, …) on that branch. The Reviewer's snapshot was stale — taken at its session start. No KZ-010 issue.
 
 ---
+
+### T-15 — Invert the profile suites and re-point the contrast test
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 1, + one advisory line) · auto-approved |
+| Date | 2026-09-07 |
+| Requirements covered | FR-6, FR-1 · design.md §8, RV-1 · **D-14** |
+| Files changed | 3 test files · +155/-85 |
+| Ran in parallel with | T-16 |
+
+**Values, not labels.** All eight disclosure assertions are exact-string `getByText(FIXTURE.field!)`. T-14's review had warned that the old `queryByText(/phone/i)` guards redden on the **label**, so flipping them to `toBeInTheDocument()` would prove only that a label exists. The Reviewer added a property nobody claimed: `getByText` throws on both zero and multiple matches, so a green run also proves each value renders **exactly once**.
+
+**Em-dash path row-scoped, all five fields.** `getByText(label).closest('div')` resolves the per-row card, so `toHaveTextContent('—')` cannot be satisfied by a dash in a different row. Three failure modes redden: row absent, value present instead of dash, dash in the wrong row.
+
+**D-14 is genuinely page-level** — both files render the whole `ProfileView` and query through `screen` (bound to `document.body`), no `container`/`within()` scoping. Demonstrated: a stray `<h2>Contact & Commercial Data</h2>` reddened **exactly four** assertions, the count reconciled against source.
+
+#### The judgment call — coverage lost by declaration rather than kept by fiction
+
+Deleting the panel removed the **only** site rendering `text-muted` on `bg-restricted`. The Implementer moved that contrast pair to the existing *"UNREACHABLE, recorded not asserted"* block rather than cite a deleted file, and flagged it as substantive.
+
+**Upheld, and the Reviewer said it would have made the same call.** Verified independently: `Hero`'s `bg-restricted` div has **no text node at all** (only an `<Image>` and an `aria-hidden` scrim), and its single `text-muted` is a *sibling* on `bg-surface`. Nothing pairs them.
+
+Why it is bookkeeping and not loss dressed as bookkeeping:
+- the pair is still **computed every run** in the unreachable block, and `contrast.test.ts`'s own `gated + unreachable === 63` count makes a silent drop **impossible**;
+- the demoted pair **passes** (~4.93:1), so nothing failing was parked in the unasserted bucket;
+- `fg`→`restricted` was correctly **retained** on the Button-hover site, which is what keeps RV-1's "token kept" and OQ-4's resolution honest.
+
+> Fabricating a citation *"would have corrupted the one mechanism this suite has for telling a gate from a decoration, and would be invisible to anyone reading only the green run."*
+
+**First time in this spec that someone chose to lose coverage visibly over keeping it falsely** — with accounting that makes the loss reversible in one line.
+
+#### One advisory line fixed before commit — T-15's own residue
+
+`profile-a11y.test.tsx` carried `// Fixtures — PublicActor shapes with no PII (no phone/email)` three lines above the fixtures T-15 had just retyped to `PublicActorDetail` **with** phone and email. T-15's own change made it false.
+
+**And no other task would have caught it:** T-17's sweep greps `phone.*email` over `CLAUDE.md` and `docs/` — it never reaches a frontend test file. Eleventh instance of this spec's dominant family, closed at its last chance.
+
+#### Limits recorded, not dissolved
+
+- **The copy sweeps are literal.** An affordance reintroduced as "Locked" or "Not available for public view" passes all four. Inherent to a text-based guard.
+- **Only one of D-14's four assertion families was falsified** — the heading. The three copy sweeps are green-but-unfalsified. The task's literal falsifying input was discharged; inserting the locked copy would have been the sharper probe.
+- **A T-10 assertion left with its render site.** The deleted test pinned the panel's closing sentence to `/contact`. That entry point remains covered by the about and contact a11y suites — nothing orphaned, recorded so T-10's trail is not silently shortened.
+- **`contrast.test.ts` is arithmetic over constants** parsed from `globals.css`. It evaluates no rendered pixel. **NFR-4's rendered half and D-8 remain T-19's.**
+
+**Verification:** `npm test -- --silent "Profile|contrast"` → 3 suites / **164** tests · lint clean · `tsc --noEmit` clean.
+
+---

@@ -160,7 +160,7 @@
       Skills: `ui-ux-pro-max`, `tailwind-design-system`, `react-doctor`
       **Note:** `sex` is **not** in `CONTACT_BLOCK_FIELDS` despite sitting near contact fields in the UI. Do not "harmonise" it in.
 
-- [ ] **T-15** Invert the profile suites and re-point the contrast test  (deps: T-14)
+- [x] **T-15** Invert the profile suites and re-point the contrast test  (deps: T-14)
       Scope: two suites currently assert the locked panel **exists** — invert them; add a **page-level** absence assertion for any "Restricted" affordance; re-point `contrast.test.ts`'s WCAG pairs from the deleted component to `ProfileContact`.
       Traces: FR-6 · design.md §4, RV-1 · **D-14**
       Files: `frontend/components/profile/ProfileView.test.tsx`, `frontend/components/profile/profile-a11y.test.tsx`, `frontend/lib/contrast.test.ts`
