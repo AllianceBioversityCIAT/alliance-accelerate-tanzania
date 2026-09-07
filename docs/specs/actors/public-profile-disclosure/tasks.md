@@ -117,7 +117,7 @@
       Falsifying input: leaking `'Needs cold storage'` on any public path must redden.
       Skills: `tdd`
 
-- [ ] **T-11** Invert the release gate  (deps: T-5, T-8, T-9, T-10)
+- [x] **T-11** Invert the release gate  (deps: T-5, T-8, T-9, T-10)
       Scope: presence of the disclosed set on **detail**; absence of the contact block from **list** by key *and* value; absence of everything for non-granted actors; never-public absence unchanged; the two `404` bodies compared byte-for-byte.
       Traces: FR-1, FR-2, FR-3, FR-9, NFR-1 · design.md §10 · D-1, D-1b, D-2, D-4, D-11
       Files: `backend/src/test/pii-boundary.spec.ts`

@@ -18,7 +18,11 @@ import {
 import request from 'supertest';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { NEVER_PUBLIC_FIELDS } from '../common/pii-consent.policy';
+import {
+  NEVER_PUBLIC_FIELDS,
+  PUBLICLY_DISCLOSED_FIELDS,
+  CONTACT_BLOCK_FIELDS,
+} from '../common/pii-consent.policy';
 import { createValidationPipe } from '../common/validation-pipe';
 import { configureBodyParser } from '../common/body-parser.config';
 import { configurePayloadCap } from '../common/payload-cap.config';
@@ -513,6 +517,129 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
         expect(Object.keys(item.gps)).toEqual(['lat', 'long']);
       }
     });
+
+    // T-11/DD-1 — DIRECTION 2, key half (FR-9): FORBIDDEN_KEYS is
+    // NEVER_PUBLIC_FIELDS only and CANNOT catch a contact-block leak here —
+    // no contact-block field is a member of NEVER_PUBLIC_FIELDS (see
+    // `pii-consent.policy.ts`'s three-polarity note). This is
+    // CONTACT_BLOCK_FIELDS' own key sweep, deliberately separate from the
+    // `expectNoPiiKeys(wire)` call in the deep-scan test above. The value
+    // half of FR-9's "by key AND by value" clause is already covered by that
+    // same deep-scan test's `LIST_AND_METRICS_LEAKABLE_VALUES` sweep (it
+    // includes every `DETAIL_ONLY_LEAKABLE_VALUES` member, i.e. every
+    // CONTACT_BLOCK_FIELDS fixture value) — not repeated here.
+    // Falsifying mutation: add `position: actor.position ?? null,` to
+    // `toPublicListItem` (role-aware.serializer.ts) — the key `position`
+    // then appears on every list item, and `expectNoPiiKeys(wire,
+    // CONTACT_BLOCK_FIELDS)` throws naming it, even before any value check.
+    it(
+      'the contact block is absent from the list BY KEY, not merely by value (FR-9)',
+      async () => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/actors')
+          .expect(200);
+
+        const wire = JSON.parse(JSON.stringify(res.body));
+        expectNoPiiKeys(wire, CONTACT_BLOCK_FIELDS);
+      },
+    );
+  });
+
+  // T-11/DD-10 — DIRECTION 3 (FR-2): no field of EITHER non-granted fixture
+  // may appear on any public path, by value. This is the direction T-5/DD-10
+  // made falsifiable: before that task, `actor-unknown-1`/`actor-denied-1`
+  // inherited `fixtureActor()`'s defaults byte-identical to every GRANTED
+  // row, so "this value is absent" would fail for the WRONG reason (a
+  // GRANTED actor legitimately supplying the same string) rather than
+  // proving the consent gate. Verified below: each fixture's phone, email,
+  // position, marketLocation, contactPerson and technicalSupport values are
+  // read straight off the ACTORS array (never retyped as literals here), so
+  // a future edit to either fixture cannot silently desynchronize this test
+  // from what it claims to sweep.
+  describe('non-granted actors leave no trace on any public path (FR-2)', () => {
+    const NON_GRANTED_IDS = ['actor-unknown-1', 'actor-denied-1'] as const;
+
+    /**
+     * Every distinct PII value for one non-granted fixture, read off the
+     * fixture itself. Deliberately EXCLUDES `sex` — a short,
+     * closed-vocabulary string (`'F'`/`'Other'`) that risks colliding with
+     * unrelated substrings elsewhere in the body (this file's T-11 fact:
+     * `'F'` is already inside `SELF_REGISTERED`/`SIGNED_FORM`/the consent
+     * reference, and inside `traderName` values), so it is asserted
+     * separately, below, by exact key/value equality rather than by
+     * substring search. `otherCrops` carries no such collision risk (its
+     * fixture values, `'Bambara groundnut'`/`'Cassava'`, are long and do not
+     * recur elsewhere) and is the one field here that is ALSO on the list
+     * projection — the phone/email/position/marketLocation/contactPerson/
+     * technicalSupport members below never appear on the list or `/metrics`
+     * for ANY actor, granted or not (they are structurally absent per
+     * CONTACT_BLOCK_FIELDS/NEVER_PUBLIC_FIELDS), so `otherCrops` is what
+     * makes the list-path sweep below load-bearing rather than vacuously
+     * true.
+     */
+    function nonGrantedPiiValues(id: string): string[] {
+      const fixture = ACTORS.find((a) => a.id === id);
+      if (!fixture) throw new Error(`No ACTORS fixture for ${id}`);
+      return [
+        fixture.phone,
+        fixture.email,
+        fixture.position,
+        fixture.marketLocation,
+        fixture.contactPerson,
+        fixture.technicalSupport,
+        fixture.otherCrops,
+      ] as string[];
+    }
+
+    it.each(NON_GRANTED_IDS)(
+      "%s's own PII values are absent from the list response, by value",
+      async (id) => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/actors')
+          .expect(200);
+        const bodyText = JSON.stringify(res.body);
+
+        for (const value of nonGrantedPiiValues(id)) {
+          expect(bodyText).not.toContain(value);
+        }
+      },
+    );
+
+    it.each(NON_GRANTED_IDS)(
+      "%s's own PII values are absent from /metrics, by value",
+      async (id) => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/metrics')
+          .expect(200);
+        const bodyText = JSON.stringify(res.body);
+
+        for (const value of nonGrantedPiiValues(id)) {
+          expect(bodyText).not.toContain(value);
+        }
+      },
+    );
+
+    // `sex` cannot join `nonGrantedPiiValues`'s substring sweep (see its doc
+    // comment) — asserted here instead by EXACT per-item equality. Every
+    // GRANTED fixture's `sex` is `'M'` (none override it); `actor-unknown-1`
+    // is `'F'` and `actor-denied-1` is `'Other'`. If either non-granted row
+    // ever reached the list, its `sex` would be the tell.
+    // Falsifying mutation: remove `consentStatus: ConsentStatus.GRANTED`
+    // from the Prisma `WHERE` in `ActorsService.findPublic` — both
+    // non-granted rows join the list, and this assertion reddens on the
+    // first item whose `sex` is not `'M'`.
+    it("every list item's sex is a GRANTED fixture's own value, never a non-granted fixture's (FR-2)", async () => {
+      const grantedSexValues = new Set(
+        GRANTED.map((a) => a.sex as string),
+      );
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/actors')
+        .expect(200);
+
+      for (const item of res.body.data as Array<{ sex: string | null }>) {
+        expect(grantedSexValues.has(item.sex as string)).toBe(true);
+      }
+    });
   });
 
   describe('GET /api/v1/actors/:id', () => {
@@ -543,6 +670,152 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
       expect(Object.keys(wire.gps)).toEqual(['lat', 'long']);
     });
 
+    // T-11/DD-1 — DIRECTION 1 (FR-1): every PUBLICLY_DISCLOSED_FIELDS member
+    // MUST be present, BY VALUE, on the detail path for a GRANTED actor. This
+    // is the inversion itself — the presence half FR-1 requires and the
+    // prior test above deliberately does NOT cover (it only swept the
+    // never-public group for absence). Values are pinned against
+    // `fixtureActor()`'s own literals so a dropped or wrong-valued field
+    // fails by name via `toBe`, never via a fragile substring search.
+    // Falsifying mutation, VERIFIED (attempt 2 rework — the ORIGINAL claim
+    // here, "delete the `contactPerson: actor.contactPerson ?? null,` line",
+    // does not even compile: `PublicActorDetail.contactPerson` is a
+    // required, non-optional property, so deleting the line is TS2741
+    // ("Property 'contactPerson' is missing"), not a runtime red — the same
+    // defect family as this task's blocking issue, caught while re-checking
+    // this docblock rather than left standing). The mutation that actually
+    // reddens THIS test, run and confirmed: change `contactPerson:
+    // actor.contactPerson ?? null,` to `contactPerson: null,` (drop the
+    // `actor.contactPerson ??` prefix, keep the property) — `wire
+    // .contactPerson` becomes `null` for every actor regardless of its own
+    // value, so `expect(wire.contactPerson).toBe('Amina Juma')` reddens
+    // (33 passed, 1 failed). This same mutation leaves the null-case test
+    // below green, since that fixture's `contactPerson` is unsupplied and
+    // therefore expected to be `null` either way — by design each of the
+    // two direction-1 tests is falsified by a different, non-overlapping
+    // mutation.
+    it(
+      'detail discloses every PUBLICLY_DISCLOSED_FIELDS member, by value, for the GRANTED fixture (FR-1)',
+      async () => {
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/actors/actor-granted-1')
+          .expect(200);
+
+        const wire = JSON.parse(JSON.stringify(res.body));
+        const expectedByField: Record<
+          (typeof PUBLICLY_DISCLOSED_FIELDS)[number],
+          unknown
+        > = {
+          phone: '+255700000000',
+          email: 'director@example.com',
+          sex: 'M',
+          position: 'Director',
+          marketLocation: 'Arusha Central Market',
+          contactPerson: 'Amina Juma',
+          otherCrops: 'Sesame, chia',
+        };
+        for (const field of PUBLICLY_DISCLOSED_FIELDS) {
+          expect(wire[field]).toBe(expectedByField[field]);
+        }
+      },
+    );
+
+    // T-11/DD-1, REWORK (attempt 2) — a GRANTED actor that supplied only its
+    // required fields MUST still carry every PUBLICLY_DISCLOSED_FIELDS
+    // member, present AND `null`, never omitted (FR-1's "optional fields
+    // absent" scenario) — the contract shape is identical for every actor
+    // regardless of what they filled in.
+    //
+    // Every row in `ACTORS` is built from `fixtureActor()`, which populates
+    // ALL seven published-optional fields verbatim (T-10/DD-4's deliberate
+    // by-value coverage) — there is no unsupplied-field row in that array,
+    // and adding a fourth GRANTED row would break `GRANTED.length`,
+    // `actorsMapped: 3`, `regionsCovered: 3`, `actorTypes: 3`,
+    // `cropsTracked: 3`, and the `bySlug` map below. So this scenario needs
+    // its OWN fixture and its OWN app, built the same way D-11 above builds
+    // its empty-mock app: a purpose-built second `TestingModule` whose
+    // Prisma mock serves exactly one row, with every PUBLICLY_DISCLOSED_
+    // FIELDS member left `undefined` (never even mentioned) — never faked
+    // as an explicit `null`, since the point is proving `?? null` coalesces
+    // an ABSENT field, not a present-but-null one.
+    //
+    // Falsifying mutation, VERIFIED (attempt 2 rework), reported as found —
+    // not smoothed over: change `contactPerson: actor.contactPerson ??
+    // null,` to `...(actor.contactPerson ? { contactPerson: actor.contactPerson } : {})`
+    // in `toPublicDetail` (role-aware.serializer.ts). Run literally, this
+    // does NOT reach this test at all: `PublicActorDetail.contactPerson` is
+    // a required, non-optional property, so the conditional spread makes
+    // the object literal's inferred type `{ contactPerson?: string }`,
+    // which fails TS2322 ("not assignable to type 'PublicActorDetail'") —
+    // `npm test` fails to compile the whole suite (0 tests run), not just
+    // this one. Forced past the type system with an
+    // `as unknown as PublicActorDetail` cast on the return object (a change
+    // made ONLY to observe the runtime behavior, then reverted — never
+    // landed), the mutation DOES redden exactly the assertion this docblock
+    // claims:
+    // `Object.prototype.hasOwnProperty.call(res.body, 'contactPerson')` is
+    // `false` (33 passed, 1 failed). In its literal, uncast form the type
+    // system itself is the thing preventing this exact mutation from ever
+    // shipping — a stronger guarantee than a test assertion, not a weaker
+    // one, but a different claim than "this test redden it" and worth
+    // recording precisely rather than restating the original claim as if
+    // verified unchanged.
+    it(
+      'an unsupplied published field serializes as null, never omitted, on the detail path (FR-1)',
+      async () => {
+        const minimalActor = {
+          id: 'actor-minimal-required-only',
+          traderName: 'Minimal Fields Only Trader',
+          region: 'Singida',
+          traderType: 'seed_company',
+          consentStatus: ConsentStatus.GRANTED,
+          // Every PUBLICLY_DISCLOSED_FIELDS member is left unmentioned
+          // (`undefined`), not set to `null` — this is the "actor supplied
+          // only its required fields" case, not the "actor explicitly
+          // cleared a field" case.
+        };
+
+        const minimalModuleRef: TestingModule = await Test.createTestingModule(
+          {
+            imports: [AppModule],
+          },
+        )
+          .overrideProvider(PrismaService)
+          .useValue({
+            actor: {
+              findUnique: jest.fn(async () => minimalActor),
+              findMany: jest.fn(async () => []),
+              count: jest.fn(async () => 0),
+              groupBy: jest.fn(async () => []),
+            },
+          } as unknown as Partial<PrismaService>)
+          .compile();
+
+        const minimalApp =
+          minimalModuleRef.createNestApplication<NestExpressApplication>();
+        minimalApp.setGlobalPrefix('api/v1');
+        minimalApp.useGlobalPipes(createValidationPipe());
+        configurePayloadCap(minimalApp);
+        configureBodyParser(minimalApp);
+        await minimalApp.init();
+
+        try {
+          const res = await request(minimalApp.getHttpServer())
+            .get('/api/v1/actors/actor-minimal-required-only')
+            .expect(200);
+
+          for (const field of PUBLICLY_DISCLOSED_FIELDS) {
+            expect(
+              Object.prototype.hasOwnProperty.call(res.body, field),
+            ).toBe(true);
+            expect(res.body[field]).toBeNull();
+          }
+        } finally {
+          await minimalApp.close();
+        }
+      },
+    );
+
     it('404s for an UNKNOWN-consent actor (indistinguishable from missing)', async () => {
       await request(app.getHttpServer())
         .get('/api/v1/actors/actor-unknown-1')
@@ -560,6 +833,70 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
         .get('/api/v1/actors/does-not-exist')
         .expect(404);
     });
+
+    // T-11/D-11 — DIRECTION 5 (FR-2's `BUT`): the 404 for a REAL, non-granted
+    // actor must be indistinguishable from the 404 for an id that does not
+    // exist at all. A NAIVE byte comparison across two DIFFERENT id strings
+    // cannot prove this: `ActorsController.findOnePublic` embeds the
+    // REQUESTED id verbatim in `NotFoundException`'s message
+    // (`Actor ${id} not found`), so 'actor-unknown-1' and 'does-not-exist'
+    // produce different text EVEN when the boundary is perfectly sound — the
+    // difference is only the caller's own input echoed back, not a leak.
+    // The rigorous test holds the id CONSTANT and varies only WHY it
+    // resolves to nothing: a second, minimal app whose Prisma mock has no
+    // row at all is compared, for the SAME id, against the primary app's
+    // real (non-granted) row. Because the controller's only throw site
+    // builds its message from `id` alone — never from anything about the
+    // actor or the reason — the two bodies are byte-identical by
+    // construction today.
+    // Falsifying mutation: add a second branch in `ActorsController
+    // .findOnePublic`, e.g. distinguishing "exists but not consented" from
+    // "absent" with a different message/status — the byte comparison below
+    // reddens immediately because the two apps would then diverge for the
+    // SAME requested id.
+    it(
+      'the SAME requested id produces a byte-identical 404 whether it belongs to a real ' +
+        'non-granted actor or does not exist at all (D-11, FR-2 BUT)',
+      async () => {
+        const emptyModuleRef: TestingModule = await Test.createTestingModule({
+          imports: [AppModule],
+        })
+          .overrideProvider(PrismaService)
+          .useValue({
+            actor: {
+              findUnique: jest.fn(async () => null),
+              findMany: jest.fn(async () => []),
+              count: jest.fn(async () => 0),
+              groupBy: jest.fn(async () => []),
+            },
+          } as unknown as Partial<PrismaService>)
+          .compile();
+
+        const emptyApp =
+          emptyModuleRef.createNestApplication<NestExpressApplication>();
+        emptyApp.setGlobalPrefix('api/v1');
+        emptyApp.useGlobalPipes(createValidationPipe());
+        configurePayloadCap(emptyApp);
+        configureBodyParser(emptyApp);
+        await emptyApp.init();
+
+        try {
+          const nonGrantedRes = await request(app.getHttpServer()).get(
+            '/api/v1/actors/actor-unknown-1',
+          );
+          const missingRes = await request(emptyApp.getHttpServer()).get(
+            '/api/v1/actors/actor-unknown-1',
+          );
+
+          expect(nonGrantedRes.status).toBe(404);
+          expect(missingRes.status).toBe(404);
+          expect(nonGrantedRes.body).toEqual(missingRes.body);
+          expect(nonGrantedRes.text).toEqual(missingRes.text);
+        } finally {
+          await emptyApp.close();
+        }
+      },
+    );
   });
 
   describe('GET /api/v1/metrics', () => {

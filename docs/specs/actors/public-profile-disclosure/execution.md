@@ -746,3 +746,77 @@ Fixed by derivation: `jest.MockedFunction<typeof import('./actors').getActor>`.
 **Verification:** `npx tsc --noEmit` clean · `npm run build` ✓ 27/27 pages · `npm test -- --silent` → **109 suites / 1632 tests** · `npm run lint` clean. **`tsc` is the only one of the four that speaks to this task** — `next/jest` uses SWC and does not typecheck, so 1632 green tests establish that fixtures satisfy assertions, not that any type lines up.
 
 ---
+
+### T-11 — Invert the release gate
+
+| Field | Value |
+|---|---|
+| Status | **PASS** (attempt 2 of 3) · auto-approved |
+| Date | 2026-09-07 |
+| Implementer attempts | 2 — FAIL (a null-case test that could not fail), PASS |
+| Requirements covered | FR-1, FR-2, FR-3, FR-9, NFR-1 · design.md §10, DD-3, DD-4 · D-1, D-1b, D-2, D-4, D-11 |
+| Files changed | `pii-boundary.spec.ts` (+339), `pii-consent.policy.ts` (+19/-10) |
+| Ran in parallel with | T-13 (frontend) |
+
+**The gate is inverted.** 25 → **34** tests; full backend suite 1043 → **1052**.
+
+#### The five directions, each mutation-tested and reverted
+
+| # | Direction | Mutation run | Result |
+|---|---|---|---|
+| 1 | Presence on detail (FR-1) | `contactPerson: null` unconditionally in `toPublicDetail` | reddened the by-value test |
+| 1b | **Null case** — key present AND `null` for an unsupplied field | conditional spread (see DD-11) | reddened, cast-forced |
+| 2 | Contact block absent from list, **by key** | added `position` to `toPublicListItem` | reddened the new key sweep **and** the pre-existing value sweep |
+| 3 | Non-granted absence (FR-2) | removed `consentStatus: GRANTED` from `findPublic`'s `where` | **five** assertions reddened |
+| 4 | Never-public absence (FR-3) | added `technicalSupport` to `toPublicDetail` | reddened via two independent paths |
+| 5 | **D-11 · 404 indistinguishability** | a service branch returning a sentinel for "exists but not consented" | **only the new test caught it**; all three pre-existing 404 tests stayed green |
+
+Direction 2 needed its own sweep because **`FORBIDDEN_KEYS` structurally cannot see the contact block** — `NEVER_PUBLIC_FIELDS ∩ CONTACT_BLOCK_FIELDS = ∅`, and widening it would break the detail path. Established at T-8, acted on here.
+
+#### The Implementer found a defect in MY specification, and fixed it
+
+T-11's scope, as the Leader wrote it, said *"the two `404` bodies compared byte-for-byte."*
+
+**That is unsatisfiable as written.** `ActorsController.findOnePublic` has one throw site and its message is derived from `id` alone — so comparing the body for `actor-unknown-1` against the body for `does-not-exist` **can never pass, correct code or not.** A test that cannot pass is as useless as one that cannot fail, and the spec specified it.
+
+The repair holds the id **constant**: a second minimal app whose Prisma mock always returns `null`, queried with the *same* id, compared byte-for-byte against the real non-granted response. The Reviewer confirmed **no confound** — identical bootstrap, no global exception filter registered in either `main.ts` or `lambda.ts`, so the compared rendering *is* the production rendering, and the single varied input is whether `findUnique` returns a row.
+
+And the mutation claim is credible **because the three pre-existing 404 tests assert only `.expect(404)` and nothing about the body** — a distinct-message-at-equal-status regression leaves them all green. That is exactly the hole D-11 exists to close.
+
+#### Direction 3 — the Implementer distinguished real coverage from apparent coverage, unprompted
+
+> The contact-block fields **never appear on the list for any actor, consented or not** — so `otherCrops` and `sex` are what make this direction genuinely load-bearing.
+
+Asserting contact-block absence under a *consent* heading proves nothing about consent, because the projection already guarantees it; the assertion would pass with the pin broken. The Reviewer verified the substitution: `toPublicListItem` emits exactly `sex` and `otherCrops` of the seven swept fields, and re-derived the five-red claim from source — **getting exactly five.**
+
+#### Attempt 1 FAIL — a green assertion whose comment claimed a falsification it could not deliver
+
+The null-case test requested `actor-granted-2`, which supplies **every** optional published field. There was no unsupplied field, so FR-1's *"optional fields absent"* scenario was asserted nowhere. The docblock contradicted itself in four lines, and the mutation it named left `contactPerson` truthy — reddening nothing.
+
+**No gate could have caught this.** The test was green, correctly titled, and carried a stated falsifying mutation. The whole apparatus of evidence was in place and it measured nothing. It is only visible reading the fixture and the test together.
+
+Attempt 2 built a purpose-built one-row app whose seven published optionals are **never mentioned** — not faked as `null`, because the point is proving `?? null` coalesces an **absent** field. The Reviewer verified all seven covered, both halves (`hasOwnProperty` AND `toBeNull`), and that `GRANTED.length` and every `/metrics` count are undisturbed. It also **recomputed the test count from source** — 32 `it` sites, two of them `it.each` over 2 ids → exactly 34 — confirming the broken test was *replaced*, not silently dropped.
+
+#### DD-11 recorded — the third time the compiler beat the tests
+
+The conditional-spread mutation **did not compile**: `PublicActorDetail.contactPerson` is a required property, and `ts-jest` runs with diagnostics on, so the whole transform fails. Forced past with a cast, it reddened the exact assertion claimed (33 passed, 1 failed).
+
+**The Implementer reported that distinction instead of claiming the test caught it**, and the Reviewer adjudicated the framing correct — and then sharpened it into something more useful than either of us had:
+
+> Types describe the **object**; the gate asserts the **wire payload**. `hasOwnProperty` on `res.body` catches a serialization-layer omission the type cannot see — and **the `toBeNull()` half is not type-guaranteed at all**, since `string | null` admits `?? ''` or `?? '—'`. That is a *plausible wrong fix* here, because FR-6 mandates an em-dash placeholder on the frontend. **The type owns presence; the test owns nullness.**
+
+Recorded as **DD-11** in `design.md`: *a mutation-based falsifiability claim must state whether its mutation is type-reachable; if it is not, the guard is the type, and the claim must be re-aimed at the property the type does not constrain.* Generalises KZ-002 to the case where the catching harness is the compiler rather than the suite — and would have pre-empted attempt 1's defect.
+
+#### Forward sweep closed (KZ-004), on the third pass
+
+Attempt 1 fixed one dangling `LEAKABLE_PII_VALUES` reference; the Reviewer found a second two paragraphs below **in the same doc block**, plus an instruction still addressed to T-9 in the future tense after T-9 had run. Both rewritten. Verified: the surviving mention is the one **stating the constant no longer exists** and naming its successors.
+
+#### ADVISORY — carried to T-17
+
+The policy module's *"`LEAKABLE_PII_VALUES` no longer exists"* is **true of `pii-boundary.spec.ts`** — which the same sentence names — **but false repo-wide.** Two file-local constants of that exact name are live in `admin-actors.e2e.spec.ts` and `admin-actors-crud.e2e.spec.ts`, and the Reviewer checked both call sites: they sweep the **list** path, where those values must still be absent under FR-9/FR-3, so they are non-vacuous and contradict nothing.
+
+Only the quantifier over-reaches. **Ninth instance of this spec's dominant family.** Routed to **T-17**, the documentation-accuracy task, rather than reopening a passed task.
+
+**Verification (Leader-run, quiet tree, `--runInBand` throughout):** gate 34/34 · full suite 75 suites / **1052** tests · eslint clean · `git diff` on `role-aware.serializer.ts` and `actors.service.ts` **empty** — no leftover mutation, independently confirmed by the Reviewer reading the unmutated line on disk.
+
+---

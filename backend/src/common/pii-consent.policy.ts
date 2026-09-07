@@ -159,21 +159,22 @@ export type ContactBlockField = (typeof CONTACT_BLOCK_FIELDS)[number];
  *   KEY on the list path (FR-9/DD-3); those same fields are REQUIRED PRESENT
  *   on the detail path. By VALUE, the contact-block fixture values are also
  *   absent on `/metrics` (design.md DD-4's "Detail-only" row), enforced
- *   today by `LEAKABLE_PII_VALUES` rather than this constant.
+ *   today by `DETAIL_ONLY_LEAKABLE_VALUES` — folded into
+ *   `LIST_AND_METRICS_LEAKABLE_VALUES` at the list/`/metrics` call sites —
+ *   rather than this constant. (`LEAKABLE_PII_VALUES` no longer exists:
+ *   T-10, `pii-boundary.spec.ts`, split it into `DETAIL_ONLY_LEAKABLE_VALUES`
+ *   and `NEVER_PUBLIC_LEAKABLE_VALUES`.)
  * - {@link PUBLICLY_DISCLOSED_FIELDS} — a PRESENCE set, checked on the
  *   detail path only. It must NEVER be folded into an absence check: doing
  *   so would forbid `phone`/`email`/`position`/`marketLocation`/
  *   `contactPerson`/`otherCrops` on the very path FR-1 requires them
  *   present on.
  *
- * As of T-6, `pii-boundary.spec.ts` still iterates
- * `FORBIDDEN_KEYS = [...PII_ALLOWLIST, ...NEVER_PUBLIC_FIELDS]` and applies
- * it as an absence set on all three public paths — that is the correct
- * polarity for `NEVER_PUBLIC_FIELDS` above and needs no change on that
- * account. Whichever task next re-points `PII_ALLOWLIST`'s now-empty share
- * of that union should consult design.md §7.1/DD-3 for the target, not
- * assume it is {@link PUBLICLY_DISCLOSED_FIELDS} — that constant is a
- * presence set and does not belong in `FORBIDDEN_KEYS` at all.
+ * `pii-boundary.spec.ts` now (T-9) defines
+ * `FORBIDDEN_KEYS = [...NEVER_PUBLIC_FIELDS]` — `PII_ALLOWLIST` was retired
+ * from that union, since it was always empty — and applies it as an absence
+ * set on all three public paths; that is the correct polarity for
+ * `NEVER_PUBLIC_FIELDS` above and needs no further change on that account.
  */
 export const NEVER_PUBLIC_FIELDS = [
   'traderId',
