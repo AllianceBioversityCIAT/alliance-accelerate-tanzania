@@ -189,7 +189,7 @@ describe('ActorImportService', () => {
     // legibly, telling the admin to re-download, rather than falling through
     // to the generic "no Data sheet matching" column-mismatch error.
     it('rejects a workbook stamped with a stale template version', async () => {
-      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v2' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
         /out of date.*re-download/i,
@@ -202,7 +202,7 @@ describe('ActorImportService', () => {
     // presence check that only re-proves the old substrings is not evidence
     // for this task).
     it('names the template download location in the stale-template message', async () => {
-      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v1' });
+      const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v2' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
         /link on this page/i,
@@ -284,6 +284,118 @@ describe('ActorImportService', () => {
       expect(report.rows[0].outcome).toBe('create');
       expect(report.rows[1].outcome).toBe('failed');
       expect(report.rows[1].errors?.[0].field).toBe('email');
+    });
+  });
+
+  // T-4 (public-profile-disclosure) — Contact Person and Other Crops (v3,
+  // FR-5). The parser is a SECOND writer of these two columns (T-1's
+  // Reviewer): `contactPerson` is bound to 120 chars (matching
+  // `ActorCreateDto`/`RegistrationPayloadDto`, not just the `VARCHAR(191)`
+  // column), `otherCrops` to 300 chars (`Actor.otherCrops VARCHAR(300)`).
+  describe('Contact Person and Other Crops (v3, T-4 public-profile-disclosure)', () => {
+    it('round-trips both new fields end to end on a v3 row', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          contactPerson: 'Jane Mwangi',
+          otherCrops: 'Sesame, Sunflower',
+        }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created.contactPerson).toBe('Jane Mwangi');
+      expect(created.otherCrops).toBe('Sesame, Sunflower');
+    });
+
+    it('leaves both fields unwritten when the cells are blank', async () => {
+      const b64 = await buildWorkbook([validRow()]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created).not.toHaveProperty('contactPerson');
+      expect(created).not.toHaveProperty('otherCrops');
+    });
+
+    // Validation remediation (D-12) — the test above is a vacuous guard
+    // against derivation: EVERY plausible derive-source (position,
+    // marketLocation, sex, traderName) is ALSO blank on `validRow()`, so a
+    // defect like `contactPerson = cells.contactPerson || cells.position`
+    // would leave `contactPerson` unwritten on that row too and the test
+    // above would still pass. This row gives every plausible derive-source a
+    // distinct, non-blank sentinel value while leaving ONLY `contactPerson`
+    // and `otherCrops` blank, so a derive from any of them is now
+    // observable. Requirements FR-4: "AND IT MUST NOT be backfilled,
+    // invented, or derived from any other column."
+    it('does not derive contactPerson or otherCrops from other populated cells (FR-4, D-12)', async () => {
+      const b64 = await buildWorkbook([
+        validRow({
+          traderName: 'Sentinel Trader Name',
+          position: 'Sentinel Position',
+          marketLocation: 'Sentinel Market Location',
+          sex: 'Female',
+          // contactPerson and otherCrops cells intentionally left blank.
+        }),
+      ]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      const created = tx.actor.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(created).not.toHaveProperty('contactPerson');
+      expect(created).not.toHaveProperty('otherCrops');
+    });
+
+    it('rejects a Contact Person cell over 120 characters with a field-level error', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ contactPerson: 'A'.repeat(121) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('contactPerson');
+    });
+
+    it('accepts a Contact Person cell at exactly 120 characters', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ contactPerson: 'A'.repeat(120) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('create');
+    });
+
+    it('rejects an Other Crops cell over 300 characters with a field-level error', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ otherCrops: 'B'.repeat(301) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.[0].field).toBe('otherCrops');
+    });
+
+    it('accepts an Other Crops cell at exactly 300 characters', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ otherCrops: 'B'.repeat(300) }),
+      ]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('create');
     });
   });
 

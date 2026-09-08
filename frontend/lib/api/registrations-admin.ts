@@ -106,13 +106,14 @@ export interface AdminRegistrationListQuery {
 /**
  * The submitted payload, verbatim — `AdminRegistrationPayload` in
  * `serializers/admin-registration.serializer.ts`. `contactPerson` and
- * `otherCrops` have no `Actor` column (FR-12's projection table) and are
- * review context only — never published.
+ * `otherCrops` are written to `Actor.contactPerson`/`Actor.otherCrops` on
+ * approval and published to the `Public` role once the resulting actor's
+ * `consentStatus` is `GRANTED` (`actors/public-profile-disclosure` FR-4).
  */
 export interface AdminRegistrationPayload {
   traderName: string;
   traderType: string;
-  /** Review context only — no `Actor` column exists. */
+  /** Persisted to `Actor.contactPerson` on approval; published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string;
   position: string | null;
   district: string | null;
@@ -122,7 +123,7 @@ export interface AdminRegistrationPayload {
   gpsLatitude: number | null;
   gpsLongitude: number | null;
   crops: string[];
-  /** Review context only — no `Actor` column exists. */
+  /** Persisted to `Actor.otherCrops` on approval; published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   otherCrops: string | null;
   capacityTons: number;
   phone: string;

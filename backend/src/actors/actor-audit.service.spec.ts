@@ -32,10 +32,12 @@ function fixtureActor(overrides: Partial<AdminActor> = {}): AdminActor {
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
+    contactPerson: null,
     sex: 'M',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
     capacityTons: 1850,
+    otherCrops: null,
     technicalSupport: 'Needs cold storage',
     phone: '+255700000000',
     email: 'director@example.com',
@@ -310,6 +312,63 @@ describe('ActorAuditService', () => {
         'phone',
         'region',
       ]);
+    });
+
+    // `actors/public-profile-disclosure` T-2 (validation remediation) —
+    // `contactPerson` is a third party's name, now publicly disclosed and
+    // admin-editable; a `contactPerson`-only update must not be the one kind
+    // of admin write that leaves zero audit trace. Falsifiable: removing
+    // `'contactPerson'` from `AUDITABLE_FIELDS` makes `logUpdate` see an
+    // empty diff for this before/after pair and return `null` without
+    // calling `create` at all — reddening both assertions below.
+    it('writes a diff row for a contactPerson-only change (regression guard)', async () => {
+      const tx = mockTx();
+      const before = fixtureActor({ contactPerson: null });
+      const after = fixtureActor({ contactPerson: 'Amina Juma' });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-contact' });
+
+      const result = await service.logUpdate(tx, before, after, acting);
+
+      expect(result).not.toBeNull();
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+      const changes = data.changes as {
+        kind: string;
+        fields: Record<string, { from: unknown; to: unknown }>;
+      };
+
+      expect(changes.kind).toBe('diff');
+      expect(Object.keys(changes.fields)).toEqual(['contactPerson']);
+      expect(changes.fields.contactPerson).toEqual({
+        from: null,
+        to: 'Amina Juma',
+      });
+    });
+
+    // Same regression guard for `otherCrops` — the second field this task's
+    // audit added alongside `contactPerson` (FR-4).
+    it('writes a diff row for an otherCrops-only change (regression guard)', async () => {
+      const tx = mockTx();
+      const before = fixtureActor({ otherCrops: null });
+      const after = fixtureActor({ otherCrops: 'Sesame, chia' });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-crops-text' });
+
+      const result = await service.logUpdate(tx, before, after, acting);
+
+      expect(result).not.toBeNull();
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+        .data as Record<string, unknown>;
+      const changes = data.changes as {
+        kind: string;
+        fields: Record<string, { from: unknown; to: unknown }>;
+      };
+
+      expect(Object.keys(changes.fields)).toEqual(['otherCrops']);
+      expect(changes.fields.otherCrops).toEqual({
+        from: null,
+        to: 'Sesame, chia',
+      });
     });
   });
 

@@ -22,7 +22,7 @@ Your sole responsibility is to perform an independent, objective audit of the gi
 ---
 
 ## 🧭 Project-Specific Audit Gates (any violation ⇒ FAIL)
-- **PII leakage:** any read path (list, detail, geo, export) that can serialize `phone`/`email` to the `Public` role is an automatic FAIL. Verify the role-aware serializer is used.
+- **PII leakage:** any **list, geo, export, or `/metrics`** path that can serialize the contact block (`phone`, `email`, `position`, `marketLocation`, `contactPerson` — `CONTACT_BLOCK_FIELDS`) to the `Public` role is an automatic FAIL — those fields are required present on the single-actor detail read for a `GRANTED` actor (FR-1), so their presence there is correct, not a leak. Any public path (including detail) serializing a `NEVER_PUBLIC_FIELDS` member, or serializing the contact block for a non-`GRANTED` actor, is also an automatic FAIL. Verify the role-aware serializer is used.
 - **AWS profile:** any AWS CLI command, script, or IaC change missing `--profile IBD-DEV` is a FAIL.
 - **Static-export violation:** introduction of Next.js SSR/ISR/route handlers is a FAIL.
 - **Stack substitution:** non-Prisma DB access, a non-Leaflet map, or non-Cognito auth is drift — FAIL and flag for Pivot Protocol.

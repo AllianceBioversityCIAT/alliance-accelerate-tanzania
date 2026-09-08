@@ -1,16 +1,20 @@
 /**
  * Unit tests for ProfileView + profile section components.
- * T-5, FR-5, FR-6, FR-8, NFR-1, NFR-3.
+ * T-5, T-15, FR-1, FR-5, FR-6, FR-8, FR-9, NFR-1, NFR-3.
  *
  * Filter: `profile` (matched via test file path).
  *
  * Covers:
- *   (a) renders all profile sections from a mocked PublicActor
+ *   (a) renders all profile sections from a mocked PublicActorDetail
  *   (b) not-found when data is null (404 / non-consented)
  *   (c) not-found when id is missing from the URL
  *   (d) loading state — skeletons shown, sections absent
- *   (e) PII omission — no 'phone' or 'email' substring in rendered DOM (FR-6/NFR-1)
- *   (f) RestrictedContactPanel always present — locked state, no contact fields (FR-6)
+ *   (e) contact block DISCLOSURE — asserts the disclosed VALUES render for a
+ *       GRANTED actor, and the em-dash path for an absent value with no row
+ *       hidden (FR-1, FR-6). This inverts the pre-T-14 "PII omission" guard,
+ *       which asserted the OPPOSITE of what FR-1 now requires.
+ *   (f) no "Restricted" affordance survives anywhere on the page, checked at
+ *       the page level, not scoped to any one section (FR-6, D-14 — RV-1)
  *
  * Mocking:
  *   - useActor is module-mocked so no real fetch occurs (mirrors useActor.test.ts)
@@ -24,7 +28,8 @@
 import React, { Suspense } from 'react';
 import { render, screen } from '@testing-library/react';
 import ProfileView from './ProfileView';
-import type { PublicActor } from '@/lib/api/actors';
+import type { PublicActorDetail } from '@/lib/api/actors';
+import { ACTOR_FULL, ACTOR_SPARSE } from './__fixtures__/actor';
 
 // ── Module mocks (hoisted before imports are evaluated) ────────────────────────
 
@@ -49,29 +54,12 @@ const { useActor } = require('@/lib/api/useActor') as {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** Full actor with all optional fields, including 2 crops + GPS. */
-const ACTOR_FULL: PublicActor = {
-  id: 'actor-full',
-  traderName: 'Dodoma Seeds Ltd',
-  region: 'Dodoma',
-  district: 'Dodoma Urban',
-  traderType: 'seed_company',
-  capacityTons: 500,
-  crops: ['sorghum', 'common_bean'],
-  gps: { lat: -6.17, long: 35.74 },
-};
-
-/** Sparse actor: null district, null capacity, 1 crop, no GPS. */
-const ACTOR_SPARSE: PublicActor = {
-  id: 'actor-sparse',
-  traderName: 'Mbeya Cooperative',
-  region: 'Mbeya',
-  district: null,
-  traderType: 'cooperative',
-  capacityTons: null,
-  crops: ['groundnut'],
-  gps: null,
-};
+/**
+ * Full actor with all optional fields, including 2 crops + GPS, AND the full
+ * contact block (FR-1: the detail endpoint discloses it for a GRANTED
+ * actor). Typed PublicActorDetail — this is one of only two consumers of
+ * that shape (design.md §9 DD-6) — mirroring useActor's real return type.
+ */
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
@@ -154,11 +142,14 @@ describe('ProfileView', () => {
       expect(screen.getByText(/500/)).toBeInTheDocument();
     });
 
-    it('renders the RestrictedContactPanel heading', () => {
+    it('renders the Contact section heading (ProfileContact replaces the locked panel, FR-6)', () => {
       renderProfile();
-      expect(
-        screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 })
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Contact', level: 2 })).toBeInTheDocument();
+    });
+
+    it('renders the Profile section heading', () => {
+      renderProfile();
+      expect(screen.getByRole('heading', { name: 'Profile', level: 2 })).toBeInTheDocument();
     });
   });
 
@@ -250,85 +241,103 @@ describe('ProfileView', () => {
     });
   });
 
-  // ── (e) PII omission — no phone/email in rendered DOM (FR-6/NFR-1) ────────
+  // ── (e) Contact block DISCLOSURE — asserts VALUES, not labels (FR-1, FR-6) ─
+  //
+  // T-15 review note (carried from T-14): a substring match on the LABEL
+  // (`queryByText(/phone/i)`) proves only that the word "Phone" is on the
+  // page — it reddens on the label itself and says nothing about whether a
+  // VALUE was disclosed. FR-1 requires the actual disclosed value to render
+  // for a GRANTED actor; these assertions match the fixture's real phone
+  // number, email address, and contact person name.
 
-  describe('PII omission guard (FR-6, NFR-1)', () => {
-    it('does not render any phone or email text in success state', () => {
+  describe('Contact block disclosure (FR-1) — asserts values, not labels', () => {
+    it('renders the disclosed contact VALUES for a GRANTED actor with the full record', () => {
       useSearchParams.mockReturnValue({ get: () => 'actor-full' });
       useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
 
       renderProfile();
 
-      // Assert no 'phone' or 'email' substring anywhere in the rendered DOM
-      expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.contactPerson!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.position!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.phone!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.email!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.marketLocation!)).toBeInTheDocument();
+      // Profile section fields (sex, otherCrops) — list-set members, not
+      // CONTACT_BLOCK_FIELDS, but every published field's label MUST always
+      // render its value too (FR-6).
+      expect(screen.getByText(ACTOR_FULL.sex!)).toBeInTheDocument();
+      expect(screen.getByText(ACTOR_FULL.otherCrops!)).toBeInTheDocument();
     });
 
-    it('does not render phone or email for the sparse actor', () => {
+    it('renders an em-dash for every absent contact field, with no row hidden (FR-6)', () => {
       useSearchParams.mockReturnValue({ get: () => 'actor-sparse' });
       useActor.mockReturnValue({ data: ACTOR_SPARSE, loading: false, error: false });
 
       renderProfile();
 
-      expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+      // Every label still renders — a hidden row would fail these first.
+      // Includes the two Profile-section rows (Sex, Other Crops): they are
+      // NOT CONTACT_BLOCK_FIELDS, but FR-6's "every published field's label
+      // MUST always render" binds them too — and they are the two fields
+      // also published on the list path, the likeliest to be "tidied" away.
+      const labels = ['Contact Person', 'Position', 'Phone', 'Email', 'Market Location', 'Sex', 'Other Crops'];
+      for (const label of labels) {
+        const labelEl = screen.getByText(label);
+        expect(labelEl).toBeInTheDocument();
+        // ...and its own value cell is the em-dash placeholder, not omitted
+        // (FR-6: "it must NOT hide a row whose value is absent").
+        expect(labelEl.closest('div')).toHaveTextContent('—');
+      }
     });
   });
 
-  // ── (f) RestrictedContactPanel — always present and locked (FR-6) ─────────
+  // ── (f) No "Restricted" affordance survives anywhere on the page (D-14) ───
+  //
+  // Page-level, not component-level (RV-1 / D-14 disqualifier): rendered
+  // via the SAME `renderProfile()` helper as every other test in this file,
+  // sweeping the whole ProfileView tree via `screen` — not scoped to
+  // ProfileContact or any other single section — so a stray "Restricted"
+  // affordance surviving ANYWHERE on the page would be caught, not only one
+  // reintroduced inside the section that used to own it.
 
-  describe('RestrictedContactPanel always-locked (FR-6)', () => {
-    it('always renders the locked panel in success state', () => {
+  describe('No "Restricted" affordance survives anywhere on the page (FR-6, D-14)', () => {
+    it('renders no "Restricted" affordance for the full actor', () => {
       useSearchParams.mockReturnValue({ get: () => 'actor-full' });
       useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
 
       renderProfile();
 
-      // Panel heading
+      expect(screen.queryByText(/restricted/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/authorization required/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/consent-gated/i)).not.toBeInTheDocument();
       expect(
-        screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 })
-      ).toBeInTheDocument();
-
-      // Locked state copy — no contact fields
-      expect(screen.getByText(/restricted — authorization required/i)).toBeInTheDocument();
-      expect(screen.getByText(/consent-gated/i)).toBeInTheDocument();
+        screen.queryByRole('heading', { name: 'Contact & Commercial Data' })
+      ).not.toBeInTheDocument();
     });
 
-    it('renders no input fields or contact data in the locked panel', () => {
-      useSearchParams.mockReturnValue({ get: () => 'actor-full' });
-      useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
-
-      renderProfile();
-
-      // No input, textarea, or select elements anywhere in the profile
-      expect(document.querySelector('input')).toBeNull();
-      expect(document.querySelector('textarea')).toBeNull();
-      expect(document.querySelector('select')).toBeNull();
-    });
-
-    it('renders the locked panel even for the sparse actor', () => {
+    it('renders no "Restricted" affordance for the sparse actor', () => {
       useSearchParams.mockReturnValue({ get: () => 'actor-sparse' });
       useActor.mockReturnValue({ data: ACTOR_SPARSE, loading: false, error: false });
 
       renderProfile();
 
+      expect(screen.queryByText(/restricted/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/authorization required/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/consent-gated/i)).not.toBeInTheDocument();
       expect(
-        screen.getByRole('heading', { name: 'Contact & Commercial Data', level: 2 })
-      ).toBeInTheDocument();
+        screen.queryByRole('heading', { name: 'Contact & Commercial Data' })
+      ).not.toBeInTheDocument();
     });
 
-    // T-10: the closing sentence used to be a dead end ("…please contact the
-    // ACCELERATE Tanzania programme team", no link). It now links /contact —
-    // the public entry point this task built.
-    it('T-10: the closing sentence links "contact the ACCELERATE Tanzania programme team" to /contact', () => {
+    it('renders no input, textarea, or select elements anywhere on the page', () => {
       useSearchParams.mockReturnValue({ get: () => 'actor-full' });
       useActor.mockReturnValue({ data: ACTOR_FULL, loading: false, error: false });
 
       renderProfile();
 
-      const link = screen.getByRole('link', { name: /contact the accelerate tanzania programme team/i });
-      expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute('href', '/contact');
+      expect(document.querySelector('input')).toBeNull();
+      expect(document.querySelector('textarea')).toBeNull();
+      expect(document.querySelector('select')).toBeNull();
     });
   });
 });

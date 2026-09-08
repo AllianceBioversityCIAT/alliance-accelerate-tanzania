@@ -7,6 +7,9 @@
  *     Contact, Data protection & consent)
  *   - all ten canonical trader types are offered with labels
  *   - GPS-optional copy is present (A25)
+ *   - (`actors/public-profile-disclosure` T-20) the `contactPerson` and
+ *     `otherCrops` fields each carry the applicant-facing "Shown on your
+ *     public profile once your registration is approved" hint
  *   - the literal FR-2 scenario 2 trio: negative capacity, malformed email,
  *     no crop selected — count + one inline message each
  *   - summary and inline messages provably derive from the SAME `errors`
@@ -184,6 +187,25 @@ describe('RegistrationForm — structure', () => {
     expect(latitude).toHaveAccessibleDescription(/Decimal between -90 and 90/);
     expect(longitude).toHaveAccessibleDescription(gpsCopy);
     expect(longitude).toHaveAccessibleDescription(/Decimal between -180 and 180/);
+  });
+
+  /**
+   * `actors/public-profile-disclosure` T-20: the applicant-facing notice is
+   * the reason T-20 exists (a false "will not be published" claim reached
+   * the reviewer's screen; this hint is what tells the APPLICANT the truth
+   * up front) and it was previously unasserted here — only the GPS hints
+   * were pinned. Both fields render the byte-identical hint text, so a
+   * plain `getByText` would throw on ambiguity; scoping to each field via
+   * its accessible description (same technique as the GPS test above)
+   * checks each occurrence individually.
+   */
+  it('shows the "published on approval" hint on contactPerson and otherCrops (T-20)', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    const publishedHint = 'Shown on your public profile once your registration is approved';
+
+    expect(screen.getAllByText(publishedHint)).toHaveLength(2);
+    expect(screen.getByLabelText(/^contact person/i)).toHaveAccessibleDescription(publishedHint);
+    expect(screen.getByLabelText(/^other crop/i)).toHaveAccessibleDescription(publishedHint);
   });
 
   it('the consent checkbox is unticked at every initial render (T-18 seam)', () => {

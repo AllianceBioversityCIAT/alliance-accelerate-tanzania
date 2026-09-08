@@ -102,6 +102,8 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     capacityTons: 200,
     crops: ['sorghum'],
     gps: { lat: -6.17, long: 35.74 },
+    sex: null,
+    otherCrops: null,
     ...overrides,
   };
 }

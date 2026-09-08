@@ -19,7 +19,7 @@ Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJ
 
 ## Hard constraints
 1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored.
-2. PII (`phone`, `email`) is never exposed to `Public`; enforce server-side.
+2. Consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public only on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path. `NEVER_PUBLIC_FIELDS` stays absolute on every public path regardless of consent. Enforce server-side.
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `docs/ux-ui/design.md §7`; no hardcoded colors/geometry.
 
@@ -29,7 +29,7 @@ Failure-only variants — a green run should cost one summary line.
 | Package | Verify | Lint | Build |
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
-| `backend/` (e2e) | `cd backend && npm run test:e2e -- --silent` | — | — |
+| `backend/` (e2e) | *no separate command* — the 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` above | — | — |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
 | `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) | — | — |
 

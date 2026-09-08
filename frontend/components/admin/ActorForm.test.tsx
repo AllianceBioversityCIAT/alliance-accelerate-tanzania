@@ -78,6 +78,8 @@ const ADMIN_ACTOR: AdminActor = {
   technicalSupport: 'extension_officer',
   phone: '+255123456789',
   email: 'info@mbeyaseeds.example',
+  contactPerson: 'Grace Mwangi',
+  otherCrops: 'Sunflower',
   gpsLatitude: -8.9,
   gpsLongitude: 33.46,
   gpsAltitude: null,
@@ -203,6 +205,8 @@ describe('ActorForm — rendering', () => {
     expect(screen.getByLabelText(/technical support/i)).toHaveValue(ADMIN_ACTOR.technicalSupport);
     expect(screen.getByLabelText(/phone/i)).toHaveValue(ADMIN_ACTOR.phone);
     expect(screen.getByLabelText(/email/i)).toHaveValue(ADMIN_ACTOR.email);
+    expect(screen.getByLabelText(/contact person/i)).toHaveValue(ADMIN_ACTOR.contactPerson);
+    expect(screen.getByLabelText(/other crop/i)).toHaveValue(ADMIN_ACTOR.otherCrops);
     expect(screen.getByLabelText(/consent status/i)).toHaveValue(ADMIN_ACTOR.consentStatus);
     expect(screen.getByLabelText(/registration source/i)).toHaveValue(ADMIN_ACTOR.registrationSource);
     expect(screen.getByLabelText(/consent method/i)).toHaveValue(ADMIN_ACTOR.consentMethod);
@@ -626,6 +630,75 @@ describe('ActorForm — registration source (FR-6)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(getFieldError(/consent method/i)).toBeNull();
     expect(getFieldError(/consent obtained/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contact person & other crops (`actors/public-profile-disclosure` T-2, FR-4)
+//
+// Populated round-trips only — a `null` default proves nothing (T-2's
+// Disqualifier): each test sets a NON-EMPTY value and reads it back, either
+// from the prefilled edit-mode input or from the submitted DTO.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — contact person and other crops (FR-4)', () => {
+  it('prefills Contact person and Other crop(s) from an existing actor in edit mode', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    expect(screen.getByLabelText(/contact person/i)).toHaveValue(ADMIN_ACTOR.contactPerson);
+    expect(screen.getByLabelText(/other crop/i)).toHaveValue(ADMIN_ACTOR.otherCrops);
+  });
+
+  it('round-trips a non-empty Contact person and Other crop(s) into the create payload', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/contact person/i), {
+      target: { value: 'Neema Shirima' },
+    });
+    fireEvent.change(screen.getByLabelText(/other crop/i), {
+      target: { value: 'Sesame' },
+    });
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.contactPerson).toBe('Neema Shirima');
+    expect(dto.otherCrops).toBe('Sesame');
+  });
+
+  it('round-trips an edited Contact person and Other crop(s) into the update payload', async () => {
+    jest.mocked(updateActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/contact person/i), {
+      target: { value: 'Amina Hassan' },
+    });
+    fireEvent.change(screen.getByLabelText(/other crop/i), {
+      target: { value: 'Cassava' },
+    });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.contactPerson).toBe('Amina Hassan');
+    expect(dto.otherCrops).toBe('Cassava');
+  });
+
+  it('sends null, not empty string, when Contact person and Other crop(s) are left blank', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    const dto = jest.mocked(createActor).mock.calls[0][0];
+    expect(dto.contactPerson).toBeNull();
+    expect(dto.otherCrops).toBeNull();
   });
 });
 

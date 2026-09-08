@@ -68,10 +68,14 @@ export interface AdminActor {
   region: string;
   district: string | null;
   traderType: string;
+  /** Published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
+  contactPerson: string | null;
   sex: string | null;
   position: string | null;
   marketLocation: string | null;
   capacityTons: number | null;
+  /** Actor-declared free text, published (FR-4). */
+  otherCrops: string | null;
   technicalSupport: string | null;
   phone: string | null;
   email: string | null;
@@ -249,10 +253,12 @@ export interface AdminActorCreateInput {
   consentObtainedAt?: string | null;
   consentReference?: string | null;
   district?: string | null;
+  contactPerson?: string | null;
   sex?: string | null;
   position?: string | null;
   marketLocation?: string | null;
   capacityTons?: number | null;
+  otherCrops?: string | null;
   technicalSupport?: string | null;
   phone?: string | null;
   email?: string | null;

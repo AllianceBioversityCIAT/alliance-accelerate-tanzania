@@ -24,8 +24,11 @@ import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
  * Instructions sheet and used for best-effort stale-template detection.
  *
  * T-6 — bumped v1 → v2: four columns added (Registration Source, Consent
- * Method, Consent Obtained At, Consent Reference), FR-1/FR-2/FR-5. */
-export const TEMPLATE_VERSION = 'v2';
+ * Method, Consent Obtained At, Consent Reference), FR-1/FR-2/FR-5.
+ *
+ * T-4 (public-profile-disclosure) — bumped v2 → v3: two columns appended
+ * (Contact Person, Other Crops), FR-4/FR-5. */
+export const TEMPLATE_VERSION = 'v3';
 
 /**
  * Canonical Actor `sex` values. Mirrors the private `SEX_VALUES` in
@@ -95,6 +98,12 @@ export interface TemplateColumn {
  * T-6 — appended after Consent Status (additive only, existing column
  * positions unchanged): Registration Source and the three consent-provenance
  * columns (Method, Obtained At, Reference), FR-1/FR-2/FR-5.
+ *
+ * T-4 (public-profile-disclosure) — appended after Consent Reference
+ * (additive only, existing column positions and required flags unchanged,
+ * D-13): Contact Person and Other Crops, both optional free text with no
+ * allowed-value list — there is nothing to validate against, so "no list" IS
+ * the headers/Instructions/parser agreement FR-5 requires for these two.
  */
 export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
   { header: 'Trader ID', field: 'traderId', required: true },
@@ -210,6 +219,18 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     field: 'consentReference',
     required: false,
     format: 'Free text pointer to the evidence, e.g. document ID or email thread (max 255 chars)',
+  },
+  {
+    header: 'Contact Person',
+    field: 'contactPerson',
+    required: false,
+    format: 'Free text, e.g. Jane Mwangi (max 120 chars)',
+  },
+  {
+    header: 'Other Crops',
+    field: 'otherCrops',
+    required: false,
+    format: 'Free text, e.g. Sesame, Sunflower (max 300 chars)',
   },
 ] as const;
 

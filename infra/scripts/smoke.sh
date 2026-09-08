@@ -13,11 +13,24 @@
 #                             (override via API_BASE_URL / CLOUDFRONT_URL / BUCKET).
 #     2. API health (FR-6)  — GET /api/v1/metrics and /api/v1/actors → 200, JSON.
 #     3. PII boundary (NFR-5, the critical gate) — the /actors AND /metrics bodies
-#                             contain NONE of the PII keys (phone, email, sex,
-#                             position, marketLocation; case-insensitive), and the
-#                             /actors body is the PII-safe list contract
+#                             contain NONE of NEVER_PUBLIC_FIELDS (traderId,
+#                             gpsAltitude, gpsAccuracy, registrationSource,
+#                             consentMethod, consentObtainedAt, consentReference,
+#                             technicalSupport; case-insensitive); BOTH the
+#                             /actors LIST body AND /metrics additionally
+#                             contain NONE of CONTACT_BLOCK_FIELDS
+#                             (contactPerson, position, phone, email,
+#                             marketLocation) — those are REQUIRED PRESENT only
+#                             on the single-actor DETAIL read for a GRANTED
+#                             actor (FR-1), so they are excluded from that one
+#                             assertion, not from /metrics. This script has no
+#                             detail check today. The /actors body is also
+#                             asserted as the PII-safe list contract
 #                             ({ data:[], page, pageSize, total }). Mirrors
-#                             backend/src/test/pii-boundary.spec.ts intent.
+#                             backend/src/common/pii-consent.policy.ts's
+#                             NEVER_PUBLIC_FIELDS/CONTACT_BLOCK_FIELDS split, as
+#                             asserted over HTTP by
+#                             backend/src/test/pii-boundary.spec.ts.
 #     4. Frontend (FR-5/6)  — CloudFront serves "/" and "/map" → 200.
 #     5. S3 privacy (DD-5)  — a DIRECT S3 object URL → 403 (private bucket; only
 #                             CloudFront via OAC may read).
@@ -60,12 +73,21 @@ REGION="${AWS_REGION:-eu-west-1}"
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 
-# The PII keys that must NEVER appear in a public response. This is the headline
-# NFR-5 guarantee: the PublicActor projection carries none of these, and the
-# checks below FAIL-CLOSE (exit non-zero) if any surfaces — a regression guard
-# against a serializer/config change re-exposing PII over the wire. Mirrors the
-# allowlist enforced in backend/src/test/pii-boundary.spec.ts.
-PII_KEYS=(phone email sex position marketLocation)
+# The PII keys that must NEVER appear in a given public response. This is the
+# headline NFR-5 guarantee, and the checks below FAIL-CLOSE (exit non-zero) if
+# any surfaces — a regression guard against a serializer/config change
+# re-exposing PII over the wire. Mirrors the two constants enforced in
+# backend/src/common/pii-consent.policy.ts (and asserted over HTTP by
+# backend/src/test/pii-boundary.spec.ts's FORBIDDEN_KEYS / list-body checks):
+#   - NEVER_PUBLIC_FIELDS: absent from EVERY public path, list AND /metrics.
+#   - CONTACT_BLOCK_FIELDS: absent from BOTH the /actors LIST body and
+#     /metrics — these fields are REQUIRED PRESENT ONLY on the single-actor
+#     detail read (GET /api/v1/actors/:id) for a GRANTED actor (FR-1), so
+#     they are excluded from that one assertion, not from /metrics. This
+#     script has no detail check today; if one is added, it must NOT
+#     include these keys there.
+NEVER_PUBLIC_FIELDS=(traderId gpsAltitude gpsAccuracy registrationSource consentMethod consentObtainedAt consentReference technicalSupport)
+CONTACT_BLOCK_FIELDS=(contactPerson position phone email marketLocation)
 
 # ── Result accounting (so each check is summarised even under `set -e`) ───────
 # Each check appends "PASS <label>" or "FAIL <label>" to RESULTS and bumps the
@@ -150,10 +172,13 @@ echo
 # token. If ANY matches, the check FAILS. A non-JSON/empty body is treated as a
 # failure of the upstream health check, not silently passed.
 assert_no_pii() {
-  local label="$1" body="$2" key lc_keys found=0
+  local label="$1" body="$2"
+  shift 2
+  local keys=("$@")
+  local key lc_keys found=0
   # Lowercased newline-delimited list of every key present in the payload.
   lc_keys="$(jq -r '[.. | objects | keys[]] | unique | .[] | ascii_downcase' <<<"$body" 2>/dev/null || true)"
-  for key in "${PII_KEYS[@]}"; do
+  for key in "${keys[@]}"; do
     # Whole-line (whole-key) case-insensitive match — avoids false hits on
     # substrings, but the keys are matched case-insensitively per the spec.
     if grep -qix -- "$key" <<<"$lc_keys"; then
@@ -162,7 +187,7 @@ assert_no_pii() {
     fi
   done
   if [[ "$found" -eq 0 ]]; then
-    pass "PII boundary ($label): none of [${PII_KEYS[*]}] present"
+    pass "PII boundary ($label): none of [${keys[*]}] present"
   else
     fail "PII boundary ($label): forbidden PII key(s) exposed over the wire"
   fi
@@ -202,13 +227,13 @@ fi
 echo "==> Check: PII boundary over the wire (NFR-5) ..."
 
 if [[ -n "$METRICS_BODY" ]]; then
-  assert_no_pii "metrics" "$METRICS_BODY"
+  assert_no_pii "metrics" "$METRICS_BODY" "${NEVER_PUBLIC_FIELDS[@]}" "${CONTACT_BLOCK_FIELDS[@]}"
 else
   fail "PII boundary (metrics): no body to scan (health check failed)"
 fi
 
 if [[ -n "$ACTORS_BODY" ]]; then
-  assert_no_pii "actors" "$ACTORS_BODY"
+  assert_no_pii "actors" "$ACTORS_BODY" "${NEVER_PUBLIC_FIELDS[@]}" "${CONTACT_BLOCK_FIELDS[@]}"
 
   # PII-safe list contract: { data: [], page: n, pageSize: n, total: n }.
   if jq -e '

@@ -84,6 +84,8 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     capacityTons: 200,
     crops: ['sorghum', 'common_bean'],
     gps: null,
+    sex: null,
+    otherCrops: null,
     ...overrides,
   };
 }

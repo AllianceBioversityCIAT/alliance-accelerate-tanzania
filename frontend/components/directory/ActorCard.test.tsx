@@ -30,6 +30,8 @@ const ACTOR_FULL: PublicActor = {
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -6.17, long: 35.74 },
+  sex: null,
+  otherCrops: null,
 };
 
 /** Actor with null-capacity, null-district, and a single crop. */
@@ -42,6 +44,8 @@ const ACTOR_SPARSE: PublicActor = {
   capacityTons: null,
   crops: ['groundnut'],
   gps: null,
+  sex: null,
+  otherCrops: null,
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

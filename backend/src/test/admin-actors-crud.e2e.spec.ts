@@ -13,7 +13,10 @@ import { createValidationPipe } from '../common/validation-pipe';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser } from '../auth/auth.types';
-import { PII_ALLOWLIST } from '../common/pii-consent.policy';
+import {
+  CONTACT_BLOCK_FIELDS,
+  NEVER_PUBLIC_FIELDS,
+} from '../common/pii-consent.policy';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 
 /**
@@ -29,15 +32,21 @@ import { ActingAdminResolver } from '../actors/acting-admin.resolver';
  */
 
 /**
- * The complete set of keys that must NEVER appear anywhere in a public response:
- * the PII allowlist plus the non-public columns the public serializer accepts
- * but never emits. Mirrors pii-boundary.spec.ts exactly.
+ * The complete set of keys that must NEVER appear in the PUBLIC LIST response
+ * scanned below (`GET /api/v1/actors`): {@link NEVER_PUBLIC_FIELDS} (admin-only
+ * metadata, absent on every public path) UNION {@link CONTACT_BLOCK_FIELDS}
+ * (absent on the list path specifically, FR-9 — those fields ARE required
+ * present on the detail path, so this union is deliberately NOT reused there).
+ * This used to be `[...PII_ALLOWLIST, 'traderId', 'gpsAltitude',
+ * 'gpsAccuracy']`; `actors/public-profile-disclosure` T-6 emptied
+ * `PII_ALLOWLIST` and moved `technicalSupport` into `NEVER_PUBLIC_FIELDS` —
+ * T-9 re-points this constant so that coverage (and the contact-block
+ * coverage `PII_ALLOWLIST` used to also carry) is restored rather than
+ * silently dropped (D-1c).
  */
 const FORBIDDEN_KEYS: readonly string[] = [
-  ...PII_ALLOWLIST,
-  'traderId',
-  'gpsAltitude',
-  'gpsAccuracy',
+  ...NEVER_PUBLIC_FIELDS,
+  ...CONTACT_BLOCK_FIELDS,
 ];
 
 /** A fully Prisma-shaped Actor row with EVERY PII field + full GPS populated. */
@@ -178,7 +187,11 @@ function collectForbiddenValues(
   return found;
 }
 
-/** The exact PII values seeded into the fixtures (must never appear publicly). */
+/**
+ * The exact PII values seeded into the fixtures — must never appear on the
+ * public LIST path; some are disclosed on the single-actor detail read
+ * (FR-1, `actors/public-profile-disclosure`).
+ */
 const LEAKABLE_PII_VALUES = [
   '+255700000000',
   'director@example.com',
@@ -1382,6 +1395,95 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
     );
   });
 
+  // `actors/public-profile-disclosure` T-2 — mirrors the "Registration source
+  // & consent provenance" block above exactly (R-1 precedent): a populated
+  // round-trip is the only thing that proves SCALAR_FIELDS carries a new
+  // field into the write, not just that the DTO validates it or the 201/200
+  // echoes it back. Disqualifier: submitting a contactPerson and reading
+  // back null.
+  describe('Contact person and other crops (FR-4)', () => {
+    it('round-trips both fields on create — write then read back', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        contactPerson: 'Neema Shirima',
+        otherCrops: 'Sesame trial plot',
+      };
+
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(createRes.body.contactPerson).toBe('Neema Shirima');
+      expect(createRes.body.otherCrops).toBe('Sesame trial plot');
+
+      const getRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${createRes.body.id}`)
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.contactPerson).toBe('Neema Shirima');
+      expect(getRes.body.otherCrops).toBe('Sesame trial plot');
+    });
+
+    it('round-trips both fields on update — write then read back', async () => {
+      const patchRes = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .send({
+          contactPerson: 'Amina Hassan',
+          otherCrops: 'Cassava',
+        })
+        .expect(200);
+
+      expect(patchRes.body.contactPerson).toBe('Amina Hassan');
+      expect(patchRes.body.otherCrops).toBe('Cassava');
+
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-unknown-1')
+        .set(admin)
+        .expect(200);
+
+      expect(getRes.body.contactPerson).toBe('Amina Hassan');
+      expect(getRes.body.otherCrops).toBe('Cassava');
+    });
+
+    it('defaults both fields to null when never set', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.contactPerson).toBeNull();
+      expect(res.body.otherCrops).toBeNull();
+    });
+
+    it('rejects a contactPerson over 120 characters — field-level 400', async () => {
+      const payload = { ...validCreatePayload(), contactPerson: 'x'.repeat(121) };
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('contactPerson');
+    });
+
+    it('rejects an otherCrops over 300 characters — field-level 400', async () => {
+      const payload = { ...validCreatePayload(), otherCrops: 'x'.repeat(301) };
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('otherCrops');
+    });
+  });
+
   describe('Public read + PII boundary regression', () => {
     it('GET /api/v1/actors returns only GRANTED actors', async () => {
       const res = await request(app.getHttpServer())
@@ -1394,7 +1496,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(ids).not.toContain('actor-unknown-1');
     });
 
-    it('deep-scan: no PII allowlist key anywhere in public response', async () => {
+    it('deep-scan: no never-public/contact-block key or seeded PII value anywhere in the public LIST response', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/actors')
         .expect(200);

@@ -119,7 +119,8 @@ npx prisma generate
 npx prisma migrate dev
 npm run start:dev  # local NestJS dev server
 npm test           # unit tests
-npm run test:e2e   # end-to-end tests
+# the 16 *.e2e.spec.ts files run under the ordinary `npm test` above —
+# there is no separate e2e command (see CLAUDE.md, Verification commands)
 ```
 
 ### Deploy
@@ -137,7 +138,7 @@ See [`infra/README.md`](infra/README.md) for the full deploy → operate → tea
 ## Key Constraints
 
 1. **AWS Profile:** every AWS CLI command uses `--profile IBD-DEV`.
-2. **PII Protection:** `phone` and `email` are never exposed to the `Public` role; enforcement is server-side.
+2. **PII Protection:** consent (`consentStatus = GRANTED`), not role, gates disclosure — a consenting actor's `phone`/`email` are public only on their individual profile (`GET /api/v1/actors/:id`), never on the directory/map/CSV list path; enforcement is server-side.
 3. **Static Export:** no Next.js SSR / route handlers — server logic stays in NestJS.
 4. **Design Tokens:** use tokens from `docs/ux-ui/design.md` §7; no hardcoded colors or geometry.
 

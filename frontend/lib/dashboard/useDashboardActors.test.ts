@@ -38,6 +38,8 @@ function makeActor(id: string, overrides: Partial<PublicActor> = {}): PublicActo
     traderType: 'cooperative',
     crops: ['sorghum'],
     capacityTons: null,
+    sex: null,
+    otherCrops: null,
     ...overrides,
   };
 }

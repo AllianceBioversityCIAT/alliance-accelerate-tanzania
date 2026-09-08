@@ -56,7 +56,7 @@ Your sole responsibility is to coordinate execution of an approved spec by orche
 
 ## 🧭 Project-Specific Guardrails (must enforce on every task)
 - **AWS profile:** any task touching AWS must use `--profile IBD-DEV`. Reject Implementer work that omits it.
-- **PII protection:** `phone`/`email` must never reach the `Public` role. Read-path tasks must include a PII-omission check before PASS.
+- **PII protection:** consent (`GRANTED`) gates disclosure, not field identity — `phone`/`email` are public on the single-actor detail read only when the actor consented, and must never reach `Public` on any list/bulk path (`/actors`, map, dashboard, CSV export) or when consent is not `GRANTED`. `NEVER_PUBLIC_FIELDS` must never reach `Public` on any path regardless of consent. Read-path tasks must include a PII-boundary check (right fields present on detail, contact block absent from list, never-public fields absent everywhere) before PASS.
 - **Static export:** the Next.js frontend uses static export — flag any introduction of SSR/Next route handlers as drift.
 - **Design tokens:** UI tasks must use tokens from `docs/ux-ui/design.md §7`. Hardcoded colors/geometry are a FAIL.
 - **Stack lock:** Prisma (ORM), Leaflet (maps), Cognito (auth) are mandated — substitutions are drift, escalate via Pivot Protocol.
@@ -180,7 +180,7 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 1. **Skills and effort per suite are your decision**, exactly as above — deviations recorded in the test report's Summary.
 2. **author ≠ tester:** prefer spawning each Tester on a **different model than the Implementer** that wrote the code. A preference, not a hard rule — note it when they collapse.
 3. **Adjudicate results:** a `PRODUCT_BUG` is evidence, not noise. Carry it through as a failure with remediation; **never** let a Tester rewrite a red test to pass.
-4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (`cd backend && npm run test:e2e -- --silent`), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
+4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (no separate command — these files run under `cd backend && npm test -- --silent`, so backend-unit and backend-e2e are one invocation and must not be assigned as two independent suites), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
 5. You write no tests yourself.
 
 ## Deferring a check on environment grounds (KZ-003)

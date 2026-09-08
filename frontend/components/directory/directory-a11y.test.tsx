@@ -79,6 +79,8 @@ const ACTOR_A: PublicActor = {
   capacityTons: 500,
   crops: ['sorghum'],
   gps: { lat: -6.17, long: 35.74 },
+  sex: null,
+  otherCrops: null,
 };
 
 const ACTOR_B: PublicActor = {
@@ -90,6 +92,8 @@ const ACTOR_B: PublicActor = {
   capacityTons: null,
   crops: ['common_bean', 'groundnut'],
   gps: null,
+  sex: null,
+  otherCrops: null,
 };
 
 const ACTOR_LIST: PublicActorList = {

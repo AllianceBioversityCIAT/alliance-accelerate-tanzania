@@ -57,6 +57,8 @@ const MOCK_ACTOR_LIST: PublicActorList = {
       district: 'Kinondoni',
       capacityTons: 500,
       gps: { lat: -6.7924, long: 39.2083 },
+      sex: null,
+      otherCrops: null,
     },
   ],
   total: 1,

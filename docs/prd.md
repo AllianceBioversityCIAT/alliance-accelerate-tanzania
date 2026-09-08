@@ -25,7 +25,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 
 | Persona | Role in system | Primary needs |
 |---|---|---|
-| **Public visitor** (donor, researcher, partner, general public) | `Public` (unauthenticated) | Browse and search the actor directory; see the map and aggregate metrics; **no access to PII**. |
+| **Public visitor** (donor, researcher, partner, general public) | `Public` (unauthenticated) | Browse and search the actor directory; see the map and aggregate metrics — none of which ever carries an actor's contact data; view a consenting actor's full profile, including contact details, one actor at a time. |
 | **Field/Data-entry staff** (program officers, enumerators) | `Staff` | Add and edit actor records, including PII; import field-collected CSVs; cannot manage users or delete in bulk. |
 | **Administrator** (program lead, data manager) | `Admin` | Full CRUD on all records and fields; user/role management; bulk import/export including PII; data governance. |
 
@@ -36,7 +36,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 | Centralize the seed system dataset | 100% of the existing CSV/Excel actor records imported into RDS MySQL with zero field loss. |
 | Make actors discoverable | Public directory search returns results in < 1s (p95) over 1,000+ records; pagination on every list view. |
 | Visualize territorial patterns | Map renders all geolocated actors and supports filtering by Crop, Region, Capacity, and Trader/processor type. |
-| Protect PII | 0 PII fields (phone, email) exposed to `Public` role in any API response, export, or page. |
+| Bound bulk contact exposure | 0 occurrences of an actor's contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) on any `Public` list, map, dashboard, or export surface — reachable only one profile at a time, and only for an actor who granted consent. (An `Admin` export is a separate, role-gated surface and is out of this metric's scope — AC-6.) |
 | Enable governed data entry | `Staff` can create/edit a record end-to-end with form validation; invalid submissions are rejected with field-level errors. |
 | Operate cost-effectively | Static frontend on S3/CloudFront; serverless backend on Lambda — no always-on servers. |
 
@@ -60,7 +60,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 
 ## 6. User Stories
 
-- **US-1 (Public):** As a public visitor, I can browse a paginated directory of seed system actors and search by name/region/crop, so that I can find relevant stakeholders — without seeing their phone or email.
+- **US-1 (Public):** As a public visitor, I can browse a paginated directory of seed system actors and search by name/region/crop, so that I can find relevant stakeholders — the directory, map, and CSV never carry any actor's phone or email; I can view a consenting actor's phone and email on their individual profile page.
 - **US-2 (Public):** As a public visitor, I can view an interactive map of actors and filter by crop, region, capacity, and trader type, so that I can understand territorial coverage and gaps.
 - **US-3 (Public):** As a visitor landing on the homepage, I can see headline metrics (actors mapped, crops tracked, regions covered), so that I understand the dataset's scale at a glance.
 - **US-4 (Staff):** As data-entry staff, I can sign in and create or edit an actor record through a validated form, so that field corrections reach the central registry reliably.
@@ -72,12 +72,12 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 
 ## 7. Acceptance Criteria
 
-- **AC-1:** Every public-facing actor list and detail response omits `phone` and `email` unless the requester is authenticated as `Staff` or `Admin`. (Testable: API contract test per role.)
+- **AC-1:** The public actor **list** response (`GET /actors`) omits `phone` and `email` (and the rest of the contact block) for every actor, regardless of consent or role. The public actor **detail** response (`GET /actors/:id`) includes `phone` and `email` only for an actor whose consent is `GRANTED`; a non-`GRANTED` actor's detail request returns `404` and none of that actor's fields. (Testable: API contract test per endpoint and consent state.)
 - **AC-2:** The directory paginates at a fixed page size and supports search across `traderName`, `region`, `district`, and `crop`; p95 latency < 1s over the seed dataset.
 - **AC-3:** The map plots a marker for every actor with valid `gpsLatitude`/`gpsLongitude`; the four filters compose (AND) and update markers without a full page reload.
 - **AC-4:** Creating/editing an actor rejects invalid input (missing required fields, malformed email, out-of-range GPS) with field-level error messages; valid input persists to MySQL.
 - **AC-5:** CSV import maps every column in the canonical schema, reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
-- **AC-6:** CSV export for a `Public`-equivalent share omits PII columns; export for `Admin` includes them.
+- **AC-6:** The public dashboard CSV export never carries the contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) for any actor — structural, since the export is built from the same list projection as `GET /actors` — and does carry `sex`/`otherCrops` as non-contact, gender-disaggregated/demographic fields (`public-profile-disclosure` A-1); an `Admin` export includes the full record.
 - **AC-7:** All AWS CLI / IaC / deployment commands use the `IBD-DEV` profile.
 - **AC-8:** A public self-registration submission is stored with no public read path for any submitted field until an Admin approves it; no response on the public registration paths echoes a payload field, the submitter's email, or the submission's internal id. (Testable: PII-boundary test over HTTP — release gate.)
 

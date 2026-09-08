@@ -16,9 +16,16 @@
  *      action).
  *   4. The submitted-details table — every payload field EXCEPT
  *      `gpsLatitude`/`gpsLongitude` (which the location card renders as raw
- *      coordinates), with `contactPerson` and `otherCrops` explicitly
- *      marked as review context that will not be published (see
- *      `REVIEW_CONTEXT_FIELDS` below — the human half of DC-23).
+ *      coordinates). Every row here is published on approval (`approve()` sets
+ *      `consentStatus: GRANTED` unconditionally) — but NOT all to the same
+ *      surface: the contact block (`contactPerson`, `position`, `phone`,
+ *      `email`, `marketLocation`) reaches only the single-actor PROFILE
+ *      (`GET /api/v1/actors/:id`), never the directory/list, which is where
+ *      the map, dashboard and CSV are built from (FR-9)
+ *      — see the caption in `SubmittedDetailsTable` below, and the note
+ *      atop the Helpers section (above `cropLabel`/`formatValue`) recording
+ *      that this file previously marked two of the thirteen rows as NOT
+ *      published — the opposite of their actual status (`T-20`).
  *   5. The location card — raw GPS coordinates and an OpenStreetMap link
  *      (D-5 excludes GPS/district consistency validation; this is a raw
  *      display only).
@@ -83,30 +90,33 @@ import { RejectDialog, type RejectDialogInput } from './RejectDialog';
 const APPROVAL_ACKNOWLEDGEMENT_TEXT = 'I confirm consent is on file';
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/**
- * The two payload fields with no `Actor` column (FR-12's projection table —
- * `contactPerson` -> nothing, `otherCrops` -> nothing). FR-10 scenario 1
- * requires them shown but explicitly marked as review context that will
- * not be published, so a reviewer is not misled into thinking they will
- * appear on the public profile — this set is the ONE place that marking is
- * decided, so the two fields cannot drift apart between the table rows and
- * the badge.
- *
- * **This is the human half of DC-23.** Removing either key from this set
- * removes the marking from that field's row without touching the row
- * itself — the specific mutation the falsifying test proves reddens.
- */
-const REVIEW_CONTEXT_FIELDS: ReadonlySet<keyof AdminRegistrationPayload> = new Set([
-  'contactPerson',
-  'otherCrops',
-]);
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// FR-10 scenario 1's marking clause ("fields with no `Actor` column are
+// marked as review context that will not be published"
+// — `docs/specs/archive/2026-09-02-admin--registration-review-queue/requirements.md`)
+// is SPENT. Its predicate was "fields with no `Actor` column" — at the time
+// that was `contactPerson`/`otherCrops` — and `actors/public-profile-disclosure`
+// T-1 gave both of them one (`Actor.contactPerson`, `Actor.otherCrops`,
+// disclosed to `Public` for a `GRANTED` actor per FR-1/FR-4). The predicate is
+// now empty: every payload field this screen shows has an `Actor` column, so
+// FR-10 requires no per-row marking on any of them. Its "every submitted
+// field is displayed" half is unaffected and still holds below.
+//
+// This file previously carried a `ReviewContextBadge` marking exactly two
+// of the table's thirteen rows (`contactPerson`, `otherCrops`) with the
+// caption "Review context — will not be published" — which told the
+// reviewer those two fields would NEVER be published. That promise became
+// false once `actors/public-profile-disclosure` T-1 gave both fields an
+// `Actor` column and T-7's `toPublicDetail` (via `toPublicListItem` for
+// `otherCrops`) started publishing them. Deletion, not relabelling, is the
+// correct closure: after T-1 the badge's predicate ("fields with no
+// `Actor` column") is empty, so there is no durable distinction left for
+// any label to carry. That badge and its backing set
+// (`REVIEW_CONTEXT_FIELDS`) are removed (`T-20`); see the caption in
+// `SubmittedDetailsTable` below for the single accurate statement that
+// replaces them.
 
 // statusLabel/statusBadgeClasses moved to `@/lib/content/registration-status`
 // (T-14, carried forward from T-13's review, A-78/A-79) — this file
@@ -154,7 +164,8 @@ function buildPayloadRows(detail: AdminRegistrationDetail): PayloadFieldRow[] {
     { key: 'phone', label: 'Phone', value: formatValue(payload.phone) },
     // Not a payload field (Registration.submitterEmail) but part of what
     // was submitted, and it IS published (FR-12's projection table:
-    // submitterEmail -> Actor.email -> yes) — not review context.
+    // submitterEmail -> Actor.email -> yes). Rendered as a hardcoded row
+    // above `rows.map`, not one of these entries.
   ];
 }
 
@@ -165,19 +176,6 @@ function mapUrl(lat: number, lon: number): string {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function ReviewContextBadge() {
-  return (
-    <span
-      className={[
-        'ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        'bg-primary-soft text-primary',
-      ].join(' ')}
-    >
-      Review context — will not be published
-    </span>
-  );
-}
 
 function SubmittedDetailsTable({ detail }: Readonly<{ detail: AdminRegistrationDetail }>) {
   const rows = buildPayloadRows(detail);
@@ -190,10 +188,10 @@ function SubmittedDetailsTable({ detail }: Readonly<{ detail: AdminRegistrationD
       <div className="mt-3 overflow-x-auto">
         <table className="min-w-full divide-y divide-border text-sm">
           <caption className="sr-only">
-            Every field submitted with this registration. Fields marked
-            &quot;Review context — will not be published&quot; have no
-            corresponding column on the public directory record and will
-            never appear there.
+            Every field submitted with this registration. Every one of them
+            is copied onto the actor record and becomes visible on the
+            public profile once this registration is approved, which sets
+            consent automatically.
           </caption>
           <tbody className="divide-y divide-border">
             <tr>
@@ -207,10 +205,7 @@ function SubmittedDetailsTable({ detail }: Readonly<{ detail: AdminRegistrationD
                 <th scope="row" className="w-48 py-2 pr-4 text-left align-top text-xs font-medium uppercase tracking-wide text-muted">
                   {row.label}
                 </th>
-                <td className="py-2 text-fg">
-                  {row.value}
-                  {REVIEW_CONTEXT_FIELDS.has(row.key) && <ReviewContextBadge />}
-                </td>
+                <td className="py-2 text-fg">{row.value}</td>
               </tr>
             ))}
           </tbody>
