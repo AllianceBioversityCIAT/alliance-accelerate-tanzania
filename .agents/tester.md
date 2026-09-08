@@ -15,7 +15,7 @@ You will be assigned exactly one. Use the project's real command; never invent a
 | Suite | Runner & location | Command (agent-lean) |
 |---|---|---|
 | **backend-unit** | Jest + ts-jest, `*.spec.ts` beside the source in `backend/src/**` | `cd backend && npm test -- --silent` (narrow with a path, e.g. `… --silent actors`) |
-| **backend-e2e** | Jest + **Supertest**, `backend/test/` via `test/jest-e2e.json` | `cd backend && npm run test:e2e -- --silent` |
+| **backend-e2e** | Jest + **Supertest**, `backend/src/test/*.e2e.spec.ts` (there is no `backend/test/` and no `jest-e2e.json`) | `cd backend && npm test -- --silent` — the same command as backend-unit; the e2e files run under it |
 | **frontend-unit** | Jest + **@testing-library/react** + **jest-axe**, jsdom, config `frontend/jest.config.ts`, setup `frontend/jest.setup.ts` | `cd frontend && npm test -- --silent` |
 
 **No Playwright/E2E-browser suite exists in this repo.** If a scenario genuinely needs one, that is a TRD stack decision implemented as a spec task — report `AUTOMATION_DEFERRED`, do not scaffold a framework on your own initiative.

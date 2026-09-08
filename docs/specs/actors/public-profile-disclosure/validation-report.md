@@ -177,6 +177,8 @@ Green in isolation, intermittent only in a full run, in the one suite that owns 
 
 **A correction the Leader made to itself, recorded because it nearly shipped.** The first failure of the day appeared in `admin-registrations-reject`, and the temptation was to write *"known flake in `admin-registrations-reject`"* into this report. That attribution is **false**. It was refused for the right reason — a claim about an artefact that had not been re-examined is the exact defect this spec spent itself eliminating — and capturing the identity proved the refusal correct.
 
+**Confirmed independent of `--runInBand`.** After `backend/package.json`'s test script was corrected to `jest --runInBand`, two consecutive bare `npm test` runs gave **1061 passed** and then **1 failed / 1061**. So the serial-execution fix addresses the *parallel-contention* class (the 21 phantom failures) and **not** this finding. The throttle-state leak survives serial execution and remains open.
+
 **What still cannot be claimed:** the true failure rate. Three of the runs were contaminated by the Leader's own overlapping measurements (§12), so the 2-of-5 figure mixes clean and contended observations and should not be quoted as a rate.
 
 A suite containing PII release gates whose verdict varies between identical runs is not a reliable gate, even when today's failure touches no PII assertion. Together with the `--runInBand` finding, this says the repository's **test infrastructure needs its own spec**, not a patch inside this one.

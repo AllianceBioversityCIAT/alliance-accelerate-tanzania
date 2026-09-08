@@ -119,7 +119,8 @@ npx prisma generate
 npx prisma migrate dev
 npm run start:dev  # local NestJS dev server
 npm test           # unit tests
-npm run test:e2e   # end-to-end tests
+# the 16 *.e2e.spec.ts files run under the ordinary `npm test` above —
+# there is no separate e2e command (see CLAUDE.md, Verification commands)
 ```
 
 ### Deploy

@@ -65,7 +65,7 @@ Use the **failure-only** variants from the root guide's *Verification commands* 
 | Package | Verify | Lint | Build |
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
-| `backend/` (e2e) | `cd backend && npm run test:e2e -- --silent` | — | — |
+| `backend/` (e2e) | *no separate command* — the 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` above | — | — |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
 | `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) | — | — |
 

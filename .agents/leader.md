@@ -180,7 +180,7 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 1. **Skills and effort per suite are your decision**, exactly as above — deviations recorded in the test report's Summary.
 2. **author ≠ tester:** prefer spawning each Tester on a **different model than the Implementer** that wrote the code. A preference, not a hard rule — note it when they collapse.
 3. **Adjudicate results:** a `PRODUCT_BUG` is evidence, not noise. Carry it through as a failure with remediation; **never** let a Tester rewrite a red test to pass.
-4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (`cd backend && npm run test:e2e -- --silent`), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
+4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (no separate command — these files run under `cd backend && npm test -- --silent`, so backend-unit and backend-e2e are one invocation and must not be assigned as two independent suites), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
 5. You write no tests yourself.
 
 ## Deferring a check on environment grounds (KZ-003)
