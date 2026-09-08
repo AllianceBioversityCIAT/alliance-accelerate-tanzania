@@ -181,7 +181,9 @@ Green in isolation, intermittent only in a full run, in the one suite that owns 
 
 **What still cannot be claimed:** the true failure rate. Three of the runs were contaminated by the Leader's own overlapping measurements (§12), so the 2-of-5 figure mixes clean and contended observations and should not be quoted as a rate.
 
-A suite containing PII release gates whose verdict varies between identical runs is not a reliable gate, even when today's failure touches no PII assertion. Together with the `--runInBand` finding, this says the repository's **test infrastructure needs its own spec**, not a patch inside this one.
+A suite containing PII release gates whose verdict varies between identical runs is not a reliable gate, even when today's failure touches no PII assertion.
+
+**R-1 already has an owner, and that owner's document denies it.** `docs/specs/bugfix/flaky-frontend-suite/proposal.md` (Draft, 2026-08-07) covers exactly this shape — *"every suite observed failing passes in isolation"* — but its non-goals state: *"Backend (`backend/`) test stability — not observed to have this problem."* That sentence is **now false**, and this validation is the evidence. The right route is not a new proposal: it is revisiting that non-goal, since the backend now exhibits the same mechanism the spec was written for.
 
 ### Routed out — confirmed pre-existing
 
