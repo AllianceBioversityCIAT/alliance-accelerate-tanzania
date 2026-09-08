@@ -47,6 +47,7 @@ expect.extend(toHaveNoViolations);
 
 import ProfileView from './ProfileView';
 import type { PublicActorDetail } from '@/lib/api/actors';
+import { ACTOR_FULL, ACTOR_SPARSE } from './__fixtures__/actor';
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be hoisted before dynamic imports resolve
@@ -78,47 +79,6 @@ const { useActor } = require('@/lib/api/useActor') as {
 // none, for the FR-6 em-dash path.
 // ---------------------------------------------------------------------------
 
-/**
- * Full actor with all optional fields, including 2 crops + GPS, AND the full
- * contact block (FR-1). Typed PublicActorDetail, mirroring useActor's real
- * return type (design.md §9 DD-6).
- */
-const ACTOR_FULL: PublicActorDetail = {
-  id: 'actor-full',
-  traderName: 'Dodoma Seeds Ltd',
-  region: 'Dodoma',
-  district: 'Dodoma Urban',
-  traderType: 'seed_company',
-  capacityTons: 500,
-  crops: ['sorghum', 'common_bean'],
-  gps: { lat: -6.17, long: 35.74 },
-  sex: null,
-  otherCrops: null,
-  contactPerson: 'Amina Juma',
-  position: 'Director',
-  phone: '+255700000000',
-  email: 'director@example.com',
-  marketLocation: 'Arusha Central Market',
-};
-
-/** Sparse actor: null district, null capacity, 1 crop, no GPS, no contact block (FR-6 em-dash path). */
-const ACTOR_SPARSE: PublicActorDetail = {
-  id: 'actor-sparse',
-  traderName: 'Mbeya Cooperative',
-  region: 'Mbeya',
-  district: null,
-  traderType: 'cooperative',
-  capacityTons: null,
-  crops: ['groundnut'],
-  gps: null,
-  sex: null,
-  otherCrops: null,
-  contactPerson: null,
-  position: null,
-  phone: null,
-  email: null,
-  marketLocation: null,
-};
 
 // ---------------------------------------------------------------------------
 // Helper — wrap ProfileView in <Suspense> for tests, mirroring production

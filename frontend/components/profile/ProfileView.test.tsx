@@ -29,6 +29,7 @@ import React, { Suspense } from 'react';
 import { render, screen } from '@testing-library/react';
 import ProfileView from './ProfileView';
 import type { PublicActorDetail } from '@/lib/api/actors';
+import { ACTOR_FULL, ACTOR_SPARSE } from './__fixtures__/actor';
 
 // ── Module mocks (hoisted before imports are evaluated) ────────────────────────
 
@@ -59,47 +60,6 @@ const { useActor } = require('@/lib/api/useActor') as {
  * actor). Typed PublicActorDetail — this is one of only two consumers of
  * that shape (design.md §9 DD-6) — mirroring useActor's real return type.
  */
-const ACTOR_FULL: PublicActorDetail = {
-  id: 'actor-full',
-  traderName: 'Dodoma Seeds Ltd',
-  region: 'Dodoma',
-  district: 'Dodoma Urban',
-  traderType: 'seed_company',
-  capacityTons: 500,
-  crops: ['sorghum', 'common_bean'],
-  gps: { lat: -6.17, long: 35.74 },
-  sex: 'Female',
-  otherCrops: 'Sesame, Sunflower',
-  contactPerson: 'Amina Juma',
-  position: 'Director',
-  phone: '+255700000000',
-  email: 'director@example.com',
-  marketLocation: 'Arusha Central Market',
-};
-
-/**
- * Sparse actor: null district, null capacity, 1 crop, no GPS, AND every
- * contact-block field absent (FR-6's em-dash scenario — a pre-existing
- * Excel actor with no contactPerson, or any GRANTED actor who omitted an
- * optional field).
- */
-const ACTOR_SPARSE: PublicActorDetail = {
-  id: 'actor-sparse',
-  traderName: 'Mbeya Cooperative',
-  region: 'Mbeya',
-  district: null,
-  traderType: 'cooperative',
-  capacityTons: null,
-  crops: ['groundnut'],
-  gps: null,
-  sex: null,
-  otherCrops: null,
-  contactPerson: null,
-  position: null,
-  phone: null,
-  email: null,
-  marketLocation: null,
-};
 
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
