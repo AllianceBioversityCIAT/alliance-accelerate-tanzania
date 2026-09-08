@@ -265,6 +265,68 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
     expect(summary).toHaveTextContent('Email');
   });
 
+  /**
+   * ATP-57 — the reported defect was NOT that validation failed to run. It
+   * ran, the summary rendered, and `aria-live="assertive"` announced it. But
+   * the summary sits at the TOP of a long sectioned form whose submit button
+   * is at the BOTTOM, so a sighted applicant — especially on a phone, the
+   * primary self-registration channel — saw nothing change and read the
+   * button as dead.
+   *
+   * Focus is what this asserts, because focus is the part jsdom can actually
+   * evaluate: it has no layout engine, so `scrollIntoView` is not
+   * implemented and scroll position is unobservable here.
+   *
+   * The scroll half was measured separately, in headless Chrome at 375x667
+   * against the static export [2026-09-08]: page 2995px tall, submit button
+   * at y=2369, applicant clicking from scrollY=2053. After the failed
+   * submit, scrollY=222 and the summary sits at top 0 / bottom 347 — fully
+   * in the viewport, and `document.activeElement`. Before this change it
+   * rendered roughly 1800px above the fold and nothing moved. That
+   * measurement is not reproducible from this suite; do not add an
+   * assertion here that pretends otherwise.
+   */
+  it('moves focus to the error summary on a failed submit, so the failure is not silent', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+
+    // Nothing filled in — every required field fails.
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    const summary = screen.getByTestId('error-summary');
+    expect(summary).toHaveFocus();
+    // -1, so the summary is focusable programmatically without joining the
+    // tab order — a summary a keyboard user must tab THROUGH on every pass
+    // would be its own defect.
+    expect(summary).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('re-focuses the summary on a SECOND failed submit, not only the first', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    // Move focus away, as an applicant would by starting to fix a field.
+    screen.getByLabelText(/organisation name/i).focus();
+    expect(screen.getByTestId('error-summary')).not.toHaveFocus();
+
+    // A second failed submit must move them back. This is the case a naive
+    // "focus once when the summary first mounts" implementation silently
+    // fails: the summary is already mounted, so nothing re-fires.
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+    expect(screen.getByTestId('error-summary')).toHaveFocus();
+  });
+
+  it('does NOT render or focus a summary when the submit succeeds', async () => {
+    const user = userEvent.setup();
+    const onValidated = jest.fn();
+    render(<RegistrationForm onValidated={onValidated} />);
+    await fillMinimalValidForm(user);
+
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(onValidated).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('error-summary')).not.toBeInTheDocument();
+  });
+
   it('fixing one field clears it from the summary AND the inline message simultaneously — proof of one shared object', async () => {
     const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
