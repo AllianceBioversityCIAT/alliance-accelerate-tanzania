@@ -72,6 +72,7 @@ export class ActorsService {
       // Consent enforced at the QUERY — never serializer-only (NFR-1, DD-3).
       consentStatus: ConsentStatus.GRANTED,
       ...(query.region ? { region: query.region } : {}),
+      ...(query.district ? { district: { contains: query.district } } : {}),
       ...(query.role ? { traderType: query.role } : {}),
       ...(query.crop
         ? { crops: { some: { crop: { name: query.crop } } } }

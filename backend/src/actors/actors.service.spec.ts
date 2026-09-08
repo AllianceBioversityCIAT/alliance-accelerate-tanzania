@@ -132,6 +132,36 @@ describe('ActorsService (mocked Prisma)', () => {
       });
     });
 
+    it('translates the district filter into a `contains` WHERE clause, not equality', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ district: 'Moshi' } as ListQueryDto);
+
+      const where = prisma.actor.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        consentStatus: ConsentStatus.GRANTED,
+        district: { contains: 'Moshi' },
+      });
+      // `contains`, so a partial district ("Moshi") reaches "Moshi Urban" —
+      // there is no canonical district list for a user to pick from.
+      expect(where.district).not.toBe('Moshi');
+    });
+
+    it('district is a filter in its own right, not folded into the search OR', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ district: 'Moshi' } as ListQueryDto);
+
+      const where = prisma.actor.findMany.mock.calls[0][0].where;
+      // Regression guard: the dashboard shipped a District input while
+      // `district` was absent from ListQueryDto, so the pipe's
+      // `whitelist: true` stripped it and the control silently did nothing.
+      // A sibling key ANDs with consent; an OR member would not.
+      expect(where.OR).toBeUndefined();
+    });
+
     it('adds an OR partial match over name/region/district for a search term (FR-4)', async () => {
       prisma.actor.findMany.mockResolvedValue([]);
       prisma.actor.count.mockResolvedValue(0);

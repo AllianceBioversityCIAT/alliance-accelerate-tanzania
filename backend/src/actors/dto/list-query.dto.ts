@@ -40,6 +40,21 @@ export class ListQueryDto {
   @IsIn(CANONICAL_REGIONS as readonly string[])
   region?: string;
 
+  /**
+   * District filter — free text, matched with `contains` rather than equality,
+   * so "Moshi" finds "Moshi Urban". Unlike `region` there is no canonical
+   * district list to validate against, so this is a bounded string.
+   *
+   * Declared here deliberately: the dashboard shipped a District input for
+   * months while this field was absent from the DTO, so the global pipe's
+   * `whitelist: true` stripped `?district=` in silence and the control did
+   * nothing. An undeclared query param is not a no-op, it is an invisible one.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  district?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

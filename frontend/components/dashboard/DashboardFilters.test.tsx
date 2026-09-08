@@ -154,6 +154,10 @@ describe('DashboardFilters', () => {
       expect(screen.getByLabelText('Filter by region')).toBeInTheDocument();
     });
 
+    it('has an accessible label for the district input', () => {
+      expect(screen.getByLabelText('Filter by district')).toBeInTheDocument();
+    });
+
     it('has an accessible label for the actor type select', () => {
       expect(screen.getByLabelText('Filter by actor type')).toBeInTheDocument();
     });
@@ -252,6 +256,17 @@ describe('DashboardFilters', () => {
       });
 
       expect(onChange.mock.calls[0][0].search).toBeUndefined();
+    });
+
+    it('calls onChange with district set when district input changes', () => {
+      const { onChange } = setup();
+
+      fireEvent.change(screen.getByLabelText('Filter by district'), {
+        target: { value: 'Moshi' },
+      });
+
+      expect(onChange.mock.calls[0][0].district).toBe('Moshi');
+      expect(onChange.mock.calls[0][0].page).toBe(1);
     });
 
     it('clears role to undefined when "All types" is selected', () => {
