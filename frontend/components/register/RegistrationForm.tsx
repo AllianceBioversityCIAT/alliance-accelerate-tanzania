@@ -514,7 +514,7 @@ export default function RegistrationForm({
   onValidated,
   submitting = false,
   initialValues,
-}: RegistrationFormProps) {
+}: Readonly<RegistrationFormProps>) {
   const [values, setValues] = useState<FormValues>(() => toFormValues(initialValues));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
