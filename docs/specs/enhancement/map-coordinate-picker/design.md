@@ -105,7 +105,18 @@ Deliberately **absent**: any function that mutates a field the person typed. `pa
 
 `TANZANIA_CENTER`, `TANZANIA_BOUNDS`, `OSM_TILE_URL`, `OSM_ATTRIBUTION`, moved verbatim out of `LeafletMap.tsx`.
 
-**Typed as plain tuples, not Leaflet's `L.LatLngExpression` / `L.LatLngBoundsExpression`** — note the two shapes differ: `TANZANIA_CENTER` is `readonly [number, number]`, while `TANZANIA_BOUNDS` is a pair of pairs, `readonly [readonly [number, number], readonly [number, number]]`. Leaflet's structural types would satisfy those positions anyway, and a plain tuple keeps this module importable by code that must not pull Leaflet in. `LeafletMap.tsx` deletes its four `const`s and imports instead — a pure extraction, no value changed, which is what NFR-6 pins.
+**Typed as plain tuples, not Leaflet's `L.LatLngExpression` / `L.LatLngBoundsExpression`** — note the two shapes differ: `TANZANIA_CENTER` is `readonly [number, number]`, while `TANZANIA_BOUNDS` is a pair of pairs, `readonly [readonly [number, number], readonly [number, number]]`. **Correction (T-2 review, 2026-09-08 — twice; read the second half, the first correction was also wrong).** An early draft claimed *"Leaflet's structural types would satisfy those positions anyway."* They do not: a `readonly` tuple is rejected, and `npx tsc --noEmit` produced `TS2322: The type 'readonly [number, number]' is 'readonly' and cannot be assigned to the mutable type 'LatLngTuple'` during T-2. **The first correction then asserted `L.LatLngTuple` is `[number, number]`. That is also false.** Read from the installed primary source — `frontend/node_modules/@types/leaflet/index.d.ts`, `@types/leaflet@1.9.21` — the declarations are:
+
+```ts
+export type LatLngTuple = [number, number, number?];      // line 164 — third element is optional altitude
+export type LatLngExpression = LatLng | LatLngLiteral | LatLngTuple;
+export type LatLngBoundsLiteral = LatLngTuple[];          // line 200 — an ARRAY, not a 2-tuple
+export type LatLngBoundsExpression = LatLngBounds | LatLngBoundsLiteral;
+```
+
+What is true of `LatLngTuple`, and all that is needed here, is that it carries **no `readonly`** — which is why the assignment is rejected and why a consumer spreads at the call site (`[...TANZANIA_CENTER]`), as `LeafletMap.tsx` now does. Note also that the two exports fail **differently**: `TANZANIA_CENTER` against `LatLngTuple`, `TANZANIA_BOUNDS` against `LatLngBoundsLiteral` (`LatLngTuple[]`). They are not "the same error". Keeping the exports `readonly` remains correct and deliberate — it keeps this module importable by code that must not pull Leaflet in (its whole purpose), and protects shared values from consumer mutation — at the cost of one spread per call site. A later consumer that assigns one of these exports directly will meet the same **kind** of rejection; a consumer that spreads from the first line, which is what this note exists to produce, will meet none.
+
+> **Why this correction is recorded in full rather than silently applied.** The arity error came from reading the compiler's message — which names the alias `LatLngTuple` without expanding it — and writing the inferred expansion as fact, without opening the `.d.ts`. That is the same mechanism as `judgment.md` **F-1** (a regex artefact read as a count) and it is the fourth KZ-008 instance in this spec. In both cases the fix was not more care; it was **opening the artefact**. `LeafletMap.tsx` deletes its four `const`s and imports instead — a pure extraction, no value changed, which is what NFR-6 pins.
 
 ### 7.3 `CoordinatePicker.tsx` — the wrapper (FR-4, FR-7)
 

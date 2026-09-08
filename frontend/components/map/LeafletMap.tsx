@@ -26,26 +26,19 @@ import type { TraderType } from '@/lib/content/roles';
 import { ROLE_CSS_VAR } from './RoleBadge';
 import ActorPopup from './ActorPopup';
 import MapLegend from './MapLegend';
+import {
+  TANZANIA_CENTER,
+  TANZANIA_BOUNDS,
+  OSM_TILE_URL,
+  OSM_ATTRIBUTION,
+} from './map-constants';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-// Tanzania geographic center and suitable initial zoom level.
-const TANZANIA_CENTER: L.LatLngExpression = [-6.37, 34.89];
+// Suitable initial zoom level for the Tanzania overview.
 const INITIAL_ZOOM = 6;
 // Zoom level used when flying to a single actor.
 const ACTOR_ZOOM = 11;
-
-// Approximate bounding box for Tanzania — keeps the initial view focused.
-// [southWest, northEast] in [lat, lng] form.
-const TANZANIA_BOUNDS: L.LatLngBoundsExpression = [
-  [-11.75, 29.34], // SW corner
-  [ -0.98, 40.44], // NE corner
-];
-
-// OSM tile URL + required attribution (OpenStreetMap policy).
-const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 // ── Marker helpers ────────────────────────────────────────────────────────────
 
@@ -161,9 +154,15 @@ export default function LeafletMap({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      center:    TANZANIA_CENTER,
+      // map-constants.ts exports plain readonly tuples
+      // (enhancement/map-coordinate-picker FR-8) so the
+      // module stays importable without pulling in `leaflet`; Leaflet's own
+      // LatLngExpression/LatLngBoundsExpression types are structurally
+      // identical but declared mutable, so we spread into fresh mutable
+      // tuples here rather than loosen the shared module's contract.
+      center:    [...TANZANIA_CENTER] as L.LatLngExpression,
       zoom:      INITIAL_ZOOM,
-      maxBounds: TANZANIA_BOUNDS,
+      maxBounds: TANZANIA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression,
       maxBoundsViscosity: 0.85,
     });
 
