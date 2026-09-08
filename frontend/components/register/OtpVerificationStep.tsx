@@ -51,13 +51,18 @@
  * "onBack" affordance — there is nothing to verify if the email itself was
  * rejected, so the code-entry UI is hidden rather than shown disabled.
  *
- * `onBack` is a real, if narrow, tradeoff: the parent resets to the `form`
- * step with a blank `RegistrationForm` (T-17's component has no
- * initial-values seam to restore mid-entry state, and adding one is outside
- * this task's scope) — so the applicant re-enters everything, this time
- * with a correct email. That is a bounded regression only on the path this
- * spec exists to reach in the first place (a malformed address that fooled
- * the client regex); it is not the common path.
+ * `onBack` is no longer a tradeoff (ATP-57): the parent resets to the `form`
+ * step with the applicant's entries RESTORED. `RegistrationForm` now takes
+ * an `initialValues` seam and `RegisterPage` holds the raw values across the
+ * unmount, so going back means correcting one field, not retyping the form.
+ * Consent is the one thing deliberately NOT restored — FR-3 requires the
+ * checkbox unticked at every initial render, so the applicant re-accepts.
+ *
+ * The copy below must keep saying what actually happens. It previously
+ * warned that nothing entered would be kept, which was true when written;
+ * leaving that warning in place after the seam landed would tell the
+ * applicant their work is lost and talk them out of a correction that now
+ * costs one field.
  *
  * Tokens only (NFR-6) — zero hex literals. No entrance motion (A26).
  */
@@ -383,14 +388,15 @@ export default function OtpVerificationStep({
         <p className="font-semibold">{heading}</p>
         <p className="mt-1">{blockingIssue.message}</p>
         {/*
-          Reviewer correction 1: the button previously read "Back to your
-          details", but `page.tsx`'s onBack clears `pending` — there is no
-          "back" to return to. This discloses the actual consequence so
-          re-entry is an informed choice, not a surprise.
+          States the actual consequence, which changed with ATP-57: going
+          back now RESTORES what the applicant typed, so this discloses a
+          one-field correction rather than warning of a total loss. The
+          consent caveat is named because it is the one real exception —
+          FR-3 unticks the checkbox on every initial render.
         */}
         <p className="mt-2 text-xs text-danger">
-          You&apos;ll need to fill in the form again with {correction} — nothing you&apos;ve entered
-          so far will be kept.
+          Go back and correct {correction}. Everything else you entered is kept — you will only
+          need to accept the consent policy again.
         </p>
         <button
           type="button"
@@ -401,7 +407,7 @@ export default function OtpVerificationStep({
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
           ].join(' ')}
         >
-          Go back and re-enter your details
+          Go back and correct your details
         </button>
       </div>
     );

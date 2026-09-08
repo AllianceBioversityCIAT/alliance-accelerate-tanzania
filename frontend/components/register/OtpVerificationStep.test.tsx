@@ -142,7 +142,7 @@ describe('OtpVerificationStep — server-side email rejection (T17-A4)', () => {
     expect(alert).toHaveTextContent('email must be an email');
     expect(screen.queryByLabelText(/verification code/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /go back and re-enter your details/i }));
+    fireEvent.click(screen.getByRole('button', { name: /go back and correct your details/i }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
@@ -159,21 +159,28 @@ describe('OtpVerificationStep — server-side email rejection (T17-A4)', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('email must be an email');
     // The applicant has something to act on: a route back, not a dead end.
-    fireEvent.click(screen.getByRole('button', { name: /go back and re-enter your details/i }));
+    fireEvent.click(screen.getByRole('button', { name: /go back and correct your details/i }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it('discloses that going back clears entered details, naming the corrected field honestly (Reviewer correction 1)', async () => {
+  it('discloses that going back KEEPS entered details, naming the corrected field and the consent exception (ATP-57)', async () => {
     mockRequestVerificationCode.mockRejectedValue(
       new ApiError(400, 'Bad Request', [{ field: 'email', message: 'email must be an email' }]),
     );
     renderStep();
     await screen.findByRole('alert');
-    // The button no longer claims a "back" that does not exist (page.tsx
-    // clears `pending`) — the disclosure states the actual consequence.
-    expect(screen.getByText(/fill in the form again/i)).toBeInTheDocument();
-    expect(screen.getByText(/nothing you've entered so far will be kept/i)).toBeInTheDocument();
+
+    // ATP-57 inverted this disclosure. It used to warn that nothing entered
+    // would be kept, which was true then and is false now that
+    // `RegisterPage` restores the values through `initialValues`. A stale
+    // warning here would talk the applicant out of a correction that costs
+    // one field — so this asserts the NEW promise by value, and asserts the
+    // OLD one is gone rather than trusting the new string alone.
+    expect(screen.getByText(/everything else you entered is kept/i)).toBeInTheDocument();
+    expect(screen.getByText(/accept the consent policy again/i)).toBeInTheDocument();
     expect(screen.getByText(/corrected email address/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing you've entered so far will be kept/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/fill in the form again/i)).not.toBeInTheDocument();
   });
 
   it('names the ACTUAL rejected field in the heading, not a hardcoded "email" (Reviewer correction 5)', async () => {

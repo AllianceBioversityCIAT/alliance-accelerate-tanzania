@@ -62,7 +62,7 @@
  * motion (A26) — nothing here animates on mount.
  */
 
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ROLES } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
@@ -160,7 +160,7 @@ const FIELD_LABELS: Record<keyof FormValues, string> = {
 // Types
 // ---------------------------------------------------------------------------
 
-interface FormValues {
+export interface FormValues {
   traderName: string;
   traderType: string;
   contactPerson: string;
@@ -248,17 +248,47 @@ export interface RegistrationFormProps {
     payload: RegistrationPayloadInput,
     consent: RegistrationConsentInput,
     email: string,
+    values: FormValues,
   ) => void;
   /** T-19 seam — parent sets this while an OTP/final-submit round trip is in flight. */
   submitting?: boolean;
+  /**
+   * Raw form values to seed the fields with, for the OTP-rejection return
+   * path only — see {@link toFormValues}. This is the RAW `FormValues` the
+   * fourth `onValidated` argument handed back, deliberately NOT
+   * `RegistrationPayloadInput`: `buildPayload` trims, coerces to number, and
+   * collapses blanks to `undefined`, so restoring from a payload would be a
+   * lossy inverse. Read once, at mount — this is an uncontrolled seed, not a
+   * controlled value, so changing it on a mounted form does nothing.
+   */
+  initialValues?: FormValues;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toFormValues(): FormValues {
-  return {
+/**
+ * Blank form, or a restored one when `restored` is supplied.
+ *
+ * `restored` exists for ONE flow: the applicant reached the OTP step, the
+ * server rejected the address the client's deliberately-permissive email
+ * regex admitted, and the page sent them back here. Before this seam existed
+ * that return remounted a BLANK form and every field the applicant had typed
+ * was gone — on a phone, mid-registration, which is where this form is
+ * actually used.
+ *
+ * **Consent is never restored, by requirement (FR-3).** `consentAccepted`
+ * and `consentPolicyVersion` are forced back to their blank values however
+ * full `restored` is: the checkbox must be unticked at every initial render,
+ * and the version is re-set by `ConsentPolicyDisclosure`'s `onPolicyLoaded`
+ * when its fetch resolves on the remount. Spreading `restored` over the
+ * blank without these two overrides would carry a prior acceptance across a
+ * remount and re-open the scroll-gated consent step — the exact thing FR-3
+ * forbids. Do not "simplify" them away.
+ */
+function toFormValues(restored?: FormValues): FormValues {
+  const blank: FormValues = {
     traderName: '',
     traderType: '',
     contactPerson: '',
@@ -274,6 +304,15 @@ function toFormValues(): FormValues {
     capacityTons: '',
     phone: '',
     email: '',
+    consentAccepted: false,
+    consentPolicyVersion: '',
+  };
+
+  if (!restored) return blank;
+
+  return {
+    ...blank,
+    ...restored,
     consentAccepted: false,
     consentPolicyVersion: '',
   };
@@ -471,9 +510,45 @@ function inputClasses(error?: boolean): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function RegistrationForm({ onValidated, submitting = false }: RegistrationFormProps) {
-  const [values, setValues] = useState<FormValues>(toFormValues);
+export default function RegistrationForm({
+  onValidated,
+  submitting = false,
+  initialValues,
+}: Readonly<RegistrationFormProps>) {
+  const [values, setValues] = useState<FormValues>(() => toFormValues(initialValues));
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  /**
+   * The error summary renders at the TOP of a long, sectioned form whose
+   * submit button is at the BOTTOM. Setting `errors` alone updated state
+   * correctly and changed nothing the applicant could see — several screens
+   * above the viewport — which read as a dead button. These two refs move
+   * the applicant to the summary on a failed submit.
+   *
+   * The focus cannot happen inside `handleSubmit`: `setErrors` is async and
+   * the summary is conditionally rendered on `errorCount > 0`, so on the
+   * first failure the node does not exist yet. The ref flags the intent and
+   * the effect below acts once the summary has actually mounted.
+   */
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const focusSummaryOnNextRender = useRef(false);
+
+  useEffect(() => {
+    if (!focusSummaryOnNextRender.current) return;
+    focusSummaryOnNextRender.current = false;
+
+    const summary = errorSummaryRef.current;
+    if (!summary) return;
+
+    // Focus first (it carries the count and the per-field links, so a
+    // keyboard user lands on the whole list rather than at one field with no
+    // sense of how many remain), then scroll deliberately. `preventScroll`
+    // keeps focus() from doing its own partial scroll and fighting this one.
+    summary.focus({ preventScroll: true });
+    // jsdom does not implement scrollIntoView; the optional call keeps the
+    // suite green without a global stub.
+    summary.scrollIntoView?.({ block: 'start' });
+  }, [errors]);
 
   const baseId = useId();
   const fieldId = useCallback((field: keyof FormValues) => `${baseId}-${field}`, [baseId]);
@@ -509,6 +584,7 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       const validationErrors = validate(values);
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
+        focusSummaryOnNextRender.current = true;
         return;
       }
       const payload = buildPayload(values);
@@ -516,6 +592,7 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
         payload,
         { accepted: values.consentAccepted, policyVersion: values.consentPolicyVersion },
         values.email.trim(),
+        values,
       );
     },
     [values, onValidated],
@@ -650,10 +727,14 @@ export default function RegistrationForm({ onValidated, submitting = false }: Re
       */}
       {errorCount > 0 && (
         <div
+          ref={errorSummaryRef}
+          // -1 makes the summary a valid focus target for the failed-submit
+          // effect above without inserting it into the tab order.
+          tabIndex={-1}
           role="alert"
           aria-live="assertive"
           data-testid="error-summary"
-          className="rounded-md border border-danger bg-danger-soft px-4 py-4 text-sm text-danger"
+          className="rounded-md border border-danger bg-danger-soft px-4 py-4 text-sm text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
         >
           <p className="font-semibold">
             {errorCount} field{errorCount === 1 ? '' : 's'} need attention:

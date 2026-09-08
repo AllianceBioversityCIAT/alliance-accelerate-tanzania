@@ -37,9 +37,12 @@
  * verified-candidate email at the OTP step (T17-A4 — the client's
  * intentionally-permissive regex can admit an address the server's
  * `@IsEmail()` rejects), there is nothing left to verify. This page resets
- * to the `form` step with a blank `RegistrationForm` — T-17's component has
- * no seam to restore mid-entry values, and adding one is outside T-19's
- * scope (see `OtpVerificationStep.tsx`'s file header).
+ * to the `form` step and RESTORES what the applicant typed, via
+ * `enteredValues` → `RegistrationForm`'s `initialValues` seam (ATP-57).
+ * Before that seam the reset remounted a blank form and the applicant lost
+ * every field — on a phone, mid-registration, which is the primary
+ * self-registration channel. Consent is the deliberate exception: FR-3
+ * unticks the checkbox at every initial render, so it is re-accepted.
  *
  * `onSubmitted`: T-20 (receipt screen, `/register/submitted?ref=...`)
  * has not landed yet. This page still performs the documented redirect
@@ -53,6 +56,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import RegistrationForm, {
+  type FormValues as RegistrationFormValues,
   type RegistrationConsentInput,
   type RegistrationPayloadInput,
 } from '@/components/register/RegistrationForm';
@@ -77,11 +81,26 @@ export default function RegisterPage() {
   const [step, setStep] = useState<Step>('form');
   const [pending, setPending] = useState<PendingSubmission | null>(null);
 
+  /**
+   * The applicant's raw entries, kept ACROSS the form's unmount so returning
+   * from the OTP step restores a filled form instead of a blank one.
+   *
+   * Deliberately separate state from `pending`, and deliberately NOT cleared
+   * by `handleBackToForm`: `pending` is the in-flight submission and is
+   * nulled on return so the OTP step cannot re-render against a stale one,
+   * whereas these values must OUTLIVE that return — clearing them here is
+   * precisely the blank-form defect. They are also not derivable from
+   * `pending.payload`, which `buildPayload` has already trimmed and coerced.
+   */
+  const [enteredValues, setEnteredValues] = useState<RegistrationFormValues | undefined>(undefined);
+
   const handleValidated = (
     payload: RegistrationPayloadInput,
     consent: RegistrationConsentInput,
     email: string,
+    values: RegistrationFormValues,
   ) => {
+    setEnteredValues(values);
     setPending({ payload, consent, email });
     setStep('otp');
   };
@@ -106,7 +125,9 @@ export default function RegisterPage() {
       </p>
 
       <div className="mt-8">
-        {step === 'form' && <RegistrationForm onValidated={handleValidated} />}
+        {step === 'form' && (
+          <RegistrationForm onValidated={handleValidated} initialValues={enteredValues} />
+        )}
         {step === 'otp' && pending && (
           <OtpVerificationStep
             email={pending.email}

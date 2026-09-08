@@ -39,6 +39,7 @@ jest.mock('@/lib/api/registrations', () => ({
   submitRegistration: jest.fn(() => new Promise(() => {})),
 }));
 
+import { ApiError } from '@/lib/api/client';
 import RegisterPage from './page';
 
 /**
@@ -118,5 +119,71 @@ describe('RegisterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(screen.getByText('jane@kilimanjaroseed.co.tz', { exact: false })).toBeInTheDocument();
+  });
+
+  /**
+   * ATP-57 — drives the full round trip the restore seam exists for: fill the
+   * form, advance to OTP, have the SERVER reject the address the client's
+   * deliberately-permissive regex admitted, then come back.
+   *
+   * `requestVerificationCode` must reject for this to be the real path —
+   * the back affordance renders only on `OtpVerificationStep`'s
+   * blocking-issue branch, which is exactly where a rejected address lands.
+   *
+   * Extracted because both tests below need the identical eight-step
+   * journey and differ only in what they assert at the end. Keep it a
+   * NAVIGATION helper with no assertions of its own: an expectation hidden
+   * in here would fail under whichever test happened to run first and send
+   * the reader to the wrong place.
+   */
+  async function returnToFormAfterServerRejectsEmail(user: ReturnType<typeof userEvent.setup>) {
+    const { requestVerificationCode } = jest.requireMock('@/lib/api/registrations');
+    requestVerificationCode.mockRejectedValueOnce(
+      new ApiError(400, 'Bad Request', [{ field: 'email', message: 'email must be an email' }]),
+    );
+
+    render(<RegisterPage />);
+    await fillMinimalValidForm(user);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: /go back and correct your details/i }));
+  }
+
+  /**
+   * Returning from the OTP step used to remount a BLANK `RegistrationForm`,
+   * so an applicant whose email the server rejected lost every field they
+   * had typed. On a phone, mid-registration, that is worse than the original
+   * complaint and likely ends the attempt.
+   */
+  it('restores the entered values when the applicant returns from the OTP step', async () => {
+    const user = userEvent.setup();
+    await returnToFormAfterServerRejectsEmail(user);
+
+    // Back on the form, with the applicant's work intact — asserted by
+    // VALUE, per field. A blank-form regression reddens every line here.
+    expect(screen.getByLabelText(/organisation name/i)).toHaveValue('Kilimanjaro Seed Co-op');
+    expect(screen.getByLabelText(/^trader type/i)).toHaveValue('seed_company');
+    expect(screen.getByLabelText(/contact person/i)).toHaveValue('Jane Doe');
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('+255700000000');
+    // Numeric input — `toHaveValue` yields a number here, not the raw string.
+    expect(screen.getByLabelText(/capacity \(tons\)/i)).toHaveValue(10);
+    expect(screen.getByLabelText(/^email/i)).toHaveValue('jane@kilimanjaroseed.co.tz');
+    expect(screen.getByLabelText(/^sorghum/i)).toBeChecked();
+  });
+
+  it('does NOT restore consent on that return — FR-3 requires it unticked at every initial render', async () => {
+    const user = userEvent.setup();
+    await returnToFormAfterServerRejectsEmail(user);
+
+    // The one field the restore must NOT carry across. Restoring a prior
+    // acceptance would re-open the scroll-gated consent step with the box
+    // already ticked — the exact thing FR-3 forbids — and would do it
+    // silently, since every other field around it looks correctly restored.
+    expect(
+      screen.getByLabelText(
+        'I have read and accept the Data Protection & Participant Consent Policy.',
+      ),
+    ).not.toBeChecked();
   });
 });
