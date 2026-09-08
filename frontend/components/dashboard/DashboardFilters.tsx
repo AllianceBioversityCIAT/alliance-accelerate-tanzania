@@ -51,7 +51,7 @@ const CONTROL_CLASS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Dashboard filter panel containing crop, region, district, actor type,
+ * Dashboard filter panel containing crop, region, actor type,
  * free-text search, and capacity range controls.
  *
  * Usage:
@@ -84,11 +84,6 @@ export default function DashboardFilters({ filters, onChange, regions }: Dashboa
   function handleRegion(e: React.ChangeEvent<HTMLSelectElement>) {
     const value = e.target.value;
     onChange(merge({ region: value !== '' ? value : undefined }));
-  }
-
-  function handleDistrict(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value.trim();
-    onChange(merge({ district: value !== '' ? value : undefined }));
   }
 
   function handleRole(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -153,22 +148,6 @@ export default function DashboardFilters({ filters, onChange, regions }: Dashboa
             </option>
           ))}
         </select>
-      </div>
-
-      {/* ── District ─────────────────────────────────────────────────────── */}
-      <div>
-        <label htmlFor="dash-filter-district" className={LABEL_CLASS}>
-          District
-        </label>
-        <input
-          id="dash-filter-district"
-          type="text"
-          placeholder="All districts"
-          value={filters.district ?? ''}
-          onChange={handleDistrict}
-          className={CONTROL_CLASS}
-          aria-label="Filter by district"
-        />
       </div>
 
       {/* ── Actor type ───────────────────────────────────────────────────── */}
