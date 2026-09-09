@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/enhancement/map-coordinate-picker/`
 - Status: Approved
-- Depth: **Standard** · Budget: **7 tasks · ~635 LOC · 9 review rounds** (`design.md` §11)
+- Depth: **Standard** · Budget: **7 tasks · ~900 LOC · 16 review rounds** (`design.md` §11 — rounds re-baselined from 9 after T-2, on measured evidence)
 - Traces: `requirements.md` FR-1…FR-8, NFR-1…NFR-6 · `design.md` §3–§12
 - Design reviewed: `judgment.md` — **JUDGMENT: APPROVED ✅** (2 fix rounds, 1 scoped re-judgment)
 
@@ -47,7 +47,7 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       **Done when:** the four constants exist in exactly one module; `LeafletMap.tsx` declares none of them; `/map` still builds at 112 kB; the map suite is green.
       **What this cannot prove:** that the public map still *looks* right. Extraction is byte-for-byte on values, but no automated gate renders `/map` — a glance at it during T-7's captures is the cheapest cover.
 
-- [ ] **T-3  Leaflet shell — `components/map/CoordinatePickerMap.tsx`**  (deps: T-1, T-2)
+- [x] **T-3  Leaflet shell — `components/map/CoordinatePickerMap.tsx`**  (deps: T-1, T-2)
       **Size:** ~135 LOC · **Skills:** `vercel-react-best-practices` (effect/ref lifecycle), `tailwind-design-system` (token discipline)
       **Scope:** The only module importing `leaflet` / `leaflet/dist/leaflet.css`. Map + marker refs, **no coordinate state**. Mount, prop-change, `dragend`, map `click`, unmount per `design.md` §7.4. Marker is an `L.divIcon` whose inline style uses `var(--token)` references only — the purge-proof pattern `LeafletMap.buildDivIcon` already establishes.
       **Traces:** FR-1 sc. 1 + sc. 2 · FR-2 sc. 1 + sc. 2 + sc. 3 · FR-3 sc. 1 + sc. 2 · NFR-3 · `design.md` §7.4, DD-4
@@ -158,4 +158,9 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 - Commits: `[SPEC:enhancement/map-coordinate-picker] <message>`.
 - Evidence before checkbox: append the Reviewer's PASS to `execution.md` **first**, then flip `tasks.md`, then commit.
 - Re-run the KZ-010 concurrency check (`git log --oneline --all -20 -- <target paths>`) **at execution start** — M-5 was clear on 2026-09-08, but that is a reading of that moment, not a property of the repo.
+- **Comment discipline (added 2026-09-08, user-approved).** A comment earns its place by recording something **that exists nowhere else**: a decision and its reason, a constraint no test enforces, a measured result, a hazard. A comment that **restates the spec** is a liability — it duplicates a document that can change without it, and every assertion it makes is a chance to be false. Measured justification: **every review FAIL in this spec except T-3's two runtime defects was a false claim in a comment**, and the documentation is also the entire LOC overrun. Keep forward pointers and decision rationale; drop lifecycle tables and behaviour restatements that `design.md` already owns.
+
+- **What a Reviewer may FAIL on (narrowed 2026-09-08, user-approved).** Spec-conformance and code defects gate, as before. **Documentation-accuracy findings gate only when the false claim would mislead a downstream task** — a docblock in a module another task is told to import, an instruction in a spec document, a comment that states a verification result. Prose imprecision with no downstream reader is **ADVISORY**.
+  *Why this line and not a looser one:* the `LatLngTuple` arity defect was exactly the gating kind — `map-constants.ts` exists to be imported by T-3, its docblock is the first thing T-3's implementer reads, and it promised an assignment that would fail. Catching it cost a round and saved T-3 inheriting it. The pre-existing "structurally identical" phrasing is exactly the advisory kind: loose, but nothing downstream acts on it. Reviewers must still **report** both; only the gate narrows.
+
 - **Linting in `frontend/` is `npm run lint` (`next lint`), never `npx eslint`.** Root `CLAUDE.md`'s `npx eslint … --quiet` guidance is a **`backend/` rule** — it exists because `backend/`'s `npm run lint` runs `eslint --fix` and mutates the diff under review. `frontend/`'s does not mutate, and `npx eslint` cannot run here at all (no flat config). Applying the backend rule to a frontend task is what produced T-3's dead gate.

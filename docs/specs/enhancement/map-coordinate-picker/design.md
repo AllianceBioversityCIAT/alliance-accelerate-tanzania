@@ -240,10 +240,10 @@ Explicitly **not** written: any test asserting marker position, drag behaviour, 
 | Metric | Expected |
 |---|---|
 | **Tasks** | **7** |
-| **LOC** | **635** (395 production, 240 test) — refined at Phase 3 from the estimate-per-task table in `tasks.md`; the Phase 2 figure was ~620 (≈370/≈250) |
-| **Review rounds** | **9** |
+| **LOC** | **~900** — re-baselined 2026-09-08 at the T-3 gate, user-approved. Prior figures: 620 (Phase 2) → 635 (Phase 3) → **900**. Measured cause: **every task has overrun, and the trend is upward** — T-1 261/170 (+54 %), T-2 63/35 (+80 %), T-3 296/135 (+119 %), i.e. 620 of the old 635 consumed at 3/7 tasks. The "T-1 was an outlier" reading recorded at the T-2 gate was **wrong** and is corrected in `execution.md`. The overrun is documentation, not logic: 106 of T-3's 296 lines are comment. |
+| **Review rounds** | **16** — re-baselined 2026-09-08 after T-2, user-approved. The original **9** assumed reviews audit *code*. Measured across T-1 and T-2: **7 rounds, 6 of them spent on the accuracy of prose rather than the correctness of code** — T-2's code was accepted on attempt 1 and never changed again, while three rounds went into one docblock. Every FAIL was legitimate (a false claim in a module written to be read by the next implementer is a real defect, and one of them was caught before T-3 could inherit it), so the discipline is not the problem — the estimate was. LOC and task count both held: 323 of 635 at 2/7 tasks, so T-1's overrun was the test-dense outlier it looked like, not a uniform underestimate. |
 
-Sized against the finished design, not the Phase 0 guess, then reconciled against the actual decomposition (KZ-005 — a figure that contradicts a sibling document's prose is a defect detectable without re-measuring). The estimate matches **Standard** depth — no re-scoping recommended. `/akili-execute` must **stop and escalate** rather than continue past any of these three numbers.
+Sized against the finished design, not the Phase 0 guess, then reconciled against the actual decomposition, then **re-baselined once in flight on measured evidence** (rounds only — see the row above) (KZ-005 — a figure that contradicts a sibling document's prose is a defect detectable without re-measuring). The estimate matches **Standard** depth — no re-scoping recommended. `/akili-execute` must **stop and escalate** rather than continue past any of these three numbers.
 
 ## 12. PR Strategy
 

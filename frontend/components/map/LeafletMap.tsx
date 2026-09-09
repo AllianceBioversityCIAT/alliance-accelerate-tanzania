@@ -13,7 +13,8 @@
 //   - MapLegend overlay rendered via a Leaflet custom Control.
 //   - Marker layer group: cleared + rebuilt when actors prop changes.
 //
-// T-2 baseline remains:
+// Original seed-map spec's T-2 baseline remains (unrelated to
+// enhancement/map-coordinate-picker's own T-2, `map-constants.ts`, below):
 //   - OSM TileLayer, Tanzania center/bounds, container aria-label (NFR-3).
 //   - useRef + useEffect lifecycle (init once, remove on unmount).
 

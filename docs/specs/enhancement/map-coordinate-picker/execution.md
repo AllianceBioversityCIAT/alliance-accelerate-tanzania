@@ -161,3 +161,114 @@ That makes **four KZ-008 instances in this spec, two of them authored by the Lea
 3. `LeafletMap.tsx` and `map-constants.ts` state the same fact at different precisions. Not a defect (see above). Align only if T-3 opens that comment block for another reason.
 
 **Reviewer's audit boundary (KZ-012):** the suite, page count, route table and clean `tsc` are the Implementer's account. The Reviewer reconciled 112 kB structurally — comments are stripped from the bundle, so it is the only value a comment-only diff *could* produce.
+
+---
+
+## Budget re-baseline — after T-2, user-approved 2026-09-08
+
+**Tripwire state at the T-2 gate:** 2/7 tasks · **7 of 9 review rounds** · ~323 of 635 LOC.
+
+The round budget failed; the LOC and task budgets held. Escalated to the user *before* spending past it rather than at the breach.
+
+**Cause, measured not guessed.** Six of seven rounds went to the accuracy of **prose**, not the correctness of code. T-2 is the clean case: its code was accepted on attempt 1 and never changed again, while three Implementer spawns and three review rounds went entirely into one docblock. Every FAIL was legitimate — and the `LatLngTuple` one was caught *before* T-3 could inherit the false premise — so the discipline is sound and the estimate was wrong. The original 9 assumed reviews audit code; this Reviewer also audits documentation truth, and keeps finding real defects doing it.
+
+**Also settled:** the question raised at the T-1 gate (outlier vs. uniform underestimate) appears to resolve to **outlier**. T-2 landed at 42 lines against ~35, and the running total is 323/635 at 2/7 tasks.
+
+> ⚠️ **This conclusion was FALSIFIED at the T-3 gate — see the escalation below.** It was wrong twice over: T-2 did not finish at 42 lines (its attempt-2/3 docblock rewrites took it to **63**, +80 %, not +20 %), and T-3 came in at **296 against 135** (+119 %). Every task has overrun and the trend is upward. Recorded here rather than edited away, because the reasoning error — treating two data points as a trend and closing the question — is the finding.
+
+**Two changes, both applied:**
+1. `design.md` §11 review-round budget **9 → 16**, with the measured rationale recorded in the budget row itself so the number is not mistaken for a fresh guess.
+2. `tasks.md` § Execution conventions now narrows the **gate** (not the reporting): documentation-accuracy findings FAIL only when the false claim would mislead a downstream task — a docblock in a module another task imports, an instruction in a spec document, a comment stating a verification result. Prose imprecision with no downstream reader is ADVISORY. Reviewers still report everything.
+
+**Leader accountability, recorded for the retrospective:** of the four false claims this spec has produced, **two were the Leader's** — `judgment.md` F-1 (a `*`-quantified regex counting type declarations as data, written up as a measurement) and `design.md` §7.2's `LatLngTuple` arity (the compiler's message names an alias without expanding it; the expansion was inferred and written as primary-source fact). **Identical mechanism both times:** reading something that *describes* an artefact and recording the inference as the artefact. Both were caught by measurement; neither would have been caught by re-reading more carefully.
+
+### T-3 — Leaflet shell · attempt 1 · Reviewer **FAIL** (2 issues) + budget escalation
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, effort `xhigh`, skills `vercel-react-best-practices` + `tailwind-design-system` + `react-doctor` · **Reviewer:** opus, read-only
+
+**File:** `frontend/components/map/CoordinatePickerMap.tsx`, 296 lines, no other file touched.
+
+**Verification (Implementer):** `npx tsc --noEmit` clean · `npm run build` 27/27 pages, `/map` 112 kB and `/register` 113 kB **both unchanged** (component imported nowhere yet — dead code, correct at this task) · `npm run lint` only pre-existing unrelated warnings · `react-doctor` 0 issues on changed files.
+
+**Falsifying input demonstrated:** inserting `#1F4E8C` into the divIcon made the token grep return `80: background: #1F4E8C;` (exit 0); reverted, clean (exit 1). Genuine discrimination test with an inspectable control.
+
+#### FAIL 1 — `maxBounds` makes the feature's own purpose unreachable *(Leader-flagged, Reviewer confirmed independently)*
+
+The picker passed `maxBounds: TANZANIA_BOUNDS`. Both `setView` and `panTo` route through `_limitCenter`, which **offsets the requested centre back inside the bounds**. So an actor whose stored coordinates fall outside the Tanzania bbox gets a marker at the right `LatLng` and a view clamped to the bbox edge — **the pin is never on screen.**
+
+Why this is the central case, not an edge case: a *wrong* coordinate is disproportionately one outside Tanzania. Transposed lat/lng turns `(-6.8, 39.28)` into `(39.28, -6.8)` — the Atlantic off Morocco — and both axes pass `parseCoordinatePair`, because "in range" is `[-90,90]`/`[-180,180]`, not the bbox. The admin sees an empty Tanzania map with no pin and no signal anything is wrong. That is precisely the failure `proposal.md` commissioned the feature to fix. *Violated:* FR-2 description, FR-2 sc. 1, FR-2 Rationale, `design.md` §7.4 (which specifies no bounds restriction).
+
+**Reviewer's independent verification went further than the Leader's** and closed three holes in it: `panTo` is a thin delegate to `setView` (no unclamped path); `_getBoundsOffset`/`_rebound` take the **hard-clamp** branch when the bbox exceeds the viewport, not a nudge; and `maxBoundsViscosity` is read **only** by `Drag._onDragStart`, never by `_limitCenter` — plus `setMaxBounds` registers `_panInsideMaxBounds` on `moveend`, so even a view that somehow lands outside is panned back afterwards.
+
+#### FAIL 2 — `PICKER_ZOOM = 12` used for the *empty* view *(Reviewer only — the Leader missed this, and it hurts the primary flow more than FAIL 1)*
+
+The map initialises at z12 on `TANZANIA_CENTER` even when no coordinates exist. Measured by the Reviewer: at z12 and −6.37° latitude, resolution is `156543.03 × cos(6.37°) / 2^12` ≈ **38 m/px**, so the `h-80` (320 px) container shows roughly **12 km** of rural Singida — about **1 %** of the country's width, with no recognisable landmark. A person must zoom out ~6 levels before FR-1 sc. 2 (click to place the pin) is usable.
+
+**That is the `/register` flow, where the fields are blank by definition** — the mobile-first channel this whole spec exists to serve. And the docblock asserts the zoom is fit for *"a placed point (FR-2 sc. 1) **or** the Tanzania default (FR-2 sc. 2)"*, which is false for the second half — a downstream-facing false claim in the module T-4 imports, so it gates under the narrowed rule. *Violated:* FR-2 sc. 2, `design.md` §7.4 Mount row ("at the Tanzania view" — the only such view this codebase defines is `INITIAL_ZOOM = 6`), and the narrowed documentation gate.
+
+**Remediation:** split the two view policies — keep `PICKER_ZOOM = 12` for `setView` on a placed point, give the initial/empty view its own overview zoom (or `fitBounds(TANZANIA_BOUNDS)`). The Reviewer notes this is also the **constructive** resolution of the Implementer's flagged judgment call: `TANZANIA_BOUNDS` belongs in *framing* the initial view, never in caging it. No effect reordering needed.
+
+#### Reviewer PASSED on everything else, by reading Leaflet's source
+
+- **Forward pointer (1) — the `isSamePoint` contract holds, verified at source level.** `worldCopyJump` defaults false and is never set; no `.wrap()`; every write is verbatim from `parseCoordinatePair`. Critically, it answered the Leader's open question: **Leaflet's `LatLng` constructor does not normalize or round** — `this.lat = +lat; this.lng = +lng;` and nothing else — and `MarkerDrag._onDrag` assigns `layerPointToLatLng(iconPos)` unwrapped and unrounded. **There is no path by which the stored double differs from the parsed double.** DD-4's `===` is sound.
+- **Effects:** dependency arrays correct (`onChange`/`disabled` read through refs, not captured); StrictMode double-invoke safe because `map.remove()` clears `_container._leaflet_id`; the docblock's "placement effect also runs on mount" claim is **true**, but only because hook declaration order puts init first — an unrecorded load-bearing precondition.
+- **`disabled`** closes both write paths: click guarded by `disabledRef.current`; drag disabled via `marker.dragging.disable()`, with `removeHooks` detaching `dragend` so an interrupted gesture writes nothing.
+- **NFR-3:** all three CSS custom properties confirmed present in `globals.css`; no hex/rgb/arbitrary values; container uses `border border-border`, per the 1.05:1 rule.
+- **Clause-sweep honesty:** every (B) carries a real structural reason. The Reviewer tested the KZ-003 assumption rather than accepting it — `getSize()` returns 0×0 in jsdom, corrupting `_limitCenter`, projection and marker positioning — so none of the deferred clauses is testable without the stack. Three clauses were arguably *under*-credited (declared (B) when a partial (A) existed); that is the safe direction.
+
+#### ADVISORY (recorded, non-gating, not tasks)
+
+1. **Forward pointer (1)'s comment names the wrong methods.** It promises `setView`/`panTo` are fed parsed values — but those move the map *centre* and cannot affect `isSamePoint`, which compares `marker.getLatLng()`. The load-bearing call is **`marker.setLatLng`**, unmentioned. True but protecting the wrong invariant; a future editor could satisfy it literally and still break the guard.
+2. The DD-4 comment describes the steady state as if it were the first pass — after a drag the marker is at ~13 dp and `isSamePoint` correctly reports **not** equal, which is what triggers the snap.
+3. Record the hook-declaration-order precondition in the lifecycle docblock.
+4. **`alt: 'Selected location'` is silently dropped for a `divIcon`** — Leaflet applies `alt` only to `IMG` elements, while `title` applies to any. The marker is focusable (`keyboard: true` → `tabIndex=0`, `role="button"`), so its only accessible name is the inner `aria-label`. One-word fix: add `title`.
+5. **Clicking the pin itself rewrites a hand-typed 7-dp value.** Marker clicks bubble to the map handler with `data.latlng = target.getLatLng()`, so a click (or Enter) on the pin calls `onChange` and rounds `-6.8123456` → `-6.81235` **without the pin moving**. FR-1 sc. 2 scopes to "a point that is not the marker", so undefined rather than violated. **Add to T-7 gate 2's observation list.**
+6. Removing `maxBounds` opens a reachable antimeridian edge: an unbounded pan lets a click yield `lng = 200`, which round-trips to a removed marker (defined FR-2 sc. 3 behaviour, but confusing). Consider wrapping only the click-derived longitude.
+7. `panTo` fires on every settle, so each drag recentres the map — conformant with §7.4, but may visibly snap. For the T-7 observer to judge.
+8. **Carry-over now unowned:** the `LeafletMap.tsx` bare-`T-2` qualification was directed at T-3 "opportunistically"; the Implementer correctly declined (one file in scope) and said so. T-5/T-6 do not touch that directory. **The Leader must reassign it or drop it.**
+
+**Reviewer's audit boundary (KZ-012):** everything above is established by reading source. The clean `tsc`, the route table, lint and `react-doctor` are the Implementer's account, produced by the agent that wrote the code. They reconcile (unchanged route sizes are exactly right for a module imported nowhere) but are not independently verified. **Both FAIL issues are runtime-view properties that no committed gate would redden** — they must be confirmed by observation at T-7 gate 2, and FAIL 2 should be one of gate 3's rendered captures.
+
+### T-3 — Leaflet shell · attempt 2 · Reviewer **PASS** ✅
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, effort `xhigh` · **Reviewer:** opus, read-only
+
+**Both FAILs closed, verified unreachable at source.** `maxBounds`/`maxBoundsViscosity` removed entirely and `L.map()` now takes **no options object at all**, so there is no nested option to hide one in — the Reviewer confirmed `_limitCenter` returns its argument when `bounds` is falsy and `_panInsideMaxBounds` is registered *only* by `setMaxBounds`, which `initialize` calls only `if (options.maxBounds)`. `PICKER_ZOOM = 12` now appears exactly once, on the placed-point path; the empty view is `map.fitBounds(TANZANIA_BOUNDS)`, hand-checked by the Reviewer to frame the country at **≈z5** in a 375 px layout.
+
+**Antimeridian:** click-derived longitude normalised with `L.Util.wrapNum(lng, [-180,180], true)`. Verified three ways — the Implementer extracted the function body and ran it in Node (`wrapNum(200,…) === -160`); the Reviewer confirmed the runtime export (leaflet-src.js:113/:264), the `@types/leaflet` declaration (:3138), the arithmetic by hand, and that `includeMax: true` is **Leaflet's own idiom for this exact call** (`CRS.wrapLatLng`, :1684) — with `false`, a legitimate `lng = 180` would flip to `-180`.
+
+#### The Leader's zero-size-container risk — adjudicated as a T-4 constraint, not a T-3 defect
+
+The Leader flagged that swapping `center`/`zoom` for `fitBounds` introduces a layout dependency: `getBoundsZoom` divides by `getSize()`. The Reviewer confirmed the mechanism precisely — a 0×0 container yields `scale = 0` → `getScaleZoom(0)` = **`-Infinity`** (not `NaN`, so the `isNaN → Infinity` escape does not fire), clamped to **zoom 0**: the whole world, correctly centred on Tanzania. **And it is sticky** — Leaflet's resize handler calls `invalidateSize`, which preserves centre and zoom and never re-fits, so a map initialised at 0×0 stays at z0 for its lifetime. Nothing in the file mitigates it.
+
+**But it is not a T-3 defect**, on an argument stronger than the Leader's framing: `design.md` §7.3 already requires that the wrapper **not render** `CoordinatePickerMap` while closed, and a `display:none` mount would still execute the dynamic import — so the chunk, the CSS and the tiles all appear in the NFR-1b capture. **T-7 gate 1 reddens on exactly this mistake, and that gate is required to be mutation-verified before it is trusted.** Failing T-3 would mean failing a file for a defect living in a file nobody has written yet.
+
+The Reviewer did not suppress the counter-argument: the fix genuinely trades layout-independence for aspect-ratio-correct framing, and if the Leader wants that neutralised inside T-3 the minimal form is a guard (`fit only when clientHeight > 0, else setView([...TANZANIA_CENTER], 5)`) — but that is a **hardening request a Leader may issue, not a conformance defect a Reviewer can manufacture a FAIL from.** Recorded as offered and not taken.
+
+**→ Carried into T-4/T-5's brief as a hard constraint** (below), and one line added to T-7 gate 2.
+
+**Also corrected by the Reviewer:** the Leader's trace of the init order was right but the "no window" phrasing was not — `fitBounds`-before-`addTo` **is** load-bearing (swapping them makes `getCenter()` throw `Set map center and zoom first.`), but it fails **loudly**, which is why only the silent declaration-order hazard needed a comment.
+
+#### Comment trim: +11 lines, not the −40/−60 the Leader asked for — accepted
+
+The Implementer flagged the miss explicitly rather than claiming the target. The Reviewer went looking for redundant prose to justify calling it a defect and **found none worth cutting** (it found redundant *code* instead — advisory 4). Every addition is a decision rationale, a measured result, or a hazard, which is exactly what the new comment rule says earns a place. **The Leader's 40–60 figure was a guess; the rule was applied correctly and the guess was wrong.** The dropped lifecycle table's one load-bearing fact survives, and in a stronger form — the placement effect's mount behaviour now also carries the React rule that makes it true, the declaration-order precondition, and the silent failure mode.
+
+#### KZ-008 sweep: 12 comment claims checked against installed source, all borne except two
+
+Verified true: the `wrapNum` behaviour and export; `alt` reaching only `IMG` while `title` applies to any element (:7903–7909, quoted verbatim); `DivIcon.createIcon` building a `<div>`; `keyboard: true` → `tabIndex`/`role="button"`; the declaration-order precondition; the `fitBounds` rationale; the ≈38 m/px arithmetic (reproduced: 37.98); forward pointer 2's `INITIAL_ZOOM`/`ACTOR_ZOOM` values; forward pointer 1's `marker.setLatLng` correction.
+
+#### ADVISORY (recorded, non-gating, not tasks — two are real and cheap)
+
+1. **A drag can also produce an out-of-range longitude; the "click-only" justification is a true premise with a false conclusion.** The comment reasons *"a marker drag can't leave the rendered viewport"* — true and irrelevant: with `maxBounds` gone and `TileLayer`'s default `noWrap: false` repeating the world, **the viewport itself can sit past lng 180**. Pan east to 175–190, drag the marker, and `dragend` writes `"185.00000"`, which `parseCoordinatePair` rejects — the marker vanishes and the person gets a range error they did not cause. Non-gating: needs a ~145° pan in a 320 px map, and the consequence is a correctly-messaged validation error. **One-line fix when the file is next open:** the same `wrapNum` inside `createMarker`'s `dragend`, and delete the "click-only" sentence.
+2. **`(TS2322, measured via npx tsc --noEmit)` carries a measurement tag that cannot be corroborated** — and it trips the exact tripwire the T-2 review set (*"must not accrete a 'measured' tag without one"*). The substance is true and the instruction a reader acts on ("spread first") is correct, but TS2322 is the **assignment** code, whereas the direct form here would be a call **argument** → **TS2345**. Ask for the verbatim string or drop the parenthetical; `design.md` §7.2 already carries the one genuinely measured instance.
+3. **The `LeafletMap.tsx` fix is half a pair.** Line 16's bare `T-2` is now qualified, but line 7 still reads `// T-3 additions (pins/popup/legend…)` — and *this* spec's T-3 is the file that just imported from it, so that reference is now **more** ambiguous than the one that was fixed.
+4. **Dead code:** the init effect's `dragging/doubleClickZoom/touchZoom` disable block is redundant — the `[disabled]` effect also runs on mount, after it, and does the same plus the marker.
+5. One DD-4 sentence describes a pass that does not occur (deps are `[latitude, longitude]`, so nothing re-runs after the snap; the loop terminates because the effect stops firing). Inherited verbatim from `design.md` DD-4, load-bearing half is correct.
+
+#### → T-7 observation list now carries five items
+(i) after revealing the picker on `/register` with blank fields, confirm the empty view frames **Tanzania, not the world**; (ii) drag near the antimeridian; (iii) clicking the pin itself rounds a hand-typed 7-dp value; (iv) `panTo` recentres on every drag settle — may visibly snap; (v) an antimeridian click teleports the pin before `panTo` converges.
+
+#### → Hard constraint carried to T-4/T-5
+**The shell must be mounted only into a laid-out container — never behind `display:none`, `hidden`, or a zero-height wrapper.** A picker mounted at 0×0 fits to zoom 0 and *stays there for its lifetime*, because `invalidateSize` preserves zoom and never re-fits. This is not advisory: it is the condition under which FAIL 2's fix works at all.
+
+**Reviewer's audit boundary (KZ-012):** all of the above established by reading source; it ran no commands. The `tsc`, build, lint and `react-doctor` results are the Implementer's account, reconciling with a module still imported nowhere.
