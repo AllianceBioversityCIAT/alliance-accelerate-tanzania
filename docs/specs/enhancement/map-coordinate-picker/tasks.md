@@ -58,7 +58,7 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       **Disqualifies the evidence — read this before reporting:** **there is no automated gate for this task's actual behaviour.** jsdom has no layout engine and cannot evaluate marker creation, drag, click wiring, or map fit (**D-3**). The build and grep prove only that the file compiles and uses tokens. **Do NOT write a jsdom test asserting marker position, drag, or map fit** — such a test cannot fail and would be the KZ-002 defect this spec exists to avoid. Report the behaviour as **unverified pending T-7**, which is a legitimate, expected outcome for this task.
       **Done when:** compiles, lints, token-clean, and every FR-1/FR-2/FR-3 clause it owns is either exercised by T-4's recording stub **or** listed by the Implementer as a D-3 gap to be closed in T-7 — each clause gets (A) a reddening test or (B) a declared gap, per KZ-013. No third option.
 
-- [ ] **T-4  Wrapper — `components/map/CoordinatePicker.tsx` + tests**  (deps: T-3)
+- [x] **T-4  Wrapper — `components/map/CoordinatePicker.tsx` + tests**  (deps: T-3)
       **Size:** ~190 LOC (105 prod / 85 test) · **Skills:** `vercel-react-best-practices`, `ui-ux-pro-max` (disclosure + clear affordance), `react-doctor` before reporting
       **Scope:** Client component importing **no Leaflet**. Props per `design.md` §7.3. Owns the disclosure (`initiallyOpen` seeds open state), the clear control, and the `dynamic(() => import('./CoordinatePickerMap'), { ssr: false, loading })` boundary. Reveal and clear are `components/ui/Button.tsx` `variant="secondary"` — a real `<button type="button">` that cannot submit the form, already carrying `focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2`. Tests replace the shell with a **recording stub** exposing received props/callbacks.
       **Traces:** FR-4 sc. 1 + sc. 2 · FR-7 sc. 1 (shell not rendered while closed) + sc. 2 · FR-1 sc. 1 "never one alone" · NFR-2 (control names + focus) · `design.md` §7.3, DD-2
@@ -151,7 +151,7 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | T-7 | — | evidence only |
 | **Total** | **395** | **240** |
 
-**635 LOC**, matching the `design.md` §11 budget. `/akili-execute` stops and escalates on exceeding 7 tasks, 635 LOC, or 9 review rounds.
+**The per-task estimates above are the Phase-3 figures and are now known to be low across the board.** Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190. The live budget is **7 tasks · ~900 LOC · 16 review rounds** (`design.md` §11, re-baselined twice in flight). ⚠️ **This line previously read "635 LOC … or 9 review rounds" — both figures were already superseded when the T-3 gate re-baselined them, and the correction was not swept here.** That is KZ-004 (a correction is not applied until the superseded value is gone from everywhere it lived), committed by the Leader, and caught by the T-4 Reviewer rather than by the sweep that should have caught it.
 
 ## Execution conventions
 

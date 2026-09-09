@@ -297,3 +297,46 @@ The original tag was wrong twice over — it claimed a measurement nobody took, 
 **DD-4 interaction — traced, convergent.** The one genuinely new behaviour: after a past-antimeridian drag the marker sits unwrapped at 185.2 while `onChange` writes `−174.8`. `isSamePoint` reports not-equal, the effect sets and pans one world-width west, `_tryAnimatedPan` rejects the animation (offset exceeds viewport) so it is an instant reset rather than a slide, tiles are identical under `noWrap: false`, and the next render compares equal and early-returns. **One pass, no oscillation.** The invariant holds because the wrap touches a *number on the write path*, never a `LatLng` that `isSamePoint` reads back.
 
 **Advisories (recorded):** the ±90 asymptote is true of the real-valued function but `Math.exp` overflow makes exactly ±90 representable in IEEE-754 — unreachable by a drag and in-range anyway; `noWrap` is declared on `GridLayer` and inherited by `TileLayer`; and no test drives a past-antimeridian drag, so D's convergence is reasoned, not asserted.
+
+### T-4 — Wrapper · attempt 1 · Reviewer **PASS** ✅
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, effort `high`, skills `vercel-react-best-practices` + `ui-ux-pro-max` + `react-doctor` · **Reviewer:** opus, read-only
+
+**Files:** `CoordinatePicker.tsx` (114) + `CoordinatePicker.test.tsx` (200), both new. 12 tests. First task in the spec with real behavioural coverage — the wrapper imports no Leaflet, so jsdom can exercise it.
+
+**Verification:** `npm test -- CoordinatePicker` 12/12 · `npm test -- map` 9 suites / 79 tests · build: `/register` **113 kB**, `/map` **112 kB** unchanged · lint and token grep clean.
+
+**Three falsifying inputs demonstrated, each reverted and re-confirmed green:** clear → `onChange('', longitude)` reddens the clears-both test · `{open &&` → `{true &&` reddens the FR-7 sc.1 absence test *and* sc.2's pre-reveal assertion · removing the reveal's accessible name throws both `getByRole` lookups and reddens both `jest-axe` runs with `button-name`.
+
+#### The "zero (B) gaps" claim was an overclaim — two undeclared gaps, corrected here
+
+Neither is a defect; both are satisfied by reading, and both were reported as covered when they are not:
+
+1. **FR-4 sc.1's `BUT must NOT reset the map view`** — no test. Satisfied structurally: clear changes neither `open` nor `mapRegionId` (`useId` is instance-stable) and no `key` is present, so React reconciles rather than remounts and the shell's init effect never re-runs.
+2. **NFR-2's *focus* clause** — **un-testable in jsdom and covered by no T-7 gate.** Tailwind is not compiled under `next/jest`, so `focus-visible:ring-*` has no computed effect and axe cannot see it. The Reviewer proved the gap rather than asserting it: **swapping both `Button`s for bare `<button>`s leaves all 12 tests green.** Satisfied by reading (`Button.BASE_CLASSES` carries the ring), but if it is recorded as covered nobody ever checks it. **Folded into T-7's rendered captures.**
+
+#### On the FR-1 sc.1 prop-key test — the Leader's suspicion was half right
+
+Asserting the stub's prop keys are exactly `disabled/latitude/longitude/onChange` is a **structural** claim that *would* survive a broken implementation: `onChange={(lat) => onChange(lat, longitude)}` keeps the key set identical. It is not the proof. The clause is rescued by its neighbour, which invokes the received `onChange('-6.17','35.74')` and asserts the parent got both — that test reddens under the mutation. `tasks.md`'s coverage table assigns T-4 the structural half explicitly, so the shape assertion is in scope; it just isn't what does the work.
+
+#### Both interpretive choices adjudicated — approved
+
+- **(i) The toggle** is explicitly licensed by §7.3 ("seeds the open state; it is not a lock") and loses no state that matters: the shell holds no coordinate state, so a reopen re-derives the pin from the fields and **FR-2 sc.1 re-holds on every reopen**. What is lost is the user's pan/zoom, which no requirement protects. The Reviewer also verified `aria-expanded` is not an axe blind spot: `axe.js` skips the `aria-controls` IDREF precheck when `aria-expanded === 'false'`, but resolves it when `true` — so **the open-state axe test is a real reddening guard on `id={mapRegionId}`**, a piece of coverage nobody claimed.
+- **(ii) The always-rendered clear** matches §7.3 bullet 3 verbatim. The Reviewer supplied the decisive argument the Implementer did not: gating it on the map being open would make it **unreachable on the exact path FR-5 sc.1 and NFR-2 exist to protect** — a keyboard-only person who typed coordinates and wants them blank would have to summon a map they explicitly do not want, to reach a control that acts only on the text inputs.
+
+#### The 0×0 constraint — first comment in this spec confirmed true in full detail
+
+The Reviewer verified the mechanism at primary source rather than accepting it: `getBoundsZoom` 0×0 → `scale = 0`; `getScaleZoom(0)` = `log(0)/LN2` = `-Infinity` (not `NaN`, so not the `Infinity` fallback); clamped to **0**; and `invalidateSize` only `_rawPanBy`s and fires events — **zoom is never touched, so the view never self-corrects.** `{open && …}` is the only mount path in the file.
+
+#### ADVISORY (recorded)
+
+- Docblock: "owns exactly two things" is a wrong count (it owns at least three); "the chunk is fetched only once `open` becomes true" states as settled the very proposition NFR-1b says must be mutation-verified — recommend rewording to name T-7 as the verifier; `describedBy`'s doc should name the recipient element (it lands on the **reveal button**, which T-6's falsifier needs to know).
+- Test docblock: the jest-arg rationale is right-conclusion/wrong-reason, and "an absence check would also pass if the component threw" is false — RTL propagates a render throw. Both inherited from the Leader's brief wording.
+- Disabled clear does not communicate *why* to a screen reader (native `disabled` removes it from tab order). FR-4 sc.2 permits it; UX observation only.
+- `react-doctor`'s `effect-needs-cleanup` on `CoordinatePickerMap.tsx` is a **confirmed false positive** from primary source — `map.remove()` calls `_initEvents(true)`, `_clearHandlers()`, removes layers and panes and deletes `_container._leaflet_id`; the `click` subscriber lives on the map's own bus and is collected with it. **Closed, not carried.**
+
+#### → Hard constraints carried to T-5/T-6
+1. **The 0×0-ancestor hazard.** `{open && …}` protects the wrapper, but only as far as the ancestor chain. This repo's own `hidden lg:block` dual-render convention would break it — and **`ActorForm` mounts eagerly**, so the shell inits at first paint. No breakpoint-hidden wrapper, no collapsed section, no tab panel above the picker.
+2. **Pass `?? ''` on both coordinate props.** They are required non-optional `string` and `nothingToClear` calls `.trim()`; `undefined` throws and blanks the whole Location section. SWC does not typecheck under Jest — only `npm run build` catches it.
+3. **No value-varying `key`** on `<CoordinatePicker>` — that remounts the shell and resets the view.
+4. **`describedBy` lands on the reveal button**, so T-6 must assert there.
