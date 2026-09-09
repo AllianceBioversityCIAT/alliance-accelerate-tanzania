@@ -143,7 +143,7 @@ export default function CoordinatePickerMap({
   longitude,
   onChange,
   disabled = false,
-}: CoordinatePickerMapProps) {
+}: Readonly<CoordinatePickerMapProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);

@@ -61,7 +61,7 @@ export default function CoordinatePicker({
   initiallyOpen = false,
   disabled = false,
   describedBy,
-}: CoordinatePickerProps) {
+}: Readonly<CoordinatePickerProps>) {
   const [open, setOpen] = useState(initiallyOpen);
   const mapRegionId = useId();
 
