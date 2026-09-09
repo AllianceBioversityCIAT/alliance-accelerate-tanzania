@@ -104,7 +104,21 @@ function createMarker(
   });
   marker.on('dragend', () => {
     const pos = marker.getLatLng();
-    onDragEnd(pos.lat, pos.lng);
+    // Same wrap as the map `click` handler below, and for the same reason:
+    // with `maxBounds` gone (T-3 review FAIL 1) and `TileLayer`'s `noWrap`
+    // at its default `false` (leaflet-src.js, `@option noWrap: Boolean =
+    // false`), OSM's tiles repeat horizontally, so the rendered viewport
+    // itself can sit past longitude 180 — panning to 175–190 and dragging
+    // the marker there yields `pos.lng` like 185, which
+    // `parseCoordinatePair` would reject as out of range. Folding it back
+    // onto the same meridian here, in the one dragend handler both write
+    // paths share, keeps the two paths from re-diverging. Latitude needs no
+    // equivalent: Leaflet's default CRS (`EPSG3857`) only sets `wrapLng`,
+    // never `wrapLat`, because `SphericalMercator.unproject`'s
+    // `2 * atan(exp(y / R)) - PI/2` asymptotes toward ±90° for any finite Y
+    // and can never reach or cross it.
+    const lng = L.Util.wrapNum(pos.lng, [-180, 180], true);
+    onDragEnd(pos.lat, lng);
   });
   return marker;
 }
@@ -161,9 +175,13 @@ export default function CoordinatePickerMap({
     // sees (FR-2 sc. 2).
     const map = L.map(containerRef.current);
     // TANZANIA_BOUNDS is a `readonly` tuple (design.md §7.2); spread into a
-    // fresh mutable tuple before casting — `L.LatLngBoundsExpression` carries
-    // no `readonly` and rejects a direct assignment (TS2322, measured via
-    // `npx tsc --noEmit`).
+    // fresh mutable tuple before casting — Leaflet's types carry no
+    // `readonly`, so passing it straight through fails here too. This is a
+    // call **argument**, not an assignment, so the code differs from
+    // `map-constants.ts`'s genuinely measured TS2322: with the spread
+    // removed, `npx tsc --noEmit` reports TS2345, "Argument of type
+    // 'readonly [readonly [number, number], readonly [number, number]]' is
+    // not assignable to parameter of type 'LatLngBoundsExpression'."
     map.fitBounds(TANZANIA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
 
     L.tileLayer(OSM_TILE_URL, {
@@ -185,7 +203,9 @@ export default function CoordinatePickerMap({
       // `parseCoordinatePair` would then reject as out of range.
       // `L.Util.wrapNum` (leaflet-src.js) folds it back onto the same
       // meridian first — verified: `wrapNum(200, [-180, 180], true) ===
-      // -160`. Click-only: a marker drag can't leave the rendered viewport.
+      // -160`. `createMarker`'s `dragend` callback applies the identical
+      // wrap for the same reason — a drag can leave [-180, 180] too, once
+      // panning already put the viewport there.
       const lng = L.Util.wrapNum(event.latlng.lng, [-180, 180], true);
       const point: CoordinatePoint = { lat: event.latlng.lat, lng };
       const existing = markerRef.current;

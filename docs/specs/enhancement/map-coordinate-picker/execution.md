@@ -272,3 +272,28 @@ Verified true: the `wrapNum` behaviour and export; `alt` reaching only `IMG` whi
 **The shell must be mounted only into a laid-out container — never behind `display:none`, `hidden`, or a zero-height wrapper.** A picker mounted at 0×0 fits to zoom 0 and *stays there for its lifetime*, because `invalidateSize` preserves zoom and never re-fits. This is not advisory: it is the condition under which FAIL 2's fix works at all.
 
 **Reviewer's audit boundary (KZ-012):** all of the above established by reading source; it ran no commands. The `tsc`, build, lint and `react-doctor` results are the Implementer's account, reconciling with a module still imported nowhere.
+
+### Post-T-3 advisory corrections · Reviewer **PASS** ✅
+
+**Date:** 2026-09-08 · **Authorisation:** user, explicitly, at the T-3 gate. Recorded because the protocol forbids the Leader turning an advisory into work on its own initiative — the user deciding directly is the sanctioned route. Scope was the two named items; advisories 3–6 were held out and remain recorded-only.
+
+**Item 1 — a drag could also produce an out-of-range longitude.** The `dragend` path now applies the same `L.Util.wrapNum(pos.lng, [-180,180], true)` as the click path, inside `createMarker` — the one helper both write paths share, so they cannot re-diverge. The false *"click-only: a marker drag can't leave the rendered viewport"* sentence is gone.
+
+Reviewer confirmed the premise at source rather than accepting it: `Marker.Drag._onDrag` assigns `layerPointToLatLng(iconPos)` **unwrapped**, `worldCopyJump` defaults false, so `getLatLng().lng` genuinely can be 185 — which `parseCoordinatePair` rejects, removing the pin and leaving an out-of-range value in the form. Real bug. A repo-wide grep confirmed exactly one `dragend` registration and one `onDragEnd` call, so the fix covers every drag write path.
+
+**Latitude verified two independent ways** (the Implementer checked both rather than taking the Leader's word): no CRS in Leaflet's distribution sets `wrapLat` (`Earth` sets only `wrapLng`; `wrapLat` exists solely as a commented-out placeholder), and `SphericalMercator.unproject`'s `2·atan(exp(y/R)) − π/2` is strictly within (−90°, 90°) for any finite Y.
+
+**Item 2 — the uncorroborated "measured" tag. Measured, and the suspicion was right.** Removing the spread and running `tsc` produced **TS2345**, not TS2322:
+
+```
+error TS2345: Argument of type 'readonly [readonly [number, number], readonly [number, number]]'
+is not assignable to parameter of type 'LatLngBoundsExpression'.
+```
+
+The original tag was wrong twice over — it claimed a measurement nobody took, **and** named the wrong code, because `fitBounds` takes an argument (TS2345) where `map-constants.ts`'s genuine case is an assignment (TS2322). **Sixth false comment claim in this spec, and again found by measuring rather than re-reading.**
+
+**How the Reviewer corroborated a string it could not produce** (KZ-012 in practice): checked that `fitBounds`'s declaration puts the value in argument position, so TS2345 is the predicted code; that the quoted type text matches `TANZANIA_BOUNDS`'s declaration character-for-character including both nested `readonly`s; that the elaboration names `LatLngBoundsLiteral`, the correct failing constituent of the union; that **column 19 is exact** (4-space indent + `map.fitBounds(`); and that line 167 reconciles with the reported +25/−5 diffstat. Its note is worth keeping: *"the measurement corrected the claim in the direction I predicted, which is the opposite of what a fabricated re-quote would do."*
+
+**DD-4 interaction — traced, convergent.** The one genuinely new behaviour: after a past-antimeridian drag the marker sits unwrapped at 185.2 while `onChange` writes `−174.8`. `isSamePoint` reports not-equal, the effect sets and pans one world-width west, `_tryAnimatedPan` rejects the animation (offset exceeds viewport) so it is an instant reset rather than a slide, tiles are identical under `noWrap: false`, and the next render compares equal and early-returns. **One pass, no oscillation.** The invariant holds because the wrap touches a *number on the write path*, never a `LatLng` that `isSamePoint` reads back.
+
+**Advisories (recorded):** the ±90 asymptote is true of the real-valued function but `Math.exp` overflow makes exactly ±90 representable in IEEE-754 — unreachable by a drag and in-range anyway; `noWrap` is declared on `GridLayer` and inherited by `TileLayer`; and no test drives a past-antimeridian drag, so D's convergence is reasoned, not asserted.
