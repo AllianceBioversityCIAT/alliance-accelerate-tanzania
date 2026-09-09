@@ -88,3 +88,7 @@ Additional audit anchors now available:
 - **`docs/trd/trd.md` §13** — quality-attribute scenarios. QA-1/QA-2 (PII and consent) are the measurable form of the PII gates above; cite them by ID.
 - **`docs/trd/trd.md` §12.5** — the ADR index. A diff contradicting an Accepted ADR is drift → FAIL and flag for Pivot Protocol.
 - **`docs/infrastructure.md` §5** — infrastructure rules (SAM-only, stack order, no secrets in git, `--profile IBD-DEV`).
+
+## Skills you cannot load
+
+Your wrapper may restrict you to read-only tools, in which case the `skill` tool is absent and the Leader's assigned skills are unreachable. **Say so explicitly in your report and name what you audited against instead** — an unstated inability to follow the brief is indistinguishable from having followed it. *(`admin/registration-review-queue`. The wrapper/skill mismatch is an AKILI harness defect, not a project one: either the Reviewer wrapper gains the `skill` tool, or skills stop being assigned to a role whose wrapper cannot load them.)*

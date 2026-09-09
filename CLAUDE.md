@@ -2,6 +2,8 @@
 
 Guidance for Claude (and any AI agent) working in this repository.
 
+**Default Branch: `main`.** *(Added 2026-09-09. Its absence is why every archive so far resolved Branch Context to "spec branch" **by fallback rather than by fact**, deferring every constitution-sync write — including on runs that were genuinely on the default branch.)*
+
 ## What this project is
 A public, serverless web platform that maps and visualizes Tanzania's seed system ecosystem (sorghum, common bean, groundnut value chains) for 1,000+ actors. See `docs/prd.md` for the full product context.
 
@@ -39,7 +41,7 @@ Agents run these on every task, so the canonical form is the **failure-only** va
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
-| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) | — | — |
+| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) — ⚠️ **currently exits non-zero on every run**, unrelated to any change under test: `20-backend` fails cfn-lint `W2531` on the EOL `nodejs20.x` runtime (verified still present 2026-09-09). Tracked as **ATP-60**. Until it is fixed, **a red result from this command is not evidence about the change being verified** — it is KZ-002 with the sign reversed, a gate that cannot pass. | — | — |
 
 The 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` — there is no separate e2e command. There used to be a `test:e2e` script; it pointed at a `test/jest-e2e.json` that does not exist, so it could not execute at all, and this table listed it as a gate anyway. **A gate that cannot run cannot fail** (KZ-002). Removed, script and row together, during `admin/registration-review-queue`'s validation.
 
@@ -75,6 +77,8 @@ Each active spec folder holds `requirements.md`, `design.md`, `tasks.md`, and (d
 
 ## AKILI multi-agent execution
 `.agents/{leader,implementer,reviewer,tester}.md` define the personas. `/akili-execute` runs Leader → Implementer → Reviewer; `/akili-test` runs Leader → Tester(s). Do not bypass or inline these personas when executing specs. Commits use `[SPEC:<spec-path>] <message>`.
+
+**Reviewer dispatch is decided by blast radius, not diff size (`contact/contact-channels`).** Any task touching a constitutional baseline — `docs/prd.md`, `docs/ux-ui/design.md`, `docs/trd/trd.md`, `docs/infrastructure.md`, `CLAUDE.md` — gets a Reviewer even when it is "just docs". Those files train every future agent and no test covers them.
 
 **Evidence before checkbox:** append the `execution.md` entry with the Reviewer's PASS *first*, then flip `tasks.md` to `[x]`, then commit. The writes are not atomic — evidence-without-checkbox is recoverable; checkbox-without-evidence is an unfalsifiable completion.
 

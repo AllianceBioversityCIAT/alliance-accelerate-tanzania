@@ -39,6 +39,8 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
     never from reasoning. One such list went 1 → 3 → 10 across two corrections; every correction came from measuring,
     none from re-reading.
 
+- **A universal negative requires a search that could have failed (`admin/registration-review-queue`).** Before writing *"X exists nowhere"*, run a case-insensitive, multi-pattern search over the whole tree. A single case-sensitive grep is evidence for a positive claim, never for an absence.
+
 - **Cite stable anchors, not line numbers (KZ-009).** `file:line` decays on its own — every edit above the
   cited line falsifies it, including edits made by the same task. In any persistent document, anchor citations
   to a **symbol, a unique class or literal string, or a section title**, and use bare line numbers only in

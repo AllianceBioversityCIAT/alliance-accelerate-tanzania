@@ -57,7 +57,9 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 - **`getCognitoAdminClient()` demands `COGNITO_CLIENT_ID` for a value `ListUsersInGroup` never uses**, and the bare `catch` hides the resulting silent fallback. Below the lesson bar as a one-line coupling; recorded in `execution.md` for the auth module's owner.
 - **The AKILI slash commands live only at user level** (`~/.claude/commands/`), while root `CLAUDE.md` cites them as project process. A teammate cloning this repo has the personas but not the commands. Sub-threshold; noted for recurrence.
 
-## Pending Items
+## Pending Items — **APPLIED 2026-09-09 on `main`** (user-approved)
+
+> **D2's KZ-008 update** was the only recurrence number in the whole backlog that was chronologically correct (×3); the others collided and were renumbered.
 
 > **Spec branch — nothing below has been written.** Every item awaits the apply phase on `main`. Recording them here loses nothing; applying them from this branch would write shared files the gate exists to protect.
 
@@ -69,7 +71,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | `.agents/leader.md` |
 | Edit | **When scope is cut or a requirement is withdrawn mid-spec, re-derive every standing design decision whose stated rationale cited the removed surface.** A mechanism that outlives its reason is a defect, not inertia — and it will be defended by the findings it generates. |
 | Severity | High |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P2
 
@@ -79,7 +81,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | `frontend/CLAUDE.md` |
 | Edit | **Never infer rendered geometry from class inspection.** Any "does it fit / overflow / crowd" question is answered by measuring `scrollWidth` vs `clientWidth` in a real browser, never by estimating glyph widths. Note that a `max-w-*` container caps usable width **permanently**, so "show it at a wider breakpoint" is frequently impossible rather than merely undesirable. |
 | Severity | High |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P3
 
@@ -89,7 +91,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | root `CLAUDE.md` § AKILI multi-agent execution |
 | Edit | **Reviewer dispatch is decided by blast radius, not diff size.** Any task touching a constitutional baseline (`docs/prd.md`, `docs/ux-ui/design.md`, `docs/trd/trd.md`, `docs/infrastructure.md`, `CLAUDE.md`) gets a Reviewer even when it is "just docs" — those files train every future agent, and no test covers them. |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### D1
 
@@ -99,7 +101,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | **KZ-004** |
 | Edit | Add `contact/contact-channels` as a source spec. **Recurrence ×2 (2026-08-31), and the standardization did not hold** — KZ-004 is already `Applied` in `.agents/leader.md` § Applying a correction, yet this spec produced *seven* instances of the same root cause: an amendment applied to one document while sibling statements resting on the withdrawn premise survived. Four were caught during execution (the fire-and-forget artifacts behind Decisions A–C and NFR-1's settle clause); three more survived to validation (`validation-report.md` F-3 phantom `DD-6` in two documents, F-4 NFR-2 never amended, F-5 the nav description that outlived its own fix). Recommend raising the rule from "grep the superseded value" to "grep the withdrawn **premise**" — the surviving sentences quoted no shared figure, which is precisely why a value-grep missed them. |
 | Severity | High |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### D2
 
@@ -109,7 +111,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | **KZ-008** |
 | Edit | Add `contact/contact-channels` as a source spec. **Recurrence ×3.** This spec produced the pattern in every artefact class it touched: two constitutional baselines (`docs/infrastructure.md`'s false CloudFront topology, `docs/trd/trd.md`'s *"Always 202"*), a requirement claiming a build assertion that does not exist (F-6), a task table claiming an analytics assertion that does not exist (F-7), a TRD scenario describing a spy over log lines that never run (F-9), and code docblocks naming two functions that do not exist (F-10). Confirms the lesson's own clause that it *"recurs at every level of its own correction"*. |
 | Severity | High |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### D3
 
@@ -119,7 +121,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | **KZ-005** |
 | Edit | Add `contact/contact-channels` as a source spec. **Recurrence ×2.** One browser measurement was published as two different figure sets — `execution.md` carried the final numbers (935px / 41px / 1015px / 201px) while `docs/ux-ui/design.md` carried the pre-CTA-margin ones (931 / 45 / 1007 / 209), both presented as measured. Extends the lesson from *"numeric claim vs prose"* to *"the same measurement published twice"*, which no prose cross-check catches. |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### G1
 
@@ -129,7 +131,7 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | `backend/CLAUDE.md` and `frontend/CLAUDE.md` |
 | Edit | Backend: note that `src/contact/` is a **stateless, no-Prisma module** whose zero-writes property is disciplinary, gated only by `contact-no-writes.e2e.spec.ts` — `PrismaModule` is `@Global()`, so nothing structurally prevents a write. Frontend: note that `components/contact/` never reads `err.message` or `err.status` (FR-5), partitioning solely on `Array.isArray(err.details)`. |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### F1
 
@@ -139,6 +141,14 @@ Three. Most of this spec's documentation findings were **not** new lessons — s
 | Target | root `CLAUDE.md` § Verification commands |
 | Edit | Annotate the `infra/` row: `./infra/scripts/validate.sh` **currently exits non-zero on every run** — `20-backend` fails cfn-lint `W2531` on the EOL `nodejs20.x` runtime, unrelated to any change under test. Tracked as **ATP-60**. Until fixed, a red result from this command is not evidence about the change being verified. |
 | Severity | High |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 > **No `trd-adr` item.** DD-3's move from fire-and-forget to an awaited send governs this endpoint only; it overturns no ADR recorded in `docs/trd/trd.md`. The registrations path keeps its own fire-and-forget dispatch and its documented rationale, untouched.
+
+---
+
+## Recurrence-number collision, found at apply time (2026-09-09)
+
+This file's KZ-008 recurrence number **collided with three other specs'**. Five entry files, each written on its own branch against a digest that had not absorbed the others, produced *three* claims of `×3` and *two* of `×4`. All were renumbered chronologically at apply time; KZ-008 is now **×7**, the most recurrent lesson in the log.
+
+Root `CLAUDE.md` § Concurrency protocol already carried this rule for ADR numbers — **nobody had applied it to recurrence counters, which are the same kind of monotonic id in the same kind of shared document.** The check is now written into `kaizen-log.md`'s preamble: before taking a recurrence number, `grep -l 'KZ-0NN' docs/specs/kaizen/*.md` and read what each pending item claims.

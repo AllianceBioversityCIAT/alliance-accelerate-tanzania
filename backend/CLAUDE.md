@@ -40,6 +40,8 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
   write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
   sign-in/reset. Keep new email inputs normalized.
 
+**`src/contact/` is stateless and Prisma-free — and that is disciplinary, not structural.** `PrismaModule` is `@Global()`, so nothing prevents a write from that module; the zero-writes property is held by `contact-no-writes.e2e.spec.ts` alone. Treat that spec as the guard, and if you add persistence there, know you are removing the only thing enforcing it.
+
 ## Testing conventions
 
 - Jest `testRegex` accepts `.spec.ts` AND `.e2e-spec.ts`; the **canonical e2e name is `*.e2e.spec.ts`** (a hyphen-named file once sat dead for weeks — see archived `bugfix/dead-e2e-tests`).

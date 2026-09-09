@@ -101,7 +101,10 @@ recurrence recorded in D1.
   a field-by-field payload comparison over Leader-authored fixtures, not by a run of the
   real form. Recorded in `validation-report.md` §11b.
 
-## Pending Items
+## Pending Items — **APPLIED 2026-09-09 on `main`** (user-approved)
+
+> **P3** is upstream-only and stays open as a recommendation to the AKILI methodology repository — no local edit exists to make.
+> **P4's KZ-008 update** became ×5 in the chronological renumbering, not the ×4 this file claimed.
 
 ### P1
 
@@ -111,7 +114,7 @@ recurrence recorded in D1.
 | Target | `.agents/reviewer.md` |
 | Edit | Append to the persona: "**Skills you cannot load.** Your wrapper may restrict you to read-only tools, in which case the `skill` tool is absent and the Leader's assigned skills are unreachable. Say so explicitly in your report and name what you audited against instead — an unstated inability to follow the brief is indistinguishable from having followed it." |
 | Severity | Medium |
-| Status | pending |
+| Status | **recorded — upstream recommendation, no local edit** |
 | Upstream | Yes — the wrapper/skill mismatch is an AKILI harness defect, not a project one. Recommend upstreaming: either grant the Reviewer wrapper the `skill` tool, or stop assigning skills to a role whose wrapper cannot load them. |
 
 ### P2
@@ -122,7 +125,7 @@ recurrence recorded in D1.
 | Target | `docs/specs/general-setup/requirements.md` § Writing Standards |
 | Edit | Add: "**A universal negative requires a search that could have failed.** Before writing *'X exists nowhere'*, use a case-insensitive, multi-pattern search over the whole tree; a single case-sensitive grep is evidence for a positive claim, never for an absence." |
 | Severity | Medium |
-| Status | pending |
+| Status | **recorded — upstream recommendation, no local edit** |
 | Upstream | Yes — dual lesson, names nothing project-specific. |
 
 ### P3
@@ -133,7 +136,7 @@ recurrence recorded in D1.
 | Target | *(upstream only — no local edit)* |
 | Edit | Recommend to the AKILI methodology repository: give `/akili-validate`'s Remediation section the same Branch Context gate `/akili-archive` Step 3 carries, so remediation targeting shared files defers on a spec branch instead of writing. Today the constraint's presence depends on which command is running. |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P4
 
@@ -143,7 +146,7 @@ recurrence recorded in D1.
 | Target | `KZ-008` |
 | Edit | Add `admin/registration-review-queue` as a source spec. Append: "**Recurrence ×4 (2026-09-02): 7 instances in one spec, and — measured — a **100% FAIL rate across five remediation review rounds**. Every fix reviewed contained a defect in the fix. Two were the Leader's own, written while correcting other authors' false claims, and one landed *inside* the attempt whose sole purpose was correcting false comments. The practical corollary, adopted at a HALT: **where a correction can be made by deleting the false text rather than replacing it, deletion is the lower-risk correction** — it cannot introduce the next instance." |
 | Severity | High (unchanged — already High) |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P5
 
@@ -153,7 +156,7 @@ recurrence recorded in D1.
 | Target | `KZ-003` |
 | Edit | Add `admin/registration-review-queue` as a source spec. Widen the lesson from deferring a *check* to deferring *work*: "**Recurrence (2026-09-02): the same shape applied to triage.** Four tickets were filed as 'needs investigation' or 'needs a product decision'; all four closed the same day, two of them refuting their own ticket's premise, and two needed a single diagnostic command nobody had run. **'Needs investigation' is a claim about the work and requires the same evidence as any other claim** — and a ticket costs more to carry than most of these cost to fix." |
 | Severity | Medium → **High** (it suppressed four tractable fixes and was only caught by the user, three separate times) |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P6
 
@@ -163,7 +166,7 @@ recurrence recorded in D1.
 | Target | `KZ-010` |
 | Edit | Add `admin/registration-review-queue` as a source spec. Append: "**Recurrence ×2 (2026-09-02): still unenforced, and the detection came from below.** Another session moved this shared checkout `registration-review → main → tracking-tools → main → reset` mid-task. No work was lost, but a subordinate Implementer — not the Leader — caught it by checking `reflog` for an anomaly it was not asked to look for, and its final gates were still measured on the wrong branch (98 suites/1,478 tests instead of 108/1,619). **A measurement taken on the wrong branch is not a slow measurement, it is a wrong one** — the same failure the protocol already names for measuring beside an active worker." |
 | Severity | High (unchanged) |
-| Status | pending |
+| Status | **applied 2026-09-09** |
 
 ### P7
 
@@ -173,4 +176,12 @@ recurrence recorded in D1.
 | Target | root `CLAUDE.md` — constitution summary |
 | Edit | Add a `Default Branch: main` pin. Its absence is why this archive's Branch Context resolved to "spec branch" by fallback rather than by fact, deferring every constitution-sync write; the `kaizen` skill names the pin as the remedy. |
 | Severity | Low |
-| Status | pending |
+| Status | **applied 2026-09-09** |
+
+---
+
+## Recurrence-number collision, found at apply time (2026-09-09)
+
+This file's KZ-008 recurrence number **collided with three other specs'**. Five entry files, each written on its own branch against a digest that had not absorbed the others, produced *three* claims of `×3` and *two* of `×4`. All were renumbered chronologically at apply time; KZ-008 is now **×7**, the most recurrent lesson in the log.
+
+Root `CLAUDE.md` § Concurrency protocol already carried this rule for ADR numbers — **nobody had applied it to recurrence counters, which are the same kind of monotonic id in the same kind of shared document.** The check is now written into `kaizen-log.md`'s preamble: before taking a recurrence number, `grep -l 'KZ-0NN' docs/specs/kaizen/*.md` and read what each pending item claims.

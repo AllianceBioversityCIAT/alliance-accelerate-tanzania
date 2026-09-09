@@ -76,6 +76,12 @@ Keep this report concise. The full audit trail belongs in `execution.md`, not in
 
 **Recompute every figure at the moment you report it (KZ-005, `enhancement/map-coordinate-picker`).** Counts, budgets, sizes, round totals — a number carried between turns is recall, not measurement, and it drifts upward. This binds hardest on your own ledger, because it is the one document no Reviewer audits: that spec reported its review-round count from memory across three consecutive gates (real 5, reported 7; real 10, reported 12–14) and **escalated a budget on the inflated figure**.
 
+**Establish quiet before measuring (KZ-010, `actors/public-profile-disclosure`).** A build, test run, or SAM validate taken while any delegate is active is not a slow measurement, it is a **wrong** one. Before measuring, confirm no worker is running *and* confirm the invocation's own concurrency — a bare `npm test` may be parallel. Re-measure once on a quiet tree before treating a single failure as real, and once more before treating a single pass as evidence.
+
+**Routing test: scope, then causation (`actors/public-profile-disclosure`).** Before routing a finding out of a spec, answer both — (1) is it in scope? and (2) **did this spec cause it?** A finding that fails (1) but passes (2) belongs *inside* the spec: use the budget-tripwire escalation, not the advisory queue. *"No FR/NFR mentions it"* decides who pays, never whether it is a defect.
+
+**When scope is cut mid-spec, re-derive every design decision whose rationale cited the removed surface (`contact/contact-channels`).** A mechanism that outlives its reason is a defect, not inertia — and it will be defended by the findings it generates.
+
 ---
 
 <!-- ===== AKILI upgrade block — appended 2026-08-03 by /akili-constitution. Everything above is the project's original persona and is authoritative where the two overlap. ===== -->

@@ -67,7 +67,7 @@ Any acceptance evidence MUST therefore be **statistical and adversarial**:
 ## 6. Out of scope
 
 - The three pre-existing `no-img-element` lint advisories in `*.test.tsx` files (unrelated, zero errors).
-- Backend (`backend/`) test stability — not observed to have this problem.
+- Backend (`backend/`) test stability — ⚠️ **now observed** (`actors/public-profile-disclosure` validation, 2026-09-08), so this non-goal is **falsified**. `contact.e2e.spec.ts` fails intermittently in a full run, passes 23/23 in isolation ×3, and **survives `--runInBand`** — that suite owns a rate limiter whose throttle counter leaks across test files, so a request the test expects to succeed is rejected by a budget another file already spent. Serialising does not fix it because the leak is state, not concurrency. Decide whether this proposal absorbs it or a sibling ticket takes it.
 - Any production-code change. If diagnosis finds a **product** bug rather than a harness bug, that is a finding to escalate and re-scope, not to fix inside this spec.
 
 ## 7. Risks
