@@ -90,10 +90,10 @@ What actually stands between `/register` and a ~44 kB Leaflet fetch: `Coordinate
 **Carried out of the archive, not into it (4):**
 | # | Item |
 |---|---|
-| 1 | **A user decision is owed** — clicking the pin relocates the point ~31 m and truncates a hand-typed 7th decimal. Measured, reclassified FR-1 sc. 2 **conformant** (Leaflet's marker-click branch is unreachable for a marker with no click listener, so T-3 advisory 5's mechanism is falsified). Candidate fix named, deliberately not applied |
+| 1 | **DECIDED 2026-09-08 — accepted as-is, no fix.** Clicking the pin relocates the point ~31 m and truncates a hand-typed 7th decimal. Measured, and **conformant** to FR-1 sc. 2 (Leaflet's marker-click branch is unreachable for a marker with no click listener, so T-3 advisory 5's mechanism is falsified). The user weighed it and accepted: 31 m on an agricultural actor changes nothing, and a fix would be scope no approved requirement covers. **Recorded as a decision, not an oversight** — the candidate remedy (skip `onChange` when the click resolves `isSamePoint` against the current fields) is preserved here in case the tolerance ever changes |
 | 2 | **`design.md` §13's committed browser harness is unfiled** — it closes D-3, D-4 *and* NFR-1b at once |
-| 3 | **Relabel the `ActorForm` residual** from *blocked* to *not attempted* |
-| 4 | **Dead code + an unowned comment** — `CoordinatePickerMap`'s redundant init-effect disable block; `LeafletMap.tsx`'s bare `// T-3 additions` from the archived seed-map spec |
+| 3 | ~~Relabel the `ActorForm` residual from *blocked* to *not attempted*~~ — **done 2026-09-08**, in `execution.md` and `captures/README.md` |
+| 4 | ~~Dead code + an unowned comment~~ — **done 2026-09-08.** The redundant init-effect disable block is removed (the `[disabled]` effect runs after it on the same mount and does strictly more); `LeafletMap.tsx`'s `// T-3 additions` is now qualified to the seed-map spec. 79 map tests green, typecheck clean, `/map` and `/register` unmoved |
 
 **BLOCKED (1):** `design.md` §12 commits to two PRs at the T-4/T-5 seam. The auditor has no git or PR access and could not confirm whether that strategy was honoured. **10 commits sit on one branch; no PR has been opened.**
 

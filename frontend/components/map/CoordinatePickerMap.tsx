@@ -223,12 +223,6 @@ export default function CoordinatePickerMap({
       onChangeRef.current(formatCoordinate(point.lat), formatCoordinate(point.lng));
     });
 
-    if (disabledRef.current) {
-      map.dragging.disable();
-      map.doubleClickZoom.disable();
-      map.touchZoom.disable();
-    }
-
     mapRef.current = map;
 
     return () => {

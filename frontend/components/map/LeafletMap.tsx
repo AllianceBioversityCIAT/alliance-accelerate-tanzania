@@ -4,7 +4,10 @@
 // This module is the dynamic-import target from ActorMap.tsx; Leaflet and its
 // CSS are imported HERE so they stay out of the static bundle (NFR-1).
 //
-// T-3 additions (pins/popup/legend — FR-2, FR-3, FR-5 partial, FR-6, NFR-4):
+// Seed-map spec's T-3 additions (pins/popup/legend — that spec's FR-2, FR-3,
+// FR-5 partial, FR-6, NFR-4). Unrelated to enhancement/map-coordinate-picker's
+// own T-3, which built CoordinatePickerMap.tsx and imports the shared constants
+// from ./map-constants:
 //   - Role-colored divIcon markers (one per actor with gps).
 //     Color via CSS custom-property inline style (purge-proof, token-compliant NFR-4).
 //   - Marker click → onSelectActor(actor.id) + opens popup.
