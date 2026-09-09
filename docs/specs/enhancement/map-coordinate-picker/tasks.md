@@ -140,16 +140,18 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 
 ## Estimated LOC
 
-| Task | Prod | Test |
-|---|---|---|
-| T-1 | 60 | 110 |
-| T-2 | 35 | — |
-| T-3 | 135 | — |
-| T-4 | 105 | 85 |
-| T-5 | 28 | 22 |
-| T-6 | 32 | 23 |
-| T-7 | — | evidence only |
-| **Total** | **395** | **240** |
+| Task | Est. prod | Est. test | **Actual (measured at close)** |
+|---|---|---|---|
+| T-1 | 60 | 110 | **261** |
+| T-2 | 35 | — | **63** |
+| T-3 | 135 | — | **327** |
+| T-4 | 105 | 85 | **314** |
+| T-5 | 28 | 22 | ~113 (19 prod + 94 test) |
+| T-6 | 32 | 23 | ~114 (18 prod + 96 test) |
+| T-7 | — | evidence only | 0 code · 11 captures |
+| **Total** | **395** | **240** | **~1,192** |
+
+**Every task overran, and the estimates are kept only as a record of how far off they were.** LOC was retired as a tripwire at the T-4 gate (`design.md` §11) after being raised twice without any scope change: the task count never moved from 7, no requirement grew, and the overrun is documentation — including the forward pointers that caught two defects no test could see.
 
 **The per-task estimates above are the Phase-3 figures and are now known to be low across the board.** Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190. The live budget is **7 tasks · 16 review rounds** (`design.md` §11). LOC was retired as a tripwire at the T-4 gate after being raised twice without any scope change; the per-task figures above are kept as sizing information, not as a gate. ⚠️ **This line previously read "635 LOC … or 9 review rounds" — both figures were already superseded when the T-3 gate re-baselined them, and the correction was not swept here.** That is KZ-004 (a correction is not applied until the superseded value is gone from everywhere it lived), committed by the Leader, and caught by the T-4 Reviewer rather than by the sweep that should have caught it.
 

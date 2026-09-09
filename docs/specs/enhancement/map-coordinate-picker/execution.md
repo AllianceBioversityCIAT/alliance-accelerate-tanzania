@@ -521,3 +521,31 @@ Therefore: **(iii) is FR-1 sc. 2 CONFORMANT** — there is no marker-click speci
 #### Leader decision — the 16th review round was not spent
 
 The remaining corrections were the Reviewer's own specified remediations applied to Leader-owned ledger documents (`execution.md`, `captures/README.md`), with no product-code change. Auditing a transcription of the Reviewer's own text would not have been independent review. The one factual question the remediation turned on — whether the discarded captures were recoverable — was settled by **measurement**, not by transcription. Recorded as a decision, not an omission.
+
+## Constitution Impact: T-1 … T-7
+
+**Owed since T-1 and written only at the close — a Leader omission.** `/akili-execute` Step 3.5 requires this block whenever a task creates a module, moves a boundary, or changes a module's public surface. T-1 created one and T-2 changed another, and no block was written until the user asked what was still pending. Recorded as late rather than backdated.
+
+| Change | Impact |
+|---|---|
+| **`frontend/lib/geo/` — new module** (`coordinates.ts` + tests) | The pure coordinate seam. No child guide warranted (one file, no divergent conventions of its own), but its **purity is a constraint future work must not break** — see below |
+| **`frontend/components/map/map-constants.ts` — new, and it changes that module's public surface** | `components/map/` now *provides* shared geography and tile source to two consumers instead of holding them privately. That is a boundary change, not just a file |
+| **`CoordinatePicker.tsx` / `CoordinatePickerMap.tsx` — new components in an existing module** | Second OSM tile surface in the app |
+
+### Guides updated **now**, not deferred to `/akili-archive`
+
+The command allows deferral, but requires immediate update when leaving the guides would be *actively misleading*. Two of this spec's hardest-won findings are **traps that produce no error**, and an agent touching `components/map/` would hit them blind:
+
+1. **The 0×0-container hazard** — `fitBounds` divides by `getSize()`, so an unlaid-out container pins the map to zoom 0 **for its lifetime** (`invalidateSize` preserves zoom and never re-fits). Silent.
+2. **The exact-`===` binding contract** — any `LatLng` normalization (`worldCopyJump`, `.wrap()`, pixel re-derivation) makes `isSamePoint` report "different" forever and the map fights the fields. Silent.
+
+Plus the shared-constants rule (never re-type the OSM attribution — licence compliance, not tidiness), the deliberate `readonly` tuples and the `TS2345` a consumer should expect, and the seam-purity rule (`lib/geo/coordinates.ts` imports nothing from `leaflet`/`react`; a test needing `jest.mock('leaflet')` has broken the seam, not satisfied it).
+
+Applied to **`frontend/CLAUDE.md`** (new *Map surfaces* section) and mirrored into **`frontend/AGENTS.md`** (new rule 6, existing rule renumbered to 7). Root guides need no change: no new top-level package, and the root `## Module Guides` index already lists `frontend/CLAUDE.md`.
+
+### CodeGraph
+**No re-index pending.** `.codegraph/` holds only `config.json` and `.gitignore` in this checkout — the graph was never initialized here, so there is nothing to refresh. Anyone who runs `codegraph init` later picks up the new modules on the first index.
+
+### Left for `/akili-archive`
+- The **Kaizen retrospective**. The strongest signal available: **all seven KZ-002 instances in this spec were in *verification lines* — never in requirements, never in design intent.** The requirements and design survived two judgment rounds and fifteen reviews; the gates written alongside them did not. Second signal: **eight false claims, four by the Leader, all four the same mechanism** — a property of an artefact asserted without opening it, and all four caught by measuring rather than by re-reading.
+- **TRD sync:** none owed. DD-6 deliberately allocated no ADR (no new module or service in the architectural sense, no integration, no persistence or topology change), so the shared counter was never touched and there is nothing to supersede.
