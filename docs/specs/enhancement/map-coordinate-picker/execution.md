@@ -340,3 +340,53 @@ The Reviewer verified the mechanism at primary source rather than accepting it: 
 2. **Pass `?? ''` on both coordinate props.** They are required non-optional `string` and `nothingToClear` calls `.trim()`; `undefined` throws and blanks the whole Location section. SWC does not typecheck under Jest — only `npm run build` catches it.
 3. **No value-varying `key`** on `<CoordinatePicker>` — that remounts the shell and resets the view.
 4. **`describedBy` lands on the reveal button**, so T-6 must assert there.
+
+### T-5 — Adopt in `ActorForm` · attempt 1 · Reviewer **FAIL**
+
+> ⚠️ **This entry was written late.** The Leader spawned attempt 2 without first recording attempt 1's FAIL — the one ordering rule this log exists to enforce (`tasks.md` § Execution conventions: evidence before checkbox; the command's loop: *"if FAIL: append FAIL findings to `execution.md`"*, **then** re-spawn). Caught by the Leader while auditing its own round count, not by any gate. Reconstructed below from the Reviewer's report; nothing is lost, but the sequence was wrong and that is worth more than the recovery.
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, effort `medium` · **Reviewer:** opus, read-only
+
+**Diff:** `ActorForm.tsx` +19 (one import, one JSX block as a sibling below the `grid … lg:grid-cols-3`, inside the existing `<fieldset>`), `ActorForm.test.tsx` +94 (module-mocked recording stub, 3 new tests). Leader verified by `git diff -U0 … | grep -cE 'validate|buildDto|renderInput\(.gps'` → **0**.
+
+**Verification:** `npm test -- ActorForm` 47 passed (44 pre-existing + 3 new) · build `/admin/actors/edit` **165 kB**, `/admin/actors/new` **163 kB** (both +~1 kB), `/register` **113 kB** and `/map` **112 kB** unchanged · lint clean. Two falsifiers demonstrated with backup-and-restore and byte-identical recovery.
+
+**Reviewer verdict — FAIL, 1 issue: the picker abuts the coordinate inputs at 0 px.** `gap-4` applies *between* grid items and adds nothing below the grid's last row, and `CoordinatePicker`'s root (`flex flex-col gap-3`) carries no margin — so the reveal/clear button row sits flush against the GPS altitude/accuracy inputs. **D-4 class:** test, lint, build and contrast are all structurally blind to it, and `frontend/CLAUDE.md` names this exact class as one that already shipped to Dev with every gate green. *Violated:* NFR-3/D-4 · `docs/ux-ui/design.md` §6 · `frontend/CLAUDE.md`. Remediation: `<div className="mt-4">`, the idiom this same file already uses at line 949 (Crops fieldset).
+
+**Reviewer PASSED on everything else, corroborating from current-state source rather than from the diff grep:** `validate()` still carries the independent per-axis checks and **no** pairing rule — matching `requirements.md` §2.1 C-2's independent description of the *prior* state, which is what makes "untouched" verifiable without the diff · `buildDto` unchanged · all four `renderInput('gps…')` identical including both hints · **`gpsAltitude`/`gpsAccuracy` unreachable by the picker** (its props expose no altitude/accuracy surface at all) · OQ-3 discipline clean, and the FR-1 sc.3 test actively *depends* on the C-2 divergence surviving, so a future "improvement" to `validate()` would redden it · the full 0×0 ancestor chain re-walked independently (`RequireRole` renders a bare fragment; `<main>` is `flex-1 overflow-auto` under an `overflow-hidden` row that clips rather than zero-sizes; both pages gate on a `Skeleton` until auth resolves, so the shell only ever mounts into a laid-out `<main>`).
+
+**The bundle numbers read as evidence:** +1 kB per admin route is the right order for the wrapper alone; a top-level `import 'leaflet'` would have put both routes near **205–207 kB** (M-2: ~44 kB gzip). `/map` and `/register` holding also rules out Leaflet being promoted into a shared chunk, which would have moved *every* route. **The `ssr: false` split survives adoption.**
+
+**Leader-authored inaccuracy found while reviewing this diff:** `tasks.md` T-5 and `design.md` §7.5 both named `buildPayload` as this form's payload builder. It is `buildDto`; `buildPayload` is `RegistrationForm`'s. Corrected in all three sites and verified by the Reviewer. **Seventh false claim in this spec, third by the Leader** — same mechanism every time: a name written from memory instead of read from the file.
+
+**ADVISORY:** deleting `initiallyOpen` reddens **zero** tests, so the admin form could silently lose its eager mount — the thing FR-7 calls "that form's entire value" · the `?? ''` guard is dead code (`FormValues` declares both as non-optional `string`) · the test file's "Covers:" list was not extended · **composed-DOM a11y is unaudited**: the module mock means this suite's `jest-axe` runs audit the stub, not the picker's real controls, so NFR-2 for the picker-inside-fieldset composition rests on `CoordinatePicker.test.tsx`'s standalone pass and folds into T-7's HITL review.
+
+### Leader correction — the review-round count was wrong, and I was reporting it from memory
+
+Recounted from this ledger (9 entries, of which the T-2 entry folds attempts 2–3): **10 review rounds completed**, not the 12/13/14 the Leader reported at successive gates. The figure was never measured — it was incremented by recall between turns, and it drifted upward.
+
+This matters in a specific direction: **the round budget was the tripwire the Leader escalated on**, twice, and part of the case for re-baselining 9 → 16 rested on a count that was inflated. The re-baseline is still defensible on its stated cause (six of the first seven rounds went to prose accuracy, which is measurable and true), but the *urgency* attached to it was overstated. With 10 of 16 spent and T-6/T-7 remaining, the round budget is comfortable, not tight.
+
+KZ-005 in its plainest form — a numeric claim published without being cross-checked — committed by the Leader in the very reports whose job was to keep the budget honest.
+
+### T-5 — Adopt in `ActorForm` · attempt 2 · Reviewer **PASS** ✅
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, effort `high` · **Reviewer:** opus, read-only
+
+Four changes: `mt-4` wrapper (the FAIL), an `initiallyOpen` assertion, the `?? ''` guard removed, the "Covers:" list extended. Verification: 47/47 · all four route figures unchanged (`/admin/actors/edit` 165 kB, `/admin/actors/new` 163 kB, `/register` 113 kB, `/map` 112 kB) · lint clean.
+
+**The FAIL is closed on a box-model reading, not a hand-wave.** `mt-4` sits on a normal-flow block sibling, second in flow — so no parent-collapse path exists (that only reaches a *first* in-flow child), adjacent-sibling collapse resolves to `max(0, 16px)` since the grid div has no bottom margin, and a `<fieldset>`'s anonymous content box establishes a BFC anyway. The picker's own `flex … gap-3` cannot absorb it: `gap` is internal-only and never touches the flex container's margin box. On magnitude: 16px is the card's established rhythm (`legend mb-4`, grid `gap-4`, form `gap-6` between cards), and the picker's internal 12px is deliberately tighter — group-internal < group-external is the correct hierarchy, not drift.
+
+#### The guard reversal was right, and the Reviewer's reason is better than the Leader's
+
+The Leader reversed its own safety instruction and asked for it to be attacked hardest. The Reviewer traced every write path independently — `FormValues` non-optional `string`; both `toFormValues` branches terminating in `''` (the actor branch's `?.toString() ?? ''` covering `null`, `undefined`, and any untyped JSON scalar); exactly two `setValues` calls in the file, both spreading `prev` with one named key, **so no partial-object spread into `values` exists anywhere**; and all nine `setField` call sites string-typed, with the picker's only two producers being the literal `onChange('', '')` and `formatCoordinate`'s `toFixed`.
+
+**Then it made the argument neither the Leader nor the Implementer made:** `next.config.mjs` sets no `typescript.ignoreBuildErrors`, so `next build` type-checks. `CoordinatePickerProps.latitude` is a required `string` — so if anyone ever makes `FormValues.gpsLatitude` optional, `latitude={values.gpsLatitude}` becomes a **compile error at the exact call site**. The `?? ''` would have *silently absorbed* that regression. **Removing the dead runtime guard converted it into a live build-time one; net safety increased.** The Reviewer also confirmed the feared crash is real if `undefined` ever arrives (`latitude.trim()` runs unguarded during render and would blank the whole Location card) — the mitigation is the type boundary, and it holds.
+
+**`initiallyOpen` assertion is genuinely discriminating:** `toBe(true)` reddens on removal (`undefined`) *and* on `initiallyOpen={false}`. Boundary named: it asserts the **prop**, not the eager mount; the behavioural half lives in `CoordinatePicker.test.tsx`. That is the correct seam split (T-4 owns the wrapper's behaviour, T-5 the wiring), not a hole.
+
+**Route figures reconcile rather than merely matching:** `/register` and `/map` *must* be byte-identical since neither imports `ActorForm`; movement there would have been the anomaly. On the admin routes, one `<div>` plus two removed operators is tens of bytes against a figure reported at 1 kB granularity — unchanged is the only outcome consistent with the source.
+
+**ADVISORY:** no `ActorForm` test reddens if the wrapper's own `initiallyOpen` handling regresses (correct seam split, worth knowing) · the "Covers:" addition names two of three new tests · `"proposal Success Criteria 2"` cites an ordinal into an **unnumbered** bullet list — resolves correctly today, goes stale silently if a bullet is inserted above it (predates this delta).
+
+**Reviewer boundary (KZ-012):** it re-ran nothing; the 47/47 and the four figures are the Implementer's account, verified only as reconciling with the diff. **D-4's real evidence remains T-7's 375/768/1440 captures** — the spacing verdict above is a box-model reading, not a measurement.

@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/enhancement/map-coordinate-picker/`
 - Status: Approved
-- Depth: **Standard** · Budget: **7 tasks · ~900 LOC · 16 review rounds** (`design.md` §11 — rounds re-baselined from 9 after T-2, on measured evidence)
+- Depth: **Standard** · Budget: **7 tasks · 16 review rounds** (LOC retired as a tripwire at the T-4 gate — see `design.md` §11) (`design.md` §11 — rounds re-baselined from 9 after T-2, on measured evidence)
 - Traces: `requirements.md` FR-1…FR-8, NFR-1…NFR-6 · `design.md` §3–§12
 - Design reviewed: `judgment.md` — **JUDGMENT: APPROVED ✅** (2 fix rounds, 1 scoped re-judgment)
 
@@ -68,14 +68,14 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       **Disqualifies the evidence:** a test asserting the shell is absent that would **also** pass if the component threw or rendered nothing at all — assert on the reveal control's presence in the same test, or the absence proves nothing. A `jest-axe` pass is **not** evidence about the map's keyboard story (D-8 folds into D-3); do not report it as such.
       **Done when:** clear writes `('', '')`; the control is disabled (not absent-then-present) when both fields are blank; the shell is provably unrendered while closed and rendered after reveal; `jest-axe` clean; `react-doctor` run.
 
-- [ ] **T-5  Adopt in `ActorForm` (eager)**  (deps: T-4)
+- [x] **T-5  Adopt in `ActorForm` (eager)**  (deps: T-4)
       **Size:** ~50 LOC (28 prod / 22 test) · **Skills:** `ui-ux-pro-max`, `tailwind-design-system`
-      **Scope:** Insert `<CoordinatePicker initiallyOpen …/>` **inside the existing Location `<fieldset>`, adjacent to the coordinate inputs**. Wire `onChange` to two `setField` calls. Keep the card-wrapping-`div` + semantic-only `fieldset` shape. **`validate()`, `buildPayload`, and all four GPS inputs are untouched.**
+      **Scope:** Insert `<CoordinatePicker initiallyOpen …/>` **inside the existing Location `<fieldset>`, as a sibling BELOW the `grid … lg:grid-cols-3` div** — inside that grid it would render as one cell at ~1/3 card width. Wire `onChange` to two `setField` calls. Keep the card-wrapping-`div` + semantic-only `fieldset` shape. **`validate()`, `buildDto`, and all four GPS inputs are untouched.** ⚠️ The payload builder in `ActorForm` is `buildDto`; `buildPayload` is `RegistrationForm`'s (T-6). This line named the wrong one until 2026-09-08 — a Leader-authored KZ-008, caught while reading the T-5 diff.
       **Traces:** FR-5 sc. 1 + sc. 2 (incl. `gpsAltitude`/`gpsAccuracy` stay manual) · FR-1 sc. 3 (half-filled pair, the C-2 divergence) · FR-2 sc. 1 (pin pre-placed on edit) · FR-4 sc. 1 (`BUT` must not clear other fields)
       **Files:** `frontend/components/admin/ActorForm.tsx`, `frontend/components/admin/ActorForm.test.tsx`
       **Verify:** `cd frontend && npm test -- ActorForm && git diff --stat frontend/components/admin/ActorForm.tsx`
       **Falsifying input:** change one character of `ActorForm.validate()` → existing GPS validation tests redden (proving they guard FR-5 sc. 2). Have the picker write only latitude → the FR-1 sc. 3 test reddens.
-      **Disqualifies the evidence:** if `git diff` shows any edit inside `validate()`, `buildPayload`, or the four `renderInput('gps…')` calls, **FR-5 is violated regardless of a green suite** — the suite does not assert the absence of edits. Report the diff, do not self-certify.
+      **Disqualifies the evidence:** if `git diff` shows any edit inside `validate()`, `buildDto`, or the four `renderInput('gps…')` calls, **FR-5 is violated regardless of a green suite** — the suite does not assert the absence of edits. Report the diff, do not self-certify.
       **Done when:** picker renders in the Location fieldset; a half-filled pair is resolved by placing the pin; opening an actor with coordinates shows the pin pre-placed; the diff touches no validation, payload, or input-rendering code.
 
 - [ ] **T-6  Adopt in `RegistrationForm` (behind the disclosure)**  (deps: T-4)
@@ -151,7 +151,7 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | T-7 | — | evidence only |
 | **Total** | **395** | **240** |
 
-**The per-task estimates above are the Phase-3 figures and are now known to be low across the board.** Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190. The live budget is **7 tasks · ~900 LOC · 16 review rounds** (`design.md` §11, re-baselined twice in flight). ⚠️ **This line previously read "635 LOC … or 9 review rounds" — both figures were already superseded when the T-3 gate re-baselined them, and the correction was not swept here.** That is KZ-004 (a correction is not applied until the superseded value is gone from everywhere it lived), committed by the Leader, and caught by the T-4 Reviewer rather than by the sweep that should have caught it.
+**The per-task estimates above are the Phase-3 figures and are now known to be low across the board.** Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190. The live budget is **7 tasks · 16 review rounds** (`design.md` §11). LOC was retired as a tripwire at the T-4 gate after being raised twice without any scope change; the per-task figures above are kept as sizing information, not as a gate. ⚠️ **This line previously read "635 LOC … or 9 review rounds" — both figures were already superseded when the T-3 gate re-baselined them, and the correction was not swept here.** That is KZ-004 (a correction is not applied until the superseded value is gone from everywhere it lived), committed by the Leader, and caught by the T-4 Reviewer rather than by the sweep that should have caught it.
 
 ## Execution conventions
 

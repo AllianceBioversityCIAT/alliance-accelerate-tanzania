@@ -162,7 +162,7 @@ Both keep the card-wrapping-`div` + semantic-only `<fieldset>` shape mandated by
 |---|---|---|
 | Mount | `initiallyOpen={false}` — reveal control (FR-7) | `initiallyOpen` — eager |
 | `describedBy` | its existing `gpsHintId` | none (that form has no shared GPS paragraph) |
-| Untouched | `renderInput('gpsLatitude'…)`, `renderInput('gpsLongitude'…)`, `validate()`, `buildPayload` | the same, plus `gpsAltitude` / `gpsAccuracy` stay manual |
+| Untouched | `renderInput('gpsLatitude'…)`, `renderInput('gpsLongitude'…)`, `validate()`, `buildPayload` | the same — but the payload builder here is **`buildDto`**, not `buildPayload` — plus `gpsAltitude` / `gpsAccuracy` stay manual |
 | `onChange` wiring | two `setField` calls — the existing per-field write path, so existing error-clearing applies unchanged | same |
 
 Neither form's `validate()` is edited. The C-2 divergence (`ActorForm` has no both-or-neither rule) is preserved exactly as found; see OQ-3.
@@ -240,14 +240,14 @@ Explicitly **not** written: any test asserting marker position, drag behaviour, 
 | Metric | Expected |
 |---|---|
 | **Tasks** | **7** |
-| **LOC** | **~900** — re-baselined 2026-09-08 at the T-3 gate, user-approved. Prior figures: 620 (Phase 2) → 635 (Phase 3) → **900**. Measured cause: **every task has overrun, and the trend is upward** — T-1 261/170 (+54 %), T-2 63/35 (+80 %), T-3 296/135 (+119 %), i.e. 620 of the old 635 consumed at 3/7 tasks. The "T-1 was an outlier" reading recorded at the T-2 gate was **wrong** and is corrected in `execution.md`. The overrun is documentation, not logic: 106 of T-3's 296 lines are comment. |
+| **LOC** | **RETIRED as a tripwire — 2026-09-08, T-4 gate, user-approved.** History: 620 (Phase 2) → 635 (Phase 3) → ~900 (T-3 gate) → **retired**. Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190 — **965 lines against the ~900 it had just been raised to.** **A tripwire raised twice without any scope change is not measuring the thing it was meant to protect.** The task count never moved (7), no requirement grew, and the entire overrun is documentation — the same documentation that caught two defects no test could see (`isSamePoint`'s normalization contract, the 0×0 container). LOC was a reasonable proxy before execution; four tasks of evidence say the real cost here is **review rounds**, which remain a live gate. Recorded rather than raised a third time. |
 | **Review rounds** | **16** — re-baselined 2026-09-08 after T-2, user-approved. The original **9** assumed reviews audit *code*. Measured across T-1 and T-2: **7 rounds, 6 of them spent on the accuracy of prose rather than the correctness of code** — T-2's code was accepted on attempt 1 and never changed again, while three rounds went into one docblock. Every FAIL was legitimate (a false claim in a module written to be read by the next implementer is a real defect, and one of them was caught before T-3 could inherit it), so the discipline is not the problem — the estimate was. LOC and task count both held: 323 of 635 at 2/7 tasks, so T-1's overrun was the test-dense outlier it looked like, not a uniform underestimate. |
 
 Sized against the finished design, not the Phase 0 guess, then reconciled against the actual decomposition, then **re-baselined once in flight on measured evidence** (rounds only — see the row above) (KZ-005 — a figure that contradicts a sibling document's prose is a defect detectable without re-measuring). The estimate matches **Standard** depth — no re-scoping recommended. `/akili-execute` must **stop and escalate** rather than continue past any of these three numbers.
 
 ## 12. PR Strategy
 
-635 LOC is above the ~400 line where a single PR stops being reviewable. Two PRs, at the seam the design already draws:
+At 965 lines across T-1…T-4 alone (measured; the Phase-3 estimate was 635), the work is far above the ~400 line where a single PR stops being reviewable. Two PRs, at the seam the design already draws:
 
 | PR | Contents | Review focus |
 |---|---|---|

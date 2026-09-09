@@ -18,6 +18,10 @@
  *     the required asterisk, `disabled` while `loading`, "Region is required."
  *     inline, and payload fidelity — every clause `tasks.md` T-7 owns for this
  *     field, named individually
+ *   - (T-5) CoordinatePicker adoption: edit mode passes the actor's GPS
+ *     coordinates and `initiallyOpen` through to the picker, and placing the
+ *     pin (via the recording stub's `onChange`) resolves a half-filled
+ *     latitude/longitude pair by writing both fields
  *
  * Region selection (T-7): mirrors RegistrationForm.test.tsx's T-4 rewrite.
  * `SearchableSelect` never commits from typing (FR-3) — `fireEvent.change` on
@@ -39,6 +43,46 @@ jest.mock('aws-amplify/auth', () => ({
 jest.mock('@/lib/api/actors-admin', () => ({
   createActor: jest.fn(),
   updateActor: jest.fn(),
+}));
+
+/**
+ * Recording stub for CoordinatePicker (T-5), mirroring the mock shape
+ * CoordinatePicker.test.tsx uses for its own Leaflet shell: capture every
+ * props object the real component would have received, and expose a single
+ * button that fires the ONE write path (`onChange(lat, lng)`) so a test can
+ * simulate "the pin was placed" without ever pulling Leaflet into this suite.
+ */
+let receivedCoordinatePickerProps: {
+  latitude: string;
+  longitude: string;
+  onChange: (lat: string, lng: string) => void;
+  initiallyOpen?: boolean;
+  disabled?: boolean;
+  describedBy?: string;
+} | null = null;
+
+jest.mock('@/components/map/CoordinatePicker', () => ({
+  __esModule: true,
+  default: (props: {
+    latitude: string;
+    longitude: string;
+    onChange: (lat: string, lng: string) => void;
+    initiallyOpen?: boolean;
+    disabled?: boolean;
+    describedBy?: string;
+  }) => {
+    receivedCoordinatePickerProps = props;
+    return (
+      <button
+        type="button"
+        aria-label="mock place pin"
+        disabled={props.disabled}
+        onClick={() => props.onChange('-6.5', '39.0')}
+      >
+        mock place pin
+      </button>
+    );
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -165,6 +209,7 @@ function getFieldError(name: RegExp) {
 
 beforeEach(() => {
   jest.resetAllMocks();
+  receivedCoordinatePickerProps = null;
   process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
 });
 
@@ -276,6 +321,60 @@ describe('ActorForm — client validation', () => {
     submitForm();
 
     expect(getFieldError(/capacity/i)?.textContent).toMatch(/0 or greater/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CoordinatePicker adoption (T-5, FR-1 sc. 3, FR-2 sc. 1, FR-5)
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
+  it('FR-2 sc.1: opening an actor with coordinates passes them to the picker', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    expect(receivedCoordinatePickerProps).not.toBeNull();
+    expect(receivedCoordinatePickerProps!.latitude).toBe(String(ADMIN_ACTOR.gpsLatitude));
+    expect(receivedCoordinatePickerProps!.longitude).toBe(String(ADMIN_ACTOR.gpsLongitude));
+    expect(receivedCoordinatePickerProps!.initiallyOpen).toBe(true);
+  });
+
+  it('FR-1 sc.3: placing the pin resolves a half-filled pair (latitude set, longitude blank) by writing both fields', async () => {
+    const HALF_FILLED_ACTOR: AdminActor = {
+      ...ADMIN_ACTOR,
+      gpsLatitude: -8.9,
+      gpsLongitude: null,
+    };
+    renderForm({ mode: 'edit', initialValues: HALF_FILLED_ACTOR });
+
+    // A latitude-only pair is a legal ActorForm state (C-2) — confirm it
+    // renders that way before the picker resolves it.
+    expect(screen.getByLabelText(/gps latitude/i)).toHaveValue(-8.9);
+    expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(null);
+
+    fireEvent.click(screen.getByRole('button', { name: /mock place pin/i }));
+
+    expect(screen.getByLabelText(/gps latitude/i)).toHaveValue(-6.5);
+    expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(39.0);
+  });
+
+  it('FR-5: the four GPS inputs are still present, labelled, and independently validated', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(screen.getByLabelText(/gps latitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/gps longitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/gps altitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/gps accuracy/i)).toBeInTheDocument();
+
+    // Existing range validation (FR-5 sc. 2) still fires unchanged — a
+    // latitude-only submission is valid here (C-2), so only the
+    // out-of-range case is exercised (the in-range cases are covered above).
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
+    submitForm();
+
+    expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-90 and 90/i);
     expect(createActor).not.toHaveBeenCalled();
   });
 });

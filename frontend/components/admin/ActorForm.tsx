@@ -23,6 +23,7 @@ import { AcknowledgeDialog } from './AcknowledgeDialog';
 import Button from '../ui/Button';
 import { SearchableSelect } from '../ui/SearchableSelect';
 
+import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
 import {
@@ -874,6 +875,23 @@ export default function ActorForm({
               {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
               {renderInput('gpsAltitude', 'GPS altitude', 'number')}
               {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
+            </div>
+            {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
+                cell would cap the map at ~1/3 card width on lg. Mounted
+                eagerly (FR-7): this is a desktop admin surface, and seeing a
+                wrong pin without clicking is the whole point (proposal
+                Success Criteria 2). */}
+            <div className="mt-4">
+              <CoordinatePicker
+                initiallyOpen
+                latitude={values.gpsLatitude}
+                longitude={values.gpsLongitude}
+                disabled={loading}
+                onChange={(lat, lng) => {
+                  setField('gpsLatitude', lat);
+                  setField('gpsLongitude', lng);
+                }}
+              />
             </div>
           </fieldset>
         </div>
