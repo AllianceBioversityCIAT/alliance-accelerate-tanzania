@@ -72,9 +72,9 @@ None involves generated output; none would have been caught under the narrower r
 - **LOC was retired as a tripwire rather than raised a third time.** Two raises with no scope change is evidence the metric is measuring the wrong thing; tasks and review rounds stayed live.
 - **`author ≠ auditor` was structurally enforced** by the `.claude/agents/` wrappers (Implementer sonnet, Reviewer opus) and never collapsed on review — only on test authorship (see the KZ-012 digest update).
 
-## Pending Items
+## Pending Items — **APPLIED 2026-09-09 on `main`** (user-approved)
 
-Recorded on a spec branch; all await the apply phase on `main`.
+Recorded on the `map-picker` spec branch; applied in the first default-branch pass after the merge.
 
 ### Kind: `guide-sync` — **already applied during execution, no pending write**
 `frontend/CLAUDE.md` gained a *Map surfaces* section and `frontend/AGENTS.md` its mirror (rule 6, list renumbered 1–9), covering the two silent-failure traps, the shared-constants rule and the seam-purity rule. Applied mid-execution under `/akili-execute` Step 3.5's "actively misleading" clause rather than deferred. **Nothing further owed.** Root guides swept for falsified claims: none found.
@@ -82,17 +82,19 @@ Recorded on a spec branch; all await the apply phase on `main`.
 ### Kind: `trd-adr` — **none**
 DD-6 deliberately allocated no ADR (no new module or service in the architectural sense, no integration, no persistence or topology change). The shared counter was never touched.
 
-### Kind: `standardization`
+### Kind: `standardization` — both applied
+
+> The digest was at **8,120 bytes against its ~8 KB cap** when these landed. Following this log's own guidance (*"prefer raising the budget"*), the cap went to ~12 KB rather than retiring rows. **KZ-011 was explicitly not retired** despite qualifying: it is the *claims-must-cite-where-verified* lesson, and this spec violated it five times while it sat marked `Applied` — retiring it as held would be the exact failure the preamble describes.
 | Id | Target | Edit | Severity | Status |
 |---|---|---|---|---|
-| S-1 | `.agents/leader.md` § Reporting To The User | L-1's recompute-every-figure clause | High | pending |
-| S-2 | `docs/specs/general-setup/task.md` § Testing & Verification | L-2's widening of the differential-baseline rule | Medium | pending |
+| S-1 | `.agents/leader.md` § Reporting To The User | L-1's recompute-every-figure clause | High | **applied** |
+| S-2 | `docs/specs/general-setup/task.md` § Testing & Verification | L-2's widening of the differential-baseline rule | Medium | **applied** |
 
 ### Kind: `digest-update`
 | Id | Lesson | Update | Status |
 |---|---|---|---|
-| D-1 | **KZ-002** | Recurrence **×5**. New locus, and it is the finding: **all seven instances in this spec were in *verification lines*** — never in a requirement, never in design intent. The spec's content survived two judgment rounds and fifteen reviews; the gates authored alongside it failed seven times. Three were caught only because a Reviewer read *one task ahead* (T-3's `npx eslint` could not start at all in `frontend/`) | pending |
-| D-2 | **KZ-008** | Recurrence **×4 → ×5**. New mechanism to name: the failure is not carelessness but that **reading *about* an artefact feels like reading it** — a grep's output, a compiler message naming an alias, a remembered symbol, a general truth about git. Five instances, all the Leader's, all caught by measuring and none by re-reading | pending |
-| D-3 | **KZ-005** | Extend to the **Leader's own ledger**: round counts reported from recall across three gates, drifting upward, with a budget escalated on the inflated figure — then the same basis re-asserted as *"measurable and true"* in the very paragraph admitting the counts were kept by memory. KZ-005 surviving its own correction | pending |
-| D-4 | **KZ-012** | Extend to **test authorship**. `author ≠ auditor` held on review and never on testing: `/akili-test` was not run, so every test was written by the agent that wrote the code. Four non-discriminating suites resulted; three were caught anyway by the demonstrated-falsifier rule (L-2) | pending |
-| D-5 | **KZ-004** | Recurrence. Two corrections were applied to a cited site and not swept: `execution.md`'s own header kept the retired `635 LOC · 9 review rounds` that the same sweep fixed in `tasks.md`, and a coverage-row demotion at the T-6 gate was never applied to the two sibling rows found one task earlier | pending |
+| D-1 | **KZ-002** | Recurrence **×5**. New locus, and it is the finding: **all seven instances in this spec were in *verification lines*** — never in a requirement, never in design intent. The spec's content survived two judgment rounds and fifteen reviews; the gates authored alongside it failed seven times. Three were caught only because a Reviewer read *one task ahead* (T-3's `npx eslint` could not start at all in `frontend/`) | **applied** |
+| D-2 | **KZ-008** | Recurrence **×4 → ×5**. New mechanism to name: the failure is not carelessness but that **reading *about* an artefact feels like reading it** — a grep's output, a compiler message naming an alias, a remembered symbol, a general truth about git. Five instances, all the Leader's, all caught by measuring and none by re-reading | **applied** |
+| D-3 | **KZ-005** | Extend to the **Leader's own ledger**: round counts reported from recall across three gates, drifting upward, with a budget escalated on the inflated figure — then the same basis re-asserted as *"measurable and true"* in the very paragraph admitting the counts were kept by memory. KZ-005 surviving its own correction | **applied** |
+| D-4 | **KZ-012** | Extend to **test authorship**. `author ≠ auditor` held on review and never on testing: `/akili-test` was not run, so every test was written by the agent that wrote the code. Four non-discriminating suites resulted; three were caught anyway by the demonstrated-falsifier rule (L-2) | **applied** |
+| D-5 | **KZ-004** | Recurrence. Two corrections were applied to a cited site and not swept: `execution.md`'s own header kept the retired `635 LOC · 9 review rounds` that the same sweep fixed in `tasks.md`, and a coverage-row demotion at the T-6 gate was never applied to the two sibling rows found one task earlier | **applied** |

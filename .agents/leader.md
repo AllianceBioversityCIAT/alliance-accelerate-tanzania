@@ -74,6 +74,8 @@ After each task completes (whether on first pass or after self-correction), repo
 
 Keep this report concise. The full audit trail belongs in `execution.md`, not in chat.
 
+**Recompute every figure at the moment you report it (KZ-005, `enhancement/map-coordinate-picker`).** Counts, budgets, sizes, round totals — a number carried between turns is recall, not measurement, and it drifts upward. This binds hardest on your own ledger, because it is the one document no Reviewer audits: that spec reported its review-round count from memory across three consecutive gates (real 5, reported 7; real 10, reported 12–14) and **escalated a budget on the inflated figure**.
+
 ---
 
 <!-- ===== AKILI upgrade block — appended 2026-08-03 by /akili-constitution. Everything above is the project's original persona and is authoritative where the two overlap. ===== -->
