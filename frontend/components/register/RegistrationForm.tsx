@@ -67,6 +67,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ROLES } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import CoordinatePicker from '@/components/map/CoordinatePicker';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 
 // ---------------------------------------------------------------------------
@@ -803,6 +804,23 @@ export default function RegistrationForm({
               'Decimal between -180 and 180',
               gpsHintId,
             )}
+          </div>
+          {/* T-6 (FR-7): sibling below the grid, not a grid cell — a grid cell
+              would cap the map at half card width on lg. `mt-4` matches the
+              grid's own `gap-4`, since gap adds nothing below the last row.
+              Closed by default (`initiallyOpen` omitted): this is the public,
+              mobile-first form Leaflet must not load onto until asked. */}
+          <div className="mt-4">
+            <CoordinatePicker
+              latitude={values.gpsLatitude}
+              longitude={values.gpsLongitude}
+              disabled={submitting}
+              describedBy={gpsHintId}
+              onChange={(lat, lng) => {
+                setField('gpsLatitude', lat);
+                setField('gpsLongitude', lng);
+              }}
+            />
           </div>
         </fieldset>
       </div>

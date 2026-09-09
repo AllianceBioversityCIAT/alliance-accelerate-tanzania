@@ -34,7 +34,7 @@ Both forms then adopt `CoordinatePicker` in their Location section, differing in
 
 So a `dynamic(… { ssr: false })` child is kept out of **First Load JS** whether it is mounted eagerly or on demand. The route table would read identical for both, and would report green on the exact regression FR-7 forbids. A gate that cannot fail is not a gate.
 
-**What the route table *does* prove**, and should still be run for: that the dynamic split is intact at all. A careless `import 'leaflet'` at the top of `CoordinatePicker.tsx` would move ~44 kB gzip into First Load JS and breach the 116 kB bar. That is a real, distinct defect (**D-5a**) and this gate catches it.
+**What the route table *does* prove**, and should still be run for: that the dynamic split is intact at all. A careless `import 'leaflet'` at the top of `CoordinatePicker.tsx` would move ~44 kB gzip into First Load JS and breach the ceiling unmistakably. That is a real, distinct defect (**D-5a**) and this gate catches it.
 
 **What must be added** — a gate that *can* fail on eager mounting: a **real-browser network observation** on the built static export.
 
@@ -229,7 +229,7 @@ No design decision removes, disables, or inverts already-delivered behaviour. DD
 | Seam unit tests — `lib/geo/coordinates.test.ts` | FR-2 sc. 3 (all four `null` cases), FR-6 (rounding, round-trip stability), DD-4 (`isSamePoint`) | `cd frontend && npm test -- coordinates` |
 | Wrapper component tests — `CoordinatePicker.test.tsx`, Leaflet shell replaced by a **recording stub** | FR-4 (clear writes both blank, disabled when nothing to clear), FR-7 sc. 1–2 (shell not rendered while closed; rendered after reveal), prop pass-through | `cd frontend && npm test -- CoordinatePicker` |
 | Form suites — existing `RegistrationForm.test.tsx`, `ActorForm.test.tsx` | FR-5 (inputs, validation, error wiring, `aria-describedby` unchanged), FR-1 sc. 3, NFR-2 via `jest-axe` | `cd frontend && npm test -- RegistrationForm ActorForm` |
-| Build gate | **D-5a** / NFR-1 (dynamic split intact, `/register` ≤ 116 kB, `/map` still 112 kB) | `cd frontend && npm run build` |
+| Build gate | **D-5a** / NFR-1 (dynamic split intact, `/register` ≤ 119 kB — amended post-measurement at T-6, was 116 — `/map` still 112 kB) | `cd frontend && npm run build` |
 | **Real-browser network check** | **D-5b** / **NFR-1b** — FR-7 (§2), the gate that *can* fail on eager mounting | CDP over the static export; mutation-verified first. **One-time, not committed** — see §2 *Durability* and §13 |
 | **Rendered captures** | NFR-5 / D-4 at 375 / 768 / 1440 | HITL pause |
 

@@ -390,3 +390,38 @@ The Leader reversed its own safety instruction and asked for it to be attacked h
 **ADVISORY:** no `ActorForm` test reddens if the wrapper's own `initiallyOpen` handling regresses (correct seam split, worth knowing) · the "Covers:" addition names two of three new tests · `"proposal Success Criteria 2"` cites an ordinal into an **unnumbered** bullet list — resolves correctly today, goes stale silently if a bullet is inserted above it (predates this delta).
 
 **Reviewer boundary (KZ-012):** it re-ran nothing; the 47/47 and the four figures are the Implementer's account, verified only as reconciling with the diff. **D-4's real evidence remains T-7's 375/768/1440 captures** — the spacing verdict above is a box-model reading, not a measurement.
+
+### T-6 — Adopt in `RegistrationForm` · attempts 1–2 · Reviewer **PASS** ✅
+
+**Date:** 2026-09-08 · **Implementer:** sonnet, `high` → `high` · **Reviewer:** opus, read-only
+
+**Attempt 1 FAILed on three test-file issues; the production diff was accepted in full and never touched again.** The Reviewer verified FR-5 by *arithmetic* — +18 with no deletions reconciles exactly with the new block, so nothing was modified in place — and re-derived the `mt-4` reasoning against this form's own markup rather than accepting it from T-5: the GPS-optional paragraph sits **above** the grid, so it does not change the rhythm below the last row, and this form's `lg:grid-cols-2` makes the "half card width" phrasing correct where `ActorForm`'s said a third.
+
+**The three issues, and why the second mattered most:**
+1. **The coordinate pass-through was never asserted.** Swapping the `latitude`/`longitude` props — or blanking both — left **every test green**, because the stub calls `onChange` with hardcoded values and never reads the props. This is the only part of FR-7 sc. 2 the adoption seam owns.
+2. **A test named `FR-7 sc.2` actually tested FR-5.** *This is why issue 1 was easy to miss: the coverage ledger read as satisfied.* Test names are downstream-facing here — T-7 and the archive read them as the record.
+3. **The FR-1 sc. 3 test never asserted the half-filled premise it was named for** — a no-op `fireEvent.change` would have passed.
+
+**Attempt 2 closed all three.** The new FR-7 sc. 2 test asserts **both axes independently** against distinct typed values, so a swap, a blank, *or* a single-axis hardcode all redden. The Reviewer confirmed the reported falsifier output reconciles with the source **character for character**, including which axis reddened and the argument order — and separately read the production file to confirm no residual swap survived, noting that the unchanged 118 kB could not have corroborated the revert since a two-prop swap is byte-neutral.
+
+**35/35 is not merely plausible — the Reviewer recomputed it** from the file (6 structure + 7 error contract + 8 GPS pairing + 5 CoordinatePicker + 7 Region + 2 accessibility = 35). Full suite reported at 111 suites / 1682 tests, credited as consistent but not verified.
+
+#### The naming question, adjudicated rather than waved through
+
+The Leader asked whether the renamed `FR-7 sc.2` test overclaims in a *new* way, since it asserts props received while the picker is still **closed**, not behaviour after revealing. The Reviewer considered failing it as a fresh instance of issue 2's class and **declined, with reasons on the record**: `tasks.md` assigns FR-7 sc. 2 to **T-4 and T-6 jointly** (T-4 owns "reveal mounts the shell with the props it was handed", T-6 owns "those props are the live typed coordinates"), so the composite claim is true across the halves and the name cites the *correct* requirement — unlike attempt 1's issue 2, which cited a different one. Decisively: **the T-5 review had already blessed this exact seam split for `initiallyOpen`**, and applying a stricter rule to T-6 for the identical pattern would be inconsistent.
+
+#### Leader correction — a coverage row claiming an owner with no test
+
+Reviewer advisory 7, pre-existing and not introduced by this attempt: `tasks.md` assigned FR-1 sc. 1's error-clearing clause to **T-5 and T-6**, but T-6's own Traces line never listed it and no test in that suite drives it. The behaviour is structurally sound (`setField` deletes the field's error on every write; the picker calls it for both axes) — but unasserted. **Corrected: the T-6 half is now a declared (B) gap rather than a silent claim.** A coverage row naming an owner that has no test is KZ-008 one level above a test name.
+
+#### ADVISORY (recorded, non-gating)
+- `FR-7 sc.1`'s name says the inputs stay "visible", but `getByLabelText` returns hidden elements — the task's own falsifier only requires *queryability*, so the bar is met, but name and body differ.
+- `disabled` is asserted only at `false`; no test renders `<RegistrationForm submitting />` against the picker, so a hardcoded `false` would pass. The spec assigns the picker no disabled clause, so this is a bonus assertion with one pole missing.
+- The file-header "Covers:" list names no T-6 entry while that block now holds five tests.
+- One new FR-5 test near-duplicates the pre-existing `rejects exactly one of two coordinates`.
+- The mock writes `'-6.5'`/`'39.0'` while the real `formatCoordinate` emits 5-dp strings; assertions are numeric, so this suite is blind to any future trailing-zero trimming. **T-7 gate 2 sees the real strings.**
+
+#### → Carried into T-7's brief (both from this review)
+1. **T-7's mandatory gate-1 mutation will redden one jsdom test by design.** Rendering `<CoordinatePicker initiallyOpen />` on `/register` breaks the FR-7 sc. 1 assertion. **That is corroboration that the jsdom gate discriminates — nobody should "fix" it.**
+2. **Reveal → pin placement is covered by no jsdom test**, despite the FR-7 sc. 2 name. T-7 gate 2 owns it end to end.
+3. `/register` sits at **118 kB against the amended 119 kB ceiling — 1 kB of headroom.** T-7 must record the measured figure verbatim, not a pass token.

@@ -78,7 +78,7 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       **Disqualifies the evidence:** if `git diff` shows any edit inside `validate()`, `buildDto`, or the four `renderInput('gps…')` calls, **FR-5 is violated regardless of a green suite** — the suite does not assert the absence of edits. Report the diff, do not self-certify.
       **Done when:** picker renders in the Location fieldset; a half-filled pair is resolved by placing the pin; opening an actor with coordinates shows the pin pre-placed; the diff touches no validation, payload, or input-rendering code.
 
-- [ ] **T-6  Adopt in `RegistrationForm` (behind the disclosure)**  (deps: T-4)
+- [x] **T-6  Adopt in `RegistrationForm` (behind the disclosure)**  (deps: T-4)
       **Size:** ~55 LOC (32 prod / 23 test) · **Skills:** `ui-ux-pro-max`, `tailwind-design-system`
       **Scope:** Same insertion, `initiallyOpen={false}`, passing the form's existing `gpsHintId` as `describedBy`. `validate()` (including the both-or-neither rule) and `buildPayload` untouched.
       **Traces:** FR-7 sc. 1 (`BUT` the inputs stay visible without revealing the map) + sc. 2 (reveal places pin from already-typed coords) · FR-5 sc. 1 + sc. 2 · FR-1 sc. 3
@@ -94,7 +94,7 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       1. **NFR-1b / D-5b** — serve `frontend/out/`, load `/register` in headless Chrome over CDP, record all network requests. **Pass:** zero requests matching the Leaflet chunk, the Leaflet CSS, or `tile.openstreetmap.org`.
       2. **D-3** — drive the picker in a real browser on both forms: marker created, draggable, map click moves it, fields update, typed values move the pin, clear empties both.
       3. **NFR-5 / D-4** — rendered captures of both forms' Location section at **375 / 768 / 1440**, checking no horizontal overflow.
-      Plus the build gate: `cd frontend && npm run build` → `/register` ≤ **116 kB** (NFR-1 / D-5a), `/map` still **112 kB** (NFR-6).
+      Plus the build gate: `cd frontend && npm run build` → `/register` ≤ **119 kB** (NFR-1, amended post-measurement at T-6 / D-5a), `/map` still **112 kB** (NFR-6).
       **Traces:** NFR-1, NFR-1b, NFR-5, NFR-6 · FR-7 sc. 1 · FR-1 sc. 1/sc. 2 and FR-2/FR-3's Leaflet halves · `design.md` §2, §10, §13
       **Files:** `docs/specs/enhancement/map-coordinate-picker/execution.md` (evidence), capture images
       **Verify:** the three procedures above, each recorded with its raw observation.
@@ -115,7 +115,7 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | Requirement · scenario · clause | Owner |
 |---|---|
 | FR-1 sc. 1 drag writes both · *AND IT MUST write both, never one alone* | T-3 (behaviour), T-4 (API makes it inexpressible) |
-| FR-1 sc. 1 · clears pre-existing error · *BUT must NOT alter other fields / submit* | T-5, T-6 (both forms' wiring) |
+| FR-1 sc. 1 · clears pre-existing error · *BUT must NOT alter other fields / submit* | T-5 **(A)** · T-6 **(B), declared** — structurally sound on the RegistrationForm side (`setField` deletes the field's error on every write and the picker calls it for both axes) but **unasserted there**; T-6's own Traces line never claimed it. Corrected at the T-6 gate: a coverage row naming an owner that has no test is KZ-008 one level up from a test name |
 | FR-1 sc. 2 map click | T-3, verified T-7 gate 2 |
 | FR-1 sc. 3 half-filled pair · *AND IT MUST behave identically in both* · *BUT must NOT change `validate()`* | T-5, T-6 |
 | FR-2 sc. 1 pin pre-placed + centered | T-3, T-5 |

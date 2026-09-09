@@ -75,12 +75,54 @@ jest.mock('@/lib/api/registrations', () => ({
   getConsentPolicy: jest.fn(),
 }));
 
+/**
+ * Recording stub for CoordinatePicker (T-6), mirroring the mock shape
+ * ActorForm.test.tsx uses for its own T-5 adoption: capture every props
+ * object the real component would have received, and expose a single button
+ * that fires the ONE write path (`onChange(lat, lng)`) so a test can
+ * simulate "the pin was placed" without ever pulling Leaflet into this suite
+ * (NFR-4).
+ */
+let receivedCoordinatePickerProps: {
+  latitude: string;
+  longitude: string;
+  onChange: (lat: string, lng: string) => void;
+  initiallyOpen?: boolean;
+  disabled?: boolean;
+  describedBy?: string;
+} | null = null;
+
+jest.mock('@/components/map/CoordinatePicker', () => ({
+  __esModule: true,
+  default: (props: {
+    latitude: string;
+    longitude: string;
+    onChange: (lat: string, lng: string) => void;
+    initiallyOpen?: boolean;
+    disabled?: boolean;
+    describedBy?: string;
+  }) => {
+    receivedCoordinatePickerProps = props;
+    return (
+      <button
+        type="button"
+        aria-label="mock place pin"
+        disabled={props.disabled}
+        onClick={() => props.onChange('-6.5', '39.0')}
+      >
+        mock place pin
+      </button>
+    );
+  },
+}));
+
 const mockGetConsentPolicy = getConsentPolicy as jest.MockedFunction<typeof getConsentPolicy>;
 
 beforeEach(() => {
   // Default: never resolves — see file header. Individual tests that care
   // about the fetched policy override this with mockResolvedValueOnce.
   mockGetConsentPolicy.mockReturnValue(new Promise(() => {}));
+  receivedCoordinatePickerProps = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -570,6 +612,84 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
 
     expect(onValidated).not.toHaveBeenCalled();
     expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CoordinatePicker adoption (T-6, FR-7, FR-1 sc. 3, FR-5)
+// ---------------------------------------------------------------------------
+
+describe('RegistrationForm — CoordinatePicker adoption (T-6)', () => {
+  it('FR-7 sc.1: the picker mounts closed, and both coordinate inputs stay visible and usable without it', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+
+    expect(receivedCoordinatePickerProps).not.toBeNull();
+    expect(receivedCoordinatePickerProps!.initiallyOpen).toBeFalsy();
+    expect(receivedCoordinatePickerProps!.disabled).toBe(false);
+
+    // BUT clause: the map never reveals, yet both inputs remain queryable
+    // and editable through the ordinary field path.
+    const latitude = screen.getByLabelText(/gps latitude/i);
+    const longitude = screen.getByLabelText(/gps longitude/i);
+    fireEvent.change(latitude, { target: { value: '-6.81235' } });
+    fireEvent.change(longitude, { target: { value: '39.28' } });
+    expect(latitude).toHaveValue(-6.81235);
+    expect(longitude).toHaveValue(39.28);
+  });
+
+  it('FR-7 sc.2: revealing places the pin from any coordinates already typed', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+
+    // Type into both inputs with the picker still closed, then confirm the
+    // picker is receiving those exact values as its live latitude/longitude
+    // props — the coordinates it would place its pin at the instant it is
+    // revealed. Asserting only the rendered inputs (as the previous version
+    // of this test did) cannot catch a swapped or hardcoded prop wire-up,
+    // since the mock's own click handler never reads these props at all.
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '-6.81235' } });
+    fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '39.28' } });
+
+    expect(receivedCoordinatePickerProps!.latitude).toBe('-6.81235');
+    expect(receivedCoordinatePickerProps!.longitude).toBe('39.28');
+  });
+
+  it("FR-5: describedBy is wired to the form's existing gpsHintId", () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+
+    const gpsHint = screen.getByText(/GPS coordinates are optional/i);
+    expect(receivedCoordinatePickerProps).not.toBeNull();
+    expect(receivedCoordinatePickerProps!.describedBy).toBe(gpsHint.id);
+  });
+
+  it('FR-1 sc.3: placing the pin resolves a half-filled pair by writing both fields', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '-8.9' } });
+    // Longitude left blank — a legal in-progress state, though `validate()`
+    // would reject it as a pair (FR-5 sc. 2, unaffected by this adoption).
+
+    // The GIVEN this test is named for: confirm the half-filled premise
+    // actually holds before the pin is placed, not just the post-click
+    // resolved state (a no-op `fireEvent.change` would otherwise still
+    // pass this test).
+    expect(screen.getByLabelText(/gps latitude/i)).toHaveValue(-8.9);
+    expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(null);
+
+    fireEvent.click(screen.getByRole('button', { name: /mock place pin/i }));
+
+    expect(screen.getByLabelText(/gps latitude/i)).toHaveValue(-6.5);
+    expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(39.0);
+  });
+
+  it('FR-5: the both-or-neither validation rule still fires, untouched by the picker', async () => {
+    const user = userEvent.setup();
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    await fillMinimalValidForm(user);
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '-3.5' } });
+    // Longitude left blank.
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(screen.getByText('Enter both coordinates, or leave both blank.')).toBeInTheDocument();
   });
 });
 
