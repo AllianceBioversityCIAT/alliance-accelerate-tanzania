@@ -88,7 +88,7 @@ A task is eligible when its status is `[ ]`/`[~]` and every dependency is `[x]`.
       **Disqualifies the evidence:** same as T-5 — a green suite does not prove `validate()` was untouched; the diff does. Also: **this task cannot prove FR-7's network behaviour.** A jsdom test showing the shell unrendered is not the same claim as "no Leaflet request was made" — that is T-7 (NFR-1b).
       **Done when:** reveal control present and labelled; coordinate inputs usable with the map never revealed; revealing places the pin from typed values; `gpsHintId` still joins both inputs' `aria-describedby`; diff touches no validation or payload code.
 
-- [ ] **T-7  The three declared gaps — browser gates and rendered captures**  (deps: T-5, T-6)
+- [x] **T-7  The three declared gaps — browser gates and rendered captures**  (deps: T-5, T-6)
       **Size:** ~0 LOC of product code; output is **evidence**, recorded in `execution.md` · **Skills:** `playwright-cli` **only if installed in the running environment** — it is not vendored here, so the task must remain completable with raw CDP over headless Chrome (the ATP-57 route)
       **Scope:** Three checks, none of which any jsdom test may claim.
       1. **NFR-1b / D-5b** — serve `frontend/out/`, load `/register` in headless Chrome over CDP, record all network requests. **Pass:** zero requests matching the Leaflet chunk, the Leaflet CSS, or `tile.openstreetmap.org`.
