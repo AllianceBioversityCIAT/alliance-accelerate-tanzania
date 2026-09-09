@@ -6,7 +6,7 @@
 |---|---|
 | Spec path | `docs/specs/enhancement/map-coordinate-picker/` |
 | Approval Mode | `gated` (from `proposal.md` Document Control) — the Leader pauses at every continue gate |
-| Budget (tripwire) | **7 tasks · 635 LOC · 9 review rounds** (`design.md` §11). Exceeding any of the three stops the run and escalates |
+| Budget (tripwire) | **Final: 7 tasks · 16 review rounds.** LOC retired as a tripwire at the T-4 gate. Full history — LOC 620 → 635 → ~900 → retired (actual **1,192**); rounds 9 → 16 (spent **15**). ⚠️ This row read `635 LOC · 9 review rounds` until validation — **the identical stale-figure defect this spec caught and swept in `tasks.md`, missed in `execution.md`'s own header by that same sweep.** KZ-004 |
 | Leader | Opus 5 (T1) |
 | Implementer | `akili-implementer` wrapper → **sonnet** (T2) |
 | Reviewer | `akili-reviewer` wrapper → **opus** (T3), read-only. `author ≠ auditor` enforced by wrapper config |
@@ -166,7 +166,7 @@ That makes **four KZ-008 instances in this spec, two of them authored by the Lea
 
 ## Budget re-baseline — after T-2, user-approved 2026-09-08
 
-**Tripwire state at the T-2 gate:** 2/7 tasks · **7 of 9 review rounds** · ~323 of 635 LOC.
+**Tripwire state at the T-2 gate:** 2/7 tasks · **5 of 9 review rounds** · ~323 of 635 LOC. ⚠️ **This read "7 of 9" until validation.** Recounted from this ledger's own entries — T-1 a1, T-1 a2, T-2 a1, T-2 a2, T-2 a3 — the figure at that gate was **5**. The escalation below was therefore made on an inflated count, and the Leader later re-asserted the same basis (*"six of seven rounds went to prose accuracy, which is measurable and true"*) **without re-measuring it**, in the very paragraph admitting the counts had been kept by recall. KZ-005 surviving its own correction.
 
 The round budget failed; the LOC and task budgets held. Escalated to the user *before* spending past it rather than at the breach.
 
@@ -547,5 +547,5 @@ Applied to **`frontend/CLAUDE.md`** (new *Map surfaces* section) and mirrored in
 **No re-index pending.** `.codegraph/` holds only `config.json` and `.gitignore` in this checkout — the graph was never initialized here, so there is nothing to refresh. Anyone who runs `codegraph init` later picks up the new modules on the first index.
 
 ### Left for `/akili-archive`
-- The **Kaizen retrospective**. The strongest signal available: **all seven KZ-002 instances in this spec were in *verification lines* — never in requirements, never in design intent.** The requirements and design survived two judgment rounds and fifteen reviews; the gates written alongside them did not. Second signal: **eight false claims, four by the Leader, all four the same mechanism** — a property of an artefact asserted without opening it, and all four caught by measuring rather than by re-reading.
+- The **Kaizen retrospective**. The strongest signal available: **all seven KZ-002 instances in this spec were in *verification lines* — never in requirements, never in design intent.** Enumerated, because validation found the count asserted as **three** earlier in this log (true at the T-2 gate, when only three had occurred) and as **seven** here, with nothing bridging them: (1) NFR-1's route table could not see eager mounting — caught at design review; (2) T-1's round-trip falsifier could not redden its own clause; (3) T-3's `npx eslint` verify command could not start at all; (4) T-1's `isSamePoint` suite passed with a single-axis comparator; (5) T-4's NFR-2 focus clause — bare `<button>`s left all 12 tests green; (6) T-5's `initiallyOpen` — deleting it reddened zero tests; (7) T-6's coordinate pass-through — swapping the props left every test green. The requirements and design survived two judgment rounds and fifteen reviews; the gates written alongside them did not. Second signal: **eight false claims, four by the Leader, all four the same mechanism** — a property of an artefact asserted without opening it, and all four caught by measuring rather than by re-reading.
 - **TRD sync:** none owed. DD-6 deliberately allocated no ADR (no new module or service in the architectural sense, no integration, no persistence or topology change), so the shared counter was never touched and there is nothing to supersede.

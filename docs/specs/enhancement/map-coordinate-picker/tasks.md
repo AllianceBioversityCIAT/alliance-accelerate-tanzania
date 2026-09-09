@@ -115,7 +115,7 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | Requirement · scenario · clause | Owner |
 |---|---|
 | FR-1 sc. 1 drag writes both · *AND IT MUST write both, never one alone* | T-3 (behaviour), T-4 (API makes it inexpressible) |
-| FR-1 sc. 1 · clears pre-existing error · *BUT must NOT alter other fields / submit* | T-5 **(A)** · T-6 **(B), declared** — structurally sound on the RegistrationForm side (`setField` deletes the field's error on every write and the picker calls it for both axes) but **unasserted there**; T-6's own Traces line never claimed it. Corrected at the T-6 gate: a coverage row naming an owner that has no test is KZ-008 one level up from a test name |
+| FR-1 sc. 1 · clears pre-existing error · *BUT must NOT alter other fields / submit* | **(B) on BOTH sides, declared** — corrected at validation. T-6's half was demoted at its own gate; **the same reasoning was not applied to T-5's**, whose three tests are props pass-through, half-filled resolution, and inputs-present — none sets a GPS error then places the pin, none asserts other fields unchanged or that submit did not fire, and FR-1 sc. 1 is absent from T-5's Traces line. Applying a correction to one clause and leaving its siblings is KZ-004 inside the coverage table — structurally sound on the RegistrationForm side (`setField` deletes the field's error on every write and the picker calls it for both axes) but **unasserted there**; T-6's own Traces line never claimed it. Corrected at the T-6 gate: a coverage row naming an owner that has no test is KZ-008 one level up from a test name |
 | FR-1 sc. 2 map click | T-3, verified T-7 gate 2 |
 | FR-1 sc. 3 half-filled pair · *AND IT MUST behave identically in both* · *BUT must NOT change `validate()`* | T-5, T-6 |
 | FR-2 sc. 1 pin pre-placed + centered | T-3, T-5 |
@@ -123,7 +123,9 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | FR-2 sc. 3 four unplaceable cases · *AND IT MUST leave values as typed* · *BUT must NOT throw / block* | T-1 (all four named tests), T-3 |
 | FR-3 sc. 1 typing places pin · *AND IT MUST NOT rewrite typed values* | T-1, T-3 |
 | FR-3 sc. 2 invalid removes marker | T-1, T-3 |
-| FR-4 sc. 1 clear · *AND IT MUST clear both* · *BUT must NOT clear others / reset view* | T-4 (both), T-5 (other fields) |
+| FR-4 sc. 1 clear · *AND IT MUST clear both* | T-4 **(A)** |
+| FR-4 sc. 1 · *BUT must NOT clear any other field* | **(B), declared** — corrected at validation. The table read "T-5 (other fields)", but **no `ActorForm` test exercises the clear path at all**: that suite's stub renders one button that fires `onChange('-6.5','39.0')`, and `onChange('', '')` is invoked in neither form suite. Structurally sound (`setField` writes named keys) but unasserted |
+| FR-4 sc. 1 · *BUT must NOT reset the map view* | **(B), declared** — corrected at validation. The T-4 review already recorded this as *"no test, satisfied structurally"* (`useId` is instance-stable, no `key`, so React reconciles rather than remounts); it was never moved into the declared-gap list |
 | FR-4 sc. 2 nothing to clear · *BUT must NOT be enabled with no effect* | T-4 |
 | FR-5 sc. 1 non-map path · *AND IT MUST need no map* · *BUT must NOT relabel / require GPS* | T-5, T-6 (diff-verified) |
 | FR-5 sc. 2 each form keeps its rules · *AND IT MUST leave altitude/accuracy manual* | T-5 |
@@ -151,7 +153,7 @@ Every scenario and every `BUT it must NOT` / `AND IT MUST` clause is owned by ex
 | T-7 | — | evidence only | 0 code · 11 captures |
 | **Total** | **395** | **240** | **~1,192** |
 
-**Every task overran, and the estimates are kept only as a record of how far off they were.** LOC was retired as a tripwire at the T-4 gate (`design.md` §11) after being raised twice without any scope change: the task count never moved from 7, no requirement grew, and the overrun is documentation — including the forward pointers that caught two defects no test could see.
+**Every task overran, and the estimates are kept only as a record of how far off they were.** LOC was retired as a tripwire at the T-4 gate (`design.md` §11) after being raised twice without any scope change: the task count never moved from 7 and no requirement grew. **The overrun is 56 % test code** (313 of 557 extra lines; prod 639 vs 395 est., test 553 vs 240 est.) — an earlier claim that it was *entirely* documentation was false and was corrected at validation.
 
 **The per-task estimates above are the Phase-3 figures and are now known to be low across the board.** Actuals: T-1 261/170 · T-2 63/35 · T-3 327/135 · T-4 314/190. The live budget is **7 tasks · 16 review rounds** (`design.md` §11). LOC was retired as a tripwire at the T-4 gate after being raised twice without any scope change; the per-task figures above are kept as sizing information, not as a gate. ⚠️ **This line previously read "635 LOC … or 9 review rounds" — both figures were already superseded when the T-3 gate re-baselined them, and the correction was not swept here.** That is KZ-004 (a correction is not applied until the superseded value is gone from everywhere it lived), committed by the Leader, and caught by the T-4 Reviewer rather than by the sweep that should have caught it.
 
