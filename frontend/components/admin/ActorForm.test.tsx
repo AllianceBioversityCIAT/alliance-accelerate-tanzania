@@ -52,44 +52,22 @@ jest.mock('@/lib/api/actors-admin', () => ({
  * button that fires the ONE write path (`onChange(lat, lng)`) so a test can
  * simulate "the pin was placed" without ever pulling Leaflet into this suite.
  */
-let receivedCoordinatePickerProps: {
-  latitude: string;
-  longitude: string;
-  onChange: (lat: string, lng: string) => void;
-  initiallyOpen?: boolean;
-  disabled?: boolean;
-  describedBy?: string;
-} | null = null;
+let receivedCoordinatePickerProps: CoordinatePickerStubProps | null = null;
 
-jest.mock('@/components/map/CoordinatePicker', () => ({
-  __esModule: true,
-  default: (props: {
-    latitude: string;
-    longitude: string;
-    onChange: (lat: string, lng: string) => void;
-    initiallyOpen?: boolean;
-    disabled?: boolean;
-    describedBy?: string;
-  }) => {
-    receivedCoordinatePickerProps = props;
-    return (
-      <button
-        type="button"
-        aria-label="mock place pin"
-        disabled={props.disabled}
-        onClick={() => props.onChange('-6.5', '39.0')}
-      >
-        mock place pin
-      </button>
-    );
-  },
-}));
+jest.mock('@/components/map/CoordinatePicker', () =>
+  require('@/test-utils/coordinate-picker-stub').coordinatePickerStub(
+    (props: CoordinatePickerStubProps) => {
+      receivedCoordinatePickerProps = props;
+    },
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
 import React from 'react';
+import type { CoordinatePickerStubProps } from '@/test-utils/coordinate-picker-stub';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
