@@ -229,7 +229,7 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     const aside = document.getElementById('admin-sidebar');
     const signOut = screen.getByRole('button', { name: /sign out of admin/i });
     expect(aside!.contains(signOut)).toBe(true);
-    expect(aside!.textContent).toContain(ADMIN_SESSION.user.name);
+    expect(aside!.textContent).toContain(ADMIN_SESSION.user!.name);
   });
 
   // ── Loading — no premature redirect (NFR-7) ────────────────────────────────
