@@ -87,7 +87,7 @@ export default function AdminLayout({
       <div className="min-h-screen bg-surface flex flex-col">
 
         {/* ── Top bar ──────────────────────────────────────────────────── */}
-        <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-sm">
+        <header className="sticky top-0 z-[1050] bg-surface border-b border-border shadow-sm">
           <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
 
             <div className="flex items-center gap-2">

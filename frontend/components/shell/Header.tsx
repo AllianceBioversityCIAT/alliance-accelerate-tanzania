@@ -305,8 +305,14 @@ function NavLink({
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // z-[1050]: Leaflet's own CSS puts its panes at 400-700 and its controls at
+  // 800-1000, all in the root stacking context. A `sticky z-40` header is a
+  // stacking context, so every descendant — including the account dropdown's
+  // z-50 — is confined to 40 and loses to the map. Raising the dropdown cannot
+  // fix it; the header is what has to clear Leaflet. Stays under the consent
+  // banner (z-[1100]).
   return (
-    <header className="sticky top-0 z-40 bg-surface border-b border-border shadow-sm">
+    <header className="sticky top-0 z-[1050] bg-surface border-b border-border shadow-sm">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 xl:px-8">
         <div className="flex h-14 items-center justify-between gap-4">
 
