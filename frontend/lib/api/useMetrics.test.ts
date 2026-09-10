@@ -5,6 +5,8 @@
  *   - loading starts as true, transitions to false after fetch resolves (design.md §8)
  *   - data is populated when getMetrics() returns a valid Metrics object
  *   - data remains null when getMetrics() returns null (DD-3 graceful fallback)
+ *   - error is true ONLY when the fetch failed — false initially and on success
+ *     (ATP-50: distinguishes a failed fetch from in-flight loading)
  *   - no state-update-after-unmount warning (cleanup guard)
  */
 
@@ -61,6 +63,8 @@ describe('useMetrics()', () => {
 
     expect(result.current.loading).toBe(true);
     expect(result.current.data).toBeNull();
+    // ATP-50: null data while in flight is NOT an error yet.
+    expect(result.current.error).toBe(false);
 
     // Resolve inside act() to flush all state updates before the test exits
     await act(async () => { resolveFn(null); });
@@ -77,6 +81,7 @@ describe('useMetrics()', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.data).toEqual(VALID_METRICS);
+    expect(result.current.error).toBe(false);
   });
 
   it('sets loading=false and data=null when getMetrics() returns null (graceful fallback)', async () => {
@@ -87,6 +92,9 @@ describe('useMetrics()', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.data).toBeNull();
+    // ATP-50: the API always returns numeric aggregates (zeros included), so a
+    // null result after loading can only mean the request failed.
+    expect(result.current.error).toBe(true);
   });
 
   it('does not update state after unmount (cleanup guard prevents post-unmount setState)', async () => {
