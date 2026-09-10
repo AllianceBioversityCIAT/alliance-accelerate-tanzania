@@ -492,14 +492,22 @@ describe('SearchableSelect — NFR-5 reduced motion (presence only — KZ-002, d
   });
 });
 
-describe('SearchableSelect — Issue-2 z-index regression: z-50 survives the portal (KZ-002 presence-only — does not prove visual stacking under jsdom, which has no layout engine)', () => {
-  it('includes z-50, not the inline-era z-10, on the portaled popup', async () => {
+describe('SearchableSelect — Issue-2 z-index regression: the portaled popup keeps a page-level z-index that clears Leaflet (KZ-002 presence-only — does not prove visual stacking under jsdom, which has no layout engine)', () => {
+  it('carries z-[1075] — not the inline-era z-10, and not the z-50 that lost to Leaflet', async () => {
     const user = userEvent.setup();
     const { input } = renderControl();
     await user.click(input);
     const popup = screen.getByRole('listbox').parentElement as HTMLElement;
-    expect(popup.className).toMatch(/\bz-50\b/);
-    expect(popup.className).not.toMatch(/\bz-10\b/);
+    // Leaflet's own CSS occupies 400-1000 in the root stacking context, and
+    // this popup portals to document.body, so it competes there directly.
+    // Raised from z-50 with the sticky headers (z-[1050]); stays under the
+    // consent banner (z-[1100]).
+    // Token comparison, not a regex: `\b` does not anchor after `]`, so a
+    // /z-\[1075\]\b/ pattern silently never matches.
+    const classes = popup.className.split(/\s+/);
+    expect(classes).toContain('z-[1075]');
+    expect(classes).not.toContain('z-50');
+    expect(classes).not.toContain('z-10');
   });
 });
 
