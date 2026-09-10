@@ -481,7 +481,7 @@ export default function UsersPage() {
       {resetHandoff && (
         <>
           <div
-            className="fixed inset-0 z-50 bg-fg/40"
+            className="fixed inset-0 z-50 bg-backdrop"
             aria-hidden="true"
             onClick={handleResetHandoffDone}
           />
