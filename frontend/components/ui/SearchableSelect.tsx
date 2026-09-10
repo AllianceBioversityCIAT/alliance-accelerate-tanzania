@@ -538,12 +538,15 @@ export function SearchableSelect({
   // portaled to `document.body`, so its position, width, and vertical
   // offset are no longer relative to this wrapper and are written directly
   // onto the element by `recomputePosition` instead.
-  // `z-50` is a page-level z-index now, not a wrapper-local one: inline the
+  // `z-[1075]` is a page-level z-index, not a wrapper-local one: inline the
   // popup only had to beat its own siblings, but portaled to `document.body`
-  // it competes in the root stacking context against every sticky header
-  // (`z-40`) and floating overlay in this repo, which uniformly use `z-50`.
+  // it competes in the root stacking context — against the sticky headers
+  // (`z-[1050]`) and, on the pages that mount Leaflet (the map rail and the
+  // actor form's inline CoordinatePicker), against Leaflet's panes and
+  // controls at 400-1000. `z-50` lost to those. Above the header, below the
+  // consent banner (`z-[1100]`).
   const popupClasses = [
-    'fixed z-50 max-h-60 overflow-y-auto rounded-md border border-border bg-surface shadow-md',
+    'fixed z-[1075] max-h-60 overflow-y-auto rounded-md border border-border bg-surface shadow-md',
     'transition-opacity duration-fast ease-out motion-reduce:transition-none',
   ].join(' ');
 
