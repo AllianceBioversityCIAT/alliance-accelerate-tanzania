@@ -4,9 +4,19 @@
 
 generator client {
   provider      = "prisma-client-js"
-  // "native" for local dev; "rhel-openssl-3.0.x" for the nodejs20.x Lambda
+  // "native" for local dev; "rhel-openssl-3.0.x" for the nodejs24.x Lambda
   // runtime (Amazon Linux 2023 / OpenSSL 3) so the deployed function ships the
   // matching query engine binary (infra/aws-deployment T-3, design.md §4/§9).
+  //
+  // The target moved 20 → 24 with ATP-60, and this line is the reason that bump
+  // needed checking at all: if the runtime's base image or OpenSSL major had
+  // changed, this engine would mismatch and EVERY database call would fail at
+  // runtime while the deploy itself stayed green. Verified 2026-09-09 rather
+  // than assumed — `public.ecr.aws/lambda/nodejs:24` is still Amazon Linux 2023
+  // (Node v24.20.0), and this exact engine was dlopen'd there and run against a
+  // real MySQL 8, including a relation query. A control loading the darwin
+  // engine in the same container was rejected ("invalid ELF header"), so the
+  // check discriminates.
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 

@@ -64,7 +64,7 @@ Resources:
       FunctionName: !Sub "${AWS::StackName}-api"
       CodeUri: ../../backend
       Handler: dist/lambda.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 512
       Timeout: 15
       # Cap concurrency to keep dev RDS connections + cost bounded (NFR-6).

@@ -149,6 +149,34 @@ describe('ActorPopup', () => {
     expect(link).toHaveAttribute('href', `/profile?id=${ACTOR_FULL.id}`);
   });
 
+  /**
+   * Guards the `!` in `!text-primary-fg`. This popup is injected into
+   * Leaflet's DOM, where `leaflet.css`'s `.leaflet-container a { color:
+   * #0078A8 }` (0,1,1) outranks Tailwind's `.text-primary-fg` (0,1,0) — so
+   * without the important flag the label renders Leaflet blue on the dark
+   * primary button.
+   *
+   * **This is a presence assertion, and presence is all it is (KZ-002).**
+   * jsdom loads no stylesheet and resolves no cascade, so nothing here can
+   * observe the rendered colour; a test claiming otherwise would pass with
+   * the defect present. What it does buy is a tripwire on the one character
+   * a future reader is most likely to delete as redundant.
+   *
+   * The colour itself was measured in headless Chrome against the real built
+   * CSS bundle plus the real leaflet.css [2026-09-09]: with the `!`,
+   * rgb(255,255,255); without it, rgb(0,120,168). On the button's
+   * rgb(31,78,140) that is 8.31:1 versus 1.68:1 — the unfixed state failed
+   * WCAG AA, so this is a contrast fix, not a preference.
+   */
+  it('keeps the important flag that defeats leaflet.css on the View Profile label', () => {
+    render(<ActorPopup actor={ACTOR_FULL} />);
+
+    const link = screen.getByRole('link', { name: /view profile/i });
+    expect(link).toHaveClass('!text-primary-fg');
+    // The token, never a hardcoded literal — no `text-white` here.
+    expect(link.className).not.toMatch(/text-white|#fff/i);
+  });
+
   // ── (g) PII guard — no phone/email ever rendered (NFR-5) ──────────────────
 
   it('does not render any phone or email text (PII guard)', () => {
