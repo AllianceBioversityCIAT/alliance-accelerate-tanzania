@@ -16,6 +16,14 @@
 //   Each figure animates 0→value when the band scrolls into view, but ONLY
 //   once metrics have loaded (enabled = !loading && data != null).
 //   Reduced-motion or GSAP mocked in tests → final value shown statically (FR-7/FR-8).
+//
+// Error state (ATP-50):
+//   The API always returns numeric aggregates — zeros included — so an em-dash
+//   after loading can only mean the fetch failed, never "no data yet". The
+//   dashes stay as the per-figure placeholder (FR-3) and ONE status line is
+//   added below the grid so the degradation is legible instead of silent.
+//   One line for the band, not one per card: four copies would break the
+//   4-column grid and a screen reader would announce them four times.
 
 import { useMetrics } from '@/lib/api/useMetrics';
 import StatCard from '@/components/ui/StatCard';
@@ -25,7 +33,7 @@ import StatCard from '@/components/ui/StatCard';
 // ---------------------------------------------------------------------------
 
 export default function MetricsBand() {
-  const { data, loading } = useMetrics();
+  const { data, loading, error } = useMetrics();
 
   // Gate: count-up only fires once data is loaded and available (FR-4).
   // While loading or when data is null, StatCard shows its static value/skeleton.
@@ -70,6 +78,25 @@ export default function MetricsBand() {
             countUp={countUp}
           />
         </div>
+
+        {/*
+          Error notice (ATP-50) — rendered only on a failed fetch, never while
+          loading and never on a successful (possibly all-zero) response.
+          role="status" + aria-live="polite" rather than ActorMap's role="alert":
+          this band is supplementary content on the landing page, so it must not
+          interrupt a screen reader the way a blanked-out primary map does.
+          Colour is token-only on the dark surface — text-bg at reduced opacity,
+          the Footer.tsx inversion pattern (NFR-4).
+        */}
+        {error && (
+          <p
+            className="mt-3 px-2 text-xs text-bg/80 text-center leading-snug"
+            role="status"
+            aria-live="polite"
+          >
+            Metrics are temporarily unavailable. Please try again shortly.
+          </p>
+        )}
       </div>
     </section>
   );
