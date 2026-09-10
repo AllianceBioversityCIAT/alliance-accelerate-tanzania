@@ -41,7 +41,7 @@ Agents run these on every task, so the canonical form is the **failure-only** va
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
-| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) — ⚠️ **currently exits non-zero on every run**, unrelated to any change under test: `20-backend` fails cfn-lint `W2531` on the EOL `nodejs20.x` runtime (verified still present 2026-09-09). Tracked as **ATP-60**. Until it is fixed, **a red result from this command is not evidence about the change being verified** — it is KZ-002 with the sign reversed, a gate that cannot pass. | — | — |
+| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) — **green across all three stacks again as of 2026-09-09** (ATP-60 bumped the Lambda runtime to `nodejs24.x`). A red result is now evidence about the change under test. | — | — |
 
 The 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` — there is no separate e2e command. There used to be a `test:e2e` script; it pointed at a `test/jest-e2e.json` that does not exist, so it could not execute at all, and this table listed it as a gate anyway. **A gate that cannot run cannot fail** (KZ-002). Removed, script and row together, during `admin/registration-review-queue`'s validation.
 
