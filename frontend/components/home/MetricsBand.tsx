@@ -85,12 +85,17 @@ export default function MetricsBand() {
           role="status" + aria-live="polite" rather than ActorMap's role="alert":
           this band is supplementary content on the landing page, so it must not
           interrupt a screen reader the way a blanked-out primary map does.
-          Colour is token-only on the dark surface — text-bg at reduced opacity,
-          the Footer.tsx inversion pattern (NFR-4).
+          Colour is token-only on the dark surface (NFR-4). Dimmed with
+          `opacity-80`, NOT `text-bg/80`: every semantic colour in
+          tailwind.config.ts is `var(--color-x)`, an arbitrary value Tailwind
+          cannot compose an alpha into, so a `/NN` modifier on a token emits
+          nothing and silently renders at FULL opacity — verified against the
+          built CSS, where zero token `/NN` classes exist. Measured 9.55:1 on
+          bg-fg. Do not "restore" the `/80` form.
         */}
         {error && (
           <p
-            className="mt-3 px-2 text-xs text-bg/80 text-center leading-snug"
+            className="mt-3 px-2 text-xs text-bg opacity-80 text-center leading-snug"
             role="status"
             aria-live="polite"
           >
