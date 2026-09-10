@@ -37,26 +37,33 @@ import { AdminSidebar }  from '@/components/admin/AdminSidebar';
 // Top-bar user identity + sign-out slot
 // ---------------------------------------------------------------------------
 
-function AdminTopBarUserSlot() {
+function AdminSidebarUserSlot() {
   const { role, user } = useSession();
   const { signOut }    = useAuth();
 
   if (!user) return null;
 
   return (
-    <div className="flex items-center gap-3">
-      {/* User email / role identity */}
-      <span className="hidden sm:block text-sm text-muted">
-        {user.name}
-      </span>
-      <span className="inline-flex items-center rounded-full bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
-        {role}
-      </span>
-      {/* Sign-out */}
+    <div className="border-t border-border px-3 py-3">
+      <div className="flex items-center gap-2.5 px-1 pb-2.5">
+        <span
+          aria-hidden="true"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-fg select-none"
+        >
+          {user.name.slice(0, 1).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-fg" title={user.name}>
+            {user.name}
+          </p>
+          <p className="text-xs text-muted">{role}</p>
+        </div>
+      </div>
+
       <button
         type="button"
         onClick={() => void signOut()}
-        className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         aria-label="Sign out of admin"
       >
         Sign out
@@ -122,11 +129,11 @@ export default function AdminLayout({
                 </svg>
               </button>
 
-            {/* Brand mark */}
+            {/* Brand mark — leaves the console, matching the button beside it */}
             <Link
-              href="/admin/actors"
-              className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-              aria-label="ACCELERATE Tanzania — Admin console"
+              href="/"
+              className="flex items-center shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
+              aria-label="ACCELERATE Tanzania — view public site"
             >
               <Image
                 src="/brand/accelerate-logo-color.png"
@@ -136,39 +143,25 @@ export default function AdminLayout({
                 priority
                 className="h-8 w-auto sm:h-9"
               />
-              <span className="hidden sm:block border-l border-border pl-2.5 text-xs font-medium uppercase tracking-wider text-muted">
-                Admin
-              </span>
+            </Link>
+
+            <Link
+              href="/"
+              aria-label="View public site"
+              className="ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <span className="hidden sm:inline">View public site</span>
+              <span className="sm:hidden">Public site</span>
+              <svg aria-hidden="true" className="h-3.5 w-3.5 text-muted" viewBox="0 0 16 16" fill="currentColor">
+                <path fillRule="evenodd" clipRule="evenodd" d="M8.636 3.5a.5.5 0 00-.5-.5H1.5A1.5 1.5 0 000 4.5v10A1.5 1.5 0 001.5 16h10a1.5 1.5 0 001.5-1.5V7.864a.5.5 0 00-1 0V14.5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5h6.636a.5.5 0 00.5-.5z" />
+                <path fillRule="evenodd" clipRule="evenodd" d="M16 .5a.5.5 0 00-.5-.5h-5a.5.5 0 000 1h3.793L6.146 9.146a.5.5 0 10.708.708L15 1.707V5.5a.5.5 0 001 0v-5z" />
+              </svg>
             </Link>
             </div>
 
-            {/* Right: public-site link + user slot */}
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="hidden sm:inline-flex items-center text-sm font-medium text-muted hover:text-fg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-              >
-                View public site
-                <svg
-                  aria-hidden="true"
-                  className="ml-1 h-3.5 w-3.5"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M8.636 3.5a.5.5 0 00-.5-.5H1.5A1.5 1.5 0 000 4.5v10A1.5 1.5 0 001.5 16h10a1.5 1.5 0 001.5-1.5V7.864a.5.5 0 00-1 0V14.5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5h6.636a.5.5 0 00.5-.5z"
-                    clipRule="evenodd"
-                  />
-                  <path
-                    fillRule="evenodd"
-                    d="M16 .5a.5.5 0 00-.5-.5h-5a.5.5 0 000 1h3.793L6.146 9.146a.5.5 0 10.708.708L15 1.707V5.5a.5.5 0 001 0v-5z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </Link>
-              <AdminTopBarUserSlot />
-            </div>
+            <h2 className="shrink-0 text-xs font-semibold uppercase tracking-widest text-muted sm:text-sm">
+              Admin console
+            </h2>
           </div>
         </header>
 
@@ -184,37 +177,13 @@ export default function AdminLayout({
             aria-label="Admin sidebar"
             className={[
               menuOpen ? 'block' : 'hidden',
-              'md:block w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border',
+              'md:flex md:flex-col w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border',
             ].join(' ')}
           >
-            <AdminSidebar />
-            {/* Mobile-only: the top bar's "View public site" link is sm+ —
-                without this the public site is unreachable on phones. */}
-            <div className="md:hidden border-t border-border px-3 py-3">
-              <Link
-                href="/"
-                className="flex items-center rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-border hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-              >
-                View public site
-                <svg
-                  aria-hidden="true"
-                  className="ml-1.5 h-3.5 w-3.5"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M8.636 3.5a.5.5 0 00-.5-.5H1.5A1.5 1.5 0 000 4.5v10A1.5 1.5 0 001.5 16h10a1.5 1.5 0 001.5-1.5V7.864a.5.5 0 00-1 0V14.5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5v-10a.5.5 0 01.5-.5h6.636a.5.5 0 00.5-.5z"
-                    clipRule="evenodd"
-                  />
-                  <path
-                    fillRule="evenodd"
-                    d="M16 .5a.5.5 0 00-.5-.5h-5a.5.5 0 000 1h3.793L6.146 9.146a.5.5 0 10.708.708L15 1.707V5.5a.5.5 0 001 0v-5z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </Link>
+            <div className="md:flex-1">
+              <AdminSidebar />
             </div>
+            <AdminSidebarUserSlot />
           </aside>
 
           {/* Content region */}

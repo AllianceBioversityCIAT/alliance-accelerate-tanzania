@@ -169,15 +169,6 @@ function AuthSlot() {
             </Link>
           )}
 
-          <Link
-            href="/"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-muted transition-colors hover:bg-surface-alt hover:text-fg focus-visible:outline-none focus-visible:bg-surface-alt"
-          >
-            View public site
-          </Link>
-
           <div className="border-t border-border" />
 
           {/* Sign out — FR-3; accessible menu item with visible focus (NFR-4). */}
