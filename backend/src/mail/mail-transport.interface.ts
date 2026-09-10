@@ -34,6 +34,14 @@ export interface MailMessage {
   to: string | string[];
   subject: string;
   text: string;
+  /**
+   * Optional HTML alternative. When present the transport sends
+   * multipart/alternative and `text` becomes the fallback part — it is never
+   * replaced: text-only clients, screen readers and spam scoring all want it.
+   * Built by `templates/email-layout.ts`, which escapes every interpolated
+   * value (the contact message carries visitor-supplied fields).
+   */
+  html?: string;
   /** The applicant-facing reference, when one has been allocated. See above. */
   reference?: string;
   /** Pre-composed `Display Name <address>` for the SES `ReplyToAddresses` header (FR-4). Absent for the verification-code and receipt messages. */

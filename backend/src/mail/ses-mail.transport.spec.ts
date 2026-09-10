@@ -120,4 +120,41 @@ describe('SesMailTransport (design.md §4.9)', () => {
     const input = sesMock.call(0).args[0].input as { Source?: string };
     expect(input.Source).toBe('Existing Name <registry@example.org>');
   });
+
+  describe('the HTML alternative', () => {
+    type Body = {
+      Text?: { Data?: string; Charset?: string };
+      Html?: { Data?: string; Charset?: string };
+    };
+
+    function bodyOf(): Body {
+      const input = sesMock.call(0).args[0].input as { Message?: { Body?: Body } };
+      return input.Message?.Body ?? {};
+    }
+
+    it('sends Text only when the message has no html part', async () => {
+      sesMock.on(SendEmailCommand).resolves({ MessageId: 'id' });
+      await new SesMailTransport().send({ to: 'a@b.org', subject: 's', text: 'plain' });
+
+      const body = bodyOf();
+      expect(body.Text).toEqual({ Data: 'plain', Charset: 'UTF-8' });
+      // Absent entirely, not present-and-empty: an empty Html part would make
+      // SES emit a multipart message whose HTML alternative renders blank.
+      expect(body).not.toHaveProperty('Html');
+    });
+
+    it('sends both parts when html is present, keeping text as the fallback', async () => {
+      sesMock.on(SendEmailCommand).resolves({ MessageId: 'id' });
+      await new SesMailTransport().send({
+        to: 'a@b.org',
+        subject: 's',
+        text: 'plain',
+        html: '<p>rich</p>',
+      });
+
+      const body = bodyOf();
+      expect(body.Text).toEqual({ Data: 'plain', Charset: 'UTF-8' });
+      expect(body.Html).toEqual({ Data: '<p>rich</p>', Charset: 'UTF-8' });
+    });
+  });
 });

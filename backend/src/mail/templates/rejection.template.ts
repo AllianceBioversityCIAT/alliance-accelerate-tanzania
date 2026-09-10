@@ -1,5 +1,6 @@
 // @sdd-spec admin/registration-review-queue (T-9)
 import { MailMessage } from '../mail-transport.interface';
+import { renderEmailHtml } from './email-layout';
 
 /**
  * FR-13 / FR-14 scenario 2 — the rejection-decision message.
@@ -31,5 +32,26 @@ export function buildRejectionMessage(to: string, reference: string): MailMessag
       'left.\n\n' +
       'If you believe this was in error, or your details have since changed, you are welcome to ' +
       'submit a new registration.',
+    // No callout on the reference here: emphasising a number is the wrong
+    // visual weight for a refusal, and the copy already carries it.
+    html: renderEmailHtml({
+      preheader: `${reference} was not approved. You can look up the reviewer's note.`,
+      heading: 'Your registration was not approved',
+      blocks: [
+        {
+          kind: 'paragraph',
+          text: 'Your ACCELERATE Tanzania registration has been reviewed and was not approved at this time.',
+        },
+        { kind: 'fields', rows: [{ label: 'Reference', value: reference }] },
+        {
+          kind: 'paragraph',
+          text: "You can look up your submission at any time using this reference and the email address you registered with, to see the reviewer's note if one was left.",
+        },
+        {
+          kind: 'note',
+          text: 'If you believe this was in error, or your details have since changed, you are welcome to submit a new registration.',
+        },
+      ],
+    }),
   };
 }

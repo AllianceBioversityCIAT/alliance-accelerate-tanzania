@@ -72,7 +72,15 @@ export class SesMailTransport implements MailTransport {
         ...(message.replyTo ? { ReplyToAddresses: [message.replyTo] } : {}),
         Message: {
           Subject: { Data: message.subject, Charset: 'UTF-8' },
-          Body: { Text: { Data: message.text, Charset: 'UTF-8' } },
+          Body: {
+            Text: { Data: message.text, Charset: 'UTF-8' },
+            // Both parts present → SES emits multipart/alternative and the
+            // client picks. Omitted entirely when a builder has no HTML, so
+            // an empty Html part is never sent.
+            ...(message.html
+              ? { Html: { Data: message.html, Charset: 'UTF-8' } }
+              : {}),
+          },
         },
       }),
     );
