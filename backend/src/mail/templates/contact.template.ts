@@ -1,5 +1,6 @@
 // @sdd-spec contact/contact-channels (T-3)
 import { MailMessage } from '../mail-transport.interface';
+import { renderEmailHtml, type EmailBlock } from './email-layout';
 import { composeReplyTo } from '../../contact/reply-to.util';
 
 /**
@@ -105,16 +106,25 @@ function stripCrLf(value: string): string {
   return (value ?? '').replace(CR_LF, '');
 }
 
+/**
+ * The CR/LF discipline applied once, so the text and HTML parts cannot show
+ * different values for the same submission. `message` is deliberately NOT
+ * stripped — see the file docblock: its newlines are legitimate paragraph
+ * structure and cannot reach a header from here.
+ */
+function normalizeFields(data: ContactSubmissionData) {
+  return {
+    name: stripCrLf(data.name),
+    email: stripCrLf(data.email),
+    organization: stripCrLf(data.organization ?? ''),
+    category: stripCrLf(data.category),
+    subject: stripCrLf(data.subject),
+    message: data.message,
+  };
+}
+
 function renderBody(data: ContactSubmissionData): string {
-  const name = stripCrLf(data.name);
-  const email = stripCrLf(data.email);
-  const organization = stripCrLf(data.organization ?? '');
-  const category = stripCrLf(data.category);
-  const subject = stripCrLf(data.subject);
-  // Deliberately NOT stripped — `message` is body-only free text (see file
-  // docblock); its newlines are legitimate paragraph structure and cannot
-  // reach a header from here.
-  const message = data.message;
+  const { name, email, organization, category, subject, message } = normalizeFields(data);
 
   const lines: string[] = [CONTACT_PROVENANCE_LINE, '', `Name: ${name}`, `Email: ${email}`];
 
@@ -132,11 +142,46 @@ function renderBody(data: ContactSubmissionData): string {
  * Render a fully-formed contact-form `MailMessage`. `to` is supplied by the
  * caller (T-6) — this function never resolves recipients itself.
  */
+/**
+ * The HTML part. Every value here is visitor-supplied, and `email-layout`
+ * escapes each one — this is the message where that matters: in the text part
+ * a `<script>` in the message field is inert, in HTML it is not.
+ *
+ * The provenance line renders as a `warning` block rather than a paragraph.
+ * It is the one sentence telling the reader the identity below is a claim,
+ * and it must not read as body copy they can skim.
+ */
+function renderHtmlBody(data: ContactSubmissionData): string {
+  const { name, email, organization, category, subject, message } = normalizeFields(data);
+
+  const rows = [
+    { label: 'Name', value: name },
+    { label: 'Email', value: email },
+    // `''` and `undefined` must render identically — omitted for both, as in the text part.
+    ...(organization.length > 0 ? [{ label: 'Organisation', value: organization }] : []),
+    { label: 'Category', value: category },
+    { label: 'Subject', value: subject },
+  ];
+
+  const blocks: EmailBlock[] = [
+    { kind: 'warning', text: CONTACT_PROVENANCE_LINE },
+    { kind: 'fields', rows },
+    { kind: 'quote', text: message },
+  ];
+
+  return renderEmailHtml({
+    preheader: `${category}: ${subject}`,
+    heading: 'New contact-form message',
+    blocks,
+  });
+}
+
 export function buildContactMessage(to: string | string[], data: ContactSubmissionData): MailMessage {
   return {
     to,
     subject: CONTACT_SUBJECT,
     text: renderBody(data),
+    html: renderHtmlBody(data),
     replyTo: composeReplyTo(data.name, data.email),
   };
 }

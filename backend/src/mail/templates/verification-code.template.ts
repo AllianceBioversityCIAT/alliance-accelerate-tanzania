@@ -1,5 +1,6 @@
 // @sdd-spec actors/public-self-registration (T-3, T-8)
 import { MailMessage } from '../mail-transport.interface';
+import { renderEmailHtml } from './email-layout';
 import { OTP_LIFETIME_MS } from '../../registrations/email-verification.service';
 
 /**
@@ -28,5 +29,19 @@ export function buildVerificationCodeMessage(to: string, code: string): MailMess
     text:
       `Your verification code is ${code}. It expires in ${OTP_LIFETIME_MINUTES} minutes.\n\n` +
       'If you did not request this code, you can ignore this message.',
+    html: renderEmailHtml({
+      preheader: `Your code is ${code} — it expires in ${OTP_LIFETIME_MINUTES} minutes.`,
+      heading: 'Your verification code',
+      blocks: [
+        { kind: 'paragraph', text: 'Enter this code to confirm your email address and continue your registration.' },
+        {
+          kind: 'callout',
+          label: 'Verification code',
+          value: code,
+          caption: `Expires in ${OTP_LIFETIME_MINUTES} minutes.`,
+        },
+        { kind: 'note', text: 'If you did not request this code, you can ignore this message.' },
+      ],
+    }),
   };
 }
