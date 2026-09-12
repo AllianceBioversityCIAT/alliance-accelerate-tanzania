@@ -28,10 +28,38 @@ describe('renderEmailHtml', () => {
     expect(html).toContain('&lt;b&gt;head&lt;/b&gt;');
   });
 
-  it('declares a light colour scheme so clients do not auto-invert it', () => {
+  it('declares both schemes and ships a dark block, so clients use our palette instead of inverting', () => {
     const html = renderEmailHtml({ preheader: 'p', heading: 'h', blocks: [] });
-    expect(html).toContain('name="color-scheme" content="light"');
-    expect(html).toContain('name="supported-color-schemes" content="light"');
+    // Declaring only `light` did not stop the inversion in practice — the
+    // client inverted anyway and the callout lost the fill that carried its
+    // emphasis. Declaring both plus a dark block is what makes Apple Mail and
+    // Outlook use these values rather than running their own.
+    expect(html).toContain('name="color-scheme" content="light dark"');
+    expect(html).toContain('name="supported-color-schemes" content="light dark"');
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+  });
+
+  it('keeps the callout filled in dark mode, distinctly from the card', () => {
+    const html = renderEmailHtml({
+      preheader: 'p',
+      heading: 'h',
+      blocks: [{ kind: 'callout', label: 'Code', value: '123456' }],
+    });
+    // The regression this guards: an inverted callout that ends up the same
+    // colour as the card reads as plain text with a border round it.
+    expect(html).toContain('.em-fill{background:#332F2A!important');
+    expect(html).toContain('.em-card{background:#262320!important');
+    expect(html).toContain('class="em-fill"');
+  });
+
+  it('overrides with !important, because the light palette is inline', () => {
+    const html = renderEmailHtml({ preheader: 'p', heading: 'h', blocks: [] });
+    const dark = /@media \(prefers-color-scheme: dark\)\{(.*?)\}<\/style>/s.exec(html)?.[1] ?? '';
+    expect(dark).not.toBe('');
+    // Every declaration in the dark block must carry it or the inline style wins.
+    const declarations = dark.match(/:[^;{}]+(?=[;}])/g) ?? [];
+    expect(declarations.length).toBeGreaterThan(0);
+    expect(declarations.every((d) => d.includes('!important'))).toBe(true);
   });
 
   it('references no remote asset — a blocked image must not be able to break the design', () => {
