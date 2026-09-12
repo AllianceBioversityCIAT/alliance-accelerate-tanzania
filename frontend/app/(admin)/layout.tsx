@@ -91,7 +91,12 @@ export default function AdminLayout({
 
   return (
     <RequireRole allow={['Admin']}>
-      <div className="min-h-screen bg-surface flex flex-col">
+      {/* md:h-screen, not min-h-screen: an inner overflow-auto only becomes a
+          scroll container when an ancestor bounds its height. With min-h-screen
+          the shell grew with the content, so the whole page scrolled and took
+          the sidebar with it. Mobile keeps normal page scroll — the sidebar is
+          collapsed behind the hamburger there, so pinning it buys nothing. */}
+      <div className="min-h-screen md:h-screen bg-surface flex flex-col">
 
         {/* ── Top bar ──────────────────────────────────────────────────── */}
         <header className="sticky top-0 z-[1050] bg-surface border-b border-border shadow-sm">
@@ -169,7 +174,7 @@ export default function AdminLayout({
         {/* flex-col on mobile so the (toggleable) sidebar stacks ABOVE main —
             the previous always-row flex let the w-full aside crush <main> on
             small screens. */}
-        <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
+        <div className="flex flex-1 flex-col md:flex-row md:overflow-hidden md:min-h-0">
 
           {/* Left sidebar — persistent on md+; behind the hamburger on mobile */}
           <aside
@@ -180,7 +185,7 @@ export default function AdminLayout({
               'md:flex md:flex-col w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border',
             ].join(' ')}
           >
-            <div className="md:flex-1">
+            <div className="md:flex-1 md:min-h-0 md:overflow-y-auto">
               <AdminSidebar />
             </div>
             <AdminSidebarUserSlot />
@@ -189,7 +194,7 @@ export default function AdminLayout({
           {/* Content region */}
           <main
             id="main-content"
-            className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8"
+            className="flex-1 md:min-h-0 overflow-auto p-4 sm:p-6 lg:p-8"
           >
             {children}
           </main>
