@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { createValidationPipe } from './common/validation-pipe';
 import { configureBodyParser } from './common/body-parser.config';
 import { configurePayloadCap } from './common/payload-cap.config';
+import { configureSecurityHeaders } from './common/security-headers.config';
 
 /**
  * Local entrypoint — `npm run start`. In Lambda the app is bootstrapped by
@@ -16,6 +17,11 @@ import { configurePayloadCap } from './common/payload-cap.config';
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // FIRST — so the headers are on error responses too (the payload cap's
+  // 413, a ValidationPipe 400, any exception-filter body), not only on
+  // successful output. See security-headers.config.ts's header.
+  configureSecurityHeaders(app);
 
   // Local-dev only — `lambda.ts` deliberately sets no CORS header and this
   // file is never imported there. The deployed API is same-origin: CloudFront

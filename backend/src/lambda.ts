@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 import { createValidationPipe } from './common/validation-pipe';
 import { configureBodyParser } from './common/body-parser.config';
 import { configurePayloadCap } from './common/payload-cap.config';
+import { configureSecurityHeaders } from './common/security-headers.config';
 
 /**
  * Serverless entrypoint — one Lambda wrapping the whole NestJS app behind
@@ -22,6 +23,9 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
     AppModule,
     new ExpressAdapter(expressApp),
   );
+  // FIRST — see main.ts and security-headers.config.ts: the headers must
+  // cover error responses, so this precedes every other `app.use`.
+  configureSecurityHeaders(app);
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(createValidationPipe());
   configurePayloadCap(app);
