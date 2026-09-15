@@ -51,6 +51,9 @@ Functional `FR-n`, non-functional `NFR-n`, closed decisions `D-n`. RFC 2119 keyw
 | **D-5** | **OQ-1 resolved: English only.** No i18n is built. | No i18n exists in the repo. Zero-cost hedge: the version registry is already a list, so a future Swahili edition enters as `v2.0-en`/`v2.0-sw` with no redesign. **No speculative `locale` field is added.** |
 | **D-6** | **Versions are `v1.0`, `v2.0`, …** Dates live inside each text. Only the consent policy carries a version in the database. | Terms and Privacy are never accepted by anyone, so they need a visible version and date, not acceptance machinery. |
 | **D-7** | **Contact details live inside the legal prose**, not as a link to `/contact`. `ContactForm.tsx` is not modified. | Legal's text supplies its own contact block. |
+| **D-9** | **The contact-channel facts stay on `/privacy`, authored by engineering, not by Legal.** Legal's *"Information We Collect"* covers what a contact submission collects; the three remaining facts — who receives it, that it is relayed and not stored, that submitting is not consent to publish — are placed as a short section after Legal's block. | Resolves OQ-A (2026-09-15). The approved policy covers the collection half; the other three are system behaviour, not legal commitment, so asking Legal to author them would be asking the wrong party. Carrying the four superseded sections in wholesale was rejected: three of them are now redundant with Legal's text. |
+| **D-10** | **`/privacy` does not name Google. The recipient disclosure lives only on `/cookies`.** Legal's Cookies section is carried verbatim, unamended, including its *"does not use cookies to collect personal information"* sentence. | Resolves OQ-B (2026-09-15). D-4's division applied consistently: the policy states the commitment, the notice states the fact. The site as a whole discloses the recipient and the IP-derived geolocation on `/cookies`, which is where the consent banner sends every visitor it asks for consent. **Recorded as an accepted divergence, not a reconciled one** — Legal's sentence and `/cookies`' inventory are in tension, and the resolution is placement, not amendment. |
+| **D-11** | **The pre-existing IA drift is repaired in passing.** `docs/ux-ui/design.md` §2 and §4 omit `/about` and `/forgot-password`, both of which ship. | Resolves OQ-C (2026-09-15). The same block is already being edited by T-10, and a route map that omits shipped routes is what sends agents looking for files that exist at a different path — the exact failure the A-92 correction note in that block already records. |
 | **D-8 (governance)** | **Zero registrations were accepted under `v1.0-placeholder`** — public self-registration has never been released to production. **No re-consent flow is required and no follow-up ticket is opened.** `v1.0-placeholder` is nevertheless **retained** in the known-version set. | This is ATP-54's *"a documented decision exists for registrations accepted under the placeholder version"* acceptance criterion, discharged. Retention is unconditional: the append-only rule is never suspended, even when the set it protects is empty, because a rule with an exception is not an invariant. |
 
 **Verification owed on D-8.** The claim "zero registrations" is a claim about a running system and is therefore load-bearing (KZ-011). It is recorded here as **stated by the product owner on 2026-09-15**, not as a measured value. FR-9 owns confirming it, and names the disconfirming input.
@@ -209,7 +212,9 @@ Three call sites link to `/privacy` today. Each wants a different destination:
 - GIVEN `ContactForm.tsx`'s privacy-acknowledgement link
 - WHEN a visitor follows it
 - THEN they reach `/privacy` and it renders the approved Privacy Policy
-- AND IT MUST still describe what a contact-form submission collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish — the FR-6 obligation the previous notice discharged, which must not be lost in the replacement (see OQ-2)
+- AND IT MUST still discharge the four-part obligation the previous notice carried (the originating spec's FR-6): what a contact-form submission collects, who receives it, that messages are relayed by email and **not stored** by the platform, and that submitting is **not consent to publish** anything
+- AND IT MUST do so via the split D-9 records — Legal's *"Information We Collect"* discharges the first part; the remaining three are carried in a short engineering-authored section, because they are facts about this system rather than legal commitments
+- BUT it must NOT be treated as discharged by the page merely existing, nor by the collection list alone
 - BUT it must NOT retain the previous page's self-limiting statement that it does not cover registration or directory data, which the approved policy makes false
 
 #### Scenario: Cookies are stated once as commitment and once as fact
@@ -336,13 +341,13 @@ Named first, then mapped — a gate blind to the defect class this spec most oft
 
 ## 10. Open Questions
 
-| ID | Question | Owner | Blocks |
-|---|---|---|---|
-| **OQ-A** | Does the approved Privacy Policy cover **what the contact form collects**? `ContactForm.tsx`'s mandatory acknowledgement links to `/privacy`, and the previous notice discharged that obligation in four sections. If Legal's text does not cover it, those four sections are carried into the new document as a subsection. | Daniela + Legal | FR-5 |
-| **OQ-B** | Will Legal amend the Cookies section to name Google Analytics and Google as recipient, and revisit *"does not use cookies to collect personal information"*? If not, `/cookies` carries the disclosure alone and the divergence is recorded as accepted. | Legal | FR-3 wording only, not its structure |
-| **OQ-C** | `docs/ux-ui/design.md` §2 and §4 list neither `/about` nor `/forgot-password`, both of which ship. Pre-existing drift, noticed while editing the same block. Fix it in passing, or leave it? | Daniela | Nothing — FR-8 proceeds either way |
+**All three resolved 2026-09-15.** Retained with their resolutions rather than deleted, so the spec records what was asked and why it was settled that way.
 
----
+| ID | Question | Resolution |
+|---|---|---|
+| **OQ-A** | Does the approved Privacy Policy cover what the contact form collects? | **Resolved → D-9.** Partly: Legal's *"Information We Collect"* covers the collection half via *"Information submitted through communications with Registry administrators"*. The other three parts of the obligation are carried in a short engineering-authored section. |
+| **OQ-B** | Will Legal amend the Cookies section to name Google as recipient? | **Resolved → D-10.** Not asked. `/privacy` carries Legal's text verbatim; `/cookies` carries the recipient disclosure alone. The divergence is accepted and recorded. |
+| **OQ-C** | Repair the `/about` and `/forgot-password` IA drift in passing? | **Resolved → D-11.** Yes. T-10 owns it. |
 
 ## 11. Requirement ID Index
 

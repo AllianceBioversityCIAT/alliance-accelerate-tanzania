@@ -90,14 +90,15 @@
 
 ## Phase B — Blocked on Legal's approved texts
 
-- [ ] **T-8 Place the approved Terms of Use and Privacy Policy**  (deps: T-5, T-6; **blocked: approved texts + OQ-A**)
-      Scope: Replace both content modules with the approved prose. Legal's Cookies section is carried **verbatim** into `privacy.ts` and closes with a link to `/cookies`. Remove `/privacy`'s self-limiting scope statement — now, with the replacement in place.
-      Traces: FR-4, FR-5 (both scenarios)
+- [ ] **T-8 Place the approved Terms of Use and Privacy Policy**  (deps: T-5, T-6; **blocked: approved texts only — OQ-A resolved**)
+      Scope: Replace both content modules with the approved prose. Legal's Cookies section is carried **verbatim and unamended** into `privacy.ts` (D-10) and closes with a link to `/cookies`. Add the short engineering-authored contact-channel section after Legal's block (D-9). Remove `/privacy`'s self-limiting scope statement — now, with the replacement in place.
+      Traces: FR-4, FR-5 (both scenarios), D-9, D-10
       Files: `frontend/lib/content/legal/{terms,privacy}.ts`, `privacy-a11y.test.tsx`, `terms-a11y.test.tsx`
-      Clause ownership: *`/privacy` still describes what the contact form collects* — **OQ-A gates this.** If Legal's text does not cover it, the four existing sections are carried in as a subsection; the clause is not discharged by the page merely existing.
+      Clause ownership: the four-part obligation is asserted as **four separate assertions**, not one — (1) what a submission collects (satisfied by Legal's *"Information We Collect"*), (2) who receives it, (3) relayed and not stored, (4) not consent to publish. Parts 2–4 come from the D-9 section. *Must NOT be discharged by the page merely existing, nor by the collection list alone* → each of the four has its own assertion, so losing any one reddens exactly one.
+      Also owned: *`/privacy` must NOT name Google* (D-10) → assert the recipient disclosure is absent here and present on `/cookies`.
       Verify: `cd frontend && npm test -- privacy terms contact-a11y --silent && npm run build`
-      Falsifying input: strip the contact-collection disclosure from `privacy.ts` → the retained assertion from the originating spec reds.
-      Done when: both documents carry approved prose, a visible version and effective date, no placeholder marker, and the contact-form disclosure survives.
+      Falsifying inputs: (1) delete the "not stored" sentence → assertion 3 reds and 1, 2, 4 stay green, proving the four are independent; (2) drop the D-9 section entirely → three assertions red at once.
+      Done when: both documents carry approved prose, a visible version and effective date, no placeholder marker, and all four parts assert independently green.
       Review: light — content accuracy is defect class 8 and has no automated gate.
       Skills: `cognitive-doc-design`
 
@@ -115,10 +116,10 @@
 ## Phase C — Baseline sync
 
 - [ ] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
-      Scope: `docs/ux-ui/design.md` §2 IA — add `/cookies` and `/terms`, rewrite `/privacy`'s description. §4 Screen Inventory — add two rows, rewrite the Privacy row. `docs/trd/trd.md` — add **ADR-014** (D-1), amend **ADR-013**'s consequences (it asserts the text is still placeholder), and amend **ADR-011**'s consequences (it asserts city-level geography is something *"the `/privacy` notice must state"*, which this spec makes false).
+      Scope: `docs/ux-ui/design.md` §2 IA — add `/cookies` and `/terms`, rewrite `/privacy`'s description, and **repair the pre-existing drift (D-11): `/about` and `/forgot-password` both ship and neither is listed** in §2 or §4. §4 Screen Inventory — add two rows, rewrite the Privacy row. `docs/trd/trd.md` — add **ADR-014** (D-1), amend **ADR-013**'s consequences (it asserts the text is still placeholder), and amend **ADR-011**'s consequences (it asserts city-level geography is something *"the `/privacy` notice must state"*, which this spec makes false).
       Traces: FR-8, design.md §4.3
       Files: `docs/ux-ui/design.md`, `docs/trd/trd.md`
-      Clause ownership: *sweep the withdrawn premise, not the changed literal* (KZ-004) — ADR-011's site shares **no literal** with ADR-013's and was found by the reversion challenge, not by grep. *Must NOT rewrite an accepted ADR's decision text* — amend consequences or supersede.
+      Clause ownership: D-11's two missing routes → each listed in §2 **and** given a §4 Screen Inventory row. *sweep the withdrawn premise, not the changed literal* (KZ-004) — ADR-011's site shares **no literal** with ADR-013's and was found by the reversion challenge, not by grep. *Must NOT rewrite an accepted ADR's decision text* — amend consequences or supersede.
       **ADR allocation:** ADR-014 verified free on `main` and all four unmerged branches on 2026-09-15. Per the root guide, allocate **at apply time on the default branch**; re-check immediately before writing (`git log --oneline --all -20 -- docs/trd/trd.md`).
       Verify: No automated gate — this is documentation. Reviewer reads the diff against both baselines. Additionally: grep both files for the withdrawn premise and show zero surviving present-tense assertions.
       **What the grep cannot prove:** that the *new* text is true. That is the Reviewer's read, and it is the reason this task gets one at all (blast-radius rule — these files train every future agent).
@@ -138,7 +139,7 @@ T-2 ─┬─► T-3 ─► T-4 ─┐    │
 T-7 (independent)
 ```
 
-Eligible now: **T-1, T-2, T-7.** Phase B (T-8, T-9) waits on Legal. T-10's consent half waits on T-9; its IA half is ready once T-6 lands.
+Eligible now: **T-1, T-2, T-7.** Phase B (T-8, T-9) waits on Legal's texts alone — no open question gates it. T-10's consent half waits on T-9; its IA half is ready once T-6 lands.
 
 ## Coverage closure (KZ-001)
 
@@ -146,8 +147,10 @@ Every scenario and every `BUT`/`AND IT MUST` clause is owned by exactly one task
 
 ## Open items carried into execution
 
-| ID | Blocks | Needed from |
+| ID | Status | Outcome |
 |---|---|---|
-| OQ-A | T-8 | Daniela + Legal — does the approved Privacy Policy cover contact-form collection? |
-| OQ-B | FR-3 wording only | Legal — name Google as recipient; revisit the "no personal information" sentence |
-| OQ-C | nothing | Daniela — fix `/about` + `/forgot-password` IA drift in passing, or leave it? |
+| OQ-A | **resolved 2026-09-15** | → D-9. Legal's text covers the collection half; parts 2–4 become a short engineering-authored section in T-8. |
+| OQ-B | **resolved 2026-09-15** | → D-10. Legal is not asked to amend. `/privacy` verbatim, recipient disclosure on `/cookies` only. |
+| OQ-C | **resolved 2026-09-15** | → D-11. T-10 repairs the drift in passing. |
+
+**Nothing is blocked except on Legal's three texts (T-8, T-9).** Phase A is fully executable.
