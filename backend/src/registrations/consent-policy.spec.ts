@@ -377,9 +377,7 @@ describe(
               'process.\n\n' +
               'I understand that any information submitted through this registration and ' +
               'approved for publication may be displayed through the Registry and made ' +
-              'available to users worldwide. Submit a complaint to the competent data ' +
-              'protection authority or other competent authority in accordance with ' +
-              'applicable law.',
+              'available to users worldwide.',
           },
           {
             heading: 'Public Availability of Information',
