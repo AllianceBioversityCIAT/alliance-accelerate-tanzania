@@ -1,133 +1,33 @@
-// /privacy — privacy notice for the contact channel and, as of T-6, the
-// analytics cookies this site sets (T-10, T-6, FR-6, DC-11).
+// /privacy — Privacy Policy, keeping its existing URL (T-5, FR-5, D-3,
+// design.md §4.3, §5.2). Rewritten (T-5) to render through the shared
+// `LegalDocumentView` instead of bespoke markup — see design.md §5.1 for
+// why data-driven content replaced ~100 lines of interleaved markup.
 //
-// This is FR-6's link target: `ContactForm.tsx`'s privacy-acknowledgement
-// copy ("Read our privacy notice…") points to `/privacy`, and until T-10
-// that link went nowhere (design.md §5.2 — "does not exist today").
+// Cookie content and the `ConsentChoiceControl` island have LEFT this
+// page as of T-5 — they now live on `/cookies` (T-4). This page is a
+// pure static server component again: no 'use client', no hooks, no
+// useSearchParams, and no client island of any kind (NFR-1, ADR-002).
 //
-// Scope is deliberately narrow — but as of T-6 it is an enumerated
-// **two-item** scope, not the original single-item one (design.md §5.6,
-// §8.1). This notice covers (1) the contact form: what a submission
-// collects, who receives it, that messages are relayed by email and NOT
-// stored by the platform, and that submitting is NOT consent to publish
-// anything; and (2) analytics cookies: the 4 signals GA4 collects, Google
-// as recipient, that cookies are set only after consent, and the control
-// below to change a prior choice — and, as of T-11, the asymmetric timing
-// of that change (immediate on accept, deferred to the next page load on
-// reject) and that this site does not delete cookies already set. It
-// still does not describe how the
-// registry handles data collected through organisation registration or
-// shown in the public directory — this is not a site-wide privacy policy.
-// (§8.1 records why: deleting that limitation instead of re-scoping it
-// would turn this page into an implied site-wide policy it does not
-// deliver, over-promising to exactly the visitor the limitation protects.)
-//
-// Static server component (NFR-5): no 'use client', no useSearchParams, no
-// dynamic segment, no route handler on THIS file. It is no longer *pure*
-// static content, though — `ConsentChoiceControl` below is a small
-// 'use client' island (T-6, DD-5) that lets a visitor change their stored
-// consent choice without a reload; every other line on this page is static
-// markup, exactly as before.
+// The four contact-channel facts (what a submission collects, who
+// receives it, that it is relayed and not stored, that submitting is not
+// consent to publish) are carried over as real, delivered content — see
+// `lib/content/legal/privacy.ts`'s module doc. The page's self-limiting
+// scope statement is RETAINED at this task (design.md §4.3 reversion
+// challenge) and only removed once the approved policy replaces it
+// (T-8) — deleting it now would over-promise to exactly the visitor it
+// protects.
 
 import type { Metadata } from 'next';
 
-import { ConsentChoiceControl } from '@/components/analytics/ConsentChoiceControl';
+import LegalDocumentView from '@/components/legal/LegalDocumentView';
+import { PRIVACY_POLICY } from '@/lib/content/legal/privacy';
 
 export const metadata: Metadata = {
   title: 'Privacy notice — ACCELERATE Tanzania Seed Registry',
   description:
-    'What the ACCELERATE Tanzania contact form collects, who receives it, how it is handled, and how analytics cookies are used and can be changed.',
+    'What the ACCELERATE Tanzania contact form collects, who receives it, and how it is handled.',
 };
 
 export default function PrivacyPage() {
-  return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-extrabold leading-tight text-fg lg:text-3xl">
-        Privacy notice
-      </h1>
-      <p className="mt-2 max-w-prose text-sm text-muted">
-        This notice covers two things: what happens when you submit the contact form, and
-        the analytics cookies this site sets. It does not describe how the registry handles
-        data collected through organisation registration or shown in the public directory.
-      </p>
-
-      <div className="mt-8 flex flex-col gap-8">
-        <section aria-labelledby="privacy-collect-heading">
-          <h2 id="privacy-collect-heading" className="text-lg font-semibold text-fg">
-            What a submission collects
-          </h2>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            When you submit the contact form we collect the name, email address,
-            organisation (if you provide one), inquiry category, subject and message you
-            enter, along with your acknowledgement of this notice.
-          </p>
-        </section>
-
-        <section aria-labelledby="privacy-recipients-heading">
-          <h2 id="privacy-recipients-heading" className="text-lg font-semibold text-fg">
-            Who receives it
-          </h2>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            Your message is sent by email to the ACCELERATE Tanzania programme team
-            &mdash; the administrators of this platform &mdash; so they can respond to
-            you directly.
-          </p>
-        </section>
-
-        <section aria-labelledby="privacy-storage-heading">
-          <h2 id="privacy-storage-heading" className="text-lg font-semibold text-fg">
-            How it is handled
-          </h2>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            Your message is relayed by email and is not stored by the platform &mdash;
-            the registry keeps no copy of what you submit, and no record of your
-            submission is added to the seed registry database.
-          </p>
-        </section>
-
-        <section aria-labelledby="privacy-consent-heading">
-          <h2 id="privacy-consent-heading" className="text-lg font-semibold text-fg">
-            Not consent to publish
-          </h2>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            Submitting this form is not consent to publish any organisation&rsquo;s
-            information in the public registry. It does not change the consent status,
-            contact visibility, or any other record of an actor in the directory.
-          </p>
-        </section>
-
-        <section aria-labelledby="privacy-analytics-heading">
-          <h2 id="privacy-analytics-heading" className="text-lg font-semibold text-fg">
-            Analytics cookies
-          </h2>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            If you consent, this site uses Google Analytics to understand how the registry
-            is used. Analytics cookies are set only after you consent &mdash; never before.
-            Once consent is granted, four kinds of information are collected and sent to
-            Google, which provides the analytics service: page views, sessions (how many
-            separate visits occur), your approximate geographic origin at country, region,
-            and city level, derived from your IP address (Google Analytics&rsquo; default
-            reporting), and your device and browser category (for example, desktop or
-            mobile, and browser type).
-          </p>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            You can change this choice at any time, for this browser, using the control
-            below.
-          </p>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-            Rejecting analytics here takes effect from your next page load, not
-            immediately on the page you are currently viewing &mdash; analytics already
-            loaded keeps running for the rest of this visit, including as you move
-            between pages, and stops the next time you load the site. Accepting takes
-            effect immediately. Changing your choice does not remove any analytics
-            cookies already set in this browser &mdash; this site does not delete
-            cookies itself.
-          </p>
-          <div className="mt-4">
-            <ConsentChoiceControl />
-          </div>
-        </section>
-      </div>
-    </div>
-  );
+  return <LegalDocumentView document={PRIVACY_POLICY} />;
 }

@@ -27,7 +27,11 @@ const LOGO_DIMS: Record<string, { width: number; height: number }> = {
 };
 
 // Shared token-only treatment for the footer's link row (About / Contact /
-// Privacy — T-10). Factored out so the three links stay visually identical.
+// Cookie Notice / Privacy Policy / Terms of Use — T-10, extended to five at
+// legal/legal-notices-and-consent-copy T-6). Factored out so all five links
+// stay visually identical — this row is the single source for these links
+// (mirrors the `NAV_LINKS` convention design.md §5 sets for the header; no
+// second, divergent list exists).
 const FOOTER_LINK_CLASSES =
   'text-xs text-bg/80 hover:text-bg underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg rounded-sm';
 
@@ -52,7 +56,9 @@ export default function Footer() {
             />
           </Link>
 
-          {/* Governance note + footer links (About, Contact, Privacy — T-10, FR-1, DC-11) */}
+          {/* Governance note + footer links (About, Contact, Cookie Notice,
+              Privacy Policy, Terms of Use — T-10/FR-1/DC-11, extended at
+              legal/legal-notices-and-consent-copy T-6/FR-6) */}
           <div className="flex flex-col items-end gap-1.5">
             <p className="text-xs opacity-60 max-w-md text-right">
               A seed-system registry for institutional partners and agribusinesses
@@ -68,8 +74,14 @@ export default function Footer() {
               <Link href="/contact" className={FOOTER_LINK_CLASSES}>
                 Contact
               </Link>
+              <Link href="/cookies" className={FOOTER_LINK_CLASSES}>
+                Cookie Notice
+              </Link>
               <Link href="/privacy" className={FOOTER_LINK_CLASSES}>
-                Privacy notice
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className={FOOTER_LINK_CLASSES}>
+                Terms of Use
               </Link>
             </nav>
           </div>

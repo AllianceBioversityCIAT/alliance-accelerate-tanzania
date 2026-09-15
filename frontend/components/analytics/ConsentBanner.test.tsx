@@ -31,7 +31,7 @@
  *  6. No backdrop intercepting pointer events           → 'renders no backdrop element — exactly one child…'
  *  7. Rejecting no harder than accepting                → 'resolves each choice in exactly one click, with no…'
  *  8. Labelled landmark region                          → 'renders as a landmark region…' (same test as #1)
- *  9. Links to /privacy                                 → 'links to /privacy'
+ *  9. Links to /cookies (T-6 re-route)                   → 'links to /cookies'
  * 10. Visibility derives from showBanner, not composed  → 'does NOT render merely because consent is "undecided"…'
  * 11. One-click resolution writing through setConsent   → 'resolves each choice in exactly one click, with no…' (same as #7)
  * 12. Zero jest-axe violations                          → 'has no axe violations…'
@@ -207,7 +207,7 @@ describe('ConsentBanner — keyboard reachability and no focus trap (FR-2 scenar
 
     await user.tab();
     // The privacy link precedes the two buttons in document order.
-    expect(screen.getByRole('link', { name: 'privacy notice' })).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'cookie notice' })).toHaveFocus();
     await user.tab();
     expect(rejectButton).toHaveFocus();
     await user.tab();
@@ -345,15 +345,17 @@ describe('ConsentBanner — symmetric one-click resolution (FR-2 BUT, DD-4)', ()
 });
 
 // ---------------------------------------------------------------------------
-// Clause 9 — links to /privacy
+// Clause 9 — links to /cookies (re-routed at T-6; the cookie content lives
+// there now — see legal/legal-notices-and-consent-copy requirements.md §5's
+// inbound re-routing table)
 // ---------------------------------------------------------------------------
 
-describe('ConsentBanner — links to /privacy (FR-2 AND IT MUST)', () => {
-  it('links to /privacy', () => {
+describe('ConsentBanner — links to /cookies (FR-2 AND IT MUST, T-6 re-route)', () => {
+  it('links to /cookies', () => {
     renderBanner();
 
-    const link = screen.getByRole('link', { name: 'privacy notice' });
-    expect(link).toHaveAttribute('href', '/privacy');
+    const link = screen.getByRole('link', { name: 'cookie notice' });
+    expect(link).toHaveAttribute('href', '/cookies');
   });
 });
 

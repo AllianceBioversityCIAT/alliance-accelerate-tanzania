@@ -1,39 +1,53 @@
 /**
- * Automated accessibility + content tests for the /privacy page — T-10,
- * FR-6, DC-11.
+ * Automated accessibility + content tests for the /privacy page — T-5,
+ * FR-5, D-3, design.md §4.3, §5.2.
  *
- * This route is FR-6's link target: before this task, `/privacy` did not
- * exist and `ContactForm.tsx`'s (T-9, PASSED) privacy-acknowledgement link
- * went nowhere. DC-11 requires a test asserting "the link resolves to a
- * page that exists" — the strongest form of that assertion Jest can make
- * without an HTTP server is that this page's own module resolves, renders,
- * and carries the content design.md §5.2 requires (what is collected, who
- * receives it, that it is relayed and not stored, and that submitting is
- * not consent to publish). The complementary static-export half of that
- * proof (NFR-5) is `npm run build` itself: under output: 'export' it fails
- * loudly on any static-export violation and emits `out/privacy/index.html`
- * under `trailingSlash: true`. No committed check asserts that file — the
- * build is the gate, and no test here proves emission.
+ * REWRITTEN at T-5 (was T-10/T-6/T-11 of a superseded plan). `/privacy`
+ * keeps its URL (D-3) but is now rendered through the shared
+ * `LegalDocumentView` against `PRIVACY_POLICY`, and its cookie content and
+ * `ConsentChoiceControl` island have LEFT this page — they now live on
+ * `/cookies` (T-4). This file's cookie-related assertions moved with
+ * them: every assertion this rewrite removed was checked against
+ * `frontend/app/(public)/cookies/cookies-a11y.test.tsx` first, per the
+ * T-5 task brief's "BEFORE deleting any assertion" instruction. Two gaps
+ * were found doing that and are reported (not silently fixed — both
+ * files this task does not own):
  *
- * PrivacyPage the module is a pure static server component: no hooks, no
- * data fetching, no useSearchParams. As of T-6, though, the tree this file
- * renders is no longer purely static — see the note below the T-6 marker.
+ *  1. The previous "banner reacts with no reload (DD-4)" test rendered
+ *     `ConsentProvider` + `ConsentBanner` + the page together to prove the
+ *     banner disappears immediately when `ConsentChoiceControl` changes
+ *     the stored choice. `cookies-a11y.test.tsx`'s equivalent test
+ *     ("lets a visitor change their stored consent choice") checks
+ *     `readConsent()` but does not render `ConsentBanner` alongside, so
+ *     it does not re-assert banner reactivity. `ConsentBanner.test.tsx`
+ *     asserts `setConsent` is called under a mocked context, not through
+ *     a real `ConsentChoiceControl` + `ConsentProvider` integration. No
+ *     currently-owned file re-proves this integration.
+ *  2. The previous "states the rider accurately" test asserted the
+ *     specific phrases "including as you move between pages" and "stops
+ *     the next time you load the site" (plus a negative guard against
+ *     "until you navigate away"). `cookies-a11y.test.tsx`'s asymmetry
+ *     test (d) matches on `/rejecting takes effect from your next page
+ *     load/i` and `/accepting takes effect immediately/i` only — the
+ *     rider's finer phrasing (and the negative guard) has no equivalent
+ *     assertion there, even though the identical sentence now lives in
+ *     `cookies.ts`'s "Changing your choice" section.
+ *
+ * Neither gap is fixed by this task: both `cookies/` files are out of
+ * scope here (T-5 task brief hard constraint 3; owned by T-4/T-6).
+ *
+ * NOT covered here (NFR-2, NFR-5): jsdom has no layout engine and
+ * evaluates neither contrast nor rendered legibility — human check
+ * routed to T-10's HITL pause.
  */
 
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
 
-jest.mock('next/navigation', () => ({
-  usePathname: jest.fn().mockReturnValue('/privacy'),
-}));
-
 import PrivacyPage from './page';
-import { ConsentProvider } from '@/lib/analytics/ConsentProvider';
-import { ConsentBanner } from '@/components/analytics/ConsentBanner';
-import { readConsent } from '@/lib/analytics/consent-storage';
 
 function renderPrivacyPage() {
   return render(
@@ -43,179 +57,8 @@ function renderPrivacyPage() {
   );
 }
 
-// T-6 additions below (FR-6, design.md §5.6/§8.1, DD-4/DD-5). This task is
-// purely additive to this file (tasks.md T-6's disqualifier): the six
-// pre-existing `it(` blocks — in the `axe accessibility` and `content per
-// design.md §5.2` describes further down — are untouched and still use the
-// unchanged `renderPrivacyPage()` helper. Above this line, two things
-// changed: the imports (the RTL import widened to `fireEvent, within`, the
-// three new analytics imports, and the `next/navigation` stub — a guard,
-// not a requirement: removing it and rerunning this suite left it green),
-// and this file's header docblock, whose closing paragraph now records
-// that the rendered tree is no longer purely static (T-6, item 3).
-//
-// The six pre-existing `it(` blocks render `PrivacyPage` with no
-// `ConsentProvider`, so `ConsentChoiceControl` (inside the new analytics
-// section) falls back to `ConsentProvider.tsx`'s `DEFAULT_CONTEXT` — a safe,
-// inert value (`loading: false`, `consent: 'undecided'`, a no-op
-// `setConsent`) that renders the control's markup without needing a real
-// provider. That is sufficient for the axe/heading/content checks above,
-// but proving the control actually changes the *stored* choice, and that
-// the banner reacts to it with no reload (DD-4), needs a real provider —
-// hence the separate helper below, used only by the new tests.
-function renderWithProvider() {
-  return render(
-    <ConsentProvider>
-      <ConsentBanner />
-      <main>
-        <PrivacyPage />
-      </main>
-    </ConsentProvider>
-  );
-}
-
-describe('/privacy page — analytics disclosure per design.md §5.6 (FR-6, T-6)', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
-  it('has no axe violations with a real ConsentProvider mounted (WCAG 2.1 AA)', async () => {
-    const { container } = renderWithProvider();
-    const results = await axe(container);
-
-    expect(results).toHaveNoViolations();
-  });
-
-  it('names the 4 collected signals (FR-4/FR-6)', () => {
-    renderPrivacyPage();
-
-    const section = screen.getByRole('heading', { name: /analytics cookies/i }).closest('section');
-    expect(section).not.toBeNull();
-    const scoped = within(section as HTMLElement);
-
-    expect(scoped.getByText(/page views/i)).toBeInTheDocument();
-    expect(scoped.getByText(/sessions/i)).toBeInTheDocument();
-    expect(scoped.getByText(/geographic origin at country, region, and city level/i)).toBeInTheDocument();
-    expect(scoped.getByText(/device and browser category/i)).toBeInTheDocument();
-  });
-
-  it('names Google as the recipient of analytics data', () => {
-    renderPrivacyPage();
-
-    const section = screen.getByRole('heading', { name: /analytics cookies/i }).closest('section');
-    expect(within(section as HTMLElement).getByText(/sent to\s*google/i)).toBeInTheDocument();
-  });
-
-  it('states analytics cookies are set only after consent', () => {
-    renderPrivacyPage();
-
-    expect(screen.getByText(/analytics cookies are set only after you consent/i)).toBeInTheDocument();
-  });
-
-  it('states the route to change a prior choice, and renders the change-choice control', () => {
-    renderPrivacyPage();
-
-    expect(screen.getByText(/change this choice at any time.*using the control below/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /accept analytics cookies/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reject analytics cookies/i })).toBeInTheDocument();
-  });
-
-  it('re-scopes the opening sentence to an enumerated two-item set, and still states what it does not cover (FR-6 BUT, design.md §8.1)', () => {
-    renderPrivacyPage();
-
-    const scopeSentence = screen.getByText(/this notice covers two things/i);
-    expect(scopeSentence).toBeInTheDocument();
-    expect(scopeSentence.textContent).toMatch(/contact form/i);
-    expect(scopeSentence.textContent).toMatch(/analytics cookies/i);
-    // still explicitly out of scope — the limitation is re-scoped, not deleted.
-    expect(scopeSentence.textContent).toMatch(/organisation registration/i);
-    expect(scopeSentence.textContent).toMatch(/public directory/i);
-  });
-
-  it('leaves the "not consent to publish" section’s own text untouched', () => {
-    renderPrivacyPage();
-
-    // Same string the pre-existing test above asserts — proves this task
-    // added a new section without touching this one's content.
-    expect(
-      screen.getByText(/not consent to publish any organisation.s information/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/does not change the consent status,\s*contact visibility/i)
-    ).toBeInTheDocument();
-  });
-
-  it('lets a visitor change their stored consent choice, and the banner reacts with no reload (DD-4)', () => {
-    renderWithProvider();
-
-    // No stored record yet: FR-3's "absence is not consent" resolves to
-    // `undecided`, so the banner (mounted alongside, as it is in the real
-    // (public) layout) is visible.
-    expect(screen.getByRole('region', { name: /cookie consent/i })).toBeInTheDocument();
-    expect(readConsent()).toBe('undecided');
-
-    fireEvent.click(screen.getByRole('button', { name: /accept analytics cookies/i }));
-
-    // The stored choice changed...
-    expect(readConsent()).toBe('granted');
-    // ...and the banner — a sibling consumer of the same ConsentProvider,
-    // not re-rendered via any reload — reacted immediately.
-    expect(screen.queryByRole('region', { name: /cookie consent/i })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /reject analytics cookies/i }));
-
-    // The control can also change an already-decided choice (the "route to
-    // change a prior choice" FR-6 requires) — still no reload, still no
-    // banner, since `denied` is not `undecided` either.
-    expect(readConsent()).toBe('denied');
-    expect(screen.queryByRole('region', { name: /cookie consent/i })).not.toBeInTheDocument();
-  });
-});
-
-describe('/privacy page — withdrawal timing and cookie-removal disclosure (F-2, T-11)', () => {
-  it('states rejecting takes effect from the next page load, and accepting takes effect immediately', () => {
-    renderPrivacyPage();
-
-    const timingParagraph = screen.getByText(/takes effect from your next page load, not immediately/i);
-    expect(timingParagraph).toBeInTheDocument();
-    // Rejecting is deferred...
-    expect(timingParagraph.textContent).toMatch(
-      /rejecting analytics here takes effect from your next page load, not immediately/i
-    );
-    // ...but accepting is not — pins the direction the T-11 rework fixed.
-    expect(timingParagraph.textContent).toMatch(/accepting takes effect immediately/i);
-  });
-
-  it('states plainly that cookies already set are not removed by this site', () => {
-    renderPrivacyPage();
-
-    expect(
-      screen.getByText(/does not remove\s*any analytics cookies already set/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/this site does not delete cookies itself/i)).toBeInTheDocument();
-  });
-
-  // Attempt-3 addition: the rider's cutoff, corrected against next/script's
-  // actual behaviour (design.md §5.2's asymmetry table, "corrected
-  // 2026-09-01") — already-loaded analytics survives a client-side route
-  // change (every in-site link is next/link; no document reload occurs)
-  // and stops only on the next real page load, not "until you navigate
-  // away". This is the only sentence in the analytics paragraph that had no
-  // assertion pinning it; this closes that gap.
-  it('states the rider accurately: already-loaded analytics survives moving between pages and stops only on the next page load', () => {
-    renderPrivacyPage();
-
-    const rider = screen.getByText(/analytics already loaded keeps running for the rest of this visit/i);
-    expect(rider).toBeInTheDocument();
-    expect(rider.textContent).toMatch(/including as you move between pages/i);
-    expect(rider.textContent).toMatch(/stops the next time you load the site/i);
-    // Guards against regressing to the attempt-2 wording this task replaced.
-    expect(rider.textContent).not.toMatch(/until you navigate away/i);
-  });
-});
-
-describe('/privacy page — axe accessibility (T-10, NFR-3)', () => {
-  it('has no axe violations (WCAG 2.1 AA compliance)', async () => {
+describe('/privacy page — axe accessibility (NFR-2)', () => {
+  it('has no axe violations (WCAG 2.1 AA)', async () => {
     const { container } = renderPrivacyPage();
     const results = await axe(container);
 
@@ -225,12 +68,59 @@ describe('/privacy page — axe accessibility (T-10, NFR-3)', () => {
   it('has exactly one h1', () => {
     renderPrivacyPage();
 
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { level: 1, name: /privacy policy/i })).toHaveLength(1);
   });
 });
 
-describe('/privacy page — content per design.md §5.2 (FR-6)', () => {
-  it('states what a submission collects', () => {
+describe('/privacy page — no client island (T-5 hard constraint 1)', () => {
+  it('renders no interactive control at all — the consent-change island has moved to /cookies', () => {
+    renderPrivacyPage();
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('/privacy page — placeholder status (T-5, pending Legal)', () => {
+  it('makes the placeholder status unmistakable — the marker is visible on the page', () => {
+    renderPrivacyPage();
+
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).toMatch(/\[PLACEHOLDER TEXT — pending legal review\]/);
+  });
+});
+
+describe('/privacy page — scope statement (FR-5, design.md §4.3 "Explicitly NOT owned here")', () => {
+  // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-5): deleting the
+  // limitation clause from privacy.ts's lede must redden this assertion.
+  // Run with the clause removed, observe red, then revert — see the
+  // Implementer's report for the failing output.
+  it('RETAINS the limitation clause — this notice does not cover registration or directory data', () => {
+    renderPrivacyPage();
+
+    const lede = screen.getByText(/this notice covers/i);
+    expect(lede.textContent).toMatch(/organisation registration/i);
+    expect(lede.textContent).toMatch(/public directory/i);
+  });
+
+  it('describes one subject — the contact form — and points to the Cookie Notice for cookies', () => {
+    renderPrivacyPage();
+
+    const lede = screen.getByText(/this notice covers/i);
+    expect(lede.textContent).toMatch(/contact form/i);
+    expect(lede.textContent).toMatch(/cookie notice/i);
+    // The old "covers two things … and the analytics cookies this site
+    // sets" framing is corrected, not merely relocated — it must not
+    // survive as a claim that this page itself covers cookies.
+    expect(lede.textContent).not.toMatch(/covers two things/i);
+  });
+});
+
+describe('/privacy page — the four contact-channel facts (FR-5, D-9), asserted independently', () => {
+  // Each assertion below is independent by construction: deleting any one
+  // sentence from privacy.ts must redden exactly one of these four and
+  // leave the other three green (T-5 task brief falsifier 2).
+
+  it('(1) states what a submission collects', () => {
     renderPrivacyPage();
 
     expect(
@@ -239,20 +129,20 @@ describe('/privacy page — content per design.md §5.2 (FR-6)', () => {
     expect(screen.getByText(/name, email address/i)).toBeInTheDocument();
   });
 
-  it('states who receives it', () => {
+  it('(2) states who receives it', () => {
     renderPrivacyPage();
 
     expect(screen.getByRole('heading', { name: /who receives it/i })).toBeInTheDocument();
     expect(screen.getByText(/accelerate tanzania programme team/i)).toBeInTheDocument();
   });
 
-  it('states messages are relayed by email and NOT stored by the platform', () => {
+  it('(3) states messages are relayed by email and NOT stored by the platform', () => {
     renderPrivacyPage();
 
     expect(screen.getByText(/relayed by email and is not stored/i)).toBeInTheDocument();
   });
 
-  it('states submitting is NOT consent to publish anything', () => {
+  it('(4) states submitting is NOT consent to publish anything', () => {
     renderPrivacyPage();
 
     expect(

@@ -1,21 +1,27 @@
 /**
- * Unit tests for Footer — T-10 (contact-channels spec).
+ * Unit tests for Footer — T-10 (contact-channels spec), extended at
+ * legal/legal-notices-and-consent-copy T-6 (FR-6) to five destinations.
  *
  * Filter: `header profile` in this task's Verify line does not catch this
  * file (it matches neither substring); it is exercised by the broader
  * `npm test -- --silent` full run and by `npm run build`'s static-export
  * assertion for the routes it links to.
  *
- * Covers (FR-1, DC-11): Footer links /contact and /privacy, alongside the
- * pre-existing /about link, all from a single footer nav — not asserting
- * layout/visual density (that is DC-9's manual gate, out of jsdom's reach).
+ * Covers (FR-6): Footer links About, Contact, Cookie Notice, Privacy
+ * Policy and Terms of Use — five separate assertions, one per destination,
+ * so losing any single link reddens exactly its own test and leaves the
+ * other four green (T-6 falsifier 2). Each asserts only the `href` string
+ * — it proves the link's target text, not that the destination exists;
+ * `npm run build` under `output: 'export'` is the half that proves
+ * emission (KZ-002). Not asserting layout/visual density (that is DC-9's
+ * manual gate, out of jsdom's reach).
  */
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import Footer from './Footer';
 
-describe('Footer — links (T-10, FR-1, DC-11)', () => {
+describe('Footer — links (FR-6, T-6)', () => {
   it('links "About this project" to /about (pre-existing)', () => {
     render(<Footer />);
 
@@ -32,11 +38,27 @@ describe('Footer — links (T-10, FR-1, DC-11)', () => {
     expect(link).toHaveAttribute('href', '/contact');
   });
 
-  it('links "Privacy notice" to /privacy', () => {
+  it('links "Cookie Notice" to /cookies', () => {
     render(<Footer />);
 
-    const link = screen.getByRole('link', { name: /privacy notice/i });
+    const link = screen.getByRole('link', { name: /^cookie notice$/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/cookies');
+  });
+
+  it('links "Privacy Policy" to /privacy', () => {
+    render(<Footer />);
+
+    const link = screen.getByRole('link', { name: /^privacy policy$/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/privacy');
+  });
+
+  it('links "Terms of Use" to /terms', () => {
+    render(<Footer />);
+
+    const link = screen.getByRole('link', { name: /^terms of use$/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/terms');
   });
 });
