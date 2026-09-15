@@ -385,7 +385,13 @@ export const TERMS_OF_USE: LegalDocument = {
       ],
     },
     {
-      heading: '15. Contact Information',
+      // Legal's source types this one heading as "15. Contact Information" while
+      // every other heading in the document is unnumbered — an inconsistency in
+      // the source, not a numbering scheme (there is no 1-14). The "15. " is
+      // dropped on the product owner's instruction, 2026-09-15; recorded as D-14
+      // so a future reader diffing against Legal's file finds the authorization
+      // rather than reading it as drift.
+      heading: 'Contact Information',
       blocks: [
         { kind: 'paragraph', text: 'For questions regarding these Terms of Use, please contact:' },
         {
