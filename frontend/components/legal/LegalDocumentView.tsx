@@ -63,6 +63,21 @@ export interface LegalDocumentViewProps {
 }
 
 /**
+ * Normalizes free text into a URL/id-safe slug: trims, lowercases, collapses
+ * any run of non-alphanumeric characters to a single hyphen, and strips a
+ * leading/trailing hyphen. Shared by {@link sectionHeadingId} (heading ids)
+ * and {@link contentKey} (list-item keys) so both derive stable identifiers
+ * from content the same way.
+ */
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+/**
  * Derives a stable, unique `id` for a section heading so `aria-labelledby`
  * always resolves. Prefixed with the section's index so two sections that
  * share (or both omit) a heading never collide, and so an empty heading
@@ -71,17 +86,32 @@ export interface LegalDocumentViewProps {
  * failure mode (see LegalDocumentView.test.tsx).
  */
 function sectionHeadingId(heading: string, index: number): string {
-  const slug = heading
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-  return `legal-section-${index}${slug ? `-${slug}` : ''}-heading`;
+  const slug = slugify(heading);
+  const slugSegment = slug ? `-${slug}` : '';
+  return `legal-section-${index}${slugSegment}-heading`;
+}
+
+/**
+ * Derives a list-item `key` from the item's own content rather than its
+ * array position: slugs (via {@link slugify}) up to the first ~40
+ * characters, then appends the index so two identical strings in one list
+ * still get distinct keys. These lists never reorder in practice, but an
+ * index-only key is fragile the moment one does — a legal document gaining
+ * a clause mid-list is exactly that case.
+ */
+function contentKey(value: string, index: number): string {
+  const slug = slugify(value.slice(0, 40));
+  return slug ? `${slug}-${index}` : `item-${index}`;
+}
+
+/** A bullet item's own text, whether it is a plain string or the object form. */
+function bulletItemText(item: string | LegalBulletItem): string {
+  return typeof item === 'string' ? item : item.text;
 }
 
 /** Renders one bullet list item, including its nested sub-bullets if any. */
-function BulletItem({ item }: { item: string | LegalBulletItem }) {
-  const text = typeof item === 'string' ? item : item.text;
+function BulletItem({ item }: Readonly<{ item: string | LegalBulletItem }>) {
+  const text = bulletItemText(item);
   const children = typeof item === 'string' ? undefined : item.children;
 
   return (
@@ -90,7 +120,7 @@ function BulletItem({ item }: { item: string | LegalBulletItem }) {
       {children && children.length > 0 && (
         <ul className="mt-1 list-[circle] space-y-1 pl-5">
           {children.map((child, index) => (
-            <li key={index}>{child}</li>
+            <li key={contentKey(child, index)}>{child}</li>
           ))}
         </ul>
       )}
@@ -99,7 +129,7 @@ function BulletItem({ item }: { item: string | LegalBulletItem }) {
 }
 
 /** Renders the ordered `blocks` content of a section, block by block. */
-function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
+function SectionBlocks({ blocks }: Readonly<{ blocks: LegalContentBlock[] }>) {
   return (
     <>
       {blocks.map((block, index) => {
@@ -107,7 +137,7 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
           case 'paragraph':
             return (
               <p
-                key={index}
+                key={contentKey(block.text, index)}
                 className="mt-2 text-sm leading-relaxed text-muted"
               >
                 {block.text}
@@ -132,27 +162,33 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
               </p>
             );
 
-          case 'bullets':
+          case 'bullets': {
+            const firstItem = block.items[0];
+            const firstItemText = firstItem === undefined ? '' : bulletItemText(firstItem);
+
             return (
               <ul
-                key={index}
+                key={contentKey(firstItemText, index)}
                 className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted"
               >
                 {block.items.map((item, itemIndex) => (
-                  <BulletItem key={itemIndex} item={item} />
+                  <BulletItem key={contentKey(bulletItemText(item), itemIndex)} item={item} />
                 ))}
               </ul>
             );
+          }
 
-          case 'subBlocks':
+          case 'subBlocks': {
+            const firstHeading = block.blocks[0]?.heading ?? '';
+
             return (
-              <div key={index} className="mt-4 flex flex-col gap-4">
+              <div key={contentKey(firstHeading, index)} className="mt-4 flex flex-col gap-4">
                 {block.blocks.map((subBlock, subIndex) => (
-                  <div key={subIndex}>
+                  <div key={contentKey(subBlock.heading, subIndex)}>
                     <h3 className="text-sm font-semibold text-fg">{subBlock.heading}</h3>
                     {subBlock.paragraphs.map((paragraph, paragraphIndex) => (
                       <p
-                        key={paragraphIndex}
+                        key={contentKey(paragraph, paragraphIndex)}
                         className="mt-1 text-sm leading-relaxed text-muted"
                       >
                         {paragraph}
@@ -162,21 +198,25 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
                 ))}
               </div>
             );
+          }
 
-          case 'contact':
+          case 'contact': {
+            const firstLabel = block.entries[0]?.label ?? '';
+
             return (
               <dl
-                key={index}
+                key={contentKey(firstLabel, index)}
                 className="mt-3 space-y-1 text-sm leading-relaxed text-muted"
               >
                 {block.entries.map((entry, entryIndex) => (
-                  <div key={entryIndex} className="flex flex-wrap gap-x-2">
+                  <div key={contentKey(entry.label, entryIndex)} className="flex flex-wrap gap-x-2">
                     <dt className="font-semibold text-fg">{entry.label}:</dt>
                     <dd>{entry.value}</dd>
                   </div>
                 ))}
               </dl>
             );
+          }
 
           default:
             return null;
@@ -190,12 +230,12 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
 type ParagraphsSection = Extract<LegalSection, { paragraphs: string[] }>;
 
 /** Renders a section's body via the simple `paragraphs`/`bullets` path. */
-function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
+function SimpleSectionBody({ section }: Readonly<{ section: ParagraphsSection }>) {
   return (
     <>
       {section.paragraphs.map((paragraph, paragraphIndex) => (
         <p
-          key={paragraphIndex}
+          key={contentKey(paragraph, paragraphIndex)}
           className="mt-2 text-sm leading-relaxed text-muted"
         >
           {paragraph}
@@ -205,7 +245,7 @@ function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
       {section.bullets && section.bullets.length > 0 && (
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted">
           {section.bullets.map((bullet, bulletIndex) => (
-            <li key={bulletIndex}>{bullet}</li>
+            <li key={contentKey(bullet, bulletIndex)}>{bullet}</li>
           ))}
         </ul>
       )}
@@ -213,7 +253,7 @@ function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
   );
 }
 
-export default function LegalDocumentView({ document, slot }: LegalDocumentViewProps) {
+export default function LegalDocumentView({ document, slot }: Readonly<LegalDocumentViewProps>) {
   return (
     // WIDTH — two controls, and the non-obvious one was the binding constraint.
     // Every paragraph and list used to carry `max-w-prose` (65ch, measured at
@@ -242,7 +282,7 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
       {document.lede
         && (Array.isArray(document.lede) ? (
           document.lede.map((paragraph, index) => (
-            <p key={index} className="mt-2 text-sm text-muted">
+            <p key={contentKey(paragraph, index)} className="mt-2 text-sm text-muted">
               {paragraph}
             </p>
           ))
@@ -253,7 +293,6 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
       <div className="mt-8 flex flex-col gap-8">
         {document.sections.flatMap((section, index) => {
           const headingId = sectionHeadingId(section.heading, index);
-          const showSlotAfter = slot?.afterHeading === section.heading;
 
           const elements: ReactNode[] = [
             <section key={headingId} aria-labelledby={headingId}>
@@ -269,8 +308,13 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
             </section>,
           ];
 
-          if (showSlotAfter) {
-            elements.push(<div key={`${headingId}-slot`}>{slot!.content}</div>);
+          // Narrowed via `slot && …` (rather than a separate boolean plus a
+          // `slot!` non-null assertion below) so TypeScript itself proves
+          // `slot` is defined wherever `slot.content` is read — the same
+          // behaviour, with no assertion for Sonar S4325 to flag as
+          // unnecessary.
+          if (slot && slot.afterHeading === section.heading) {
+            elements.push(<div key={`${headingId}-slot`}>{slot.content}</div>);
           }
 
           return elements;

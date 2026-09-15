@@ -79,8 +79,17 @@ const UNFILLED_FIELD_PATTERN = /\binsert(?: [a-z][a-z]*){1,4}\b/gi;
  * realistic space is covered; neither covers it alone, and this comment
  * exists so nobody reads an empty inventory as proof of more than it is.
  */
-const BLANK_PROSE_LABEL_PATTERN =
-  /(?<!please )\b(address|e-?mail|telephone|phone|fax|website|contact person):(?=\s*$|\s+[A-Z][a-z]+:)/gi;
+const BLANK_PROSE_LABELS = ['address', 'e-?mail', 'telephone', 'phone', 'fax', 'website', 'contact person'];
+
+// Built via `new RegExp` from the `BLANK_PROSE_LABELS` list above rather than
+// a single alternation literal (typescript:S5843 — "regex too complex"): the
+// matching behaviour is byte-for-byte identical (same lookbehind, same
+// alternatives, same lookahead) — only the inline alternation is gone,
+// replaced by data the list above makes visible and easy to extend.
+const BLANK_PROSE_LABEL_PATTERN = new RegExp(
+  `(?<!please )\\b(${BLANK_PROSE_LABELS.join('|')}):(?=\\s*$|\\s+[A-Z][a-z]+:)`,
+  'gi',
+);
 
 function collectBlockText(block: LegalContentBlock): string[] {
   switch (block.kind) {
@@ -118,13 +127,24 @@ function collectContactEntries(document: LegalDocument): LegalContactEntry[] {
 }
 
 /**
+ * Normalizes `document.lede` (absent, a single string, or a string[]) to
+ * always an array, so the caller below has exactly one shape to spread —
+ * pulled out of the nested ternary that used to compute this inline
+ * (typescript:S3358), same behaviour.
+ */
+function normalizeLede(lede: LegalDocument['lede']): string[] {
+  if (lede === undefined) return [];
+  return Array.isArray(lede) ? lede : [lede];
+}
+
+/**
  * Returns the sorted, de-duplicated set of unfilled-Legal-field tokens
  * present anywhere in `document` — every "Insert <…>" placeholder, plus
  * one `"<label>: (blank)"` token per contact entry whose `value` is `''`.
  * See module doc for what a non-empty result means.
  */
 export function collectUnfilledFieldTokens(document: LegalDocument): string[] {
-  const lede = document.lede === undefined ? [] : Array.isArray(document.lede) ? document.lede : [document.lede];
+  const lede = normalizeLede(document.lede);
   const allText: string[] = [
     document.title,
     document.effectiveDate,

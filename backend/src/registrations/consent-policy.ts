@@ -55,8 +55,7 @@ export interface ConsentPolicyEdition {
  * `REJECTION_REASONS` split, for the same reason: one non-duplicated array
  * literal, one frozen view every real caller uses.
  */
-const CONSENT_POLICY_EDITIONS_SOURCE: ConsentPolicyEdition[] =
-  APPROVED_TEXT.editions as ConsentPolicyEdition[];
+const CONSENT_POLICY_EDITIONS_SOURCE: ConsentPolicyEdition[] = APPROVED_TEXT.editions;
 
 /**
  * The acceptance-checkbox label from Legal's approved text (FR-2, D-6) — NOT
