@@ -259,7 +259,7 @@ export default function ConsentPolicyDisclosure({
             'disabled:cursor-not-allowed disabled:opacity-50',
           ].join(' ')}
         />
-        <label htmlFor={checkboxId} className="text-sm text-fg">
+        <label htmlFor={checkboxId} className="text-sm font-semibold text-fg">
           {policy?.acceptanceStatement || FALLBACK_ACCEPTANCE_STATEMENT}
         </label>
       </div>

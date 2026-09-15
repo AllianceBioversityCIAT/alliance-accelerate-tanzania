@@ -36,7 +36,7 @@ export const COOKIE_NOTICE: LegalDocument = {
   version: 'v1.0',
   effectiveDate: '15 September 2026',
   lede:
-    'This notice describes the cookies this site actually sets today — not a general or ' +
+    'This notice describes the cookies this site actually sets today, not a general or ' +
     'prospective statement of what a site like this might use cookies for.',
   sections: [
     {
@@ -45,24 +45,24 @@ export const COOKIE_NOTICE: LegalDocument = {
         'If you consent, this site uses Google Analytics to understand how the registry is ' +
           'used. Google Analytics sets cookies in your browser ("_ga" and "_ga_*"). Once you ' +
           'consent, the information those cookies collect is sent to Google, which provides the ' +
-          'analytics service on our behalf — Google is the only third party that receives it.',
+          'analytics service on our behalf. Google is the only third party that receives it.',
       ],
     },
     {
       heading: 'What information is collected',
       paragraphs: ['Once you consent, four kinds of information are collected:'],
       bullets: [
-        'Page views — which pages of the registry you visit.',
-        'Sessions — how many separate visits occur.',
+        'Page views: which pages of the registry you visit.',
+        'Sessions: how many separate visits occur.',
         'Your approximate geographic origin at country, region, and city level, derived from ' +
           'your IP address (Google Analytics’ default reporting).',
-        'Your device and browser category — for example, desktop or mobile, and browser type.',
+        'Your device and browser category: for example, desktop or mobile, and browser type.',
       ],
     },
     {
       heading: 'Before you consent',
       paragraphs: [
-        'No analytics cookie is set before you consent — never before. The Google Analytics ' +
+        'No analytics cookie is set before you consent, never before. The Google Analytics ' +
           'script itself does not load until you accept.',
       ],
     },
@@ -71,7 +71,7 @@ export const COOKIE_NOTICE: LegalDocument = {
       paragraphs: [
         'You can change this choice at any time, for this browser, using the control below.',
         'Accepting takes effect immediately. Rejecting takes effect from your next page load, ' +
-          'not immediately on the page you are currently viewing — analytics already loaded ' +
+          'not immediately on the page you are currently viewing. Analytics already loaded ' +
           'keeps running for the rest of this visit, including as you move between pages, and ' +
           'stops the next time you load the site.',
       ],
@@ -79,8 +79,8 @@ export const COOKIE_NOTICE: LegalDocument = {
     {
       heading: 'Cookies already set',
       paragraphs: [
-        'Changing your choice does not remove any analytics cookies already set in this browser ' +
-          '— this site does not delete cookies itself. To remove cookies already set, clear them ' +
+        'Changing your choice does not remove any analytics cookies already set in this browser. ' +
+          'This site does not delete cookies itself. To remove cookies already set, clear them ' +
           'in your browser’s own settings.',
       ],
     },
@@ -88,9 +88,9 @@ export const COOKIE_NOTICE: LegalDocument = {
       heading: 'What this notice covers',
       paragraphs: [
         'The Google Analytics cookies described above are the only cookies this site sets. Your ' +
-          'consent choice, and — for administrators — your Cognito sign-in tokens, are stored in ' +
-          'this browser’s local storage, not in a cookie, and no response from this site’s ' +
-          'backend sets a cookie of any kind.',
+          'consent choice, and for administrators your Cognito sign-in tokens, are stored in ' +
+          'this browser’s local storage rather than in a cookie, and no response from this ' +
+          'site’s backend sets a cookie of any kind.',
       ],
     },
   ],

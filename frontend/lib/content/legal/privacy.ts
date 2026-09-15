@@ -446,6 +446,63 @@ export const PRIVACY_POLICY: LegalDocument = {
         },
       ],
     },
+    // -----------------------------------------------------------------
+    // Engineering-authored (D-9). NOT Legal's text, and deliberately placed
+    // as ONE clearly-titled section with its own sub-headings rather than
+    // three bare sections interleaved with Legal's — the product owner's
+    // objection on 2026-09-15 was that engineering prose was reading as part
+    // of Legal's document. Same substance, same three facts, contained.
+    //
+    // Carries facts 2-4 of the four-part contact-form obligation
+    // (requirements.md FR-5 scenario, originating spec's FR-6). Fact 1 —
+    // what a submission collects — is discharged by Legal's "Information We
+    // Collect" section above, via "Information submitted through
+    // communications with Registry administrators".
+    //
+    // Each fact stays a separate sub-block so each remains independently
+    // testable; privacy-a11y.test.tsx asserts all three separately, and
+    // losing one must redden exactly one test.
+    // -----------------------------------------------------------------
+    {
+      heading: 'Messages sent through the contact form',
+      blocks: [
+        {
+          kind: 'paragraph',
+          text:
+            'This section describes how this site handles the contact form specifically. ' +
+            'It is not part of the Privacy Policy above.',
+        },
+        {
+          kind: 'subBlocks',
+          blocks: [
+            {
+              heading: 'Who receives it',
+              paragraphs: [
+                'Your message is sent by email to the ACCELERATE Tanzania programme team, ' +
+                  'the administrators of this platform, so they can respond to you directly.',
+              ],
+            },
+            {
+              heading: 'How it is handled',
+              paragraphs: [
+                'Your message is relayed by email and is not stored by the platform. The ' +
+                  'registry keeps no copy of what you submit, and no record of your ' +
+                  'submission is added to the seed registry database.',
+              ],
+            },
+            {
+              heading: 'Not consent to publish',
+              paragraphs: [
+                'Submitting this form is not consent to publish any organisation’s ' +
+                  'information in the public registry. It does not change the consent ' +
+                  'status, contact visibility, or any other record of an actor in the ' +
+                  'directory.',
+              ],
+            },
+          ],
+        },
+      ],
+    },
     {
       heading: 'Contact Us',
       blocks: [
@@ -479,37 +536,5 @@ export const PRIVACY_POLICY: LegalDocument = {
     },
 
     // -----------------------------------------------------------------
-    // Engineering-authored (D-9). NOT Legal's text. Carries facts 2–4 of
-    // the four-part contact-form obligation (requirements.md FR-5 scenario,
-    // originating spec's FR-6). Fact 1 — what a submission collects — is
-    // now discharged by Legal's "Information We Collect" section above,
-    // via "Information submitted through communications with Registry
-    // administrators". Kept as three separate sections, unchanged in
-    // substance from the previous page, so each fact stays independently
-    // testable (privacy-a11y.test.tsx asserts each separately).
-    // -----------------------------------------------------------------
-    {
-      heading: 'Who receives it',
-      paragraphs: [
-        'Your message is sent by email to the ACCELERATE Tanzania programme team — the ' +
-          'administrators of this platform — so they can respond to you directly.',
-      ],
-    },
-    {
-      heading: 'How it is handled',
-      paragraphs: [
-        'Your message is relayed by email and is not stored by the platform — the ' +
-          'registry keeps no copy of what you submit, and no record of your submission is ' +
-          'added to the seed registry database.',
-      ],
-    },
-    {
-      heading: 'Not consent to publish',
-      paragraphs: [
-        'Submitting this form is not consent to publish any organisation’s information in ' +
-          'the public registry. It does not change the consent status, contact visibility, ' +
-          'or any other record of an actor in the directory.',
-      ],
-    },
   ],
 };

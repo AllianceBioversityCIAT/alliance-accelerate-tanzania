@@ -108,7 +108,7 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
             return (
               <p
                 key={index}
-                className="mt-2 max-w-prose text-sm leading-relaxed text-muted"
+                className="mt-2 text-sm leading-relaxed text-muted"
               >
                 {block.text}
                 {block.link && (
@@ -136,7 +136,7 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
             return (
               <ul
                 key={index}
-                className="mt-2 max-w-prose list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted"
+                className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted"
               >
                 {block.items.map((item, itemIndex) => (
                   <BulletItem key={itemIndex} item={item} />
@@ -153,7 +153,7 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
                     {subBlock.paragraphs.map((paragraph, paragraphIndex) => (
                       <p
                         key={paragraphIndex}
-                        className="mt-1 max-w-prose text-sm leading-relaxed text-muted"
+                        className="mt-1 text-sm leading-relaxed text-muted"
                       >
                         {paragraph}
                       </p>
@@ -167,7 +167,7 @@ function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
             return (
               <dl
                 key={index}
-                className="mt-3 max-w-prose space-y-1 text-sm leading-relaxed text-muted"
+                className="mt-3 space-y-1 text-sm leading-relaxed text-muted"
               >
                 {block.entries.map((entry, entryIndex) => (
                   <div key={entryIndex} className="flex flex-wrap gap-x-2">
@@ -196,14 +196,14 @@ function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
       {section.paragraphs.map((paragraph, paragraphIndex) => (
         <p
           key={paragraphIndex}
-          className="mt-2 max-w-prose text-sm leading-relaxed text-muted"
+          className="mt-2 text-sm leading-relaxed text-muted"
         >
           {paragraph}
         </p>
       ))}
 
       {section.bullets && section.bullets.length > 0 && (
-        <ul className="mt-2 max-w-prose list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted">
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted">
           {section.bullets.map((bullet, bulletIndex) => (
             <li key={bulletIndex}>{bullet}</li>
           ))}
@@ -215,7 +215,19 @@ function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
 
 export default function LegalDocumentView({ document, slot }: LegalDocumentViewProps) {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+    // WIDTH — two controls, and the non-obvious one was the binding constraint.
+    // Every paragraph and list used to carry `max-w-prose` (65ch, measured at
+    // 574px / ~88 characters here), which capped the text REGARDLESS of this
+    // container. Widening the container alone changed nothing visible, which is
+    // why the first attempt at this looked identical. `max-w-prose` is gone;
+    // this container is now the only cap.
+    // `max-w-4xl` (56rem) rather than `3xl` (48rem): the widening the product
+    // owner asked for, deliberately NOT full-bleed — line length still governs
+    // legibility, and these are long documents.
+    // `text-justify` + `hyphens-auto`: justification alone opens rivers of
+    // whitespace on narrow viewports, and the hyphenation is what keeps the
+    // word spacing even. The two go together; do not keep one without the other.
+    <div className="mx-auto max-w-4xl px-4 py-8 text-justify hyphens-auto sm:px-6 lg:px-8">
       <h1 className="text-2xl font-extrabold leading-tight text-fg lg:text-3xl">
         {document.title}
       </h1>
@@ -230,12 +242,12 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
       {document.lede
         && (Array.isArray(document.lede) ? (
           document.lede.map((paragraph, index) => (
-            <p key={index} className="mt-2 max-w-prose text-sm text-muted">
+            <p key={index} className="mt-2 text-sm text-muted">
               {paragraph}
             </p>
           ))
         ) : (
-          <p className="mt-2 max-w-prose text-sm text-muted">{document.lede}</p>
+          <p className="mt-2 text-sm text-muted">{document.lede}</p>
         ))}
 
       <div className="mt-8 flex flex-col gap-8">
