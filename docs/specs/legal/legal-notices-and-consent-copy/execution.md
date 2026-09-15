@@ -271,3 +271,57 @@ Re-verified after the edits: `consent-policy` 22/22, lint clean.
 2. **Two latent gates activate together at T-9**, not one. The disclosure note names `CONSENT_POLICY_VERSION`; `CONSENT_POLICY_SECTIONS`' *wiring* (as opposed to its selection rule, now falsifiable) is the same latent class. Both should be tightened when the second edition lands.
 3. **The retained edition's body prose is not byte-pinned** by any test — only `sections.length === 4` and `body.includes('PLACEHOLDER')`. The headings *are* pinned verbatim. Sufficient for FR-1 scenario 2 today; T-9's Reviewer should know the retained text could drift without reddening anything.
 
+### T-10 — Sync the baseline documents to what shipped · **REVIEWER PASS on the executable half** · status `[~]`
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-15 |
+| Attempts | 1, plus Leader-inline advisory application |
+| Implementer | T2 (sonnet), effort `high` |
+| Reviewer | T3 (opus), effort `high` — constitutional baseline, blast-radius rule |
+| Requirements covered | FR-8 (partly — see *what is deliberately not done*), D-1, D-4, D-11 |
+
+**Files:** `docs/ux-ui/design.md` §2 (IA) and §4 (Screen Inventory) · `docs/trd/trd.md` §12.5 (ADR index).
+
+**This task stays `[~]`, not `[x]`.** Its ADR-013 half depends on T-9, which is blocked on Legal. Marking it complete would be an unfalsifiable completion: the checkbox would read done and the evidence would not support it. See *what is deliberately not done* below.
+
+#### What the Reviewer established — by opening files, not by reading the diff
+
+The gate here is not *"does the code match the spec"* but *"does the document match reality"* — the untrue-spec surface KZ-011 names, where every other AKILI gate asks the wrong direction. Nothing downstream catches a plausible-but-false sentence in a baseline. The Reviewer opened `cookies.ts`, `privacy.ts`, `terms.ts`, all four page components, `ConsentBanner.tsx`, `ConsentChoiceControl.tsx`, `LegalDocumentView.tsx`, `about/page.tsx`, `ForgotPasswordForm.tsx` and `auth-client.ts` rather than accepting the descriptions.
+
+Confirmed against the tree: `/cookies` contains every element claimed, in order. `/privacy` is a bare static server component with no island, and **the limitation clause is present verbatim** — T-8's dependency holds. `/terms` presents no acceptance control, and that is structural (the renderer emits no interactive element) rather than incidental. The D-11 drift repair introduces no new inaccuracy: every item in the new About row exists at the stated path, and the Forgot-password row's load-bearing clause *"enumeration-safe notice either way"* was verified in `auth-client.ts`, where `resetPassword` returns `code_sent` even on `UserNotFoundException`.
+
+**ADR-011:** Decision column byte-identical, amendment confined to Consequences. **ADR-013:** untouched — and the Reviewer verified the *premise has not expired*, confirming `consent-policy.ts` still holds one edition at `v1.0-placeholder`. **ADR-014:** faithful compression, occurring exactly twice (its row and ADR-011's new cross-reference).
+
+**Withdrawn-premise sweep re-run by the Reviewer rather than credited.** It also checked §3 (Primary User Flows) and §5 (Navigation Model), which the diff does not touch: §3 describes only the banner's accept/reject and overlay-not-gate behaviour, §5 never enumerates footer destinations. Nothing stale.
+
+#### Out-of-scope finding the Reviewer surfaced — adjudicated IN scope and fixed
+
+The baseline documents were clean, but **the withdrawn premise survived in seven code and test comment sites that this spec itself created**, left behind when T-5/T-6 moved the island "unchanged":
+
+- `ConsentChoiceControl.tsx` ×3 — *"the change-choice control on `/privacy`"*, *"`/privacy` itself stays a static server component"*, *"this island on `/privacy`"*
+- `consent-storage.ts` ×1 — *"Exposed for the `/privacy` change-choice control"*
+- `ConsentBanner.test.tsx` ×3 — *"the privacy link"*, after T-6 both re-pointed and re-labelled it
+
+**Leader adjudication: fixed, and not scope creep.** The Reviewer was right not to FAIL T-10 on it — the task's declared scope is the two baseline files. But this is residue *this spec produced*: comments that now assert something false about where the island lives. Fixing false text a task created is finishing that task, not widening it, and it is the same KZ-004 shape the T-6 entry already records catching once. Comment-only, seven sites, no behaviour touched. The one surviving `/privacy` mention in `ConsentChoiceControl.tsx` is a deliberate historical note recording the move.
+
+Re-verified after: `ConsentBanner` + `cookies` 32/32, lint clean.
+
+#### Four Reviewer advisories applied by the Leader
+
+1. *"No cookie content"* was imprecise **and scheduled to become false by this same spec** — `privacy.ts`'s lede does carry one cookie sentence (a pointer to `/cookies`), and FR-5/D-4 require Legal's Cookies section verbatim at T-8. Rewritten to "no cookie **disclosure**… the lede carries only a pointer", with the T-8 change noted inline.
+2. Two mis-descriptions in the Cookie Notice row. (a) The island is **not** *"inside"* the "Changing your choice" section — `LegalDocumentView` pushes the slot as a sibling immediately **after** the matching `<section>`, so it sits outside that `aria-labelledby` region. In a blueprint this precise about aria semantics the distinction is load-bearing. (b) *"the consent banner's 'learn more' link"* read as a literal label; the accessible name is **"cookie notice"** — which is exactly what T-6's inline fix changed it to.
+3. **The most consequential one.** The Privacy row compressed two different kinds of content into *"placeholder copy pending Legal"*: placeholder prose **and** the four engineering-authored contact-channel facts that D-9 says T-8 must **not** replace. A future T-8 agent reading that clause as licence to swap the module wholesale would delete a delivered requirement. The row now states the distinction explicitly and says why.
+4. Bare `(T-8)` references are unresolvable once this spec is archived. All four now carry the spec path.
+
+#### What is deliberately NOT done — the deferred half
+
+- **ADR-013's consequences are not amended.** They assert the consent text is still placeholder and the version deliberately un-bumped, and **that is still true today**. Amending it before T-9 would make the document false in the opposite direction. T-9 owns it.
+- **NFR-5 / defect class 9 — the human visual check of the three rendered pages at mobile and desktop widths has NOT been performed.** jsdom evaluates neither contrast nor layout, so nothing automated covers it. This is an open gap, recorded as open rather than quietly counted as covered.
+
+#### ADR-014 allocation risk, stated rather than assumed
+
+The Reviewer could not run `git log --all` (read-only wrapper) and so **could not confirm ADR-014 is still free on unmerged branches** — it verified only that the number is unused within `trd.md` as it stands. The Leader ran that check twice (2026-09-15, before spawning and again before writing): free on `main`, `origin/chore/security-headers` and `origin/public-profile`, max observed ADR-013.
+
+Per the root guide's concurrency corollary, the number is being allocated **from a spec branch**, which does not make it free — it decides who pays. **If a collision appears at merge, this branch pays the renumbering.** Re-verify immediately before merging to `main`.
+

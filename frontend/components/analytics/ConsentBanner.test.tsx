@@ -206,7 +206,7 @@ describe('ConsentBanner — keyboard reachability and no focus trap (FR-2 scenar
     expect(acceptButton).not.toHaveAttribute('tabindex', '-1');
 
     await user.tab();
-    // The privacy link precedes the two buttons in document order.
+    // The cookie-notice link precedes the two buttons in document order.
     expect(screen.getByRole('link', { name: 'cookie notice' })).toHaveFocus();
     await user.tab();
     expect(rejectButton).toHaveFocus();
@@ -225,8 +225,8 @@ describe('ConsentBanner — keyboard reachability and no focus trap (FR-2 scenar
     beforeButton.focus();
     expect(beforeButton).toHaveFocus();
 
-    // Walk forward through: Before banner → privacy link → Reject → Accept → After banner.
-    await user.tab(); // privacy link
+    // Walk forward through: Before banner → cookie-notice link → Reject → Accept → After banner.
+    await user.tab(); // cookie-notice link
     await user.tab(); // Reject
     await user.tab();
     expect(acceptButton).toHaveFocus();

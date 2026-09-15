@@ -112,7 +112,7 @@ export function writeConsent(choice: ConsentChoice): void {
 }
 
 /**
- * Clears the visitor's stored choice. Exposed for the `/privacy`
+ * Clears the visitor's stored choice. Exposed for the `/cookies`
  * change-choice control (T-6, FR-6) to reset state before re-recording a
  * new choice; not required to succeed for the module's contract to hold.
  */

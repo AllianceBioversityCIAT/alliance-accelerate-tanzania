@@ -15,6 +15,9 @@
 
 ```
 /                         Landing / Public Registry Portal (metrics + entry points)
+/about                    About the project — narrative (challenge, demand-led model, crops
+                           & value chains, partners, enterprise case studies), CTAs into
+                           /map, /directory and /contact
 /directory                Searchable, paginated actor directory (list/table)
 /profile?id=              Actor profile page — full contact block (contactPerson, position,
                            phone, email, marketLocation) shown only for a GRANTED actor;
@@ -32,9 +35,18 @@
 /register/status          Status lookup by reference + email — status and reviewer note only
 /contact                  Public contact form — relays to the current Cognito `admin` group,
                            no sign-in required
-/privacy                  Privacy notice — contact submissions + analytics cookies; carries one
-                           interactive client island (ConsentChoiceControl) to change a prior
-                           consent choice
+/cookies                  Cookie Notice — the factual inventory of the cookies this site
+                           actually sets today (Google Analytics only, and only after
+                           consent), plus the interactive client island
+                           (ConsentChoiceControl) to change a prior consent choice. This is
+                           where the consent banner's policy link lands.
+/terms                    Terms of Use — placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8); presents no
+                           acceptance control (nobody "accepts" this document)
+/privacy                  Privacy Policy — placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8), covering
+                           contact-form data handling only; retains its narrow-scope
+                           limitation clause (does not describe registration or public-
+                           directory data handling) until T-8. No client island and no
+                           cookie content — both moved to /cookies.
 /admin                    Admin/Staff console — a route PREFIX, not a page: there is
                           no /admin index. The brand mark links to /admin/actors.
   /admin/actors           Actor management table (CRUD)
@@ -47,6 +59,9 @@
   /admin/registrations/review?id=  Registration detail — approve/reject/dismiss-duplicate (Admin only)
   /admin/users            User & role management (Admin only)
 /login                    Cognito-backed sign-in (Staff/Admin)
+/forgot-password          Self-service password reset request (Staff/Admin) — email → reset
+                           code → new password, via Cognito; reached from /login, not part
+                           of the public top nav
 ```
 
 > **Not built (A-92, corrected 2026-09-02).** This block previously listed
@@ -75,6 +90,16 @@
 > not match `buildDashboardCsv`. A universal negative — "this exists nowhere" — needs a
 > stronger search than a positive one; caught by the A-92 review round.)*
 
+> **Drift repaired (D-11, 2026-09-15).** `/about` and `/forgot-password` both shipped —
+> in `frontend/app/(public)/about/page.tsx` and `frontend/app/(public)/forgot-password/page.tsx`
+> respectively — but neither appeared anywhere in this section or in §4's Screen
+> Inventory (verified: zero occurrences of either string before this correction). This
+> is exactly the A-92 failure mode above, on two different routes: a route map that
+> omits a shipped path sends agents looking for files that exist somewhere else, or
+> nowhere they think to look. Repaired in passing while this block was already open for
+> `/cookies` and `/terms` (`docs/specs/legal/legal-notices-and-consent-copy/`, T-10);
+> neither page's existence is new, only this document's account of it.
+
 ## 3. Primary User Flows
 
 - **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (renders only for a `GRANTED` actor — Contact section included; a non-consented actor's profile route 404s, so the whole page is absent, not the section masked) → optionally jump to Map centered on that actor.
@@ -88,6 +113,7 @@
 | Screen | Audience | Core content |
 |---|---|---|
 | Landing | Public | Hero, 3–4 metric stat cards, CTA into Directory & Map, crop legend. |
+| About | Public | Project narrative: hero, the challenge (3% formal-sector clause), the demand-led model (`PillarCards`), crops & value chains (per-crop cards with representative varieties), partners (`PartnerWall`), four enterprise case studies, an "About this registry" section with CTAs into Map / Directory / Contact, and a credits/sources block attributing field figures and linking the Alliance project page. |
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
 | Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
@@ -102,8 +128,11 @@
 | Admin Registration Detail | Admin | Reference code header, full submitted payload — every field on it is copied to the actor record on approval and becomes publicly visible, since approval sets `consentStatus: GRANTED` (`actors/public-profile-disclosure` FR-4); no per-field marking, one table-wide caption, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
+| Forgot password | Staff / Admin | Self-service password reset request, via Cognito: step 1 collects an email and requests a reset code (neutral, enumeration-safe notice either way); step 2 collects the code plus a new password (email pre-filled, editable) and confirms the reset, then routes to `/login?reset=success`. Accessible error region (`role="alert"`, `aria-live="assertive"`) on failure; no code or password ever placed in a URL. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
-| Privacy | Public | Two subjects. **Contact submissions:** what one collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything. **Analytics cookies:** the four signals GA4 collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and a control to change a prior consent choice. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load. |
+| Cookie Notice | Public | The factual inventory of what this site's cookies actually set today: Google Analytics only, and only once consent is given (never before) — the four signals it collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and the `ConsentChoiceControl` island to change a prior choice, rendered as a sibling **immediately after** the "Changing your choice" section — outside that section's `aria-labelledby` region, not within it. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load — and that the site does not delete cookies already set. This is where the consent banner's link — accessible name "cookie notice" — lands. |
+| Terms of Use | Public | Placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8); version/effective-date stamp is itself a placeholder marker. Presents no acceptance control — nobody "accepts" this document, only the consent policy is accepted, and only by an applicant registering an organisation. |
+| Privacy | Public | **Two kinds of content, and the difference is load-bearing.** The policy prose is placeholder pending Legal. The four contact-channel facts are **engineering-authored and already delivered** — what a submission collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything — carried over from the previous notice to satisfy an earlier spec's requirement that `ContactForm`'s mandatory acknowledgement link resolve to a page describing them. Replacing the module wholesale when the approved policy arrives would delete a delivered requirement. Retains its narrow-scope limitation clause (does not describe registration or public-directory data handling) until `docs/specs/legal/legal-notices-and-consent-copy` T-8 replaces it with the approved policy. No cookie **disclosure** and no client island — both live on Cookie Notice; the lede carries only a pointer to it. (The approved policy will carry its own Cookies section verbatim, so this becomes "no cookie *inventory*" rather than none at all.) |
 
 ## 5. Navigation Model
 
