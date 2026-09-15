@@ -1,11 +1,16 @@
 // LegalDocumentView — the one shared renderer for the three public legal
 // documents (Cookie Notice, Terms of Use, Privacy Policy). T-2 (FR-7,
-// design.md §5.1, §5.3).
+// design.md §5.1, §5.3); extended T-8 to render the richer structure the
+// approved Terms of Use and Privacy Policy texts carry (nested bullets,
+// labelled sub-blocks, contact blocks — see types.ts's module doc).
 //
 // Static server component: no 'use client', no hooks, no useSearchParams.
-// Every one of the three route modules that will consume this (T-4, T-5,
-// T-8 — not built by this task) stays compatible with `output: 'export'`
-// (ADR-002) as long as this file only takes props and renders markup.
+// Every one of the three route modules that consume this
+// (`app/(public)/{cookies,terms,privacy}/page.tsx`) stays compatible with
+// `output: 'export'` (ADR-002) as long as this file only takes props and
+// renders markup. `next/link` is safe to use here for the same reason
+// Footer.tsx and ContactForm.tsx already do — it renders a plain `<a>` at
+// build time, no client runtime required.
 //
 // Markup mirrors the existing `/privacy` page's heading hierarchy,
 // `aria-labelledby` section pattern, and token classes exactly (FR-7's
@@ -13,16 +18,30 @@
 // version/date stamp in the same position and share heading/token
 // treatment. Only the *content* differs per document.
 //
+// A section renders its content one of two ways:
+//   - the simple path: `paragraphs` (always), then `bullets` (if set) —
+//     unchanged since T-2, and the only path `cookies.ts` ever uses.
+//   - the `blocks` path: when a section sets a non-empty `blocks` array,
+//     it is rendered INSTEAD of `paragraphs`/`bullets`, block by block, in
+//     the exact order given. This is what `terms.ts`/`privacy.ts` (T-8)
+//     use for every section whose structure does not fit the simple path.
+//
 // The optional `slot` lets a document place one interactive control inside
 // its flow, immediately after a named section, rather than bolted on below
-// the whole document (design.md §5.3). `/cookies` (T-4) will use it to
-// place `ConsentChoiceControl` after the Cookie Notice's "Changing your
-// choice" section; `/terms` and `/privacy` (T-5/T-8) pass no slot and so
-// render identically to each other structurally.
+// the whole document (design.md §5.3). `/cookies` uses it to place
+// `ConsentChoiceControl` after the Cookie Notice's "Changing your choice"
+// section; `/terms` and `/privacy` pass no slot and so render identically
+// to each other structurally.
 
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 
-import type { LegalDocument } from '@/lib/content/legal/types';
+import type {
+  LegalBulletItem,
+  LegalContentBlock,
+  LegalDocument,
+  LegalSection,
+} from '@/lib/content/legal/types';
 
 export interface LegalDocumentSlot {
   /**
@@ -60,6 +79,140 @@ function sectionHeadingId(heading: string, index: number): string {
   return `legal-section-${index}${slug ? `-${slug}` : ''}-heading`;
 }
 
+/** Renders one bullet list item, including its nested sub-bullets if any. */
+function BulletItem({ item }: { item: string | LegalBulletItem }) {
+  const text = typeof item === 'string' ? item : item.text;
+  const children = typeof item === 'string' ? undefined : item.children;
+
+  return (
+    <li>
+      {text}
+      {children && children.length > 0 && (
+        <ul className="mt-1 list-[circle] space-y-1 pl-5">
+          {children.map((child, index) => (
+            <li key={index}>{child}</li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/** Renders the ordered `blocks` content of a section, block by block. */
+function SectionBlocks({ blocks }: { blocks: LegalContentBlock[] }) {
+  return (
+    <>
+      {blocks.map((block, index) => {
+        switch (block.kind) {
+          case 'paragraph':
+            return (
+              <p
+                key={index}
+                className="mt-2 max-w-prose text-sm leading-relaxed text-muted"
+              >
+                {block.text}
+                {block.link && (
+                  <>
+                    {' '}
+                    <Link
+                      href={block.link.href}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {block.link.label}
+                    </Link>
+                    {/* A trailing link closes the sentence its preceding
+                        text opened (e.g. privacy.ts's "...see the" +
+                        "Cookie Notice"), so a terminal full stop is added
+                        here rather than in every block's `text` — the one
+                        current consumer omitted it (Reviewer FAIL, T-8
+                        rework). */}
+                    .
+                  </>
+                )}
+              </p>
+            );
+
+          case 'bullets':
+            return (
+              <ul
+                key={index}
+                className="mt-2 max-w-prose list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted"
+              >
+                {block.items.map((item, itemIndex) => (
+                  <BulletItem key={itemIndex} item={item} />
+                ))}
+              </ul>
+            );
+
+          case 'subBlocks':
+            return (
+              <div key={index} className="mt-4 flex flex-col gap-4">
+                {block.blocks.map((subBlock, subIndex) => (
+                  <div key={subIndex}>
+                    <h3 className="text-sm font-semibold text-fg">{subBlock.heading}</h3>
+                    {subBlock.paragraphs.map((paragraph, paragraphIndex) => (
+                      <p
+                        key={paragraphIndex}
+                        className="mt-1 max-w-prose text-sm leading-relaxed text-muted"
+                      >
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+
+          case 'contact':
+            return (
+              <dl
+                key={index}
+                className="mt-3 max-w-prose space-y-1 text-sm leading-relaxed text-muted"
+              >
+                {block.entries.map((entry, entryIndex) => (
+                  <div key={entryIndex} className="flex flex-wrap gap-x-2">
+                    <dt className="font-semibold text-fg">{entry.label}:</dt>
+                    <dd>{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            );
+
+          default:
+            return null;
+        }
+      })}
+    </>
+  );
+}
+
+/** The `LegalSection` union member carrying the simple `paragraphs`/`bullets` path. */
+type ParagraphsSection = Extract<LegalSection, { paragraphs: string[] }>;
+
+/** Renders a section's body via the simple `paragraphs`/`bullets` path. */
+function SimpleSectionBody({ section }: { section: ParagraphsSection }) {
+  return (
+    <>
+      {section.paragraphs.map((paragraph, paragraphIndex) => (
+        <p
+          key={paragraphIndex}
+          className="mt-2 max-w-prose text-sm leading-relaxed text-muted"
+        >
+          {paragraph}
+        </p>
+      ))}
+
+      {section.bullets && section.bullets.length > 0 && (
+        <ul className="mt-2 max-w-prose list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted">
+          {section.bullets.map((bullet, bulletIndex) => (
+            <li key={bulletIndex}>{bullet}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 export default function LegalDocumentView({ document, slot }: LegalDocumentViewProps) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -74,9 +227,16 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
         Version {document.version} &middot; Effective {document.effectiveDate}
       </p>
 
-      {document.lede && (
-        <p className="mt-2 max-w-prose text-sm text-muted">{document.lede}</p>
-      )}
+      {document.lede
+        && (Array.isArray(document.lede) ? (
+          document.lede.map((paragraph, index) => (
+            <p key={index} className="mt-2 max-w-prose text-sm text-muted">
+              {paragraph}
+            </p>
+          ))
+        ) : (
+          <p className="mt-2 max-w-prose text-sm text-muted">{document.lede}</p>
+        ))}
 
       <div className="mt-8 flex flex-col gap-8">
         {document.sections.flatMap((section, index) => {
@@ -89,21 +249,10 @@ export default function LegalDocumentView({ document, slot }: LegalDocumentViewP
                 {section.heading}
               </h2>
 
-              {section.paragraphs.map((paragraph, paragraphIndex) => (
-                <p
-                  key={paragraphIndex}
-                  className="mt-2 max-w-prose text-sm leading-relaxed text-muted"
-                >
-                  {paragraph}
-                </p>
-              ))}
-
-              {section.bullets && section.bullets.length > 0 && (
-                <ul className="mt-2 max-w-prose list-disc space-y-1 pl-5 text-sm leading-relaxed text-muted">
-                  {section.bullets.map((bullet, bulletIndex) => (
-                    <li key={bulletIndex}>{bullet}</li>
-                  ))}
-                </ul>
+              {section.blocks ? (
+                <SectionBlocks blocks={section.blocks} />
+              ) : (
+                <SimpleSectionBody section={section} />
               )}
             </section>,
           ];

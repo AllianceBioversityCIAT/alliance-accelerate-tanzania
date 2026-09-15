@@ -8,6 +8,15 @@
  * `ConsentPolicySection` EXACTLY (`frontend/CLAUDE.md`: "types mirror backend
  * contracts exactly").
  *
+ * `acceptanceStatement` (T-9 rework attempt 2, Part 3): a deliberate,
+ * Leader-directed widen of this response, sourced server-side from
+ * `CONSENT_ACCEPTANCE_STATEMENT`. Before this, `ConsentPolicyDisclosure.tsx`
+ * hand-copied Legal's checkbox-label sentence into the component — two
+ * divergent copies of the words a person legally accepts, exactly what
+ * DD-7/D-1 exist to prevent. The frontend cannot import `backend/src`
+ * directly (static export, separate deployable), so this field is the only
+ * way the real sentence reaches the checkbox.
+ *
  * `requestVerificationCode()` and `submitRegistration()` (T-19) are the two
  * public WRITE calls the OTP step makes — `POST /registrations/verify` and
  * `POST /registrations` respectively (design.md §3.1). Unlike
@@ -52,6 +61,7 @@ export interface ConsentPolicySection {
 }
 
 export interface ConsentPolicy {
+  acceptanceStatement: string;
   version: string;
   sections: ConsentPolicySection[];
 }

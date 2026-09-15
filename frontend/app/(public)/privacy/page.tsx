@@ -11,11 +11,11 @@
 // The four contact-channel facts (what a submission collects, who
 // receives it, that it is relayed and not stored, that submitting is not
 // consent to publish) are carried over as real, delivered content — see
-// `lib/content/legal/privacy.ts`'s module doc. The page's self-limiting
-// scope statement is RETAINED at this task (design.md §4.3 reversion
-// challenge) and only removed once the approved policy replaces it
-// (T-8) — deleting it now would over-promise to exactly the visitor it
-// protects.
+// `lib/content/legal/privacy.ts`'s module doc. The previous page's
+// self-limiting scope statement (that it did not cover registration or
+// directory data) was REMOVED at T-8 (FR-5) — the approved policy now
+// describes registration and directory data, which makes that statement
+// false.
 
 import type { Metadata } from 'next';
 
@@ -23,9 +23,10 @@ import LegalDocumentView from '@/components/legal/LegalDocumentView';
 import { PRIVACY_POLICY } from '@/lib/content/legal/privacy';
 
 export const metadata: Metadata = {
-  title: 'Privacy notice — ACCELERATE Tanzania Seed Registry',
+  title: 'Privacy Policy — ACCELERATE Tanzania Seed Registry',
   description:
-    'What the ACCELERATE Tanzania contact form collects, who receives it, and how it is handled.',
+    'How the ACCELERATE Tanzania Registry collects, uses, stores, publishes and protects '
+    + 'information submitted through the platform.',
 };
 
 export default function PrivacyPage() {

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
+  CONSENT_ACCEPTANCE_STATEMENT,
   CONSENT_POLICY_SECTIONS,
   CONSENT_POLICY_VERSION,
   ConsentPolicySection,
@@ -23,8 +24,25 @@ import { RegistrationsThrottleGuard } from './registrations-throttle.guard';
 import { ThrottlerExceptionFilter } from './throttler-exception.filter';
 import { PublicRegistrationLookup } from './serializers/public-registration.serializer';
 
-/** `GET /registrations/consent-policy` response (design.md §3.1). */
+/**
+ * `GET /registrations/consent-policy` response (design.md §3.1).
+ *
+ * `acceptanceStatement` (T-9 rework attempt 2, Part 3 — a deliberate,
+ * Leader-directed contract widen, not drift): previously
+ * `CONSENT_ACCEPTANCE_STATEMENT` had no reachable consumer — its own doc
+ * comment in `consent-policy.ts` promised one that could not exist, since
+ * the frontend does not and must not import `backend/src` (static export,
+ * separate deployable). `ConsentPolicyDisclosure.tsx`'s checkbox label was
+ * hand-copied from Legal's sentence instead, creating exactly the two
+ * divergent copies of legally-accepted text DD-7/D-1 exist to prevent. This
+ * field is the fix: the frontend now fetches the one real sentence rather
+ * than carrying its own copy. `registrations.controller.spec.ts`'s
+ * response-key-set test was updated to `['acceptanceStatement', 'sections',
+ * 'version']` for this — see that test's comment for why the redden was
+ * expected and correct, not a regression.
+ */
 export interface ConsentPolicyResponse {
+  acceptanceStatement: string;
   version: string;
   sections: ConsentPolicySection[];
 }
@@ -98,6 +116,7 @@ export class RegistrationsController {
   @Get('consent-policy')
   getConsentPolicy(): ConsentPolicyResponse {
     return {
+      acceptanceStatement: CONSENT_ACCEPTANCE_STATEMENT,
       version: CONSENT_POLICY_VERSION,
       sections: CONSENT_POLICY_SECTIONS,
     };

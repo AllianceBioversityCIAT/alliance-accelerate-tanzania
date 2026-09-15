@@ -1,6 +1,7 @@
 import { RegistrationsController } from './registrations.controller';
 import { RegistrationsService } from './registrations.service';
 import {
+  CONSENT_ACCEPTANCE_STATEMENT,
   CONSENT_POLICY_VERSION,
   isKnownConsentPolicyVersion,
 } from './consent-policy';
@@ -48,15 +49,23 @@ describe('RegistrationsController', () => {
       }
     });
 
-    it('marks section bodies as an unmistakable placeholder pending OQ-1', () => {
-      // The mechanism is this task's deliverable; the prose is not. Legal
-      // owns the wording (tasks.md T-2) — asserting the placeholder marker
-      // guards against someone later swapping in authoritative-sounding
-      // copy without also resolving OQ-1.
+    it('carries no PLACEHOLDER marker in the current edition — the inverted tripwire (T-9, FR-2 scenario 1)', () => {
+      // INVERTED at T-9. Before the approved copy landed, this test asserted
+      // the OPPOSITE — every section.body DID contain 'PLACEHOLDER' — as a
+      // guard against shipping the mechanism without resolving OQ-1. Now
+      // that the approved v1.0 edition is current, the risk points the
+      // other way: approved-sounding copy that still carries a leftover
+      // placeholder marker. This is the tripwire requirements.md FR-2
+      // scenario 1 names explicitly for inversion — NOT
+      // `consent-policy.spec.ts`'s `getConsentPolicyEdition('v1.0-placeholder')`
+      // assertion, which is a retention guard over the historical edition
+      // and stays correctly true forever (D-8). Searched case-insensitively
+      // across BOTH heading and body, per FR-2 scenario 1's own wording.
       const { sections } = controller.getConsentPolicy();
 
       for (const section of sections) {
-        expect(section.body).toContain('PLACEHOLDER');
+        expect(section.heading.toLowerCase()).not.toContain('placeholder');
+        expect(section.body.toLowerCase()).not.toContain('placeholder');
       }
     });
 
@@ -84,14 +93,29 @@ describe('RegistrationsController', () => {
     });
 
     it(
-      'pins the exact response key set to {version, sections} — FR-1 scenario 3, the ' +
-        "T-1 registry refactor MUST NOT gain, lose, or rename a key",
+      'pins the exact response key set to {acceptanceStatement, version, sections} — T-9 ' +
+        'rework attempt 2, Part 3, a DELIBERATE contract widen, not drift',
       () => {
+        // This assertion REDDENED when `acceptanceStatement` was added to
+        // the controller response — that was the correct, expected
+        // consequence of a real contract change, per the Leader's brief:
+        // CONSENT_ACCEPTANCE_STATEMENT previously had no reachable
+        // consumer (the frontend cannot import `backend/src`), so
+        // ConsentPolicyDisclosure.tsx hand-copied Legal's checkbox-label
+        // sentence instead — exactly the two-divergent-copies problem
+        // DD-7/D-1 exist to prevent. Widening this endpoint to serve the
+        // one real sentence is the fix. Do NOT read a future redden here
+        // as drift without first checking whether it is another
+        // deliberate, Leader-directed widen like this one.
         const result = controller.getConsentPolicy();
 
-        expect(Object.keys(result).sort()).toEqual(['sections', 'version']);
+        expect(Object.keys(result).sort()).toEqual(['acceptanceStatement', 'sections', 'version']);
       },
     );
+
+    it('serves the acceptance statement wired to CONSENT_ACCEPTANCE_STATEMENT, not a copy', () => {
+      expect(controller.getConsentPolicy().acceptanceStatement).toBe(CONSENT_ACCEPTANCE_STATEMENT);
+    });
   });
 
   describe('isKnownConsentPolicyVersion (T-10\'s acceptance check)', () => {
@@ -103,6 +127,14 @@ describe('RegistrationsController', () => {
     it('accepts the version currently served', () => {
       expect(isKnownConsentPolicyVersion(CONSENT_POLICY_VERSION)).toBe(true);
     });
+
+    it(
+      'accepts a superseded version that is still in the known set (v1.0-placeholder, D-8, ' +
+        'FR-2 scenario 2 — in-flight submissions do not break)',
+      () => {
+        expect(isKnownConsentPolicyVersion('v1.0-placeholder')).toBe(true);
+      },
+    );
   });
 
   describe('POST /registrations/verify (T-8)', () => {
@@ -137,7 +169,14 @@ describe('RegistrationsController', () => {
     const dto = {
       email: 'neema@khsc.co.tz',
       code: '123456',
-      consent: { accepted: true, policyVersion: 'v1.0-placeholder' },
+      // The service is a jest mock in this suite (see the file header) so
+      // this DTO's job is only to be a plausible payload for the delegation
+      // assertions below — it does not exercise real acceptance-check
+      // behaviour. Sourced from CONSENT_POLICY_VERSION rather than a
+      // hardcoded literal (T-9) since a hardcoded 'v1.0-placeholder' here
+      // meant "the current version" pre-T-9 and would silently keep meaning
+      // "a superseded version" post-T-9 if left as a stale literal.
+      consent: { accepted: true, policyVersion: CONSENT_POLICY_VERSION },
       payload: { traderName: 'Mbeya Seed Traders Ltd' },
     } as unknown as Parameters<RegistrationsController['submitRegistration']>[0];
 

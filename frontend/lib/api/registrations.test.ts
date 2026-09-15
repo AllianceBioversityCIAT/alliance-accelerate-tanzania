@@ -28,6 +28,13 @@ import { getConsentPolicy, lookupRegistration, type ConsentPolicy } from './regi
 // ---------------------------------------------------------------------------
 
 const VALID_POLICY: ConsentPolicy = {
+  acceptanceStatement:
+    'I confirm that I have read and understood this Consent for Publication of ' +
+    'Information and voluntarily consent to the collection, storage, processing, ' +
+    'international transfer, and public publication of the information provided ' +
+    'through my registration in the ACCELERATE Tanzania Registry, including contact ' +
+    'information, business information, capacity information, and location ' +
+    'information where provided.',
   version: 'v1.0-placeholder',
   sections: [
     { heading: '[PLACEHOLDER] What we collect', body: 'Body text one.' },

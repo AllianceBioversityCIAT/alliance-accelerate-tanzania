@@ -10,7 +10,7 @@
 
 Three separable pieces of work, joined only by the subject matter:
 
-1. **Backend — a data-shape change with no contract change.** `consent-policy.ts` turns its single current edition into an ordered registry of editions and derives its two public constants from it. `RegistrationsController` and `RegistrationsService` are untouched; the served response is byte-compatible.
+1. **Backend — a data-shape change with no contract change *at T-1*.** `consent-policy.ts` turns its single current edition into an ordered registry of editions and derives its two public constants from it. `RegistrationsController` and `RegistrationsService` are untouched by the refactor; the served response is byte-compatible across it. *(T-9 later widened the response with `acceptanceStatement` — a separate, argued decision, D-13, not a consequence of the refactor.)*
 2. **Frontend — one content contract, three pages.** A `LegalDocument` type plus one renderer under `frontend/lib/content/legal/`; three route modules that supply a document and render it. Pure static server components, no new client islands — `ConsentChoiceControl`, the one island involved, **moves** from `/privacy` to `/cookies` unchanged.
 3. **Documentation — a truth repair.** Two baseline files assert, in present tense, a state this spec removes.
 
@@ -30,7 +30,7 @@ This is the deliberate boundary of D-1: the database holds *which* edition was a
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/v1/registrations/consent-policy` | **Response contract unchanged.** Same keys, same types. Values change when FR-2 lands (new sections, `version: 'v1.0'`). |
+| `GET /api/v1/registrations/consent-policy` | **Unchanged by T-1's refactor** — same keys, same types across it. **Widened at T-9 (D-13)** to `{version, sections, acceptanceStatement}`: the acceptance paragraph is the checkbox's label and the frontend cannot import it from the backend, so carrying it on the wire is what stops two divergent copies of the words a person legally accepts. Values also change at T-9 (approved sections, `version: 'v1.0'`). |
 | `POST /api/v1/registrations` | **Unchanged.** The consent gate still calls `isKnownConsentPolicyVersion`; only how that function obtains its set changes. |
 
 No endpoint is added to serve a *historical* edition. The registry makes per-version retrieval possible for server-side consumers (a future admin review screen imports the module directly); exposing it over HTTP is not required by any requirement here and is out of scope.

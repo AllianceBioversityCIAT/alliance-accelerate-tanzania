@@ -555,6 +555,8 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
   it('flows the real policyVersion ConsentPolicyDisclosure fetched through to onValidated, never a placeholder', async () => {
     const user = userEvent.setup();
     mockGetConsentPolicy.mockResolvedValueOnce({
+      acceptanceStatement:
+        'I have read and accept the Data Protection & Participant Consent Policy.',
       version: 'v9.9-test-fixture',
       sections: [{ heading: 'A section', body: 'Body text.' }],
     });

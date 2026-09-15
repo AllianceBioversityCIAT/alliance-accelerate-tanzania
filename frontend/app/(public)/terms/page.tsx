@@ -1,11 +1,11 @@
 // /terms — Terms of Use (T-5, FR-4, design.md §4.3, §5.2).
 //
 // New route. Static server component: no 'use client', no hooks, no
-// useSearchParams (NFR-1, ADR-002). Renders `TERMS_OF_USE` — currently
-// placeholder prose, pending delivery from Legal (T-8) — through the
-// shared `LegalDocumentView`, with no slot: nobody accepts this document
-// (D-6), so this page composes no acceptance control, checkbox, or
-// "I agree" affordance of any kind.
+// useSearchParams (NFR-1, ADR-002). Renders `TERMS_OF_USE` — the approved
+// text delivered by Legal, landed at T-8 — through the shared
+// `LegalDocumentView`, with no slot: nobody accepts this document (D-6),
+// so this page composes no acceptance control, checkbox, or "I agree"
+// affordance of any kind.
 
 import type { Metadata } from 'next';
 

@@ -38,6 +38,22 @@
  * `consent.policyVersion` it hands `onValidated`, without lifting the fetch
  * itself out of this component or duplicating consent state.
  *
+ * Checkbox label (T-9 rework attempt 2, Part 3): sourced from the fetched
+ * `policy.acceptanceStatement` — the server's `CONSENT_ACCEPTANCE_STATEMENT`
+ * — never a hardcoded copy. Hand-copying Legal's sentence into this
+ * component would create two divergent copies of the words a person legally
+ * accepts, which is exactly what DD-7/D-1 exist to prevent. Before the
+ * fetch resolves, and if it fails or the field is somehow absent from an
+ * old/misbehaving API response, `FALLBACK_ACCEPTANCE_STATEMENT` below is
+ * shown instead — degrading safely to a real, legible label rather than an
+ * empty or missing one. That fallback is inert as a legal record on its
+ * own: `RegistrationsService.submitRegistration` still validates
+ * `consent.policyVersion` against the server's known-version set
+ * server-side (design.md §4.1 step 4), so a submission made against a
+ * fallback label cannot silently bypass acceptance — it can only ever
+ * proceed if the version the applicant was actually shown is one the
+ * server recognises.
+ *
  * Human check (DC-17 — NOT covered by any automated test in this file or
  * `consent-scroll-gate.test.ts`): jsdom performs no layout, so every
  * jsdom-reported `scrollTop`/`clientHeight`/`scrollHeight` is a fabrication
@@ -55,6 +71,19 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { getConsentPolicy, type ConsentPolicy } from '@/lib/api/registrations';
 import { hasReachedScrollEnd, type ScrollEndMetrics } from './consent-scroll-gate';
+
+/**
+ * Degrade-safe fallback for the acceptance-checkbox label (see file header)
+ * — shown while `getConsentPolicy()` is still in flight, and if it fails or
+ * resolves without a usable `acceptanceStatement`. Never an empty label.
+ * This is NOT a second copy of Legal's text in the sense DD-7/D-1 forbid:
+ * it never reaches an applicant who successfully loaded the real policy,
+ * and a submission's `consent.policyVersion` is still checked against the
+ * server's known-version set regardless of which label they saw (see file
+ * header) — so this string carries no legal weight on its own.
+ */
+const FALLBACK_ACCEPTANCE_STATEMENT =
+  'I have read and accept the Data Protection & Participant Consent Policy.';
 
 export interface ConsentPolicyDisclosureProps {
   /** Controlled acceptance value — owned by the parent form (T-17 obligation). */
@@ -194,7 +223,20 @@ export default function ConsentPolicyDisclosure({
                 skipped two levels once the outer heading moved from h4 to
                 h2 in the same fix. */}
             <h3 className="text-sm font-semibold text-fg">{section.heading}</h3>
-            <p className="mt-1 text-sm text-muted">{section.body}</p>
+            {/* `whitespace-pre-line` is LOAD-BEARING, not styling. Each
+                `section.body` carries Legal's own line breaks and `- ` bullet
+                markers inside a single string; under the CSS default
+                (`white-space: normal`) every one of those newlines collapses
+                to a space, and the section renders as one run-on block.
+                MEASURED in headless Chrome at 375px against the real v1.0
+                text: 280px / 14 lines collapsed, vs 440px / 22 lines correct.
+                This is the document a person accepts, behind the scroll gate.
+                No test in this repo can catch a regression here — jsdom
+                applies no CSS and the text content is present either way — so
+                the assertion in the test file pins the CLASS, and that is a
+                presence-assertion that cannot prove the rendered effect
+                (KZ-002). Verify by rendering, never by reading. */}
+            <p className="mt-1 whitespace-pre-line text-sm text-muted">{section.body}</p>
           </section>
         ))}
       </div>
@@ -218,7 +260,7 @@ export default function ConsentPolicyDisclosure({
           ].join(' ')}
         />
         <label htmlFor={checkboxId} className="text-sm text-fg">
-          I have read and accept the Data Protection &amp; Participant Consent Policy.
+          {policy?.acceptanceStatement || FALLBACK_ACCEPTANCE_STATEMENT}
         </label>
       </div>
 

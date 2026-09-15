@@ -1,40 +1,28 @@
 /**
- * Automated accessibility + content tests for the /privacy page — T-5,
- * FR-5, D-3, design.md §4.3, §5.2.
+ * Automated accessibility + content tests for the /privacy page — T-5
+ * scaffold, T-8 approved-copy landing (FR-5, D-3, D-9, D-10, design.md
+ * §4.3, §5.2).
  *
- * REWRITTEN at T-5 (was T-10/T-6/T-11 of a superseded plan). `/privacy`
- * keeps its URL (D-3) but is now rendered through the shared
- * `LegalDocumentView` against `PRIVACY_POLICY`, and its cookie content and
- * `ConsentChoiceControl` island have LEFT this page — they now live on
- * `/cookies` (T-4). This file's cookie-related assertions moved with
- * them: every assertion this rewrite removed was checked against
- * `frontend/app/(public)/cookies/cookies-a11y.test.tsx` first, per the
- * T-5 task brief's "BEFORE deleting any assertion" instruction. Two gaps
- * were found doing that and are reported (not silently fixed — both
- * files this task does not own):
+ * `/privacy` keeps its URL (D-3) and renders through the shared
+ * `LegalDocumentView` against `PRIVACY_POLICY`. As of T-8, that document
+ * is the Privacy Policy text approved by the Alliance/CIAT legal owners,
+ * plus a short engineering-authored section carrying facts 2–4 of the
+ * contact-form obligation (D-9 — see privacy.ts's module doc). Cookie
+ * content and the `ConsentChoiceControl` island stay off this page — they
+ * live on `/cookies` (T-4); Legal's own "Cookies" section is carried
+ * verbatim into this page and closes with a pointer link to `/cookies`
+ * (D-4), asserted below.
  *
- *  1. The previous "banner reacts with no reload (DD-4)" test rendered
- *     `ConsentProvider` + `ConsentBanner` + the page together to prove the
- *     banner disappears immediately when `ConsentChoiceControl` changes
- *     the stored choice. `cookies-a11y.test.tsx`'s equivalent test
- *     ("lets a visitor change their stored consent choice") checks
- *     `readConsent()` but does not render `ConsentBanner` alongside, so
- *     it does not re-assert banner reactivity. `ConsentBanner.test.tsx`
- *     asserts `setConsent` is called under a mocked context, not through
- *     a real `ConsentChoiceControl` + `ConsentProvider` integration. No
- *     currently-owned file re-proves this integration.
- *  2. The previous "states the rider accurately" test asserted the
- *     specific phrases "including as you move between pages" and "stops
- *     the next time you load the site" (plus a negative guard against
- *     "until you navigate away"). `cookies-a11y.test.tsx`'s asymmetry
- *     test (d) matches on `/rejecting takes effect from your next page
- *     load/i` and `/accepting takes effect immediately/i` only — the
- *     rider's finer phrasing (and the negative guard) has no equivalent
- *     assertion there, even though the identical sentence now lives in
- *     `cookies.ts`'s "Changing your choice" section.
- *
- * Neither gap is fixed by this task: both `cookies/` files are out of
- * scope here (T-5 task brief hard constraint 3; owned by T-4/T-6).
+ * REMOVED AT T-8 (design.md §4.3 reversion challenge, requirements.md FR-5
+ * "BUT it must NOT retain the previous page's self-limiting statement"):
+ * the lede's clause stating this notice does not describe registration or
+ * public-directory data. The approved Privacy Policy DOES describe that
+ * (its "Public Nature of the Registry" and related sections), so the
+ * clause became false and is deleted along with its retention assertion
+ * here (the former "RETAINS the limitation clause" test, and the adjacent
+ * "describes one subject" test that asserted the same retired
+ * engineering-authored lede framing — both were specific to the T-5
+ * scaffold's own lede, which Legal's real lede replaces wholesale).
  *
  * NOT covered here (NFR-2, NFR-5): jsdom has no layout engine and
  * evaluates neither contrast nor rendered legibility — human check
@@ -42,7 +30,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -80,53 +68,173 @@ describe('/privacy page — no client island (T-5 hard constraint 1)', () => {
   });
 });
 
-describe('/privacy page — placeholder status (T-5, pending Legal)', () => {
-  it('makes the placeholder status unmistakable — the marker is visible on the page', () => {
+describe('/privacy page — the lede is Legal\'s two source paragraphs, not one merged string (T-8 rework, FR-5)', () => {
+  // DEMONSTRATED FALSIFIER (mandatory): collapsing PRIVACY_POLICY's `lede`
+  // back into a single string must redden this assertion. Run with `lede`
+  // collapsed to one string, observe red, then revert — see the
+  // Implementer's report for the failing output.
+  it('renders the operator-identity paragraph and the "what this policy explains" paragraph separately', () => {
     renderPrivacyPage();
 
-    const bodyText = document.body.textContent ?? '';
-    expect(bodyText).toMatch(/\[PLACEHOLDER TEXT — pending legal review\]/);
+    const operatorIdentity = screen.getByText(/is an online platform operated by insert ciat legal entity/i);
+    const explains = screen.getByText(/this privacy policy explains how we collect/i);
+
+    expect(operatorIdentity.tagName).toBe('P');
+    expect(explains.tagName).toBe('P');
+    // Two DISTINCT <p> elements — proves the two source paragraphs were
+    // not merged into one.
+    expect(operatorIdentity).not.toBe(explains);
   });
 });
 
-describe('/privacy page — scope statement (FR-5, design.md §4.3 "Explicitly NOT owned here")', () => {
-  // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-5): deleting the
-  // limitation clause from privacy.ts's lede must redden this assertion.
-  // Run with the clause removed, observe red, then revert — see the
-  // Implementer's report for the failing output.
-  it('RETAINS the limitation clause — this notice does not cover registration or directory data', () => {
+describe('/privacy page — approved-copy status (T-8)', () => {
+  it('carries no placeholder marker — the approved text has landed', () => {
     renderPrivacyPage();
 
-    const lede = screen.getByText(/this notice covers/i);
-    expect(lede.textContent).toMatch(/organisation registration/i);
-    expect(lede.textContent).toMatch(/public directory/i);
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText.toLowerCase()).not.toMatch(/placeholder/);
   });
 
-  it('describes one subject — the contact form — and points to the Cookie Notice for cookies', () => {
+  it('renders a visible version identifier and effective date', () => {
     renderPrivacyPage();
 
-    const lede = screen.getByText(/this notice covers/i);
-    expect(lede.textContent).toMatch(/contact form/i);
-    expect(lede.textContent).toMatch(/cookie notice/i);
-    // The old "covers two things … and the analytics cookies this site
-    // sets" framing is corrected, not merely relocated — it must not
-    // survive as a claim that this page itself covers cookies.
-    expect(lede.textContent).not.toMatch(/covers two things/i);
+    expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective insert date/i)).toBeInTheDocument();
+  });
+
+  // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): the previous page's
+  // self-limiting scope statement — "does not describe how the registry
+  // handles data collected through organisation registration or shown in
+  // the public directory" — is REMOVED at this task (FR-5 "BUT it must
+  // NOT retain..."), because the approved policy now describes exactly
+  // that. This asserts the withdrawn clause is genuinely gone, not merely
+  // unasserted.
+  it('does NOT retain the previous page’s self-limiting scope statement', () => {
+    renderPrivacyPage();
+
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toMatch(/does not describe how the registry handles data/i);
+  });
+});
+
+describe('/privacy page — Legal’s Cookies section (FR-5 scenario (b), D-4, D-10)', () => {
+  // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): editing one word of
+  // Legal's Cookies section in privacy.ts must redden this assertion. Run
+  // with one word changed, observe red, then revert — see the
+  // Implementer's report for the failing output. This test hardcodes its
+  // own independent copy of Legal's exact wording (not imported from
+  // privacy.ts), so an edit to the source is genuinely caught rather than
+  // trivially agreeing with itself.
+  it('is carried verbatim and unamended — every paragraph/bullet text matches Legal’s source exactly, in order', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies' });
+    // Only the <p>/<li> elements that came from Legal's own blocks — the
+    // engineering pointer paragraph (asserted separately below) is the
+    // LAST <p>, deliberately excluded here by slicing it off, so this
+    // comparison is scoped to Legal's words only.
+    const allParagraphsAndItems = Array.from(region.querySelectorAll('p, li')).map(
+      (el) => el.textContent,
+    );
+    const actual = allParagraphsAndItems.slice(0, -1); // drop the trailing pointer <p>
+
+    // This is this test's OWN independent copy of Legal's exact wording
+    // (not imported from privacy.ts) — an edit to the source is genuinely
+    // caught, rather than the test trivially agreeing with itself.
+    const expectedLegalText = [
+      'The Registry may use cookies and similar technologies to support the operation, security, functionality, and performance of the platform.',
+      'Cookies are small text files that are stored on a user’s device when visiting a website. These technologies may be used to:',
+      'Enable and maintain essential platform functionality;',
+      'Authenticate administrator sessions and maintain secure access to administrative features;',
+      'Improve the performance and reliability of the Registry;',
+      'Detect and prevent unauthorized access, fraud, or misuse;',
+      'Generate aggregated and non-identifiable statistics regarding the use of the Registry; and',
+      'Support troubleshooting, maintenance, and security monitoring activities.',
+      'Users will be provided with appropriate notice to manage cookie preferences.',
+      'Users may also manage or disable cookies through their browser settings. Please note that disabling certain cookies may affect the availability or functionality of some features of the Registry.',
+      'The Registry does not use cookies to collect personal information beyond what is reasonably necessary for the purposes described in this Privacy Policy.',
+      'For additional information regarding the technologies used by the Registry, users may contact CIAT using the contact details provided in this Privacy Policy.',
+    ];
+
+    expect(actual).toEqual(expectedLegalText);
+  });
+
+  it('closes with an engineering-authored pointer link to /cookies (D-4), not a consent-change control', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies' });
+    const link = within(region).getByRole('link', { name: /cookie notice/i });
+    expect(link).toHaveAttribute('href', '/cookies');
+
+    // D-4: the consent-change control lives only on /cookies, never here.
+    expect(within(region).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('does NOT name Google as recipient (D-10) — that disclosure lives only on /cookies', () => {
+    renderPrivacyPage();
+
+    const bodyText = document.body.textContent ?? '';
+    expect(bodyText).not.toMatch(/google/i);
+  });
+});
+
+describe('/privacy page — labelled sub-blocks (T-8, "How We Collect Information")', () => {
+  it('renders Self-registration, Administrator-managed registration and Platform operation as sub-blocks', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'How We Collect Information' });
+    expect(within(region).getByText('Self-registration').tagName).toBe('H3');
+    expect(within(region).getByText('Administrator-managed registration').tagName).toBe('H3');
+    expect(within(region).getByText('Platform operation').tagName).toBe('H3');
+    expect(
+      within(region).getByText(/actors may submit their own information directly/i),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('/privacy page — the closing Contact Us block (T-8, contact description list)', () => {
+  it('renders Contact/Email/Address/Telephone as a description list, blank values reproduced as-is', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Contact Us' });
+    const dl = region.querySelector('dl')!;
+    expect(dl).toBeInTheDocument();
+    const dts = Array.from(dl.querySelectorAll('dt')).map((el) => el.textContent);
+    expect(dts).toEqual(['Contact:', 'Email:', 'Address:', 'Telephone:']);
+    // Legal's source left every value on this block blank — reproduced,
+    // not invented.
+    const dds = Array.from(dl.querySelectorAll('dd')).map((el) => el.textContent);
+    expect(dds).toEqual(['', '', '', '']);
   });
 });
 
 describe('/privacy page — the four contact-channel facts (FR-5, D-9), asserted independently', () => {
   // Each assertion below is independent by construction: deleting any one
   // sentence from privacy.ts must redden exactly one of these four and
-  // leave the other three green (T-5 task brief falsifier 2).
+  // leave the other three green (T-8 task brief falsifier (1)).
+  //
+  // Part 1 is now discharged by LEGAL's own "Information We Collect"
+  // section (D-9, requirements.md FR-5 scenario) rather than by a
+  // dedicated engineering section — the T-5 scaffold's "What a submission
+  // collects" section is superseded by Legal's text and no longer exists
+  // as a separate heading.
 
-  it('(1) states what a submission collects', () => {
+  it('(1) states what a submission collects, via Legal’s "Information We Collect" section', () => {
     renderPrivacyPage();
 
     expect(
-      screen.getByRole('heading', { name: /what a submission collects/i })
+      screen.getByRole('heading', { name: /information we collect/i })
     ).toBeInTheDocument();
-    expect(screen.getByText(/name, email address/i)).toBeInTheDocument();
+    // This regex is coupled to Legal's own bullet wording in
+    // `privacy.ts`, not to engineering copy — a future Legal edition that
+    // rewords this bullet WILL redden this test even though nothing
+    // engineering owns changed. The correct response when that happens is
+    // to re-point this assertion at the new wording (confirm the D-9
+    // obligation is still discharged), never to loosen the regex to keep
+    // it passing.
+    expect(
+      screen.getByText(/information submitted through communications with registry administrators/i),
+    ).toBeInTheDocument();
   });
 
   it('(2) states who receives it', () => {

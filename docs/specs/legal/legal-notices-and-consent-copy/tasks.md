@@ -15,7 +15,7 @@
       Scope: Add `ConsentPolicyEdition` and `CONSENT_POLICY_EDITIONS` (ordered, oldest first, seeded with the existing `v1.0-placeholder` content). Derive `CONSENT_POLICY_VERSION` and `KNOWN_CONSENT_POLICY_VERSIONS` from it. Add lookup-by-version. Keep `isVersionKnown`'s parameterized seam and its explanatory comment intact (design.md §4.2).
       Traces: FR-1 (all three scenarios), design.md §4.1, §4.2
       Files: `backend/src/registrations/consent-policy.ts`, `consent-policy.spec.ts`, `registrations.controller.spec.ts`
-      Clause ownership: *derives both exports* → derivation test · *superseded prose retrievable without git* → lookup test · *contract does not move* → controller response test · *must NOT gain/lose/rename a field* → key-set assertion
+      Clause ownership: *derives both exports* → derivation test · *superseded prose retrievable without git* → lookup test · *contract does not move* → controller response test · *must NOT gain/lose/rename a field* → key-set assertion *(constrains T-1 only; T-9 widened the contract deliberately under D-13 and updated this assertion with its reason recorded beside it)*
       Verify: `cd backend && npm test -- consent-policy registrations.controller --silent`
       Falsifying inputs (run each, watch it redden, revert): (1) replace a derived export with a hand-written literal → derivation test reds; (2) drop the non-final edition from the registry → set-semantics test reds; (3) add a key to the controller's response → key-set assertion reds.
       Done when: all three mutations demonstrably redden a **named** test, the suite is green on the real code, and `npm run build` compiles.
@@ -90,7 +90,7 @@
 
 ## Phase B — Blocked on Legal's approved texts
 
-- [ ] **T-8 Place the approved Terms of Use and Privacy Policy**  (deps: T-5, T-6; **blocked: approved texts only — OQ-A resolved**)
+- [x] **T-8 Place the approved Terms of Use and Privacy Policy**  (deps: T-5, T-6; **blocked: approved texts only — OQ-A resolved**)
       Scope: Replace both content modules with the approved prose. Legal's Cookies section is carried **verbatim and unamended** into `privacy.ts` (D-10) and closes with a link to `/cookies`. Add the short engineering-authored contact-channel section after Legal's block (D-9). Remove `/privacy`'s self-limiting scope statement — now, with the replacement in place.
       Traces: FR-4, FR-5 (both scenarios), D-9, D-10
       Files: `frontend/lib/content/legal/{terms,privacy}.ts`, `privacy-a11y.test.tsx`, `terms-a11y.test.tsx`
@@ -102,7 +102,7 @@
       Review: light — content accuracy is defect class 8 and has no automated gate.
       Skills: `cognitive-doc-design`
 
-- [ ] **T-9 Land the approved consent copy as edition `v1.0` and invert the tripwire**  (deps: T-1; **blocked: approved consent text**)
+- [x] **T-9 Land the approved consent copy as edition `v1.0` and invert the tripwire**  (deps: T-1; **blocked: approved consent text**)
       Scope: Append a `v1.0` edition to `CONSENT_POLICY_EDITIONS` with the approved headings and bodies. Invert `registrations.controller.spec.ts`'s placeholder assertion to assert the **current** edition carries no marker. Update the `v1.0-placeholder` literals in `ConsentPolicyDisclosure.test.tsx` and `lib/api/registrations.test.ts` to whatever those fixtures should now assert.
       Traces: FR-2 (both scenarios)
       Files: `backend/src/registrations/consent-policy.ts`, `registrations.controller.spec.ts`, `frontend/components/register/ConsentPolicyDisclosure.test.tsx`, `frontend/lib/api/registrations.test.ts`
@@ -115,7 +115,7 @@
 
 ## Phase C — Baseline sync
 
-- [~] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
+- [x] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
       Scope: `docs/ux-ui/design.md` §2 IA — add `/cookies` and `/terms`, rewrite `/privacy`'s description, and **repair the pre-existing drift (D-11): `/about` and `/forgot-password` both ship and neither is listed** in §2 or §4. §4 Screen Inventory — add two rows, rewrite the Privacy row. `docs/trd/trd.md` — add **ADR-014** (D-1), amend **ADR-013**'s consequences (it asserts the text is still placeholder), and amend **ADR-011**'s consequences (it asserts city-level geography is something *"the `/privacy` notice must state"*, which this spec makes false).
       Traces: FR-8, design.md §4.3
       Files: `docs/ux-ui/design.md`, `docs/trd/trd.md`

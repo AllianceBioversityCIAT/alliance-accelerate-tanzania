@@ -325,3 +325,71 @@ The Reviewer could not run `git log --all` (read-only wrapper) and so **could no
 
 Per the root guide's concurrency corollary, the number is being allocated **from a spec branch**, which does not make it free — it decides who pays. **If a collision appears at merge, this branch pays the renumbering.** Re-verify immediately before merging to `main`.
 
+### T-8 — Approved Terms of Use and Privacy Policy · **PASS** (attempt 2)
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-15 |
+| Attempts | 2 |
+| Reviewer | T3 (opus), effort `max` |
+| Review depth | **Escalated from the `tasks.md` assignment.** T-8 was scoped to *light review* when these files were placeholder scaffolds. They are now the legally operative text, and the parallel consent audit had just found a fidelity defect (D-12). A full clause-by-clause fidelity audit was run instead. |
+
+**The central result: the legal text is faithful.** The Reviewer reconciled every bullet-glyph line in Legal's sources against the landed data — Privacy 16 headings + 61 bullets = 77 source glyph lines; Terms 17 + 63 = 80. Nothing dropped, added or reordered. **No D-12-class reframing exists in either document**: every source bullet is a bullet, every trailing sentence is a paragraph. Trailing sentences render *after* their lists in all 19 affected sections. Legal's own errors are preserved, not repaired.
+
+**Attempt 1 FAIL — four issues, none in the text itself.**
+
+1. `/privacy/page.tsx`'s comment still instructed future agents to **retain** the self-limiting scope clause that T-8 had just removed — a comment telling the next author to restore what FR-5 forbids.
+2. `/terms/page.tsx` still described the approved text as *"currently placeholder prose, pending delivery from Legal"*.
+3. **Unratified edits to a legal document.** Legal's sources contain **zero** typographic quote characters (grep-verified); the landed text had converted 12 double-quoted terms to curly. The stated rationale — escaping — is only half true: these are single-quoted TS strings, so `"Registry"` needs no escaping. Beyond legality, it defeats byte-exact diffing of Legal's next edition against the delivered file, which is the **only** practical verification for a document class with no automated gate (defect class 8).
+4. **The one structural merge.** Both ledes joined Legal's separate paragraphs into one string; in Terms this folded the **binding assent clause** (*"By accessing or using the Registry, you agree to comply…"*) into the same muted paragraph as the welcome. *"The type holds one string"* was not a real constraint — `types.ts` had already been extended additively in the same task.
+
+**Leader adjudication on 3 and 4.** Both were offered as *revert or obtain ratification*. **Reverted, not escalated** — the product owner's standing instruction for this task is *"respeta la estructura de Legal"*, so reverting is the option that obeys it, and asking again would be re-asking a settled question. Curly **apostrophes** were kept: in single-quoted TS strings those genuinely need escaping.
+
+**Attempt 2 — all four closed, plus three adopted advisories.** `lede` widened to `string | string[]`; `LegalSection` made a **discriminated union** so `{paragraphs, blocks}` — which silently discarded `paragraphs` — is now a **compile error** (silent content loss is the wrong default in a legal renderer); a test labelled `FALSIFIER` that could not fail was replaced with one that does.
+
+**Falsifiers:** collapsing Terms' lede back to one string reddens a named assertion · setting both `paragraphs` and `blocks` is rejected by `tsc` (`TS2322`) — a type-level guard's falsifier is a compile error, not a red test · the replacement falsifier reddens against an injected renderer bug.
+
+**Verification:** 114 suites / 1733 tests · `tsc --noEmit` clean · lint clean · build emits both routes, and the emitted HTML contains **zero** curly double-quote characters.
+
+---
+
+### T-9 — Approved consent copy as edition `v1.0` · **PASS** (attempt 2) · Leader follow-ups applied
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-15 |
+| Attempts | 2 |
+| Reviewer | T3 (opus), effort `max`, three rounds on this module |
+
+**Attempt 1 FAIL — the finding that justified the whole review depth.** Legal's **sixth bullet** in §Consent had been carried as a trailing paragraph. The list is introduced by *"I expressly and voluntarily consent to:"* — so as Legal marked it, record retention is an **object of consent**; as landed, a separate statement of **understanding**. A change of legal framing, made by engineering, on the document a person accepts. Escalated to the product owner, who **decided to keep the paragraph form** → **D-12**, recorded with its grammatical evidence (Legal's fourth bullet ends `; and`, the fifth closes with a full stop, the sixth is a complete `I understand that…` sentence). Engineering did not make the call; the alternative was offered and declined.
+
+Also closed: four withdrawn-premise sites in `consent-policy.spec.ts` including **a test name** that printed a false statement on every run — a **repeat** of the same defect fixed in this module at T-1 attempt 2, where the source was corrected and the sibling file was not swept. And the *"append BELOW this line"* comment, which had drifted mid-array: a future author following it literally would insert `v2.0` **between** the two editions, `deriveCurrentEdition` would keep returning `v1.0`, the new edition would never be served, and **nothing would redden**. Now pinned by a full version-sequence assertion.
+
+**Attempt 2 verified by the Reviewer against Legal's source, including every string-concatenation seam** — the classic place a space is dropped or doubled. All 78 source lines accounted for, in order. Exactly the two authorized edits on `CONSENT_ACCEPTANCE_STATEMENT` (`☐ ` stripped, `provided..` → `provided.`). The new byte-pins over all nine `v1.0` sections are character-identical to the module text.
+
+**PII checked by reading, not assumed:** the added `acceptanceStatement` is a module-level string literal — no actor data, no interpolation, no serializer involvement, on a route already fully public. The Reviewer also checked it against `pii-boundary.spec.ts`'s raw-value scan for false collisions (the prose contains no digits) and confirmed every unknown-version literal in the suite is unaffected.
+
+#### The defect nothing in this repository could have caught
+
+The Reviewer's attempt-2 FAIL found that every `v1.0` body embeds Legal's line breaks and `- ` bullet markers **inside a single string**, while the only consumer rendered it in a `<p>` with no `whitespace-pre-line`. Under the CSS default, every newline collapses to a space.
+
+**Measured rather than reasoned** (`frontend/CLAUDE.md`'s rule; headless Chrome, 375px, against the real `v1.0` text):
+
+| | height | lines |
+|---|---|---|
+| as shipped | **280px** | 14 |
+| with `whitespace-pre-line` | **440px** | 22 |
+
+Twelve data categories rendered mid-sentence in one run-on block, inside a `max-h-64` scroll region, behind the gate that captures consent — on the one document a person legally accepts. **Invisible to all 1733 frontend tests**: jsdom applies no CSS and the text content is present either way. Introduced silently by T-9, because the pre-T-9 placeholder bodies were single sentences with no newlines, so nothing exposed the limitation.
+
+**Fixed** with `whitespace-pre-line`, the measurement recorded at the call site, plus a guard test that pins the class and **states in its own docblock what it cannot prove** (KZ-002) — demonstrated to redden when the class is removed.
+
+**Deferred, named, not silent:** giving the consent policy the same `paragraphs`/`bullets` shape the three legal *pages* already have. It is the structurally correct fix and would yield real `<ul>` semantics — which matters for a screen-reader user, who currently hears a run of text where a sighted user sees twelve lines. It is a second contract change and therefore a scoping decision, not an improvisation. **Recorded as debt here rather than shipped unremarked, because it is invisible to every gate in this repo.**
+
+#### Leader follow-ups (KZ-004 sweeps the Leader owed)
+
+1. **A doc comment asserting the opposite of what shipped.** `CONSENT_ACCEPTANCE_STATEMENT`'s comment said the field was *deliberately NOT* in the response and that adding it *"would widen that endpoint's response shape, which FR-1 scenario 3 forbids"*. Every operative clause was false at HEAD — and worse than stale: it told a future author the shipped code violated a requirement. Rewritten to cite D-13; the *"not a policy section"* half, which is still true and is why two checkboxes would otherwise render, was kept. `CONSENT_POLICY_SECTIONS`' neighbouring T-1-era claims were scoped to T-1 in the same pass.
+2. **`requirements.md` §4 still listed the change D-13 authorized as an explicit non-goal.** FR-1 scenario 3 and both `design.md` sites were updated when D-13 landed; the non-goal list was missed, leaving the document forbidding and authorizing the same change. Swept — struck through with its reason rather than deleted, because its first half is still the record of what T-1's refactor did not do. **Second sweep miss by the Leader this run** (the first was the banner label's focus-order reference). Recorded as a pattern, not as two incidents: the rule is easy to state and hard to execute.
+
+**Verification (Leader-run, quiet tree):** backend 76 suites / 1106 tests, build and lint clean · frontend 114 suites / 1733 tests, `tsc --noEmit` clean, lint clean, static export clean.
+
