@@ -1,11 +1,10 @@
 // /cookies — the factual Cookie Notice (T-4, FR-3, design.md §5.2, §5.3).
 //
 // This is the consent banner's "learn more" destination (`ConsentBanner`
-// still points at `/privacy` until T-6 re-routes it — expected, not a
-// bug of this task). It states what this site's cookies actually do
-// today — Google Analytics as the tool, Google as the third-party
-// recipient, the four GA4 signals, no cookie before consent, the
-// asymmetric withdrawal, and that this site does not itself delete
+// targets `/cookies`, per T-6/FR-6). It states what this site's cookies
+// actually do today — Google Analytics as the tool, Google as the
+// third-party recipient, the four GA4 signals, no cookie before consent,
+// the asymmetric withdrawal, and that this site does not itself delete
 // cookies already set (requirements.md FR-3, NFR-4).
 //
 // Static server component: no 'use client', no hooks, no

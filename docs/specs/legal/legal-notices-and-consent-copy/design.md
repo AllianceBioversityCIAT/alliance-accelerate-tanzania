@@ -1,7 +1,7 @@
 # Design — Legal Notices & Approved Consent Copy
 
 - Spec path: `docs/specs/legal/legal-notices-and-consent-copy/`
-- Status: Draft
+- Status: **Done** — implemented and validated 2026-09-15.
 - Traces requirements: FR-1..FR-9, NFR-1..NFR-5 from this spec's `requirements.md`
 
 ---
@@ -56,7 +56,7 @@ No endpoint is added to serve a *historical* edition. The registry makes per-ver
 
 `isVersionKnown(versions, version)` stays parameterized. The module's existing comment explains why at length and the reasoning still holds: with a one-element known set, *"is in the known set"* and *"equals the current version"* agree on every input, so a test written against the wrapper alone cannot distinguish a real set-membership check from a narrower, wrong one. Taking the array as a parameter is what lets a test construct a synthetic multi-entry set and prove set semantics.
 
-The registry **will** make production's set multi-entry once T-9 appends the approved edition — it still carries exactly one today — which **weakens rather than removes** the argument for the seam *(tense corrected 2026-09-15: this originally read "makes … for the first time" in the present tense and was inherited verbatim into a code comment, where it contradicted five correct "exactly ONE edition today" statements in the same file — including the premise the latent-gate note rests on)*: the seam is what makes the property testable independent of how many editions have shipped. Removing it would be a reversion; it is not proposed.
+The registry **made** production's set multi-entry at T-9, when the approved `v1.0` edition was appended — it carries two — *(tense corrected twice: first on 2026-09-15 from a false present tense while one edition existed, then again by validation the same day, because T-9 falsified the correction. The code comment that had inherited the original sentence **was** re-swept at T-9; this document was the sibling left behind. The sentence has now gone stale in both directions, which is the argument for stating a fact rather than a schedule.)* — **weakens rather than removes** the argument for the seam *(tense corrected 2026-09-15: this originally read "makes … for the first time" in the present tense and was inherited verbatim into a code comment, where it contradicted five correct "exactly ONE edition today" statements in the same file — including the premise the latent-gate note rests on)*: the seam is what makes the property testable independent of how many editions have shipped. Removing it would be a reversion; it is not proposed.
 
 ### 4.3 Reversion challenge (Step 2.3)
 
@@ -81,7 +81,7 @@ frontend/lib/content/legal/
   privacy.ts      Privacy Policy (Legal's text, placed verbatim)
 ```
 
-A `LegalDocument` carries a title, a version, an effective date, an optional lede, and ordered sections; a `LegalSection` carries a heading, paragraphs, and an optional bullet list. That shape is sufficient for Legal's supplied structure — headings, prose, and bulleted enumerations — and deliberately does not model arbitrary rich text. If a delivered text needs something the shape cannot express, the shape is extended once, in one place, rather than each page inventing markup.
+A `LegalDocument` carries a title, a version, an effective date, a lede (`string | string[]`), and ordered sections. **`LegalSection` shipped wider than this section first described**: T-8 found Legal's structure needed ordered, mixed content — a trailing sentence *after* a bullet list, nested sub-bullets, labelled sub-blocks, and contact blocks — so it became a **discriminated union**, either `{paragraphs, bullets?}` or `{blocks}` where a block is a paragraph, a bullet list, a sub-block group, or a contact list. The union is enforced by the compiler: setting both variants silently discarded content, and silent content loss is the wrong default in a legal renderer. That shape is sufficient for Legal's supplied structure — headings, prose, and bulleted enumerations — and deliberately does not model arbitrary rich text. If a delivered text needs something the shape cannot express, the shape is extended once, in one place, rather than each page inventing markup.
 
 `components/legal/LegalDocumentView.tsx` renders it: `h1` + version/date stamp, then `section` elements with `aria-labelledby`, matching the heading hierarchy and token classes the current `/privacy` page already uses.
 

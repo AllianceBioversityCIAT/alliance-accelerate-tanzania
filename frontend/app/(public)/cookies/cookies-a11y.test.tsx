@@ -215,6 +215,30 @@ describe('/cookies page — FR-3 content clauses (each a separate, independently
     expect(bodyText).not.toMatch(/troubleshoot/i);
     expect(bodyText).not.toMatch(/maintenance/i);
   });
+
+  // (g) THE EXCLUSIVE CLAIM (FR-3 third scenario: "THEN it names the GA4
+  // cookies as the only cookies this site sets"). Distinct from (f): (f)
+  // proves the page never mentions the forbidden purposes; this proves the
+  // page makes the affirmative, exclusive claim that GA4's cookies are the
+  // ONLY ones this site sets. Before this test, nothing asserted this
+  // sentence at all — the keyword-absence checks in (f) are satisfied
+  // MORE thoroughly by deleting the "What this notice covers" section
+  // than by keeping it, so a deletion reddened nothing.
+  // FALSIFIER (mandatory): delete the "What this notice covers" section
+  // from cookies.ts — see the Implementer's report for the failing output.
+  it('(g) names the GA4 cookies as the only cookies this site sets', () => {
+    renderCookiesPage();
+
+    const section = screen
+      .getByRole('heading', { name: /what this notice covers/i })
+      .closest('section');
+    expect(section).not.toBeNull();
+    const scoped = within(section as HTMLElement);
+
+    expect(
+      scoped.getByText(/are the only cookies this site sets/i)
+    ).toBeInTheDocument();
+  });
 });
 
 describe('/cookies page — the consent-change control (FR-3 second scenario)', () => {

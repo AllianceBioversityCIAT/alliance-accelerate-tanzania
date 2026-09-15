@@ -14,9 +14,12 @@
  *    Those ARE Legal's numbered section headings, not list items — the
  *    glyph is stripped, the heading text is not touched. The final
  *    section's heading survived extraction as literal "15. Contact
- *    Information" (a typed number, not a bullet glyph) — reproduced
- *    exactly, number included, since it is Legal's own heading text, not
- *    an artifact to strip.
+ *    Information" (a typed number, not a bullet glyph) — Legal's source
+ *    types this one heading as numbered while every other heading in the
+ *    document is not (there is no 1-14), an inconsistency in the source
+ *    rather than a numbering scheme. The "15. " prefix is DROPPED on the
+ *    product owner's instruction, 2026-09-15, recorded as **D-14**
+ *    (`requirements.md`) — see the inline comment at the heading below.
  *  - Double quotes in Legal's prose are reproduced as straight ASCII `"`,
  *    matching the source .txt exactly (T-8 rework, product-owner
  *    instruction: "respeta la estructura de Legal"). They need no

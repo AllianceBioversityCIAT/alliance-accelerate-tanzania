@@ -22,11 +22,11 @@
  * derived progress) — neither is part of the form's error/value contract.
  *
  * Progress-text section count (T-18 obligation 2): the mockup's "2 of 6
- * sections read" names six sections, but the backend today serves four
- * (`backend/src/registrations/consent-policy.ts`). The count below always
- * reads `policy.sections.length` from the fetched payload — never a
- * literal — so it cannot go stale against whatever the server actually
- * serves.
+ * sections read" names six sections, but the backend today serves nine
+ * (`backend/src/registrations/consent-policy.ts`, the current `v1.0`
+ * edition). The count below always reads `policy.sections.length` from
+ * the fetched payload — never a literal — so it cannot go stale against
+ * whatever the server actually serves.
  *
  * `onPolicyLoaded` (optional): fires once, with the fetched policy's exact
  * `version` string, the moment the fetch resolves successfully. FR-3

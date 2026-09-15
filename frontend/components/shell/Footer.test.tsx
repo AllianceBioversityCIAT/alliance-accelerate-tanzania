@@ -61,4 +61,30 @@ describe('Footer — links (FR-6, T-6)', () => {
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/terms');
   });
+
+  // FR-6 "AND IT MUST reuse the existing FOOTER_LINK_CLASSES treatment so
+  // the row stays visually uniform" — previously unguarded: the five tests
+  // above assert only `href`, never `className`. This pins the CLASS
+  // STRING each link carries, not the rendered result — jsdom applies no
+  // CSS, so this cannot prove the five links actually render identically,
+  // only that they share the same className attribute value.
+  // FALSIFIER (mandatory): give one of the five links a different
+  // className and this is the one test that reddens — see the
+  // Implementer's report for the failing output.
+  it('all five links share the same FOOTER_LINK_CLASSES treatment', () => {
+    render(<Footer />);
+
+    const names = [
+      /about this project/i,
+      /^contact$/i,
+      /^cookie notice$/i,
+      /^privacy policy$/i,
+      /^terms of use$/i,
+    ];
+    const classNames = names.map(
+      (name) => screen.getByRole('link', { name }).className
+    );
+
+    expect(new Set(classNames).size).toBe(1);
+  });
 });

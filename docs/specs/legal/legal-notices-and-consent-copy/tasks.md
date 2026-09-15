@@ -115,7 +115,7 @@
 
 ## Phase C — Baseline sync
 
-- [x] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
+- [~] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
       Scope: `docs/ux-ui/design.md` §2 IA — add `/cookies` and `/terms`, rewrite `/privacy`'s description, and **repair the pre-existing drift (D-11): `/about` and `/forgot-password` both ship and neither is listed** in §2 or §4. §4 Screen Inventory — add two rows, rewrite the Privacy row. `docs/trd/trd.md` — add **ADR-014** (D-1), amend **ADR-013**'s consequences (it asserts the text is still placeholder), and amend **ADR-011**'s consequences (it asserts city-level geography is something *"the `/privacy` notice must state"*, which this spec makes false).
       Traces: FR-8, design.md §4.3
       Files: `docs/ux-ui/design.md`, `docs/trd/trd.md`
@@ -139,11 +139,16 @@ T-2 ─┬─► T-3 ─► T-4 ─┐    │
 T-7 (independent)
 ```
 
-Eligible now: **T-1, T-2, T-7.** Phase B (T-8, T-9) waits on Legal's texts alone — no open question gates it. T-10's consent half waits on T-9; its IA half is ready once T-6 lands.
+**All tasks are `[x]` except T-10, which is `[~]`** pending the NFR-5 human render check. *(This line read "Eligible now: T-1, T-2, T-7" until validation caught it — written at decomposition and never updated.)* T-10's consent half waits on T-9; its IA half is ready once T-6 lands.
 
 ## Coverage closure (KZ-001)
 
-Every scenario and every `BUT`/`AND IT MUST` clause is owned by exactly one task above, named under `Clause ownership:`. Two clauses are deliberately **deferred across tasks rather than split**: `/privacy`'s scope statement (retained in T-5, removed in T-8) and the contact-form disclosure (asserted in T-8, gated by OQ-A). Neither is discharged by citing a different requirement.
+~~Every scenario and every `BUT`/`AND IT MUST` clause is owned by exactly one task above.~~ **That claim was false when written, and validation proved it (2026-09-15).** Two clauses were owned by no task and guarded by no test:
+
+- **FR-3 scenario 3** — *"THEN it names the GA4 cookies as the only cookies this site sets"*. The sentence shipped; deleting the whole section that carried it reddened nothing, because the neighbouring tests are keyword **absence** checks that a deletion satisfies more thoroughly. Now owned by T-4 with a falsifiable assertion.
+- **FR-6** — *"AND IT MUST reuse the existing `FOOTER_LINK_CLASSES` treatment"*. `Footer.test.tsx` asserted five `href`s and zero classNames. Now owned by T-6.
+
+**The lesson is about the claim, not the gap.** This section asserted closure in the same document that failed to close it — an unfalsifiable statement of completeness, which is the shape KZ-001 exists to catch and which an author checking their own work cannot see. Closure was only established by an independent enumeration that assumed nothing. Two clauses are deliberately **deferred across tasks rather than split**: `/privacy`'s scope statement (retained in T-5, removed in T-8) and the contact-form disclosure (asserted in T-8, gated by OQ-A). Neither is discharged by citing a different requirement.
 
 ## Open items carried into execution
 
@@ -153,4 +158,4 @@ Every scenario and every `BUT`/`AND IT MUST` clause is owned by exactly one task
 | OQ-B | **resolved 2026-09-15** | → D-10. Legal is not asked to amend. `/privacy` verbatim, recipient disclosure on `/cookies` only. |
 | OQ-C | **resolved 2026-09-15** | → D-11. T-10 repairs the drift in passing. |
 
-**Nothing is blocked except on Legal's three texts (T-8, T-9).** Phase A is fully executable.
+**Legal's three texts were delivered and landed.** What remains blocked is publication, not implementation: the unfilled fields inside those texts.

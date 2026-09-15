@@ -40,13 +40,22 @@
                            consent), plus the interactive client island
                            (ConsentChoiceControl) to change a prior consent choice. This is
                            where the consent banner's policy link lands.
-/terms                    Terms of Use — placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8); presents no
-                           acceptance control (nobody "accepts" this document)
-/privacy                  Privacy Policy — placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8), covering
-                           contact-form data handling only; retains its narrow-scope
-                           limitation clause (does not describe registration or public-
-                           directory data handling) until T-8. No client island and no
-                           cookie content — both moved to /cookies.
+/terms                    Terms of Use — CIAT's approved text, v1.0. Presents no acceptance
+                           control: nobody accepts this document, only the consent policy
+                           is accepted, and only by an applicant registering an organisation.
+                           Ships with Legal's own unfilled fields (an "Insert Date" effective
+                           date, an unfilled contact block) — see the note below the block.
+/privacy                  Privacy Policy — CIAT's approved text, v1.0. Covers the registry as a
+                           whole: what is collected, why, the public nature of publication,
+                           international storage, data-subject rights, and Legal's own
+                           Cookies section carried verbatim with an onward pointer to
+                           /cookies. The narrow-scope limitation clause it used to carry was
+                           REMOVED once the approved policy made it false. No client island —
+                           the consent-change control lives on /cookies. Also carries one
+                           engineering-authored section ("Messages sent through the contact
+                           form", three sub-headings) satisfying an obligation the contact
+                           form's own acknowledgement makes. Ships with Legal's unfilled
+                           fields — see the note below the block.
 /admin                    Admin/Staff console — a route PREFIX, not a page: there is
                           no /admin index. The brand mark links to /admin/actors.
   /admin/actors           Actor management table (CRUD)
@@ -131,8 +140,20 @@
 | Forgot password | Staff / Admin | Self-service password reset request, via Cognito: step 1 collects an email and requests a reset code (neutral, enumeration-safe notice either way); step 2 collects the code plus a new password (email pre-filled, editable) and confirms the reset, then routes to `/login?reset=success`. Accessible error region (`role="alert"`, `aria-live="assertive"`) on failure; no code or password ever placed in a URL. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
 | Cookie Notice | Public | The factual inventory of what this site's cookies actually set today: Google Analytics only, and only once consent is given (never before) — the four signals it collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and the `ConsentChoiceControl` island to change a prior choice, rendered as a sibling **immediately after** the "Changing your choice" section — outside that section's `aria-labelledby` region, not within it. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load — and that the site does not delete cookies already set. This is where the consent banner's link — accessible name "cookie notice" — lands. |
-| Terms of Use | Public | Placeholder copy pending Legal (`docs/specs/legal/legal-notices-and-consent-copy` T-8); version/effective-date stamp is itself a placeholder marker. Presents no acceptance control — nobody "accepts" this document, only the consent policy is accepted, and only by an applicant registering an organisation. |
-| Privacy | Public | **Two kinds of content, and the difference is load-bearing.** The policy prose is placeholder pending Legal. The four contact-channel facts are **engineering-authored and already delivered** — what a submission collects, who receives it, that messages are relayed by email and not stored, and that submitting is not consent to publish anything — carried over from the previous notice to satisfy an earlier spec's requirement that `ContactForm`'s mandatory acknowledgement link resolve to a page describing them. Replacing the module wholesale when the approved policy arrives would delete a delivered requirement. Retains its narrow-scope limitation clause (does not describe registration or public-directory data handling) until `docs/specs/legal/legal-notices-and-consent-copy` T-8 replaces it with the approved policy. No cookie **disclosure** and no client island — both live on Cookie Notice; the lede carries only a pointer to it. (The approved policy will carry its own Cookies section verbatim, so this becomes "no cookie *inventory*" rather than none at all.) |
+| Terms of Use | Public | CIAT's approved Terms, **v1.0**. Purpose, registry content, no-verification/no-endorsement, responsibility for submitted information, public nature, user conduct (including a no-scraping clause), third-party interactions, IP, privacy pointer, profile removal, availability, warranty disclaimer, liability limit, indemnification, use of the CIAT name, dispute resolution (UNCITRAL arbitration, Nairobi) and privileges-and-immunities reservation. **Presents no acceptance control** — nobody accepts this document; only the consent policy is accepted, and only by an applicant registering an organisation. Ships with Legal's own unfilled fields (`Insert Date`, `Insert Email`, `Insert Address`, `Insert Telephone Number`) — **not yet publishable**; see the note below §4. |
+| Privacy | Public | CIAT's approved Privacy Policy, **v1.0**, covering the registry as a whole: who is responsible, what is collected, how, why, the public nature of publication, business and location data, international storage (Ireland), legal basis, accuracy and authority, sharing, retention, data-subject rights, security, **Legal's Cookies section carried verbatim** with an onward pointer to Cookie Notice, contact, and change history. The narrow-scope limitation clause it previously carried was **removed** once the approved policy made it false. No client island. **Plus one engineering-authored section** — *Messages sent through the contact form*, with three sub-headings (who receives it · relayed and not stored · not consent to publish) — placed before Contact Us. These are **three** engineering facts; the fourth part of that obligation, what a submission collects, is discharged by Legal's own *Information We Collect*. Ships with Legal's unfilled fields — **not yet publishable**. |
+
+> **Both legal pages ship with Legal's own unfilled fields and are NOT yet publishable.**
+> `/terms` and `/privacy` render `Effective Insert Date`, `Insert CIAT Legal Entity`, `Insert Email`, `Insert Address`,
+> `Insert Telephone Number` and blank contact values — CIAT delivered the texts with those fields outstanding, and
+> engineering carries Legal's prose verbatim rather than inventing values. The consequence is concrete: a data subject
+> following either document's contact instructions today reaches a blank.
+>
+> The placeholder tripwire in `backend/src/registrations/consent-policy.ts` matches the literal word `placeholder` and is
+> **structurally blind** to this, which is Legal's own placeholder idiom. An inventory test per document pins the exact set
+> of unfilled tokens: adding one reddens, filling one requires updating the list, and an empty list is the signal that the
+> document may be published. *(Recorded 2026-09-15 from `docs/specs/legal/legal-notices-and-consent-copy/validation-report.md`,
+> finding O-1 — three independent validators found the gate certifying the defect it existed to catch.)*
 
 ## 5. Navigation Model
 

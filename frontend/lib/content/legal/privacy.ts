@@ -5,11 +5,13 @@
  * T-8 replaces the placeholder scaffold wholesale with the Privacy Policy
  * text approved by the Alliance/CIAT legal owners
  * ("ACCELERATE Tanzania Registry - Privacy Policy.txt"), transcribed
- * verbatim below. Section 1 through the "Changes to this Privacy Policy"
- * section are LEGAL'S TEXT — engineering places it, does not author or
- * edit it (requirements.md §4 non-goals). The three sections after that
- * ("Who receives it" / "How it is handled" / "Not consent to publish") are
- * ENGINEERING-AUTHORED (D-9) and marked as such below.
+ * verbatim below. Every section except one is LEGAL'S TEXT — engineering
+ * places it, does not author or edit it (requirements.md §4 non-goals).
+ * The one exception is a single ENGINEERING-AUTHORED section, "Messages
+ * sent through the contact form" (D-9), holding three sub-blocks ("Who
+ * receives it" / "How it is handled" / "Not consent to publish"). It sits
+ * BETWEEN Legal's "Cookies" section and Legal's "Contact Us" section —
+ * not after the document — and is marked as such below.
  *
  * Transcription notes (verbatim ≠ blind copy of extraction artifacts):
  *  - The source .docx was extracted with `textutil`; its top-level section
@@ -470,7 +472,7 @@ export const PRIVACY_POLICY: LegalDocument = {
           kind: 'paragraph',
           text:
             'This section describes how this site handles the contact form specifically. ' +
-            'It is not part of the Privacy Policy above.',
+            'It is engineering-authored and is not part of Legal’s approved Privacy Policy text.',
         },
         {
           kind: 'subBlocks',
