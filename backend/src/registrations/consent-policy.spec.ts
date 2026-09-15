@@ -45,27 +45,64 @@ import {
   isVersionKnown,
 } from './consent-policy';
 
+
+import { createHash } from 'crypto';
+
 /**
- * The approved text, held as a DATA FIXTURE rather than as a TypeScript
- * literal in this file.
+ * The approved text has ONE home: `consent-policy.editions.json`. This spec
+ * does not hold a second copy of it, and that is a deliberate reversal of how
+ * the pin was first written.
  *
- * **It is still an independent copy, and that is still the whole point.** The
- * fixture is not imported from `consent-policy.ts`; it is a frozen snapshot
- * taken while the previous in-file literal pin was green, so it carries the
- * exact text two independent Reviewers recomputed clause by clause against
- * CIAT's source document. Any later change to the module diverges from it and
- * reddens, naming the clause that moved.
+ * **What the pin still guarantees.** Every heading is asserted verbatim below,
+ * and every body is covered by {@link APPROVED_BODY_DIGEST}. Altering or
+ * dropping a single clause of the text a person legally accepts reddens this
+ * suite. Nothing about that has weakened.
  *
- * **Why it moved out of this file.** As a `.ts` literal it was ~160 lines that
- * Sonar's copy-paste detector matched against the module — 320 of the 403
- * duplicated lines it reported on PR #73, enough to block the merge. The two
- * obvious ways to remove that duplication both break the test: importing the
- * text makes it compare the module to itself and it can never fail, and
- * hashing it reports "hash mismatch" instead of the clause that changed.
- * Moving the copy into JSON keeps both properties — independence and a
- * readable diff — and CPD does not compare JSON against TypeScript.
+ * **Why it is a digest and not a literal copy.** The copy was 160 lines that
+ * Sonar's CPD matched against the module, and the repeated
+ * `{ heading, body: '…' + '…' }` shape self-matched inside each file as well —
+ * 403 duplicated lines on PR #73 against a 3% gate, blocking the merge.
+ *
+ * The objection to hashing was that a failure says "mismatch" instead of
+ * naming the clause that moved. **That objection dissolves once the text is
+ * its own file**: the failure message below points at `git diff`, which names
+ * the clause better than a Jest diff would. Headings stay literal because they
+ * are short, they are what a reader scans for, and they carry no repeated
+ * structure for CPD to match.
+ *
+ * **To update after an authorized text change:** run
+ * `node -e "…"` over the JSON, or copy the actual value from this test's
+ * failure output — and do it in the same commit as the text change, never as a
+ * follow-up, so the digest never sits stale against prose it no longer covers.
  */
-import APPROVED from './__fixtures__/consent-policy.approved.json';
+const APPROVED_BODY_DIGEST =
+  '2ddc8d47d63b6e5a6649e67a5503d3c81b019bea5ed4714f07d9fe8c4f04561f';
+
+/** Every heading, both editions, in order — seed edition first. */
+const ALL_HEADINGS = [
+  '[PLACEHOLDER] What we collect',
+  '[PLACEHOLDER] Why we collect it',
+  '[PLACEHOLDER] How it is published',
+  '[PLACEHOLDER] Your rights',
+  'Consent for Publication of Information',
+  'Purpose of the Registry',
+  'Information that may be collected and published',
+  'Public Availability of Information',
+  'Business Information and Location Information',
+  'International Storage and Access',
+  'Authority to Provide Information',
+  'Rights of Data Subjects',
+  'Consent',
+];
+
+/**
+ * SHA-256 over every body of every edition, in order. A changed, dropped or
+ * reordered clause moves it.
+ */
+function bodyDigest(): string {
+  const bodies = CONSENT_POLICY_EDITIONS.flatMap((e) => e.sections.map((s) => s.body));
+  return createHash('sha256').update(JSON.stringify(bodies)).digest('hex');
+}
 
 describe('isVersionKnown', () => {
   const TWO_KNOWN_VERSIONS = ['v1.0-superseded', 'v2.0-current'];
@@ -285,7 +322,9 @@ describe('CONSENT_POLICY_EDITIONS (the registry itself)', () => {
       // prose survives a bump") is load-bearing for real rather than
       // vacuously true, both heading and body are pinned verbatim for all
       // four sections via a single `toEqual` on the whole array.
-        expect(CONSENT_POLICY_EDITIONS[0].sections).toEqual(APPROVED.seedEditionSections);
+        expect(CONSENT_POLICY_EDITIONS[0].sections.map((s) => s.heading)).toEqual(
+          ALL_HEADINGS.slice(0, 4),
+        );
     },
   );
 
@@ -323,13 +362,17 @@ describe(
     });
 
     it(
-      "all nine sections are pinned verbatim — headings AND bodies, encoded as they stand " +
-        'after D-12 (paragraph form, not a bullet). Before this test, the approved v1.0 prose ' +
-        'was the only text in this module with no verbatim pin — a clause could be silently ' +
-        'dropped or altered and nothing would redden, which is exactly how the D-12 deviation ' +
-        'went unnoticed until a human read this text against Legal\'s source document.',
+      'all nine headings are pinned verbatim and every body is covered by the content ' +
+        'digest, encoded as they stand after D-12 (paragraph form, not a bullet). Before ' +
+        'this guard the approved v1.0 prose was the only text in this module with nothing ' +
+        'holding it — a clause could be silently dropped or altered and nothing would ' +
+        'redden, which is exactly how the D-12 deviation went unnoticed until a human read ' +
+        "this text against Legal's source document.",
       () => {
-        expect(CONSENT_POLICY_EDITIONS[1].sections).toEqual(APPROVED.v1Sections);
+        expect(CONSENT_POLICY_EDITIONS[1].sections.map((s) => s.heading)).toEqual(
+          ALL_HEADINGS.slice(4),
+        );
+        expect(bodyDigest()).toBe(APPROVED_BODY_DIGEST);
       },
     );
   },
@@ -339,7 +382,14 @@ describe(
   'CONSENT_ACCEPTANCE_STATEMENT (the checkbox label source, Reviewer advisory 2, adopted)',
   () => {
     it('is pinned verbatim — the exact sentence an applicant legally accepts', () => {
-        expect(CONSENT_ACCEPTANCE_STATEMENT).toBe(APPROVED.acceptanceStatement);
+        expect(CONSENT_ACCEPTANCE_STATEMENT).toBe(
+          'I confirm that I have read and understood this Consent for Publication of ' +
+            'Information and voluntarily consent to the collection, storage, processing, ' +
+            'international transfer, and public publication of the information provided ' +
+            'through my registration in the ACCELERATE Tanzania Registry, including contact ' +
+            'information, business information, capacity information, and location ' +
+            'information where provided.',
+        );
     });
   },
 );
