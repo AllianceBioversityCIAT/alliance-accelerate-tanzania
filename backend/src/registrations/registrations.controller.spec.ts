@@ -82,6 +82,16 @@ describe('RegistrationsController', () => {
     it('serves the current CONSENT_POLICY_VERSION (sanity on the fixture above)', () => {
       expect(controller.getConsentPolicy().version).toBe(CONSENT_POLICY_VERSION);
     });
+
+    it(
+      'pins the exact response key set to {version, sections} — FR-1 scenario 3, the ' +
+        "T-1 registry refactor MUST NOT gain, lose, or rename a key",
+      () => {
+        const result = controller.getConsentPolicy();
+
+        expect(Object.keys(result).sort()).toEqual(['sections', 'version']);
+      },
+    );
   });
 
   describe('isKnownConsentPolicyVersion (T-10\'s acceptance check)', () => {
