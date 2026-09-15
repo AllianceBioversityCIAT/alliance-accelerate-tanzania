@@ -11,7 +11,7 @@
 
 ## Phase A — Executable now (not blocked by Legal)
 
-- [ ] **T-1 Convert `consent-policy.ts` into an append-only registry of editions**  (deps: none)
+- [x] **T-1 Convert `consent-policy.ts` into an append-only registry of editions**  (deps: none)
       Scope: Add `ConsentPolicyEdition` and `CONSENT_POLICY_EDITIONS` (ordered, oldest first, seeded with the existing `v1.0-placeholder` content). Derive `CONSENT_POLICY_VERSION` and `KNOWN_CONSENT_POLICY_VERSIONS` from it. Add lookup-by-version. Keep `isVersionKnown`'s parameterized seam and its explanatory comment intact (design.md §4.2).
       Traces: FR-1 (all three scenarios), design.md §4.1, §4.2
       Files: `backend/src/registrations/consent-policy.ts`, `consent-policy.spec.ts`, `registrations.controller.spec.ts`
@@ -22,7 +22,7 @@
       Review: **Reviewer, effort `max`.** `Registration.consentPolicyVersion` is legal evidence; a broken append-only invariant is a legal problem, not a bug.
       Skills: `nestjs-expert`, `tdd`
 
-- [ ] **T-2 Add the `LegalDocument` content contract and its renderer**  (deps: none)
+- [x] **T-2 Add the `LegalDocument` content contract and its renderer**  (deps: none)
       Scope: `frontend/lib/content/legal/types.ts` (`LegalDocument`, `LegalSection`) and `frontend/components/legal/LegalDocumentView.tsx` — title, version/effective-date stamp, `aria-labelledby` sections, optional bullet lists, optional post-section slot (design.md §5.3).
       Traces: FR-7, design.md §5.1, §5.3
       Files: `frontend/lib/content/legal/types.ts`, `frontend/components/legal/LegalDocumentView.tsx`, `LegalDocumentView.test.tsx`
@@ -33,7 +33,7 @@
       Review: light
       Skills: `tailwind-design-system`, `frontend-design`
 
-- [ ] **T-3 Author the Cookie Notice content module**  (deps: T-2)
+- [x] **T-3 Author the Cookie Notice content module**  (deps: T-2)
       Scope: `frontend/lib/content/legal/cookies.ts` — the factual inventory from requirements.md NFR-4. Names Google Analytics and Google as recipient; the four GA4 signals with **city-level** granularity; no cookie before consent; the asymmetric withdrawal; that the site does not delete already-set cookies.
       Traces: FR-3 (all three scenarios), requirements.md NFR-4, design.md §5.1
       Files: `frontend/lib/content/legal/cookies.ts`
@@ -43,18 +43,18 @@
       Review: light — **but the content itself is defect class 8**: its accuracy rests on NFR-4's audit, which was measured against the tree, not reasoned.
       Skills: `cognitive-doc-design`
 
-- [ ] **T-4 Create `/cookies` and move `ConsentChoiceControl` onto it**  (deps: T-2, T-3)
+- [x] **T-4 Create `/cookies` and move `ConsentChoiceControl` onto it**  (deps: T-2, T-3)
       Scope: `frontend/app/(public)/cookies/page.tsx` — static server component rendering the Cookie Notice with the island in its slot. New a11y + content test.
       Traces: FR-3, NFR-1, NFR-2, design.md §5.2, §5.3
       Files: `frontend/app/(public)/cookies/page.tsx`, `cookies-a11y.test.tsx`
       Clause ownership: all four FR-3 clauses from T-3, plus *changing a stored choice works* and *accepting is immediate / rejecting deferred is disclosed*.
       Verify: `cd frontend && npm test -- cookies --silent && npm run build`
-      Falsifying inputs: (1) delete the "Google" mention → content assertion reds; (2) add `'use client'` with a hook to the page module → `npm run build` fails under `output: 'export'`; (3) remove a section heading → `jest-axe` reds.
+      Falsifying inputs: (1) delete the "Google" mention → content assertion reds; (2) add `useSearchParams()` without a `Suspense` boundary to the page module → `npm run build` fails under `output: 'export'`. *(Corrected 2026-09-15: this originally named `'use client'` + `useState`, which was measured during T-4 and does **not** fail — such a page prerenders and hydrates fine.)*; (3) remove a section heading → `jest-axe` reds.
       Done when: tests green, `out/cookies/index.html` is emitted, the control changes a stored choice in the test.
       Review: light
       Skills: `ui-ux-pro-max`, `react-doctor`
 
-- [ ] **T-5 Scaffold `/terms` and re-point `/privacy` at the renderer**  (deps: T-2)
+- [x] **T-5 Scaffold `/terms` and re-point `/privacy` at the renderer**  (deps: T-2)
       Scope: `frontend/lib/content/legal/terms.ts` and `privacy.ts` with clearly-marked placeholder bodies; `/terms/page.tsx` new; `/privacy/page.tsx` rewritten to render the document. Cookie content and the island are removed from `/privacy` (they now live on `/cookies`).
       Traces: FR-4, FR-5 (structure only — the prose is T-8), design.md §4.3
       Files: `frontend/lib/content/legal/{terms,privacy}.ts`, `frontend/app/(public)/terms/page.tsx`, `frontend/app/(public)/privacy/page.tsx`, `terms-a11y.test.tsx`, `privacy-a11y.test.tsx`
@@ -66,7 +66,7 @@
       Review: light
       Skills: `ui-ux-pro-max`
 
-- [ ] **T-6 Re-route the consent banner and extend the footer**  (deps: T-4, T-5)
+- [x] **T-6 Re-route the consent banner and extend the footer**  (deps: T-4, T-5)
       Scope: `ConsentBanner`'s policy link → `/cookies`. `Footer` lists About · Contact · Cookie Notice · Privacy Policy · Terms of Use via the existing `FOOTER_LINK_CLASSES`. Update `ConsentBanner.test.tsx`'s target assertion; add footer assertions. `contact-a11y.test.tsx`'s `/privacy` assertion stays as-is.
       Traces: FR-6, requirements.md §5 re-routing table
       Files: `frontend/components/analytics/ConsentBanner.tsx` + test, `frontend/components/shell/Footer.tsx` + test
@@ -77,7 +77,7 @@
       Review: light
       Skills: `react-doctor`
 
-- [ ] **T-7 Confirm the governance count and record D-8**  (deps: none)
+- [x] **T-7 Confirm the governance count and record D-8**  (deps: none)
       Scope: Confirm zero real acceptances under `v1.0-placeholder`; write D-8 into `execution.md` with the evidence that produced it.
       Traces: FR-9
       Files: `docs/specs/legal/legal-notices-and-consent-copy/execution.md`

@@ -56,7 +56,7 @@ No endpoint is added to serve a *historical* edition. The registry makes per-ver
 
 `isVersionKnown(versions, version)` stays parameterized. The module's existing comment explains why at length and the reasoning still holds: with a one-element known set, *"is in the known set"* and *"equals the current version"* agree on every input, so a test written against the wrapper alone cannot distinguish a real set-membership check from a narrower, wrong one. Taking the array as a parameter is what lets a test construct a synthetic multi-entry set and prove set semantics.
 
-The registry makes production's set multi-entry for the first time, which **weakens rather than removes** the argument for the seam: the seam is what makes the property testable independent of how many editions have shipped. Removing it would be a reversion; it is not proposed.
+The registry **will** make production's set multi-entry once T-9 appends the approved edition — it still carries exactly one today — which **weakens rather than removes** the argument for the seam *(tense corrected 2026-09-15: this originally read "makes … for the first time" in the present tense and was inherited verbatim into a code comment, where it contradicted five correct "exactly ONE edition today" statements in the same file — including the premise the latent-gate note rests on)*: the seam is what makes the property testable independent of how many editions have shipped. Removing it would be a reversion; it is not proposed.
 
 ### 4.3 Reversion challenge (Step 2.3)
 
@@ -97,7 +97,9 @@ A `LegalDocument` carries a title, a version, an effective date, an optional led
 
 All three are static server components. The single `'use client'` boundary in this spec is `ConsentChoiceControl`, which moves unmodified — it already exists, already has tests, and its storage module already documents that it is exposed for exactly this purpose.
 
-**Static-export compliance (NFR-1, ADR-002):** no hooks, no `useSearchParams`, no dynamic segments, no route handlers. `npm run build` is the gate and it fails loudly on violation.
+**Static-export compliance (NFR-1, ADR-002):** no `useSearchParams` outside a `Suspense` boundary, no dynamic segments, no route handlers. `npm run build` is the gate for those three and fails loudly on each.
+
+**What the build does NOT catch — measured during T-4, not assumed.** A `'use client'` page module using a plain hook such as `useState` builds and exports **successfully**: Next.js prerenders it to static HTML and hydrates it on the client. So the project's server-component preference for these pages is a **design rule enforced by review**, not by the build. Stating otherwise would have left the rule with a gate that cannot see its own violation — the exact shape KZ-002 names.
 
 ### 5.3 The consent-change slot
 

@@ -320,7 +320,7 @@ Named first, then mapped — a gate blind to the defect class this spec most oft
 | 3 | The two exports drift apart on a bump | Derivation test: adding an edition updates both | Re-introduce a hand-written literal for either export → red |
 | 4 | Endpoint contract moves during the refactor | Controller test pinning the response key set and values (FR-1) | Add or rename a key in the response → red |
 | 5 | A re-routed link points at a page that does not exist | Route-target assertions in the banner/footer tests **plus** `npm run build` under `output: 'export'` | Point the banner at `/cookie` → the assertion reddens; delete the page → the build fails |
-| 6 | New pages break static export | `npm run build` | Add a `'use client'` hook to a page module → build fails |
+| 6 | New pages break static export | `npm run build` | Add `useSearchParams()` without a `Suspense` boundary, a route handler, or a dynamic segment → build fails. **Corrected 2026-09-15 during T-4:** this row originally named `'use client'` + `useState`, which was **measured and does not fail** — Next.js prerenders such a page to static HTML and hydrates it client-side, so `output: 'export'` accepts it. The gate is real; the falsifier named for it was not. |
 | 7 | a11y regression | `jest-axe` | Remove a heading's accessible name → red |
 | 8 | **Legal text is inaccurate about this system** | ⚠️ **No automated gate exists.** | — |
 | 9 | **Contrast, layout and rendered legibility of long documents** | ⚠️ **jsdom structurally cannot evaluate these.** | — |
