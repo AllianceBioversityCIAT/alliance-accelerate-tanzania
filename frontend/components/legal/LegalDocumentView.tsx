@@ -254,6 +254,14 @@ function SimpleSectionBody({ section }: Readonly<{ section: ParagraphsSection }>
 }
 
 export default function LegalDocumentView({ document, slot }: Readonly<LegalDocumentViewProps>) {
+  // Destructured once, outside the sections loop: the slot is a
+  // document-level prop, so reading it per section was a loop invariant
+  // evaluated once per iteration. Destructuring also means the guard below
+  // needs neither a non-null assertion nor an `a && a.b` chain — the two
+  // Sonar rules that disagree about that line (S4325 and S6582) both stop
+  // applying rather than one being chosen over the other.
+  const { afterHeading: slotAfterHeading, content: slotContent } = slot ?? {};
+
   return (
     // WIDTH — two controls, and the non-obvious one was the binding constraint.
     // Every paragraph and list used to carry `max-w-prose` (65ch, measured at
@@ -291,6 +299,8 @@ export default function LegalDocumentView({ document, slot }: Readonly<LegalDocu
         ))}
 
       <div className="mt-8 flex flex-col gap-8">
+        {/* Loop-invariant: the slot is a document-level prop. Destructured
+            once here rather than re-read inside every section iteration. */}
         {document.sections.flatMap((section, index) => {
           const headingId = sectionHeadingId(section.heading, index);
 
@@ -308,13 +318,17 @@ export default function LegalDocumentView({ document, slot }: Readonly<LegalDocu
             </section>,
           ];
 
-          // Narrowed via `slot && …` (rather than a separate boolean plus a
-          // `slot!` non-null assertion below) so TypeScript itself proves
-          // `slot` is defined wherever `slot.content` is read — the same
-          // behaviour, with no assertion for Sonar S4325 to flag as
-          // unnecessary.
-          if (slot && slot.afterHeading === section.heading) {
-            elements.push(<div key={`${headingId}-slot`}>{slot.content}</div>);
+          // `slotContent !== undefined` is what narrows the type here, so no
+          // non-null assertion is needed and no `slot && slot.x` chain exists
+          // for an optional-chain rule to object to. Those two Sonar rules
+          // (S4325 and S6582) pull against each other on a per-section check;
+          // hoisting the destructure out of the loop removes the tension
+          // instead of picking a side, and is the better shape regardless:
+          // `slot` is one prop for the whole document, not a per-section
+          // value, so re-reading it on every section was a loop invariant
+          // evaluated N times.
+          if (slotContent !== undefined && slotAfterHeading === section.heading) {
+            elements.push(<div key={`${headingId}-slot`}>{slotContent}</div>);
           }
 
           return elements;
