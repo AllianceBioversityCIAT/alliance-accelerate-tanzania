@@ -80,6 +80,15 @@ ADR-014's freedom on unmerged branches must be **re-checked immediately before m
 
 ## Archive readiness
 
-**NOT READY.** Four blocking findings, six serious, and the ledger cannot presently be trusted as an account of the run.
+**READY**, as of the remediation commit of 2026-09-15.
 
-The remediation is almost entirely documentation. The product does not need reopening.
+All four blocking findings, all six serious findings, the ledger-integrity findings and the four false comments are closed. The two orphaned clauses have falsifiable guards, each demonstrated to redden. NFR-5's human render check was performed by the product owner on 2026-09-15 and T-10 is closed against a written entry.
+
+**Two items remain open and are deliberately not blockers on the code:**
+
+1. **`/terms` and `/privacy` are not publishable** until CIAT fills the outstanding fields in its own delivered texts. Tracked by a per-document inventory test and marked in `docs/ux-ui/design.md` §4. This is Legal's to close, not engineering's.
+2. **D-10 vs. defect class 8** — the spec promised the two NFR-4 cookie findings would go back to Legal before the text was frozen; they did not, and the text is frozen at `v1.0`. `/privacy` publishes four cookie purposes that FR-3 forbids `/cookies` from claiming, and neither document tells a reader which governs. Carried to the product owner as an open item.
+
+**One narrow residual:** contrast ratios were never measured. A real-browser `axe` run closes it in seconds.
+
+**Before merging:** re-verify ADR-014 is still free on unmerged branches. No validator could run `git log --all`, and the number was allocated from this spec branch — which decides who pays a collision, not whether one exists.

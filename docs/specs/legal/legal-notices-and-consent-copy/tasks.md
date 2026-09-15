@@ -115,7 +115,7 @@
 
 ## Phase C — Baseline sync
 
-- [~] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
+- [x] **T-10 Sync the baseline documents to what shipped**  (deps: T-6; T-8/T-9 for the consent half)
       Scope: `docs/ux-ui/design.md` §2 IA — add `/cookies` and `/terms`, rewrite `/privacy`'s description, and **repair the pre-existing drift (D-11): `/about` and `/forgot-password` both ship and neither is listed** in §2 or §4. §4 Screen Inventory — add two rows, rewrite the Privacy row. `docs/trd/trd.md` — add **ADR-014** (D-1), amend **ADR-013**'s consequences (it asserts the text is still placeholder), and amend **ADR-011**'s consequences (it asserts city-level geography is something *"the `/privacy` notice must state"*, which this spec makes false).
       Traces: FR-8, design.md §4.3
       Files: `docs/ux-ui/design.md`, `docs/trd/trd.md`

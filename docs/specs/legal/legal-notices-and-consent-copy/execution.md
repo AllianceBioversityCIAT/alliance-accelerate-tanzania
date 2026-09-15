@@ -437,3 +437,22 @@ Worth recording for the diagnosis, not just the change: the container was widene
 
 It lands squarely in defect class 9, where no automated gate exists and the human check has not been performed.
 
+### NFR-5 / defect class 9 — human render check · **PERFORMED** · T-10 closed
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-15 |
+| Performed by | Daniela Gómez (product owner), against the locally-running stack |
+| Scope | The three legal pages (`/cookies`, `/terms`, `/privacy`) and the consent disclosure on `/register`, rendered |
+| Result | **Correct.** No defects reported. |
+
+This is the check nothing automated could substitute for, and its absence is why T-10 was held at `[~]` through validation rather than closed on the strength of a green suite. jsdom applies no CSS; `axe`'s contrast rule returns `incomplete` under it and `toHaveNoViolations` does not fail on incomplete. The property was genuinely uncovered, and is now covered by the only instrument that could cover it.
+
+**Basis: the product owner's direct observation**, recorded as such rather than as a measured artifact — the same discipline applied to D-8. What it establishes is that a person who knows what these pages are supposed to say looked at them rendered and found them right.
+
+**What it composes with, since neither half is sufficient alone.** Measured separately during this spec: horizontal overflow zero at 360, 390 and 414px on all three pages (headless Chrome, iframe-forced viewports — an earlier screenshot that appeared to show clipping was an artifact of a 500px render cropped to 390, and was discarded rather than reported); and the consent disclosure's run-on rendering defect, found by measuring (280px/14 lines collapsed vs 440px/22 correct) after the Reviewer inferred it from CSS semantics. The line length after the width rework is ~128 characters, past the 90-character point typographic guidance flags, and the product owner has now seen it rendered and accepted it.
+
+**The one property still not measured:** contrast ratios. A person can see that text is legible; the eye cannot reliably estimate a 4.5:1 threshold, and this repository has a recorded instance of exactly that failure — a scrim measured at 3.62:1 that looked fine. A real-browser `axe` run would close it and takes seconds; offered and not taken, so it is recorded here as a known, narrow residual rather than left implied.
+
+**T-10's `Done when` is now satisfied in full.** Status `[~]` → `[x]`.
+
