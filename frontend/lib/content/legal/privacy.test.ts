@@ -37,16 +37,16 @@ import { collectUnfilledFieldTokens } from './unfilled-fields';
 describe('privacy.ts — unfilled-field inventory (PART 2, not yet publishable)', () => {
   it('the set of unfilled Legal tokens equals the expected list', () => {
     expect(collectUnfilledFieldTokens(PRIVACY_POLICY)).toEqual([
+      'Address: (blank, in prose)',
       'Address: (blank)',
       // Legal's "Who is Responsible for the Registry?" section renders as
       // "CIAT Address: Email:" — two labels with nothing after them, in prose
       // rather than a structured contact block. Tracked because an inventory
       // that could reach an EMPTY list while the page still shows a blank
       // would report a publishability it does not have.
-      'Address: (blank, in prose)',
       'Contact: (blank)',
-      'Email: (blank)',
       'Email: (blank, in prose)',
+      'Email: (blank)',
       'Insert CIAT Legal Entity',
       'Insert Date',
       'Telephone: (blank)',

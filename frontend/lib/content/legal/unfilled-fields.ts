@@ -146,5 +146,9 @@ export function collectUnfilledFieldTokens(document: LegalDocument): string[] {
     if (entry.value === '') tokens.add(`${entry.label}: (blank)`);
   }
 
-  return Array.from(tokens).sort();
+  // `localeCompare`, not a bare `.sort()`: the default sorts by UTF-16 code
+  // unit, which is not alphabetical once a label carries an accent or a
+  // non-ASCII character — and these tokens come from legal prose, which is
+  // exactly where that happens (typescript:S2871).
+  return Array.from(tokens).sort((a, b) => a.localeCompare(b));
 }
