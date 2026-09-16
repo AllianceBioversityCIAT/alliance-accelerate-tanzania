@@ -59,7 +59,7 @@
       Gate discriminates: run against a non-sanitizing variant (rethrow the raw error) and confirm every assertion reddens. **Required evidence, not optional.**
       Skills: `error-handling-patterns`, `nestjs-expert`
 
-- [ ] **T-6** Bound the SES transport with the same deadline  (deps: T-1)
+- [x] **T-6** Bound the SES transport with the same deadline  (deps: T-1)
       Scope: Give `SESClient` a `requestTimeout` of `MAIL_SEND_TIMEOUT_MS` and cap retries. Today it is constructed with neither — the SES path is **unbounded**, which is a pre-existing hole and the reason Phase A's higher floor would otherwise be unearned.
       Traces: NFR-7 · `design.md` DD-10 ("Both transports are bounded")
       Files: `backend/src/mail/ses-mail.transport.ts`, `ses-mail.transport.spec.ts`

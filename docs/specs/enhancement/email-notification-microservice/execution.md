@@ -318,3 +318,29 @@ It also verified (a) more sharply than asked: no query in `issueCode` scales wit
 **Final status: ✅ PASS on attempt 2.**
 
 ---
+
+#### T-6 attempt 2 — Reviewer `STATUS: PASS`
+
+> The undeclared `@smithy/node-http-handler` import is gone, replaced by a plain `requestHandler` options object carrying **both** `requestTimeout` and `throwOnRequestTimeout: true`; verified against the vendored SDK sources that this form is type-compatible with the intended `NodeHttpHandlerOptions` union member and that the client's runtimeConfig genuinely consumes it, with no dependency added to `package.json` or the lockfile.
+
+**The sharper mutation did its job.** Dropping `throwOnRequestTimeout` **alone**, keeping `requestTimeout`, made the request run past Jest's 10 s ceiling — the single-variable control the Reviewer asked for. It predicted the mechanism and the observation matched: with the option off the vendor warns and lets the request run, the silent stub never responds, and **nothing else bounds it** (`socketTimeout` defaults to disabled; `connectionTimeout` already elapsed on a successful accept). *A merely-"some bound exists" test would have stayed green here.*
+
+Two corroborations the Reviewer added from reading: the green path asserts `name === 'TimeoutError'`, a string produced **only** by the throwing branch of `setRequestTimeout`, so it cannot be satisfied by a socket hangup; and the mutation's *hang* rather than a fast auth error is itself evidence the request reached the local stub rather than real SES.
+
+⚠️ **The finding that changes how the build evidence should be read.** `requestHandler`'s type union includes `Record<string, unknown>`, so **a misspelled option key would still type-check**. `npm run build` clean is therefore **not** evidence the options are honored — only the behavioural test carries that claim. This makes T-6's test load-bearing rather than decorative, and it is the correct outcome: the property is proven where it can be proven, not where it merely compiles.
+
+The Reviewer also confirmed the mechanism end to end against vendored source: `SESClient.d.ts` types `requestHandler` as `__HttpHandlerUserInput`, both keys are declared on the intended member (not slipping through the escape hatch), and `@aws-sdk/client-ses`'s runtimeConfig is literally `NodeHttpHandler.create(config?.requestHandler ?? …)`, with `resolveDefaultConfig` destructuring `throwOnRequestTimeout` out of those options.
+
+**The load-bearing comment was judged against its purpose, not its presence.** The Reviewer asked whether it would actually stop a maintainer from re-introducing an advisory-only timeout, verified its vendor-behaviour claim against `@smithy/node-http-handler`'s source, and noted it also explains *why the import is absent* — which pre-empts a future "helpful" re-import.
+
+**ADVISORY (non-gating) — all recorded, none actioned. `ses-mail.transport.ts` is deleted in T-10, so transferring hygiene fixes into a file with weeks to live would be churn.**
+
+| ID | Finding |
+|---|---|
+| **A1** | Env-hygiene asymmetry **in the same `finally` the previous advisory just fixed**: `AWS_ENDPOINT_URL_SES` is still deleted unconditionally while the two credential vars now save-and-restore — *the same class of issue, one variable over*. Related: the credential assignments sit **outside** the `try`, so a throw from `server.listen` would leak them into the shared `--runInBand` environment |
+| **A2** | The mutation gate's failure shape is deterministic but **not self-describing**: a 10 s Jest ceiling is ~8× the deadline so it cannot be confused with jitter, but its message names the symptom, not the cause. A future maintainer must rediscover the advisory-timeout trap from scratch. An explicit ~3 s watchdog rejecting with *"send never settled — is `throwOnRequestTimeout` still set?"* would fail faster and teach the reader |
+| **A3** | The `maxAttempts` comment **inlines 800 / 1200 / 2000** — a fourth copy of constants §12 exists to keep in one place, this time in code. Low-risk (the invariant test would redden in the same edit that staled it) and the Leader's own remediation asked for the arithmetic; flagged so a future value change sweeps this line |
+
+**Final status: ✅ PASS on attempt 2.**
+
+---
