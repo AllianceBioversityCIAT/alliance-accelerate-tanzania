@@ -99,14 +99,16 @@
       Scope: Switch dev to `MailTransport=microservice` via `deploy.sh`, then observe actual email.
       Traces: FR-1, D-F, D-G, D-I, D-J′, NFR-5, NFR-7 · `design.md` §10 (final row)
       Verify: manual, on the deployed dev environment — there is no command that substitutes.
+      ✅ **Partially discharged in advance by a local smoke test (2026-09-16) — see `execution.md`.** Six sends from the product owner's laptop against the **live** broker and microservice, driving the real transport with no NestJS, no database and no Cognito. What that already established, and what it structurally could not, is recorded below so T-9 does not re-do settled work.
       Done when **all** of:
-      1. One real email **delivered** for each of the five kinds, to an address **never verified with AWS** — the single criterion no unit test can replace.
-      2. HTML visually correct per kind after the microservice's `juice` pass (**D-G** — no automated gate exists).
-      3. A **cold → idle → warm** sequence: the first send after an induced idle period succeeds (**D-F**).
-      4. The **receipt** — the one fire-and-forget kind — observed as delivered **after** its `202` (**D-I**).
-      5. Cold and warm publish latency, and the accepted branch's pre-send p99, **measured** and compared to §12.1. Any value contradicted is re-derived **in §12 only**.
-      6. No overrun warn line (T-7) under normal load.
-      7. Artifact size measured after `sam build`, under 250 MB (NFR-5).
+      1. ✅ **ESTABLISHED LOCALLY** — one real email **delivered** for each of the five kinds, to an address **never verified with AWS**. *(This was the criterion no unit test could replace, and it is the product blocker the whole change existed to remove.)* Re-confirm on the deployed stack only for the kinds the flip could plausibly change.
+      2. ✅ **ESTABLISHED LOCALLY (D-G)** — HTML visually correct per kind after the microservice's `juice` pass; the sender renders as `ACCELERATE Tanzania Seed Registry - No reply`; the `TEST - ` environment prefix is present.
+      3. ⬜ **STILL REQUIRED (D-F)** — a **cold → idle → warm** sequence on the deployed stack. **A laptop cannot establish this**: it does not freeze containers, and every local run was a fresh process.
+      4. ⬜ **STILL REQUIRED (D-I)** — the **receipt**, the one fire-and-forget kind, observed as delivered **after** its `202`. Also not reachable locally: the script awaits its send.
+      5. ⬜ **STILL REQUIRED, and now load-bearing for a decision** — cold **and warm** publish latency measured **from Lambda**, plus the accepted branch's pre-send p99. ⚠️ **Measure per kind, not once:** locally `contact` (the largest payload) was slowest on all three of its runs. These numbers are what **OQ-11** is deferred until — the choice between a 3.8 s OTP floor and connecting at Lambda init.
+      6. ⬜ **STILL REQUIRED** — no overrun warn line (T-7) under normal load.
+      7. ⬜ **STILL REQUIRED** — artifact size measured after `sam build`, under 250 MB (NFR-5).
+      8. ⬜ **STILL REQUIRED** — the Secrets Manager wiring: both dynamic references resolve into the running function's configuration. Verify with the **scoped** `--query` from `infra/README.md` §7, never a bare `get-function-configuration`.
       ✅ **UNBLOCKED** — DEP-5 answered **DEV** (product owner, 2026-09-16). Non-PROD credentials also mean the microservice prepends `TEST - ` to every subject, which is itself a confirmation signal that the right key is in use.
       ⛔ **Phase B may not start until this task is `[x]`.**
 

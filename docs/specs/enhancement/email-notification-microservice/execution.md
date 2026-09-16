@@ -638,3 +638,49 @@ Remaining advisories recorded, not actioned: **A-b** (the secret document passed
 **Final status: ✅ PASS on attempt 3. Phase A (T-1…T-8) is complete.**
 
 ---
+
+## Local smoke test — 2026-09-16, product owner
+
+**Not a task.** Scratchpad tooling (`send-one.ts`, outside the repo) driving the real `MicroserviceMailTransport` directly — no NestJS, no database, no Cognito — against the **live** CGIAR broker and microservice. Run by the product owner; six sends to a Gmail address **never verified with AWS**.
+
+### What it established — and this is the product blocker, gone
+
+**All five message kinds were delivered to an unverified address.** That is the constraint the whole change existed to remove: `infra/README.md`'s DEP-2 recorded that SES sandbox delivers only to individually verified recipients, which meant public self-registration **could not send an applicant their code**. It now can.
+
+| Also established | Evidence |
+|---|---|
+| The envelope is accepted by the real service | six confirmed publishes |
+| The CLARISA API key authenticates | delivery occurred |
+| `EMAIL_QUEUE_NAME` is correct | `checkQueue` passed; no configuration error |
+| **D-G — HTML survives the `juice` pass** | visual inspection of received mail, per kind |
+| FR-4's sender convention | renders as `ACCELERATE Tanzania Seed Registry - No reply` — **the trailing dash that looked like a typo was load-bearing** |
+| The environment marking | `TEST - ` present in every subject |
+
+### The measurement that contradicted a designed value
+
+| Kind | Elapsed | Outcome |
+|---|---|---|
+| `receipt` | 1132 ms | confirmed |
+| `approval` | 1170 ms | confirmed |
+| `verification` | 1172 ms | confirmed |
+| `contact` | **1227 ms** | ❌ timed out at the 1200 ms bound |
+| `rejection` | ≥1200 ms | ❌ timed out |
+| `contact` (after the re-derivation) | **1366 ms** | confirmed |
+
+**All five of the original sends were delivered, including both "failures."** The bound fired on messages the broker had already accepted — **the system reported failure for mail that arrived.** That is the mirror image of the defect class this spec spent seventeen review rounds eliminating, and no test would have found it: every unit test mocks the broker, so the real round-trip cost was unmeasurable until now.
+
+`MAIL_SEND_TIMEOUT_MS` 1200 → **3000**; the floor recomposed **without a second edit**, because §12's single-home rule puts the composition in code. That rule had been argued for across two Judgment Day rounds; this is the first time it paid.
+
+### What a laptop structurally could not establish
+
+Every run was a **fresh process** — so all six are **cold** measurements, and the tight 1132–1366 clustering is a fixed establishment cost, not network variance. **Nothing here measures the warm path**, which is what a Lambda reuses across invocations. Nor the cold cost *from* Lambda, which may differ substantially in either direction from a laptop over public internet.
+
+⚠️ **A hypothesis, not a finding:** `contact` carries the largest payload (5031 chars vs ~3000) and was slowest on all three of its runs. Six samples cannot establish a correlation — but T-9 should measure **per kind** rather than assume one figure covers all five.
+
+### Consequences recorded
+
+- **T-9 narrowed.** Items 1 and 2 are discharged; items 3–8 remain, and each is annotated with *why* a laptop could not reach it. The task is now scoped to exactly what the deployed environment adds.
+- **OQ-11 deferred** to post-T-9 by the product owner. The floor is 3.8 s per verification request and its dominant term is a cold handshake paid inside the request; connecting at Lambda init would move it out. **Deciding now would mean choosing an architecture from the wrong network** — every number so far is from a laptop. T-9 produces the right ones.
+- **DEP-5 corrected.** There is no DEV queue, only PROD — but the `TEST - ` prefix follows the **credential's** environment, not the queue's name, and the received mail proves the marking holds. An earlier Leader inference that PROD-queue sends would ship unmarked **was falsified by the evidence**.
+
+---
