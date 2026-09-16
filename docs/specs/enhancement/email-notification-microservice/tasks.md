@@ -81,7 +81,7 @@
       ⚠️ Cannot prove: that the allowance is large enough in production. That is T-9's measurement. This task proves the bound is **enforced**, not that it is **right**.
       Skills: `nestjs-expert`, `systematic-debugging`
 
-- [ ] **T-8** Phase-A infrastructure and operator configuration  (deps: T-3)
+- [x] **T-8** Phase-A infrastructure and operator configuration  (deps: T-3)
       Scope: `MailTransport` CloudFormation parameter (`AllowedValues: [ses, microservice]`, `Default: ses`); `MailMicroserviceSecret` in `20-backend` mirroring `OtpHmacSecret`'s named-secret shape, with a two-key JSON placeholder; the five env vars; **`MailTransport` passed through by `deploy.sh` and `set-cors.sh`**; `backend/.env.example` documented (FR-8).
       Traces: FR-7, FR-8 · `design.md` §7.1, §7.2, §7.3
       Files: `infra/20-backend/template.yaml`, `infra/scripts/deploy.sh`, `infra/scripts/set-cors.sh`, `backend/.env.example`
@@ -117,7 +117,8 @@
 - [ ] **T-10** Retire the SES transport  (deps: T-9)
       Scope: Narrow `MailTransportKind` to `'microservice' | 'no-op'`; delete `ses-mail.transport.ts` + spec; rewrite `mail.service.spec.ts`; drop `@aws-sdk/client-ses`; flip the parameter default **and pass it explicitly on deploy**.
       Traces: FR-3 (Phase-B clause), FR-6 · `design.md` §7.3
-      Files: `backend/src/mail/{mail.config.ts,mail.config.spec.ts,mail-transport.factory.ts,ses-mail.transport.ts,ses-mail.transport.spec.ts,mail.service.spec.ts}`, `backend/package.json`
+      Files: `backend/src/mail/{mail.config.ts,mail.config.spec.ts,mail-transport.factory.ts,ses-mail.transport.ts,ses-mail.transport.spec.ts,mail.service.spec.ts}`, `backend/package.json`, **`infra/scripts/deploy.sh`**, **`infra/scripts/set-cors.sh`**
+      ⚠️ **Added by the Leader from T-8's review (second-order note).** Both scripts carry a terminal `ses` fallback for the case where the backend stack does not exist yet. **Phase B removes `ses` from `AllowedValues`**, at which point that fallback makes a fresh-account first deploy fail at changeset creation. Update or remove it in the same change that narrows the union. *(Also drop `@types/amqplib` here — advisory A-4 from T-4: `amqplib@2.0.1` ships its own `index.d.ts`, which wins TS resolution, so a 0.10-era types package beside a 2.x runtime is dead weight.)*
       Verify: `cd backend && npm test --silent && npm run build`
       Done when: `'ses'` is rejected; `mail.service.spec.ts` no longer imports `SendEmailCommand`/`resetSesClient`/`aws-sdk-client-mock`; the build is green.
       ⚠️ A stack can retain `MailTransport=ses` through `UsePreviousValue` — the deploy **must** pass the parameter explicitly or every send throws with no deploy-time signal.

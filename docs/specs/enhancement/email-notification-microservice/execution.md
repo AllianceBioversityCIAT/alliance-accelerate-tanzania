@@ -513,3 +513,128 @@ The product owner authorized fixing advisories A-1, A-2 and A-3 — vacuity defe
 **Residual, unchanged and still owned by nobody:** the dead `fail()` pattern in `contact.service.spec.ts` and `cognito-error.mapper.spec.ts`. Out of this spec's scope; recommended as a standalone `/akili-quick`.
 
 ---
+
+### T-8 — Phase-A infrastructure and operator configuration
+
+| | |
+|---|---|
+| **Status** | 🔄 **IN PROGRESS** — attempt 1 FAILED review, attempt 2 dispatched |
+| Date | 2026-09-16 |
+| Requirements covered | FR-7, FR-8 · `design.md` §7.1, §7.2, §7.3 |
+
+**Leader skill/effort:** `aws-serverless`; effort `high`.
+
+**Verification:** `./infra/scripts/validate.sh` → **PASS on all three stacks**.
+
+#### What holds
+
+**Trap 1 closed, verified structurally.** `SecretStringTemplate: '{"apiKey":"…"}'` + `GenerateStringKey: "rabbitmqUrl"` genuinely yields a document with **both** keys on first creation, so both dynamic references resolve. The Reviewer corroborated three preconditions by reading, including that a colon-bearing ARN inside a dynamic reference is **the exact shape already deployed and working** at `DB_PASSWORD` — so the parse is confirmed in-repo, not only from documentation.
+
+**FR-8 met.** All five variables in `.env.example` with sources named, placeholders only, `MAIL_TRANSPORT=no-op` intact, and the inherited **B-3** query-param warning present. The `EMAIL_SENDER_NAME` literal is byte-identical to the code default, and the trailing-dash rationale is corroborated against `mail.config.ts` rather than invented.
+
+#### ⚠️ Issue 1 — the fix the Leader mandated re-created the hazard in the opposite direction
+
+Both scripts now set `MAIL_TRANSPORT="${MAIL_TRANSPORT:-ses}"` and pass it unconditionally. **After T-9 flips dev to `microservice`, any later run that forgets the env var actively sets the stack back to `ses`, prints success, and gives no signal** — and `set-cors.sh` is the routine follow-up to a frontend deploy, i.e. exactly the "unrelated operator run" §7.3 names.
+
+**The Reviewer's handling of the uncertainty is the part worth preserving.** It found that the design's premise (*"SAM sends `UsePreviousValue` for absent parameters"*) and its conclusion (*"an unrelated run would silently revert"*) **do not follow from each other** — under that premise `UsePreviousValue` *preserves* `microservice`, and the pass-through is what **introduces** the reversion. It could not execute SAM to settle the internals, and **deliberately did not rest the finding on it**: *"in either reading the operator is unprotected — if SAM preserves, the pass-through causes the revert; if SAM falls back to the template `Default`, the pass-through fails to prevent it. Same fix either way."*
+
+That is the right shape for a finding under an unresolved question: locate the conclusion that holds whichever way it goes.
+
+**The correct pattern is already in the same file.** `set-cors.sh` does not hardcode `AllowedOrigin` — it resolves the live value from the deployed stack, for precisely this reason. The Implementer **cited that reasoning** in defending its deploy vehicle while applying the opposite pattern to the parameter it was adding.
+
+**Second-order:** T-10 removes `ses` from `AllowedValues`, at which point `${MAIL_TRANSPORT:-ses}` makes **every** run of both scripts fail at changeset creation. `tasks.md` T-10's Files list does not include the scripts.
+
+#### Issue 2 — a committed AWS command without `--profile IBD-DEV`, pointing at a runbook that does not exist
+
+`20-backend/template.yaml` tells the operator to run `aws secretsmanager put-secret-value --secret-string file://…` with **no `--profile IBD-DEV`, no `--region`, no `--secret-id`**, then points at `infra/README.md` for "the exact runbook commands". That file contains **zero** matches for `put-secret-value`, `mail-microservice`, `MAIL_TRANSPORT`, `rabbitmq`, or `microservice`. The pointer resolves to nothing, and the incomplete fragment is the only command text an operator will find. Missing `--profile IBD-DEV` is a hard-constraint FAIL in this project.
+
+#### Issue 3 — nothing warns that `put-secret-value` replaces the whole document
+
+The entire reason for the two-key JSON is that a reference to a missing key **fails the whole stack operation**. `put-secret-value --secret-string` writes a complete new version: an operator who writes `{"rabbitmqUrl":"…"}` alone **silently deletes `apiKey`**, and the very next deploy — the T-9 flip, the one everything is sequenced for — fails resolving it. The template says both placeholders "MUST be overwritten" but never says *in one document, in a single call*. **That is the wording that carries the safety property, and it is absent.**
+
+#### ⚠️ A Leader process failure — the runbook was never auditable
+
+The Reviewer opened by recording a scope gap: **the runbook does not exist in the repo and was not in its brief.** It lived only in the Implementer's report, in my context. I asked for it to be audited as a deliverable I would hand to the product owner *verbatim, to run against live AWS* — and then did not give the auditor the artifact. Dimension 8 is **unanswered**, and the correct conclusion is that I nearly handed over operator commands no reviewer had seen. Attempt 2 lands the runbook **as a file**, where it can be audited like anything else.
+
+#### ADVISORY
+
+| ID | Finding |
+|---|---|
+| **A-1** | The Trap-2 mechanism is **right in conclusion, wrong about where the decisive step happens**. CloudFormation diffs the *unresolved* template + parameters to decide *whether* to update; resolution happens only while processing that resource's update. So the load-bearing fact is not "`Environment.Variables` is one opaque map" but "**some** property of `ApiFunction` must differ, then resolution happens afresh". The conclusion is in fact **over-determined** at T-9 — the transport flip, the placeholder edits, and a new code artifact each force it independently. Reword, or a future reader reasoning about a *rotation* is misled |
+| **A-2** | The residual A-1 leaves open: both scripts pass `--no-fail-on-empty-changeset`, so **correcting or rotating a secret after the stack already sits at `microservice`** with an unchanged artifact produces an empty changeset, no update, and a "deployed" message while the old value stays live. **The first flip is safe; the second correction is the silent one.** Belongs in the runbook |
+| **A-3** | Dimension 3 ruled **in favour of the literal placeholders**, partly for a reason the Implementer did not give: the placeholder edit is itself what produces the property diff that lands the secret values, so it is *load-bearing for the mechanism*. Also: a committed queue name is reviewable and versioned, which is exactly what DEP-5's DEV/PROD ambiguity needs; and forgetting the edit is **non-silent** (the queue placeholder hits DD-11's `NOT_FOUND` split as a loud configuration error). Caveat recorded: when a prod stack appears these become Parameters **with live-value resolution**, never constant defaults |
+| **A-4** | `set-cors.sh` is **the right mechanics and the wrong name** — `deploy.sh` would genuinely reset CORS to `*`. But driving a transport switch through a script named for CORS is the same class as Issue 1: a mail change hidden inside a network script |
+| **A-5** | `.env.example` says `RABBITMQ_URL` is *"held by the product owner in a sibling AI-services project"*; `design.md` §4.5 says **platform team**. One of the two is now wrong about who to ask, and the spec is what a future agent reads first |
+| **A-6** | ⚠️ **`aws lambda get-function-configuration` prints every environment variable — including the resolved broker URL and API key — to the terminal and scrollback.** The runbook must never instruct a bare invocation; scope it with `--query`. That query is also the cheapest live check of A-1's mechanism |
+| **A-7** | macOS ships no `shred`, and **`rm -P` on APFS does not guarantee overwrite** (copy-on-write means the original blocks are not rewritten in place). **Do not present it as a shred equivalent.** The property that actually holds — and the one FR-7 asks for — is that the value never entered shell history |
+| **A-8** | Pre-existing, now doubled: `teardown.sh` does nothing for Secrets Manager's 30-day recovery window, so a teardown + redeploy inside 30 days fails on the deterministic `Name`. Already true of `OtpHmacSecret`; flagged so it is not discovered during T-9 |
+
+---
+
+#### Attempt 2 — Reviewer `STATUS: FAIL` (runbook defects)
+
+**What attempt 2 closed:** Issues 1, 2 and 3, plus advisories A-1, A-5, A-6 and A-7. The runbook now **exists as a file** (`infra/README.md` §7), which was the point — the dimension that went unanswered in attempt 1 is now answerable.
+
+**Rulings worth keeping:**
+- **Issue 1's fix is safe under both readings**, verified line by line: `$(… 2>/dev/null || true)` keeps `set -e` from firing; an absent stack yields empty and `[0]` on no match yields `None`, both handled; a stack predating the parameter also yields `None` and falls back correctly; an explicit env var still wins; the resolved value is echoed with its provenance.
+- **The direct `update-function-configuration` patch is endorsed.** The Implementer's reasoning holds: the patched values are exactly what the dynamic references would produce, so the next template-driven update **converges rather than fights**, and the toggle alternative costs two stack updates plus a real window of live mail going through SES. One overclaim narrowed: `detect-stack-drift` *will* report the function `MODIFIED` until its next update, so "no lasting drift" must be scoped to **value** convergence.
+- **A-1 reworded correctly** — someone reasoning about a *rotation* now reaches the right conclusion.
+- **Renumbering clean.** Every external reference to `infra/README.md` §6 points at SES setup, which did not move.
+
+#### ⚠️ Four runbook defects — two are exactly the failure modes the brief asked to hunt
+
+**Issue 1 — the runbook's *first command* does not run on the operator's platform.** `SECRET_FILE="$(mktemp)"` is the GNU form; **BSD/macOS `mktemp` requires a template or `-t prefix`** and exits 1. `SECRET_FILE` ends up empty and `cat > ""` fails. It fails loudly rather than silently, but it is the first line the product owner would paste. **The portable form already exists one directory away** — `t9-enable-ses.sh` uses `mktemp -t ses-cognito-send-policy.XXXXXX.json`.
+
+**Issue 2 — the "confirm it took effect" command cannot detect whether the thing you just did worked.** The runbook queries `MAIL_TRANSPORT` and claims this is the cheapest live check *"independent of which value you were correcting"*. **False.** The direct patch changes `RABBITMQ_URL` and `MICROSERVICE_API_KEY` only; `MAIL_TRANSPORT` reads `microservice` before the patch and `microservice` after a **failed** one. This is precisely the silently-does-nothing case the section exists to prevent: the operator sees the expected value, concludes the rotation landed, and **the old credential stays live**.
+
+**Issue 3 — the first fenced block is presented as one paste but must be run in three parts.** The instruction to substitute real values is a shell **comment sitting between the heredoc and the write**. Pasted whole — which is what a fenced block invites — it writes the literal `amqps://<user>:<password>@<host>` placeholders to the live secret **and prints a success envelope**. Both keys survive, so nothing fails until T-9 deploys a Lambda with a bogus broker URL.
+
+**Issue 4 — the env-merge patch replaces the whole `Environment` with no pre-flight check.** `update-function-configuration --environment` is a **full replacement, not a merge**; correctness rests entirely on the `jq` having received a complete current map. There is no `set -o pipefail` and no validation. A truncated but still-parseable `get-function-configuration` yields a map missing `DB_PASSWORD`, `OTP_HMAC_SECRET` and the Cognito ids — **bricking the live API** until the next `sam deploy`. The mechanics as written are correct; the guard is absent.
+
+**The Reviewer's own summary of what it would not run as written:** the first block pasted whole, and the direct-patch block without a key-count check.
+
+#### ADVISORY
+
+| ID | Finding |
+|---|---|
+| **A-1** | `describe-stacks` **failure** is conflated with *"stack does not exist"* — both print "stack not found yet" and push `ses` on an expired SSO token, a throttle, or an IAM denial. In `deploy.sh` the next call kills the run; in `set-cors.sh` **with `CLOUDFRONT_URL` preset, a transient failure silently reverts the transport** — Issue 1's hazard through a narrower door |
+| **A-2** | *"`umask 077` restricts it to this user"* misattributes the mechanism — `mktemp` creates `0600` regardless. And *"a 700-mode dir"* is true on macOS and **false on Linux** (`/tmp` is `1777`). The security property holds; the stated reason does not |
+| **A-3** | No `trap 'rm -f' EXIT` on either temp file, and plain `rm` not `rm -f`. An abort during the edit step leaves **real broker credentials on disk** with nothing to clean them. `t9-enable-ses.sh` has the pattern one directory away |
+| **A-4** | The env file holds the resolved `DB_PASSWORD` and `OTP_HMAC_SECRET` at rest. *"nothing touches stdout"* is literally true but reads as "nothing sensitive is exposed" |
+| **A-5** | *"See the README runbook section **above**"* — wrong for a cross-file reference |
+| **A-6** | §5 and `deploy.sh`'s closing "next steps" never forward-reference §7, so an operator working top-to-bottom reaches T-9 **without having been told the secret needs writing first** |
+
+**Attempt 3 dispatched — the last permitted.** A further FAIL triggers HALT, a working-tree rollback, and escalation to the product owner.
+
+---
+
+#### Attempt 3 — Reviewer `STATUS: PASS` · **Phase A complete**
+
+> All four runbook defects are closed by inspection — `mktemp -t` at both sites, a `MAIL_TRANSPORT` check scoped to the T-9 flip plus a non-printing `shasum` rotation check that correctly discriminates a failed patch, an editor-terminated first block that cannot fall through to a placeholder write, and a two-part env-merge guard whose static floor is independent of the corrupted fetch and correctly ordered ahead of the dynamic comparison.
+
+**This attempt verified rather than reasoned.** The Implementer ran `mktemp -t` **on this machine** and pasted the output (exit 0, `0600` file), `bash -n`'d **all 20 fenced blocks** extracted from the README, and tested the logic-bearing blocks against a **mocked `aws` shim** reproducing the real JSON shapes — six synthetic outcomes for the A-1 classification, three baselines for the guard. The Reviewer corroborated `mktemp -t` independently: `t9-enable-ses.sh` already ships the identical form in a committed script, *"so this is a form the repo has been running, not a new claim."*
+
+**Defect 3's closure is better than the remedy asked for.** `${EDITOR:-nano} "$SECRET_FILE"` as the terminal line does not merely discourage a whole-paste — the Reviewer traced what actually happens: the editor takes the terminal and **the remaining pasted bytes are consumed as editor keystrokes rather than shell input**, so `put-secret-value` never executes. Under `nano` the operator lands in a visibly corrupted buffer; under `vim` the first `a` enters insert mode and it never quits. **Both fail closed** — nothing reaches the live secret.
+
+#### The self-caught gap, and the ruling on what remained
+
+While testing its own guard, the Implementer found that its first draft's dynamic `NEW < CURRENT` key-count comparison **is defeated when the baseline fetch returns valid-but-empty JSON, because both sides derive from that same corrupted fetch**. It added an independent static floor.
+
+**The Reviewer ruled the floor sound and found its ordering load-bearing** — a detail neither the Implementer nor the Leader had identified: if `Environment.Variables` returns literal `null`, `jq` errors, `CURRENT_KEY_COUNT` is empty, and `(( NEW < CURRENT ))` degrades to `2 < 0` and **passes**. The static check fires first and aborts. *"Every corruption path I can construct terminates in an abort, not an apply."* It also confirmed the floor cannot false-positive — the real function carries ~19 variables, so a healthy run is never near it, meaning no spurious aborts to train an operator into bypassing the guard.
+
+**The disclosed partial-baseline residual: accepted, and it should not block.** The Reviewer could identify **no mechanism** that produces it — `Environment.Variables` is one atomic document, so wire truncation yields *invalid* JSON (caught) and eventual-consistency staleness yields a *complete* map (harmless). Both alternatives are worse: an operator-supplied expected count goes stale the first time a variable is added, *"converting a silent risk into recurring spurious aborts, which is how guards get bypassed."* The recovery path is real and documented — a template-driven deploy rewrites the whole environment.
+
+> **The Reviewer's own framing of what it credits:** the Implementer finding this in its own first draft and then **declining to let the comment overclaim** — the guard's comment says *"Neither check alone is a full guarantee"* rather than asserting coverage it lacks.
+
+#### Two advisories closed by the Leader, because this runbook is handed to the operator
+
+The Reviewer answered *"would I run this as written?"* with **"yes — with one edit first."** Since this document is handed to the product owner to execute against live AWS, the Leader made that edit and one of the same class:
+
+- **A-a:** `update-function-configuration` was **unscoped**, so it echoes the full `FunctionConfiguration` — the just-resolved `RABBITMQ_URL` and `MICROSERVICE_API_KEY`, plus `DB_PASSWORD` and `OTP_HMAC_SECRET` — into the terminal and scrollback, **contradicting the block's own preamble** (*"without ever printing a secret"*). Not an FR-7 violation (nothing enters shell history), which is why it was advisory. Now `--query 'LastUpdateStatus' --output text`, with a comment saying why the scoping is not cosmetic.
+- **A-c:** if **both** lookups fail, each pipeline hashes empty input, the digests match, and the block printed **`MATCH — rotation took effect`** on total failure. A success message for a check that never ran — the exact defect class two attempts were spent on. Now guarded: empty on either side reports `INCONCLUSIVE`.
+
+Remaining advisories recorded, not actioned: **A-b** (the secret document passed in `argv` to `jq`, world-readable via `ps` for that process's lifetime — history stays clean; `--slurpfile` or stdin would close it), **A-d** (`exit 1` terminates an *interactive* shell when the block is pasted, so the ABORT message may scroll away; it fails safe), **A-e** (the Ctrl-C claim is true eventually but overstated — the EXIT trap fires at shell exit, not at the interrupt), **A-f** (a message misattributes "stack not found" to a case that is really "stack predates the parameter"; the behaviour is right).
+
+**Final status: ✅ PASS on attempt 3. Phase A (T-1…T-8) is complete.**
+
+---
