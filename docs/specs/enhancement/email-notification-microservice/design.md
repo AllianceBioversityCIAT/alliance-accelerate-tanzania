@@ -447,8 +447,8 @@ This rule exists because of measured failure, not tidiness. Judgment rounds 2 an
 | Constant | Value | Enforced by | Covers |
 |---|---|---|---|
 | `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS` | **800** | A deadline over the **whole `issueCode(...)` call**, applied by its caller | Validation, the `EmailSendBudget` upsert, `emailVerification.create`, code generation + hashing — ⚠️ *corrected during T-1 review (A3): only the upsert is inside `issueCode`'s `$transaction`, so a transaction timeout would bound one of these four. Bounding the call as a unit covers them all and survives anyone moving work across that transaction boundary* |
-| `MAIL_SEND_TIMEOUT_MS` | **1200** | The transport, **both** implementations | Lock wait + probe + any reconnect + publish + confirm |
-| `VERIFICATION_CODE_RESPONSE_FLOOR_MS` | **2000** | `padToVerificationCodeResponseFloor` | `= PRESEND_ALLOWANCE + SEND_TIMEOUT` |
+| `MAIL_SEND_TIMEOUT_MS` | **3000** | The transport, **both** implementations | Lock wait + probe + any reconnect + publish + confirm |
+| `VERIFICATION_CODE_RESPONSE_FLOOR_MS` | **3800** | `padToVerificationCodeResponseFloor` | `= PRESEND_ALLOWANCE + SEND_TIMEOUT` |
 
 ### 12.2 Sub-budgets inside `MAIL_SEND_TIMEOUT_MS`
 
@@ -470,18 +470,36 @@ This rule exists because of measured failure, not tidiness. Judgment rounds 2 an
 
 ### 12.3 The invariants, stated once
 
-1. `PRESEND_ALLOWANCE + SEND_TIMEOUT ≤ FLOOR` — **800 + 1200 = 2000** ✓
-2. `LOCK_WAIT + PROBE < SEND_TIMEOUT` — **200 + 250 = 450 < 1200** ✓, leaving a real reconnect budget
+1. `PRESEND_ALLOWANCE + SEND_TIMEOUT ≤ FLOOR` — **800 + 3000 = 3800** ✓
+2. `LOCK_WAIT + PROBE < SEND_TIMEOUT` — **200 + 250 = 450 < 3000** ✓, leaving a real reconnect budget
 
 ⚠️ **Invariant 2 is load-bearing for a second reason, recorded during T-4's review.** It is not only a latency budget: it is what keeps the orphaned-send residual narrow. Because the probe is bounded and `LOCK_WAIT + PROBE < SEND`, the overall deadline **cannot** fire before `acquireConnection`'s stale-branch teardown has already run — so the only window in which an orphaned continuation can overwrite `cached` is a deadline during `connectWithRetry`, whose worst outcome is one leaked connection. **If anyone ever retunes §12 so `LOCK_WAIT + PROBE ≥ SEND`, that residual grows from a leak into "an orphan can tear down a live connection out from under a concurrent send."** Any T-9 re-derivation of these values must re-check the residual, not only the latency budget.
 
 Both are asserted by one unit test over the constants. Falsifying input: raise any term past its container — the test reddens.
 
-### 12.4 Status of these numbers
+### 12.4 Status of these numbers — **measured, 2026-09-16**
 
-**Reasoned bounds, not measurements** — the same epistemic status the original `900` carried, and its docblock said so. What is different is that **each is now a ceiling the code enforces**, so being wrong about a value produces a failed request or a warn line, never a silent divergence between the two padded branches.
+⚠️ **`MAIL_SEND_TIMEOUT_MS` and the floor were re-derived from real measurements against the live broker.** Their first values (`1200` / `2000`) were reasoned bounds and **the measurement contradicted them.**
 
-T-9 supplies the first real figures: cold and warm publish latency, and the accepted branch's pre-send p99. Any value contradicted by measurement is re-derived **here**, and every consumer follows because no consumer holds a copy.
+**Five local sends, product owner's laptop → the live CGIAR broker, 2026-09-16:**
+
+| Kind | Elapsed | Outcome |
+|---|---|---|
+| `receipt` | **1132 ms** | confirmed |
+| `approval` | **1170 ms** | confirmed |
+| `verification` | **1172 ms** | confirmed |
+| `contact` | **1227 ms** | ❌ timed out at the 1200 ms bound |
+| `rejection` | ≥1200 ms | ❌ timed out |
+
+**All five emails were delivered.** The two "failures" are the bound firing on messages the broker had already accepted — *the system reported failure for mail that arrived*, which is the mirror image of the defect class this spec exists to prevent.
+
+**The old bound sat inside the distribution**, which is the one place a bound must never sit: it protected nothing and failed roughly half the time. `3000` is ~2.4× the observed maximum.
+
+⚠️ **Every one of these five is a COLD measurement.** Each script run is a fresh process, so each pays the full TCP + TLS + AMQP handshake, `checkQueue`, publish and confirm. The tight 1132–1227 clustering is the signature of a **fixed establishment cost**, not network variance. Nothing here measures the **warm** path — the cached connection a Lambda reuses across invocations, which pays only the confirm round-trip.
+
+**Still unmeasured, and T-9's remaining job:** the cold cost *from Lambda in `eu-west-1`*, which may differ substantially in either direction from a laptop over public internet; the warm path; and the accepted branch's pre-send p99 (`PRESEND_ALLOWANCE` remains a reasoned `800`).
+
+**Consequence to weigh, not hide:** every verification-code request now costs ≥3.8 s. That is the honest price of a constant-time window whose slowest term is a cold handshake to a third party. **The structural remedy — establishing the connection during Lambda init rather than inside the first request — is recorded as OQ-11 rather than smuggled in here**, because it changes the failure behaviour of every route, not just this one.
 
 ---
 
@@ -490,6 +508,7 @@ T-9 supplies the first real figures: cold and warm publish latency, and the acce
 | ID | Question |
 |---|---|
 | **OQ-7** | `ContactForm.tsx` renders *"your message has been sent"* and `MailService.dispatch` logs `status=sent`. Both assert **delivery**, which FR-5 forbids. Raised by one round-1 judge only, so recorded as unconfirmed rather than fixed. Options: soften both to "received", or amend FR-5's clause. **Needs a product decision.** *(Renumbered from OQ-5 in revision 3 — it collided with `infra/README.md`'s pre-existing `OQ-5`, the very subsection §11 instructs an implementer to preserve.)* |
+| **OQ-11** | ⚠️ **The floor is now 3.8 s per verification request, and its dominant term is a cold AMQP handshake paid inside the request.** Establishing the connection during **Lambda init** instead would move that cost out of the request path for every invocation after the first, letting `SEND_TIMEOUT` and the floor drop back toward the warm-path cost. It was rejected during design because a broker outage at init would fail the whole function and break every route — but a **non-fatal** init attempt (connect if possible, fall back to lazy) keeps that property. **Needs a design decision; do not absorb it into a task.** |
 | **OQ-8** | Does the platform team impose a broker `connection_max` we could exhaust across cold starts? And what **durability** is the queue declared with — `checkQueue` cannot verify it (DD-3), so it is an assumption about someone else's topology until they confirm it |
 | **OQ-10** | ✅ **DECIDED — accept as-is** (product owner, 2026-09-16). After Phase B, Cognito's branded invitation and password-reset templates render through `COGNITO_DEFAULT` permanently and may look degraded. Accepted for now; restyling for the default mailer is deferred, not refused. **T-16 must record this as an accepted state in `infra/README.md`, not leave it reading as a temporary rollback condition.** |
 | **OQ-9** | FR-6's sweep was unsatisfiable as written: two **active** specs (`epic/hybrid-actor-registration`, `admin/registration-info-requests`) assert SES as a live dependency. Revision 3 scopes the sweep to code, infra and baselines, and adds a one-line superseded-by pointer to each. Confirm that pointer is the right treatment rather than editing those specs outright |

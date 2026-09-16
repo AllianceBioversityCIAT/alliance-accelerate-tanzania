@@ -20,7 +20,7 @@
  * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` — the fourth row of §12.1's table —
  * is not defined here. It lives in `registrations/registrations.service.ts`,
  * where it is now (T-7) COMPUTED as `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS
- * + MAIL_SEND_TIMEOUT_MS`, imported from this file — `2000`, per §12.1.
+ * + MAIL_SEND_TIMEOUT_MS`, imported from this file — `3800`, per §12.1.
  * *(At T-1 time, when this paragraph was first written, it was still the
  * literal `900` an earlier, unrelated production fix
  * (`fix/otp-mail-lambda-freeze`) had reasoned from the one real latency
@@ -64,7 +64,7 @@
  * and SDK-default retries, i.e. genuinely unbounded, which would make
  * Phase A's higher floor unearned while SES is still the active transport.
  */
-export const MAIL_SEND_TIMEOUT_MS = 1200;
+export const MAIL_SEND_TIMEOUT_MS = 3000;
 
 /**
  * Sub-budget of {@link MAIL_SEND_TIMEOUT_MS} for acquiring the module-scope

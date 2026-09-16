@@ -209,7 +209,7 @@ D-F, D-G and D-H are the classes that matter most and the ones no green test cov
 | **DEP-2** | ACCELERATE registered as a MIS in CLARISA | ⏳ Same request |
 | **DEP-3** | RabbitMQ URL, credentials, queue name | ✅ Held by the product owner |
 | **DEP-4** | Sender address authorized on the microservice's SMTP | ✅ Not blocking — the microservice's default sender is usable for DEV |
-| **DEP-5** | Whether the available queue is DEV or PROD | ✅ **RESOLVED — DEV** (product owner, 2026-09-16). T-9 is unblocked |
+| **DEP-5** | Whether the available queue is DEV or PROD | ✅ **RESOLVED — and the question was the wrong one.** There is **only a PROD queue**; no DEV queue exists (product owner, 2026-09-16). But the `TEST - ` subject prefix follows **the credential's environment, not the queue's name**, and the issued key is non-PROD — **verified empirically**: all five received emails carried `TEST - ` in the subject. The marking property holds; the queue name never governed it. *(An earlier revision of this row recorded "DEV" on a misreading, and a Leader inference that PROD-queue sends would be unmarked was falsified by the received mail.)* |
 | **DEP-6** | `--profile IBD-DEV` on every AWS command | Standing constraint |
 
 **Assumption A-1:** the microservice accepts a `from.email` whose domain its SMTP is authorized for; an unauthorized domain fails at SMTP, invisibly to us (D-H). Mitigated by using its default sender until DEP-4 is explicitly widened.

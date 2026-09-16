@@ -419,7 +419,7 @@ describe(
   () => {
     it(
       'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS ≤ ' +
-        'VERIFICATION_CODE_RESPONSE_FLOOR_MS — 800 + 1200 ≤ 2000 (mutation-tested: ' +
+        'VERIFICATION_CODE_RESPONSE_FLOOR_MS — 800 + 3000 ≤ 3800 (mutation-tested: ' +
         'reddens if the floor stops being composed from these two imports)',
       () => {
         expect(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS).toBeLessThanOrEqual(

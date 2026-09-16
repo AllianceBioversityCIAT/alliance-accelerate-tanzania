@@ -15,13 +15,13 @@
  * **The `VERIFICATION_CODE_RESPONSE_FLOOR_MS` question — resolved by T-7.**
  * That constant lives in `registrations/registrations.service.ts`. At T-1
  * time it was still `900`, set by an earlier, unrelated fix predating this
- * spec, and re-deriving it to §12.1's `2000` (`= PRESEND_ALLOWANCE +
+ * spec, and re-deriving it to §12.1's `3800` (`= PRESEND_ALLOWANCE +
  * SEND_TIMEOUT`, DD-10) was T-7's task — this file therefore carried a
  * target-only gate (asserting the §12.1 arithmetic in isolation) plus a
  * second test pinning the then-true, expected gap against the still-`900`
  * live import. **T-7 has since landed** (`registrations.service.ts` now
  * COMPUTES the constant as that same sum, imported from `mail-timing.ts`),
- * which retired both: the gap test would assert `2000 < 2000` — false — and
+ * which retired both: the gap test would assert `3800 < 3800` — false — and
  * a target-only gate duplicates what is now a real, permanent invariant
  * test against the LIVE constant in `registrations.service.spec.ts`
  * (`design.md` §10's nominated home). Both were removed here rather than
@@ -36,7 +36,7 @@ import {
 
 describe('mail-timing constants — §12.1/§12.2 values, verbatim', () => {
   it('pins MAIL_SEND_TIMEOUT_MS to the §12.1 value', () => {
-    expect(MAIL_SEND_TIMEOUT_MS).toBe(1200);
+    expect(MAIL_SEND_TIMEOUT_MS).toBe(3000);
   });
 
   it('pins MAIL_LOCK_WAIT_TIMEOUT_MS to the §12.2 value', () => {
@@ -60,7 +60,7 @@ describe('mail-timing constants — §12.1/§12.2 values, verbatim', () => {
 // target. See this file's header for the removed tests this replaced.
 
 describe('§12.3 invariant 2 — LOCK_WAIT + PROBE < SEND_TIMEOUT (DD-11)', () => {
-  it('leaves a real reconnect budget inside the send deadline — 200 + 250 = 450 < 1200', () => {
+  it('leaves a real reconnect budget inside the send deadline — 200 + 250 = 450 < 3000', () => {
     expect(MAIL_LOCK_WAIT_TIMEOUT_MS + MAIL_PROBE_TIMEOUT_MS).toBeLessThan(MAIL_SEND_TIMEOUT_MS);
   });
 });
