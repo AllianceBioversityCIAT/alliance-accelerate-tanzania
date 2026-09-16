@@ -590,7 +590,7 @@ async function acquireConnection(
   config: MicroserviceMailBrokerConfig,
   logger: Logger,
 ): Promise<CachedMicroserviceConnection> {
-  if (cached && cached.healthy) {
+  if (cached?.healthy) {
     const outcome = await probeConnection(cached, config.queueName, logger);
     if (outcome === 'alive') {
       return cached;
