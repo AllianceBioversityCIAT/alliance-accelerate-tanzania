@@ -50,6 +50,7 @@ const mockGetConsentPolicy = getConsentPolicy as jest.MockedFunction<typeof getC
 // ---------------------------------------------------------------------------
 
 const FOUR_SECTION_POLICY: ConsentPolicy = {
+  acceptanceStatement: 'I confirm that I accept the consent policy above.',
   version: 'v1.0-placeholder',
   sections: [
     { heading: 'What we collect', body: 'Body one.' },
@@ -177,6 +178,7 @@ describe('ConsentPolicyDisclosure — progress text', () => {
 
   it('reflects a different fetched section count (2) instead of assuming any fixed number', async () => {
     mockGetConsentPolicy.mockResolvedValue({
+      acceptanceStatement: 'I confirm that I accept the consent policy above.',
       version: 'v2.0',
       sections: [
         { heading: 'One', body: 'Body one.' },
@@ -357,4 +359,43 @@ describe('ConsentPolicyDisclosure — accessibility (jsdom-provable subset)', ()
   // `color-contrast` rule returns `incomplete`, which `toHaveNoViolations`
   // does not fail on. Those, plus the real-browser scroll-gate behaviour
   // above, route to the human check recorded in ConsentPolicyDisclosure.tsx.
+});
+
+// ---------------------------------------------------------------------------
+// Line structure of the policy body (T-9)
+// ---------------------------------------------------------------------------
+
+/**
+ * A CLASS pin, and nothing more — said plainly, because KZ-002's failure mode
+ * is precisely a test like this one being mistaken for behavioural coverage.
+ *
+ * What it proves: `whitespace-pre-line` is present on the element that renders
+ * each policy section's body.
+ *
+ * What it CANNOT prove: that the class has any rendered effect. jsdom applies
+ * no CSS. If Tailwind stopped emitting the rule, or a later utility overrode
+ * it, this test stays green while the consent document — the one a person
+ * actually accepts — renders as run-on text with Legal's twelve data
+ * categories buried mid-sentence.
+ *
+ * Why it is here anyway: the defect it guards was introduced silently at T-9
+ * (the pre-T-9 placeholder bodies were single sentences with no newlines, so
+ * nothing exposed the limitation) and was invisible to all 1732 frontend
+ * tests. A class pin at least reddens on the most likely regression — someone
+ * "tidying" the className.
+ *
+ * The real check is a browser measurement, recorded in this spec's
+ * `execution.md` under T-9: headless Chrome at 375px against the real v1.0
+ * text — 280px / 14 lines collapsed, versus 440px / 22 lines correct.
+ */
+describe('ConsentPolicyDisclosure — the policy body preserves Legal line structure', () => {
+  it('renders section bodies with `whitespace-pre-line`, so embedded newlines and `- ` bullets survive', async () => {
+    mockGetConsentPolicy.mockResolvedValue(FOUR_SECTION_POLICY);
+    render(<ConsentPolicyDisclosure checked={false} onChange={jest.fn()} />);
+
+    await screen.findByText('What we collect');
+    const body = screen.getByText('Body one.');
+
+    expect(body).toHaveClass('whitespace-pre-line');
+  });
 });

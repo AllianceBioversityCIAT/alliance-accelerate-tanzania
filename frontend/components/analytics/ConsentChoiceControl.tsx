@@ -2,10 +2,15 @@
 
 // @sdd-spec enhancement/usage-analytics (T-6)
 /**
- * ConsentChoiceControl — the FR-6 / DD-5 change-choice control on
- * `/privacy` (requirements.md FR-6; design.md §5.6, §8.1, DD-4, DD-5).
+ * ConsentChoiceControl — the FR-6 / DD-5 change-choice control, hosted on
+ * `/cookies` (requirements.md FR-6; design.md §5.6, §8.1, DD-4, DD-5).
  *
- * `/privacy` itself (`page.tsx`) stays a static server component; this is
+ * Moved from `/privacy` to `/cookies` by
+ * `docs/specs/legal/legal-notices-and-consent-copy` T-4/T-5: the cookie
+ * disclosure this control belongs beside now lives there. The component
+ * itself was not modified by that move — only where it is mounted.
+ *
+ * `/cookies` itself (`page.tsx`) stays a static server component; this is
  * the one `'use client'` island DD-5 introduces so the page can host a
  * real control without giving up its static-export shape (ADR-002). The
  * page composes this component directly — no dynamic import, no
@@ -33,7 +38,7 @@
  * Labels read "…analytics cookies" rather than the banner's bare
  * "Accept"/"Reject" so the two controls have distinguishable accessible
  * names when both are mounted at once — the banner in the `(public)`
- * layout, this island on `/privacy`.
+ * layout, this island on `/cookies`.
  *
  * No `gtag`/`dataLayer` call site here or anywhere this file reaches: the
  * only outbound effect of a click is `setConsent`, which writes to
