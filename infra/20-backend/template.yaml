@@ -205,8 +205,8 @@ Resources:
           # project value from design.md §4.5, not a placeholder.
           RABBITMQ_URL: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:rabbitmqUrl}}"
           MICROSERVICE_API_KEY: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:apiKey}}"
-          EMAIL_QUEUE_NAME: REPLACE_WITH_PLATFORM_TEAM_QUEUE_NAME
-          EMAIL_SENDER: REPLACE_WITH_PLATFORM_TEAM_SENDER_EMAIL
+          EMAIL_QUEUE_NAME: cgiar_ms_prod_mailer_queue
+          EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
           EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
