@@ -58,7 +58,21 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 
 Full runbook: `infra/README.md`.
 
-**CI/CD:** none currently — deploys are operator-run from a workstation holding the `IBD-DEV` profile. **Open question OQ-INFRA-2:** whether to move to a pipeline (GitHub Actions + OIDC role assumption) before a production environment exists.
+**CI/CD:** a Jenkins pipeline, since 2026-09-01. A push to `main` runs `.github/workflows/jenkins-trigger.yml`, which POSTs to the `tanzania-main` job on `automation.prms.cgiar.org`; the job clones, lints, tests, deploys and smoke-tests. **The `Jenkinsfile` is not versioned in this repository** — it lives on the Jenkins server, so the deploy path cannot be read from the codebase. Treat that as a known gap when reasoning about what a merge will do.
+
+Three of its behaviours change what a merge means, and none of them are visible from the repo:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `DEPLOY_INFRA` | **`false`** | The `Deploy Infra (10 + 30)` stage is **skipped**. A change to `infra/10-data-auth/` or `infra/30-frontend/` — including any CloudFront setting — **does not ship on an ordinary merge**. It must be flipped to `true` for that build. |
+| `RUN_MIGRATIONS` | `true` | `prisma migrate deploy` + seed run against RDS. |
+| `RUN_SMOKE` | `true` | `infra/scripts/smoke.sh` runs post-deploy and fails the build closed. |
+
+The backend (`20-backend`) and the web assets (`Deploy Web` → `deploy-frontend.sh`) **do** deploy on every merge to `main`.
+
+**CORS is safe across pipeline deploys.** The steady-state `Deploy Backend` stage resolves the live `CloudFrontUrl` from the frontend stack's outputs and passes it as `AllowedOrigin`, precisely so a redeploy never regresses to the permissive `*` bootstrap default. The `*` default is used only on the bootstrap path (`DEPLOY_INFRA=true`, via `deploy.sh`), where the frontend stack may not exist yet, and a dedicated `Lock CORS` stage runs `set-cors.sh` afterwards on exactly that path. The `deploy.sh` defect tracked in **ATP-64** therefore affects **manual** runs, not the pipeline.
+
+Operator-run deploys from a workstation remain possible and are documented in `infra/README.md`; they are no longer the only path, and they are no longer the normal one.
 
 **Governed, not improvised:** agents never invent a deploy. Any cloud change goes through these scripts and templates. A change that needs a resource not in §2 is an infrastructure spec, not an inline action.
 
@@ -116,6 +130,7 @@ What makes the Lambda's own CORS unnecessary is that **API Gateway already owns 
 | ID | Question |
 |---|---|
 | OQ-INFRA-1 | Production account, domain, and dev→prod promotion path are undecided. Only the `IBD-DEV` dev environment exists. |
-| OQ-INFRA-2 | Move operator-run deploys to CI/CD (GitHub Actions + OIDC) before provisioning production? |
+| ~~OQ-INFRA-2~~ | **Resolved 2026-09-01** — deploys moved to a Jenkins pipeline triggered from GitHub Actions (§3). Not the GitHub-Actions-plus-OIDC shape this question proposed: the pipeline authenticates with credentials bridged into a file-based `IBD-DEV` profile, because the seven scripts in `infra/scripts/` and `infra/samconfig.toml` all require a named profile to exist as a file. The successor question is **OQ-INFRA-5**. |
 | OQ-INFRA-3 | Add a committed `docker-compose.dev.yml` to make the local primary route a single command? |
 | OQ-INFRA-4 | Adopt RDS Proxy before Lambda concurrency grows, or keep the constrained connection pool? (`docs/trd/trd.md` §11) |
+| OQ-INFRA-5 | The `Jenkinsfile` is not versioned in this repository, so the deploy path cannot be reviewed, diffed, or reasoned about from the codebase — and `DEPLOY_INFRA=false` means an infra change can merge without shipping. Vendor it into the repo, or accept the gap deliberately and record where the authoritative copy lives? |
