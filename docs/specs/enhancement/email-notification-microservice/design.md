@@ -175,9 +175,9 @@ This splits one false claim into two true ones. `pii-boundary.spec.ts` changes b
 |---|---|---|
 | `MAIL_TRANSPORT` | **throws if unset/invalid** | `microservice` deployed · `no-op` locally · **`ses` remains valid through Phase A** — it is the rollback control (§7.3) |
 | `RABBITMQ_URL` | **throws if absent** | Platform team — **secret** |
-| `EMAIL_QUEUE_NAME` | **throws if absent** | Platform team |
+| `EMAIL_QUEUE_NAME` | **throws if absent** | Platform team — **secret in deployed environments** (product owner, 2026-09-16). Not a credential and grants no access alone, but it discloses the platform's queue naming and target environment, so it resolves from `MailMicroserviceSecret` rather than sitting as a committed literal |
 | `MICROSERVICE_API_KEY` | **throws if absent** | CLARISA — **secret** |
-| `EMAIL_SENDER` | **throws if absent** | Platform team |
+| `EMAIL_SENDER` | **throws if absent** | Platform team — **deliberately NOT a secret.** It is the `From` header of every message the system sends, so it is public by construction; hiding it would add an operator step and protect nothing. SPF/DKIM is the control against spoofing, not its absence from a file |
 | `EMAIL_SENDER_NAME` | **defaults**, never throws | Fixed: `ACCELERATE Tanzania Seed Registry -` |
 
 Five throw, one defaults — resolving judgment S-7, which found this undecided across both documents. FR-3's enumeration is amended to match.
