@@ -29,28 +29,31 @@
       Gate discriminates: rename `socketFile` → `file` and confirm the suite reddens.
       Skills: `nestjs-expert`, `api-design-principles`
 
-- [ ] **T-3** Extend mail configuration — add `microservice`, **retain `ses`**  (deps: T-1)
+- [x] **T-3** Extend mail configuration — add `microservice`, **retain `ses`**  (deps: T-1)
       Scope: `MailTransportKind` gains `'microservice'`; add `getMicroserviceMailConfig`. `'ses'` stays valid — it is Phase A's rollback control.
       Traces: FR-3 · `design.md` §4.5, §7.3
-      Files: `backend/src/mail/mail.config.ts`, `mail.config.spec.ts`, `mail-transport.factory.ts`
+      Files: `backend/src/mail/mail.config.ts`, `mail.config.spec.ts`
+      ⚠️ **`mail-transport.factory.ts` moved to T-4 (Leader, in flight).** The factory branch must construct `MicroserviceMailTransport`, a class T-4 creates — T-3 cannot add a branch to a type that does not exist yet. T-3 delivers the config surface only.
       Verify: `cd backend && npm test -- mail.config --silent`
       Done when: throws naming each of the **four** required transport variables (`RABBITMQ_URL`, `EMAIL_QUEUE_NAME`, `MICROSERVICE_API_KEY`, `EMAIL_SENDER`); `EMAIL_SENDER_NAME` **defaults** and never throws; resolution stays **lazy** (importing with nothing set must not throw — FR-3's `BUT`); the thrown message never contains the key or URL (FR-3's `AND IT MUST`); `'ses'`, `'microservice'`, `'no-op'` all accepted in this phase.
       Skills: `nestjs-expert`
 
 - [ ] **T-4** Implement the connection lifecycle  (deps: T-2, T-3)
-      Scope: Module-scope cache; `'error'`/`'close'` listeners setting an owned `healthy` flag; mutex (wide scope, released in `finally`, race constructed **inside** the critical section); `checkQueue` probe under `MAIL_PROBE_TIMEOUT_MS`; confirm channel; publish once with `mandatory` + `'return'` listener; `consumerCount == 0` warn.
+      Scope: The `MicroserviceMailTransport` class **and its `mail-transport.factory.ts` branch** (moved here from T-3 — see that task). Module-scope cache; `'error'`/`'close'` listeners setting an owned `healthy` flag; mutex (wide scope, released in `finally`, race constructed **inside** the critical section); `checkQueue` probe under `MAIL_PROBE_TIMEOUT_MS`; confirm channel; publish once with `mandatory` + `'return'` listener; `consumerCount == 0` warn.
       Traces: FR-1, NFR-1, NFR-2 · `design.md` §4.3, DD-3, DD-4, DD-11
-      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`
+      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, `mail-transport.factory.ts`
       Verify: `cd backend && npm test -- microservice-mail --silent`
       Done when: reuses a healthy pair; **a hanging probe is cut at `MAIL_PROBE_TIMEOUT_MS` and enough budget remains to reconnect and publish**; a probe returning `NOT_FOUND` throws a **configuration error without reconnecting**; the connection is retried **at most once**, and **never after a publish** (FR-1's `AND IT MUST` — exactly once per send call); the mutex is released on every path **including the deadline**; teardown is detached; **the queue is never declared or created** (FR-1's `BUT`).
-      Gate discriminates: (a) remove the probe timeout → the hang test fails; (b) remove the `finally` → the release test fails; (c) make step 5 retry → the exactly-once test fails. Demonstrate all three.
+      **AND — inherited from T-3's review, a Done-when bullet, not a suggestion:** `mail-transport.factory.ts` must become an **exhaustive `switch (kind)` whose `default` throws**, NOT a third ternary arm. The current `kind === 'ses' ? Ses : NoOp` makes the no-op transport the **silent fallback for every unhandled kind** — it is what created the accepted-but-inert window T-3 opened, and appending an arm would regenerate it at Phase B when the union narrows again. This is the spec's own worst-named failure class (**D-J**: *"every request `202`, zero emails, no signal anywhere"*). A guard that is hoped for is not a guard.
+      Gate discriminates: (a) remove the probe timeout → the hang test fails; (b) remove the `finally` → the release test fails; (c) make step 5 retry → the exactly-once test fails; (d) **add a bogus kind to the union without a switch arm → the default throws and a test proves it**. Demonstrate all four.
       Skills: `nestjs-expert`, `aws-serverless`, `error-handling-patterns`
 
 - [ ] **T-5** Close all three credential-leak paths, and gate them  (deps: T-4)
       Scope: Sanitize every escaping error; never let an `amqplib` error or the broker URL reach a logger, an envelope, or a thrown message.
       Traces: NFR-3, D-D · `design.md` §4.4, DD-5
-      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`
-      Verify: `cd backend && npm test -- microservice-mail --silent`
+      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, **`backend/src/mail/mail.config.spec.ts`**
+      ⚠️ **Inherited from T-3's review (advisories A1/A3) — a transfer, not a note.** T-3's no-leak tests are **near-vacuous**: both assert the absence of a value that was *just deleted from the environment*, so an implementation appending `JSON.stringify(process.env)` to the error would **pass them while leaking the live broker URL**. That clause currently passes on the Reviewer's *reading*, not on its test. The discriminating fix is one line — T-3's second block already has `RABBITMQ_URL` **set** while a different variable is missing, so assert `amqps://` absent *there*, against a secret that is actually present. Also enumerate `mail.config.ts`'s `Invalid MAIL_TRANSPORT "${value}"` — the module's one value-interpolating throw (A3), harmless today but an escape path.
+      Verify: `cd backend && npm test -- microservice-mail mail.config --silent`
       Done when: a URL-bearing error injected on **each** of the three paths — sync rejection, an async `'error'`/`'close'` event, and the promise orphaned by the deadline race — escapes with no credential substring in `name`, `message`, or any `Logger` call. **QA-13 is NOT the gate and is not extended** (it provider-overrides `MailService`); this spec is.
       Gate discriminates: run against a non-sanitizing variant (rethrow the raw error) and confirm every assertion reddens. **Required evidence, not optional.**
       Skills: `error-handling-patterns`, `nestjs-expert`

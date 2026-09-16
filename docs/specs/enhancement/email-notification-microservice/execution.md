@@ -87,3 +87,54 @@ Notable audit findings within the gate: invariant 2 uses `toBeLessThan` where a 
 Amended: `design.md` §12.1 ("Covers" and "Enforced by"), DD-10's mechanism sentence, §4.1, §10; `tasks.md` T-7 scope and Done-when.
 
 ---
+
+### T-3 — Extend mail configuration: add `microservice`, retain `ses`
+
+| | |
+|---|---|
+| **Status** | ✅ **PASS** on attempt 1 |
+| Date | 2026-09-16 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-3 · `design.md` §4.5, §7.3 |
+
+**Leader decomposition correction (in flight, before dispatch).** `tasks.md` T-3 listed `mail-transport.factory.ts` in its Files. **Moved to T-4:** the factory branch must construct `MicroserviceMailTransport`, a class T-4 creates — T-3 cannot add a branch for a type that does not exist. Recorded here because it changes two tasks' file lists, not just this one's.
+
+**Leader skill/effort:** no stack skill (config surface, no NestJS construct); effort `medium`.
+
+**Files changed:** `backend/src/mail/mail.config.ts`, `mail.config.spec.ts` (+157 / −9).
+
+**Verification:** `cd backend && npm test -- mail.config --silent` → **14/14 pass**; eslint exit 0; build success. The Reviewer independently reconciled the count against the file (3+3+7+1 `it()` blocks = 14) rather than accepting the figure.
+
+**Mutation evidence**
+
+| Target | Mutation | Result | Reverted |
+|---|---|---|---|
+| Required-variable throw | `rabbitmqUrl` defaults instead of throwing | 1 test red | ✅ |
+| Lazy resolution | a `required()` call moved to module top level | **whole suite failed to load**, before any test body ran | ✅ |
+
+**Reviewer verdict — `STATUS: PASS`**
+
+> All six FR-3 clauses are implemented and owned by discriminating tests; the no-leak guarantee holds by construction (the only value-interpolating throw carries MAIL_TRANSPORT's own value, never a secret); scope is exactly the two authorized files.
+
+The Reviewer noted one detail worth preserving: the test regex `/EMAIL_SENDER\b/` correctly refuses to match `EMAIL_SENDER_NAME`, which is the single place a sloppier pattern would have passed vacuously.
+
+It also **corrected the Implementer's own claim**: the "two independent mechanisms" argued for the lazy-resolution proof are in fact *sequential and masking* — the static import at the spec's top kills the file before the dedicated test can run, so mechanism 1's firing was inferred, not observed. Verdict unchanged; the property is genuinely driven.
+
+**The routing hazard — Leader-raised, Reviewer-ruled**
+
+The Leader found that widening `MailTransportKind` while leaving the factory untouched creates a window where `MAIL_TRANSPORT=microservice` is *accepted by config and silently routed to the no-op transport* — success reported, nothing sent.
+
+**Ruling: acceptable intermediate state; no guard belongs in T-3.** The window is type-level only and unreachable by any configuration in the tree — `infra/20-backend/template.yaml` still pins `MAIL_TRANSPORT: ses`, `.env.example` pins `no-op`, and no test calls `getMailTransport()` with the new kind. Dependency order closes it before it opens: **T-4 owns the factory and is strictly prior to T-8**, which is the first task that makes `microservice` selectable in a deployed environment. Adding a guard here would have meant editing the one file deliberately removed from this task while T-2/T-4 work is in flight in the same directory — trading an unreachable hazard for a real collision.
+
+**ADVISORY findings**
+
+| ID | Finding | Leader disposition |
+|---|---|---|
+| **A1** | ⚠️ **The no-leak test is near-vacuous.** Both assertions check for the absence of a value *just deleted from the environment*. An implementation appending `JSON.stringify(process.env)` to the error would **pass this test while leaking the live broker URL**. The Reviewer passed the clause on **reading** — a static property of a 12-line function with one interpolation site — and said so explicitly rather than letting the test stand as the evidence | **Transferred to T-5**, which owns the same property at transport level and whose brief already demands a non-sanitizing variant. `mail.config.spec.ts` added to its Files. The discriminating fix is one line: the second block already has `RABBITMQ_URL` **set**, so asserting `amqps://` absent there tests a secret that is actually present |
+| **A2** | The lazy test can never be observed failing on its own — the static import kills the file first. Cosmetic today; matters the moment someone cites it as discrimination evidence | Recorded. Folded into A1's transfer |
+| **A3** | `mail.config.ts`'s `Invalid MAIL_TRANSPORT "${value}"` is the module's one value-interpolating throw. Harmless (it can only carry `MAIL_TRANSPORT`'s own value) and pre-existing, but it is an escape path | **Transferred to T-5** as a known site to enumerate |
+| **A4** | `required()`'s widened advice points a caller missing `MAIL_SENDER_ADDRESS` at `MAIL_TRANSPORT` first | Nit. Recorded, not actioned |
+
+**Guard transferred to T-4 — stronger than "add the branch."** The Reviewer's recommendation, adopted: T-4 must **replace the ternary with an exhaustive `switch` whose `default` throws**, not append a third arm. The current `=== 'ses' ? Ses : NoOp` makes the no-op transport the silent fallback for *every* unhandled kind — it is the generator of this hazard and would regenerate it at Phase B when the union narrows again. This is the spec's own worst-named failure class (D-J: *"every request `202`, zero emails, no signal anywhere"*). It is now a **Done-when bullet**, not a Scope mention, because a guard that is hoped for is not a guard.
+
+---
