@@ -344,3 +344,103 @@ The Reviewer also confirmed the mechanism end to end against vendored source: `S
 **Final status: ✅ PASS on attempt 2.**
 
 ---
+
+### T-4 — Implement the connection lifecycle
+
+| | |
+|---|---|
+| **Status** | 🔄 **IN PROGRESS** — attempt 1 FAILED review, attempt 2 dispatched |
+| Date | 2026-09-16 |
+| Requirements covered | FR-1, NFR-1, NFR-2 · `design.md` §4.3, DD-3, DD-4, DD-5, DD-11 |
+
+**Leader skill/effort:** `aws-serverless` + `error-handling-patterns`; **`nestjs-expert` deliberately dropped** (a plain class implementing a one-method interface — no DI, no module registration, no provider). Effort `xhigh`.
+
+**Leader-assigned ownership fix, before dispatch:** `design.md` §4.1 lists `backend/package.json` (`+amqplib`) under Phase A, but **no task's Files carried it** — nobody owned the dependency the whole transport needs. Assigned to T-4.
+
+Files: `microservice-mail.transport.ts` (+604, the class **appended alongside** T-2's untouched builder), `…spec.ts` (+589, 34 tests behind a hand-rolled `amqplib` mock), `mail-transport.factory.ts` (+52/−7), `package.json`.
+
+#### The three inherited constraints — all satisfied, two more strongly than asked
+
+1. **Exhaustive switch:** `default: { const exhaustiveCheck: never = kind; throw … }` — compile-time *and* runtime guard. Assignment is per-`case`, so nothing is cached behind the throw.
+2. **Config separation:** rather than merely destructuring at the call site, the Implementer declared **two disjoint types** — `MicroserviceMailBrokerConfig` (carries `rabbitmqUrl`) and `MicroserviceEnvelopeConfig` — so no object in `send()` holds both the credential and reaches the builder.
+3. **The probe's two roles:** `probeConnection` returns `'alive' | 'stale' | 'not-found'`; timeout → invalidate + reconnect; `404` → configuration error, thrown immediately, no reconnect.
+
+Mutation (b) is the most instructive: removing the mutex's `finally` reddened **five** tests — the release test plus every later test hanging behind the leaked lock, reproducing exactly the container-lifetime failure the brief warned about.
+
+#### ⚠️ Mock fidelity — the dimension the Leader prioritised, answered against the library itself
+
+The 34 tests run on a mock the Implementer wrote, which can make its own tests pass against behaviour the real library lacks. **The Reviewer checked each behaviour against the installed `amqplib@2.0.1` source** rather than against docblocks: the `404` rejection shape (`convertCloseFrameToError` sets `error.code` from the reply code — so `err.code === 404` **is** the correct discriminator), the confirm-channel callback contract, and the `'error'`/`'close'` emission path (including that `safe_emit` **rethrows** when unlistened, which confirms DD-5's premise).
+
+**Verdict: no test's green depends on behaviour `amqplib` does not have.** One genuine infidelity found — a failed passive declare closes the channel in reality and the mock's does not — and the Reviewer *traced both 404 tests under a faithful mock* to confirm the call counts are unchanged. **The infidelity hides a docblock claim, not a gate** (advisory A-1).
+
+#### Reviewer `STATUS: FAIL`
+
+**Issue 1 — the deadline path does not invalidate the cached connection, and the test compensates for it instead of the code fixing it.**
+
+`§4.3` step 5 requires invalidation on *"deadline, nack, or return"*. Two of the three invalidate; **the deadline does not** — `send()`'s catch sanitizes and rethrows, while only `publishOnce`'s catch clears the cache. A send that times out with the publish still pending leaves the pair cached and `healthy === true`.
+
+**The tell is in the Implementer's own test.** The mutex-release test hand-emits `model.emit('close')` with the comment *"it is still cached and reported healthy — reusing it would just hang again"*. The behaviour was **observed, and worked around in the test**, rather than implemented. That compensation is currently doing the job the gate should do.
+
+Three consequences the Reviewer traced, all in the post-deadline window where the lock is released but `sendLocked` still runs: (a) a wedged pair survives until the next send pays the full probe timeout — **this is D-F's own shape**; (b) `confirmPublish`'s `'return'` listener is removed only inside the ack callback, so on a hung publish it is never removed and a later send's `'return'` can be **attributed to the wrong publish** — the exact mis-attribution DD-11's wide mutex scope exists to prevent — while listeners accumulate on a long-lived channel; (c) `acquireConnection` assigns `cached` unconditionally, so an orphaned `sendLocked` can overwrite a pair a concurrent send just established, leaking it.
+
+**Issue 2 — "detaches cleanup" has no test.** The mock's `close` resolves in the same tick on every path, so an implementation that `await`ed it *inside* the deadline — consuming the caller's budget, precisely what NFR-1's last sentence forbids — **would leave all 34 tests green**. The property is implemented correctly (verified by reading); nothing would change colour if it regressed.
+
+#### ADVISORY
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **A-1** | The 404 docblock is **false against the real library**: it says the connection "is fine", but a 404 passive declare closes the **channel**. The system still behaves correctly — the `'close'` listener sets `healthy = false` — but the stated reason is not the operating one | → attempt 2. False claims are this spec's recurring defect class |
+| **A-2** | One vacuous assertion: `expect(channel.assertQueue).toBeUndefined()` asserts a property of the **mock**, not the transport. (The real gate for FR-1's `BUT` is the mock's minimal surface — a topology call would `TypeError` — which is a good gate, just not the one the line claims) | → attempt 2 |
+| **A-3** | Heartbeat placement: **local is defensible and should not move** — §12.1 is the floor budget and §12.2 its sub-budgets; the heartbeat is neither, and T-1's scope forbade adding values to `mail-timing.ts`. **The residual is a design-document gap**: §12 should gain a "connection-level tunables" row. *Also:* the heartbeat **mechanism is ungated** — `connect` reads it only from the URL query, so a refactor to `connect(url, { heartbeat })` would silently disable it | §12 row: **Leader, applied now.** URL assertion → attempt 2 |
+| **A-5** | After a stale probe a send can call `amqp.connect` twice (initial + retry) against NFR-2's *"at most once per send"*. One-retry-per-send is the reasonable reading and what the tests gate; the deadline bounds the cost either way | Recorded so the phrasing is not later read as an unnoticed breach |
+| **A-6** | NFR-2's literal measure — *"one reconnect **and then exactly one publish**"* — is half-gated: the hanging-probe test asserts the reconnect but never the publish counts | → attempt 2 |
+| **A-4** | `@types/amqplib@^0.10.8` is dead weight: `amqplib@2.0.1` ships its own `index.d.ts`, which wins resolution. A 0.10-era types package beside a 2.x runtime is a future footgun | → **T-10 housekeeping** |
+| **A-7** | No T-4 test emits `'error'`; that leak path is established by reading only — correct sequencing, since **T-5 owns that gate** | Recorded |
+
+---
+
+#### T-4 attempt 2 — Reviewer `STATUS: PASS`
+
+> Both attempt-1 issues are genuinely closed **in the code rather than in the fixture** — the deadline-path invalidation runs under the held mutex and only on `MicroserviceMailTimeoutError`, the shared-teardown `'return'` sweep covers the hung-publish gap without breaking `amqplib` internals, and the new detached-cleanup test reddens structurally under an awaited teardown.
+
+**The compensating fixture nudge is gone and the assertion became the gate.** The Reviewer traced mutation (a) against the source and confirmed the precise failure it produces: with the invalidation removed, `cached` survives healthy, the second send's probe passes, the publish hangs, and the test advances only 190 ms against a 1200 ms deadline — reddening with exactly the reported text.
+
+**Two library facts the Reviewer checked rather than assumed**, both about the new blunt listener sweep: `amqplib` registers **no** internal `'return'` listener (it only emits), so `removeAllListeners('return')` cannot break library internals; and `safeEmit` rethrows only when a *listener* throws, never on zero listeners, so a late `BasicReturn` on a stripped channel is dropped silently rather than escaping.
+
+**The Implementer refused a Leader instruction, correctly.** I told it to assert a connection had **zero** publishes. It refused: that connection legitimately had **one**, from the first send — asserting zero would have been a green test affirming something false. It captured the baseline and asserted it stays unchanged. The Reviewer verified this rather than accepting it, and found the captured-baseline form is **strictly stronger** than a hardcoded `1`, because the baseline is itself pinned — so the "unchanged" assertion cannot go vacuous by the baseline drifting. *The instruction was mine and it was wrong; check-don't-transcribe caught it.*
+
+#### Accepted residual — recorded as the Reviewer directed
+
+The Implementer **declared** that consequence (c) was not fixed rather than narrowing silently. The Reviewer ruled it **acceptable to close**, and narrowed it further than the Implementer had:
+
+**The window.** `acquireConnection`'s stale-branch teardown is **unreachable** post-fix — it sits after a probe bounded by `MAIL_PROBE_TIMEOUT_MS`, and §12.3 invariant 2 guarantees the overall deadline cannot fire first. The single surviving window is: **the deadline fires while `connectWithRetry` is in flight** (the one unbounded sub-step), `cached` is `undefined` so nothing is invalidated, and the orphan's terminal assign overwrites a pair a concurrent send established meanwhile.
+
+**Reachability** needs two overlapping sends in one container. `ReservedConcurrentExecutions: 5` does not prevent it — it bounds containers, not intra-container interleaving at `await` points. The realistic route is the one the design already names as **D-I**: the fire-and-forget `receipt` times out during a slow connect, the request returns `202`, the container freezes with the orphan pending, and the orphan resumes on thaw beside a new awaited send.
+
+**Worst outcome, ordered:** (1) **one leaked connection** — an orphaned socket plus heartbeat timer, alive for the container's lifetime; (2) a **mis-attributed `'return'`**, second-order, costing one spurious undeliverable error (a `502` on contact, a failed OTP request); (3) **not** a wedged send — DD-11's probe reclassifies any wrong `cached` within 250 ms, which is the structural reason this cannot compound; (4) **not** a duplicate email — one `publish` per `send()`, no retry loop; (5) **not** a credential leak — the orphan's rejection is `.catch()`-guarded and every escape is sanitized.
+
+**Ownership of a follow-up — explicitly *not* T-5.** The Reviewer warned that T-5's "promise orphaned by the deadline race" clause is **credential-scoped** (§4.4); treating it as the owner would quietly convert a cache-integrity residual into a leak-path one. **T-9 is the only place this is observable**: a broker connection-count reading across the cold → idle → warm sequence, where a monotonically growing count is this residual's signature.
+
+⚠️ **B-5 — recorded in `design.md` §12.3, because it changes what a future retune means.** Invariant 2 is load-bearing for a **second, previously unwritten reason**: it is what keeps the orphan's teardown branch unreachable. If anyone retunes §12 so `LOCK_WAIT + PROBE ≥ SEND`, this residual **grows from a leak into "an orphan can tear down a live connection out from under a concurrent send."** Any T-9 re-derivation must re-check the residual, not only the latency budget.
+
+**Other advisories:** **B-1** (no test asserts teardown *happens* — deleting `void model.close()` outright leaves all 36 green) → **transferred to T-5**, same file, one line, with an explicit note not to absorb the cache-integrity residual with it. **B-3** (`withHeartbeat` re-serializes the whole query string; not byte-preserving if an operator supplies a URL already carrying query params) → **transferred to T-8**. **B-2** (the Issue-2 gate fails by hanging to Jest's timeout — correct but opaque; *do not "fix" it later by adding timer advancement, which would silently un-gate it*) → recorded.
+
+**Final status: ✅ PASS on attempt 2.**
+
+---
+
+## Constitution Impact: T-4 — a dependency ships agent instructions
+
+The Reviewer flagged (**B-4**) that `backend/node_modules/amqplib/CLAUDE.md` exists and is auto-loaded into an agent's context as project instructions. **Leader-verified, and broader than reported — three files across two packages:**
+
+```
+backend/node_modules/amqplib/CLAUDE.md
+backend/node_modules/ts-loader/CLAUDE.md
+backend/node_modules/ts-loader/AGENTS.md
+```
+
+`ts-loader`'s predate this spec; `amqplib`'s arrived with **T-4's dependency**. Content is benign — the packages' own contributor guidelines (generated-file warnings, commit hygiene). **The mechanism is the finding, not the content:** a third-party package can ship text that a harness ingests as project instruction, and `npm install` is how it arrives.
+
+Not actioned here: root `CLAUDE.md` is a constitutional baseline, and editing it outside a task with no Reviewer would bypass the very dispatch rule that governs it. It is **not** actively misleading today, so it defers to `/akili-archive`'s constitution sync rather than being smuggled into this commit. Recommended there: a `node_modules/**` ignore, or a one-line note under the Concurrency protocol. **Raised to the product owner.**
+
+---

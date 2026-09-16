@@ -458,10 +458,22 @@ This rule exists because of measured failure, not tidiness. Judgment rounds 2 an
 | `MAIL_PROBE_TIMEOUT_MS` | **250** | A half-open socket does not throw — it hangs. Without its own bound the probe consumes the whole budget on the exact failure it exists to detect (DD-11) |
 | *(remainder ≈ 750)* | — | Reconnect (TCP + TLS + AMQP) + `checkQueue` + publish + confirm |
 
+### 12.2b Connection-level tunables — outside the send budget
+
+| Constant | Value | Why it is not in §12.1/§12.2 |
+|---|---|---|
+| `MICROSERVICE_MAIL_HEARTBEAT_SECONDS` | **30** | It governs the **connection's** liveness, not a term inside `MAIL_SEND_TIMEOUT_MS`, so it enters neither invariant. It lives beside the transport that uses it rather than in `mail-timing.ts`, whose four exports are exactly §12.1/§12.2's budget terms |
+
+*Added during T-4's review. §12's "every timing value lives here" was written for the floor budget; a connection tunable had no row, which left its placement arguable in both directions. This row settles it — the rule is now "every value in the send budget", and tunables outside it are named here with their reason.*
+
+⚠️ **The heartbeat is ungated by mechanism:** `amqplib` reads it **only from the URL query string**, so a refactor to `connect(url, { heartbeat })` would silently disable it with every test still green. A test must assert the URL handed to `connect` carries it.
+
 ### 12.3 The invariants, stated once
 
 1. `PRESEND_ALLOWANCE + SEND_TIMEOUT ≤ FLOOR` — **800 + 1200 = 2000** ✓
 2. `LOCK_WAIT + PROBE < SEND_TIMEOUT` — **200 + 250 = 450 < 1200** ✓, leaving a real reconnect budget
+
+⚠️ **Invariant 2 is load-bearing for a second reason, recorded during T-4's review.** It is not only a latency budget: it is what keeps the orphaned-send residual narrow. Because the probe is bounded and `LOCK_WAIT + PROBE < SEND`, the overall deadline **cannot** fire before `acquireConnection`'s stale-branch teardown has already run — so the only window in which an orphaned continuation can overwrite `cached` is a deadline during `connectWithRetry`, whose worst outcome is one leaked connection. **If anyone ever retunes §12 so `LOCK_WAIT + PROBE ≥ SEND`, that residual grows from a leak into "an orphan can tear down a live connection out from under a concurrent send."** Any T-9 re-derivation of these values must re-check the residual, not only the latency budget.
 
 Both are asserted by one unit test over the constants. Falsifying input: raise any term past its container — the test reddens.
 

@@ -1,15 +1,42 @@
 // @sdd-spec enhancement/email-notification-microservice (T-2)
+// @sdd-spec enhancement/email-notification-microservice (T-4)
 /**
- * `buildMicroserviceEnvelope` unit tests (design.md §4.2; FR-2, FR-4, DD-8).
+ * `buildMicroserviceEnvelope` unit tests (design.md §4.2; FR-2, FR-4, DD-8) —
+ * pure-function coverage only, no AMQP, no network, no mocked SDK.
  *
- * Pure-function coverage only — no AMQP, no network, no mocked SDK. T-4 adds
- * a separate spec for the connection/publish lifecycle.
+ * T-4 (below, same file so the `microservice-mail` test-path filter covers
+ * both) adds the connection/publish lifecycle: `MicroserviceMailTransport`
+ * against a hand-rolled `amqplib` mock (design.md §4.3, §4.4, DD-3, DD-4,
+ * DD-5, DD-11), plus `mail-transport.factory.ts`'s exhaustive-switch guard
+ * (the inherited constraint from T-3's review).
  */
+import { EventEmitter } from 'events';
+import * as amqp from 'amqplib';
+import { Logger } from '@nestjs/common';
+import * as mailConfigModule from './mail.config';
+import { MailTransportKind } from './mail.config';
+import { getMailTransport, resetMailTransport } from './mail-transport.factory';
+import { SesMailTransport, resetSesClient } from './ses-mail.transport';
+import { NoOpMailTransport } from './no-op-mail.transport';
+import {
+  MAIL_LOCK_WAIT_TIMEOUT_MS,
+  MAIL_PROBE_TIMEOUT_MS,
+  MAIL_SEND_TIMEOUT_MS,
+} from './mail-timing';
 import {
   buildMicroserviceEnvelope,
   MicroserviceEnvelopeConfig,
+  MicroserviceMailConnectionError,
+  MicroserviceMailLockTimeoutError,
+  MicroserviceMailPublishError,
+  MicroserviceMailQueueNotFoundError,
+  MicroserviceMailTimeoutError,
+  MicroserviceMailTransport,
+  resetMicroserviceMailTransportState,
 } from './microservice-mail.transport';
 import { MailMessage } from './mail-transport.interface';
+
+jest.mock('amqplib');
 
 const config: MicroserviceEnvelopeConfig = {
   apiKey: 'test-api-key',
@@ -212,5 +239,663 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
     };
 
     expect(buildMicroserviceEnvelope(message, config).pattern).toBe('send');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// T-4 — connection lifecycle. A hand-rolled `amqplib` mock, not
+// `aws-sdk-client-mock` (this isn't an AWS SDK): each `amqp.connect()` call
+// is scripted individually via `connectQueue`, so a test can make the
+// FIRST physical connection behave differently from a later reconnect —
+// exactly what the probe-timeout/reconnect and retry-once tests need.
+// ─────────────────────────────────────────────────────────────────────────
+
+type CheckQueueBehavior =
+  | { kind: 'ok'; consumerCount?: number }
+  | { kind: 'not-found' }
+  | { kind: 'hang' };
+
+type PublishBehavior =
+  | { kind: 'ack' }
+  | { kind: 'nack' }
+  | { kind: 'return' }
+  | { kind: 'hang' }
+  | { kind: 'nack-after'; delayMs: number };
+
+interface ChannelScript {
+  /** `callIndex` is 0-based, per THIS physical connection — call 0 is
+   * always `connectFresh`'s own `checkQueue`; call 1+ is a later probe. */
+  checkQueue: (callIndex: number) => CheckQueueBehavior;
+  publish: (callIndex: number) => PublishBehavior;
+  /** Optional override for both `channel.close` and `model.close` —
+   * defaults to an immediately-resolving mock. Issue 2 (T-4 rework): a
+   * `close` that never resolves is how the "detaches cleanup" gate proves
+   * teardown is genuinely detached rather than merely `.catch()`-guarded —
+   * see the test below. */
+  close?: () => Promise<void>;
+}
+
+function okScript(): ChannelScript {
+  return { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'ack' }) };
+}
+
+/** Mirrors the `code: 404` property the real `amqplib` sets on a
+ * `checkQueue` rejection for a queue that does not exist
+ * (`lib/channel.js`'s `convertCloseFrameToError`) — including, like the
+ * real library, the connection string inside `message`, so a test can
+ * prove the transport never lets that substring escape. */
+function makeNotFoundError(): Error & { code: number } {
+  const err = new Error(
+    'Operation failed: QueueDeclare; 404 (NOT-FOUND) with message "NOT_FOUND - no queue ' +
+      '\'accelerate-tz-email\' in vhost \'/\' amqps://user:pass@broker.example.org:5671"',
+  ) as Error & { code: number };
+  err.code = 404;
+  return err;
+}
+
+interface FakeChannel extends EventEmitter {
+  checkQueue: jest.Mock;
+  publish: jest.Mock;
+  close: jest.Mock;
+}
+
+interface FakeChannelModel extends EventEmitter {
+  createConfirmChannel: jest.Mock;
+  close: jest.Mock;
+}
+
+function createFakeChannel(script: ChannelScript): FakeChannel {
+  let checkQueueCalls = 0;
+  let publishCalls = 0;
+  const emitter = new EventEmitter() as FakeChannel;
+
+  emitter.checkQueue = jest.fn((queueName: string) => {
+    const behavior = script.checkQueue(checkQueueCalls++);
+    if (behavior.kind === 'ok') {
+      return Promise.resolve({
+        queue: queueName,
+        messageCount: 0,
+        consumerCount: behavior.consumerCount ?? 1,
+      });
+    }
+    if (behavior.kind === 'not-found') {
+      return Promise.reject(makeNotFoundError());
+    }
+    // 'hang' — the half-open-socket case DD-11 exists for: never resolves.
+    return new Promise(() => {});
+  });
+
+  emitter.publish = jest.fn(
+    (
+      _exchange: string,
+      _routingKey: string,
+      _content: Buffer,
+      _options: amqp.Options.Publish | undefined,
+      callback?: (err: unknown, ok: unknown) => void,
+    ) => {
+      const behavior = script.publish(publishCalls++);
+      switch (behavior.kind) {
+        case 'ack':
+          callback?.(null, {});
+          break;
+        case 'nack':
+          callback?.(new Error('NACK'), undefined);
+          break;
+        case 'return':
+          // RabbitMQ delivers 'return' before/alongside the ack for an
+          // unroutable mandatory message — the broker still acks it in
+          // confirm mode (an ack means "the broker took responsibility",
+          // not "it was routed").
+          emitter.emit('return', {});
+          callback?.(null, {});
+          break;
+        case 'nack-after':
+          setTimeout(() => callback?.(new Error('late NACK'), undefined), behavior.delayMs);
+          break;
+        case 'hang':
+          // Never invokes the callback.
+          break;
+      }
+      return true;
+    },
+  );
+
+  emitter.close = jest.fn(script.close ?? (() => Promise.resolve()));
+  return emitter;
+}
+
+function createFakeChannelModel(channel: FakeChannel, script: ChannelScript): FakeChannelModel {
+  const model = new EventEmitter() as FakeChannelModel;
+  model.createConfirmChannel = jest.fn(() => Promise.resolve(channel));
+  model.close = jest.fn(script.close ?? (() => Promise.resolve()));
+  return model;
+}
+
+type ConnectOutcome = { type: 'reject'; error: Error } | { type: 'ok'; script: ChannelScript };
+
+function buildMessage(): MailMessage {
+  return { to: 'applicant@example.org', subject: 'Subject', text: 'Body' };
+}
+
+/** Captures the rejection reason of a promise expected to reject, typed as
+ * `Error` rather than `unknown | void` — `Promise<void>.catch()` cannot be
+ * used for this directly since its resolved branch is `void`. */
+async function captureRejection(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise;
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error('expected the promise to reject, but it resolved');
+}
+
+describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, §4.4, DD-3, DD-4, DD-5, DD-11)', () => {
+  const ORIGINAL_ENV = { ...process.env };
+  let connectMock: jest.MockedFunction<typeof amqp.connect>;
+  let connectQueue: ConnectOutcome[];
+  let connections: Array<{ model: FakeChannelModel; channel: FakeChannel }>;
+  let transport: MicroserviceMailTransport;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    process.env = { ...ORIGINAL_ENV };
+    process.env.RABBITMQ_URL = 'amqps://user:pass@broker.example.org:5671';
+    process.env.EMAIL_QUEUE_NAME = 'accelerate-tz-email';
+    process.env.MICROSERVICE_API_KEY = 'clarisa-key-123';
+    process.env.EMAIL_SENDER = 'registry@example.org';
+    resetMicroserviceMailTransportState();
+
+    connections = [];
+    connectQueue = [];
+    connectMock = amqp.connect as jest.MockedFunction<typeof amqp.connect>;
+    connectMock.mockReset();
+    connectMock.mockImplementation(() => {
+      const outcome = connectQueue.shift() ?? { type: 'ok' as const, script: okScript() };
+      if (outcome.type === 'reject') {
+        return Promise.reject(outcome.error);
+      }
+      const channel = createFakeChannel(outcome.script);
+      const model = createFakeChannelModel(channel, outcome.script);
+      connections.push({ model, channel });
+      return Promise.resolve(model as unknown as amqp.ChannelModel);
+    });
+
+    transport = new MicroserviceMailTransport();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    process.env = { ...ORIGINAL_ENV };
+    resetMicroserviceMailTransportState();
+  });
+
+  it('publishes on the default exchange, using the queue name as the routing key, persistent and mandatory (FR-1)', async () => {
+    connectQueue = [{ type: 'ok', script: okScript() }];
+
+    await transport.send(buildMessage());
+
+    expect(connections[0].channel.publish).toHaveBeenCalledTimes(1);
+    const [exchange, routingKey, , options] = connections[0].channel.publish.mock.calls[0];
+    expect(exchange).toBe('');
+    expect(routingKey).toBe('accelerate-tz-email');
+    expect(options).toMatchObject({ persistent: true, mandatory: true });
+  });
+
+  it('never declares, creates, or modifies the queue — only checkQueue is used (FR-1 BUT, DD-3)', async () => {
+    connectQueue = [{ type: 'ok', script: okScript() }];
+
+    // A-2 (T-4 rework): the previous version of this test asserted
+    // `expect(channel.assertQueue).toBeUndefined()`, which is a fact about
+    // `FakeChannel` — it never defines that method, regardless of what the
+    // transport calls — not a fact about the transport under test. The
+    // real guarantee comes from `FakeChannel`'s deliberately minimal
+    // surface (`checkQueue`/`publish`/`close` only, matching every real
+    // `ConfirmChannel` call this file makes): a hypothetical
+    // `channel.assertQueue(...)` call in the transport would hit
+    // `undefined(...)`, throw a `TypeError`, and reject this very `send()`.
+    // It is the `resolves` assertion below that proves the transport never
+    // calls it — not a property read off the mock.
+    await expect(transport.send(buildMessage())).resolves.toBeUndefined();
+
+    expect(connections[0].channel.checkQueue).toHaveBeenCalledWith('accelerate-tz-email');
+  });
+
+  it('reuses a healthy cached connection — a second send does not reconnect (NFR-2)', async () => {
+    connectQueue = [{ type: 'ok', script: okScript() }];
+
+    await transport.send(buildMessage());
+    await transport.send(buildMessage());
+
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    // The second send still probes the cached channel (DD-11): one
+    // checkQueue at connect-time, one more as the probe.
+    expect(connections[0].channel.checkQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it(
+    'cuts a hanging probe at MAIL_PROBE_TIMEOUT_MS, reconnects once, and still publishes within the ' +
+      'overall deadline — mutation (a): removing the probe sub-deadline reddens this',
+    async () => {
+      connectQueue = [
+        {
+          type: 'ok',
+          script: {
+            // Call 0 is connectFresh's own verify — must succeed so the
+            // first send establishes a cached pair at all. Call 1+ is the
+            // probe on the SECOND send — simulates a half-open socket.
+            checkQueue: (i) => (i === 0 ? { kind: 'ok' } : { kind: 'hang' }),
+            publish: () => ({ kind: 'ack' }),
+          },
+        },
+        { type: 'ok', script: okScript() }, // the reconnect
+      ];
+
+      await transport.send(buildMessage());
+      expect(connectMock).toHaveBeenCalledTimes(1);
+      // Baseline after the FIRST send's own, successful publish — A-6
+      // measures the SECOND send's publish counts against this, not
+      // against zero, since `connections[0].channel.publish` already has
+      // one legitimate call from message #1.
+      const staleConnectionPublishCallsBeforeSecondSend =
+        connections[0].channel.publish.mock.calls.length;
+      expect(staleConnectionPublishCallsBeforeSecondSend).toBe(1);
+
+      const second = transport.send(buildMessage());
+      const settled = jest.fn();
+      second.then(settled, settled);
+
+      // Still short of the probe's own sub-deadline: must not have given
+      // up yet (proves the probe's bound is what fires, not something
+      // shorter).
+      await jest.advanceTimersByTimeAsync(MAIL_PROBE_TIMEOUT_MS - 10);
+      expect(settled).not.toHaveBeenCalled();
+
+      // Past the probe's sub-deadline, but nowhere near the overall send
+      // deadline: the transport must already have reconnected and
+      // published, not still be waiting on the hung probe.
+      await jest.advanceTimersByTimeAsync(20);
+      expect(connectMock).toHaveBeenCalledTimes(2);
+      await expect(second).resolves.toBeUndefined();
+      expect(settled).toHaveBeenCalled();
+
+      // A-6 (T-4 rework): NFR-2's measure is "one reconnect and then
+      // EXACTLY one publish" — the reconnect alone was asserted above, but
+      // nothing previously pinned the publish counts. The stale connection
+      // must not have been published on again (the probe failed before
+      // `sendLocked` ever reached step 3 on it); the fresh one must have
+      // published exactly once.
+      expect(connections[0].channel.publish).toHaveBeenCalledTimes(
+        staleConnectionPublishCallsBeforeSecondSend,
+      );
+      expect(connections[1].channel.publish).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('a probe returning NOT_FOUND throws a configuration error immediately, without reconnecting (DD-11)', async () => {
+    connectQueue = [
+      {
+        type: 'ok',
+        script: {
+          checkQueue: (i) => (i === 0 ? { kind: 'ok' } : { kind: 'not-found' }),
+          publish: () => ({ kind: 'ack' }),
+        },
+      },
+    ];
+
+    await transport.send(buildMessage());
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(
+      MicroserviceMailQueueNotFoundError,
+    );
+    // Never reconnected for a NOT_FOUND — it is a configuration error, not
+    // a stale connection (DD-11's central distinction).
+    expect(connectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fresh connect returning NOT_FOUND throws a configuration error without retrying (DD-3, DD-11)', async () => {
+    connectQueue = [
+      {
+        type: 'ok',
+        script: { checkQueue: () => ({ kind: 'not-found' }), publish: () => ({ kind: 'ack' }) },
+      },
+    ];
+
+    await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(
+      MicroserviceMailQueueNotFoundError,
+    );
+    expect(connectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the connection at most once after a non-configuration connect failure, then succeeds (DD-4)', async () => {
+    connectQueue = [
+      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://user:pass@broker') },
+      { type: 'ok', script: okScript() },
+    ];
+
+    await expect(transport.send(buildMessage())).resolves.toBeUndefined();
+    expect(connectMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after exactly one retry — a second connect failure is not retried again (DD-4 "at most once")', async () => {
+    connectQueue = [
+      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://user:pass@broker') },
+      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://user:pass@broker') },
+    ];
+
+    await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(
+      MicroserviceMailConnectionError,
+    );
+    expect(connectMock).toHaveBeenCalledTimes(2);
+  });
+
+  it(
+    'never republishes after a publish-phase (nack) failure — exactly one publish call — ' +
+      'mutation (c): making step 5 retry reddens this',
+    async () => {
+      connectQueue = [
+        { type: 'ok', script: { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'nack' }) } },
+      ];
+
+      await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(
+        MicroserviceMailPublishError,
+      );
+      expect(connections[0].channel.publish).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('a returned (unroutable) mandatory message fails the send, even though the broker still acks it (DD-3)', async () => {
+    connectQueue = [
+      { type: 'ok', script: { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'return' }) } },
+    ];
+
+    await expect(transport.send(buildMessage())).rejects.toThrow(/unroutable/);
+    expect(connections[0].channel.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('a step-3 (publish-phase) failure invalidates the connection — the NEXT send reconnects (§4.3 step 5)', async () => {
+    connectQueue = [
+      { type: 'ok', script: { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'nack' }) } },
+      { type: 'ok', script: okScript() },
+    ];
+
+    await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(MicroserviceMailPublishError);
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    await expect(transport.send(buildMessage())).resolves.toBeUndefined();
+    expect(connectMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs consumerCount === 0 as a warning — a signal, never a failure (D-J′)', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      connectQueue = [
+        {
+          type: 'ok',
+          script: {
+            checkQueue: () => ({ kind: 'ok', consumerCount: 0 }),
+            publish: () => ({ kind: 'ack' }),
+          },
+        },
+      ];
+
+      await expect(transport.send(buildMessage())).resolves.toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalled();
+      const sawConsumerWarning = warnSpy.mock.calls.some((args) => /consumer/i.test(String(args[0])));
+      expect(sawConsumerWarning).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it(
+    'releases the mutex when the send deadline fires, so a subsequent send is not stuck behind it, ' +
+      'and invalidates the wedged pair so the next send reconnects instead of reusing it — ' +
+      "mutation (b): removing the `finally` reddens the mutex half; mutation: removing send()'s " +
+      "deadline invalidation (`if (err instanceof MicroserviceMailTimeoutError && cached) { … }`) " +
+      'reddens the reconnect half',
+    async () => {
+      connectQueue = [
+        { type: 'ok', script: { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'hang' }) } },
+        { type: 'ok', script: okScript() },
+      ];
+
+      const first = transport.send(buildMessage());
+      // Attach the rejection handler BEFORE advancing timers — a promise
+      // that rejects with no handler attached yet, even briefly, can trip
+      // Node's unhandled-rejection detection under fake timers and get
+      // misattributed to a later assertion in this same test.
+      const firstOutcome = expect(first).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+      await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+      await firstOutcome;
+
+      // T-4 rework (reviewer issue 1): this test used to hand-emit
+      // `connections[0].model.emit('close')` here, with a comment
+      // explaining that without it the pair "is still cached and reported
+      // healthy — reusing it would just hang again". That was the
+      // Implementer's own observation of a real defect, worked around in
+      // the fixture instead of fixed in the transport. `send()`'s catch
+      // now invalidates `cached` itself on a `MicroserviceMailTimeoutError`
+      // (design.md §4.3 step 5), so NO manual event is emitted here — the
+      // second send below reconnects on its own, and `connectQueue`'s
+      // second entry (queued at the top of this test) is what it consumes.
+      const second = transport.send(buildMessage());
+      const settled = jest.fn();
+      second.then(settled, settled);
+
+      // Advance well short of MAIL_LOCK_WAIT_TIMEOUT_MS — if the lock was
+      // properly released AND the wedged pair was invalidated, `second`
+      // needs no timer budget to complete: it goes straight to a fresh
+      // `connectWithRetry`, which this mock resolves on the same tick.
+      await jest.advanceTimersByTimeAsync(MAIL_LOCK_WAIT_TIMEOUT_MS - 10);
+      expect(settled).toHaveBeenCalled();
+      await expect(second).resolves.toBeUndefined();
+      // The gate itself (was the compensation above): the second send
+      // reconnected rather than reusing connections[0] — proof `cached`
+      // was actually cleared, not merely that the mutex was released.
+      expect(connectMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('a send that cannot acquire the lock in time fails without ever touching the broker (DD-11)', async () => {
+    connectQueue = [
+      { type: 'ok', script: { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'hang' }) } },
+    ];
+
+    const first = transport.send(buildMessage());
+    const firstOutcome = expect(first).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+    await jest.advanceTimersByTimeAsync(0); // let the first send acquire the lock and start
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    const second = transport.send(buildMessage());
+    const secondOutcome = expect(second).rejects.toBeInstanceOf(MicroserviceMailLockTimeoutError);
+    await jest.advanceTimersByTimeAsync(MAIL_LOCK_WAIT_TIMEOUT_MS);
+    await secondOutcome;
+    // The second send never touched the broker at all.
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    // Clean up the still-pending first send so it doesn't leak into
+    // another test.
+    await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+    await firstOutcome;
+  });
+
+  it('the overall MAIL_SEND_TIMEOUT_MS deadline fires even when the hang happens during connect', async () => {
+    connectMock.mockImplementation(() => new Promise(() => {})); // hangs forever — no cached pair yet
+
+    const send = transport.send(buildMessage());
+    const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+    await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+    await outcome;
+  });
+
+  it('does not produce an unhandled rejection when the orphaned promise rejects after losing the deadline race', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      connectQueue = [
+        {
+          type: 'ok',
+          script: {
+            checkQueue: () => ({ kind: 'ok' }),
+            publish: () => ({ kind: 'nack-after', delayMs: MAIL_SEND_TIMEOUT_MS + 200 }),
+          },
+        },
+      ];
+
+      const send = transport.send(buildMessage());
+      const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+      await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+      await outcome;
+
+      // Let the orphaned publish promise actually settle (reject), late.
+      await jest.advanceTimersByTimeAsync(300);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('never lets a raw amqplib error escape — the thrown error has a fixed, credential-free message', async () => {
+    connectQueue = [
+      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671') },
+      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671') },
+    ];
+
+    const err = await captureRejection(transport.send(buildMessage()));
+
+    expect(err).toBeInstanceOf(MicroserviceMailConnectionError);
+    expect(err.message).not.toContain('sup3rSecr3t');
+    expect(err.message).not.toContain('amqps://');
+    expect((err as Error & { cause?: unknown }).cause).toBeUndefined();
+  });
+
+  it('a NOT_FOUND configuration error never contains the broker URL or credentials either', async () => {
+    connectQueue = [
+      { type: 'ok', script: { checkQueue: () => ({ kind: 'not-found' }), publish: () => ({ kind: 'ack' }) } },
+    ];
+
+    const err = await captureRejection(transport.send(buildMessage()));
+
+    expect(err).toBeInstanceOf(MicroserviceMailQueueNotFoundError);
+    expect(err.message).not.toContain('amqps://');
+    expect(err.message).not.toContain('user:pass');
+  });
+
+  it(
+    "detaches cleanup — a close() that never resolves must not delay the send's rejection past the " +
+      'publish failure itself (design.md §10 "detaches cleanup" row; requirements.md NFR-1; ' +
+      'tasks.md T-4 Done-when) — mutation: replacing `detachTeardown`\'s `void entry.model.close()' +
+      ".catch(...)` with `await entry.model.close()` reddens this by hanging the test past its timeout",
+    async () => {
+      connectQueue = [
+        {
+          type: 'ok',
+          script: {
+            checkQueue: () => ({ kind: 'ok' }),
+            publish: () => ({ kind: 'nack' }),
+            // Never resolves — if teardown awaited this, the send would
+            // hang forever rather than reject.
+            close: () => new Promise(() => {}),
+          },
+        },
+      ];
+
+      const send = transport.send(buildMessage());
+      const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailPublishError);
+
+      // Deliberately NO jest.advanceTimersByTimeAsync call: a nack settles
+      // synchronously via the publish callback, so a truly detached
+      // teardown lets this rejection resolve on plain microtasks, well
+      // before MAIL_SEND_TIMEOUT_MS's timer would ever need to fire. If
+      // `close()` were awaited inside the deadline instead, this `await`
+      // would hang for real wall-clock time (fake timers do not advance on
+      // their own) until Jest's own test timeout fails the test — that is
+      // the mutation signal, not a shorter assertion window.
+      await outcome;
+    },
+  );
+
+  it(
+    'opens the connection with the heartbeat encoded in the URL query string — amqplib reads ' +
+      "heartbeat only from the connect URL's query string, never from a separate options argument " +
+      '(design.md §4.3 "Heartbeat"; §12.2b) — mutation: refactoring to `connect(url, { heartbeat })` ' +
+      'reddens this while every other test in this file stays green',
+    async () => {
+      connectQueue = [{ type: 'ok', script: okScript() }];
+
+      await transport.send(buildMessage());
+
+      expect(connectMock).toHaveBeenCalledTimes(1);
+      const [calledUrl] = connectMock.mock.calls[0];
+      const parsed = new URL(String(calledUrl));
+      expect(parsed.searchParams.get('heartbeat')).toBe('30');
+      // And the rest of the URL is untouched — scheme, credentials, host,
+      // vhost all survive `withHeartbeat` unchanged. (`amqps:` is a
+      // non-special WHATWG scheme, so `.origin` is the opaque string
+      // "null" here — asserting `.protocol`/`.host` directly instead.)
+      expect(parsed.protocol).toBe('amqps:');
+      expect(parsed.host).toBe('broker.example.org:5671');
+      expect(parsed.username).toBe('user');
+      expect(parsed.password).toBe('pass');
+    },
+  );
+});
+
+describe('getMailTransport — exhaustive switch (mail-transport.factory.ts; inherited constraint from T-3\'s review)', () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    resetMailTransport();
+    resetSesClient();
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    jest.restoreAllMocks();
+    resetMailTransport();
+  });
+
+  it(
+    'throws for a kind added to the union with no switch arm, rather than silently falling back to ' +
+      'no-op — mutation (d): the mutation this constraint is written to catch',
+    () => {
+      jest
+        .spyOn(mailConfigModule, 'getMailTransportKind')
+        .mockReturnValue('legacy-smtp' as unknown as MailTransportKind);
+
+      expect(() => getMailTransport()).toThrow(/legacy-smtp/);
+      // And, just as important as the throw itself: it must not have
+      // silently cached a NoOpMailTransport behind that throw — the exact
+      // "every request 202, zero emails, no signal anywhere" shape (D-J)
+      // this constraint exists to close.
+      expect(() => getMailTransport()).toThrow(); // still throws — nothing was cached
+    },
+  );
+
+  it('resolves "microservice" to MicroserviceMailTransport', () => {
+    process.env.MAIL_TRANSPORT = 'microservice';
+    process.env.RABBITMQ_URL = 'amqps://user:pass@broker.example.org:5671';
+    process.env.EMAIL_QUEUE_NAME = 'accelerate-tz-email';
+    process.env.MICROSERVICE_API_KEY = 'clarisa-key-123';
+    process.env.EMAIL_SENDER = 'registry@example.org';
+
+    expect(getMailTransport()).toBeInstanceOf(MicroserviceMailTransport);
+  });
+
+  it('still resolves "ses" and "no-op" correctly (the switch is exhaustive, not narrowed)', () => {
+    process.env.MAIL_TRANSPORT = 'no-op';
+    expect(getMailTransport()).toBeInstanceOf(NoOpMailTransport);
+
+    resetMailTransport();
+    process.env.MAIL_TRANSPORT = 'ses';
+    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
+    process.env.AWS_REGION = 'eu-west-1';
+    expect(getMailTransport()).toBeInstanceOf(SesMailTransport);
   });
 });

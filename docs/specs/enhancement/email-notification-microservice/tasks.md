@@ -38,11 +38,11 @@
       Done when: throws naming each of the **four** required transport variables (`RABBITMQ_URL`, `EMAIL_QUEUE_NAME`, `MICROSERVICE_API_KEY`, `EMAIL_SENDER`); `EMAIL_SENDER_NAME` **defaults** and never throws; resolution stays **lazy** (importing with nothing set must not throw — FR-3's `BUT`); the thrown message never contains the key or URL (FR-3's `AND IT MUST`); `'ses'`, `'microservice'`, `'no-op'` all accepted in this phase.
       Skills: `nestjs-expert`
 
-- [ ] **T-4** Implement the connection lifecycle  (deps: T-2, T-3)
+- [x] **T-4** Implement the connection lifecycle  (deps: T-2, T-3)
       Scope: The `MicroserviceMailTransport` class **and its `mail-transport.factory.ts` branch** (moved here from T-3 — see that task).
       ⚠️ **Call-site constraint inherited from T-2's review (A-6).** T-3's `MicroserviceMailConfig` is a structural superset of the builder's config parameter, so passing it straight through type-checks — and hands the **credential-bearing `url`** into the builder. Harmless as the builder is written today (explicit literal, no spread), but a future `...config` would publish the broker URL **into the message body** (FR-7/NFR-3). **Destructure at the call site; never spread.** Module-scope cache; `'error'`/`'close'` listeners setting an owned `healthy` flag; mutex (wide scope, released in `finally`, race constructed **inside** the critical section); `checkQueue` probe under `MAIL_PROBE_TIMEOUT_MS`; confirm channel; publish once with `mandatory` + `'return'` listener; `consumerCount == 0` warn.
       Traces: FR-1, NFR-1, NFR-2 · `design.md` §4.3, DD-3, DD-4, DD-11
-      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, `mail-transport.factory.ts`
+      Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, `mail-transport.factory.ts`, **`backend/package.json`** (`+ amqplib`, `+ @types/amqplib` — *added by the Leader: `design.md` §4.1 lists this under Phase A but no task's Files carried it, so nobody owned it*)
       Verify: `cd backend && npm test -- microservice-mail --silent`
       Done when: reuses a healthy pair; **a hanging probe is cut at `MAIL_PROBE_TIMEOUT_MS` and enough budget remains to reconnect and publish**; a probe returning `NOT_FOUND` throws a **configuration error without reconnecting**; the connection is retried **at most once**, and **never after a publish** (FR-1's `AND IT MUST` — exactly once per send call); the mutex is released on every path **including the deadline**; teardown is detached; **the queue is never declared or created** (FR-1's `BUT`).
       **AND — inherited from T-3's review, a Done-when bullet, not a suggestion:** `mail-transport.factory.ts` must become an **exhaustive `switch (kind)` whose `default` throws**, NOT a third ternary arm. The current `kind === 'ses' ? Ses : NoOp` makes the no-op transport the **silent fallback for every unhandled kind** — it is what created the accepted-but-inert window T-3 opened, and appending an arm would regenerate it at Phase B when the union narrows again. This is the spec's own worst-named failure class (**D-J**: *"every request `202`, zero emails, no signal anywhere"*). A guard that is hoped for is not a guard.
@@ -57,6 +57,7 @@
       Verify: `cd backend && npm test -- microservice-mail mail.config --silent`
       Done when: a URL-bearing error injected on **each** of the three paths — sync rejection, an async `'error'`/`'close'` event, and the promise orphaned by the deadline race — escapes with no credential substring in `name`, `message`, or any `Logger` call. **QA-13 is NOT the gate and is not extended** (it provider-overrides `MailService`); this spec is.
       Gate discriminates: run against a non-sanitizing variant (rethrow the raw error) and confirm every assertion reddens. **Required evidence, not optional.**
+      ⚠️ **Inherited from T-4's review (B-1) — one line, same file.** No test asserts teardown *happens*. The new detached-cleanup test gates "not awaited"; the cache-clearing half is gated by the reconnect test. But **deleting `void entry.model.close().catch(…)` outright would leave all 36 tests green** — the socket/heartbeat-leak half of NFR-1 is uncovered. Add `expect(connections[0].model.close).toHaveBeenCalledTimes(1)` to the nack test. *(Note: T-4's residual is a **cache-integrity** matter, NOT this task's credential-scoped orphan clause — do not absorb it here.)*
       Skills: `error-handling-patterns`, `nestjs-expert`
 
 - [x] **T-6** Bound the SES transport with the same deadline  (deps: T-1)
@@ -85,6 +86,7 @@
       Traces: FR-7, FR-8 · `design.md` §7.1, §7.2, §7.3
       Files: `infra/20-backend/template.yaml`, `infra/scripts/deploy.sh`, `infra/scripts/set-cors.sh`, `backend/.env.example`
       Verify: `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`)
+      ⚠️ **Inherited from T-4's review (B-3).** `withHeartbeat` round-trips `RABBITMQ_URL` through WHATWG `URL` and `searchParams.set` re-serializes the **whole** query string. Provably lossless for credentials/host/vhost (amqplib parses with the same `new URL`), but **not byte-preserving if an operator supplies a URL that already carries query parameters**. One sentence in `.env.example` warning against extra query params.
       Done when: all three stacks validate; both secrets appear **only** as `{{resolve:secretsmanager:…}}` references (FR-7's `BUT`); no secret literal reaches a `sam deploy` command line (FR-7's `AND IT MUST`); `.env.example` names every variable with its source and **contains no real value**; `MAIL_TRANSPORT=no-op` remains the local default.
       ⚠️ Runbook, not code: the secret must hold real values **before** the stack that resolves them deploys, and `put-secret-value` must use `--secret-string file://` from a `600`-mode temp file, shredded after.
       Skills: `aws-serverless`
