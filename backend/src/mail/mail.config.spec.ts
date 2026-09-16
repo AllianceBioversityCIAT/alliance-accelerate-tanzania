@@ -24,6 +24,17 @@ describe('mail.config', () => {
       expect(() => getMailTransportKind()).toThrow(/Invalid MAIL_TRANSPORT/);
     });
 
+    it(
+      'interpolates the invalid value into the thrown message (T-5, inherited from T-3 review A3) — ' +
+        "on the record as checked: this is mail.config.ts's ONE value-interpolating throw. Harmless " +
+        "today because MAIL_TRANSPORT is never a secret — it can only ever carry MAIL_TRANSPORT's own " +
+        'value — but it is an escape path and must stay enumerated, not merely read past',
+      () => {
+        process.env.MAIL_TRANSPORT = 'smtp';
+        expect(() => getMailTransportKind()).toThrow(/"smtp"/);
+      },
+    );
+
     it('accepts "ses", "microservice" and "no-op" (Phase A)', () => {
       process.env.MAIL_TRANSPORT = 'ses';
       expect(getMailTransportKind()).toBe('ses');
@@ -91,27 +102,45 @@ describe('mail.config', () => {
       expect(() => getMicroserviceMailConfig()).toThrow(/EMAIL_SENDER\b/);
     });
 
-    it('never echoes the URL or the API key in a thrown message', () => {
-      setAllRequired();
-      delete process.env.RABBITMQ_URL;
-      try {
-        getMicroserviceMailConfig();
-        fail('expected getMicroserviceMailConfig to throw');
-      } catch (err) {
-        const message = (err as Error).message;
-        expect(message).not.toContain('amqps://');
-        expect(message).not.toContain('user:pass');
-      }
+    it(
+      'never echoes the URL or the API key in a thrown message — T-5 fix (inherited from T-3 review ' +
+        'A1): the FIRST block below is near-vacuous on its own terms, since it asserts the absence ' +
+        'of a value (RABBITMQ_URL) that was JUST DELETED from the environment — an implementation ' +
+        'appending `JSON.stringify(process.env)` to the thrown message would pass it while leaking ' +
+        'every OTHER live secret. The discriminating assertion is the one added to the SECOND block: ' +
+        'RABBITMQ_URL is still SET (only MICROSERVICE_API_KEY is deleted there), so asserting its ' +
+        'value is absent from that throw is checked against a secret that is genuinely live — ' +
+        'mutation: appending `process.env.RABBITMQ_URL` (or the whole env) to either thrown message ' +
+        'reddens this',
+      () => {
+        setAllRequired();
+        delete process.env.RABBITMQ_URL;
+        try {
+          getMicroserviceMailConfig();
+          fail('expected getMicroserviceMailConfig to throw');
+        } catch (err) {
+          const message = (err as Error).message;
+          expect(message).not.toContain('amqps://');
+          expect(message).not.toContain('user:pass');
+        }
 
-      setAllRequired();
-      delete process.env.MICROSERVICE_API_KEY;
-      try {
-        getMicroserviceMailConfig();
-        fail('expected getMicroserviceMailConfig to throw');
-      } catch (err) {
-        expect((err as Error).message).not.toContain('clarisa-key-123');
-      }
-    });
+        setAllRequired();
+        delete process.env.MICROSERVICE_API_KEY;
+        try {
+          getMicroserviceMailConfig();
+          fail('expected getMicroserviceMailConfig to throw');
+        } catch (err) {
+          const message = (err as Error).message;
+          expect(message).not.toContain('clarisa-key-123');
+          // The discriminating assertion (A1 fix): RABBITMQ_URL is still
+          // SET in process.env at this point (setAllRequired() above,
+          // never deleted in this second block) — a secret that is
+          // actually present, not one already removed before the check.
+          expect(message).not.toContain('amqps://');
+          expect(message).not.toContain('user:pass');
+        }
+      },
+    );
 
     it('defaults EMAIL_SENDER_NAME without throwing, preserving the trailing dash', () => {
       setAllRequired();

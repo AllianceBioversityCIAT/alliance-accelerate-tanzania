@@ -49,7 +49,7 @@
       Gate discriminates: (a) remove the probe timeout → the hang test fails; (b) remove the `finally` → the release test fails; (c) make step 5 retry → the exactly-once test fails; (d) **add a bogus kind to the union without a switch arm → the default throws and a test proves it**. Demonstrate all four.
       Skills: `nestjs-expert`, `aws-serverless`, `error-handling-patterns`
 
-- [ ] **T-5** Close all three credential-leak paths, and gate them  (deps: T-4)
+- [x] **T-5** Close all three credential-leak paths, and gate them  (deps: T-4)
       Scope: Sanitize every escaping error; never let an `amqplib` error or the broker URL reach a logger, an envelope, or a thrown message.
       Traces: NFR-3, D-D · `design.md` §4.4, DD-5
       Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, **`backend/src/mail/mail.config.spec.ts`**

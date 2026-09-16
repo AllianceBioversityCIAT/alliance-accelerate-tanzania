@@ -444,3 +444,54 @@ backend/node_modules/ts-loader/AGENTS.md
 Not actioned here: root `CLAUDE.md` is a constitutional baseline, and editing it outside a task with no Reviewer would bypass the very dispatch rule that governs it. It is **not** actively misleading today, so it defers to `/akili-archive`'s constitution sync rather than being smuggled into this commit. Recommended there: a `node_modules/**` ignore, or a one-line note under the Concurrency protocol. **Raised to the product owner.**
 
 ---
+
+### T-5 — Close all three credential-leak paths, and gate them
+
+| | |
+|---|---|
+| **Status** | ✅ **PASS** on attempt 1 |
+| Date | 2026-09-16 |
+| Requirements covered | NFR-3, D-D · `design.md` §4.4, DD-5 |
+
+**Leader skill/effort:** `error-handling-patterns`; effort `xhigh`.
+
+**Files changed:** `microservice-mail.transport.spec.ts`, `mail.config.spec.ts`. **No production code.**
+
+**Verification:** 55/55; eslint clean. **Non-sanitizing variant → 7 red**, with the leak visible in the output: `"microservice mail connection error: read ECONNRESET amqps://produser:sup3rSecr3t@broker.example.org:5671"`, and a full `process.env` dump carrying the live `RABBITMQ_URL`. Reverted; `git diff` on both production files empty.
+
+#### The disclosure that matters more than the result
+
+During its own mutation pass, the Implementer discovered **its first draft of the PATH 3 test was vacuous**: a single-failure connect queue let DD-4's retry self-heal, so nothing ever rejected and nothing could leak. It fixed it, and reported it:
+
+> *"flagging it here since it's exactly the class of defect this task exists to prevent, and worth knowing it nearly slipped through even inside the test-authoring step itself."*
+
+**This is the strongest argument this execution has produced for the mutation rule.** In the one task whose entire purpose is preventing vacuous gates, a vacuous gate was nearly written — and what caught it was not care or expertise but the mechanical requirement to run the mutation. Without that step the test would have been green forever, watching nothing.
+
+#### "No production code changed" — the Leader asked whether this was a finding or a convenience
+
+T-5's Scope says *"sanitize every escaping error"* — implementation language. The Implementer reported reducing it to test-authoring because T-4 had already closed all three paths. **The Reviewer independently enumerated every escape site** in the transport — twelve of them — and confirmed each is sanitized before T-5 touched anything. Callers corroborate: all four log `errorType` (the class name), never `err.message`.
+
+**It found one real structural note in doing so:** `getMicroserviceMailConfig()` is called **outside** `send()`'s `try`, so its throw escapes without passing through `sanitizeEscapingError` — meaning the "final boundary sanitizer" docblock is not literally true for `send()`. The property still holds, because `required()` interpolates only the variable *name*, and **T-5's own A1 fix is exactly what now gates that** — in the other file, which `tasks.md` correctly lists in T-5's Files. Verdict: the reduction to test-authoring is a genuine finding.
+
+#### Reviewer `STATUS: PASS`
+
+> All three §4.4 leak paths now carry a test that injects a genuinely credential-bearing error and asserts absence in `name`, `message` and every Logger level; I independently enumerated the transport's escape sites and confirm T-4 had already closed them, so "no production code changed" is a finding rather than convenience.
+
+Notable reasoning: the Reviewer traced PATH 3's fixture and confirmed the deadline genuinely wins before the late rejection, with the second queue entry load-bearing exactly as claimed. It also ruled on a question the Leader asked — *is the anti-vacuity guard present on every path?* — **and said no, correctly**: paths 1 and 3 produce **zero** Logger calls in unmutated code, so a `some(calls > 0)` guard there would assert something false. The asymmetry is right, not an omission.
+
+#### ADVISORY — six findings; three have no owning task and are raised to the product owner
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **A-1** | ⚠️ **`fail()` is not defined under jest-circus, and the adjacent `catch` swallows the resulting `ReferenceError`.** If `getMicroserviceMailConfig()` ever stopped throwing, `fail(...)` would raise, be caught two lines below, and every `not.toContain` would pass against the string `"fail is not defined"`. **The test T-5 was assigned to de-vacuum still cannot distinguish "threw cleanly" from "did not throw."** Repo-wide: the same dead pattern sits in `contact.service.spec.ts` and `cognito-error.mapper.spec.ts` | **No owning task** — raised |
+| **A-2** | **PATH 1's test name states a mutation that would leave it green.** Its named mutation (passthrough `sanitizeEscapingError`) changes nothing on that path, because `connectWithRetry` constructs the typed error *before* the boundary sanitizer sees it — and zero Logger calls occur there, so that half is structurally unfailable under that single mutation. Both halves *do* redden under the actual six-site variant. PATH 3's name gets this exactly right. **This spec's documented recurring defect class is a comment naming a mechanism that is not the operating one**; the Reviewer said it would not leave it | **No owning task** — raised |
+| **A-3** | **PATH 3's non-vacuity rests on a comment, not an assertion.** One fixture edit — dropping the second `connectQueue` entry — silently restores the exact vacuous state the Implementer already hit once, and the suite stays green. `expect(connectMock).toHaveBeenCalledTimes(2)` pins it in one line | **No owning task** — raised |
+| **A-4** | The `unhandledRejection` half of PATH 3 **cannot fail**: `Promise.race` internally calls `promise.then(resolve, reject)`, marking it handled, so a late rejection never reaches V8's detector. The assertion passes even with the explicit `.catch()` deleted. The guard is still correct defence-in-depth — it survives a refactor away from `Promise.race` — but it is itself ungated, while §4.4 describes it as the closure | Recorded |
+| **A-5** | No **content** assertion on the publish-phase rejection — the nack and return tests assert only `toBeInstanceOf` | Recorded |
+| **A-6** | `withHeartbeat`'s docblock is true of `.message` (Node's `ERR_INVALID_URL` is a fixed string) but the error object carries **`err.input`** holding the full URL. Immaterial today; the gate asserts `name`/`message`, so a leak via an error *property* would be invisible to it | Recorded |
+
+⚠️ **A-1, A-2 and A-3 have no later task that owns these files.** Transferring them would file a pointer to nobody — the failure the leader playbook names explicitly. They are therefore **raised to the product owner as a named, bounded decision** rather than recorded as handled.
+
+**Final status: ✅ PASS on attempt 1.**
+
+---

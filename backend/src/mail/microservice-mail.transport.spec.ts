@@ -371,10 +371,53 @@ function createFakeChannelModel(channel: FakeChannel, script: ChannelScript): Fa
   return model;
 }
 
-type ConnectOutcome = { type: 'reject'; error: Error } | { type: 'ok'; script: ChannelScript };
+type ConnectOutcome =
+  | { type: 'reject'; error: Error }
+  | { type: 'ok'; script: ChannelScript }
+  /** T-5 — mirrors `PublishBehavior`'s `'nack-after'`: the connect promise
+   * settles (rejecting) only after `delayMs`, so a test can put a
+   * credential-bearing rejection PAST the send deadline, i.e. exactly the
+   * "promise orphaned by the deadline race" shape (design.md §4.4 path 3,
+   * `raceAgainstDeadline`'s `promise.catch(() => {})` guard). */
+  | { type: 'reject-after'; error: Error; delayMs: number };
 
 function buildMessage(): MailMessage {
   return { to: 'applicant@example.org', subject: 'Subject', text: 'Body' };
+}
+
+/** T-5 — spies on every `Logger` instance method (`log`/`warn`/`error`/
+ * `debug`/`verbose`), across BOTH `MicroserviceMailTransport`'s own logger
+ * and any other `Logger` instance, since §4.4's gate is "no credential
+ * substring reaches … any Logger call", not just `warn`. Returns an
+ * `assertNoLeak` helper asserting none of the captured calls — across every
+ * argument, not just the first — contain any of the given secrets, so the
+ * gate is not defeated by a leak in a second/third `logger.warn(a, b, c)`
+ * argument either. */
+function spyOnAllLoggerLevels(): {
+  spies: jest.SpyInstance[];
+  assertNoLeak: (...secrets: string[]) => void;
+  restore: () => void;
+} {
+  const levels = ['log', 'warn', 'error', 'debug', 'verbose'] as const;
+  const spies = levels.map((level) =>
+    jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
+  );
+  return {
+    spies,
+    assertNoLeak: (...secrets: string[]) => {
+      const allLoggedText = spies
+        .flatMap((spy) => spy.mock.calls)
+        .flat()
+        .map((arg) => String(arg))
+        .join('\n');
+      for (const secret of secrets) {
+        expect(allLoggedText).not.toContain(secret);
+      }
+    },
+    restore: () => {
+      spies.forEach((spy) => spy.mockRestore());
+    },
+  };
 }
 
 /** Captures the rejection reason of a promise expected to reject, typed as
@@ -413,6 +456,11 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
       const outcome = connectQueue.shift() ?? { type: 'ok' as const, script: okScript() };
       if (outcome.type === 'reject') {
         return Promise.reject(outcome.error);
+      }
+      if (outcome.type === 'reject-after') {
+        return new Promise((_, reject) => {
+          setTimeout(() => reject(outcome.error), outcome.delayMs);
+        });
       }
       const channel = createFakeChannel(outcome.script);
       const model = createFakeChannelModel(channel, outcome.script);
@@ -601,6 +649,13 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
         MicroserviceMailPublishError,
       );
       expect(connections[0].channel.publish).toHaveBeenCalledTimes(1);
+      // T-4 review (B-1), closed here: teardown must actually HAPPEN on a
+      // publish-phase failure, not just be "not awaited" (the detached-
+      // cleanup test below gates that half). Deleting
+      // `void entry.model.close().catch(...)` outright previously left
+      // every test in this file green — this is the socket/heartbeat-leak
+      // half of NFR-1.
+      expect(connections[0].model.close).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -760,19 +815,41 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
     }
   });
 
-  it('never lets a raw amqplib error escape — the thrown error has a fixed, credential-free message', async () => {
-    connectQueue = [
-      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671') },
-      { type: 'reject', error: new Error('connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671') },
-    ];
+  it(
+    'PATH 1 (sync throw/rejection, design.md §4.4) — never lets a raw amqplib error escape: the ' +
+      "thrown error's name and message are credential-free, and nothing reaches any Logger call " +
+      "either — mutation: making sanitizeEscapingError a passthrough (`return err`) reddens both halves",
+    async () => {
+      const loggerSpy = spyOnAllLoggerLevels();
+      try {
+        connectQueue = [
+          {
+            type: 'reject',
+            error: new Error(
+              'connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671',
+            ),
+          },
+          {
+            type: 'reject',
+            error: new Error(
+              'connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671',
+            ),
+          },
+        ];
 
-    const err = await captureRejection(transport.send(buildMessage()));
+        const err = await captureRejection(transport.send(buildMessage()));
 
-    expect(err).toBeInstanceOf(MicroserviceMailConnectionError);
-    expect(err.message).not.toContain('sup3rSecr3t');
-    expect(err.message).not.toContain('amqps://');
-    expect((err as Error & { cause?: unknown }).cause).toBeUndefined();
-  });
+        expect(err).toBeInstanceOf(MicroserviceMailConnectionError);
+        expect(err.name).not.toContain('sup3rSecr3t');
+        expect(err.message).not.toContain('sup3rSecr3t');
+        expect(err.message).not.toContain('amqps://');
+        expect((err as Error & { cause?: unknown }).cause).toBeUndefined();
+        loggerSpy.assertNoLeak('sup3rSecr3t', 'amqps://produser');
+      } finally {
+        loggerSpy.restore();
+      }
+    },
+  );
 
   it('a NOT_FOUND configuration error never contains the broker URL or credentials either', async () => {
     connectQueue = [
@@ -842,6 +919,164 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
       expect(parsed.host).toBe('broker.example.org:5671');
       expect(parsed.username).toBe('user');
       expect(parsed.password).toBe('pass');
+    },
+  );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // T-5 — the two paths T-4's review left ungated (advisory A-7).
+  // design.md §4.4's table has three closures; the sync-throw one above
+  // (T-4) already had a spot-check. These two did not have ANY test
+  // exercising the `'error'`/`'close'` listeners or the orphaned-promise
+  // guard emitting a credential-bearing error — they were established "by
+  // reading only". T-9's cache-integrity residual (an orphaned continuation
+  // overwriting `cached` on a deadline-during-connect race) is explicitly
+  // OUT of scope here — these tests assert only that no credential
+  // substring escapes, never anything about which connection ends up
+  // cached.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it(
+    "PATH 2 (design.md §4.4) — a credential-bearing 'error' event emitted on the CONNECTION between " +
+      'invocations is sanitized before it reaches the Logger, and never rethrown — mutation: changing ' +
+      "attachHealthListeners's `logger.warn(...)` to interpolate the raw `(err as Error).message` " +
+      'instead of `sanitizeEscapingError(err).message` reddens this',
+    async () => {
+      const loggerSpy = spyOnAllLoggerLevels();
+      try {
+        connectQueue = [{ type: 'ok', script: okScript() }];
+        await transport.send(buildMessage());
+        expect(connections[0]).toBeDefined();
+
+        // Simulates exactly the freeze/thaw hazard §4.3/§4.4 exist for:
+        // the broker (or a proxy in front of it) tears the socket down
+        // between invocations and amqplib surfaces that as an 'error'
+        // event carrying the connection string, the way real amqplib
+        // errors do (see makeNotFoundError above for the same shape).
+        const credentialBearingError = new Error(
+          'read ECONNRESET amqps://produser:sup3rSecr3t@broker.example.org:5671',
+        );
+        connections[0].model.emit('error', credentialBearingError);
+
+        // Node throws an unhandled exception for an 'error' event with no
+        // listener — the mere fact this line is reached at all (rather
+        // than the test process crashing) is part of what DD-5's listener
+        // requirement proves, alongside the content assertion below.
+        loggerSpy.assertNoLeak('sup3rSecr3t', 'amqps://produser');
+        expect(loggerSpy.spies.some((spy) => spy.mock.calls.length > 0)).toBe(true);
+
+        // And the listener did its OTHER job (healthy = false): the next
+        // send reconnects rather than reusing a connection the broker
+        // already tore down — proof this is the real DD-5 listener, not a
+        // spy on a no-op.
+        connectQueue = [{ type: 'ok', script: okScript() }];
+        await transport.send(buildMessage());
+        expect(connectMock).toHaveBeenCalledTimes(2);
+      } finally {
+        loggerSpy.restore();
+      }
+    },
+  );
+
+  it(
+    "PATH 2 (design.md §4.4) — a credential-bearing 'error' event emitted on the CONFIRM CHANNEL " +
+      'between invocations is sanitized the same way as the connection-level case above',
+    async () => {
+      const loggerSpy = spyOnAllLoggerLevels();
+      try {
+        connectQueue = [{ type: 'ok', script: okScript() }];
+        await transport.send(buildMessage());
+        expect(connections[0]).toBeDefined();
+
+        const credentialBearingError = new Error(
+          'channel error: amqps://produser:sup3rSecr3t@broker.example.org:5671 closed unexpectedly',
+        );
+        connections[0].channel.emit('error', credentialBearingError);
+
+        loggerSpy.assertNoLeak('sup3rSecr3t', 'amqps://produser');
+        expect(loggerSpy.spies.some((spy) => spy.mock.calls.length > 0)).toBe(true);
+      } finally {
+        loggerSpy.restore();
+      }
+    },
+  );
+
+  it(
+    "PATH 2 (design.md §4.4) — a 'close' event (no error object; amqplib's own shape) carries no " +
+      'credential to begin with, and still marks the pair unhealthy so the next send reconnects',
+    async () => {
+      connectQueue = [{ type: 'ok', script: okScript() }];
+      await transport.send(buildMessage());
+
+      connections[0].model.emit('close');
+
+      connectQueue = [{ type: 'ok', script: okScript() }];
+      await transport.send(buildMessage());
+      expect(connectMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it(
+    'PATH 3 (design.md §4.4) — a credential-bearing rejection from the promise orphaned by the ' +
+      'deadline race never reaches an unhandledRejection and never reaches any Logger call — ' +
+      "mutation: changing raceAgainstDeadline's `promise.catch(() => {})` guard to log the raw " +
+      'rejection reddens this, PROVIDED connectWithRetry is also changed to rethrow the raw error ' +
+      'rather than wrap it (its own catches otherwise convert to a fixed-message typed error first, ' +
+      'so the credential is no longer live by the time the orphaned catch runs) — see the reporting ' +
+      'section for the exact non-sanitizing patch exercised',
+    async () => {
+      const loggerSpy = spyOnAllLoggerLevels();
+      const unhandled = jest.fn();
+      process.on('unhandledRejection', unhandled);
+      try {
+        // The FIRST physical connect attempt hangs past the overall send
+        // deadline, then rejects — late — with a raw, credential-bearing
+        // amqplib-shaped error. `raceAgainstDeadline` has already declared
+        // the deadline the winner by the time this settles: this IS "the
+        // promise orphaned by the deadline race" (design.md §4.4 path 3).
+        // DD-4's single retry (still running in the background, on the
+        // orphaned promise) MUST also fail here — queuing only one
+        // failure lets the retry succeed against the default `okScript()`
+        // fallback and the orphaned promise resolves instead of rejecting,
+        // which would make this test pass VACUOUSLY (nothing to leak,
+        // because nothing rejects) rather than because sanitization held.
+        connectQueue = [
+          {
+            type: 'reject-after',
+            delayMs: MAIL_SEND_TIMEOUT_MS + 200,
+            error: new Error(
+              'connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671',
+            ),
+          },
+          {
+            type: 'reject',
+            error: new Error(
+              'connect ECONNREFUSED amqps://produser:sup3rSecr3t@broker.example.org:5671',
+            ),
+          },
+        ];
+
+        const send = transport.send(buildMessage());
+        const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+        await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+        await outcome;
+
+        // Let the orphaned connect promise actually settle (reject) late —
+        // the moment the raw credential-bearing error exists as a live
+        // rejection value with nobody but the `.catch()` guard listening.
+        // The retry attempt this triggers also fails (the second queued
+        // entry, consumed synchronously off the back of the first
+        // rejection), so the orphaned promise itself rejects too.
+        await jest.advanceTimersByTimeAsync(300);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(unhandled).not.toHaveBeenCalled();
+        loggerSpy.assertNoLeak('sup3rSecr3t', 'amqps://produser');
+      } finally {
+        process.off('unhandledRejection', unhandled);
+        loggerSpy.restore();
+      }
     },
   );
 });
