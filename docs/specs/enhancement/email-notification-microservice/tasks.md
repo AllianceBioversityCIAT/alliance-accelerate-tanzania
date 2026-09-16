@@ -20,7 +20,7 @@
       Gate discriminates: mutate `MAIL_SEND_TIMEOUT_MS` to exceed the floor → test fails. Demonstrate before reporting.
       Skills: `nestjs-expert`
 
-- [ ] **T-2** Build the envelope as a pure, separately-testable function  (deps: T-1)
+- [x] **T-2** Build the envelope as a pure, separately-testable function  (deps: T-1)
       Scope: Exported pure builder mapping `MailMessage` → the microservice envelope. No AMQP, no I/O.
       Traces: FR-2, FR-4, DD-8 · `design.md` §4.2
       Files: `backend/src/mail/microservice-mail.transport.ts` (builder only), `…spec.ts`
@@ -39,7 +39,8 @@
       Skills: `nestjs-expert`
 
 - [ ] **T-4** Implement the connection lifecycle  (deps: T-2, T-3)
-      Scope: The `MicroserviceMailTransport` class **and its `mail-transport.factory.ts` branch** (moved here from T-3 — see that task). Module-scope cache; `'error'`/`'close'` listeners setting an owned `healthy` flag; mutex (wide scope, released in `finally`, race constructed **inside** the critical section); `checkQueue` probe under `MAIL_PROBE_TIMEOUT_MS`; confirm channel; publish once with `mandatory` + `'return'` listener; `consumerCount == 0` warn.
+      Scope: The `MicroserviceMailTransport` class **and its `mail-transport.factory.ts` branch** (moved here from T-3 — see that task).
+      ⚠️ **Call-site constraint inherited from T-2's review (A-6).** T-3's `MicroserviceMailConfig` is a structural superset of the builder's config parameter, so passing it straight through type-checks — and hands the **credential-bearing `url`** into the builder. Harmless as the builder is written today (explicit literal, no spread), but a future `...config` would publish the broker URL **into the message body** (FR-7/NFR-3). **Destructure at the call site; never spread.** Module-scope cache; `'error'`/`'close'` listeners setting an owned `healthy` flag; mutex (wide scope, released in `finally`, race constructed **inside** the critical section); `checkQueue` probe under `MAIL_PROBE_TIMEOUT_MS`; confirm channel; publish once with `mandatory` + `'return'` listener; `consumerCount == 0` warn.
       Traces: FR-1, NFR-1, NFR-2 · `design.md` §4.3, DD-3, DD-4, DD-11
       Files: `backend/src/mail/microservice-mail.transport.ts`, `…spec.ts`, `mail-transport.factory.ts`
       Verify: `cd backend && npm test -- microservice-mail --silent`

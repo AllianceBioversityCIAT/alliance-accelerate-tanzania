@@ -138,3 +138,50 @@ The Leader found that widening `MailTransportKind` while leaving the factory unt
 **Guard transferred to T-4 — stronger than "add the branch."** The Reviewer's recommendation, adopted: T-4 must **replace the ternary with an exhaustive `switch` whose `default` throws**, not append a third arm. The current `=== 'ses' ? Ses : NoOp` makes the no-op transport the silent fallback for *every* unhandled kind — it is the generator of this hazard and would regenerate it at Phase B when the union narrows again. This is the spec's own worst-named failure class (D-J: *"every request `202`, zero emails, no signal anywhere"*). It is now a **Done-when bullet**, not a Scope mention, because a guard that is hoped for is not a guard.
 
 ---
+
+### T-2 — Build the envelope as a pure, separately-testable function
+
+| | |
+|---|---|
+| **Status** | ✅ **PASS** on attempt 1 |
+| Date | 2026-09-16 |
+| Implementer attempts | 1 |
+| Requirements covered | FR-2, FR-4, DD-8 · `design.md` §4.2 |
+
+**Leader skill/effort:** no stack skill (a pure mapping function; `api-design-principles` targets REST surfaces, not a wire envelope); effort `medium`.
+
+**Files changed:** `backend/src/mail/microservice-mail.transport.ts` (new, 138 lines), `…spec.ts` (new, 216 lines) — 13 cases.
+
+**Verification:** `npm test -- microservice-mail --silent` → **13/13**. Full suite **78 suites / 1108 tests** green, confirming T-1/T-2/T-3 coexist without interference. eslint clean.
+
+**Mutation evidence**
+
+| Target | Mutation | Result | Reverted |
+|---|---|---|---|
+| Assigned gate — `socketFile` → `file` | renamed interface field + literal key | **TS2339, suite failed to load (0/13)** | ✅ |
+| Self-chosen — DD-8's `.trim()` on `to` | `return list.map(a => a.trim())` → `return list` | 2/13 red with value diffs | ✅ |
+
+The Implementer's stated reason for its self-chosen target is worth preserving: a dropped `.trim()` is invisible in ordinary traffic because upstream DTOs already send clean addresses, so only a whitespace-padded fixture can catch it. It picked the clause that rots silently.
+
+**Reviewer verdict — `STATUS: PASS`**
+
+> The envelope matches FR-2 field-by-field and nesting-by-nesting against every in-repo statement of the contract, all FR-2/FR-4/DD-8 clauses are owned (one — the `file` prohibition — by structural assertions rather than a named test), the injected-config builder is precisely the shape design.md §4.2(3) mandates and imposes zero wiring cost on T-4 given T-3's superset config, and the change is confined to T-2's two files.
+
+**Ruling on the injected-config builder — correct on the merits, not merely convenient.** The Implementer's stated reason was scheduling (avoiding T-3's concurrent edit). The Reviewer rejected that as the justification and supplied a better one: §4.2 assigns *"resolve configuration lazily"* to the **transport** and *"build the envelope"* to a **separate pure function**; importing the config getter into the builder would fold the first into the second and destroy the exact property the separation buys — the spec would have to mutate `process.env` and reason about lazy resolution to test a JSON mapping. It further established the wiring cost on T-4 is **zero**: T-3's `MicroserviceMailConfig` is a structural superset with identical field names, so T-4 passes it straight through and it type-checks unchanged.
+
+**A gate-shape finding worth recording (A-1).** The assigned `socketFile` → `file` mutation can only redden as a **compile** error, and the Leader flagged that a type error proves the field is *referenced*, not *correctly populated*. The Reviewer confirmed the concern and then showed it is not a weakness that could have been avoided: in a statically typed builder an assertion-level redden for that exact mutation is **unreachable** — renaming the key in the literal alone is an excess-property error, and renaming it in the interface too breaks the spec's dereference. The population property is proven separately, at assertion level, by test 2's value-level `toEqual`. **The compile error is the shape this gate necessarily takes, not a weaker substitute.** Recorded so the evidence is never later read as stronger — or weaker — than it is.
+
+**ADVISORY findings**
+
+| ID | Finding | Leader disposition |
+|---|---|---|
+| **A-1** | The `socketFile` gate reddens only at compile time; an assertion-level redden is structurally unreachable (see above) | Recorded above, in full, so the evidence is correctly weighted later |
+| **A-2** | FR-2's *"nor use the `message.file` field"* has no test **named** for it. Closed three ways — the interface, test 3's `Object.keys` equality, test 1's exact `toEqual` | Covered, not named. Recorded; no action |
+| **A-3** | Only the text-only case gets a **full-envelope** `toEqual`; the HTML case asserts the nested `message` object only. Since `toEqual` tolerates `undefined`-valued keys, an extra optional key populated *only when HTML exists* would escape every assertion | Recorded. Foreclosed by the interface today; revisit if the envelope shape grows |
+| **A-4** | The text-only branch is **unreachable in production** — all five templates set `html` unconditionally. So omit-vs-`null` for `socketFile` is inert today. The Reviewer ruled omission **safe on the merits**: the sibling producer proves `null` is accepted and says nothing about absence, while absence is at least as safe against every plausible consumer shape (`@IsOptional()` skips both; `if (socketFile)` treats both as falsy; only a key-presence check distinguishes them, and there `null` is the worse of the two — it would route an HTML path with a null body) | Recorded with the residual stated correctly: **not "covered by unit tests" but "unexercised against the real service"**, and it only becomes live if a text-only kind is ever added |
+| **A-5** | `normalizeTo` trims but does not drop empties: `to: ['']` survives | Recorded, **not actioned**. No in-repo caller can produce it (the contact path falls back to a configured recipient; the other four pass a single applicant address) and FR-2 is silent. Hardening here would be advisory-driven scope growth |
+| **A-6** | ⚠️ T-4 will likely pass the whole `MicroserviceMailConfig` through, since it type-checks as a superset — which hands the **credential-bearing `url`** into the builder. Harmless as written (explicit literal, no spread), but a future `...config` inside the builder would publish the broker URL **into the message body** | **Transferred to T-4** as an explicit call-site constraint: destructure, never spread. This is FR-7/NFR-3 territory, and the cheapest possible moment to foreclose it |
+
+**An authority gap the Reviewer surfaced, and it is real.** The microservice's own contract document — cited in `requirements.md` §2's verification ledger as the source for the envelope, `socketFile` support, and the recipient-validation rule — **is not in this repository**. The only in-repo statements of the wire contract are FR-2's JSON skeleton and `proposal.md`'s mapping table. The Reviewer correctly marked the recipient-validation rule `UNVERIFIABLE` from reading rather than passing or failing it, and routed it to T-9's observed send. *Raised to the product owner: vendoring that contract into the repo would close a gap that will otherwise recur on every future mail change.*
+
+---
