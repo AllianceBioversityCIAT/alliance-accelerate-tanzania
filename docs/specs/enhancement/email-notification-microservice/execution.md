@@ -684,3 +684,17 @@ Every run was a **fresh process** — so all six are **cold** measurements, and 
 - **DEP-5 corrected.** There is no DEV queue, only PROD — but the `TEST - ` prefix follows the **credential's** environment, not the queue's name, and the received mail proves the marking holds. An earlier Leader inference that PROD-queue sends would ship unmarked **was falsified by the evidence**.
 
 ---
+
+## Post-T-8 change — `EMAIL_QUEUE_NAME` moved into the secret (product owner, 2026-09-16)
+
+**Leader-inline change, made after T-8 closed.** Proportionate rather than delegated: a single dynamic reference, one added key in the secret's template, and the runbook text — verified by `./infra/scripts/validate.sh` (all three stacks PASS). Spawning the full triad for a four-line config change would have cost more than every advisory transferred in this spec.
+
+**What changed.** `EMAIL_QUEUE_NAME` now resolves from `MailMicroserviceSecret` (third key, `queueName`) instead of sitting as a committed literal. `GenerateSecretString`'s `SecretStringTemplate` carries **two** placeholder keys now — a reference to a missing key fails the whole stack operation, so all three must exist from first creation.
+
+**What deliberately did not change, and the reasoning is recorded because it is a refusal.** The product owner initially proposed moving `EMAIL_SENDER` too. **It stays a literal:** that address is the `From` header of **every message the system sends** — it is public by construction, visible in the screenshots from the local smoke test. Hiding it would add an operator step and protect nothing. If spoofing is the concern, SPF/DKIM on the domain is the control, not the address's absence from a file. The product owner accepted this on the merits.
+
+**The trade that was accepted, stated so it is not rediscovered.** The T-8 Reviewer had ruled *in favour* of the literal, partly because a committed queue name is **reviewable and versioned** — and DEP-5's DEV/PROD confusion is exactly the kind of thing that benefits from being in git rather than only in live stack state. Moving it to the secret loses that. The product owner weighed disclosure against reviewability and chose disclosure; recorded so a future reader sees a decision, not an oversight.
+
+⚠️ **A stale comment was introduced and caught in the same pass.** The change left `EMAIL_QUEUE_NAME and EMAIL_SENDER are NOT secrets` sitting three lines above a `queueName` dynamic reference — *the exact defect class this spec spent five review rounds eliminating*, reintroduced by the change itself. Corrected in the same commit, with both the new classification and the reason `EMAIL_SENDER` is exempt.
+
+---

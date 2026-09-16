@@ -370,13 +370,20 @@ in `20-backend/template.yaml`). Before the deploy that flips `MailTransport`
 to `microservice` (T-9), an operator MUST overwrite both placeholders with
 real values.
 
-### Write both keys — in ONE call
+### Write all three keys — in ONE call
 
 ⚠️ **`put-secret-value --secret-string` REPLACES THE WHOLE DOCUMENT — it is not
-a merge.** Writing `{"rabbitmqUrl":"amqps://..."}` alone **silently deletes
-`apiKey`**, and the very next resolve of the deleted key fails the whole stack
-operation. Always write **both** keys, in a **single** JSON document, in a
-**single** `put-secret-value` call.
+a merge.** Writing `{"rabbitmqUrl":"amqps://..."}` alone **silently deletes `apiKey`
+and `queueName`**, and the very next resolve of a deleted key fails the whole
+stack operation. Always write **all three** keys, in a **single** JSON
+document, in a **single** `put-secret-value` call.
+
+`queueName` joined the secret on 2026-09-16 at the product owner's direction.
+It is not a credential — it grants no access without the broker URL — but it
+discloses the platform's queue naming and which environment we target, which
+does not belong in a repository. `EMAIL_SENDER` deliberately did **not** move:
+it is the From header of every message the system sends, so it is public by
+construction.
 
 Do this as three separate steps — do not paste the placeholder edit as part
 of a bigger block. The values are real broker/CLARISA credentials; pasting a
@@ -400,7 +407,8 @@ trap 'rm -f "$SECRET_FILE"' EXIT
 cat > "$SECRET_FILE" <<'EOF'
 {
   "rabbitmqUrl": "amqps://<user>:<password>@<host>:5671/<vhost>",
-  "apiKey": "<clarisa-issued-api-key>"
+  "apiKey": "<clarisa-issued-api-key>",
+  "queueName": "<platform-team-queue-name>"
 }
 EOF
 

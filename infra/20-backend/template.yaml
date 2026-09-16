@@ -112,13 +112,19 @@ Resources:
     Properties:
       Name: !Sub "${AWS::StackName}-mail-microservice-secret"
       Description: >-
-        OneCGIAR notification-microservice credentials: rabbitmqUrl (broker
-        URL, embeds user:password) and apiKey (CLARISA). Placeholder JSON at
-        creation - the operator MUST overwrite both keys with real values via
-        put-secret-value before the MailTransport=microservice deploy
-        (design.md §7.2, §7.3). Never log, print, or commit either value.
+        OneCGIAR notification-microservice configuration: rabbitmqUrl (broker
+        URL, embeds user:password), apiKey (CLARISA), and queueName. Placeholder
+        JSON at creation - the operator MUST overwrite ALL THREE keys with real
+        values via put-secret-value before the MailTransport=microservice deploy
+        (design.md §7.2, §7.3). Never log, print, or commit any of them.
+        queueName is here at the product owner's direction (2026-09-16): it is
+        not a credential and grants no access on its own, but it discloses the
+        platform's queue naming and which environment we target, which does not
+        belong in a repository. EMAIL_SENDER deliberately stayed a template
+        literal - it is the From header of every message the system sends, so
+        hiding it would protect nothing while adding an operator step.
       GenerateSecretString:
-        SecretStringTemplate: '{"apiKey": "REPLACE_BEFORE_MICROSERVICE_DEPLOY"}'
+        SecretStringTemplate: '{"apiKey": "REPLACE_BEFORE_MICROSERVICE_DEPLOY", "queueName": "REPLACE_BEFORE_MICROSERVICE_DEPLOY"}'
         GenerateStringKey: "rabbitmqUrl"
         PasswordLength: 64
         ExcludePunctuation: true
@@ -193,19 +199,25 @@ Resources:
           MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org
           OTP_HMAC_SECRET: !Sub "{{resolve:secretsmanager:${OtpHmacSecret}:SecretString}}"
           # T-8 - OneCGIAR notification-microservice config (design.md §4.5,
-          # §7.1, §7.2). RABBITMQ_URL and MICROSERVICE_API_KEY are secrets -
-          # dynamic references into MailMicroserviceSecret ONLY, never a
-          # literal (FR-7). EMAIL_QUEUE_NAME and EMAIL_SENDER are NOT secrets
-          # but their real values are held by the platform team, not known at
-          # this template's authorship - the placeholders below MUST be
-          # replaced with real values (directly in this template, then
-          # committed) before the MailTransport=microservice deploy (T-9).
+          # §7.1, §7.2). THREE of the five now resolve from
+          # MailMicroserviceSecret and never appear as literals here:
+          #   RABBITMQ_URL         - a credential (embeds user:password)
+          #   MICROSERVICE_API_KEY - a credential (CLARISA)
+          #   EMAIL_QUEUE_NAME     - NOT a credential, and grants no access on
+          #     its own, but it discloses the platform's queue naming and which
+          #     environment we target. Moved here at the product owner's
+          #     direction (2026-09-16); it was a committed literal until then.
+          # EMAIL_SENDER stays a literal DELIBERATELY: it is the From header of
+          # every message the system sends, so it is public by construction -
+          # hiding it would protect nothing while adding an operator step. If
+          # spoofing is the worry, SPF/DKIM on the domain is the control, not
+          # the absence of the address from this file.
           # EMAIL_SENDER_NAME is the one variable that defaults rather than
           # throwing (getMicroserviceMailConfig); its value here is the fixed
           # project value from design.md §4.5, not a placeholder.
           RABBITMQ_URL: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:rabbitmqUrl}}"
           MICROSERVICE_API_KEY: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:apiKey}}"
-          EMAIL_QUEUE_NAME: cgiar_ms_prod_mailer_queue
+          EMAIL_QUEUE_NAME: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:queueName}}"
           EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
           EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
