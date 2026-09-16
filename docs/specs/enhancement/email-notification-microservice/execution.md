@@ -495,3 +495,21 @@ Notable reasoning: the Reviewer traced PATH 3's fixture and confirmed the deadli
 **Final status: ✅ PASS on attempt 1.**
 
 ---
+
+#### T-5 — advisory polish pass (product-owner authorized, Reviewer waived)
+
+The product owner authorized fixing advisories A-1, A-2 and A-3 — vacuity defects **in the task whose purpose is preventing vacuity** — scoped to the two files T-5 already owns. The repo-wide `fail()` pattern in `contact.service.spec.ts` and `cognito-error.mapper.spec.ts` was explicitly fenced out as a separate change.
+
+**No Reviewer on this pass, by waiver.** The Implementer's report is the evidence, and it was told so. **Leader-verified independently afterward:** production files byte-identical to `HEAD` (empty diff on both), only the two spec files changed (+40/−15), and the scoped suite re-run by the Leader on a quiet tree → **55/55**.
+
+**Fix 1 — the strongest form of proof available.** Replaced both `fail()` sites with a captured-message form. The Implementer did not merely show the new form works: it mutated `getMicroserviceMailConfig()` to stop throwing, showed the **new** form reddens (`message` is `''`), then restored the **old** `fail()`-based form from `git show HEAD:…` against *the same mutated source* and showed it **passed**, silently swallowing `ReferenceError: fail is not defined`. That is a direct A/B demonstration that the old gate could not distinguish "threw cleanly" from "did not throw".
+
+**Fix 2 — the rewritten name tells a harder truth than the one it replaced.** Testing the named mutation empirically, the Implementer found the Logger half is not merely un-reddened but **structurally impossible to redden on that path**: `connectFresh`'s `amqp.connect()` rejects before a channel model exists, so `attachHealthListeners` — the file's only `Logger.warn` site — is never attached. It rewrote the name to state the message-half mechanism precisely **and** to say plainly that the Logger check is a structural invariant of the scenario rather than a gate any mutation there reddens. It noted the result is more verbose than its exemplar and declined to shorten it at the cost of a fresh inaccuracy.
+
+⚠️ **Fix 3 — the Reviewer's own suggested fix did not discriminate, and the Implementer caught it.** The Reviewer proposed `expect(connectMock).toHaveBeenCalledTimes(2)`; the Leader relayed it verbatim. The Implementer tested it and found **it does not redden**: deleting the second `connectQueue` entry still leaves `connectMock` called twice, because the mock's `mockImplementation` falls back to a default *successful* script when the queue empties — so the retry still happens, just successfully. It replaced the assertion with `expect(connections.length).toBe(0)` and verified *that* reddens (`Expected: 0, Received: 1`).
+
+**This is the fourth time in this execution that check-don't-transcribe caught a defect in guidance handed down from above** — after T-7 narrowing a Reviewer's four-part argument, T-4 refusing a Leader instruction to assert a false count, and T-5's own mutation pass catching its first draft's vacuity. Here the non-discriminating suggestion originated with the **Reviewer** and passed through the **Leader** unchallenged. Neither caught it; the Implementer did, by running it.
+
+**Residual, unchanged and still owned by nobody:** the dead `fail()` pattern in `contact.service.spec.ts` and `cognito-error.mapper.spec.ts`. Out of this spec's scope; recommended as a standalone `/akili-quick`.
+
+---

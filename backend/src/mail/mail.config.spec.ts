@@ -115,30 +115,40 @@ describe('mail.config', () => {
       () => {
         setAllRequired();
         delete process.env.RABBITMQ_URL;
+        let message = '';
         try {
           getMicroserviceMailConfig();
-          fail('expected getMicroserviceMailConfig to throw');
         } catch (err) {
-          const message = (err as Error).message;
-          expect(message).not.toContain('amqps://');
-          expect(message).not.toContain('user:pass');
+          message = (err as Error).message;
         }
+        // T-5 polish: `fail()` is a type-only Jest global — it does not
+        // exist at runtime under jest-circus (the default runner here, and
+        // this repo sets no testRunner override), so the old
+        // try/fail()/catch shape would swallow a ReferenceError and let
+        // every toContain assertion below pass vacuously against
+        // "fail is not defined" if getMicroserviceMailConfig ever stopped
+        // throwing. Asserting the captured message is non-empty is what
+        // actually distinguishes "threw cleanly" from "did not throw".
+        expect(message).not.toBe('');
+        expect(message).not.toContain('amqps://');
+        expect(message).not.toContain('user:pass');
 
         setAllRequired();
         delete process.env.MICROSERVICE_API_KEY;
+        message = '';
         try {
           getMicroserviceMailConfig();
-          fail('expected getMicroserviceMailConfig to throw');
         } catch (err) {
-          const message = (err as Error).message;
-          expect(message).not.toContain('clarisa-key-123');
-          // The discriminating assertion (A1 fix): RABBITMQ_URL is still
-          // SET in process.env at this point (setAllRequired() above,
-          // never deleted in this second block) — a secret that is
-          // actually present, not one already removed before the check.
-          expect(message).not.toContain('amqps://');
-          expect(message).not.toContain('user:pass');
+          message = (err as Error).message;
         }
+        expect(message).not.toBe('');
+        expect(message).not.toContain('clarisa-key-123');
+        // The discriminating assertion (A1 fix): RABBITMQ_URL is still
+        // SET in process.env at this point (setAllRequired() above,
+        // never deleted in this second block) — a secret that is
+        // actually present, not one already removed before the check.
+        expect(message).not.toContain('amqps://');
+        expect(message).not.toContain('user:pass');
       },
     );
 

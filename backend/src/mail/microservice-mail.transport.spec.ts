@@ -817,8 +817,14 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
 
   it(
     'PATH 1 (sync throw/rejection, design.md §4.4) — never lets a raw amqplib error escape: the ' +
-      "thrown error's name and message are credential-free, and nothing reaches any Logger call " +
-      "either — mutation: making sanitizeEscapingError a passthrough (`return err`) reddens both halves",
+      "thrown error's name and message are credential-free (the accompanying Logger-call check " +
+      "below is a structural invariant of this scenario, not a gate any error-handling mutation " +
+      "reddens: connectFresh's `amqp.connect()` rejects before a model exists, so " +
+      "attachHealthListeners's listeners — this file's only Logger.warn call site — are never " +
+      'attached on this path) — mutation: `connectWithRetry`\'s final catch changed to rethrow the ' +
+      'raw error rather than wrap it, PLUS `sanitizeEscapingError` changed to a passthrough ' +
+      '(`return err`) so the boundary sanitizer does not re-wrap it, reddens the message-content ' +
+      'assertions below (verified empirically; see T-5 polish pass report)',
     async () => {
       const loggerSpy = spyOnAllLoggerLevels();
       try {
@@ -1071,6 +1077,15 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
         await Promise.resolve();
         await Promise.resolve();
 
+        // T-5 polish (advisory A-3): non-vacuity of the second connectQueue
+        // entry rests on this assertion, not on the comment above it —
+        // without it, deleting that entry would silently restore the
+        // vacuous state (nothing to retry, nothing to leak) and the suite
+        // would stay green. Asserting exactly 2 calls proves the first
+        // attempt genuinely rejected late AND the retry it triggered was
+        // actually consumed off the queue.
+        expect(connectMock).toHaveBeenCalledTimes(2);
+        expect(connections.length).toBe(0);
         expect(unhandled).not.toHaveBeenCalled();
         loggerSpy.assertNoLeak('sup3rSecr3t', 'amqps://produser');
       } finally {
