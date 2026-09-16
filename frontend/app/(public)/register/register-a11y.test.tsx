@@ -94,6 +94,8 @@ import { ApiError } from '@/lib/api/client';
 // ---------------------------------------------------------------------------
 
 const POLICY = {
+  acceptanceStatement:
+    'I have read and accept the Data Protection & Participant Consent Policy.',
   version: 'v2.1-a11y-fixture',
   sections: [
     { heading: 'What we collect', body: 'We collect your organisation, contact, and location details.' },

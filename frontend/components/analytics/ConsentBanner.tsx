@@ -108,10 +108,10 @@ export function ConsentBanner() {
           <span className="font-semibold text-fg">We use cookies to understand site usage.</span>{' '}
           We only set analytics cookies if you agree. Read our{' '}
           <Link
-            href="/privacy"
+            href="/cookies"
             className="text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
           >
-            privacy notice
+            cookie notice
           </Link>{' '}
           to learn more.
         </p>
