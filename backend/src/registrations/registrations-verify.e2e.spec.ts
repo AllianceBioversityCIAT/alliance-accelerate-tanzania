@@ -96,11 +96,15 @@ describe('POST /registrations/verify (T-8)', () => {
   //
   // **Real wall-clock cost, not throttle budget:** every request that
   // reaches `RegistrationsService.requestVerificationCode` now pays
-  // `VERIFICATION_CODE_RESPONSE_FLOOR_MS` (900 ms) of real time before
+  // `VERIFICATION_CODE_RESPONSE_FLOOR_MS` (2000 ms, re-derived by T-7 —
+  // `design.md` DD-10, §12.1 — composed from `VERIFICATION_CODE_
+  // PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS`, no longer the earlier
+  // `fix/otp-mail-lambda-freeze` figure of 900 ms) of real time before
   // responding — this file uses the app's real HTTP stack, not the unit
   // suite's fake timers, so that time is genuinely spent. ~11 padded
-  // requests × 900 ms is a few seconds added to this file's run, well
-  // inside `testTimeout: 20000` per test (`package.json`).
+  // requests × 2000 ms is ~22 seconds added across this file's run — spread
+  // over several `it` blocks, at most 3 padded requests (~6 s) in any ONE
+  // test, well inside `testTimeout: 20000` per test (`package.json`).
   beforeAll(async () => {
     issueCodeMock = jest.fn();
     sendMock = jest.fn().mockResolvedValue(undefined);

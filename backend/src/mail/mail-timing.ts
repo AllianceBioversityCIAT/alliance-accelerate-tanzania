@@ -18,16 +18,14 @@
  *
  * **What this file deliberately does NOT export.**
  * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` — the fourth row of §12.1's table —
- * is not defined here. It already exists in
- * `registrations/registrations.service.ts`, set to `900` by an earlier,
- * unrelated production fix (`fix/otp-mail-lambda-freeze`) that reasoned from
- * the one real latency figure that incident produced. §12.1's value for the
- * SAME constant is `2000` — composed as `PRESEND_ALLOWANCE + SEND_TIMEOUT`
- * per DD-10 below — and re-deriving the live constant to match is T-7's
- * task (`design.md` DD-10, §12; `tasks.md` T-7), not this one. This file's
- * own spec (`mail-timing.spec.ts`) imports the live value read-only to
- * prove today's known gap without asserting past this task's scope; see
- * that file's header for the exact shape of that proof.
+ * is not defined here. It lives in `registrations/registrations.service.ts`,
+ * where it is now (T-7) COMPUTED as `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS
+ * + MAIL_SEND_TIMEOUT_MS`, imported from this file — `2000`, per §12.1.
+ * *(At T-1 time, when this paragraph was first written, it was still the
+ * literal `900` an earlier, unrelated production fix
+ * (`fix/otp-mail-lambda-freeze`) had reasoned from the one real latency
+ * figure that incident produced; re-deriving it was T-7's task, now done.
+ * `mail-timing.spec.ts`'s history records the gap that existed in between.)*
  *
  * **DD-10 — why the floor is COMPOSED, not merely compared.** An earlier
  * revision of this spec set a publish timeout, raised the floor, and
@@ -42,10 +40,15 @@
  * the floor as a SUM of every term inside the padded window
  * (`PRESEND_ALLOWANCE + SEND_TIMEOUT ≤ FLOOR`) rather than comparing one
  * term against it in isolation. All three terms are enforced at runtime —
- * this module's two, plus `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS` via
- * T-7's Prisma transaction timeout — so a value being wrong produces a
- * failed request or a warn line, never a silent divergence between the
- * accepted and over-cap branches.
+ * this module's two, plus `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS` via T-7's
+ * deadline over `issueCode(...)`'s WHOLE call (⚠️ corrected during T-1
+ * review, advisory A3: a Prisma transaction timeout on `issueCode` was the
+ * original plan here and is insufficient — its `$transaction` wraps only
+ * the `EmailSendBudget` upsert, leaving `generateCode`, `hashCode` and
+ * `emailVerification.create` unbounded, which is exactly the work only the
+ * ACCEPTED branch pays) — so a value being wrong produces a failed request
+ * or a warn line, never a silent divergence between the accepted and
+ * over-cap branches.
  */
 
 /**
@@ -90,20 +93,27 @@ export const MAIL_PROBE_TIMEOUT_MS = 250;
 
 /**
  * Bounds the synchronous work `RegistrationsService.requestVerificationCode`
- * performs BEFORE it awaits the mail send: `EmailVerificationService
- * .issueCode`'s interactive Prisma transaction (the `EmailSendBudget`
- * upsert, `emailVerification.create`, and code generation/hashing).
+ * performs BEFORE it awaits the mail send: the WHOLE `EmailVerificationService
+ * .issueCode(...)` call — its interactive Prisma transaction (the
+ * `EmailSendBudget` upsert), plus code generation, hashing, and
+ * `emailVerification.create`, none of which run inside that transaction.
  *
- * DD-10 makes this a runtime ceiling rather than an assumption: T-7 gives
- * `issueCode`'s transaction an explicit timeout equal to this value. This
- * repo documents Prisma's own default interactive-transaction ceiling on
- * that exact code path as `5000ms` — 6.25× this allowance — so leaving it
- * unbounded would let a slow database silently reopen the timing oracle
- * this constant, composed with {@link MAIL_SEND_TIMEOUT_MS}, exists to
- * close. A transaction that breaches this budget now fails the request
- * loudly (the existing, deliberately-unpadded third exit — address-
- * independent infrastructure failure) instead of leaking a timing signal.
- * Wiring the actual Prisma timeout is T-7's task; this constant is only
- * the number T-7 applies.
+ * DD-10 makes this a runtime ceiling rather than an assumption: T-7's
+ * `RegistrationsService.requestVerificationCode` races the ENTIRE
+ * `issueCode(...)` call against this value (`withPreSendAllowance`) — ⚠️
+ * corrected during T-1 review, advisory A3: an earlier plan put an explicit
+ * timeout on `issueCode`'s `$transaction` instead, which is insufficient,
+ * since that transaction wraps only the `EmailSendBudget` upsert and would
+ * have left `emailVerification.create` — work only the ACCEPTED branch
+ * pays — unbounded. This repo documents Prisma's own default interactive-
+ * transaction ceiling on that transaction alone as `5000ms` — 6.25× this
+ * allowance — so leaving the call unbounded would let a slow database
+ * silently reopen the timing oracle this constant, composed with {@link
+ * MAIL_SEND_TIMEOUT_MS}, exists to close. A call that breaches this budget
+ * now fails the request loudly (the existing, deliberately-unpadded third
+ * exit — address-independent infrastructure failure) instead of leaking a
+ * timing signal. Wiring the actual deadline is T-7's task
+ * (`registrations.service.ts`); this constant is only the number T-7
+ * applies.
  */
 export const VERIFICATION_CODE_PRESEND_ALLOWANCE_MS = 800;

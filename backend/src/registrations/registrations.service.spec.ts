@@ -17,7 +17,9 @@
  * pads BOTH the rate-limited and accepted branches to
  * `VERIFICATION_CODE_RESPONSE_FLOOR_MS`, so every test in this block that
  * exercises `requestVerificationCode` now runs through that pad. Real
- * timers would make that a genuine ~900 ms of wall-clock cost PER TEST —
+ * timers would make that a genuine `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of
+ * wall-clock cost PER TEST (§12 is that constant's one home — see
+ * `mail/mail-timing.ts` — so it is named here, never restated as a number) —
  * this describe block therefore runs under Jest's modern fake timers
  * (`beforeEach`/`afterEach` below), and every test either advances fake
  * time past the floor with `jest.advanceTimersByTimeAsync` or asserts
@@ -36,11 +38,16 @@ import {
   EmailVerificationService,
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
+import {
+  MAIL_SEND_TIMEOUT_MS,
+  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS,
+} from '../mail/mail-timing';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
   RegistrationsService,
   VERIFICATION_CODE_RESPONSE_FLOOR_MS,
+  VerificationCodePreSendAllowanceExceededError,
 } from './registrations.service';
 import { CONSENT_POLICY_VERSION } from './consent-policy';
 import * as ConsentPolicy from './consent-policy';
@@ -303,7 +310,125 @@ describe('RegistrationsService.requestVerificationCode', () => {
       );
     },
   );
+
+  describe(
+    'the pre-send allowance (T-7, design.md DD-10) — issueCode(...) is bounded ' +
+      'as a UNIT, not merely its $transaction (advisory A3)',
+    () => {
+      it(
+        'fails the request when issueCode(...) does not settle within ' +
+          'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS — reaching the existing, deliberately ' +
+          'unpadded third exit, never the over-cap one',
+        async () => {
+          // A promise that never settles — models a slow/hung database
+          // round trip, the exact case a Prisma transaction timeout alone
+          // would NOT have covered for the three steps outside it
+          // (generateCode, hashCode, emailVerification.create).
+          emailVerificationService.issueCode.mockReturnValue(new Promise<never>(() => {}));
+
+          const promise = service.requestVerificationCode('slow-db@example.com');
+          const assertion = expect(promise).rejects.toBeInstanceOf(
+            VerificationCodePreSendAllowanceExceededError,
+          );
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS);
+          await assertion;
+
+          // Not the cap's shape: no code was ever issued, so nothing could
+          // have been sent, and this must not silently resolve like the
+          // over-cap branch does.
+          expect(mailService.sendVerificationCode).not.toHaveBeenCalled();
+        },
+      );
+
+      it('does not fail a call that settles within the allowance — the common case is unaffected', async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '135790',
+          expiresAt: new Date(),
+        });
+
+        await settleAfterFloor(service.requestVerificationCode('prompt@example.com'));
+
+        expect(mailService.sendVerificationCode).toHaveBeenCalledWith('prompt@example.com', '135790');
+      });
+    },
+  );
+
+  describe(
+    'the negative-remainder warn line (T-7, DD-10 "second signal, retained") — ' +
+      'observable without becoming a new PII leak',
+    () => {
+      let warnSpy: jest.SpyInstance;
+
+      beforeEach(() => {
+        warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        warnSpy.mockRestore();
+      });
+
+      it(
+        'fires exactly once, carrying the overrun in ms and no address, when the ' +
+          'total elapsed time still exceeds the composed floor',
+        async () => {
+          emailVerificationService.issueCode.mockResolvedValue({
+            code: '246810',
+            expiresAt: new Date(),
+          });
+          let resolveSend!: () => void;
+          mailService.sendVerificationCode.mockReturnValue(
+            new Promise<void>((resolve) => {
+              resolveSend = resolve;
+            }),
+          );
+
+          const overrunMs = 250;
+          const promise = service.requestVerificationCode('overrun@example.com');
+          // Advance past the floor WITHOUT letting the send settle — models
+          // a send that itself overran (T-6 bounds this at the transport;
+          // this test proves the SIGNAL fires if that bound is ever
+          // breached or absent, not that it currently can be).
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS + overrunMs);
+          resolveSend();
+          await promise;
+
+          expect(warnSpy).toHaveBeenCalledTimes(1);
+          const [emittedLine] = warnSpy.mock.calls[0] as [string];
+          expect(emittedLine).toContain(`overrunMs=${overrunMs}`);
+          expect(emittedLine).not.toContain('overrun@example.com');
+        },
+      );
+
+      it('does not fire when the response settles within the floor', async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '369121',
+          expiresAt: new Date(),
+        });
+
+        await settleAfterFloor(service.requestVerificationCode('on-time@example.com'));
+
+        expect(warnSpy).not.toHaveBeenCalled();
+      });
+    },
+  );
 });
+
+describe(
+  'the composed floor (T-7, design.md DD-10, §12.3 invariant 1) — against the LIVE constant',
+  () => {
+    it(
+      'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS ≤ ' +
+        'VERIFICATION_CODE_RESPONSE_FLOOR_MS — 800 + 1200 ≤ 2000 (mutation-tested: ' +
+        'reddens if the floor stops being composed from these two imports)',
+      () => {
+        expect(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS).toBeLessThanOrEqual(
+          VERIFICATION_CODE_RESPONSE_FLOOR_MS,
+        );
+      },
+    );
+  },
+);
 
 // @sdd-spec actors/public-self-registration (T-10)
 /**

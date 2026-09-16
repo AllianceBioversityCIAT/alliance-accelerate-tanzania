@@ -185,3 +185,136 @@ The Implementer's stated reason for its self-chosen target is worth preserving: 
 **An authority gap the Reviewer surfaced, and it is real.** The microservice's own contract document — cited in `requirements.md` §2's verification ledger as the source for the envelope, `socketFile` support, and the recipient-validation rule — **is not in this repository**. The only in-repo statements of the wire contract are FR-2's JSON skeleton and `proposal.md`'s mapping table. The Reviewer correctly marked the recipient-validation rule `UNVERIFIABLE` from reading rather than passing or failing it, and routed it to T-9's observed send. *Raised to the product owner: vendoring that contract into the repo would close a gap that will otherwise recur on every future mail change.*
 
 ---
+
+### T-7 — Bound the pre-send window and re-derive the floor
+
+| | |
+|---|---|
+| **Status** | 🔄 **IN PROGRESS** — attempt 1 FAILED review, attempt 2 dispatched |
+| Date | 2026-09-16 |
+| Requirements covered | NFR-7 · `design.md` DD-10, §12 |
+
+**Leader skill/effort:** `nestjs-expert` + `systematic-debugging`; effort **`xhigh`** — the dial rose for *security*, not size.
+
+#### ⚠️ Leader error — concurrency incident during this task
+
+I dispatched T-6 and T-7 in parallel (sanctioned: disjoint files) **and instructed T-7's brief to run the full `npm test -- --silent` suite**. A full-suite run is a global measurement; to get a clean baseline the worker ran `git stash`, which stashed **T-6's uncommitted work**.
+
+**Root cause, named precisely:** `.agents/leader.md` says *"Never run a measurement command while a delegated agent is active."* I applied that rule to myself and **never propagated it into the briefs** — then actively instructed a global measurement inside a parallel dispatch. **This is KZ-010 recurrence ×4**, and it repeats the most uncomfortable detail of ×3: *the detection came from below.* The T-6 worker caught it, not the Leader.
+
+**Worker behaviour was correct and is recorded as such:** T-6 detected the collision, **declined to pop the stash** while another process was mid-run (which would have created a second collision), started a monitor, and reported instead of improvising.
+
+**Recovery:** no work lost. Stash empty on inspection; both workers' edits intact in the tree; T-6's files additionally backed up to the scratchpad before any further action.
+
+**Standing constraints added to every future brief:**
+1. **No worker runs `git stash`** — destructive mutation of shared state, not a measurement.
+2. **No worker runs the full suite** — scoped commands only. Full-suite runs are Leader-scheduled in a quiet window.
+
+#### Attempt 1 — Reviewer `STATUS: FAIL`
+
+Files changed: `registrations.service.ts` (+227), `registrations.service.spec.ts` (+123), `registrations-verify.e2e.spec.ts`, `email-verification.service.ts` (doc-only), `mail-timing.ts` (doc-only), `mail-timing.spec.ts` (−92).
+
+**What the Reviewer confirmed holds** (verified by reading, not by accepting the account):
+- The bound covers the **whole** pre-send region — every `await` in `issueCode` is inside the raced promise; `issueCode` has exactly one call site repo-wide.
+- Both traps closed: `.catch(() => {})` attached at race construction **before** `Promise.race`; timer cleared in `.finally` on both paths.
+- Floor **composed in code** from the two imported constants — no literal.
+- Warn line interpolates only the overrun; no address anywhere.
+- Invariant 1 still gated against the **live** constant, in the file `design.md` §8 and `tasks.md` nominate. The double deletion was in bounds and **net-neutral** — the removed target-only test asserted `800 + 1200 ≤ 2000` over constants that `mail-timing.spec.ts` still pins individually — and it **discharges T-1's advisory A7**, exactly as A7 predicted.
+- The e2e cost comment updated *and arithmetically re-derived* — the Reviewer recounted the padded requests (3+3+2+1+2 = 11, max 3 per test) rather than trusting the figure.
+- `mail-timing.ts`'s doc-only edit ruled **in bounds**: it corrected a statement **T-7 itself falsified**; leaving it would be the drift §12 exists to prevent.
+
+**FAIL issue 1 — the third-exit argument is false against the code it describes.**
+
+The docblock states: *"No branch inside `issueCode` does MORE work for an address that is 'known', 'mid-registration', or has prior live codes — an attacker cannot choose an address that makes this allowance more or less likely to breach."*
+
+`issueCode` **branches on `newSends > OTP_MAX_SENDS_PER_HOUR`**: the over-cap branch throws immediately after the `$transaction`; the under-cap branch additionally pays `generateCode`, `hashCode` and a second DB round trip. **Which branch runs is a function of the address's prior sends in the window** — so an attacker *can* choose an address whose pre-send region costs one fewer round trip. The sentence is the exact negation of what the code does, and is contradicted by **DD-10's own Consequences clause**, which this spec already states: *"they do not perform identical pre-send work… which is precisely why the allowance is sized on the accepted branch, the larger of the two."*
+
+Because the third exit is unpadded, the differential surfaces as a **`500`-vs-`202` distinction under load**, not as latency.
+
+⚠️ **The conclusion may well survive — the argument does not.** The Reviewer noted the safety case holds on DD-10's actual ground (the delta is one `INSERT` plus hashing; the allowance is sized on the *larger* branch so the smaller carries more margin; the exit's own latency is constant at the allowance, so it discloses nothing through timing; and what it converts under load is a bounded delta into a status code, which DD-10 accepts by name — *"failing loudly beats leaking silently"*). **That argument is nowhere in the file.** This is a KZ-011 defect: a claim internally plausible and externally false, in the one place a future reader will trust it.
+
+**FAIL issue 2 — a stale timing constant survives in a file this task edited.** `registrations.service.spec.ts` still reads *"a genuine ~900 ms of wall-clock cost PER TEST"*, in the **present tense**, after the floor became 2000. Same class T-7's Done-when explicitly required fixed in the sibling file — and in the other file from its own Files list. (The `900` references in `registrations.service.ts` and `mail-timing.ts` are correctly framed as *history* and are fine.)
+
+**ADVISORY (non-gating):** a test name overclaims its discrimination — a hardcoded `2000` would keep it green, so it gates invariant 1, not composition-in-code (which is established by reading) · the O(1) synchronous prologue sits outside the timer window but inside the floor window, so nothing leaks · **a breached request `500`s while `issueCode` may still land — burning one of the address's three hourly sends and creating a row for a code never delivered**; a reliability note for T-9, not a timing leak · §12.3's "asserted by one unit test" needs reconciling now that the two invariants live in two files (the split is sanctioned by `tasks.md`).
+
+#### Attempt 2 — dispatched
+
+Effort held at **`xhigh`**, not raised to `max`. The rework rule says bump one level, but the routing rule forbids `max` on a cheaper tier — and escalating the *tier* would put the Implementer on the Reviewer's model, breaking `author ≠ auditor`. The compensation is precision instead of depth: the Reviewer supplied the correct argument's full structure, so attempt 2 is largely transcription of a supplied remediation plus one stale figure.
+
+---
+
+### T-6 — Bound the SES transport with the same deadline
+
+| | |
+|---|---|
+| **Status** | 🔄 **IN PROGRESS** — attempt 1 FAILED review, attempt 2 dispatched |
+| Date | 2026-09-16 |
+| Requirements covered | NFR-7 · `design.md` DD-10 |
+
+**Leader skill/effort:** `aws-serverless`; effort `medium` (attempt 2: `high`).
+
+**Worker conduct during the concurrency incident (see T-7's entry).** This worker's task was the one whose files were stashed. It detected the collision, **declined to pop the stash** while another process was mid-run, started a monitor, and reported rather than improvising. It was resumed by the Leader once the tree was quiet and delivered its full evidence then. Recorded because correct behaviour under an incident deserves the same visibility as a defect.
+
+#### Attempt 1 — the finding that justifies the task
+
+⚠️ **`requestTimeout` alone aborts nothing.** The Implementer set it, then went and *checked empirically* that it worked — a standalone probe against a hung server ran past 120 s with the timeout configured. The Reviewer then confirmed it from the **installed vendor source** (`@smithy/node-http-handler@4.9.13`, `set-request-timeout.js`): without `throwOnRequestTimeout`, a breach only calls `logger.warn` and lets the request continue. The vendor's own types say so: *"users must also opt-in for request timeout thrown errors. Without this setting, a breach of the request timeout will be logged as a warning."*
+
+**Had only `requestTimeout` shipped, DD-10's "both transports are bounded" would have been false behind a green suite** — the exact defect class this spec exists to eliminate. Both options are present in the delivered code.
+
+**The test is genuinely behavioural, and self-corroborating.** It un-mocks `SESClient.prototype.send` (`aws-sdk-client-mock` stubs *above* the middleware stack, so nothing built on it can reach the handler at all), points a real client at a silent TCP stub via `AWS_ENDPOINT_URL_SES`, and measures wall-clock to rejection. The Reviewer credited the account without executing it, for a stated reason: **had the endpoint override not been honoured, the request would have hit real SES and failed in a few hundred ms with a credentials error — below the lower bound and with a different error name.** A green run is only reachable if the request really hung and was really killed. The mutation (remove the block ⇒ that test alone hits Jest's ceiling; the other 9 stay green) reconciles for the same reason.
+
+#### Reviewer `STATUS: FAIL` — one blocking issue, and a third option neither the Leader nor the Implementer had found
+
+The Leader asked the Reviewer to rule between (a) switching to `abortSignal` and (b) declaring `@smithy/node-http-handler` as a direct dependency. It rejected **both** and supplied a third that dominates them, verified end to end against the installed sources:
+
+`SESClient`'s `requestHandler` is typed `__HttpHandlerUserInput` — *"the HTTP handler to use **or its constructor options**"* — and the client's own runtimeConfig calls `NodeHttpHandler.create(config.requestHandler)`, which constructs from a plain object whenever the input has no `.handle`. So:
+
+```ts
+requestHandler: { requestTimeout: MAIL_SEND_TIMEOUT_MS, throwOnRequestTimeout: true }
+```
+
+type-checks fully with **zero imports**, is byte-identical at runtime, guarantees the handler is the exact version `@aws-sdk/client-ses` resolved (declaring it directly risks a *second, version-skewed copy*), needs no `package.json` edit — and therefore creates no removal obligation in T-10 that `tasks.md` does not carry.
+
+**On `abortSignal` (option a), the reason for rejection is worth keeping:** it is genuine first-party API and would work, but it is *per-call* plumbing — a future call site that forgets the argument is silently unbounded, and the bound stops being a property of the client. The handler option makes it a **construction-time property of the singleton**, so every command through it is bounded unconditionally. Measured against this spec's own standard — *"a guard that is hoped for is not a guard"* — the client-level mechanism is the right one.
+
+**Blocking issue:** the delivered code imports `NodeHttpHandler` from a package **not declared** in `backend/package.json`, resolving only by npm hoisting. A `@aws-sdk/client-ses` bump, a lockfile regeneration, or a different npm version breaks the build of the one file keeping DD-10's claim true. Remediation: delete the import, pass the options object, keep the `throwOnRequestTimeout` explanatory comment (**load-bearing — it must survive**), and re-run the *sharper* mutation: drop `throwOnRequestTimeout` **alone**, not the whole block.
+
+#### ADVISORY (non-gating)
+
+| Finding | Note |
+|---|---|
+| **`maxAttempts: 1` is not merely sound — it is forced.** The Implementer under-sold its own reasoning. Invariant 1 is `800 + 1200 ≤ 2000` with **zero slack**, so any `maxAttempts > 1` makes the worst-case send `n × 1200` ms, breaching the floor and reopening the oracle. There is no defensible alternative while the floor is composed this way | Cost accepted: transient SES throttling now surfaces to the user during Phase A. Correct trade — DD-4 imposes the identical no-internal-retry rule on the microservice transport, so Phase A and Phase B behave the same |
+| **Test-window tension, recorded where a maintainer will see it.** The upper bound does double duty — jitter margin *and* the only proof of `maxAttempts: 1`. If it ever flakes, the obvious fix (widen the window) **silently retires the retry discrimination** | Preferred remedy if it flakes: keep the window, assert retry count separately, or raise Jest's per-test timeout — never the assertion bound |
+| `AWS_ENDPOINT_URL_SES` is genuine SDK-wide config, not a test seam — no test-only plumbing entered the production file | Scope clean |
+| The spec file lacks the `// @sdd-spec … (T-6)` header its sibling carries | Folded into attempt 2 — the file is open anyway |
+| The `finally` deletes `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` unconditionally, including when ambient. `jest --runInBand` shares `process.env` across files | Theoretical here; save-and-restore is strictly safer. Folded into attempt 2 as a fix to T-6's own new code |
+
+---
+
+#### Attempt 2 — Reviewer `STATUS: PASS`
+
+> Both FAIL issues are closed and verified against source — the third-exit paragraph now concedes the branch asymmetry in the direction `issueCode` actually goes, with (a)–(d) each reconciling against `email-verification.service.ts`, `mail-timing.ts` and `design.md` DD-10; and the stale ~900 ms is replaced by the named, imported constant with no number restated. The (c) narrowing is correct — a blanket constancy claim would itself have been false — and it opens no address-dependent gap.
+
+**The Implementer improved on the argument it was handed, and that is the notable outcome.** It was given a four-part remediation and told to *verify each part against the code, not transcribe it*. It verified all four and **narrowed (c)**: `Promise.race` cannot see which statement the loser is on, so when the **deadline** wins, elapsed time is constant — but it declined to extend that to the sub-case where `issueCode` rejects from a genuine infrastructure failure *before* the timer fires, where latency is whatever that failure took. It wrote the distinction into the docblock rather than claiming blanket constancy.
+
+**The Reviewer independently ruled the narrowing correct — and sharper than that:** a blanket claim *"this exit's latency is always constant"* **would itself have been a third statement contradicted by the code, in the same docblock**. It then checked the non-deadline sub-case for address dependence specifically and found the only structural correlation (`emailVerification.create` is reachable only on the accepted branch) is **pre-existing, not attacker-inducible, and already conceded by (d)**.
+
+This is the inverse of the attempt-1 defect: attempt 1 wrote a plausible claim the code contradicted; attempt 2 **rejected a plausible claim a reviewer supplied**, because checking it showed it did not hold entire.
+
+It also verified (a) more sharply than asked: no query in `issueCode` scales with the address's history, **and** there is no unique constraint on `email` that could make an address with prior live codes throw deterministically — so there is no address-history-dependent *error* path either.
+
+**Leader-run scope check.** The Reviewer recorded that it could not run `git diff` and asked the Leader to confirm the scope claim. Done: the change since `HEAD` spans T-7's declared Files plus `mail-timing.ts` (doc-only, previously ruled in bounds) — 438 insertions / 137 deletions across 6 files. No file outside that set.
+
+**ADVISORY (non-gating) — all three transferred to T-14, which already owns both files**
+
+| ID | Finding | Disposition |
+|---|---|---|
+| **A1** | `registrations.service.ts` carries *"(see the O(1) reasoning below)"* — a **dangling pointer**: the string appears nowhere else and nothing below argues query-cost-in-history. The claim it supports is **true** (independently verified), so it misdirects a reader rather than misleading one | → **T-14** |
+| **A2** | Two reference imprecisions in `registrations.service.spec.ts`: it points at `mail/mail-timing.ts` as the constant's home, but that file **explicitly states it does not define it**; and *"never restated as a number"* is true of that site but **false file-wide** — Leader-verified, the invariant test's own name restates `800 + 1200 ≤ 2000`. That same test name also **overclaims its discrimination** (a hardcoded `2000` would keep it green; it gates invariant 1, not composition-in-code) | → **T-14** |
+| **A3** | **Pre-existing, but T-7 made it more wrong.** `registrations.service.spec.ts` claims *"every test in this block that exercises `requestVerificationCode` now runs through that pad"* — falsified by two tests reaching the deliberately **unpadded** third exit, one of which **T-7 itself added**. Routed *inside* the spec per the leader playbook's routing test: it fails "is it in scope?" but passes "did this spec cause it?" | → **T-14** |
+
+**A boundary worth preserving, in the Reviewer's own words:** *"nothing in the suite can redden if any of this prose is wrong — the docblock is unfalsifiable by test, so this review **is** its only gate."* That is the honest statement of what was established here, and why the argument's correctness mattered more than the code's.
+
+**Final status: ✅ PASS on attempt 2.**
+
+---
