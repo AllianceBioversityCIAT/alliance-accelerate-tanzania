@@ -1038,3 +1038,156 @@ The 55th hit is A2's own comment citing *"the old `not.toContain('SES')"* in the
 Dangling `(see the O(1) reasoning below)` pointer deleted and the reasoning inlined · `registrations.service.spec.ts` no longer names `mail/mail-timing.ts` as the floor constant's home (**that file explicitly disclaims defining it**) and its invariant test name no longer restates the arithmetic (§12) nor overclaims composition-in-code · *"every test … runs through that pad"* now names its two exceptions.
 
 **T-14 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.
+
+## T-16 — Amend the infrastructure documents (2026-09-17)
+
+Ran **in parallel with T-15** — disjoint file sets, so genuinely independent; both workers were forbidden builds, test runs and `validate.sh`, because two concurrent builds corrupt each other's `node_modules`/`dist` and the failure surfaces in the *other* worker. Four review rounds. The first three each found something real; **the fourth was mine.**
+
+### Most of T-16's written scope was already done
+
+`tasks.md`'s T-16 block describes work **T-13 performed** under a Leader adjudication: `infra/README.md` §6 deleted by content, its `PortalUrl` survivor relocated, and `policies/README.md`'s three SES rows removed. Following the block literally would have redone or undone finished, reviewed work. The brief stated what was done and what actually remained — the four items T-13's Reviewer handed forward.
+
+### What the task was really for — and it is not what the task says
+
+T-16's Verify is *"manual review against the **running** product, not against this spec."* That line is the whole task, and it is why this ran four rounds: **every finding below came from reading an artefact with the right question, and none of them would ever go red in any gate this repo has.**
+
+### Finding 1 — three documents described a network posture the stack contradicts
+
+| Document said | Template says |
+|---|---|
+| Lambda *"VPC-attached to reach RDS"* | `20-backend/template.yaml:203` — `# NO VpcConfig - Lambda runs outside the VPC (DD-2)`; no such property exists |
+| DB ingress *"restricted to the Lambda SG and a parameterized `DevCidr`"* | `DbSecurityGroup` — `!Ref DevCidr` **and `CidrIp: 0.0.0.0/0` on 3306**. **There is no Lambda SG** |
+| *"It is **never publicly open**."* | `PubliclyAccessible: true` + that rule |
+
+**The infrastructure is not accidentally exposed** — it is a deliberate, recorded trade-off (DD-2: no VPC attachment ⇒ no NAT gateway), with `dev-only, harden later` written beside it in the template. The defect was that the document describing it said the opposite, so a reviewer reading `docs/infrastructure.md` concluded the database was closed.
+
+Rewritten to lead with the fact — `PubliclyAccessible: true` → `0.0.0.0/0` → *"port 3306 accepts connections from any address"* — **before** any qualifier, and marked as **what the stack declares**: I tried to query the live security group and could not (this credential lacks `cloudformation:DescribeStacks`/`DescribeStackResources`). That boundary is now written into §4 rather than papered over.
+
+### Finding 2 — the TLS the rewrite then leaned on is not authenticated
+
+Round 2's Reviewer caught that the new posture named **TLS** as one of only two surviving controls, while `infra/README.md` claimed `sslaccept=strict`. The artefacts say otherwise, in three places: `migrate-seed.sh:127` uses `accept_invalid_certs` with its own *"cert chain NOT verified"* comment; `20-backend/template.yaml:227` sets `DB_SSL: accept_invalid_certs`; `prisma.service.ts:20` defaults to the same.
+
+**Unverified-chain TLS defends against passive interception only** — any certificate is accepted, so it does not stop an active man-in-the-middle. Naming "TLS" flatly implies an authenticated channel, and the same edit had just removed the network control. Four sites now agree and each carries *"certificate chain not verified"* in the same clause.
+
+### Finding 3 — one false rationale, three files, stale in all three at once
+
+The posture's justification read *"Acceptable for dev (**SG-restricted**, seeded non-PII data)"* — the very claim just deleted from `docs/infrastructure.md` for being false — living in `infra/20-backend/template.yaml`, and then found a third time by the Implementer in `infra/scripts/migrate-seed.sh`. **It stopped to ask rather than reach outside its grant**, which is why the third site was found at all. All three corrected; `SG-restricted` now returns zero hits repo-wide.
+
+**This is §12's single-home pattern in a new place.** One assumption went stale once; because it had been copied into three files instead of living in one, it went false in three places simultaneously, and no test looks at a comment.
+
+### Finding 4 — the reassurance in the *same parentheses* was never measured
+
+Round 3's Reviewer: *"seeded non-PII data"* is a true statement about `prisma/seed*.ts` and **a claim about a live database** when written as the mitigation for an internet-open 3306. `docs/infrastructure.md:18` records Dev as the only deployed environment; `schema.prisma` is PII-bearing by design; that environment serves an unauthenticated public write path. **The seed's contents do not bound the database's contents** (KZ-011: *an accepted-risk list is a claim about rendered reality — measure it, never reason it*).
+
+**We had removed one three-site reassurance and left its twin in the same parentheses.**
+
+Unmeasurable from the repo, so **I asked the product owner** rather than reasoning: *"the DEV database holds test data only; no public self-registration submission and no contact-form message from a real person has been received"* (2026-09-17). All three sites now carry it **dated and attributed** — never *"verified"* or *"queried"*, because nobody queried the database; the provenance matches how ADR-013 records D-8 — **plus the caveat that it is a snapshot, not a structural property**, since the public write path is live and can falsify it with nobody acting or noticing. *A dated observation that reads as a permanent guarantee is the same defect wearing a date.*
+
+### Finding 5 — and this one came from my own brief
+
+The caveat I dictated said *"the self-registration **and contact-form** write paths"*. **The contact form writes nothing to that database.** Three artefacts falsify it independently: `contact.service.ts`'s constructor takes no `PrismaService`; `contact-no-writes.e2e.spec.ts` is a standing gate whose only purpose is to go red if that changes; `backend/CLAUDE.md` states it outright.
+
+The sentence conflated two true things: the product owner's statement is about **submissions received** (contact belongs), the caveat is about **database write paths** (it does not). The join was false.
+
+**Note the direction.** I had asked the Reviewer to watch for this claim failing *reassuringly*; it failed in the **alarming** direction — crediting the database with an exposure path it does not have. Still a defect: it would teach the next editor of `DB_SSL` that a contact submission can put PII in RDS, which is exactly how `SG-restricted` propagated. Fixed by **deleting two words**, with a longer explanatory sentence explicitly forbidden — a deletion cannot introduce the next instance.
+
+**The Reviewer's closing observation, recorded because it is the generalisable lesson:**
+
+> *"G-4 entered through the rework brief, which is the one channel in this loop that no gate reads adversarially — the Implementer is instructed to follow it, and I only ever see its output. That is KZ-011's shape exactly, now observed one level up, on the Leader's dictated sentence rather than the Leader's `Verify` clause."*
+
+### Also fixed
+`docs/infrastructure.md` §2 gained `MailMicroserviceSecret` and `OtpHmacSecret` — provisioned resources the component table silently omitted, **the same lie-by-omission** as listing a deleted one. Neither row enumerates a key set (`GenerateSecretString` remains the single authority) or names a value. `infra/README.md` §11 gained a **Verified TLS** bullet so §4's deferral pointer resolves completely.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| Classification sweep across the three documents | **14 hits**, every one compliant provenance, checked individually by the Reviewer |
+| ```bash blocks in `infra/README.md` → `bash -n` | **17/17** |
+| Comment-only property of the two code files | verified by me at the diff, and by the Reviewer in the working tree: `DB_SSL` and the `DATABASE_URL=` line byte-identical |
+| `SG-restricted` repo-wide | **zero** |
+| `./infra/scripts/validate.sh` | run by the Leader after both parallel workers went quiet — see the commit |
+
+**T-16 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.
+
+## T-15 — Amend the TRD and author the ADR (2026-09-17)
+
+Ran **in parallel with T-16** on a disjoint file set (`docs/trd/trd.md` only). Three review rounds.
+
+### ADR number — allocated from a survey, not from the task note
+
+`tasks.md`'s T-15 warning was **stale**: *"`email-ms` tops out at ADR-013; `feat/legal-notices` holds ADR-014 unmerged."* Main had since been merged into this branch, bringing ADR-014 with it. Survey run at apply time, across **all** local and remote branches:
+
+- `main`, `origin/main`, `email-ms`, `feat/legal-notices`, `origin/feat/legal-notices` → all top out at **ADR-014**
+- every other branch → ADR-011 or lower
+- `git log --all --oneline -S"ADR-015" -- docs/trd/trd.md` → **empty**
+
+**ADR-015 allocated.** Residual risk recorded: if another branch allocates 015 before this merges, this branch pays the renumbering (root `CLAUDE.md` § Concurrency protocol). The survey is the reason this did not become ADR-011's story — that number was allocated twice in two branches a day apart and cost a 14-citation forward sweep.
+
+### §12.1 — the box was false *before* this spec, and swapping the name would have kept it false
+
+The C4 Context box read `AWS SES [external]` → *"sends invites / resets"*. **Neither claim was ever true.** `users.service.ts:175` creates users with `MessageAction: 'SUPPRESS'` and `resetPassword` uses `AdminSetUserPassword({ Permanent: false })` — both deliberately send no mail (the temp password goes out-of-band, `backend/CLAUDE.md`). The Implementer was briefed not to swap SES for the microservice, read the code, and confirmed it.
+
+The corrected view names what each actor really does: the microservice carries verification-code, contact, receipt and outcome mail; **Cognito carries only the self-service `/forgot-password` code**, unconditional `COGNITO_DEFAULT` since T-13. The legend also changed — `[external]` said *"managed AWS service"*, false for a service another CGIAR platform team runs.
+
+### ADR-015 records five costs, written as costs
+
+Delivery guarantee weakened to *enqueued* (`202` ≠ delivered; `502` = could not enqueue) · **no retry, no DLQ (D-H)** — a message the microservice fails to send is lost and nothing observes it · the Slack subject disclosure · the broker URL and CLARISA key readable via `lambda:GetFunctionConfiguration` · **DD-10's re-derived floor**, with the measurement history that falsified the original bound.
+
+That last one is the reason the ADR exists in this shape: the 1200 ms bound was wrong, and it was **measurement** that showed it — 1132/1170/1172 ms confirmed, with two runs the system reported as failures **that were nonetheless delivered**. An ADR that said "the floor was re-derived" without the numbers would be unfalsifiable.
+
+### The three attempts, and the one shape behind every failure
+
+| # | Verdict | What failed |
+|---|---|---|
+| 1 | FAIL ×3 | **Three quantities restated from memory:** *"on a send failure"* where `design.md` §6 and `proposal.md` R-4 both say **every subject**; *"two more secrets"* where the template resolves **three**; `§12.2` where the value table is `§12.1` |
+| 2 | FAIL ×2 | The G-1 fix **widened a list to include a member the artefact excludes** — it promoted the verification-code subject into the reference-carrying set. And the diagram rebuild dropped an arrowhead |
+| 3 | **PASS** | Both closed at the artefact; every column re-measured |
+
+Every failure is the same move: **a scope word or a count written from memory instead of read off the artefact.**
+
+### The Slack finding — the one the ADR most owed
+
+`proposal.md` R-4 says, in as many words: *"The microservice posts **every subject** to Slack… **To be stated in the ADR, not silently accepted**."* Attempt 1's ADR said *"on a send failure"* — narrowing the disclosure surface from the whole send volume to the failure path, **in the document written to prevent exactly that**. Corrected at all three sites.
+
+The subject *contents* were true throughout and the Reviewer verified all five templates: no address in any subject, no code in the verification subject.
+
+### The correction that broke something else
+
+Closing the Slack finding, attempt 2 wrote *"the **verification**, approval, rejection, and receipt subjects carry only the applicant's public `reference`"*. The verification-code subject carries **no** reference and structurally cannot: it is sent **before any `Registration` row exists**, so none has been allocated — `verification-code.template.ts`'s own docblock says so, and only three templates interpolate `${reference}`. Attempt 1 had this right.
+
+**A false statement about a disclosure boundary, inside the sentence written to make that boundary honest.**
+
+### A regenerated diagram is a teardown in disguise
+
+The alignment rebuild dropped the REST API → database edge's `┬` junction and its `▼`, leaving the only edge in either diagram without an arrowhead — in a view whose legend promises *"Arrows point in the direction of the call."* Restored by exact column index, and the Reviewer re-measured every box border and all four corridors with anchored regexes afterwards to confirm nothing else shifted.
+
+The Implementer also caught a defect of its own before reporting: its rebuild script's debug output (`=== VERIFY ===` / `OK`) had leaked into the §12.1 fenced block. Found, removed, and independently confirmed absent.
+
+### The Reviewer was wrong once, and said so
+
+It advised that *"production broker"* was unsupported because DEP-5 resolved to DEV. `requirements.md:212` says the opposite — *"there is **only a PROD queue**"*, with the `TEST -` prefix following **the credential's environment, not the queue's name**, verified empirically by the five received emails. I checked before relaying, kept the ADR's wording, and asked the Reviewer to re-check my reading since it was about to be written into an ADR.
+
+Its retraction is worth quoting, because it names the failure mode this whole spec keeps hitting:
+
+> *"I read `design.md:341` and treated it as the authority without checking `requirements.md` — the same class of defect I was auditing for."*
+
+**And it found a real defect while being wrong:** `design.md:341` still gives DEP-5's superseded reason (*"answered DEV"*). Conclusion right, reason stale — **handed to T-17**.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `./infra/scripts/validate.sh` | **PASS** ×3 (run by the Leader once both parallel workers went quiet) |
+| `grep -n 'SES' docs/trd/trd.md` | 4 lines, each with the removal marker at or before first use |
+| `grep -n 'Slack'` | 3 lines / 4 occurrences, every one *"every subject, not only failing ones"* |
+| Diagram columns | every box border and all four corridors re-measured by anchored regex, by the Reviewer |
+| Template subjects | 3 interpolate `${reference}`, 1 fixed literal, 1 fixed constant — checked at all five files |
+
+**No test in this repo changes colour for any line in this task.** The reading was the only gate.
+
+### Handed to T-17
+1. `design.md:341` — DEP-5's superseded "DEV" reason.
+2. `docs/trd/trd.md` §7 *Integration Points* omits the microservice/broker entirely. It never named SES, so nothing stale survives there — but it is now the only place in the TRD where the mail integration is missing.
+
+**T-15 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.

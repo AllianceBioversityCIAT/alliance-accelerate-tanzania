@@ -157,7 +157,7 @@
       ⚠️ **Widened again 2026-09-17 (Phase B batch-1 rework, attempt 3).** Same root cause, two more instances: `\bSES\b` under `-i` still only fires on an isolated "ses" as its own token, so `resetSesClient()` (`microservice-mail.transport.ts:390`) and `SESClient({ region })` (`mail-timing.ts:65`) both still had no camelCase/bare-API-name term to catch them — `SesClient` (the `-i` flag already folds the case variants, so no bracket classes are needed) closes that. A second family had **no term at all**: `replyTo` / `reply-to.util.ts` / `composeReplyTo`, all referencing an artifact T-11 deleted — `reply[-_]?to` catches the hyphen, camelCase **and underscore** spellings — the underscore class was found live at `microservice-mail.transport.ts`'s `reply_to` on 2026-09-17, which `reply-?to` missed. Checked against the current tree, not assumed: both new terms fire on their target lines (`microservice-mail.transport.ts:390`, `mail-timing.ts:65`, and the `contact.service.ts`/`mail-transport.interface.ts`/`contact.template.ts`/`contact.template.spec.ts` reply-to references) without narrowing anything the previous pattern already caught. Re-widen again the next time a miss class is found.
       Done when: the sweep is empty; **`contact.e2e.spec.ts`'s third leak gate** is rebuilt on a transport-agnostic fixture; `lambda.ts`'s claim that approval/rejection are fire-and-forget is corrected (**they are awaited**; only the receipt is not); the `MessageRejected` rationale in `contact.service.ts` / `admin-registrations.service.ts` / `registrations.service.ts` is restated on grounds that survive — **those comments are why the two most sensitive log lines are written as they are, and T-5's sanitization depends on them**.
 
-- [ ] **T-15** Amend the TRD and author the ADR  (deps: T-9)
+- [x] **T-15** Amend the TRD and author the ADR  (deps: T-9)
       Scope: C4 §12.1 and §12.2; **ADR-015**; QA-13's SES-specific wording.
       Traces: FR-6's `AND IT MUST` · `design.md` §11
       Files: `docs/trd/trd.md`
@@ -165,7 +165,7 @@
       Done when: §12.1's box no longer says SES *"sends invites / resets"* — **already false before this change**, since Cognito email is suppressed and `EnableSesSending` defaults `"false"`; the ADR records the weakened delivery guarantee, no retry/DLQ (**D-H**), the Slack subject disclosure, the plaintext-env secret exposure, and DD-10's re-derived floor.
       ⚠️ **Allocate the ADR number at apply time on the default branch, re-running the survey** (root `CLAUDE.md` § Concurrency protocol, KZ-010). `email-ms` tops out at **ADR-013**; `feat/legal-notices` holds ADR-014 unmerged. Do **not** hard-code 015 from here.
 
-- [ ] **T-16** Amend the infrastructure documents  (deps: T-9)
+- [x] **T-16** Amend the infrastructure documents  (deps: T-9)
       Scope: `infrastructure.md` §2; `infra/README.md` §6 and §2; `policies/README.md`.
       Traces: FR-6 · `design.md` §11
       Files: `docs/infrastructure.md`, `infra/README.md`, `infra/policies/README.md`

@@ -47,10 +47,15 @@ Before the first deploy you need:
 - **AWS SAM CLI** and **AWS CLI v2**.
 
 > **Only deploying needs the access above.** To run the stack locally you need **no AWS account
-> at all** — `MAIL_TRANSPORT=no-op` and a local MySQL (`docs/infrastructure.md` §6). The one
-> thing that genuinely requires AWS is **real email delivery**, and the minimum policy for that
-> is `infra/policies/developer-local-test-policy.json` — SES send + sandbox verification +
-> `ListUsersInGroup`, with no deploy rights.
+> at all** — `MAIL_TRANSPORT=no-op` and a local MySQL (`docs/infrastructure.md` §6). Mail
+> delivery itself doesn't need AWS either: `MAIL_TRANSPORT=microservice` sends through the
+> external OneCGIAR notification microservice over RabbitMQ, not SES (`enhancement/
+> email-notification-microservice`, T-10 removed the SES transport). The one thing that
+> genuinely still requires AWS is resolving the contact form's admin recipients against a
+> **live Cognito user pool** (`AdminRecipientResolver`'s `ListUsersInGroup` call), and the
+> minimum policy for that is `infra/policies/developer-local-test-policy.json` —
+> `cognito-idp:ListUsersInGroup` plus read-only `cloudformation:DescribeStacks` /
+> `sts:GetCallerIdentity` to look up stack outputs, with no deploy rights.
 - **`jq`** (scripts parse stack outputs / the DB secret with it).
 - **Node 20** (backend build + Prisma; frontend static export).
 - An available **default VPC** with public subnets in `eu-west-1` (auto-detected
@@ -152,10 +157,11 @@ resources — operator only.
 
 `migrate-seed.sh` resolves the RDS wiring from the data-auth stack outputs, reads
 the DB credentials from **Secrets Manager**, composes the Prisma `DATABASE_URL`
-**in-process** (TLS on via `sslaccept=strict`, URL-encoded password — never
-written to a file/`.env` or printed; NFR-2/NFR-4/NFR-5), then runs
-`prisma migrate deploy` and seeds the **consented sample** (no real PII) from
-`backend/`.
+**in-process** (TLS on via `sslaccept=accept_invalid_certs` — encrypted, but the
+RDS server certificate chain is **not** verified, per the script's own TLS-posture
+comment; URL-encoded password — never written to a file/`.env` or printed;
+NFR-2/NFR-4/NFR-5), then runs `prisma migrate deploy` and seeds the **consented
+sample** (no real PII) from `backend/`.
 
 **Prereqs:** `10-data-auth` deployed (`CREATE_COMPLETE`); your public IP/32 in the
 RDS security group (the `DevCidr` ingress rule); `jq`, AWS CLI v2, Node 20, and
@@ -739,7 +745,14 @@ specified separately as **`infra/network-hardening`** — covers:
   Cognito JWKS, AWS SDK calls).
 - **RDS Proxy** for connection pooling under higher concurrency.
 - **RDS IAM authentication** (replace the long-lived Secrets Manager password).
+- **Verified TLS** — certificate-chain validation (`sslaccept=strict`, or RDS
+  Proxy / IAM auth); today `accept_invalid_certs`.
 
-Until then, the public RDS endpoint is mitigated by **TLS-required** connections, a
-**strong generated password** in Secrets Manager, **no real PII** (consented sample
-data only), and **easy teardown** (section 10).
+Until then, the public RDS endpoint is mitigated by **TLS-required** connections
+(unverified certificate chain), a **strong generated password** in Secrets Manager,
+**no real applicant PII today** — product owner, 2026-09-17: the DEV database
+holds test data only; no public self-registration or contact-form submission
+from a real person has been received. That is a snapshot, not a structural
+property: the self-registration write path is live and unauthenticated on
+this same environment, so it can stop being true without
+anyone acting or noticing. **Easy teardown** (section 10) rounds out the mitigations.
