@@ -967,3 +967,74 @@ The bash-block count moved 20 → 15 → 16 → 17: five SES command blocks dele
 4. `backend/src/registrations/email-verification.config.ts:15`'s doc-comment naming `MAIL_SENDER_ADDRESS` — **T-14**.
 
 **T-13 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.
+
+## T-14 — Sweep the withdrawn premise across code and tests (2026-09-17)
+
+15 files, comments and test fixtures only, **no production statement changed**. Two attempts.
+
+### The Done-when had to be replaced before any work started
+
+T-14's stated criterion is **"the sweep is empty."** I ran the sweep first: **80 hits across 25 files** — and most were not withdrawn premises at all. They were accurate past-tense provenance (*"the now-deleted `ses-mail.transport.ts`'s `getSesClient()` used…"*) explaining why current code has the shape it has. **Driving that grep to zero deletes the history.**
+
+That is not hypothetical. **T-13 attempt 1 deleted a true, load-bearing caveat because it matched an SES-shaped filter**, and it cost two rework rounds. A literal reading of T-14's gate would have rewarded doing it again, at four times the scale.
+
+**Replacement gate — three classes, and the gate is falsifiable:**
+
+| Class | Meaning | Action |
+|---|---|---|
+| **A — withdrawn premise** | the comment gives a *reason* that depends on SES being live | rewrite |
+| **B — provenance** | accurate past-tense history | keep — **but deleted-ness must be stated before or at the name's first use.** *"matching the now-deleted `getSesClient()`"* passes; *"as `getSesClient()` does"* fails and becomes class A |
+| **C — test fixture** | strings/error shapes mimicking SES so a leak gate can be proven | rebuild without asserting SES is the transport |
+
+Gate: every survivor is B or C; **no hit anywhere asserts in the present tense that SES is a transport, a dependency, or a live constraint**; the three named Done-when items complete; tests green. The Implementer was told to leave anything it could not confidently classify and report it — better three adjudications than one true comment deleted.
+
+**Result: 80 → 55.** The residue is permanent and correct. A sweep task whose gate is "grep returns nothing" is a gate that can only be satisfied by lying.
+
+### What the sweep could not see — and this is the argument for the classification pass
+
+Two of the most consequential fixes carry **none of the pattern's terms** and would never have surfaced from the grep:
+
+1. **`lambda.ts`'s dispatch topology was false.** I briefed lines 46-48 as the offender. The Implementer read the code instead of taking the brief, found **those lines were accurate history**, and located the actual false claim ~30 lines below. It then established the true topology at the source: `admin-registrations.service.ts:1054` and `:1188` **`await`** their dispatchers, which themselves `await` `mailService`; the **only** unawaited mail dispatch in non-spec `backend/src` is `registrations.service.ts`'s `dispatchReceiptEmail` (`void … .catch()`). The Reviewer re-derived it independently and confirmed — *"not wrong in the other direction."*
+2. **`registrations.service.spec.ts`'s *"every test in this block … now runs through that pad"*** — false; two tests reach the deliberately unpadded exit. Both are now named.
+
+### The finding that mattered — the same defect with the sign flipped
+
+Attempt 1 regrounded the `MessageRejected` rationale and, doing so, **asserted a premise the current code falsifies**: that the notification microservice's *"own broker-level rejections"* can carry a destination address verbatim.
+
+They cannot. `microservice-mail.transport.ts:169-242` defines seven error classes — five with literal fixed strings, two interpolating only `queueName`; `sanitizeEscapingError` collapses everything else to a generic connection error. **No recipient address is reachable by construction.** And the same diff said so in another file: `contact.e2e.spec.ts` added *"deliberately NOT one of `MicroserviceMailTransport`'s own sanitized error classes (those already carry no address, by construction)."* Two statements, one diff, mutually exclusive.
+
+I verified the hierarchy myself before dispatching the rework rather than relaying the Reviewer's reading.
+
+**T-14 exists to delete premises that died. Attempt 1 deleted one and introduced another** — not a withdrawn premise this time, but one the shipped code contradicts, sitting inside the paragraph **T-5's sanitization leans on**.
+
+**The correction strengthens the rule rather than weakening it.** The prohibition (`log err.name`, never `err.message`) now rests on: `MailService.dispatch` rethrows **whatever it is handed**, so this `catch` cannot assume *any* transport is well-behaved — including the one that currently is. Sanitization is a property of one transport; the rethrow is a property of the seam. That footing survives the next transport swap; the old one would not have. The Reviewer verified the rule's strength at all three sites and that the code beneath each still obeys it.
+
+### A checkpoint was silently lost in the rebuild
+
+The old contact leak gate asserted four things: error name, address, message fragment, **and provider identity** (`not.toContain('SES')`). The rebuild kept four — but the fourth became a second message fragment. **The provider-identity dimension went unguarded**, while `contact.service.ts` and design.md §3 both promise exactly that property; it held only because the 502 body is hardcoded. Restored as a fifth checkpoint, `not.toContain('broker')`, stated generically so it survives the next transport.
+
+*A rebuild that preserves the count is not the same as one that preserves the coverage.*
+
+### `backend/CLAUDE.md` — a module guide, so the edit trains every future agent
+
+The no-email rule lost *"SES sandbox limits"* — correctly withdrawn — leaving **one** clause under the deliberate exception to *"never return a plaintext password."* Too thin for that weight: a future agent finding a one-clause rationale may revert it to email.
+
+A **live, spec-backed second reason** existed and is stronger than the one removed: the pool stays on `COGNITO_DEFAULT` permanently (OQ-10, FR-6), because Cognito cannot publish to the microservice. Restored. Then tightened twice on the Reviewer's advisory: the bare `design.md` citation was ambiguous — in a module guide it resolves by default to the **constitutional** `docs/ux-ui/design.md` — so it is now the full spec path; and *"cannot publish"* was absolute where `requirements.md` §6 records a **deferred** `CustomEmailSender` route, so it now says so. Neither change weakens the rule.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `cd backend && npm test --silent` | **77 suites / 1138 tests** |
+| `cd backend && npm run build` | clean |
+| `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | clean |
+| `grep -rn "O(1) reasoning below" backend/src` | empty |
+| Sweep, classified | 80 → **55**, every survivor B or C, verified line-by-line by the Reviewer |
+
+The 55th hit is A2's own comment citing *"the old `not.toContain('SES')"* in the past tense — class B, and the Reviewer checked that specific line rather than accepting the account. **A sweep that grows during a sweep task is exactly the thing not to take on report.**
+
+### Inherited T-7 advisories — all three closed
+
+Dangling `(see the O(1) reasoning below)` pointer deleted and the reasoning inlined · `registrations.service.spec.ts` no longer names `mail/mail-timing.ts` as the floor constant's home (**that file explicitly disclaims defining it**) and its invariant test name no longer restates the arithmetic (§12) nor overclaims composition-in-code · *"every test … runs through that pad"* now names its two exceptions.
+
+**T-14 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.

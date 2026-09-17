@@ -262,21 +262,37 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
     // sanitization it proves is unchanged by which transport is live, and
     // was already asserted, one layer down, against the real transport in
     // `microservice-mail.transport.spec.ts`'s own credential-leak gates.
-    it('never leaks the SDK error name, message text, or a recipient address into the 502 body', async () => {
+    it('never leaks the transport error\'s class name, message text, or a recipient address into the 502 body', async () => {
+      // Deliberately NOT one of MicroserviceMailTransport's own sanitized
+      // error classes (those already carry no address, by construction —
+      // DD-3/DD-11 — and are covered by microservice-mail.transport.spec.ts's
+      // own credential-leak gates). This fixture stands for the case those
+      // classes exist to prevent: some lower-level rejection whose raw
+      // message happens to embed the recipient address verbatim — the
+      // property this gate proves is independent of which transport
+      // produced it.
       const leaking = new Error(
-        'Email address: admin-two@example.org is not verified in the SES sandbox (MessageRejected)',
+        'Recipient admin-two@example.org rejected: the message was refused by the broker (unroutable)',
       );
-      leaking.name = 'MessageRejected';
+      leaking.name = 'TransportRejectedError';
       sendContactMessageMock.mockRejectedValueOnce(leaking);
 
       const res = await request(app.getHttpServer()).post(CONTACT_PATH).send(validBody());
 
       expect(res.status).toBe(502);
       const raw = res.text;
-      expect(raw).not.toContain('MessageRejected');
+      expect(raw).not.toContain('TransportRejectedError');
       expect(raw).not.toContain('admin-two@example.org');
-      expect(raw).not.toContain('not verified');
-      expect(raw).not.toContain('SES');
+      expect(raw).not.toContain('refused by the broker');
+      expect(raw).not.toContain('unroutable');
+      // Fifth checkpoint — provider/transport IDENTITY, not message content
+      // (design.md §3's response table, contact.service.ts's "no provider
+      // name" clause): the old gate's four checkpoints were {error name,
+      // address, message fragment, provider identity — the old
+      // `not.toContain('SES')`}. The rebuilt fixture above no longer names a
+      // provider, so this checkpoint is restated generically rather than
+      // dropped.
+      expect(raw).not.toContain('broker');
     });
   });
 

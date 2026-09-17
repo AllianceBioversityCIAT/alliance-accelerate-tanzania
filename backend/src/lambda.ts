@@ -43,7 +43,8 @@ export const handler: Handler = async (event, context) => {
   // This silently killed the registration OTP (`fix/otp-mail-lambda-freeze`,
   // 2026-09-03): `RegistrationsService.requestVerificationCode` used to
   // dispatch `MailService.sendVerificationCode` fire-and-forget ON PURPOSE
-  // — awaiting SES would have made response latency an oracle for whether
+  // — awaiting SES (the transport at the time; deleted in Phase B) would
+  // have made response latency an oracle for whether
   // an address was recently used, which FR-4 (requirements.md:245) forbids
   // as a hard `AND IT MUST` — so the in-flight SES call was frozen mid-request
   // and lost, with its own `.catch()` never running either. Observed in
@@ -70,11 +71,14 @@ export const handler: Handler = async (event, context) => {
   // now AWAITS the send inside its own try/catch (padding both branches to
   // a constant-time floor to keep FR-4's timing property — see that
   // method's class doc), so the freeze this comment describes can no
-  // longer drop it. This flag remains load-bearing regardless:
-  // `AdminRegistrationsService`'s approval/rejection notices and
-  // `RegistrationsService.submitRegistration`'s receipt email are still
-  // dispatched fire-and-forget by design (DD-9), and depend on this flag to
-  // survive a freeze after their own `202`/response is written.
+  // longer drop it. `AdminRegistrationsService.dispatchApprovalEmail`/
+  // `dispatchRejectionEmail` got the same treatment and are AWAITED too —
+  // neither settles until its own send does, so neither depends on this
+  // flag any more. This flag remains load-bearing for exactly one path:
+  // `RegistrationsService.submitRegistration`'s receipt email
+  // (`dispatchReceiptEmail`) is still dispatched fire-and-forget by design
+  // (DD-9), and depends on this flag to survive a freeze after the
+  // `202`/response is written.
   context.callbackWaitsForEmptyEventLoop = true;
 
   if (!cachedHandler) {

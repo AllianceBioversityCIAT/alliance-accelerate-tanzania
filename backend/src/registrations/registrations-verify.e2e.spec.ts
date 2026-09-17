@@ -352,8 +352,9 @@ describe('POST /registrations/verify (T-8)', () => {
           // "Comparable", not identical — a real HTTP round trip carries
           // scheduler/GC jitter the unit suite's fake timers do not. A wide
           // but still meaningful bound: within 300 ms of each other, versus
-          // the multi-second gap an UNPADDED SES round trip could otherwise
-          // add to only the accepted path (the exact oracle FR-4 forbids).
+          // the multi-second gap an UNPADDED mail-transport round trip could
+          // otherwise add to only the accepted path (the exact oracle FR-4
+          // forbids).
           expect(Math.abs(rateLimitedElapsedMs - acceptedElapsedMs)).toBeLessThan(300);
         },
       );

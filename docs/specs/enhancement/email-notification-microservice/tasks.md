@@ -147,7 +147,7 @@
       Verify: `./infra/scripts/validate.sh`
       Done when: **seven** grants gone (six developer + one Lambda); all three stacks validate.
 
-- [ ] **T-14** Sweep the withdrawn premise across code and tests  (deps: T-9)
+- [x] **T-14** Sweep the withdrawn premise across code and tests  (deps: T-9)
       Scope: The **seven-plus** sites where a rationale rests on SES. Behavior changes nowhere; only the justification.
       Traces: FR-6's `BUT it must NOT` · `design.md` §11
       Files: `backend/src/registrations/{registrations.service.ts,registrations.service.spec.ts,admin-registrations.service.ts,admin-registrations-reject.spec.ts,admin-registrations.service.spec.ts,registrations-verify.e2e.spec.ts}`

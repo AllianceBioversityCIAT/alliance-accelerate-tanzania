@@ -28,8 +28,14 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 ## Users module — no-email credential handoff (intentional)
 
 - `users` create/reset deliberately do **NOT** send Cognito email (corporate
-  `@cgiar.org` deliverability + SES sandbox limits). Instead they SUPPRESS Cognito
-  mail and **return a one-time temporary password** for the admin to share
+  `@cgiar.org` deliverability, and the pool stays on `COGNITO_DEFAULT`
+  permanently post-`email-notification-microservice` —
+  `docs/specs/enhancement/email-notification-microservice/design.md` §11's
+  `10-data-auth/template.yaml` row + OQ-10, and that spec's
+  `requirements.md` §6 — because Cognito cannot publish to the notification
+  microservice without a `CustomEmailSender` trigger, which that same §6
+  records as **deferred**). Instead they
+  SUPPRESS Cognito mail and **return a one-time temporary password** for the admin to share
   out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
   `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
   `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a

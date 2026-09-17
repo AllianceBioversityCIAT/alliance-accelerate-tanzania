@@ -2378,13 +2378,14 @@ describe('PII boundary (HTTP e2e) — registrations module, 429 isolation (T-13,
  * before the request and read after it needs nothing more.
  *
  * **Why `MailService` is provider-overridden here rather than driven
- * through the real SES transport.** The one log line whose CONTENT is
+ * through the real mail transport.** The one log line whose CONTENT is
  * actually at risk — `ContactService`'s own `catch` block
  * (`contact.service.ts`: "class name only, never `err.message`") — fires
  * from `ContactService` itself regardless of what `MailService` is, real or
  * mocked; overriding `MailService` (as `contact.e2e.spec.ts` already does)
- * removes the SES SDK and Cognito as dependencies for this suite with no
- * loss of coverage over the actual defect surface NFR-1 condition 2 names.
+ * removes the mail broker and Cognito as live dependencies for this suite
+ * with no loss of coverage over the actual defect surface NFR-1 condition 2
+ * names.
  * `AdminRecipientResolver` is overridden for the identical reason
  * `contact.e2e.spec.ts` gives: a FIXED, known recipient list makes "the
  * recipient address never leaks" a real value-equality check against a
@@ -2394,12 +2395,13 @@ describe('PII boundary (HTTP e2e) — registrations module, 429 isolation (T-13,
  * manually, not left as a standing mutation, recorded in `execution.md` →
  * T-8, not kept in this file:** `contact.service.ts`'s catch block was
  * temporarily changed from `err.name` to `err.message`, the "a transport
- * rejection…" `it` below was re-run against a `MessageRejected`-shaped
- * rejection embedding {@link CONTACT_ADMIN_RECIPIENT} verbatim in its
- * message (mirroring the real SES shape `registrations.service.ts`
- * documents), the suite failed with the recipient address present in the
- * captured log text, the mutation was reverted, and the suite returned to
- * green (`git diff` confirmed clean).
+ * rejection…" `it` below was re-run against a rejection shaped like the one
+ * `registrations.service.ts`'s rationale describes — a transport error
+ * embedding {@link CONTACT_ADMIN_RECIPIENT} verbatim in its message, the
+ * property that rationale documents as surviving any transport — the suite
+ * failed with the recipient address present in the captured log text, the
+ * mutation was reverted, and the suite returned to green (`git diff`
+ * confirmed clean).
  */
 
 /** Fixture requester values — distinct from every other block's fixtures in this file so a cross-suite leak cannot hide behind a shared value. */
@@ -2546,15 +2548,16 @@ describe(
     });
 
     it(
-      "a transport rejection whose error message embeds the recipient address verbatim (SES " +
-        "MessageRejected's real shape) leaks it into neither the 502 body nor any log line " +
+      'a transport rejection whose error message embeds the recipient address verbatim ' +
+        '(the shape any transport rejection can take, not one specific to whichever transport ' +
+        'is currently configured) leaks it into neither the 502 body nor any log line ' +
         '(NFR-1 condition 2 — the shown-to-fail proof)',
       async () => {
         const rejection = new Error(
-          'Email address is not verified. The following identities failed the check in ' +
-            `region EU-WEST-1: ${CONTACT_ADMIN_RECIPIENT}`,
+          `Recipient rejected the message: ${CONTACT_ADMIN_RECIPIENT} is not on the allowed ` +
+            'sender list',
         );
-        rejection.name = 'MessageRejected';
+        rejection.name = 'TransportRejectedError';
         sendContactMessageMock.mockRejectedValueOnce(rejection);
 
         const res = await request(app.getHttpServer())

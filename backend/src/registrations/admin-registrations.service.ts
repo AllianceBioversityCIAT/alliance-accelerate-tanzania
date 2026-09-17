@@ -1250,9 +1250,10 @@ export class AdminRegistrationsService {
   /**
    * DD-9 / FR-14 scenario 1: dispatched only after the caller's transaction
    * has committed, and a failure is logged by the error's CLASS NAME
-   * only — never the destination address, which the AWS SDK's own
-   * `MessageRejected` puts verbatim in its message (a transport failure
-   * from `MailService.dispatch` rethrows unchanged — DD-9).
+   * only — never the destination address, which a transport rejection can
+   * put verbatim in its message (AWS SES's `MessageRejected` did; a
+   * broker/queue rejection can just as easily — a transport failure from
+   * `MailService.dispatch` rethrows unchanged — DD-9).
    *
    * **`fix/otp-mail-lambda-freeze` (2026-09-03) — AWAITED, not
    * fire-and-forget.** This used to be `void this.mailService.sendApproval(

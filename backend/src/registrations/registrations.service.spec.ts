@@ -16,14 +16,21 @@
  * doc and `lambda.ts` for the full incident). The fix awaits the send and
  * pads BOTH the rate-limited and accepted branches to
  * `VERIFICATION_CODE_RESPONSE_FLOOR_MS`, so every test in this block that
- * exercises `requestVerificationCode` now runs through that pad. Real
- * timers would make that a genuine `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of
- * wall-clock cost PER TEST (§12 is that constant's one home — see
- * `mail/mail-timing.ts` — so it is named here, never restated as a number) —
- * this describe block therefore runs under Jest's modern fake timers
- * (`beforeEach`/`afterEach` below), and every test either advances fake
- * time past the floor with `jest.advanceTimersByTimeAsync` or asserts
- * against a promise that has deliberately not been allowed to do so yet.
+ * exercises `requestVerificationCode` runs through that pad EXCEPT the two
+ * that deliberately target the method's third, unpadded exit — the
+ * "an unexpected failure (not the cap)" test below and the pre-send
+ * allowance-breach test in the `describe` T-7 added — both assert the
+ * UNPADDED path on purpose, since that exit is address-independent
+ * infrastructure failure, never part of FR-4's timing surface. Real
+ * timers would make the padded tests' pad a genuine
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of wall-clock cost PER TEST (§12 is
+ * that constant's one home — it is COMPUTED in `registrations.service.ts`
+ * from `mail/mail-timing.ts`'s two exports, so it is named here, never
+ * restated as a number) — this describe block therefore runs under Jest's
+ * modern fake timers (`beforeEach`/`afterEach` below), and every test
+ * either advances fake time past the floor with
+ * `jest.advanceTimersByTimeAsync` or asserts against a promise that has
+ * deliberately not been allowed to do so yet.
  */
 import { createHmac } from 'node:crypto';
 import {
@@ -167,7 +174,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
         code: '123456',
         expiresAt: new Date(),
       });
-      mailService.sendVerificationCode.mockRejectedValue(new Error('SES unavailable'));
+      mailService.sendVerificationCode.mockRejectedValue(new Error('mail transport unavailable'));
 
       const promise = service.requestVerificationCode('anyone@example.com');
       await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
@@ -187,20 +194,20 @@ describe('RegistrationsService.requestVerificationCode', () => {
 
     it(
       'does not emit the applicant email even when the transport error embeds it verbatim ' +
-        '(the real shape of SES MessageRejected under this repo\'s documented sandbox config — ' +
-        'see ses-mail.transport.ts / backend/CLAUDE.md)',
+        '(a transport rejection can carry the recipient address in its message regardless of ' +
+        'which transport is live — see registrations.service.ts\'s MessageRejected-and-beyond ' +
+        'rationale)',
       async () => {
         const applicantEmail = 'applicant@example.com';
         emailVerificationService.issueCode.mockResolvedValue({
           code: '123456',
           expiresAt: new Date(),
         });
-        const sesLikeError = new Error(
-          `Email address is not verified. The following identities failed the check in ` +
-            `region EU-WEST-1: ${applicantEmail}`,
+        const transportRejection = new Error(
+          `Recipient rejected the message: ${applicantEmail} is not on the allowed sender list`,
         );
-        sesLikeError.name = 'MessageRejected';
-        mailService.sendVerificationCode.mockRejectedValue(sesLikeError);
+        transportRejection.name = 'TransportRejectedError';
+        mailService.sendVerificationCode.mockRejectedValue(transportRejection);
 
         await settleAfterFloor(service.requestVerificationCode(applicantEmail));
 
@@ -208,7 +215,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
         expect(emittedLine).not.toContain(applicantEmail);
         // Bounded discriminator IS expected — the error's class name, never its message.
-        expect(emittedLine).toContain('MessageRejected');
+        expect(emittedLine).toContain('TransportRejectedError');
       },
     );
 
@@ -419,8 +426,10 @@ describe(
   () => {
     it(
       'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS ≤ ' +
-        'VERIFICATION_CODE_RESPONSE_FLOOR_MS — 800 + 3000 ≤ 3800 (mutation-tested: ' +
-        'reddens if the floor stops being composed from these two imports)',
+        'VERIFICATION_CODE_RESPONSE_FLOOR_MS holds for the live constants ' +
+        '(§12.3 invariant 1 — gates invariant 1 only: a hardcoded floor value ' +
+        'would keep this green too, so it does not prove the floor is composed ' +
+        'in code)',
       () => {
         expect(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS).toBeLessThanOrEqual(
           VERIFICATION_CODE_RESPONSE_FLOOR_MS,
@@ -790,17 +799,17 @@ describe('RegistrationsService.submitRegistration', () => {
 
       it(
         'does not emit the applicant email even when the transport error embeds it verbatim ' +
-          "(SES MessageRejected's real shape — see ses-mail.transport.ts / backend/CLAUDE.md), " +
-          "and the submission ITSELF still succeeds (FR-14's 3a half: a send failure must not " +
-          'fail a submission)',
+          '(a transport rejection can carry the recipient address in its message regardless of ' +
+          "which transport is live — see registrations.service.ts's MessageRejected-and-beyond " +
+          "rationale), and the submission ITSELF still succeeds (FR-14's 3a half: a send failure " +
+          'must not fail a submission)',
         async () => {
           const applicantEmail = 'neema@khsc.co.tz';
-          const sesLikeError = new Error(
-            `Email address is not verified. The following identities failed the check in ` +
-              `region EU-WEST-1: ${applicantEmail}`,
+          const transportRejection = new Error(
+            `Recipient rejected the message: ${applicantEmail} is not on the allowed sender list`,
           );
-          sesLikeError.name = 'MessageRejected';
-          mailService.sendReceipt.mockRejectedValue(sesLikeError);
+          transportRejection.name = 'TransportRejectedError';
+          mailService.sendReceipt.mockRejectedValue(transportRejection);
 
           const result = await service.submitRegistration(validDto());
           await tick();
@@ -809,7 +818,7 @@ describe('RegistrationsService.submitRegistration', () => {
           expect(errorSpy).toHaveBeenCalledTimes(1);
           const [emittedLine] = errorSpy.mock.calls[0] as [string];
           expect(emittedLine).not.toContain(applicantEmail);
-          expect(emittedLine).toContain('MessageRejected');
+          expect(emittedLine).toContain('TransportRejectedError');
           expect(emittedLine).toContain(result.reference);
         },
       );

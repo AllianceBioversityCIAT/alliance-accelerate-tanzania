@@ -39,8 +39,9 @@
  * intended mitigation) did not prevent it, because this handler is
  * `async` — Lambda settles the invocation when the RETURNED PROMISE
  * resolves, not via the callback that flag governs (see `lambda.ts` for
- * the corrected account of why). SES permissions were also broken until
- * shortly before this fix; fixing them turned a loud, fast `AccessDenied`
+ * the corrected account of why). SES — then the active transport — had
+ * permissions that were also broken until shortly before this fix; fixing
+ * them turned a loud, fast `AccessDenied`
  * (logged inside the pre-freeze window) into this silent one — the freeze
  * was always there, masked by an unrelated failure until it wasn't.
  *
@@ -52,7 +53,11 @@
  * the other. That reopens the oracle the original fire-and-forget design
  * existed to close: absent a compensating change, the accepted path would
  * again run measurably slower than the rate-limited one, because only the
- * accepted path pays the SES round trip. {@link
+ * accepted path pays the mail-transport round trip (SES, at the time this
+ * paragraph was written; T-10 has since deleted that transport, and the
+ * round trip is now against the notification microservice — the timing
+ * property this paragraph reasons about is unaffected by which transport
+ * is live). {@link
  * VERIFICATION_CODE_RESPONSE_FLOOR_MS} is that compensating change — BOTH
  * the rate-limited early return and the send-awaited return pad to the
  * same fixed floor, measured from this method's own entry, before the
@@ -134,8 +139,8 @@
  *     branch pays over the over-cap branch is exactly one `INSERT`
  *     (`emailVerification.create`) plus in-memory CSPRNG generation and one
  *     HMAC-SHA-256 computation (`generateCode`/`hashCode`) — not a query
- *     whose cost scales with the address's history (see the O(1) reasoning
- *     below).
+ *     whose cost scales with the address's history (i.e. O(1) in that
+ *     history, not O(n)).
  * (b) **{@link VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} is sized on the
  *     LARGER (accepted) branch** (its own docblock in `mail/mail-timing.ts`;
  *     DD-10 Consequences). The smaller, over-cap branch therefore carries
@@ -672,8 +677,8 @@ export class RegistrationsService {
     }
 
     // Awaited (fix/otp-mail-lambda-freeze — see the class doc for the
-    // production incident this reverses): the SES/no-op round trip is now
-    // part of this method's own awaited chain, so Lambda cannot freeze the
+    // production incident this reverses): the mail-transport/no-op round
+    // trip is now part of this method's own awaited chain, so Lambda cannot freeze the
     // container mid-send. Failure is still only logged, never surfaced to
     // the caller — a 202 has already been decided, and a notification
     // failure must never turn into a caller-visible error (design.md
@@ -683,24 +688,29 @@ export class RegistrationsService {
     // Rework attempt 2 (FAIL 1) — preserved intent, unchanged: this used
     // to log `err.message` — but `MailService.dispatch` rethrows a
     // transport failure UNCHANGED (`mail.service.ts`, deliberate — DD-9),
-    // and the AWS SDK's own `MessageRejected` error (thrown, in this
-    // repo's documented SES-sandbox configuration, for every unverified
-    // destination address — `ses-mail.transport.ts`, `backend/CLAUDE.md`)
-    // puts the destination address VERBATIM in its `message`. That made
-    // this the only `logger.*` call in `backend/src` that interpolates an
-    // unbounded value, and would have written the applicant's email to
-    // CloudWatch — a PII leak on an unauthenticated public path
-    // (design.md §4.10/§6.3: "Never logged: … email addresses"). It was
-    // also redundant: `MailService.dispatch` already logs a bounded
+    // and a transport rejection's message can carry the destination
+    // address VERBATIM — true of AWS SES's `MessageRejected` (this repo's
+    // former SES-sandbox configuration threw exactly that, for every
+    // unverified destination address) — and this `catch` cannot assume
+    // otherwise of any transport: `MicroserviceMailTransport` sanitizes its
+    // own escaping errors to fixed messages (design.md §4.4), but
+    // `MailService.dispatch` rethrows whatever it is handed, so no
+    // transport-specific list of "safe" error shapes is relied on here.
+    // Logging `err.message` made this the only `logger.*` call in `backend/src`
+    // that interpolates an unbounded value, and would have written the
+    // applicant's email to CloudWatch —
+    // a PII leak on an unauthenticated public path (design.md §4.10/§6.3:
+    // "Never logged: … email addresses"). It was also redundant:
+    // `MailService.dispatch` already logs a bounded
     // `kind=verification-code reference=n/a status=failed` outcome line
-    // before rethrowing. Logging only the error's CLASS NAME below (an SDK
-    // discriminator like `MessageRejected`/`AccessDenied`/`TimeoutError`,
-    // never its message) adds operationally-useful detail without
-    // reintroducing the leak — see `registrations.service.spec.ts` for the
-    // regression test asserting the emitted line never contains the
-    // address. That test is unchanged by this rework: it only moved from
-    // observing a `.catch()` callback to observing a `catch` block, the
-    // logged line itself is identical.
+    // before rethrowing. Logging only the error's CLASS NAME below (a
+    // discriminator like `MessageRejected`/`AccessDenied`/`TimeoutError`/
+    // `MicroserviceMailConnectionError`, never its message) adds
+    // operationally-useful detail without reintroducing the leak — see
+    // `registrations.service.spec.ts` for the regression test asserting
+    // the emitted line never contains the address. That test is unchanged
+    // by this rework: it only moved from observing a `.catch()` callback
+    // to observing a `catch` block, the logged line itself is identical.
     try {
       await this.mailService.sendVerificationCode(rawEmail, issued.code);
     } catch (err: unknown) {

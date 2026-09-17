@@ -31,7 +31,7 @@
  * the case `CONTACT_FALLBACK_RECIPIENT` exists for, and the mail transport
  * downstream adds no guard against an empty `to` list (design.md §4.6 / the
  * T-1 review forward pointer), so this resolver is the only thing standing
- * between an empty group and a malformed SES call.
+ * between an empty group and a malformed mail-transport call.
  *
  * The degradation (empty group or directory failure) is logged with no
  * requester field value and no recipient address — the log line names only

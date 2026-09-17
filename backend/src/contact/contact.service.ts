@@ -43,10 +43,13 @@
  * **The 502 envelope, and what it deliberately omits.** `err.name` (a
  * bounded, class-name-only value) is the only thing this method logs from a
  * transport failure — never `err.message`. `registrations.service.ts`
- * records why: the AWS SDK's `MessageRejected` error puts the destination
- * address verbatim in its `message`, and `MailService.dispatch` rethrows
- * unchanged, so that error reaches this `catch` block exactly as it would
- * reach `RegistrationsService`'s. The thrown `BadGatewayException`'s body
+ * records why: a transport rejection's message can carry the destination
+ * address verbatim — true of AWS SES's `MessageRejected` and equally true
+ * of a broker/queue rejection or any future transport, so there is no
+ * transport-specific list of "safe" error shapes to maintain — and
+ * `MailService.dispatch` rethrows unchanged, so that error reaches this
+ * `catch` block exactly as it would reach `RegistrationsService`'s. The
+ * thrown `BadGatewayException`'s body
  * carries a fixed, friendly `message` and no `error`-derived text at all —
  * no provider name, no status code, no stack, no recipient address (design.md
  * §3's response table and §6's "Error logging" row; the §3.2 this once cited
@@ -98,8 +101,10 @@ export class ContactService {
     } catch (err) {
       // Class name only, never `err.message` — see the class docblock and
       // `registrations.service.ts`'s identical, already-reviewed rationale:
-      // `MessageRejected` carries the destination address verbatim in its
-      // message.
+      // a transport rejection can carry the destination address verbatim in
+      // its message (AWS SES's `MessageRejected` did; a broker/queue
+      // rejection can just as easily), so only the class name is safe to
+      // log.
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(`contact message send failed: errorType=${errorType}`);
       throw new BadGatewayException({

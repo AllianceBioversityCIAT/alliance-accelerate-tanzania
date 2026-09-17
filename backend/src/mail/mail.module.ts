@@ -5,7 +5,7 @@ import { MailService } from './mail.service';
 /**
  * T-3 — MailModule: `MailService` only.
  *
- * The transport (SES vs no-op) is resolved lazily inside
+ * The transport (microservice vs no-op) is resolved lazily inside
  * `mail-transport.factory.ts` on first send, not here — so importing this
  * module does not require `MAIL_TRANSPORT` to be set. Not yet registered in
  * `app.module.ts`: nothing consumes `MailService` until 3a's OTP/submission
