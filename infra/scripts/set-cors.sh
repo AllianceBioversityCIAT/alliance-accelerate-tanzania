@@ -31,6 +31,7 @@
 # USAGE
 #   ./infra/scripts/set-cors.sh
 #   CLOUDFRONT_URL=https://d111.cloudfront.net ./infra/scripts/set-cors.sh
+#   MAIL_TRANSPORT=microservice ./infra/scripts/set-cors.sh  # preserve the T-9 switch
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -41,6 +42,66 @@ REGION="${AWS_REGION:-eu-west-1}"
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
+
+# Mail transport — "ses" (Phase A default / rollback control) or
+# "microservice" (T-9 verification). MUST be passed explicitly on every
+# backend deploy: SAM sends UsePreviousValue for any parameter absent from
+# --parameter-overrides, so omitting the parameter override entirely would
+# let this CORS-lock redeploy silently revert the transport, possibly
+# mid-verification (design.md §7.3). set-cors.sh is the routine follow-up to
+# every frontend deploy, so this is not a rare path.
+#
+# ⚠️ A hardcoded `${MAIL_TRANSPORT:-ses}` default would re-create that exact
+# hazard in the OPPOSITE direction: once T-9 has flipped the live stack to
+# "microservice", running this script without the env var set would then
+# actively push the parameter BACK to "ses" and report success, with no
+# signal (T-8 review, Issue 1). So: an explicit MAIL_TRANSPORT env var
+# always wins (operator override); otherwise resolve the CURRENT value from
+# the deployed stack — the same pattern already used a few lines below to
+# resolve CloudFrontUrl, for the same reason: read the live value instead of
+# asserting one. Only a stack that does not exist yet falls back to the
+# template's own Default ("ses").
+if [[ -n "${MAIL_TRANSPORT:-}" ]]; then
+  echo "==> MailTransport = $MAIL_TRANSPORT (operator override via MAIL_TRANSPORT env var)"
+else
+  # Separate "the describe-stacks CALL failed" from "the stack does not
+  # exist yet" — they are not the same thing. An expired SSO token, a
+  # throttle, or an IAM denial also makes the query come back empty, and
+  # empty was previously indistinguishable from "not found" (`2>/dev/null
+  # || true` swallowed both). set-cors.sh runs with CLOUDFRONT_URL commonly
+  # preset (it is the routine follow-up to every frontend deploy) — falling
+  # back to "ses" here because of a TRANSIENT failure would silently revert
+  # a live T-9-flipped transport with no signal. So: capture stdout+stderr
+  # together, check the exit status via `if`, and only accept "ses" as the
+  # fallback when the failure text is CloudFormation's `ValidationError` for
+  # a nonexistent stack — anything else aborts.
+  if RESOLVED_MAIL_TRANSPORT="$(
+    aws cloudformation describe-stacks \
+      --profile "$PROFILE" --region "$REGION" \
+      --stack-name "$BACKEND_STACK" \
+      --query "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
+      --output text 2>&1
+  )"; then
+    if [[ -z "$RESOLVED_MAIL_TRANSPORT" || "$RESOLVED_MAIL_TRANSPORT" == "None" ]]; then
+      MAIL_TRANSPORT="ses"
+      echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+    else
+      MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
+      echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
+    fi
+  elif [[ "$RESOLVED_MAIL_TRANSPORT" == *ValidationError* ]]; then
+    MAIL_TRANSPORT="ses"
+    echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+  else
+    echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK':" >&2
+    echo "$RESOLVED_MAIL_TRANSPORT" >&2
+    echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
+    echo "to 'ses' here could silently revert a live T-9 flip. Fix the AWS error" >&2
+    echo "above and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
+    exit 1
+  fi
+fi
+echo
 
 # Resolve infra/ paths relative to this script so it runs from any CWD.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -96,6 +157,7 @@ sam deploy \
   --parameter-overrides \
     AllowedOrigin="$CLOUDFRONT_URL" \
     DataAuthStackName="$DATA_AUTH_STACK" \
+    MailTransport="$MAIL_TRANSPORT" \
   --config-file "$SAMCONFIG" \
   --profile "$PROFILE" --region "$REGION" \
   --capabilities CAPABILITY_NAMED_IAM \

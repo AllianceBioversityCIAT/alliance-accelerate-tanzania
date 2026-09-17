@@ -80,25 +80,106 @@
  * "measured" timing gap that a mocked test had actually only asserted by
  * construction).
  *
- * **The residual limitation, stated honestly: the floor is typical-case,
- * not absolute.** If a real send ever takes LONGER than
- * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` — an SES throttle, a cold TLS
- * handshake stacked with network jitter, a partial AWS outage — this
- * method's response for THAT request runs slower than the rate-limited
- * path's, and the timing oracle FR-4 forbids reopens for that tail.
- * Raising the floor further would shrink the tail at the cost of taxing
- * every applicant's common case, the same trade-off this docblock's
- * earlier revision already reasoned through for a smaller residue.
- * Closing the tail completely needs the send off the request's critical
- * path entirely — e.g. an outbox row written synchronously and a worker
- * that sends it, so the `202` never waits on SES at all — which is why a
- * queue-based fix is being tracked separately rather than attempted here.
- * This fix's job was to stop the SILENT DROP (the production bug), and it
- * does that unconditionally; the residual timing tail is a smaller,
- * pre-existing class of risk FR-4 already accepts in degree (its own
- * "Code request and successful verification" scenario already tolerates
- * SES's variable RTT as part of "the same response shape and timing
+ * **Superseded by `enhancement/email-notification-microservice` T-7
+ * (`design.md` DD-10).** The `900` this paragraph reasoned to is no longer
+ * the live value — DD-10 revision 3 found this exact reasoning
+ * insufficient: it is a two-term comparison (`SES timeout < floor`) that
+ * silently ignores the synchronous work `issueCode` performs BEFORE the
+ * send is even attempted, and a later revision of this file's own history
+ * shipped precisely that gap (`1500 + ~500 > 1800`, found in review before
+ * it reached production). {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS} is
+ * now COMPOSED at runtime from two independently-enforced bounds rather
+ * than reasoned from one incident's figure — see that constant's own
+ * docblock for the current derivation, and `mail/mail-timing.ts` for the
+ * single home of the inputs.
+ *
+ * **The residual limitation, stated honestly — narrower than it used to
+ * be, not yet closed.** T-7 bounds the PRE-SEND term ({@link
+ * VERIFICATION_CODE_PRESEND_ALLOWANCE_MS}, via `withPreSendAllowance`
+ * below): a breach now FAILS the request loudly instead of silently
+ * running past the floor. The SEND term ({@link MAIL_SEND_TIMEOUT_MS}) is
+ * bounded at the transport level by a sibling task (T-6) — until both
+ * transports actually enforce it, a slow send can still take longer than
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` allows for, and the timing oracle
+ * FR-4 forbids reopens for that tail. Closing the tail completely needs the
+ * send off the request's critical path entirely — e.g. an outbox row
+ * written synchronously and a worker that sends it, so the `202` never
+ * waits on the transport at all — which is why a queue-based fix is being
+ * tracked separately rather than attempted here. This fix's job was to
+ * stop the SILENT DROP (the production bug), and it does that
+ * unconditionally; the residual timing tail is a smaller, pre-existing
+ * class of risk FR-4 already accepts in degree (its own "Code request and
+ * successful verification" scenario already tolerates the transport's
+ * variable RTT as part of "the same response shape and timing
  * characteristics"), not a new one this fix introduces.
+ *
+ * **T-7's third-exit question, answered.** A pre-send allowance breach now
+ * reaches the same unpadded `throw err;` exit an unexpected `issueCode`
+ * failure already used — is that still safe once a TIMEOUT, not just an
+ * infrastructure error, can land there?
+ *
+ * **The branches are NOT symmetric — say so plainly, per DD-10's own
+ * Consequences, rather than deny it.** `issueCode` decides which branch to
+ * pay for from `newSends > OTP_MAX_SENDS_PER_HOUR`: the over-cap branch
+ * throws immediately after the `$transaction`; the accepted (under-cap)
+ * branch additionally pays `generateCode`, `hashCode` and a second DB round
+ * trip (`emailVerification.create`). Which branch runs genuinely is a
+ * function of the address's prior sends in the window, so an attacker who
+ * picks an address whose pre-send region lands in the cheaper (over-cap)
+ * branch makes this allowance marginally LESS likely to breach than one
+ * that lands in the accepted branch. Safety rests on bounding that
+ * asymmetry, not on denying it exists:
+ *
+ * (a) **The delta is bounded and small.** The extra work the accepted
+ *     branch pays over the over-cap branch is exactly one `INSERT`
+ *     (`emailVerification.create`) plus in-memory CSPRNG generation and one
+ *     HMAC-SHA-256 computation (`generateCode`/`hashCode`) — not a query
+ *     whose cost scales with the address's history (see the O(1) reasoning
+ *     below).
+ * (b) **{@link VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} is sized on the
+ *     LARGER (accepted) branch** (its own docblock in `mail/mail-timing.ts`;
+ *     DD-10 Consequences). The smaller, over-cap branch therefore carries
+ *     STRICTLY MORE margin inside the same allowance — the (a) delta sits
+ *     far inside a budget already sized to cover the more expensive path,
+ *     so a breach requires ambient conditions (DB load, network jitter) far
+ *     beyond either branch's normal cost, not merely "the accepted branch's
+ *     extra round trip".
+ * (c) **The exit's own latency, when the ALLOWANCE is what triggers it, is
+ *     constant at `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS`, regardless of
+ *     which `issueCode` statement was pending.** `withPreSendAllowance`'s
+ *     deadline timer is armed once, at call entry, via a plain `setTimeout`
+ *     racing `issueCode(...)`'s promise (`Promise.race`); the timer fires at
+ *     a fixed wall-clock offset from that arming, independent of which
+ *     internal `issueCode` step is in flight when it does — `Promise.race`
+ *     has no visibility into the loser's internal state. So a breach caused
+ *     BY the allowance discloses nothing through timing: every such breach
+ *     surfaces after the same elapsed time. (This is distinct from — and
+ *     does not extend to — a plain infrastructure failure that lands here
+ *     without ever reaching the deadline; that pre-existing case's latency
+ *     is whatever the underlying failure took, which is the
+ *     already-accepted "address-independent infrastructure failure" this
+ *     exit was scoped to before T-7.)
+ * (d) **What (a)–(c) together mean under sufficient ambient load: the exit
+ *     converts the bounded (a) delta into a STATUS-CODE difference, not a
+ *     timing one.** Near the allowance boundary, whichever branch's
+ *     pre-send work is cheaper is marginally less likely to breach and get
+ *     the unpadded `throw` (an uncaught `Error` → Nest's default `500`);
+ *     whichever is more expensive is marginally more likely to breach.
+ *     Both outcomes still exist on the byte-identity surface FR-4 governs
+ *     only through their RESPONSE, never through how long the caller waited
+ *     for it — a `500` observed occasionally under load is DD-10's accepted
+ *     trade ("Failing loudly beats leaking silently"), not a silent timing
+ *     leak.
+ *
+ * The one caveat worth naming beyond (a)–(d): an attacker who already knows
+ * a target address could flood requests FOR THAT SAME ADDRESS to contend
+ * the single `EmailSendBudget` row keyed on it and raise ITS OWN request's
+ * chance of breaching the allowance — but that is a self-inflicted,
+ * self-targeted effect (contending your own request against your own
+ * concurrent requests), not a way to learn something about the address from
+ * a single request's timing, and it is no different in kind from contending
+ * any other address's row the same way. It does not turn the exit into an
+ * oracle distinguishing addresses from one another.
  */
 import {
   BadRequestException,
@@ -116,6 +197,10 @@ import {
 } from './email-verification.service';
 import { getOtpHmacSecret } from './email-verification.config';
 import { MailService } from '../mail/mail.service';
+import {
+  MAIL_SEND_TIMEOUT_MS,
+  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS,
+} from '../mail/mail-timing';
 import { PrismaService } from '../prisma/prisma.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import {
@@ -382,18 +467,64 @@ function lookupAttemptWindowStart(now: Date): Date {
 }
 
 /**
- * `fix/otp-mail-lambda-freeze` — the constant-time floor {@link
+ * `enhancement/email-notification-microservice` T-7 — `design.md` §12.1,
+ * DD-10. The constant-time floor {@link
  * RegistrationsService.requestVerificationCode} pads BOTH its branches to,
- * measured from the method's own entry. See that method's class doc for
- * the full evidence trail; in short: 900 ms sits comfortably above this
- * endpoint's own observed ~500 ms synchronous baseline (CloudWatch,
- * 2026-09-03, `latencyMs 498.9`) and comfortably above a plausible
- * same-region SES `SendEmail` round trip (warm client: well under 500 ms;
- * a cold TLS handshake can still add a few hundred ms, which 900 ms still
- * covers). A reasoned bound from the one real number this incident
- * produced — NOT a measured p95/p99 of this endpoint's own SES calls.
+ * measured from the method's own entry.
+ *
+ * **Re-derived here — was `900`, a single reasoned figure from one
+ * production incident.** See `RegistrationsService`'s class doc for that
+ * original reasoning and why DD-10 revision 3 found it insufficient: it
+ * compared the send timeout against the floor directly (`timeout < floor`)
+ * and ignored the synchronous work `issueCode` performs BEFORE the send is
+ * even attempted — a gap this file's own history shipped once
+ * (`1500 + ~500 > 1800`, caught in review, never in production).
+ *
+ * **Composed, not measured — this is DD-10's whole point.** The value is
+ * the SUM of the two bounds that now run inside the padded window, both
+ * enforced at runtime and imported from `mail/mail-timing.ts` — the single
+ * home for every value this spec introduces (§12) — never restated as a
+ * literal here:
+ *
+ *   - {@link VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} — the deadline
+ *     {@link withPreSendAllowance} applies over the WHOLE `issueCode(...)`
+ *     call, as a unit. NOT a timeout on `issueCode`'s own `$transaction`,
+ *     which wraps only the `EmailSendBudget` upsert — `generateCode`,
+ *     `hashCode` and `emailVerification.create` all run outside it, and
+ *     are exactly the work only the ACCEPTED branch pays (the over-cap
+ *     branch throws immediately after the transaction) — precisely the
+ *     divergence this floor exists to erase (T-7 advisory A3, corrected
+ *     during review from an earlier, insufficient "transaction timeout"
+ *     plan).
+ *   - {@link MAIL_SEND_TIMEOUT_MS} — the transport's own deadline (T-6),
+ *     both implementations.
+ *
+ * Composing the two IN CODE — rather than writing their sum as a literal —
+ * is what makes §12.3 invariant 1 (`PRESEND_ALLOWANCE + SEND_TIMEOUT ≤
+ * FLOOR`) hold BY CONSTRUCTION: raising either input raises this constant
+ * with it, so the two can never silently drift apart the way the pre-T-7
+ * `900` (and DD-10 revision 2's `1800`) both could, and once did.
  */
-export const VERIFICATION_CODE_RESPONSE_FLOOR_MS = 900;
+export const VERIFICATION_CODE_RESPONSE_FLOOR_MS =
+  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS;
+
+/**
+ * Thrown by {@link withPreSendAllowance} when `issueCode(...)` has not
+ * settled within {@link VERIFICATION_CODE_PRESEND_ALLOWANCE_MS}. Carries no
+ * email — this reaches `requestVerificationCode`'s existing, deliberately
+ * UNPADDED third exit (address-independent infrastructure failure,
+ * unchanged by T-7 — see that method's own comment at its `throw err;`),
+ * and that exit's safety depends on nothing in its message or type naming
+ * the address that triggered it.
+ */
+export class VerificationCodePreSendAllowanceExceededError extends Error {
+  constructor() {
+    super(
+      `issueCode(...) did not settle within the ${VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} ms pre-send allowance.`,
+    );
+    this.name = 'VerificationCodePreSendAllowanceExceededError';
+  }
+}
 
 /**
  * Sleep for exactly `ms`. The one primitive {@link
@@ -408,6 +539,51 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * DD-10's corrected mechanism (T-7, advisory A3): applies {@link
+ * VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} as a deadline over the WHOLE
+ * `issueCode(...)` call, as a unit — not over its `$transaction`, which
+ * wraps only one of the four things that call does (see {@link
+ * VERIFICATION_CODE_RESPONSE_FLOOR_MS}'s docblock). Because the deadline
+ * races the ENTIRE call rather than a piece of it, nothing `issueCode` does
+ * — the transaction, `generateCode`, `hashCode`, or `emailVerification.create`
+ * — can keep the CALLER waiting past this budget; a breach rejects and
+ * `requestVerificationCode` fails the request via its existing unpadded
+ * third exit, loudly, instead of leaking a timing signal.
+ *
+ * **This does not (and cannot, in plain Node/Prisma without an
+ * `AbortSignal` threaded all the way in) stop `issueCode`'s own database
+ * work once the deadline has won the race — Promise.race has no mechanism
+ * to cancel the loser.** What it bounds is the CALLER's observable wait,
+ * which is the property the timing oracle actually depends on: the
+ * response can never take longer than the allowance to decide this call
+ * has failed, regardless of what the database is doing in the background.
+ *
+ * **Two failure modes this repo has already paid for, both closed here:**
+ *  - *The orphaned promise.* If `issueCode`'s promise loses the race and
+ *    rejects later, nothing else awaits it — an unhandled rejection would
+ *    terminate the process (`backend/src` registers no
+ *    `unhandledRejection` handler; DD-5 learned this same lesson for the
+ *    mail transport). `promise.catch(() => {})` is attached at race
+ *    construction so that later rejection is always observed.
+ *  - *The leaked timer.* `setTimeout`'s handle is cleared in a `finally`
+ *    regardless of which side of the race settles first, so a pending
+ *    timer never outlives this call or keeps a Lambda event loop alive.
+ */
+function withPreSendAllowance<T>(promise: Promise<T>): Promise<T> {
+  let timer!: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new VerificationCodePreSendAllowanceExceededError());
+    }, VERIFICATION_CODE_PRESEND_ALLOWANCE_MS);
+  });
+  promise.catch(() => {
+    // See docblock: prevents an unhandled rejection if `issueCode` loses
+    // the race and settles afterward, with nobody else listening.
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Pads out to {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS}, measured from
  * `startedAtMs` (a `Date.now()` snapshot taken at the top of {@link
  * RegistrationsService.requestVerificationCode}). A no-op once the floor
@@ -415,11 +591,27 @@ function delay(ms: number): Promise<void> {
  * never on the branch that throws an unexpected (non-cap) error, which is
  * explicitly outside the byte-identity surface this floor protects (see
  * that method's own comment at its `throw err;`).
+ *
+ * T-7 (DD-10's "second signal, retained") — a NEGATIVE remainder means the
+ * two bounded terms inside the padded window (the pre-send allowance, the
+ * send timeout) together still ran longer than the composed floor. That
+ * should not happen once both are genuinely enforced, but "should not" is
+ * not a gate: `logger.warn` makes a residual overrun OBSERVABLE — carrying
+ * the overrun in ms and, deliberately, no address, since this fires on an
+ * unauthenticated public path (design.md §4.10/§6.3: "Never logged: …
+ * email addresses"). T-9 confirms this line is absent under normal load.
  */
-async function padToVerificationCodeResponseFloor(startedAtMs: number): Promise<void> {
+async function padToVerificationCodeResponseFloor(
+  startedAtMs: number,
+  logger: Logger,
+): Promise<void> {
   const remainingMs = VERIFICATION_CODE_RESPONSE_FLOOR_MS - (Date.now() - startedAtMs);
   if (remainingMs > 0) {
     await delay(remainingMs);
+    return;
+  }
+  if (remainingMs < 0) {
+    logger.warn(`verification code response floor overrun: overrunMs=${-remainingMs}`);
   }
 }
 
@@ -443,13 +635,21 @@ export class RegistrationsService {
    * padToVerificationCodeResponseFloor} for EVERY exit this method has;
    * see the class doc above for why the send is now awaited and why both
    * branches pad to the same floor.
+   *
+   * T-7 (DD-10) — `issueCode(...)` is called through {@link
+   * withPreSendAllowance}, which bounds the WHOLE call, not merely its
+   * `$transaction`. A breach throws {@link
+   * VerificationCodePreSendAllowanceExceededError}, which is not an
+   * `EmailVerificationSendLimitExceededError` and so falls straight through
+   * to this method's existing, deliberately UNPADDED third exit below —
+   * address-independent infrastructure failure, unchanged by this task.
    */
   async requestVerificationCode(rawEmail: string): Promise<void> {
     const startedAtMs = Date.now();
 
     let issued: { code: string };
     try {
-      issued = await this.emailVerificationService.issueCode(rawEmail);
+      issued = await withPreSendAllowance(this.emailVerificationService.issueCode(rawEmail));
     } catch (err) {
       if (err instanceof EmailVerificationSendLimitExceededError) {
         // The cap's entire observable effect: no code is sent. The caller
@@ -457,7 +657,7 @@ export class RegistrationsService {
         // accepted address, in comparable time (see the class doc's
         // timing note above) — the pad below is what makes "comparable
         // time" true now that the accepted branch below awaits its send.
-        await padToVerificationCodeResponseFloor(startedAtMs);
+        await padToVerificationCodeResponseFloor(startedAtMs, this.logger);
         return;
       }
       // Deliberately NOT padded: an unexpected (non-cap) failure here is
@@ -465,7 +665,9 @@ export class RegistrationsService {
       // surface FR-4 governs (that surface covers only "known address",
       // "unknown address" and "over-cap address" — never "the database is
       // unavailable"). Padding this exit would hide a real outage behind
-      // an artificial delay for no timing benefit this method claims.
+      // an artificial delay for no timing benefit this method claims. A
+      // pre-send allowance breach (T-7) reaches this same exit — see the
+      // class doc's third-exit note above for why that stays safe.
       throw err;
     }
 
@@ -506,7 +708,7 @@ export class RegistrationsService {
       this.logger.error(`verification code send failed: errorType=${errorType}`);
     }
 
-    await padToVerificationCodeResponseFloor(startedAtMs);
+    await padToVerificationCodeResponseFloor(startedAtMs, this.logger);
   }
 
   /**

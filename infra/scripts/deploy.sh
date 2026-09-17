@@ -37,6 +37,7 @@
 #   VPC_ID=vpc-abc DEV_CIDR=203.0.113.7/32 ./infra/scripts/deploy.sh
 #   SKIP_MIGRATE_PAUSE=yes ./infra/scripts/deploy.sh   # don't pause at step 2
 #   ALLOWED_ORIGIN='*' ./infra/scripts/deploy.sh       # backend CORS (dev default *)
+#   MAIL_TRANSPORT=microservice ./infra/scripts/deploy.sh  # T-9 verification switch
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -53,6 +54,65 @@ FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 # Backend CORS origin — permissive '*' for the dev bootstrap; locked to the
 # CloudFront URL later by set-cors.sh (T-8, FR-6, DD-6).
 ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"
+
+# Mail transport — "ses" (Phase A default / rollback control) or
+# "microservice" (T-9 verification). MUST be passed explicitly on every
+# backend deploy: SAM sends UsePreviousValue for any parameter absent from
+# --parameter-overrides, so omitting the parameter override entirely would
+# let an unrelated operator run silently revert the transport, possibly
+# mid-verification (design.md §7.3).
+#
+# ⚠️ A hardcoded `${MAIL_TRANSPORT:-ses}` default would re-create that exact
+# hazard in the OPPOSITE direction: once T-9 has flipped the live stack to
+# "microservice", any later run of this script that forgets to set the env
+# var would then actively push the parameter BACK to "ses" and report
+# success, with no signal (T-8 review, Issue 1). So: an explicit
+# MAIL_TRANSPORT env var always wins (operator override); otherwise resolve
+# the CURRENT value from the deployed stack — mirroring set-cors.sh's
+# CloudFrontUrl resolution, for the same reason: read the live value instead
+# of asserting one. Only a stack that does not exist yet (the very first
+# deploy) falls back to the template's own Default ("ses").
+if [[ -n "${MAIL_TRANSPORT:-}" ]]; then
+  echo "==> MailTransport = $MAIL_TRANSPORT (operator override via MAIL_TRANSPORT env var)"
+else
+  # Separate "the describe-stacks CALL failed" from "the stack does not
+  # exist yet" — they are not the same thing. An expired SSO token, a
+  # throttle, or an IAM denial also makes the query come back empty, and
+  # empty was previously indistinguishable from "not found" (`2>/dev/null
+  # || true` swallowed both). Falling back to "ses" on a T-9-flipped stack
+  # because of a TRANSIENT failure silently reverts the live transport with
+  # no signal — exactly the hazard the `${MAIL_TRANSPORT:-ses}` note above
+  # already calls out for the "forgot to set the env var" case. So: capture
+  # stdout+stderr together, check the exit status via `if`, and only accept
+  # "ses" as the fallback when the failure text is CloudFormation's
+  # `ValidationError` for a nonexistent stack — anything else aborts.
+  if RESOLVED_MAIL_TRANSPORT="$(
+    aws cloudformation describe-stacks \
+      --profile "$PROFILE" --region "$REGION" \
+      --stack-name "$BACKEND_STACK" \
+      --query "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
+      --output text 2>&1
+  )"; then
+    if [[ -z "$RESOLVED_MAIL_TRANSPORT" || "$RESOLVED_MAIL_TRANSPORT" == "None" ]]; then
+      MAIL_TRANSPORT="ses"
+      echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+    else
+      MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
+      echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
+    fi
+  elif [[ "$RESOLVED_MAIL_TRANSPORT" == *ValidationError* ]]; then
+    MAIL_TRANSPORT="ses"
+    echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+  else
+    echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK':" >&2
+    echo "$RESOLVED_MAIL_TRANSPORT" >&2
+    echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
+    echo "to 'ses' here could silently revert a live T-9 flip. Fix the AWS error" >&2
+    echo "above and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
+    exit 1
+  fi
+fi
+echo
 
 # Resolve infra/ paths relative to this script so it runs from any CWD.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -167,6 +227,7 @@ sam deploy \
   --parameter-overrides \
     AllowedOrigin="$ALLOWED_ORIGIN" \
     DataAuthStackName="$DATA_AUTH_STACK" \
+    MailTransport="$MAIL_TRANSPORT" \
   "${SAM_DEPLOY_FLAGS[@]}"
 echo "==> [3/4] $BACKEND_STACK deployed."
 print_outputs "$BACKEND_STACK"
@@ -188,3 +249,8 @@ echo
 echo "==> Next operator steps (T-8): build + sync the frontend, then lock CORS:"
 echo "        ./infra/scripts/deploy-frontend.sh   # build with ApiBaseUrl, s3 sync, invalidate"
 echo "        ./infra/scripts/set-cors.sh          # redeploy backend with AllowedOrigin=CloudFrontUrl"
+echo
+echo "==> Before flipping MailTransport to 'microservice' (T-9): write the real"
+echo "    mail microservice secret first — see infra/README.md §7, 'Mail"
+echo "    microservice secret — operator runbook (T-8)'. The secret still holds"
+echo "    its deploy-time placeholders until you do."

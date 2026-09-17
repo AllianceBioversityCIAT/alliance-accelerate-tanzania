@@ -241,6 +241,18 @@ export class EmailVerificationService {
    * concurrent sibling call does — see the class doc's three-round
    * empirical account of why this is the shape that actually works, not
    * the more "obvious" affected-rows or bare-read alternatives.
+   *
+   * **Bound by the caller, not by this method (`enhancement/email-
+   * notification-microservice` T-7, `design.md` DD-10).** This whole call —
+   * the `$transaction` below AND `generateCode`/`hashCode`/
+   * `emailVerification.create` that follow it, none of which this method
+   * itself bounds — is raced against `VERIFICATION_CODE_PRESEND_ALLOWANCE_MS`
+   * by `RegistrationsService.requestVerificationCode`'s `withPreSendAllowance`.
+   * An earlier plan put a Prisma transaction timeout HERE instead; that was
+   * found insufficient during review (advisory A3) because the transaction
+   * covers only the first of these four steps, leaving
+   * `emailVerification.create` — work only the ACCEPTED branch pays —
+   * unbounded, which is exactly the divergence the floor exists to erase.
    */
   async issueCode(rawEmail: string): Promise<IssuedCode> {
     const email = normalizeEmail(rawEmail);

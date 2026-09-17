@@ -22,6 +22,21 @@ Parameters:
       (DbSecretArn, RdsEndpoint, RdsPort, DbName, DbMasterUsername). Imported
       here via Fn::ImportValue to compose DATABASE_URL.
     Default: accelerate-tz-dev-data-auth
+  MailTransport:
+    Type: String
+    Description: >-
+      Which MailService transport the Lambda uses. `ses` (Phase A default) is
+      the rollback control the add -> verify -> remove rollout depends on
+      (enhancement/email-notification-microservice design.md §7.3); T-9
+      verifies `microservice` on the deployed dev stack before Phase B narrows
+      this parameter's AllowedValues and deletes the SES adapter. Passed
+      through explicitly by deploy.sh and set-cors.sh (both use
+      --parameter-overrides) so an unrelated operator run can never silently
+      revert it via SAM's UsePreviousValue.
+    AllowedValues:
+      - ses
+      - microservice
+    Default: ses
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -39,6 +54,78 @@ Resources:
         value does not expose stored codes, but it must never be logged,
         printed, or committed (design.md §4.3).
       GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-8 - OneCGIAR notification-microservice credentials (FR-7; design.md
+  # §7.2). Two values, one secret: `rabbitmqUrl` (broker URL, embeds
+  # user:password) and `apiKey` (CLARISA). Both are consumed ONLY via
+  # {{resolve:secretsmanager:...:SecretString:<key>}} dynamic references below
+  # - never a template/script/committed literal (FR-7's BUT).
+  #
+  # `GenerateSecretString` (as used by OtpHmacSecret above) can generate AT
+  # MOST ONE key, and a dynamic reference to a JSON key that does not exist
+  # fails the ENTIRE stack operation - so a single-key secret cannot back two
+  # references. `SecretStringTemplate` supplies the placeholder `apiKey` key
+  # and `GenerateStringKey` fills `rabbitmqUrl` with a random placeholder, so
+  # BOTH keys exist in the secret from the first deploy onward.
+  #
+  # ⚠️ OPERATOR RUNBOOK - both placeholders MUST be overwritten with real
+  # values BEFORE the deploy that flips MailTransport to "microservice"
+  # (T-9). `put-secret-value --secret-string` REPLACES THE WHOLE DOCUMENT -
+  # it is not a merge. Writing only `{"rabbitmqUrl":"..."}` SILENTLY DELETES
+  # `apiKey`, and the next resolve of the deleted key fails the whole stack
+  # operation. Both keys MUST be written in ONE JSON document, in ONE call,
+  # via `--secret-string file://<600-mode-temp-file>` (never an inline
+  # literal - it would land in shell history, the exact hazard FR-7 exists
+  # to prevent). The complete, copy-pasteable command - `--profile
+  # IBD-DEV --region eu-west-1 --secret-id
+  # accelerate-tz-dev-backend-mail-microservice-secret` and the safe
+  # temp-file pattern - is in infra/README.md, section "Mail microservice
+  # secret - operator runbook (T-8)". Do not improvise the command from
+  # this comment; none of those flags fit usefully here.
+  #
+  # Writing the secret's values alone changes nothing in THIS TEMPLATE, so
+  # it forces no changeset by itself: CloudFormation diffs the unresolved
+  # template + parameters to decide WHETHER a resource needs updating, and
+  # only re-resolves dynamic references while it processes an update to
+  # that resource - not because Environment.Variables happens to be one
+  # property. At T-9 the MailTransport flip is a real parameter change, so
+  # it forces ApiFunction to update regardless (over-determined, in fact -
+  # the flip, these placeholder edits, and a new code artifact each force
+  # it independently), and that update re-resolves EVERY dynamic reference
+  # inside Environment.Variables, including these two, against whatever the
+  # secret holds at that moment.
+  #
+  # This has a corollary the T-9 flip does NOT cover: once the stack
+  # already sits at MailTransport=microservice, a LATER secret correction
+  # or rotation with nothing else changing produces an EMPTY changeset -
+  # both deploy scripts pass --no-fail-on-empty-changeset, so the deploy
+  # reports success while the old secret value stays live. See
+  # infra/README.md §7 ("Mail microservice secret - operator runbook
+  # (T-8)"), "After writing the secret, confirm it actually took effect",
+  # for how to force that case.
+  # ════════════════════════════════════════════════════════════════════════════
+  MailMicroserviceSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}-mail-microservice-secret"
+      Description: >-
+        OneCGIAR notification-microservice configuration: rabbitmqUrl (broker
+        URL, embeds user:password), apiKey (CLARISA), and queueName. Placeholder
+        JSON at creation - the operator MUST overwrite ALL THREE keys with real
+        values via put-secret-value before the MailTransport=microservice deploy
+        (design.md §7.2, §7.3). Never log, print, or commit any of them.
+        queueName is here at the product owner's direction (2026-09-16): it is
+        not a credential and grants no access on its own, but it discloses the
+        platform's queue naming and which environment we target, which does not
+        belong in a repository. EMAIL_SENDER deliberately stayed a template
+        literal - it is the From header of every message the system sends, so
+        hiding it would protect nothing while adding an operator step.
+      GenerateSecretString:
+        SecretStringTemplate: '{"apiKey": "REPLACE_BEFORE_MICROSERVICE_DEPLOY", "queueName": "REPLACE_BEFORE_MICROSERVICE_DEPLOY"}'
+        GenerateStringKey: "rabbitmqUrl"
         PasswordLength: 64
         ExcludePunctuation: true
 
@@ -104,9 +191,35 @@ Resources:
           # T3-A1 - mail transport + OTP HMAC key (design.md §4.3). AWS_REGION
           # is deliberately NOT set here - it is reserved by the Lambda runtime
           # and getSesMailConfig() reads the runtime-provided value directly.
-          MAIL_TRANSPORT: ses
+          # MAIL_TRANSPORT is now the MailTransport PARAMETER (T-8), not a
+          # literal - the "ses" default keeps the rollback control real; T-9
+          # verifies "microservice" before Phase B narrows AllowedValues and
+          # deletes the SES adapter (design.md §7.3).
+          MAIL_TRANSPORT: !Ref MailTransport
           MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org
           OTP_HMAC_SECRET: !Sub "{{resolve:secretsmanager:${OtpHmacSecret}:SecretString}}"
+          # T-8 - OneCGIAR notification-microservice config (design.md §4.5,
+          # §7.1, §7.2). THREE of the five now resolve from
+          # MailMicroserviceSecret and never appear as literals here:
+          #   RABBITMQ_URL         - a credential (embeds user:password)
+          #   MICROSERVICE_API_KEY - a credential (CLARISA)
+          #   EMAIL_QUEUE_NAME     - NOT a credential, and grants no access on
+          #     its own, but it discloses the platform's queue naming and which
+          #     environment we target. Moved here at the product owner's
+          #     direction (2026-09-16); it was a committed literal until then.
+          # EMAIL_SENDER stays a literal DELIBERATELY: it is the From header of
+          # every message the system sends, so it is public by construction -
+          # hiding it would protect nothing while adding an operator step. If
+          # spoofing is the worry, SPF/DKIM on the domain is the control, not
+          # the absence of the address from this file.
+          # EMAIL_SENDER_NAME is the one variable that defaults rather than
+          # throwing (getMicroserviceMailConfig); its value here is the fixed
+          # project value from design.md §4.5, not a placeholder.
+          RABBITMQ_URL: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:rabbitmqUrl}}"
+          MICROSERVICE_API_KEY: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:apiKey}}"
+          EMAIL_QUEUE_NAME: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:queueName}}"
+          EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
+          EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
           # group resolves empty or the directory call fails
