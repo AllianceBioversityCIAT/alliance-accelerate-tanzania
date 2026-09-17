@@ -33,9 +33,9 @@
  *   throttle dispatch counts are all read off this mock's call history,
  *   never off `getRecordedSends()` (the no-op transport never carries `to`).
  * - `AdminRecipientResolver` -> a jest-mocked `resolve()` returning a FIXED,
- *   known recipient list, so "reaches every resolved admin" is a real
- *   equality assertion against a value this file controls, not merely "a
- *   send happened."
+ *   known recipient list, so "is dispatched to every resolved admin" is a
+ *   real equality assertion against a value this file controls, not merely
+ *   "a send happened."
  *
  * **Throttle isolation across many `it` blocks in one file.** The suite
  * shares ONE compiled app (one `ThrottlerStorageService` instance) across
@@ -75,7 +75,7 @@ import {
 
 const CONTACT_PATH = '/api/v1/contact';
 
-/** Fixed, known recipient set — the "reaches every resolved admin" assertion below is an equality check against THIS value. */
+/** Fixed, known recipient set — the "is dispatched to every resolved admin" assertion below is an equality check against THIS value. */
 const FIXED_ADMIN_RECIPIENTS = ['admin-one@example.org', 'admin-two@example.org'];
 
 function validBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -145,8 +145,8 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
     throttlerStorage.storage.clear();
   });
 
-  describe('Valid submission reaches every resolved admin (FR-2 scenario 1, FR-3)', () => {
-    it('delivers ONE message addressed to every resolved admin recipient — not merely "a send happened"', async () => {
+  describe('Valid submission is dispatched to every resolved admin (FR-2 scenario 1, FR-3)', () => {
+    it('hands ONE message addressed to every resolved admin recipient to MailService — not merely "a send happened"', async () => {
       const res = await request(app.getHttpServer()).post(CONTACT_PATH).send(validBody());
 
       expect(res.status).toBe(202);
@@ -280,6 +280,16 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
       const res = await request(app.getHttpServer()).post(CONTACT_PATH).send(validBody());
 
       expect(res.status).toBe(502);
+      // T-12 (Phase B rework, Issue 2): the Done-when clause requires the
+      // envelope be byte-identical — `toEqual`, not `toMatchObject`, so an
+      // added/renamed/changed field also reddens this, not just a dropped
+      // one. Reproduced verbatim from contact.service.ts's literal, not
+      // retyped from memory.
+      expect(res.body).toEqual({
+        statusCode: 502,
+        error: 'Bad Gateway',
+        message: 'We could not send your message right now. Please try again shortly.',
+      });
       const raw = res.text;
       expect(raw).not.toContain('TransportRejectedError');
       expect(raw).not.toContain('admin-two@example.org');

@@ -1,5 +1,7 @@
 # Proposal — Hybrid Actor Registration (Epic Umbrella)
 
+> **Superseded-by note (2026-09-17):** the email transport this proposal assumes (Amazon SES — §7 Infra row, A-3, R-3) has been replaced by the OneCGIAR Notification Microservice; see `docs/specs/enhancement/email-notification-microservice/`. Re-read the SES-specific mechanics below against that spec before building on them. The replacement has no retry past the publish and no dead-letter queue (ADR-015; `design.md` D-H) — a message it fails to relay is simply lost, unobserved by this system — so R-3's do-not-depend-on-email-as-the-only-channel concern stands, not expires.
+
 > **This is an umbrella.** It records the decomposition, the build order, and the decisions taken from the client thread. It is **not** itself specified or executed — each child chunk below has its own `proposal.md` and its own `/akili-specify` run.
 
 ## 1. Document Control

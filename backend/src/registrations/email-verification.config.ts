@@ -11,10 +11,11 @@
  * There is no SSM SDK anywhere in this codebase (see the two files above);
  * §4.3's "SSM-sourced secret" phrase describes how SAM populates this env var
  * from SSM Parameter Store / Secrets Manager at deploy time, not that the
- * application calls SSM directly. `OTP_HMAC_SECRET` carries the same
- * deployment gap already recorded against `MAIL_TRANSPORT`/`MAIL_SENDER_ADDRESS`
- * (T3-A1): no SAM template or `infra/20-backend/template.yaml` entry exists
- * for it yet.
+ * application calls SSM directly. `OTP_HMAC_SECRET` is provisioned as the
+ * `OtpHmacSecret` Secrets Manager resource in `infra/20-backend/template.yaml`
+ * and resolved into the Lambda via a `{{resolve:secretsmanager:...}}` dynamic
+ * reference (documented in `docs/infrastructure.md` §2) — there is no
+ * deployment gap.
  */
 function required(name: string): string {
   const value = process.env[name];

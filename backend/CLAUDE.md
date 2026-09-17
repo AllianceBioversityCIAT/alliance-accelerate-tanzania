@@ -52,7 +52,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 - Jest `testRegex` accepts `.spec.ts` AND `.e2e-spec.ts`; the **canonical e2e name is `*.e2e.spec.ts`** (a hyphen-named file once sat dead for weeks — see archived `bugfix/dead-e2e-tests`).
 - E2E harness pattern (`src/test/admin-actors-crud.e2e.spec.ts` is the reference): AppModule + in-memory Prisma mock override + `TestJwtAuthGuard` + the SAME shared bootstrap helpers as production (`createValidationPipe()`, `configureBodyParser`).
-- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npm run lint` (ESLint 9 flat config `eslint.config.mjs`).
+- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npx eslint "{src,test}/**/*.ts" --quiet` (ESLint 9 flat config `eslint.config.mjs`) — **not** `npm run lint`, which is `eslint --fix` (`package.json`) and mutates the diff under review (root `CLAUDE.md` § Verification commands).
 
 ## Import template
 

@@ -1191,3 +1191,133 @@ Its retraction is worth quoting, because it names the failure mode this whole sp
 2. `docs/trd/trd.md` §7 *Integration Points* omits the microservice/broker entirely. It never named SES, so nothing stale survives there — but it is now the only place in the TRD where the mail integration is missing.
 
 **T-15 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.
+
+## T-17 — Close the spec-level premise and sync the agent guides (2026-09-17)
+
+The final task. Three review rounds. **Two of its three findings were mine**, not the worker's.
+
+### Part 1 — pointers, not rewrites
+
+Both active specs (`epic/hybrid-actor-registration`, `admin/registration-info-requests`) assert SES as a live dependency — the reason FR-6's original sweep was unsatisfiable. `tasks.md` forbids rewriting them, and that constraint is right: they are **unexecuted proposals whose risk analysis was correct when written**, and R-3's concern — *"do not let a chunk depend on email as its only channel"* — is **still live**, because the microservice has no retry and no DLQ.
+
+One line added to each; no risk row touched. The Reviewer verified the citations were **complete, not a sample**: a repo-scoped grep for `SES` in each file returns exactly the sites the pointer names.
+
+**Then I overruled the Reviewer, narrowly, and it was the right call.** It ruled the pointers correct and advised against reopening. But it had itself named the failure mode: *"a reader who learns SES is gone could infer the premise expired, when in fact the risk **strengthened**."* A pointer that lets a live safety warning be read as retired is worse than a slightly longer pointer. One clause was appended, written from ADR-015 and `design.md`'s D-H row directly.
+
+The Reviewer verified the clause term by term and confirmed the judgement: *"the right call and the right trade… do not take it back out."* It also priced what remained: *"the budget is now genuinely spent. A third sentence would start to be the rewrite the Done-when prohibits, and I would gate that one."*
+
+**Its check on the one phrase that could have gone either way** — *"unobserved by this system"* — is worth recording: that qualifier makes a bounded claim about this codebase, which is what ADR-015 asserts, and **not** a universal claim that no signal exists anywhere. Slack does receive the post; the system does not consume it. Had the clause read *"unobserved"* full stop, the Reviewer would have gated it.
+
+### Part 2 — both module guides routed agents into a diff-mutating command
+
+`backend/CLAUDE.md:55` and `backend/AGENTS.md:16` both gave `npm run lint` as the verification gate. `backend/package.json:10` is `"lint": "eslint … --fix"`. **A diff-reviewing agent following either guide would silently rewrite the change under review** — which is why every worker on this spec was told otherwise by hand. Both fixed; all four guides now agree.
+
+### Part 3 — the TRD described a system that is not this one
+
+§7 Integration Points carried **four** claims. Three were false, each verified at the artefact:
+
+| Claim | Artefact |
+|---|---|
+| Lambda *"connects within/over VPC"* | `20-backend/template.yaml:203` — `# NO VpcConfig`. **The same defect T-16 had just fixed in `docs/infrastructure.md`**, surviving in the TRD |
+| *"deployed with Serverless Framework"* | ADR-008: SAM is the only IaC tool; `infra/` holds SAM templates |
+| *"via `@vendia/serverless-express` or `aws-lambda-fastify`-style adapter"* | `lambda.ts:4` imports **`serverless-http`**; `backend/CLAUDE.md` records that the adapter choice is load-bearing, not interchangeable |
+
+The fourth — no mail integration listed at all — was true, and a line was added naming the microservice, `MicroserviceMailTransport`, RabbitMQ with publisher confirm, and ADR-015.
+
+**Fixing §7 then made the file self-contradictory.** `:45` still said *"(Serverless Framework)"* while the new `:219` said *"not a Serverless Framework `serverless.yml`"* — asserting and denying the same fact 174 lines apart. The Implementer had **correctly** left `:45` alone as out of scope; I widened the grant, on the principle that **scope discipline holds until obeying it leaves a contradiction the same task created**.
+
+### Two Implementer judgements I upheld against my own instinct
+
+**The `MAIL_SENDER_ADDRESS` gate.** I wrote *"should be empty"*. It returned **8 hits** — all inside this spec's own documents, past-tense. The Implementer reported the literal result and explained why it is correct, rather than declaring the gate satisfied by silently excluding the folder. Its words: *"a sweep that 'looks empty' by silently excluding the right things is the defect this spec keeps finding."* The Reviewer then swept repo-wide and confirmed **zero** in `backend/src` and `infra/` — no ninth hit hiding behind the framing.
+
+**Leaflet at `:45`.** It declined to add it, judging the absence an omission rather than a false claim. The Reviewer agreed and gave the argument worth keeping: *"adding it would create a **third** restatement site for a fact that already has two — precisely the drift you were made to fix at `:45`/`:219`."*
+
+### The two findings that were mine
+
+**1. My advisory broke a baseline.** A5 corrected `docs/trd/trd.md:249`'s `npm run lint` — and did it **unscoped**. `frontend/package.json:9` is `"lint": "next lint"`, **not mutating**, and root `CLAUDE.md:43`, `frontend/CLAUDE.md:61` and `frontend/AGENTS.md:17` all prescribe it. The TRD became **the only place in the repository forbidding, without qualification, something the root guide mandates** — while root `CLAUDE.md:48`, the very line A5 was aligning to, scopes the warning to `backend/`. My wording dropped the two words that made it true. Fixed by adding the scope.
+
+**2. I misreported my own measurement, to the Reviewer.** I told it *"`grep -n "npm run lint" docs/trd/trd.md` → **empty**. I verified that myself."* I had run it; it returned `:249`; the hit was in my own terminal output. `grep -c` → **1**.
+
+**And the Reviewer found the deeper thing:** that grep can no longer work at all. **The correct text necessarily quotes the string it forbids**, so an empty result is unobtainable and a non-empty one uninformative. *"That is how issue 1 survived."* The remediation is not to run it more carefully — it is to retire the token grep for this line and read it.
+
+> *"The failure was caught only because a reader re-ran a claimed measurement instead of crediting it. That is the whole argument for `author ≠ auditor` on the execution axis, demonstrated rather than asserted."*
+
+### Recorded deviations
+- **Three files in the diff that `tasks.md` T-17 does not declare** — `docs/trd/trd.md`, this spec's `design.md`, and `email-verification.config.ts`. All are final-sweep catches covered by FR-6's *"every active baseline document"*; recorded so a future reader does not find them unexplained.
+- **T-14's sweep reported empty while `email-verification.config.ts:15` still named `MAIL_SENDER_ADDRESS`** — because T-14's grep pattern has **no `MAIL_SENDER_ADDRESS` term**. The gate did not fail; it could not see. Recorded as the fourth instance of a term list extended by enumerating known spellings rather than by shape.
+- **The docblock T-17 fixed there was wholly stale, not partly.** It claimed a deployment gap for `OTP_HMAC_SECRET`, citing `MAIL_TRANSPORT`/`MAIL_SENDER_ADDRESS` as precedent. **Both precedents are false** (T-8 added the parameter; T-13 deleted the variable) **and the gap itself is closed** — `OtpHmacSecret` exists at `template.yaml:54` and T-16 documented it. Replaced with the verified current provisioning. No code line touched.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `cd backend && npm test --silent` | 77 suites / **1138 tests** |
+| `cd backend && npm run build` | clean |
+| `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | clean |
+| `./infra/scripts/validate.sh` | PASS ×3 |
+| Classification sweep | **55**, unchanged — no file under `backend/src` was touched |
+| `grep -n "npm run lint" docs/trd/trd.md` | **retired as a gate** — see above; replaced by reading `:249` against both `package.json` scripts |
+
+**T-17 → `[x]`.**
+
+## T-11 and T-12 — retrospective adjudication (2026-09-17)
+
+Both tasks' code landed inside commit `b51bee9`, the **HALTed** Phase B batch 1. The work was preserved deliberately — it passed every gate, and all three review failures were prose — but **neither task was ever individually adjudicated**, and this log had no entry for either. `tasks.md` carried both as `[ ]`.
+
+That is the state the repo's own rule calls recoverable: *"evidence-without-checkbox is recoverable; checkbox-without-evidence is an unfalsifiable completion."* Rather than flip them on the strength of the code being present, a Reviewer audited **the tree** against each Done-when clause. **That decision is the reason this entry is not a quiet lie.**
+
+### T-11 — PASS
+
+Every clause satisfied, verified at the artefact: `reply-to.util.ts` and its spec gone; `MailMessage` no longer declares the field; nothing composes it; zero `composeReplyTo` anywhere; the `mail.service.spec.ts` literals are `{ to, subject, text }`, with TS excess-property checking genuinely live on them.
+
+**The clause that mattered was the one that is not a deletion.** T-11 required a **new** test — `contact.service.spec.ts` had to gain an assertion pinning the DTO's `email` to the rendered body, because the deleted `replyTo` assertion was the only thing in that suite holding the DTO→template wiring. It exists (`:65`), and the Reviewer confirmed it holds **for the right reason**: `ContactService` imports `buildContactMessage` directly and it is not mocked in that suite, so the assertion runs the real template and the address reaches `text` only via `renderBody`. Delete the mapping at `contact.service.ts:92` and it reddens. *A removal that had quietly dropped that guarantee would have passed a naive grep.*
+
+**On the "five assertions removed" clause, the Reviewer named a limitation worth keeping:** a count of *removed* things is not recomputable from a tree without the diff. It could verify the end state is zero and that the tree is consistent with `4 + 1` and with no other number it could test. Its recommendation: **phrase Done-when clauses as end-state assertions** (*"zero `replyTo` references remain outside prose"*) rather than removal counts. This is the third time a quantity has bitten this spec.
+
+### T-12 — FAIL, then remediated, then PASS
+
+**Finding 1 — T-12's own file claimed delivery, which is exactly what FR-5 forbids.** `contact.e2e.spec.ts:148-149` read *"Valid submission **reaches** every resolved admin"* / *"**delivers** ONE message…"*. What the block asserts is that a **mocked** `MailService` was called once with the right recipient list. Under T-12's own restatement a `202` asserts the broker durably accepted the message, never that anything reached a person.
+
+**Had I flipped the checkbox instead of asking, this spec would have closed a task whose own test file asserts the thing the task exists to stop asserting.**
+
+Fixed by restatement only, no assertion touched. The sweep then found **two more** — the file header and a doc-comment, both quoting the old title **verbatim**. The Implementer fixed them and flagged it as a judgment call; the Reviewer ruled it **in scope and required**: *"I would have failed the diff without those two edits"* — renaming a title and leaving its quotations is the same fix-applied-to-one-site-not-the-other shape that halted attempt 3. It then checked the ten sites left untouched and confirmed each is either internal data-flow language or already-correct negative framing (*"not delivery"*, *"never that a message failed to reach an inbox"*) — removing "delivery" there would delete the clause that **satisfies** FR-5.
+
+**Finding 2 — "envelope byte-identical" was gated by nothing (KZ-002).** Only `statusCode` was asserted anywhere; the string `could not send your message` appeared **exactly once in the repository — at its definition**. The envelope could be rewritten and every suite would stay green.
+
+Closed with a `toEqual` on the full envelope, and — because a gate nobody has seen fail is not yet a gate — **proved non-vacuous by mutation**:
+
+```
+FAIL src/contact/contact.e2e.spec.ts
+    - "message": "…Please try again shortly.",
+    + "message": "…Please try again LATER.",
+Tests: 1 failed, 22 passed, 23 total
+```
+reverted → `Tests: 23 passed`. I confirmed independently that `contact.service.ts` is byte-identical to HEAD.
+
+The Reviewer read both literals and confirmed all three keys match token for token, and noted the one subtlety: `toEqual` ignores `undefined`-valued properties, so *"an added field also reddens"* is not universally true — but `res.body` is `JSON.parse` output, which cannot hold `undefined`, so the leniency is unreachable here. **The claim is true where it is written.**
+
+### The finding that arrived last, and matters most
+
+While re-auditing, the Reviewer looked one step past the diff and found `admin-recipient.resolver.ts` citing **`getSesMailConfig()` twice, in the present tense**. That symbol exists nowhere in `backend/src` — T-10 deleted it.
+
+**T-14 is `[x]` on "Done when: the sweep is empty", and the sweep *is* empty — against the pattern, not against the tree.** `getSesMailConfig` contains `SesMail` and matches none of the nine terms: `\bSES\b` needs a token boundary, `getSesClient`/`SesClient` need "Client", `SesMailTransport` needs the full name. And `admin-recipient.resolver.ts` is in **T-14's own Files list**.
+
+This is the **third** instance of a miss class `tasks.md` already documents twice, both dated 2026-09-17. Every previous widening added *the spelling just found*. **Enumerating known names cannot catch the name you do not know yet.**
+
+The remedy is a **shape** term — `[a-zA-Z]Ses[A-Z]|Ses[A-Z][a-z]`, a camelCase-identifier pattern — added **alongside** the existing list, not replacing it (some terms catch what the shape cannot: `MessageRejected`, `sandbox`, `reply[-_]?to`). Before the fix it returned six hits: the two defects, plus four in `microservice-mail.transport.ts` already correctly past-tensed. After: **four**, all correct.
+
+Fixed as a rename, not a rewrite — the Reviewer established first that the *quoted sentence* is still accurate (it reproduces `mail.config.ts`'s surviving docblock) and that `required()` still exists; only the attribution was dead. `getMailTransportKind()` confirmed as the live successor before writing.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `cd backend && npm test --silent` | 77 suites / **1138 tests** |
+| `cd backend && npm run build` · `npx eslint … --quiet` | clean |
+| `./infra/scripts/validate.sh` | PASS ×3 |
+| `grep -rn "getSesMailConfig" backend/src` | **empty** |
+| Shape sweep `[a-zA-Z]Ses[A-Z]\|Ses[A-Z][a-z]` | **4**, all correctly past-tensed |
+| T-14's original pattern | **55**, unchanged |
+| 502 envelope gate | **proved non-vacuous by mutation** |
+
+**T-11 → `[x]`. T-12 → `[x]`.** T-9 remains `[ ]` with its ⛔ intact; Phase B ran on the recorded product-owner override and every commit says so.

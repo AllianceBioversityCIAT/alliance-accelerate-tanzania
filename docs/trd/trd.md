@@ -42,7 +42,7 @@ A decoupled, fully serverless architecture deployed to the **`IBD-DEV`** AWS acc
 ```
 
 - **Frontend:** Next.js (App Router, TypeScript, Tailwind) → `next build` static export → S3 → CloudFront.
-- **Backend:** NestJS (TypeScript) REST API wrapped as a single Lambda handler behind API Gateway (Serverless Framework). Prisma client → RDS MySQL.
+- **Backend:** NestJS (TypeScript) REST API wrapped as a single Lambda handler behind API Gateway, deployed with **AWS SAM** (ADR-008). Prisma client → RDS MySQL.
 - **Auth:** Cognito user pool; groups `admin`, `staff`. Unauthenticated callers are `Public`. NestJS guards validate the Cognito JWT and enforce RBAC.
 - **AWS profile constraint:** all CLI/IaC/deploy actions use `--profile IBD-DEV`.
 
@@ -215,8 +215,9 @@ The four public `registrations*` paths are the API's first unauthenticated **wri
 ## 7. Integration Points
 
 - **AWS Cognito** — identity, JWT issuance, role groups.
-- **AWS RDS MySQL** — primary datastore (Prisma). Lambda connects within/over VPC; use a connection strategy safe for Lambda concurrency (RDS Proxy or constrained pool).
-- **API Gateway + Lambda** — single NestJS handler (via `@vendia/serverless-express` or `aws-lambda-fastify`-style adapter) deployed with Serverless Framework.
+- **AWS RDS MySQL** — primary datastore (Prisma). ⚠️ *Corrected 2026-09-17:* the Lambda is **not** VPC-attached — `infra/20-backend/template.yaml:203`, `# NO VpcConfig - Lambda runs outside the VPC (DD-2)` — and reaches RDS over its public endpoint. Use a connection strategy safe for Lambda concurrency (RDS Proxy or constrained pool) regardless.
+- **API Gateway + Lambda** — single NestJS handler via **`serverless-http`** (API Gateway HTTP API v2; see `backend/CLAUDE.md`'s serverless-http lesson on the body-parsing gotcha — the choice of adapter is load-bearing, not interchangeable), deployed with **AWS SAM** (ADR-008: SAM is the only IaC tool in this project; `infra/` holds the SAM templates, not a Serverless Framework `serverless.yml`).
+- **OneCGIAR Notification Microservice** — email leaves the system through this external service, reached over a RabbitMQ broker under a publisher confirm (`MicroserviceMailTransport`), never Amazon SES (removed; see ADR-015, `enhancement/email-notification-microservice`).
 - **S3 + CloudFront** — static frontend hosting/CDN.
 - **Google Analytics 4** (`gtag.js`, loaded from `googletagmanager.com`) — the project's **first third-party client-side integration** and its first client-side transfer of visitor data to a third party. Default measurement only: no custom events, parameters, or dimensions. Injected by the browser only after explicit consent, mounted in the `(public)` layout; **no server component participates** — the API never sees an analytics call, and the measurement ID is a build-time `NEXT_PUBLIC_*` value, not a secret (see §8 for what belongs in SSM).
 - **All provisioning/deploy** runs under `--profile IBD-DEV`.
@@ -245,7 +246,7 @@ The four public `registrations*` paths are the API's first unauthenticated **wri
 - **Backend unit/integration:** Jest + Supertest per module; contract tests asserting AC-1's list/detail split — the contact block is omitted for `Public` on every read path except the single-actor detail read, where it is present only for a `GRANTED` actor; import service tests for partial-failure isolation (AC-5).
 - **Frontend:** component tests (Testing Library) for the profile's consent-gated Contact section (`ProfileContact`), filters, forms; the directory list as the accessible equivalent of the map.
 - **E2E (smoke):** core flows — public browse, login, create actor, import, export-respects-role.
-- Verification commands wired per package (`npm run test`, `npm run build`, `npm run lint`).
+- Verification commands wired per package (`npm run test`, `npm run build`; lint is `npx eslint "{src,test}/**/*.ts" --quiet` in `backend/` — never `npm run lint` there, it is `eslint --fix` and mutates the diff under review — and `npm run lint` in `frontend/`; root `CLAUDE.md` § Verification commands).
 
 ## 11. Technical Constraints & Assumptions
 
