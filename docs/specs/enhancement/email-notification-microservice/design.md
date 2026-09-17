@@ -225,7 +225,7 @@ All commands use `--profile IBD-DEV`.
 
 **Owner: `20-backend`**, mirroring `OtpHmacSecret`, which is declared in that same stack with a deterministic `Name: !Sub "${AWS::StackName}-…"` and consumed by its own Lambda. Revision 1 left the owner undefined (judgment C-15); a CLI-created secret would be drift under `docs/infrastructure.md` §5 rule 2 ("SAM only").
 
-`MailMicroserviceSecret` holds a JSON document with `rabbitmqUrl` and `apiKey`, consumed as two `{{resolve:secretsmanager:…:SecretString:<key>}}` references.
+`MailMicroserviceSecret` holds one JSON document whose keys are defined by `GenerateSecretString` in `infra/20-backend/template.yaml` — the single authority. Each key is consumed as its own `{{resolve:secretsmanager:…:SecretString:<key>}}` reference. *(This sentence named two keys until 2026-09-17; the 2026-09-16 change that added `queueName` swept §4.5 and the template but missed here. Naming them again would only move the next miss.)*
 
 ⚠️ **Two-deploy bootstrap, unavoidable.** Dynamic references resolve at deploy time, so the first deploy creates the secret with a placeholder and resolves that placeholder. Sequence: deploy → operator writes the real values → **redeploy**. The Lambda carries a non-working configuration in between; harmless while `MailTransport=ses`.
 

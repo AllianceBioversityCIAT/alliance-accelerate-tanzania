@@ -27,8 +27,11 @@ Parameters:
     Description: >-
       Which MailService transport the Lambda uses. Phase A's `ses` rollback
       control (enhancement/email-notification-microservice design.md §7.3)
-      is gone: Phase B (T-10) deleted the SES adapter from the codebase, so
-      this parameter is narrowed to the one value the code still supports.
+      is gone: Phase B (T-10) deleted the SES adapter from the codebase,
+      leaving the code able to run `'microservice' | 'no-op'`
+      (mail-transport.interface.ts). This parameter's AllowedValues narrows
+      what a DEPLOYED STACK may select to the one of those two the product
+      intends live here — `no-op` remains for tests, not for this template.
       ⚠️ T-9 — the deployed verification this removal was supposed to be
       gated on — HAS NOT RUN. Phase B proceeded on an explicit product-owner
       override recorded in that spec's execution.md; the gate's own checkbox
@@ -62,17 +65,28 @@ Resources:
 
   # ════════════════════════════════════════════════════════════════════════════
   # T-8 - OneCGIAR notification-microservice credentials (FR-7; design.md
-  # §7.2). Two values, one secret: `rabbitmqUrl` (broker URL, embeds
-  # user:password) and `apiKey` (CLARISA). Both are consumed ONLY via
+  # §7.2). The `GenerateSecretString` property below is the ONLY place that
+  # defines which keys this secret holds - point at that property rather
+  # than re-enumerating the set, so a future key added there needs no
+  # matching edit here. ONE restatement exists, by necessity:
+  # `CONSUMED_SECRET_KEYS` in infra/README.md §7, because a jq expression
+  # cannot reference a CloudFormation property. It self-checks against the
+  # live secret (`keys - $consumed`) and MUST be updated alongside any key
+  # added here - AND SO MUST the jq merge beside it. Updating only
+  # CONSUMED_SECRET_KEYS silences the detector while the merge still omits
+  # the new variable, which is the silent-stale-value outcome the detector
+  # exists to prevent. Every key this property defines is consumed ONLY via
   # {{resolve:secretsmanager:...:SecretString:<key>}} dynamic references below
   # - never a template/script/committed literal (FR-7's BUT).
   #
   # `GenerateSecretString` (as used by OtpHmacSecret above) can generate AT
   # MOST ONE key, and a dynamic reference to a JSON key that does not exist
-  # fails the ENTIRE stack operation - so a single-key secret cannot back two
-  # references. `SecretStringTemplate` supplies the placeholder `apiKey` key
-  # and `GenerateStringKey` fills `rabbitmqUrl` with a random placeholder, so
-  # BOTH keys exist in the secret from the first deploy onward.
+  # fails the ENTIRE stack operation - so a single-key secret cannot back
+  # multiple references. `SecretStringTemplate` below supplies every key
+  # except the one `GenerateStringKey` fills with a random placeholder -
+  # together they guarantee every key `GenerateSecretString` defines exists
+  # in the secret from the first deploy onward, so no dynamic reference
+  # below is ever resolved against a missing key.
   #
   # ⚠️ OPERATOR RUNBOOK - order depends on whether this is a fresh account.
   #
@@ -96,9 +110,10 @@ Resources:
   # resolution regardless.
   #
   # `put-secret-value --secret-string` REPLACES THE WHOLE DOCUMENT -
-  # it is not a merge. Writing only `{"rabbitmqUrl":"..."}` SILENTLY DELETES
-  # `apiKey`, and the next resolve of the deleted key fails the whole stack
-  # operation. Both keys MUST be written in ONE JSON document, in ONE call,
+  # it is not a merge. Writing a partial document SILENTLY DELETES whichever
+  # key(s) it omits, and the next resolve of a deleted key fails the whole
+  # stack operation. EVERY key `GenerateSecretString` defines MUST be
+  # written in ONE JSON document, in ONE call,
   # via `--secret-string file://<600-mode-temp-file>` (never an inline
   # literal - it would land in shell history, the exact hazard FR-7 exists
   # to prevent). The complete, copy-pasteable command - `--profile
@@ -120,8 +135,8 @@ Resources:
   # it forces ApiFunction to update regardless (over-determined, in fact -
   # the flip, these placeholder edits, and a new code artifact each force
   # it independently), and that update re-resolves EVERY dynamic reference
-  # inside Environment.Variables, including these two, against whatever the
-  # secret holds at that moment.
+  # inside Environment.Variables, including every one this secret backs,
+  # against whatever the secret holds at that moment.
   #
   # This has a corollary the T-9 flip does NOT cover: once the stack
   # already sits at MailTransport=microservice, a LATER secret correction
@@ -137,11 +152,15 @@ Resources:
     Properties:
       Name: !Sub "${AWS::StackName}-mail-microservice-secret"
       Description: >-
-        OneCGIAR notification-microservice configuration: rabbitmqUrl (broker
-        URL, embeds user:password), apiKey (CLARISA), and queueName. Placeholder
-        JSON at creation - the operator MUST overwrite ALL THREE keys with real
-        values via put-secret-value before the MailTransport=microservice deploy
-        (design.md §7.2, §7.3). Never log, print, or commit any of them.
+        OneCGIAR notification-microservice configuration. The keys this
+        secret holds are defined by this resource's own GenerateSecretString
+        property below - that is the single authority. The one deliberate
+        restatement is CONSUMED_SECRET_KEYS in infra/README.md §7, which
+        self-checks; see the comment above this resource. Placeholder
+        values at creation: the operator MUST
+        overwrite EVERY key it defines, in one put-secret-value call, before
+        the MailTransport=microservice deploy (design.md §7.2, §7.3). Never
+        log, print, or commit any value.
         queueName is here at the product owner's direction (2026-09-16): it is
         not a credential and grants no access on its own, but it discloses the
         platform's queue naming and which environment we target, which does not
@@ -216,20 +235,22 @@ Resources:
           # T3-A1 - mail transport + OTP HMAC key (design.md §4.3). AWS_REGION
           # is deliberately NOT set here - it is reserved by the Lambda runtime.
           # MAIL_TRANSPORT is the MailTransport PARAMETER (T-8); Phase B (T-10)
-          # deleted the SES adapter and narrowed AllowedValues/Default to the
-          # one value the code still supports, "microservice" (design.md §7.3).
+          # deleted the SES adapter, leaving the code able to run
+          # 'microservice' | 'no-op'. AllowedValues/Default narrow what THIS
+          # DEPLOYED STACK may select to "microservice" (design.md §7.3) -
+          # `no-op` remains for tests, not for this template.
           MAIL_TRANSPORT: !Ref MailTransport
           MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org
           OTP_HMAC_SECRET: !Sub "{{resolve:secretsmanager:${OtpHmacSecret}:SecretString}}"
           # T-8 - OneCGIAR notification-microservice config (design.md §4.5,
-          # §7.1, §7.2). THREE of the five now resolve from
-          # MailMicroserviceSecret and never appear as literals here:
-          #   RABBITMQ_URL         - a credential (embeds user:password)
-          #   MICROSERVICE_API_KEY - a credential (CLARISA)
-          #   EMAIL_QUEUE_NAME     - NOT a credential, and grants no access on
-          #     its own, but it discloses the platform's queue naming and which
-          #     environment we target. Moved here at the product owner's
-          #     direction (2026-09-16); it was a committed literal until then.
+          # §7.1, §7.2). Each variable below whose value is a
+          # {{resolve:secretsmanager:...}} reference is sourced from
+          # MailMicroserviceSecret and never appears as a literal here - read
+          # the lines themselves for which those are; this comment deliberately
+          # does not restate the list or its size, because a restated count is
+          # what went stale when queueName was added on 2026-09-16. Why each
+          # key is in the secret rather than a literal is recorded once, on
+          # the MailMicroserviceSecret resource above, and in design.md §4.5.
           # EMAIL_SENDER stays a literal DELIBERATELY: it is the From header of
           # every message the system sends, so it is public by construction -
           # hiding it would protect nothing while adding an operator step. If

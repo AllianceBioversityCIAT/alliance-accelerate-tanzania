@@ -781,3 +781,103 @@ That is `design.md` §12's remedy — the one that already stopped the timing co
 `reply_to` (underscore) is live in `microservice-mail.transport.ts` and matches neither the widened grep's `reply-?to` nor `\bSES\b`. Evidence that the term list is being extended by enumerating known spellings rather than by shape.
 
 ---
+
+## T-10 — HALT recovery: the structural remedy (Leader-inline, 2026-09-17)
+
+**Product owner chose option 1: "aplicar el remedio estructural — una sola fuente para las claves, todo lo demás referencia."** Not a fourth Implementer attempt. The Reviewer's own escalation argued that a fourth pass at the sentences would produce a sixth instance of the same defect, and it was right for a reason worth naming: **every one of the six sites was a copy of the key set, so the defect was the copying, not any of the six copies.**
+
+### Why the Leader wrote this one
+
+`.agents/leader.md` forbids the Leader writing production code. This change writes none: it is **deletions plus one derivation**, and the repo's own rule applies — *"where a correction can be made by deleting the false text rather than replacing it, delete — deletion cannot introduce the next instance."* Dispatching a worker to delete six sentences would have handed it the same authoring latitude that produced them.
+
+### The single authority
+
+`GenerateSecretString` in `infra/20-backend/template.yaml` is now the only place the secret's key set is written. Every other site was changed to point at it:
+
+| Site | Was | Now |
+|---|---|---|
+| `template.yaml` resource `Description` | named three keys, "ALL THREE" | names the authority, says "EVERY key it defines" |
+| `template.yaml` T-8 resource comment | "Two values, one secret: `rabbitmqUrl`… and `apiKey`" | states the no-re-enumeration rule, explains the `SecretStringTemplate`/`GenerateStringKey` mechanism without listing |
+| `template.yaml` env-block comment | **"THREE of the five now resolve from…"** — the count that went stale on 2026-09-16 | "each variable below whose value is a `{{resolve:…}}` reference"; explicitly refuses to restate the list or its size, and forwards the per-key rationale to the resource above and `design.md` §4.5 rather than repeating it |
+| `template.yaml` put-secret-value warning | "Writing only `{"rabbitmqUrl":"…"}` silently deletes `apiKey`" | "a partial document silently deletes whichever key(s) it omits" |
+| `README.md` §7 heading + steps 2, 3 | "all three keys" / "both placeholders" / "both keys, one call" — **the self-contradiction that halted attempt 3** | "every key", consistently, in all three places |
+| `README.md` §7 step 1 heredoc | **hand-typed JSON listing three keys** | a **guarded** `get-secret-value` into the same `0600` file — the operator edits the live document, and the editor opens only if the download produced a JSON object |
+| `README.md` §9 | "the only one of the four MAIL_TRANSPORT-adjacent values" | no uniqueness claim at all — the trimmed version was still false, falsified by `EMAIL_SENDER_NAME` one line below it in the same env block |
+| `README.md` §7 static floor | `if (( NEW_KEY_COUNT <= 2 ))` — a hardcoded count, correct for the two-key merge it was written against and stale the moment the jq gained a third | `CONSUMED_KEY_COUNT="$(jq -r 'length' <<<"$CONSUMED_SECRET_KEYS")"`, derived |
+| `design.md` §7.2 | "a JSON document with `rabbitmqUrl` and `apiKey`" | points at `GenerateSecretString`; records why it is not re-listed |
+| `tasks.md` T-14 | claimed `reply-?to` catches all three spellings | corrected to `reply[-_]?to`, naming the live `reply_to` that falsified it |
+
+### The one change that is more than a deletion — and why it is the important one
+
+Step 1 of the operator runbook hand-typed the secret JSON. That heredoc was the **worst** of the six sites, because the other five were prose an operator reads while this one was a document an operator *writes to a live secret* — and `put-secret-value` replaces the whole document. A heredoc one key behind the template would have silently deleted that key and failed the next stack operation: exactly the hazard §7 sets out in bold, with the README itself as the cause.
+
+It now downloads the current document and opens that. **The key set is no longer copied** — it is read from the live secret. That removes the copy, not every way of being a key short: a secret created before a key was added to the template still holds the old set, so step 2 instructs the operator to compare against `GenerateSecretString` before saving and add anything missing. Claiming the document "cannot omit a key" was the first draft of this fix and was itself false. Scoped `--query SecretString --output text` into the existing `0600` `mktemp` file, so the document lands in the file and nowhere else (bare `get-secret-value` prints it to the terminal — the same hazard already recorded for `get-function-configuration`).
+
+### Left standing deliberately
+
+The `jq` merge still names the keys literally, and that is correct: a `jq` expression cannot reference a CloudFormation property. Its comment says so, and the drift detector immediately below it (`keys - $consumed`) makes a fourth key **abort audibly before the Lambda is touched** rather than ship a stale value. That is the §12 pattern's own escape hatch — restate only where reference is impossible, and make the restatement self-checking — so the floor was derived rather than the detector removed.
+
+### Verification
+
+`./infra/scripts/validate.sh` — **PASS on all three stacks.** No backend source touched; the code that carried the HALT's green-but-orthogonal evidence is unchanged.
+
+**The gate's record is untouched.** T-9 remains `[ ]` with its ⛔, and the override that let Phase B start remains recorded as an override.
+
+### Two findings handed forward to T-13, not fixed here
+
+Found while reading the environment block; both are SES teardown, which is T-13's scope, and neither is a deletion I can make without entering it:
+
+1. **`MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org` is dead in the template.** A repo-wide grep finds **no live reader** in `backend/src` — only a doc-comment mention in `registrations/email-verification.config.ts`. Phase B deleted the SES adapter that consumed it. It is the variable the product owner asked about on 2026-09-16 ("¿ese es el que usaba SES?"): **yes, and nothing uses it now.** T-13 deletes it.
+2. **`CONTACT_FALLBACK_RECIPIENT`'s justification is a withdrawn premise (KZ-004).** The value is live and correct — `AdminRecipientResolver.getFallback()` reads it — but its comment says *"the account is still in the SES sandbox (§7.2), so it must be a verified identity, and this is the only one this template verifies."* The microservice does not use SES; the local smoke test delivered to an **unverified** address. The constraint that picked this address no longer exists, so the address is now a free choice nobody has made. T-13 corrects the rationale; whether to change the address is a product-owner call, not a teardown edit.
+
+### One item for the product owner — flagged, not acted on, and NOT verified
+
+The attempt-3 Reviewer raised this and explicitly could not check it:
+
+> *"For `AWS::SecretsManager::Secret`, modifying `GenerateSecretString` on an existing stack is an update to that property, and my understanding is that it causes the secret value to be **regenerated** — which would overwrite the operator's real credentials on a live stack. I cannot run AWS and did not verify this; flagging it because the entire change is built on that workflow."*
+
+Recorded as **unverified**. If true, the operator's real values would be destroyed by a later template edit touching that property, and the runbook's ordering would need to change. It is cheap to settle against the live dev stack and must be settled **before** T-9's deploy — but it is not settled by anyone reasoning about it, which is why it is written here as an open question rather than as a design note.
+
+### Reviewer verdict — **PASS** (round 3, 2026-09-17)
+
+The recovery took three review rounds. That is the honest number and it is worth recording why, because the pattern repeated itself twice inside the fix for it.
+
+| Round | Verdict | What the Reviewer found |
+|---|---|---|
+| 1 | FAIL ×6 | The remedy's own absolutes were false: `template.yaml` said *"nothing else enumerates them"* while `CONSUMED_SECRET_KEYS` legally does; the env comment refused to restate the set and then restated it ("the two credentials"); step 2 carried a **fourth** copy of the key set **and attributed the CLARISA key to the platform team**; the new download had **no status check**, so a failed fetch left an empty `0600` file and opened an editor on it — reintroducing the hand-typed document the change exists to prevent; *"do not add or remove keys"* would have bricked the flip on any secret created before 2026-09-16; and a uniqueness claim about `EMAIL_SENDER` falsified by `EMAIL_SENDER_NAME` one line below it |
+| 2 | FAIL ×3 | **The fix for the pre-existing-stack case contradicted its own section**: *"Editing what you downloaded cannot omit a key"* sat 45 lines above *"if a key is missing, add it"* — both written in the same pass, the same shape as the `all three` / `both keys` contradiction that caused the HALT. The new guard's `2>&1` **discarded jq's diagnosis** and blamed AWS for it. And step 2's replacement pointer promised §9 named every issuer; §9 named two of three |
+| 3 | **PASS** | All closed at the artefact. Three advisories, all applied |
+
+**What actually made it converge** was not more care in writing the sentences. It was changing what the sentences are about: every absolute became a pointer plus a named exception, and **the two claims that could not be settled by reading were settled by running something.** The five-case stub matrix is what let round 3 both credit the guard and find the surviving defect in its error message — the Reviewer said so explicitly: *"it functioned as evidence rather than as reassurance."*
+
+#### Round-3 advisories, all applied
+
+1. *"SEE THE ERROR ABOVE"* was false in exactly one branch — an empty `SecretString` fails silently on **both** halves (`aws` exits 0, `jq -e` exits 4 with no message), the one row of the matrix with no stderr above it. Now *"SEE THE ERROR ABOVE IF ANY"*, with the reason.
+2. *"Compare against `GenerateSecretString` **if you are unsure**"* — but that comparison is the only thing protecting the pre-existing-stack path, and performing it is the only way to know whether you are unsure. Now unconditional, and two other places that already described it as unconditional are no longer lying.
+3. **The `else` branch now `rm -f`s the temp file.** On the failure path it holds `0` bytes or the literal `None`, and **`None` is a valid `SecretString`** — an operator who pasted step 3 anyway would have replaced the whole document with a 4-byte string and failed every dynamic reference at the next stack operation. Re-measured after the change:
+
+```
+aws falla       editor=no   step 3 pegado -> FALLA RUIDOSA (no existe el archivo)
+aws -> None     editor=no   step 3 pegado -> FALLA RUIDOSA (no existe el archivo)
+camino feliz    editor=sí   step 3 pegado -> publicaría 48 bytes
+```
+
+#### Verification
+
+| Gate | Result |
+|---|---|
+| `cd backend && npm test --silent` | **77 suites / 1138 tests pass** |
+| `cd backend && npm run build` | clean |
+| `./infra/scripts/validate.sh` | **PASS** — 10-data-auth, 20-backend, 30-frontend |
+| All 20 ```bash blocks in `infra/README.md` → `bash -n` | 0 syntax errors |
+| Step-1 guard, 5 cases stubbing **both** `aws` and `jq` | editor opens on the happy path only; every failure prints its own cause |
+
+⚠️ `npm test` emits *"Jest did not exit one second after the test run has completed."* It is **not** a failure and not introduced by this task — but it is the signature of a cached connection outliving a suite, which is exactly what `MicroserviceMailTransport` is built to do. Worth a look during T-9, not here.
+
+**Note on the `bash -n` sweep, in the Reviewer's words:** *"`bash -n` parses without evaluating, so it would stay green for every finding above; it is evidence of syntax, not of behaviour."* Recorded because a future reader could otherwise mistake that row for a behavioural gate — the KZ-002 shape.
+
+#### T-10 done-when, checked
+
+`'ses'` is rejected (`MailTransportKind = 'microservice' | 'no-op'`); `ses-mail.transport.ts` and its spec are gone; `mail.service.spec.ts` imports none of `SendEmailCommand`/`resetSesClient`/`aws-sdk-client-mock` (it retains a *historical note* naming them, which is accurate and stays); `@aws-sdk/client-ses` and `@types/amqplib` are out of `package.json`. **`aws-sdk-client-mock` stays** — it is still used by four Cognito suites (`users`, `acting-admin`, `admin-recipient`, and `microservice-mail.transport.spec.ts`), so dropping it on T-10's instruction would have broken them; the instruction was written about SES's use of it, not the package.
+
+**T-10 → `[x]`.** T-9 remains `[ ]` with its ⛔ and the override remains recorded as an override.
