@@ -366,9 +366,21 @@ both `{{resolve:secretsmanager:...}}` references inside `ApiFunction` resolve
 from the first deploy onward — a single-key secret would fail the whole stack
 operation the moment CloudFormation tried to resolve the missing key, so the
 template seeds both from the start (see the `MailMicroserviceSecret` comment
-in `20-backend/template.yaml`). Before the deploy that flips `MailTransport`
-to `microservice` (T-9), an operator MUST overwrite both placeholders with
-real values.
+in `20-backend/template.yaml`).
+
+**Fresh account: there is no "flip" deploy to be before.** `MailTransport`
+defaults to `microservice` (T-10), so a fresh account's very first deploy
+already creates this stack — and `MailMicroserviceSecret` along with it — at
+`microservice`. The secret cannot hold real values before that first
+deploy, because the deploy is what creates it. The order is: first deploy
+(secret lands with its placeholders) → `put-secret-value` with the real
+values (below) → then **force the update** — see "After writing the secret,
+confirm it actually took effect" further down, which is that forcing step,
+not another deploy. (A stack that predates Phase B / the T-9 flip instead
+overwrites the placeholders before or as part of the redeploy that moves
+`MailTransport` to `microservice` — see the `MailMicroserviceSecret` comment
+in `20-backend/template.yaml` for why that redeploy's own parameter change
+forces the resolution regardless.)
 
 ### Write all three keys — in ONE call
 

@@ -37,7 +37,7 @@
 #   VPC_ID=vpc-abc DEV_CIDR=203.0.113.7/32 ./infra/scripts/deploy.sh
 #   SKIP_MIGRATE_PAUSE=yes ./infra/scripts/deploy.sh   # don't pause at step 2
 #   ALLOWED_ORIGIN='*' ./infra/scripts/deploy.sh       # backend CORS (dev default *)
-#   MAIL_TRANSPORT=microservice ./infra/scripts/deploy.sh  # T-9 verification switch
+#   MAIL_TRANSPORT=microservice ./infra/scripts/deploy.sh  # explicit, matches the current default
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -55,23 +55,30 @@ FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 # CloudFront URL later by set-cors.sh (T-8, FR-6, DD-6).
 ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"
 
-# Mail transport — "ses" (Phase A default / rollback control) or
-# "microservice" (T-9 verification). MUST be passed explicitly on every
-# backend deploy: SAM sends UsePreviousValue for any parameter absent from
-# --parameter-overrides, so omitting the parameter override entirely would
-# let an unrelated operator run silently revert the transport, possibly
-# mid-verification (design.md §7.3).
+# Mail transport for THIS DEPLOY TARGET — "microservice" is the only value
+# infra/20-backend/template.yaml's MailTransport parameter accepts (see that
+# parameter's Description for why). The CODE accepts a second value,
+# "no-op" — backend/src/mail/mail.config.ts is the source of truth for that
+# — but "no-op" is the mandated LOCAL default, not a valid override here
+# (the guard below rejects it same as any other unsupported value). MUST
+# be passed explicitly on every backend deploy: SAM sends UsePreviousValue
+# for any parameter absent from --parameter-overrides, so omitting the
+# parameter override entirely would let an unrelated operator run silently
+# revert the transport (design.md §7.3).
 #
-# ⚠️ A hardcoded `${MAIL_TRANSPORT:-ses}` default would re-create that exact
-# hazard in the OPPOSITE direction: once T-9 has flipped the live stack to
-# "microservice", any later run of this script that forgets to set the env
-# var would then actively push the parameter BACK to "ses" and report
-# success, with no signal (T-8 review, Issue 1). So: an explicit
-# MAIL_TRANSPORT env var always wins (operator override); otherwise resolve
-# the CURRENT value from the deployed stack — mirroring set-cors.sh's
-# CloudFrontUrl resolution, for the same reason: read the live value instead
-# of asserting one. Only a stack that does not exist yet (the very first
-# deploy) falls back to the template's own Default ("ses").
+# ⚠️ A hardcoded `${MAIL_TRANSPORT:-microservice}` default would repeat, on
+# a smaller scale, the exact class of hazard Phase A's rollout was built to
+# avoid: a value baked into this script rather than read from the live
+# stack can drift from what is actually deployed and report success anyway
+# (T-8 review, Issue 1 — originally found against a hardcoded "ses"
+# fallback, before Phase B removed that value from the accepted set
+# entirely). So: an explicit MAIL_TRANSPORT env var always wins (operator
+# override); otherwise resolve the CURRENT value from the deployed stack —
+# mirroring set-cors.sh's CloudFrontUrl resolution, for the same reason:
+# read the live value instead of asserting one. Only a stack that does not
+# exist yet (the very first deploy) falls back to "microservice" — the
+# template's own Default as of Phase B (T-10); "ses" is no longer a valid
+# fallback here, since the code (mail.config.ts) rejects it unconditionally.
 if [[ -n "${MAIL_TRANSPORT:-}" ]]; then
   echo "==> MailTransport = $MAIL_TRANSPORT (operator override via MAIL_TRANSPORT env var)"
 else
@@ -79,13 +86,12 @@ else
   # exist yet" — they are not the same thing. An expired SSO token, a
   # throttle, or an IAM denial also makes the query come back empty, and
   # empty was previously indistinguishable from "not found" (`2>/dev/null
-  # || true` swallowed both). Falling back to "ses" on a T-9-flipped stack
-  # because of a TRANSIENT failure silently reverts the live transport with
-  # no signal — exactly the hazard the `${MAIL_TRANSPORT:-ses}` note above
-  # already calls out for the "forgot to set the env var" case. So: capture
-  # stdout+stderr together, check the exit status via `if`, and only accept
-  # "ses" as the fallback when the failure text is CloudFormation's
-  # `ValidationError` for a nonexistent stack — anything else aborts.
+  # || true` swallowed both). Falling back to a default transport on a
+  # live stack because of a TRANSIENT failure silently reverts it with no
+  # signal. So: capture stdout+stderr together, check the exit status via
+  # `if`, and only accept the "microservice" fallback when the failure text
+  # is CloudFormation's `ValidationError` for a nonexistent stack —
+  # anything else aborts.
   if RESOLVED_MAIL_TRANSPORT="$(
     aws cloudformation describe-stacks \
       --profile "$PROFILE" --region "$REGION" \
@@ -94,23 +100,52 @@ else
       --output text 2>&1
   )"; then
     if [[ -z "$RESOLVED_MAIL_TRANSPORT" || "$RESOLVED_MAIL_TRANSPORT" == "None" ]]; then
-      MAIL_TRANSPORT="ses"
+      MAIL_TRANSPORT="microservice"
       echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
     else
       MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
       echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
     fi
   elif [[ "$RESOLVED_MAIL_TRANSPORT" == *ValidationError* ]]; then
-    MAIL_TRANSPORT="ses"
+    MAIL_TRANSPORT="microservice"
     echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
   else
     echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK':" >&2
     echo "$RESOLVED_MAIL_TRANSPORT" >&2
     echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
-    echo "to 'ses' here could silently revert a live T-9 flip. Fix the AWS error" >&2
-    echo "above and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
+    echo "here could silently revert a live transport. Fix the AWS error above" >&2
+    echo "and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
     exit 1
   fi
+fi
+
+# ⚠️ Guard, in addition to the template's own narrowed AllowedValues: abort
+# HERE, before ever reaching `sam deploy`, unless MAIL_TRANSPORT resolved to
+# "microservice" — whether the resolved value came from an explicit operator
+# override or from a live stack that predates the T-9 flip. Keyed to the
+# accepted set, not to the one legacy value ("ses") this used to guard
+# against: infra/20-backend/template.yaml's MailTransport AllowedValues
+# accepts only "microservice", so ANY other value — "ses", "no-op" (a valid
+# CODE value per backend/src/mail/mail.config.ts, but not a valid value for
+# THIS parameter), or anything else — would otherwise sail past a guard
+# keyed only to "ses", through the 10-data-auth deploy and the migrate
+# pause, and only then die at the backend changeset with a confusing
+# parameter-constraint error. That is exactly the "deploy reports success,
+# every send then throws with no deploy-time signal" hazard this script
+# exists to prevent, just relocated one step later. Fail loud, fail here,
+# before any AWS call that could otherwise be mistaken for progress.
+if [[ "$MAIL_TRANSPORT" != "microservice" ]]; then
+  echo "ERROR: MailTransport resolved to '$MAIL_TRANSPORT'." >&2
+  echo "infra/20-backend/template.yaml's MailTransport AllowedValues accepts" >&2
+  echo "only 'microservice' for a deployed stack — see that parameter's" >&2
+  echo "Description. ('no-op' is a valid LOCAL value per" >&2
+  echo "backend/src/mail/mail.config.ts, but not a valid deploy target here.)" >&2
+  if [[ "$MAIL_TRANSPORT" == "ses" ]]; then
+    echo "If this came from a live stack that predates the T-9 flip, redeploy" >&2
+    echo "with MAIL_TRANSPORT=microservice once the mail microservice secret" >&2
+    echo "(infra/README.md §7) holds real values, not placeholders." >&2
+  fi
+  exit 1
 fi
 echo
 
@@ -250,7 +285,7 @@ echo "==> Next operator steps (T-8): build + sync the frontend, then lock CORS:"
 echo "        ./infra/scripts/deploy-frontend.sh   # build with ApiBaseUrl, s3 sync, invalidate"
 echo "        ./infra/scripts/set-cors.sh          # redeploy backend with AllowedOrigin=CloudFrontUrl"
 echo
-echo "==> Before flipping MailTransport to 'microservice' (T-9): write the real"
-echo "    mail microservice secret first — see infra/README.md §7, 'Mail"
-echo "    microservice secret — operator runbook (T-8)'. The secret still holds"
-echo "    its deploy-time placeholders until you do."
+echo "==> Before this deploy's microservice transport can send anything real:"
+echo "    write the mail microservice secret first — see infra/README.md §7,"
+echo "    'Mail microservice secret — operator runbook (T-8)'. The secret still"
+echo "    holds its deploy-time placeholders until you do."

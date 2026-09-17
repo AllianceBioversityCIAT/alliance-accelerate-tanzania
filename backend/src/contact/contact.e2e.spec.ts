@@ -1,4 +1,5 @@
 // @sdd-spec contact/contact-channels (T-7)
+// @sdd-spec enhancement/email-notification-microservice (T-12)
 /**
  * T-7 — HTTP e2e proof of `POST /api/v1/contact`: submission, honeypot,
  * throttle (FR-2, FR-5, FR-6, FR-8, NFR-2, NFR-7, design.md §3 amendment 3,
@@ -253,6 +254,14 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
   });
 
   describe('Transport rejection returns 502 with no provider detail (FR-5, design.md §3 amendment 3)', () => {
+    // enhancement/email-notification-microservice T-12 (design.md §3):
+    // this `502` means the message could not be ENQUEUED — the broker did
+    // not confirm the publish — never that a message failed to reach an
+    // inbox. `sendContactMessageMock` here stands in for the whole
+    // transport (SES originally, the notification microservice now); the
+    // sanitization it proves is unchanged by which transport is live, and
+    // was already asserted, one layer down, against the real transport in
+    // `microservice-mail.transport.spec.ts`'s own credential-leak gates.
     it('never leaks the SDK error name, message text, or a recipient address into the 502 body', async () => {
       const leaking = new Error(
         'Email address: admin-two@example.org is not verified in the SES sandbox (MessageRejected)',

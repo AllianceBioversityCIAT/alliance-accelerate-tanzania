@@ -18,17 +18,21 @@
  * worse than omitting the field. See `templates/verification-code.template.ts`
  * and `templates/receipt.template.ts`.
  *
- * `MailTransport` is the swap point between "actually send" (SES) and
- * "record the attempt, send nothing" (no-op, NFR-10). Both implementations
- * receive the identical `MailMessage` shape, so a caller cannot tell which is
- * selected except by observing whether bytes left the process.
+ * `MailTransport` is the swap point between "actually send" (the OneCGIAR
+ * notification microservice, `MicroserviceMailTransport`) and "record the
+ * attempt, send nothing" (no-op, NFR-10). Both implementations receive the
+ * identical `MailMessage` shape, so a caller cannot tell which is selected
+ * except by observing whether bytes left the process. *(Until Phase B of
+ * enhancement/email-notification-microservice, SES filled the "actually
+ * send" role via `ses-mail.transport.ts`; that transport is deleted, and
+ * `MailTransportKind` narrowed to `'microservice' | 'no-op'`, in T-10.)*
  *
- * contact/contact-channels T-1 (design.md §2, §4.6) widens `to` to accept
- * multiple recipients — mapped to SES `ToAddresses` — and adds `replyTo`, a
- * pre-composed `Display Name <address>` string the contact form uses to route
- * a reply to the requester rather than the registry (FR-4). Both are optional
- * additions; the verification-code and receipt messages never set `replyTo`
- * and continue to pass a single-string `to`.
+ * contact/contact-channels T-1 (design.md §2, §4.6) widened `to` to accept
+ * multiple recipients. *(That same task also added `replyTo`, a pre-composed
+ * `Display Name <address>` string routing a reply to the requester rather
+ * than the registry; enhancement/email-notification-microservice T-11
+ * removed it again — the notification-microservice DTO has no reply-to
+ * field, so a caller-set value would be silently unread, design.md DD-7.)*
  */
 export interface MailMessage {
   to: string | string[];
@@ -44,8 +48,6 @@ export interface MailMessage {
   html?: string;
   /** The applicant-facing reference, when one has been allocated. See above. */
   reference?: string;
-  /** Pre-composed `Display Name <address>` for the SES `ReplyToAddresses` header (FR-4). Absent for the verification-code and receipt messages. */
-  replyTo?: string;
 }
 
 export interface MailTransport {

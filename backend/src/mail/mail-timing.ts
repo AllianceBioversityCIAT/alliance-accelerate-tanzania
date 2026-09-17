@@ -58,11 +58,14 @@
  * Connection teardown is detached and explicitly does NOT count against it
  * (NFR-1's own wording).
  *
- * Bounds **both** transports — DD-10's *"both implementations"* clause.
- * Phase A also gives `ses-mail.transport.ts` this same deadline (T-6):
- * today it constructs `new SESClient({ region })` with no `requestTimeout`
- * and SDK-default retries, i.e. genuinely unbounded, which would make
- * Phase A's higher floor unearned while SES is still the active transport.
+ * Bounds the one real-sending transport, `MicroserviceMailTransport`
+ * (`no-op` does no I/O and needs no deadline). *(Through Phase A, this
+ * deadline also bounded `ses-mail.transport.ts` — DD-10's *"both
+ * implementations"* clause — because that transport constructed `new
+ * SESClient({ region })` with no `requestTimeout` and SDK-default retries,
+ * i.e. genuinely unbounded, which would have made the higher floor unearned
+ * while SES was still the active transport. T-10 deleted that transport;
+ * only one real transport remains to bound.)*
  */
 export const MAIL_SEND_TIMEOUT_MS = 3000;
 

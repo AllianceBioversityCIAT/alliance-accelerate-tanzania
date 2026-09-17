@@ -3,7 +3,6 @@
 import {
   getMailTransportKind,
   getMicroserviceMailConfig,
-  getSesMailConfig,
 } from './mail.config';
 
 describe('mail.config', () => {
@@ -35,38 +34,18 @@ describe('mail.config', () => {
       },
     );
 
-    it('accepts "ses", "microservice" and "no-op" (Phase A)', () => {
-      process.env.MAIL_TRANSPORT = 'ses';
-      expect(getMailTransportKind()).toBe('ses');
-
+    it('accepts "microservice" and "no-op" (Phase B)', () => {
       process.env.MAIL_TRANSPORT = 'microservice';
       expect(getMailTransportKind()).toBe('microservice');
 
       process.env.MAIL_TRANSPORT = 'no-op';
       expect(getMailTransportKind()).toBe('no-op');
     });
-  });
 
-  describe('getSesMailConfig', () => {
-    it('throws when MAIL_SENDER_ADDRESS is missing', () => {
-      delete process.env.MAIL_SENDER_ADDRESS;
-      process.env.AWS_REGION = 'eu-west-1';
-      expect(() => getSesMailConfig()).toThrow(/MAIL_SENDER_ADDRESS/);
-    });
-
-    it('throws when AWS_REGION is missing', () => {
-      process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-      delete process.env.AWS_REGION;
-      expect(() => getSesMailConfig()).toThrow(/AWS_REGION/);
-    });
-
-    it('returns the configured sender + region', () => {
-      process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-      process.env.AWS_REGION = 'eu-west-1';
-      expect(getSesMailConfig()).toEqual({
-        senderAddress: 'registry@example.org',
-        region: 'eu-west-1',
-      });
+    it('rejects "ses" — Phase B has narrowed the union (FR-3 BUT, design.md §7.3)', () => {
+      process.env.MAIL_TRANSPORT = 'ses';
+      expect(() => getMailTransportKind()).toThrow(/Invalid MAIL_TRANSPORT/);
+      expect(() => getMailTransportKind()).toThrow(/"ses"/);
     });
   });
 
@@ -187,8 +166,6 @@ describe('mail.config', () => {
       delete process.env.MICROSERVICE_API_KEY;
       delete process.env.EMAIL_SENDER;
       delete process.env.EMAIL_SENDER_NAME;
-      delete process.env.MAIL_SENDER_ADDRESS;
-      delete process.env.AWS_REGION;
 
       jest.resetModules();
       await expect(import('./mail.config')).resolves.toBeDefined();

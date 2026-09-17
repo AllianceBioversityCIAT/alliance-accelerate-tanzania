@@ -5,15 +5,30 @@
  *
  * The single method this task adds, `submitContact`, is where every earlier
  * task in this spec converges: T-4's DTO, T-5's recipient resolver, T-3's
- * template (which itself calls T-2's `composeReplyTo`), and T-1's
- * `MailService.sendContactMessage`. Order, exactly as design.md §1's diagram
- * states it: resolve recipients -> render one message -> **await** the send
- * -> return. No branch of this method leaves the send unawaited — DD-3
- * retired fire-and-forget dispatch for this feature entirely, so unlike
+ * template, and T-1's `MailService.sendContactMessage`. *(T-3's template
+ * originally also called `composeReplyTo`, T-2's `Reply-To` composer;
+ * enhancement/email-notification-microservice T-11 removed that field
+ * end-to-end — design.md DD-7 — so the template no longer calls it.)*
+ * Order, exactly as design.md §1's diagram states it: resolve recipients ->
+ * render one message -> **await** the send -> return. No branch of this
+ * method leaves the send unawaited — DD-3 retired fire-and-forget dispatch
+ * for this feature entirely, so unlike
  * `RegistrationsService.requestVerificationCode`'s deliberately-unawaited
  * `void … .catch(...)` shape, this method's `sendContactMessage` call sits
  * directly in its own `try`/`await`, and a rejection is what becomes the
  * `502` FR-5 requires the visitor to see.
+ *
+ * **What the `502` asserts, restated (enhancement/email-notification-
+ * microservice FR-5, design.md §3).** `sendContactMessage` now dispatches
+ * onto a message broker queue, not a synchronous send to an inbox — so a
+ * `502` here means the message **could not be enqueued** (the broker did
+ * not confirm the publish within the send deadline), never that a message
+ * was enqueued but failed to reach an inbox. Symmetrically, the `202` this
+ * method's normal return produces asserts only "durably accepted by the
+ * broker", not delivery. Neither this method, `MailService`, nor the
+ * transport it dispatches through observes anything past the broker's
+ * confirm — there is no delivery signal anywhere in this call chain for a
+ * response, log line, or comment to claim.
  *
  * **The honeypot branch returns before anything is resolved or dispatched
  * (FR-8).** A filled `website` field short-circuits this method with no call
@@ -54,8 +69,10 @@ export class ContactService {
 
   /**
    * FR-2, FR-3, FR-5, FR-7, FR-8. Returns normally (the controller's `202`)
-   * on both a genuine successful send and a filled honeypot; throws a `502`
-   * only when the transport itself rejects the send. Never issues a database
+   * on both a genuine successful enqueue and a filled honeypot; throws a
+   * `502` only when the transport itself rejects the enqueue attempt (see
+   * the class docblock's "What the `502` asserts" note — not a delivery
+   * failure). Never issues a database
    * query anywhere in this method — FR-7's gate (DC-4) depends on that
    * holding for this path exactly as it does for the throttled and
    * validation-rejected paths, which never reach this service at all.

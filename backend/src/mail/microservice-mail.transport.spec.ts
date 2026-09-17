@@ -16,7 +16,6 @@ import { Logger } from '@nestjs/common';
 import * as mailConfigModule from './mail.config';
 import { MailTransportKind } from './mail.config';
 import { getMailTransport, resetMailTransport } from './mail-transport.factory';
-import { SesMailTransport, resetSesClient } from './ses-mail.transport';
 import { NoOpMailTransport } from './no-op-mail.transport';
 import {
   MAIL_LOCK_WAIT_TIMEOUT_MS,
@@ -1102,7 +1101,7 @@ describe('getMailTransport — exhaustive switch (mail-transport.factory.ts; inh
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
     resetMailTransport();
-    resetSesClient();
+    resetMicroserviceMailTransportState();
   });
 
   afterEach(() => {
@@ -1138,14 +1137,13 @@ describe('getMailTransport — exhaustive switch (mail-transport.factory.ts; inh
     expect(getMailTransport()).toBeInstanceOf(MicroserviceMailTransport);
   });
 
-  it('still resolves "ses" and "no-op" correctly (the switch is exhaustive, not narrowed)', () => {
+  it('still resolves "no-op" correctly alongside "microservice" (the switch is exhaustive over the Phase-B union)', () => {
     process.env.MAIL_TRANSPORT = 'no-op';
     expect(getMailTransport()).toBeInstanceOf(NoOpMailTransport);
+  });
 
-    resetMailTransport();
+  it('rejects "ses" — Phase B narrowed MailTransportKind; the switch never sees it (design.md §7.3)', () => {
     process.env.MAIL_TRANSPORT = 'ses';
-    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-    process.env.AWS_REGION = 'eu-west-1';
-    expect(getMailTransport()).toBeInstanceOf(SesMailTransport);
+    expect(() => getMailTransport()).toThrow(/Invalid MAIL_TRANSPORT/);
   });
 });
