@@ -83,6 +83,7 @@ Stack names, region, and shared parameters referenced by every script/template.
 |---|---|---|
 | `DevCidr` | 10-data-auth (T-2) | Operator public IP as a `/32` CIDR — the admin/migration ingress rule on `3306`. Auto-detected at deploy time (OQ-6), override via `DEV_CIDR`. |
 | `AllowedOrigin` | 20-backend (T-3, T-8) | CORS allow-origin for the HTTP API. Default `*` for the dev bootstrap; locked to the CloudFront URL in step 5 (FR-6, DD-6). |
+| `PortalUrl` | 10-data-auth, `bugfix/admin-user-invite-and-reset` §7.1 | Admin portal base URL used in the invitation email CTA (`/login` is appended). Default is the current dev CloudFront URL. |
 
 ### Cross-stack wiring (outputs → params)
 
@@ -214,145 +215,57 @@ and exits non-zero if **any** check fails:
 > CloudFront URL in a browser** and confirm the metrics band + map render **live
 > seeded data** (not the offline "couldn't load" fallback) — FR-6.
 
-> ⚠️ **Before T-9** (flipping `MailTransport` to `microservice`, §6/§7), the
+> ⚠️ **Before T-9** (flipping `MailTransport` to `microservice`), the
 > mail microservice secret still holds its deploy-time placeholders — see §7,
 > "Mail microservice secret — operator runbook (T-8)", to write the real
 > values first.
 
 ---
 
-## 6. Email (SES) setup — two-phase Cognito → SES enablement
+## 6. `/forgot-password` now sends through Cognito's own mailer
 
-Spec: `docs/specs/bugfix/admin-user-invite-and-reset/` (§7.1–§7.3, §11).
+*(This section held the two-phase Cognito → SES email setup runbook. SES is
+removed from this stack — `docs/specs/enhancement/email-notification-microservice/`
+FR-6 — so the pool's `EmailConfiguration` is now unconditionally
+`COGNITO_DEFAULT`, with no params, no identity, no sandbox/verification steps,
+and nothing here left to operate. The section that used to sit here — a
+"reset code has no in-app entry page" limitation (OQ-5) — is **gone**, not
+carried forward: that page shipped and OQ-5 closed on 2026-07-18
+(`docs/specs/archive/2026-07-18-auth--forgot-password/archive-summary.md`),
+so `frontend/app/(public)/forgot-password/page.tsx` /
+`frontend/components/auth/ForgotPasswordForm.tsx` are the live code-entry
+screen today — restating the old limitation here would just be wrong.)*
 
-**Purpose.** Cognito's transactional emails — the admin **invitation** (first
-sign-in) and the **password-reset code** — are sent via **Amazon SES in
-`DEVELOPER` mode** from a project-controlled, SES-verified sender, replacing the
-`COGNITO_DEFAULT` mailer (`no-reply@verificationemail.com`, rate-capped, poor
-reputation). This fixes deliverability to `cgiar.org` inboxes (FR-1). The
-`10-data-auth/template.yaml` gains three params for this:
+The self-service reset flow (`ForgotPasswordForm` → `resetPassword` /
+`confirmResetPassword` in `frontend/lib/auth/auth-client.ts` → Cognito's
+`ForgotPassword` API) is the **principal** remaining consumer of the pool's
+`VerificationMessageTemplate` — the branded, table-based HTML at
+`infra/10-data-auth/template.yaml`. **Two of the three** admin
+user-management paths (`backend/src/users/users.service.ts`) do not reach
+it: `create()` passes
+`MessageAction: 'SUPPRESS'` to `AdminCreateUser` and pre-verifies the
+address, and `resetPassword()` uses `AdminSetUserPassword`
+(`Permanent: false`), which sends no mail at all. One admin path is **not**
+established as silent: `update()` changes `email` via
+`AdminUpdateUserAttributes` without setting `email_verified`, and the pool
+auto-verifies `email` (`AutoVerifiedAttributes`) — that API takes no
+`MessageAction`, so it may emit a verification message from this same
+template. Untested here.
 
-| Parameter | Default | Meaning |
-|---|---|---|
-| `SenderEmail` | `""` | Project sender address to verify in SES. Empty → keep `COGNITO_DEFAULT` (safe no-op). |
-| `EnableSesSending` | `"false"` | Phase-B gate. `"true"` (with `SenderEmail` set) flips the pool's `EmailConfiguration` to `DEVELOPER`. |
-| `PortalUrl` | current dev CloudFront URL | Admin portal base URL for the invitation email CTA (`/login` is appended). |
+Two facts this repo recorded about `COGNITO_DEFAULT` during the retired SES
+rollout, carried forward here as live operational facts (not independently
+re-measured for this change):
 
-The two gates (`SenderEmail` non-empty, and `EnableSesSending=true`) exist to
-force a **two-phase rollout**: the SES sending-authorization policy needs the
-user-pool ARN, while the pool's `DEVELOPER` config needs the authorized identity
-— a circular dependency a single change set cannot satisfy. Run the phases **in
-order**; Phase B only succeeds after Phase A's verify + authorize steps.
+- It sends from `no-reply@verificationemail.com`, a shared AWS address that
+  is rate-capped and has a poor sending reputation — a real deliverability
+  risk to `cgiar.org` inboxes.
+- Its HTML handling is more limited than SES's; the branded, table-based
+  reset-code email above was authored and tuned against SES, so under
+  `COGNITO_DEFAULT` it may render degraded in some mail clients. See the
+  matching note on `EmailConfiguration` in `infra/10-data-auth/template.yaml`.
 
-Validate first (no cost): `./infra/scripts/validate.sh`.
-
-### Phase A — create + verify + authorize the sender (no DEVELOPER switch yet)
-
-The branded email templates install immediately; the `DEVELOPER`
-`EmailConfiguration` stays gated off, so the pool keeps `COGNITO_DEFAULT` through
-this whole phase.
-
-**A-1. Deploy `10-data-auth` with the sender set but SES sending disabled.** This
-creates the `AWS::SES::EmailIdentity` (which triggers AWS's verification email)
-and installs the invite + reset templates; the pool email stays
-`COGNITO_DEFAULT`.
-
-```bash
-sam deploy --template infra/10-data-auth/template.yaml \
-  --stack-name accelerate-tz-dev-data-auth \
-  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
-    SenderEmail=<sender-addr> EnableSesSending=false \
-  --profile IBD-DEV --region eu-west-1
-```
-
-**A-2. Verify the sender identity (DEP-1).** Open the mailbox of `<sender-addr>`
-and click the SES verification link AWS just emailed. The identity must reach
-`Verified` before Phase B.
-
-**A-3. Attach the Cognito sending-authorization policy.** `DEVELOPER` mode means
-Cognito sends *through* your SES identity, which AWS permits **only** if that
-identity carries a sending-authorization policy naming the Cognito service
-principal (`email.cognito-idp.amazonaws.com`). The SES console adds this
-automatically, but **CloudFormation cannot express it** (`AWS::SES::EmailIdentity`
-has no policy property and there is no native `AWS::SES::IdentityPolicy`
-resource) — so the operator attaches it once via the SES v1 API:
-
-```bash
-aws ses put-identity-policy --identity <sender-addr> --policy-name cognito-send \
-  --policy file://infra/10-data-auth/ses-cognito-send-policy.json \
-  --profile IBD-DEV --region eu-west-1
-```
-
-Before running it, edit `infra/10-data-auth/ses-cognito-send-policy.json` and
-replace its placeholders:
-
-- `<ACCOUNT_ID>` — from `aws sts get-caller-identity --profile IBD-DEV --region eu-west-1`.
-- `<SENDER_EMAIL>` — the `<sender-addr>` you verified in A-2.
-- `<USER_POOL_ARN>` — `arn:aws:cognito-idp:eu-west-1:<ACCOUNT_ID>:userpool/<UserPoolId>`,
-  where `<UserPoolId>` is the `UserPoolId` output of the `accelerate-tz-dev-data-auth`
-  stack (see section 8).
-
-If this policy is missing, the Phase-B update is rejected with
-`InvalidEmailRoleAccessPolicyException` (or, worst case, every send fails
-authorization at runtime and FR-1 stays broken) — it is the load-bearing step.
-
-### Phase B — flip the pool to DEVELOPER
-
-**B-1. Re-deploy `10-data-auth` with SES sending enabled.** This is an **in-place
-`UserPool` update (no replacement)** that sets `EmailConfiguration: DEVELOPER`.
-It now succeeds because the identity is verified **and** authorized:
-
-```bash
-sam deploy --template infra/10-data-auth/template.yaml \
-  --stack-name accelerate-tz-dev-data-auth \
-  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
-    SenderEmail=<sender-addr> EnableSesSending=true \
-  --profile IBD-DEV --region eu-west-1
-```
-
-After this, invites and reset codes send via SES from `<sender-addr>`.
-
-### SES sandbox caveat (DEP-2)
-
-This account's SES is in **sandbox** — it delivers **only to verified recipient
-addresses** until AWS grants production access. Do this **before** a real
-rollout. For dev testing, verify each recipient address:
-
-```bash
-aws ses verify-email-identity --email-address <recipient-addr> \
-  --profile IBD-DEV --region eu-west-1
-```
-
-(each recipient clicks their own verification link), **or** request SES
-production access for the account so any recipient can receive mail.
-
-### Reversibility (rollback)
-
-Re-deploy `10-data-auth` with `EnableSesSending=false` (or `SenderEmail=""`) to
-revert the pool to `COGNITO_DEFAULT`:
-
-```bash
-sam deploy --template infra/10-data-auth/template.yaml \
-  --stack-name accelerate-tz-dev-data-auth \
-  --parameter-overrides VpcId=<vpc-id> DevCidr=<your-ip>/32 \
-    SenderEmail=<sender-addr> EnableSesSending=false \
-  --profile IBD-DEV --region eu-west-1
-```
-
-Caveat: the branded, table-based HTML templates render best via SES; the
-`COGNITO_DEFAULT` mailer's HTML handling is limited, so a reverted pool still
-*sends* but may look degraded — an acceptable rollback state.
-
-### Known limitation — CONFIRMED-user reset code has no in-app entry page (OQ-5)
-
-A **CONFIRMED** user's reset uses the forgot-password flow
-(`AdminResetUserPassword` + `CONFIRM_WITH_CODE`), which emails a numeric **code**
-the user would enter on a "set new password" screen. The app currently ships
-**no** forgot-password / code-entry page, so that reset path **dead-ends in the
-UI** (pre-existing behavior — this change only makes the email correct and
-branded). The **invite / first-sign-in** path (`FORCE_CHANGE_PASSWORD`, served by
-re-invite semantics) **is fully usable** end to end. Building the code-entry page
-is a separate fast-follow (OQ-5), out of scope here.
+Neither has a fix in this repo today — flagging for whoever next owns
+`/forgot-password` deliverability or the reset-code template.
 
 ---
 
@@ -407,9 +320,9 @@ live secret.
 **1. Download the current secret into a temp file and open it for editing.** `mktemp` creates the
 file `0600` regardless of umask — the `umask 077` below is belt-and-braces,
 not what actually restricts it. The `trap` guarantees the file is removed
-even if you abort mid-edit (Ctrl-C, closed terminal) — this is the same
-pattern `infra/10-data-auth/t9-enable-ses.sh` already uses for its own temp
-file. **The block below does NOT type the JSON out — it downloads the secret's
+even if you abort mid-edit (Ctrl-C, closed terminal) — the standard shell
+idiom for a temp file that must not outlive the edit. **The block
+below does NOT type the JSON out — it downloads the secret's
 CURRENT document and opens that.** A hand-written JSON here would be a second
 copy of the key set, and since `put-secret-value` replaces the whole document,
 a copy that fell one key behind would **silently delete** the key it omitted —
@@ -781,6 +694,35 @@ aws cloudformation describe-stacks \
   --stack-name accelerate-tz-dev-data-auth \
   --profile IBD-DEV --region eu-west-1
 # → should report the stack does not exist
+```
+
+**Possible account residue outside CloudFormation — verify before touching.**
+The now-deleted `infra/10-data-auth/t9-enable-ses.sh` (removed by
+`email-notification-microservice` FR-6) used to attach an SES
+sending-authorization policy named `cognito-send` to `j.cadavid@cgiar.org`
+via `aws ses put-identity-policy`, outside any CloudFormation stack —
+`teardown.sh` above never touches it, and this deletion removes the only
+artefact that recorded it existing. **Not confirmed still present.**
+
+**List first** — `cognito-send` is the name the deleted script used; if the
+policy was ever attached through the SES console instead, it carries a
+different name and the delete call below would silently no-op against the
+wrong name:
+
+```bash
+aws ses list-identity-policies --identity j.cadavid@cgiar.org \
+  --profile IBD-DEV --region eu-west-1
+```
+
+If it turns out to still be there (under whatever name the listing shows)
+and is no longer wanted, the product owner can remove it with:
+
+```bash
+aws ses delete-identity-policy --identity j.cadavid@cgiar.org \
+  --policy-name cognito-send \
+  --profile IBD-DEV --region eu-west-1
+# ↑ `cognito-send` is only the name the DELETED script used. Use the name
+#   the listing above actually showed - a wrong name no-ops silently.
 ```
 
 ---

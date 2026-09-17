@@ -240,7 +240,6 @@ Resources:
           # DEPLOYED STACK may select to "microservice" (design.md §7.3) -
           # `no-op` remains for tests, not for this template.
           MAIL_TRANSPORT: !Ref MailTransport
-          MAIL_SENDER_ADDRESS: j.cadavid@cgiar.org
           OTP_HMAC_SECRET: !Sub "{{resolve:secretsmanager:${OtpHmacSecret}:SecretString}}"
           # T-8 - OneCGIAR notification-microservice config (design.md §4.5,
           # §7.1, §7.2). Each variable below whose value is a
@@ -267,10 +266,11 @@ Resources:
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
           # group resolves empty or the directory call fails
-          # (AdminRecipientResolver.getFallback()). Same address as
-          # MAIL_SENDER_ADDRESS above — the account is still in the SES
-          # sandbox (§7.2), so it must be a verified identity, and this is
-          # the only one this template verifies.
+          # (AdminRecipientResolver.getFallback()). email-notification-microservice
+          # (FR-6) removed SES, so the constraint that originally selected this
+          # address — it had to be an SES-verified identity — no longer exists.
+          # The notification microservice has no such restriction; this address
+          # is now an open product choice, not a technical necessity.
           CONTACT_FALLBACK_RECIPIENT: j.cadavid@cgiar.org
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
@@ -309,34 +309,6 @@ Resources:
                 - "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${PoolId}"
                 - PoolId: !ImportValue
                     Fn::Sub: "${DataAuthStackName}-UserPoolId"
-            # Registration OTP + contact form (mail.service.ts uses SendEmailCommand
-            # only, never SendRawEmailCommand).
-            #
-            # ⚠️  DO NOT narrow this back to a single identity ARN without testing
-            # a real send from the deployed Lambda. It was
-            # `identity/j.cadavid@cgiar.org` until 2026-09-01, and that produced
-            # `AccessDenied` on EVERY send from this role — silently breaking the
-            # registration OTP from 2026-08-25 (fire-and-forget swallowed it, so
-            # nobody noticed for five weeks) and visibly breaking the contact form
-            # the day it shipped, which is how it was found.
-            #
-            # What was ruled out, with evidence: the role policy was correct and
-            # complete; the role carries no permissions boundary; it is not a
-            # blanket SCP (an IAM user in the same account could send from the
-            # same identity throughout); and it is not the display-name `Source`
-            # added by contact/contact-channels T-1 (the failures predate it and
-            # the old code sent a bare address).
-            #
-            # The only remaining difference was this resource. Widening it to
-            # `identity/*` fixed both paths immediately. WHY the specific ARN is
-            # refused is NOT established — CloudTrail's denial record would settle
-            # it and was not available. Recorded as an empirical fact, not an
-            # explanation. Still scoped: SES identities only, this account, this
-            # region.
-            - Effect: Allow
-              Action:
-                - ses:SendEmail
-              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
       Events:
         # Explicit methods (NOT `ANY`) so that OPTIONS matches NO route and API
         # Gateway's CorsConfiguration auto-answers CORS preflight with 204. With a

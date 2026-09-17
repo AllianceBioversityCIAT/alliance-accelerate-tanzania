@@ -15,9 +15,6 @@ Region is `eu-west-1` throughout (`infra/samconfig.toml`).
 
 | Sid | Why it is needed |
 |---|---|
-| `SendThroughTheVerifiedRegistrySender` | `ses:SendEmail` is what `SesMailTransport` calls — `backend/src/mail/ses-mail.transport.ts` uses `@aws-sdk/client-ses`'s `SendEmailCommand`, which is **SES v1**, not v2. Scoped to the sender identity; recipients are not part of this resource. |
-| `VerifyRecipientsWhileInSandbox` | In sandbox SES delivers **only to verified addresses** (README §6, DEP-2). Each administrator address is verified individually and each owner clicks their own link. Needed until AWS grants production access. |
-| `ReadSendingStatus` | Answers "are we still in sandbox?" and "what is the quota?" instead of guessing. |
 | `ResolveContactRecipientsFromAdminGroup` | `AdminRecipientResolver` lists the `admin` group live — the same grant the Lambda role gets in `20-backend/template.yaml`. Read-only. |
 | `ReadStackOutputsAndCallerIdentity` | Read-only. `DescribeStacks` is how the user-pool id and API URL are looked up rather than pasted by hand; `GetCallerIdentity` confirms the profile resolves. |
 

@@ -140,7 +140,7 @@
       Done when: `202` on confirm, `502` on publish failure, envelope byte-identical; no response, log line, or comment claims delivery (FR-5's `BUT`); no recipient address, requester field, broker URL or key in the envelope or logs (FR-5's `AND IT MUST`).
       Note: `ContactForm.tsx`'s *"has been sent"* copy is **OQ-7** and is out of scope until decided.
 
-- [ ] **T-13** Tear down the SES infrastructure  (deps: T-9)
+- [x] **T-13** Tear down the SES infrastructure  (deps: T-9)
       Scope: `10-data-auth` params/conditions/`SesSenderIdentity`/the `EmailConfiguration` `!If` → unconditional `COGNITO_DEFAULT`; delete `ses-cognito-send-policy.json` and `t9-enable-ses.sh` (128 lines); **remove `ses:SendEmail` from the Lambda execution role**; remove three statements / six actions from the developer policy.
       Traces: FR-6 · `design.md` §7.1
       Files: `infra/10-data-auth/{template.yaml,ses-cognito-send-policy.json,t9-enable-ses.sh}`, `infra/20-backend/template.yaml`, `infra/policies/developer-local-test-policy.json`

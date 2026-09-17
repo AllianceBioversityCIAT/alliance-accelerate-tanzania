@@ -881,3 +881,89 @@ camino feliz    editor=sí   step 3 pegado -> publicaría 48 bytes
 `'ses'` is rejected (`MailTransportKind = 'microservice' | 'no-op'`); `ses-mail.transport.ts` and its spec are gone; `mail.service.spec.ts` imports none of `SendEmailCommand`/`resetSesClient`/`aws-sdk-client-mock` (it retains a *historical note* naming them, which is accurate and stays); `@aws-sdk/client-ses` and `@types/amqplib` are out of `package.json`. **`aws-sdk-client-mock` stays** — it is still used by four Cognito suites (`users`, `acting-admin`, `admin-recipient`, and `microservice-mail.transport.spec.ts`), so dropping it on T-10's instruction would have broken them; the instruction was written about SES's use of it, not the package.
 
 **T-10 → `[x]`.** T-9 remains `[ ]` with its ⛔ and the override remains recorded as an override.
+
+## T-13 — Tear down the SES infrastructure (2026-09-17)
+
+**399 deletions against 25 insertions**, then two rework passes. Implementer: `akili-implementer`. Reviewer: `akili-reviewer` (different model — author ≠ auditor held throughout).
+
+### The stack facts that framed the task — read before dispatch, read-only
+
+`describe-stacks` on `accelerate-tz-dev-data-auth` (UPDATE_COMPLETE): `EnableSesSending=true`, `SenderEmail=j.cadavid@cgiar.org`, `CreateSenderIdentity=false`.
+
+Two consequences, and they point opposite ways:
+
+- `CreateSenderIdentity=false` ⇒ `MakeSenderIdentity` was already false, so **`SesSenderIdentity` never existed in this account**. Deleting the resource is template-only; nothing is destroyed on the next deploy.
+- `EnableSesSending=true` ⇒ the pool **is on `EmailSendingAccount: DEVELOPER` right now**. Collapsing `EmailConfiguration` to unconditional `COGNITO_DEFAULT` is therefore a **live behaviour change to a user-facing flow** (`/forgot-password`), not a paper edit. The Implementer was instructed never to describe it as inert, and did not.
+
+This is why the facts were gathered first: the same one-line template edit is either harmless or user-visible depending on a parameter value no document in the repo records.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `10-data-auth/template.yaml` | Parameters `SenderEmail`/`EnableSesSending`/`CreateSenderIdentity`, conditions `HasSender`/`MakeSenderIdentity`/`UseSes`, resource `SesSenderIdentity` — all gone. `EmailConfiguration` → unconditional `COGNITO_DEFAULT` |
+| `10-data-auth/ses-cognito-send-policy.json` | **Deleted** (25 lines) |
+| `10-data-auth/t9-enable-ses.sh` | **Deleted** (128 lines) |
+| `20-backend/template.yaml` | `ses:SendEmail` grant removed; **`MAIL_SENDER_ADDRESS` removed** (verified dead first — no reader in `backend/src`); `CONTACT_FALLBACK_RECIPIENT`'s withdrawn-premise comment rewritten |
+| `policies/developer-local-test-policy.json` | 3 statements / 6 actions removed |
+| `policies/README.md` | 3 rows removed (**three, not design.md §7.1's two**) + the `ses-mail.transport.ts` citation, dead since T-10 |
+| `README.md` | §6 (the SES runbook, ~134 lines) deleted by content; §3, §5, §7 and §10 repaired |
+
+**Seven grants gone**, counted at the artefact by the Reviewer: 1 + 3 + 2 developer actions + 1 Lambda `ses:SendEmail`.
+
+### Two Leader adjudications
+
+**1. `design.md` §7.1 says `policies/README.md` loses "two rows"; it loses three.** The Implementer found the discrepancy, refused to make a two-row edit that would leave a row citing a deleted `Sid`, and asked rather than improvising. `tasks.md`'s T-16 block already carried the correction ("**three** rows, not two"). Ruling: the Implementer was right, and `tasks.md` beats `design.md` where they disagree — the task list is the work order.
+
+**2. The Reviewer was right that `infra/README.md` §6 belongs to T-16, and I kept it in T-13 anyway.** Its remediation was to revert §6 out of this task. But §6 contained a *runnable command block* pointing at `ses-cognito-send-policy.json`, which this task deletes — so reverting restores a **broken** state, not a clean one. T-16's Done-when ("§6 is deleted by content, never by line range — two non-SES survivors must be relocated") was written in anticipation of exactly this edit. The work was right and the task label was wrong; moving it back costs more than it buys.
+  **The Reviewer's second point I accepted in full**, and it is the sharper one: the dangling-reference rule had been applied *inconsistently* — §6 was rewritten because it dangled, while `policies/README.md` was left dangling for the identical reason. Consistency, not ownership, is what decided the scope. `policies/README.md` came into T-13 with §6.
+
+### The three attempts, and the one move behind all three failures
+
+| # | Verdict | What failed |
+|---|---|---|
+| 1 | FAIL ×4 | A §6 "survivor" was rescued **by topic** (is it about SES?) without checking it was still **true**: a limitation closed on 2026-07-18 was promoted to a top-level section heading, with a new sentence asserting it live. Meanwhile a **genuinely true** survivor was deleted |
+| 2 | FAIL ×1 | The replacement prose named **one** mechanism for **two** different code paths and generalised to **ONLY** |
+| 3 | **PASS** | Three paths, three distinct epistemic statuses. Two cosmetic advisories, applied |
+
+All three are the same move: **one read, generalised past what it supports.** Naming it in the attempt history is what stopped it — attempt 3 is the first delta in this spec that added no new overclaim, in the Reviewer's words.
+
+### The finding that mattered most, and it is not the largest
+
+**Something true was deleted with something false.** Old §6 carried two sentences about the `COGNITO_DEFAULT` mailer — the shared `no-reply@verificationemail.com` sender, the rate cap, and that *"the branded, table-based HTML templates render best via SES; the `COGNITO_DEFAULT` mailer's HTML handling is limited, so a reverted pool still sends but may look degraded."* They were written as facts about a **rollback state**. After this task they are facts about the **only** state, on a live flow.
+
+They now live in the present tense in **two** places — README §6 and next to `EmailConfiguration` in the template, where a deployer meets it — and are attributed honestly: *"this repo recorded… not independently re-measured here."* Nobody measured the rendering claim; upgrading it to verified fact would have been the same defect wearing the opposite sign.
+
+### The `update()` question — recorded open, deliberately
+
+The replacement prose first claimed the pool's `VerificationMessageTemplate` had exactly **one** remaining consumer. The Reviewer found a third admin path with no suppression available to it, and I confirmed it at the source before acting: `UsersService.update()` (`users.service.ts:207-215`) changes `email` via `AdminUpdateUserAttributes` with **no** `email_verified`, against a pool that sets `AutoVerifiedAttributes: [email]` — and that API accepts no `MessageAction`.
+
+Whether it actually mails is **live Cognito behaviour that cannot be settled from this checkout**. Both files now say so in those words. `create()` and `resetPassword()` are stated as established *with their correct and distinct mechanisms* — the r2 text had attributed `SUPPRESS` to `resetPassword`, which does not use it. An open question recorded as open, in the file that would have to change if it were answered.
+
+### Account residue — outlives the repo, and its last record was being deleted
+
+The deleted `t9-enable-ses.sh` attached an SES sending-authorization policy (`cognito-send`) to `j.cadavid@cgiar.org` **outside CloudFormation**. `teardown.sh` will never remove it, and this task deleted the only artefact recording that it exists. §10 now carries the note, written as **unverified** ("Possible account residue… Not confirmed still present"), with a **list-first** command before the delete — because `cognito-send` is only the name the deleted script used, and a console-attached policy under another name would make a blind delete-by-name no-op silently. **Neither command was run**; the decision is the product owner's.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `./infra/scripts/validate.sh` | **PASS** ×3 |
+| `cd backend && npm test --silent` | 77 suites / **1138 tests** |
+| `cd backend && npm run build` | clean |
+| `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | clean |
+| Dangling-reference grep (both deleted files, 3 parameters, 3 conditions, `SesSenderIdentity`, `MAIL_SENDER_ADDRESS`, 3 `Sid`s) | empty outside `docs/specs/` |
+| ```bash blocks in `infra/README.md` | **17/17 parse** |
+
+The bash-block count moved 20 → 15 → 16 → 17: five SES command blocks deleted with §6, then the A3 `delete-identity-policy` block, then the `list-identity-policies` block. Kept as **separate** blocks on the Implementer's reasoning, which is right: it is check-then-decide, not one atomic step.
+
+**No test in this repo changes colour for any of it.** The Reviewer said so plainly, twice, and it is the reason this task took three audit rounds rather than one — the gates were green at every failed attempt.
+
+### Handed forward (the T-14/T-16 briefs must carry these, or nobody will)
+
+1. `docs/infrastructure.md:34` still lists `AWS::SES::EmailIdentity` as a live `10-data-auth` component and names `CreateSenderIdentity` — **T-16**.
+2. `infra/README.md:49-53` (§2 prerequisites) still says the developer policy grants *"SES send + sandbox verification"* — **T-16**.
+3. `infra/policies/README.md`'s intro and closing "Reminder" still rest on *"the one thing that genuinely requires AWS: real email delivery"* — false since **T-10** deleted the transport, not since T-13 — **T-14/T-16**.
+4. `backend/src/registrations/email-verification.config.ts:15`'s doc-comment naming `MAIL_SENDER_ADDRESS` — **T-14**.
+
+**T-13 → `[x]`.** T-9 remains `[ ]` with its ⛔; Phase B continues on the recorded override.
