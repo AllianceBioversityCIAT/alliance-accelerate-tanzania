@@ -167,3 +167,90 @@ Two cases converted to split-stream capture with two-sided assertions (text pres
 | **FP-1, FP-2, FP-3** | still live | See the T-1 entry — `*.case.sh` naming, ambient env, and T-4 falsifying the harness header sentence |
 
 ---
+
+### T-3 — `aws-accounts.conf` and `assert_account` — **PASS on attempt 3 of 3**
+
+| | |
+|---|---|
+| Date | 2026-09-18 |
+| Implementer attempts | **3** |
+| Effort | `max` throughout — `docs/infrastructure.md` §5 makes the datastore's account part of the security boundary |
+| Skills assigned | `aws-serverless` + `tdd` |
+| Requirements covered | FR-3 (all clauses), FR-2's FR-3-interaction clause |
+
+**Files: `infra/aws-accounts.conf` (new), `infra/scripts/_guard.sh` (extended with `assert_account`), 8 new `guard-account.*.case.sh`. Suite: `Discovered 20 case(s)`, 20 passed.**
+
+#### The evidence the suite structurally cannot produce
+
+Every test stubs `sts`, so a mistyped account id would pass the entire suite and fail closed on every real run (`design.md` §9). **Leader ran the live credential:**
+
+```
+$ aws sts get-caller-identity --profile IBD-DEV
+{ "UserId": "AIDAYJAOTOYERBEE4IPMR",
+  "Account": "569113802249",
+  "Arn": "arn:aws:iam::569113802249:user/cognito_csicap" }
+```
+
+The Implementer independently re-ran it and matched. Both transcripts agree with the committed row.
+
+#### Implementer judgment recorded — two calls it made that the brief did not
+
+1. **Refused a test-only path override.** Testing the conf's content the obvious way means an env var redirecting the file's path — which would be **a live backdoor around FR-3 in production**. Instead the cases copy `_guard.sh` into a temp dir beside a fixture conf, relying on the `${BASH_SOURCE[0]%/*}` resolution T-2 already proved. `assert_account` carries zero test-only seams. The Reviewer endorsed this explicitly: *"the alternative would have been a live seam on the FR-3 boundary; the Implementer's judgment here is right and I would not accept the seam."*
+2. **Disclosed a TDD-ordering deviation** rather than claiming pure red-green. Reviewer adjudication: **discharged** — T-3's contract is clause ownership, the named falsifiers and the `sts` transcript, all present; *"write-order is not the property that mattered."*
+
+#### Attempt 1 — Reviewer FAIL
+
+Everything mechanical passed audit: the collision case genuinely constructs *foreign account with a stack of the expected name present* and cannot pass against a name check; conf parsed never sourced; `assert_account` not run on `source`, proven by a stub marker; FR-2×FR-3 discharged **structurally** (`assert_account` never inspects the override, so no branch could special-case it).
+
+**FAIL — a false universal negative, and it was the Leader's, not the Implementer's.** `aws-accounts.conf` stated *"a repo-wide search at specify time found none versioned anywhere else."* False: `569113802249` has been versioned since **2026-08-05** in `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`.
+
+⚠️ **Root cause, recorded against the Leader.** The claim originated in `design.md` §7.3 at specify time and was inherited. Its cause was mechanical: the specify-time sweep was `grep … | head -5`, and **a universal negative was drawn from a truncated result.** `docs/specs/general-setup/requirements.md` § Writing Standards forbids exactly this — *"A universal negative requires a search that could have failed."* **The same premise was also presented to the product owner at the decision gate**, so she decided on a claim that was wrong.
+
+⚠️ **The Leader's own correction then failed the KZ-004 sweep.** Fixing the cited paragraph in §7.3 left the same withdrawn premise alive in the sibling sentence four lines above it. Only a second, wider grep found it. Third instance this session of a correction landing only where the finding pointed.
+
+#### Attempt 2 — Reviewer FAIL
+
+Conf clause narrowed; **static grep widened** (Leader-adjudicated from advisory, same standard as T-1's `assert_status` and T-2's `env -u AWS_REGION`: a gate under-covering its own clause). FR-3 says *"any script"* and the extensionless stubs are scripts. **Leader verified:** planted the literal in `stubs/curl` → case reds; reverted → green. Before the widening that plant went undetected.
+
+**FAIL — caught by the Leader, not the Reviewer.** The narrowed clause asserted *"the only other occurrence … confirms only these two hits"*. Three files contain the id: the conf, the archive record, and `design.md:148` — **the Leader's own correction, quoting the id while documenting that the earlier claim was false.** The assertion was invalidated by the act of correcting it.
+
+#### Attempt 3 — Reviewer **PASS**
+
+**Deleted the enumeration rather than recounting**, with the boundary chosen deliberately: the surviving claim is scoped to a file class that can be checked exhaustively and **does not grow as this spec writes documents about itself**. Every clause past it was a claim about prose across the whole repository, which changes each time anyone documents the decision.
+
+**Reviewer PASS summary:** *"The surviving scoped negative is true of the rest of the repository under an exhaustive multi-pattern sweep; the deletion removed only the over-broad enumeration and preserved the format rules, the never-source hazard, and the live-credential transcript; no new assertion appeared; the `design.md` §7.3 correction is accurate and its sweep complete, with the decision resting on ground independent of the withdrawn premise; and the widened grep now covers every file under `infra/scripts/` bar an empty `.gitkeep`."*
+
+The Reviewer also **audited the Leader's own `design.md` correction on request**, confirmed the sweep complete, and confirmed the decision survives the withdrawal — §7.3's operative argument (*"a guard that silently does not run on a fresh clone is a guard that does not exist"*) never depended on novelty.
+
+#### Final verification — Leader-run
+
+| Gate | Result |
+|---|---|
+| Suite | 20 cases, 20 passed |
+| **`assert_account` neutered (`return 0` first statement)** | **exactly 6 red** — the account-behaviour cases incl. collision; the other 14 correctly green |
+| Account-id literal in a stub | planted in `stubs/curl` → `no-account-id-literal-in-scripts` reds; reverted → green |
+| Live credential | matches the committed row |
+| No literal in any script | exhaustive sweep, no `head`, no `--include` |
+
+Note: `matching-account-proceeds` reds under the neuter mutation, which means it verifies the check **happened**, not merely that the exit code was 0 — stronger than the brief required.
+
+#### ADVISORY — recorded, non-gating
+
+| Finding |
+|---|
+| **The surviving sentence is falsified by the file it sits in.** *"No account id is versioned in any configuration or executable file"* — line 28 of that very file is one. The deleted clause carried the scoping word (*"the only **other** occurrence"*); truncation left it absolute. `_guard.sh` already words the same fact correctly (*"the one place it is allowed to appear"*), so the two comments now frame it inconsistently. The Reviewer declined to FAIL on it and gave its reasoning: the counterexample is three lines below, self-corrects on sight, no decision rests on it, and rolling back a verified 20-case task over one word is not defensible. **Sixth instance of the false-claim class this session — and this one was created by the act of deleting.** |
+| Trap overwrite leaks seven temp dirs per suite run — compromises no gate |
+| The "conf file not found" defensive branch has no case — corresponds to no clause |
+
+**Leader action taken:** the identical imprecision in `design.md` §7.3 (two sentences) was corrected immediately by inserting *"other"* — those are the Leader's own documents. The `infra/aws-accounts.conf` wording is carried as **FP-6**.
+
+#### 🔭 Forward pointers
+
+| ID | For | Pointer |
+|---|---|---|
+| **FP-6** | **T-4** | When T-4 next touches `infra/aws-accounts.conf`, insert *"other"*: *"no account id is versioned in any **other** configuration or executable file."* One word; the sentence is currently falsified by line 28 of its own file |
+| **FP-4** | **T-4** | Still live — export-ness of `PROFILE`/`REGION` and FR-2's *"single variable across all scripts"* become observable only when scripts actually source the guard |
+| **FP-5** | **T-5, T-6** | Still live — every case asserting a **default** must `env -u` that variable. Three instances now (`AWS_PROFILE`, `AWS_REGION`, and the class itself) |
+| **FP-1, FP-3** | still live | `*.case.sh` naming; T-4 falsifies the harness header sentence, T-7 sweeps it |
+
+---

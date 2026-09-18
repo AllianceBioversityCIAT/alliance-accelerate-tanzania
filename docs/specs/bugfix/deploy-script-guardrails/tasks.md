@@ -38,7 +38,7 @@
       Done when: every clause above has a case, and each named falsifier was run and observed red.
       Skills: `aws-serverless`, `tdd`
 
-- [ ] **T-3 `aws-accounts.conf` and `assert_account`** (deps: T-2)
+- [x] **T-3 `aws-accounts.conf` and `assert_account`** (deps: T-2)
       Scope: the committed config file and the explicit `assert_account` function. **Parsed with `awk -F=`, never sourced** — `IBD-DEV=…` is not a valid bash assignment and sourcing it would abort every script on a *correct* profile. A missing or malformed row aborts, naming the file. An overridden profile still needs a row and still asserts (FR-2's interaction clause).
       Traces: FR-3 (all clauses), FR-2 interaction clause, `design.md` §7.3
       Files: `infra/aws-accounts.conf`, `infra/scripts/_guard.sh`, `infra/scripts/tests/cases/guard-account.*`

@@ -141,9 +141,15 @@ That reaches the cases the proposal called hard:
 
 ### 7.3 Where the expected account id comes from — settled
 
-FR-3 needs an expected account id. `infra/samconfig.toml` carries no account id (it sets `profile`, `region`, `confirm_changeset`, `capabilities`, `resolve_s3`, `tags` and `lint`), and a repo-wide search found no AWS account id versioned anywhere.
+FR-3 needs an expected account id. `infra/samconfig.toml` carries no account id (it sets `profile`, `region`, `confirm_changeset`, `capabilities`, `resolve_s3`, `tags` and `lint`), and no account id is versioned in any **other** configuration or executable file — see the correction below for what the specify-time search got wrong.
 
-**Decided 2026-09-18 by the product owner: commit `infra/aws-accounts.conf`** — the first AWS account id versioned in this repository, a deliberate recorded first rather than an accident. Chosen over an operator-local file because a guard that silently does not run on a fresh clone is a guard that does not exist (root `CLAUDE.md`: *"A gate that cannot run cannot fail"*).
+**Decided 2026-09-18 by the product owner: commit `infra/aws-accounts.conf`.** Chosen over an operator-local file because a guard that silently does not run on a fresh clone is a guard that does not exist (root `CLAUDE.md`: *"A gate that cannot run cannot fail"*).
+
+⚠️ **Correction, 2026-09-18 (T-3 review).** This section previously called it *"the first AWS account id versioned in this repository, a deliberate recorded first"*. **That was false, and it was presented to the product owner as part of the decision.** `569113802249` has been versioned since **2026-08-05** in `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md` (*"account `569113802249` (IBD-DEV), eu-west-1"*).
+
+The defect was in the search, not the reasoning: the specify-time sweep was a single `grep` piped through `head -5`, and a **universal negative was drawn from a truncated result**. `docs/specs/general-setup/requirements.md` § Writing Standards already forbids exactly this — *"A universal negative requires a search that could have failed… A single case-sensitive grep is evidence for a positive claim, never for an absence."*
+
+**What is true, and what the decision actually rests on:** `infra/samconfig.toml` carries no account id, and no account id is versioned in any **other** configuration or executable file. The only prior occurrence is a prose mention inside a frozen archive record that nothing reads or executes. Committing the id into a file a guard parses at runtime is still a different act from a historical note — so the decision stands, but it stands on this narrower ground, not on a "first".
 
 **It is parsed, never sourced.** `IBD-DEV=123456789012` is not a valid bash assignment — the hyphen is illegal in an identifier — so `source`-ing it under `set -euo pipefail` would abort **every script on a correct profile**: a fail-closed guard against correct input, the "sign reversed" shape KZ-002 records (`judgment.md` S-6). `_guard.sh` reads the row with `awk -F=`, and a missing or malformed row is an abort with a message naming the file.
 
