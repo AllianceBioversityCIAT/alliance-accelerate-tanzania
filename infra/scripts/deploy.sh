@@ -51,9 +51,44 @@ DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 
-# Backend CORS origin — permissive '*' for the dev bootstrap; locked to the
-# CloudFront URL later by set-cors.sh (T-8, FR-6, DD-6).
-ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"
+# Backend CORS origin (FR-4, FR-5, T-5). An explicit ALLOWED_ORIGIN from the
+# operator always wins — same precedence MAIL_TRANSPORT has, below. Otherwise
+# resolve the LIVE CloudFrontUrl output from the frontend stack via the
+# shared resolve_stack_value helper (_guard.sh, NFR-4): read the live value
+# instead of asserting one, the same lesson MAIL_TRANSPORT already applies a
+# few lines down. '*' survives ONLY where the 30-frontend stack genuinely
+# does not exist yet — the true bootstrap, before any distribution exists to
+# point at — and that fallback is announced on stderr (FR-4). A FAILED
+# lookup (expired token, throttle, IAM denial, a malformed stack name) is
+# NOT that case and ABORTS rather than silently deploying a permissive
+# origin (FR-5) — this replaces `ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"`, a
+# static default with no resolution and no failure/absence distinction at
+# all, locked later by set-cors.sh (T-8, FR-6, DD-6).
+if [[ -n "${ALLOWED_ORIGIN:-}" ]]; then
+  echo "==> AllowedOrigin = $ALLOWED_ORIGIN (operator override via ALLOWED_ORIGIN env var)"
+else
+  if RESOLVED_ALLOWED_ORIGIN="$(resolve_stack_value "$FRONTEND_STACK" \
+      "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue | [0]" \
+      output)"; then
+    ALLOWED_ORIGIN="$RESOLVED_ALLOWED_ORIGIN"
+    echo "==> AllowedOrigin = $ALLOWED_ORIGIN (resolved from live stack '$FRONTEND_STACK')"
+  else
+    rc=$?
+    case "$rc" in
+      2)
+        ALLOWED_ORIGIN='*'
+        echo "==> AllowedOrigin = '*' — stack '$FRONTEND_STACK' does not exist yet (dev bootstrap; set-cors.sh locks this once the frontend deploys)." >&2
+        ;;
+      *)
+        echo "ERROR: could not resolve AllowedOrigin from stack '$FRONTEND_STACK'." >&2
+        echo "Refusing to guess — a failed lookup is not the same as an absent stack," >&2
+        echo "and deploying '*' here would silently reopen CORS. Fix the AWS error" >&2
+        echo "above and retry, or pass ALLOWED_ORIGIN explicitly to override." >&2
+        exit 1
+        ;;
+    esac
+  fi
+fi
 
 # Mail transport for THIS DEPLOY TARGET — "microservice" is the only value
 # infra/20-backend/template.yaml's MailTransport parameter accepts (see that
@@ -82,40 +117,34 @@ ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"
 if [[ -n "${MAIL_TRANSPORT:-}" ]]; then
   echo "==> MailTransport = $MAIL_TRANSPORT (operator override via MAIL_TRANSPORT env var)"
 else
-  # Separate "the describe-stacks CALL failed" from "the stack does not
-  # exist yet" — they are not the same thing. An expired SSO token, a
-  # throttle, or an IAM denial also makes the query come back empty, and
-  # empty was previously indistinguishable from "not found" (`2>/dev/null
-  # || true` swallowed both). Falling back to a default transport on a
-  # live stack because of a TRANSIENT failure silently reverts it with no
-  # signal. So: capture stdout+stderr together, check the exit status via
-  # `if`, and only accept the "microservice" fallback when the failure text
-  # is CloudFormation's `ValidationError` for a nonexistent stack —
-  # anything else aborts.
-  if RESOLVED_MAIL_TRANSPORT="$(
-    aws cloudformation describe-stacks \
-      --profile "$PROFILE" --region "$REGION" \
-      --stack-name "$BACKEND_STACK" \
-      --query "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
-      --output text 2>&1
-  )"; then
-    if [[ -z "$RESOLVED_MAIL_TRANSPORT" || "$RESOLVED_MAIL_TRANSPORT" == "None" ]]; then
-      MAIL_TRANSPORT="microservice"
-      echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
-    else
-      MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
-      echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
-    fi
-  elif [[ "$RESOLVED_MAIL_TRANSPORT" == *ValidationError* ]]; then
-    MAIL_TRANSPORT="microservice"
-    echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+  # Delegates to the shared resolve_stack_value helper (_guard.sh, T-5,
+  # NFR-4) instead of a local copy of the same classification — this used
+  # to duplicate the block set-cors.sh also carried. That collapse TIGHTENS
+  # this site's behaviour (requirements.md FR-5's last clause, intentional
+  # and covered by its own test): it used to accept a bare `ValidationError`
+  # as "stack not found"; the helper additionally requires the literal
+  # absent-stack phrasing, so a malformed stack name now aborts
+  # here instead of silently resolving to the "microservice" default.
+  if RESOLVED_MAIL_TRANSPORT="$(resolve_stack_value "$BACKEND_STACK" \
+      "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
+      parameter)"; then
+    MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
+    echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
   else
-    echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK':" >&2
-    echo "$RESOLVED_MAIL_TRANSPORT" >&2
-    echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
-    echo "here could silently revert a live transport. Fix the AWS error above" >&2
-    echo "and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
-    exit 1
+    rc=$?
+    case "$rc" in
+      2)
+        MAIL_TRANSPORT="microservice"
+        echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+        ;;
+      *)
+        echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK'." >&2
+        echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
+        echo "here could silently revert a live transport. Fix the AWS error above" >&2
+        echo "and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
+        exit 1
+        ;;
+    esac
   fi
 fi
 

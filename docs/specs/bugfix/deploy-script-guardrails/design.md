@@ -100,7 +100,7 @@ Sourced (not executed) as the first statement after `set -euo pipefail`. Four re
 - **Call sites MUST NOT wrap the call in `local`, `||`, or a pipeline** — all three discard the status.
 - **Success-with-`None` is classified explicitly.** A stack that exists but has no such key returns success and the literal string `None` (today each call site re-checks this itself — the duplication NFR-4 removes). The helper returns `2` for a Parameter query and **aborts** for an Output query: a frontend stack that exists but exports no `CloudFrontUrl` is a broken deployment, not a bootstrap, and announcing `*` for it would contradict FR-4's "only where the stack genuinely does not exist".
 - **`set-cors.sh`'s converted lookup treats `2` as abort**, for the same reason: it runs only after the frontend stack is deployed.
-- **Absent is classified on two tokens, not one.** `ValidationError` alone also covers a malformed or misspelled stack name; matching it alone would read a typo'd `FRONTEND_STACK` as "absent" and deploy `*`. The match requires `ValidationError` **and** the absent-stack phrasing.
+- **Absent is classified on two tokens, not one.** `ValidationError` alone also covers a **malformed** stack name and parameter-constraint violations, which are failures rather than absences; matching it alone would read them as "absent" and deploy `*`. The match requires `ValidationError` **and** the absent-stack phrasing. ⚠️ It does **not** separate a *well-formed typo* from a genuine bootstrap — that is the accepted residual in §9 and `requirements.md` FR-5.
 
 Both existing `MailTransport` copies — in `deploy.sh` and `set-cors.sh` — are replaced by calls to this helper (NFR-4). `set-cors.sh`'s `CloudFrontUrl` lookup already hard-fails and has no silent fallback; it is converted for uniformity, not to fix a defect.
 
@@ -194,7 +194,7 @@ Seven copies drift — that is how five scripts ended up without the guard the o
 Refactoring seven scripts to take injectable commands would be a larger diff than the bug warrants and would change the code under test to suit the test. A `PATH` stub runs the **real, unmodified scripts**. **Rejected:** wrapper-function mocking, which requires editing every call site — the change most likely to introduce D-4.
 
 ### DD-3: Classify on two tokens, not on emptiness or on `ValidationError` alone
-Both an absent stack and a failed call yield an empty string, so emptiness cannot discriminate. `ValidationError` alone over-matches (a misspelled stack name). **Accepted risk:** CloudFormation's wording is an external contract; a change makes the guard fail **closed** — a recoverable annoyance on a rare, attended bootstrap, versus the fail-open bug being fixed. The exact string is asserted in a test, so a wording change surfaces as a test failure rather than a silent regression. *(KZ-011: verified against the message text in `deploy-profile-override/proposal.md` §3 and the `*ValidationError*` branch in `deploy.sh`.)*
+Both an absent stack and a failed call yield an empty string, so emptiness cannot discriminate. `ValidationError` alone over-matches (a malformed name, a constraint violation). **Accepted risk:** CloudFormation's wording is an external contract; a change makes the guard fail **closed** — a recoverable annoyance on a rare, attended bootstrap, versus the fail-open bug being fixed. The exact string is asserted in a test, so a wording change surfaces as a test failure rather than a silent regression. *(KZ-011: verified against the message text in `deploy-profile-override/proposal.md` §3 and the `*ValidationError*` branch in `deploy.sh`.)*
 
 ### DD-4: A value-carrying, purpose-named override replacing `CONFIRM=yes`'s profile role
 Driven by §6.1. `CONFIRM` keeps its destruction-confirmation role; it stops authorising a foreign account. **This reverts delivered behaviour** — see the challenge below.
@@ -255,41 +255,45 @@ Every gate has a named falsifier — the input that makes it red. A gate with no
 
 **Declared gap (D-7):** no gate evaluates whether a sentence in `docs/infrastructure.md` is true. Substituted with a mandatory Reviewer re-deriving from §7.4.
 
-## 11. Budget (tripwire) — **re-baselined 2026-09-18 after the tripwire fired**
+## 11. Budget (tripwire) — re-baselined **twice**
 
-| Metric | Revision 1 | Revision 2 | **Re-baselined (rev 3)** |
-|---|---|---|---|
-| Tasks | 6 | 7 | **7** (unchanged) |
-| Net LOC | ~380 | ~470 | **~2,500** |
-| Review rounds | 8 | 9 | **~16** |
+| Metric | rev 1 | rev 2 | re-baseline 1 (T-2) | **re-baseline 2 (T-5)** |
+|---|---|---|---|---|
+| Tasks | 6 | 7 | 7 | **7** |
+| Net LOC | ~380 | ~470 | ~2,500 | **~4,300** |
+| Review rounds | 8 | 9 | ~16 | **~20** |
 
-### Why the original number was wrong — measured, not guessed
+### The diagnosis held; the projection did not
 
-The tripwire fired at **T-2**, with **892 LOC spent against ~470 budgeted at 2 of 7 tasks**. Escalated to the product owner, who chose to continue at the re-baselined figure. The diagnosis matters more than the number, because it says which future estimates are also wrong:
+The tripwire fired at **T-2** (892 vs ~470) and again at **T-5** (3,395 vs ~2,500). Both escalated to the product owner, who chose to continue each time.
 
-| Line item | Budgeted | Actual | |
-|---|---|---|---|
-| `_guard.sh` | ~110 | **86** | ✅ under |
-| Harness (T-1) | ~210 | **411** | |
-| T-2 test cases | *not itemised* | **395** | 🔴 |
+**Re-baseline 1 diagnosed:** production code tracks or beats its estimate; the entire overshoot is test cases, because §11 was computed before `tasks.md` required per-clause ownership. **Measured again at T-5, that diagnosis is confirmed and sharper:**
 
-**The production code is tracking the estimate or beating it. The entire overshoot is test cases.** The cause is structural, not drift: §11's figures were computed here, in `design.md`, **before `tasks.md` made per-clause case ownership explicit** — one case per scenario and per `BUT`/`AND IT MUST` clause, each with a demonstrated falsifier (KZ-013, and the coverage-closure rule of `docs/specs/general-setup/task.md`). T-2 owns ~9 clauses and produced 11 cases.
+| | Lines |
+|---|---|
+| Production — seven scripts + `_guard.sh` + `aws-accounts.conf` | **454** |
+| Test cases | **2,941** |
+| Ratio | **6.5 : 1** |
 
-So the rigour this spec argues for costs roughly **4× what the budget priced for tests** — in a spec whose entire problem statement was that nothing could be verified. The budget measured the fix and not the evidence.
+Production for the *entire spec* fits in 454 lines against an original estimate of ~290 — **56% over, not 600%**. The estimate for the fix was roughly right. The estimate for the evidence was wrong by an order of magnitude.
 
-### Projection for the remaining tasks
+**What was actually wrong was the projection, not the diagnosis.** Re-baseline 1 projected ~1,650 for the five remaining tasks; four of them consumed ~2,470. The error was projecting **per task** while cases scale **per clause × per call site**:
 
-Estimates, not measurements — no diff exists for them yet:
+- T-5 owns 9 clauses, and `resolve_stack_value` serves **four call sites with different absence semantics** — Parameter vs Output, bootstrap vs broken-state. Cases are the product, not the sum: 15 cases, 982 lines.
+- The same multiplication explains T-4 (five clause groups × seven scripts).
+
+### Remaining projection — the first made from two measured points
 
 | Task | Projected |
 |---|---|
-| T-3 account assertion + cases | ~400 |
-| T-4 wire seven scripts + D-3/D-3b cases | ~350 |
-| T-5 `resolve_stack_value` + `deploy.sh` + cases | ~450 |
-| T-6 `smoke.sh` CORS + five scenario cases | ~300 |
-| T-7 docs + patch | ~150 |
-| **Remaining** | **~1,650** |
+| T-6 `smoke.sh` CORS — 5 directions, one script | ~700 |
+| T-7 documentation — **no test cases** | ~200 |
+| **Final total** | **~4,300** |
 
-Review rounds re-baselined from the measured rate: T-1 took 3, T-2 took 2 — five rounds for two tasks, against a budget of 9 for seven.
+T-7 is cheap for a structural reason, not an optimistic one: it adds no clauses and therefore no cases.
 
-**The tripwire stays armed at the new figure.** A re-baseline is not a waiver: `/akili-execute` escalates again if actuals exceed ~2,500, and a second breach would mean this diagnosis was also wrong.
+**The tripwire stays armed.** A third breach would mean the clause × call-site model is also wrong, and the right response then would be to stop and re-scope rather than re-baseline a third time.
+
+### The standing question this raises for the methodology
+
+A 6.5 : 1 evidence-to-fix ratio is either the correct price of a spec whose thesis is that nothing was verifiable, or a signal that per-clause case ownership over-generates on tasks with many call sites. This spec is not the place to settle it — but it is a measured data point worth carrying to Kaizen, alongside the finding that **every one of the seven rework rounds so far was spent on documentation or on a gate that could not fire, and none on the mechanism being wrong.**

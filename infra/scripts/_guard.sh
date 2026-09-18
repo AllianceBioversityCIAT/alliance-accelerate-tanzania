@@ -10,11 +10,9 @@
 #   not a function call a caller could forget, is what makes the profile
 #   floor and override unconditional.
 #
-#   T-2 and T-3 together deliver three of the library's four eventual
-#   responsibilities: the profile floor, the override, and (as of T-3)
-#   assert_account. The fourth is a later task and MUST NOT be inferred as
-#   present here:
-#     - resolve_stack_value   (FR-5) — arrives in T-5
+#   T-2, T-3, and T-5 together deliver all four of the library's
+#   responsibilities: the profile floor, the override, assert_account, and
+#   (as of T-5) resolve_stack_value.
 #
 #   assert_account is an EXPLICIT function call, not something that runs on
 #   `source` — see the section below for why. Wiring calls to it into the
@@ -167,4 +165,119 @@ assert_account() {
   fi
 
   echo "==> assert_account: profile '$PROFILE' verified against expected account $expected." >&2
+}
+
+# ── 4. resolve_stack_value — a stack Parameter or Output, with a defined
+#      exit-code contract (FR-4, FR-5, NFR-4) ────────────────────────────
+#
+# resolve_stack_value <stack-name> <jmespath-query> <kind>
+#   <kind> is "parameter" or "output" — it changes nothing about HOW the
+#   value is fetched (both are a plain `describe-stacks --query ...
+#   --output text`), only how a SUCCESSFUL-but-empty answer is classified
+#   (see "Success-with-None" below). A helper hardcoded to one JMESPath
+#   shape (e.g. always Outputs) could not have absorbed both of this
+#   file's callers: the MailTransport sites query a Parameter
+#   (Stacks[0].Parameters[?ParameterKey=='...']...) while deploy.sh's new
+#   origin resolution needs an Output (CloudFrontUrl).
+#
+# CONTRACT (design.md §7.1 — this is the prescribed shape, not a summary
+# of it; the call site MUST match it exactly, see below)
+#   - The resolved value is printed on STDOUT, and ONLY on success.
+#   - Exit 0 = found (value on stdout) · 2 = confirmed absent (nothing on
+#     stdout) · 1 = abort (an error already printed to stderr).
+#   - This function is always invoked inside a command substitution
+#     ($(...)), which forks a subshell — so `return` here ends only that
+#     subshell's function call, and `exit` would end only that subshell
+#     process, never the caller. Either would behave identically at any
+#     of this repo's call sites; `return` is used because it is correct
+#     even in a hypothetical future caller that invokes this function
+#     directly, without wrapping it in $(...).
+#
+# THE PRESCRIBED CALL-SITE SHAPE — an `if`/`else` alone cannot read a
+# three-way contract; `if`/`else` splits zero from non-zero only, so 1 and
+# 2 both land in the else-branch. The status MUST be captured as the
+# FIRST statement of that branch, or anything before it (an `echo`
+# included) clobbers $?:
+#
+#   if VALUE="$(resolve_stack_value "$STACK" "$QUERY" parameter)"; then
+#     …use VALUE…
+#   else
+#     rc=$?
+#     case "$rc" in
+#       2) …announced bootstrap… ;;
+#       *) …abort… ;;
+#     esac
+#   fi
+#
+# Callers MUST NOT wrap the call in `local`, `||`, or a pipeline — all
+# three discard the exit status this contract depends on.
+#
+# SUCCESS-WITH-`None` — classified explicitly, not left to re-checking at
+# every call site (that re-checking is the exact duplication NFR-4
+# removes). A stack that EXISTS but has no such key returns exit 0 and
+# the literal string "None" (or empty text). For a Parameter query this
+# is folded into "absent" (exit 2) — a stack predating the parameter is
+# the same bootstrap case as a stack that does not exist yet. For an
+# Output query it is NOT folded in: it ABORTS. A frontend stack that
+# exists but exports no CloudFrontUrl is a BROKEN deployment, not a
+# bootstrap, and silently returning `*` for it would contradict FR-4's
+# "only where the stack genuinely does not exist".
+#
+# ABSENT vs. FAILED — the reason this function exists at all (FR-5). A
+# `describe-stacks` call that FAILS and a stack that genuinely does not
+# EXIST both make the underlying AWS CLI invocation come back with empty
+# stdout — `2>/dev/null || true`, the exact defect in the unversioned
+# Jenkinsfile (design.md §7.4), cannot tell them apart, and neither can
+# emptiness alone. This function classifies on the ERROR TEXT: absence
+# requires BOTH the "ValidationError" token AND the literal absent-stack
+# phrasing CloudFormation actually uses, "does not exist" — never
+# "ValidationError" alone, which ALSO covers a malformed stack
+# name and parameter-constraint violations, i.e. failures, not absences.
+# Anything else (an expired token, a throttle, an IAM denial, a malformed
+# name) aborts, with the AWS CLI's own error text surfaced on stderr so
+# the operator sees exactly what failed.
+#
+# ACCEPTED RESIDUAL, not a gate (requirements.md FR-5; tasks.md T-5): a
+# WELL-FORMED but MISSPELLED stack name IS a nonexistent stack to
+# CloudFormation and produces the identical "does not exist" text. No
+# error-text rule can separate that typo from a genuine bootstrap: this
+# function would legitimately return 2 for it, and a caller like
+# deploy.sh would go on to create a stack under the typo'd name. The
+# failure is visible (a stray stack appears) rather than silent, and is
+# accepted on that basis — this is NOT the same clause as "malformed",
+# which means CloudFormation itself rejected the name as ill-formed
+# (a real ValidationError with no absent-stack phrasing) and is caught.
+resolve_stack_value() {
+  local stack="$1" query="$2" kind="$3"
+  local raw
+
+  if raw="$(
+    aws cloudformation describe-stacks \
+      --profile "$PROFILE" --region "$REGION" \
+      --stack-name "$stack" \
+      --query "$query" --output text 2>&1
+  )"; then
+    if [[ -z "$raw" || "$raw" == "None" ]]; then
+      if [[ "$kind" == "output" ]]; then
+        echo "ERROR: stack '$stack' exists but query \"$query\" resolved no value (None)." >&2
+        echo "       That is a broken deployment, not an absent stack — refusing to" >&2
+        echo "       treat it as a bootstrap (FR-4)." >&2
+        return 1
+      fi
+      return 2
+    fi
+    echo "$raw"
+    return 0
+  fi
+
+  # Two-token classification, per the block comment above: ValidationError
+  # ALONE is not enough — it also fires for a malformed stack
+  # name, which is a failure this function must abort on.
+  if [[ "$raw" == *ValidationError* && "$raw" == *"does not exist"* ]]; then
+    return 2
+  fi
+
+  echo "ERROR: resolve_stack_value: describe-stacks failed for stack '$stack' (query: $query):" >&2
+  echo "$raw" >&2
+  return 1
 }

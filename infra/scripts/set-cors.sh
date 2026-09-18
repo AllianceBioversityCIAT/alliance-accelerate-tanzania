@@ -72,41 +72,34 @@ DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 if [[ -n "${MAIL_TRANSPORT:-}" ]]; then
   echo "==> MailTransport = $MAIL_TRANSPORT (operator override via MAIL_TRANSPORT env var)"
 else
-  # Separate "the describe-stacks CALL failed" from "the stack does not
-  # exist yet" — they are not the same thing. An expired SSO token, a
-  # throttle, or an IAM denial also makes the query come back empty, and
-  # empty was previously indistinguishable from "not found" (`2>/dev/null
-  # || true` swallowed both). set-cors.sh runs with CLOUDFRONT_URL commonly
-  # preset (it is the routine follow-up to every frontend deploy) — falling
-  # back to a default transport here because of a TRANSIENT failure would
-  # silently revert a live transport with no signal. So: capture
-  # stdout+stderr together, check the exit status via `if`, and only accept
-  # the "microservice" fallback when the failure text is CloudFormation's
-  # `ValidationError` for a nonexistent stack — anything else aborts.
-  if RESOLVED_MAIL_TRANSPORT="$(
-    aws cloudformation describe-stacks \
-      --profile "$PROFILE" --region "$REGION" \
-      --stack-name "$BACKEND_STACK" \
-      --query "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
-      --output text 2>&1
-  )"; then
-    if [[ -z "$RESOLVED_MAIL_TRANSPORT" || "$RESOLVED_MAIL_TRANSPORT" == "None" ]]; then
-      MAIL_TRANSPORT="microservice"
-      echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
-    else
-      MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
-      echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
-    fi
-  elif [[ "$RESOLVED_MAIL_TRANSPORT" == *ValidationError* ]]; then
-    MAIL_TRANSPORT="microservice"
-    echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+  # Delegates to the shared resolve_stack_value helper (_guard.sh, T-5,
+  # NFR-4) instead of a local copy of the same classification — this used
+  # to duplicate the block deploy.sh also carried. That collapse TIGHTENS
+  # this site's behaviour (requirements.md FR-5's last clause, intentional
+  # and covered by its own test): it used to accept a bare `ValidationError`
+  # as "stack not found"; the helper additionally requires the literal
+  # absent-stack phrasing, so a malformed stack name now aborts
+  # here instead of silently resolving to the "microservice" default.
+  if RESOLVED_MAIL_TRANSPORT="$(resolve_stack_value "$BACKEND_STACK" \
+      "Stacks[0].Parameters[?ParameterKey=='MailTransport'].ParameterValue | [0]" \
+      parameter)"; then
+    MAIL_TRANSPORT="$RESOLVED_MAIL_TRANSPORT"
+    echo "==> MailTransport = $MAIL_TRANSPORT (resolved from live stack '$BACKEND_STACK')"
   else
-    echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK':" >&2
-    echo "$RESOLVED_MAIL_TRANSPORT" >&2
-    echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
-    echo "here could silently revert a live transport. Fix the AWS error above" >&2
-    echo "and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
-    exit 1
+    rc=$?
+    case "$rc" in
+      2)
+        MAIL_TRANSPORT="microservice"
+        echo "==> MailTransport = $MAIL_TRANSPORT (stack '$BACKEND_STACK' not found yet — template default)"
+        ;;
+      *)
+        echo "ERROR: could not resolve MailTransport from stack '$BACKEND_STACK'." >&2
+        echo "Refusing to guess — this is not 'stack does not exist', so defaulting" >&2
+        echo "here could silently revert a live transport. Fix the AWS error above" >&2
+        echo "and retry, or pass MAIL_TRANSPORT explicitly to override." >&2
+        exit 1
+        ;;
+    esac
   fi
 fi
 
@@ -149,25 +142,38 @@ echo "==> ACCELERATE Tanzania CORS lock — profile '$PROFILE', region '$REGION'
 echo
 
 # ── Resolve CloudFrontUrl from the frontend stack (override via CLOUDFRONT_URL) ─
+# Converted to the shared resolve_stack_value helper (_guard.sh, T-5, NFR-4)
+# for uniformity with deploy.sh's origin resolution — this call site already
+# hard-failed on every non-success case before this change, so there was no
+# silent-fallback defect here to fix (requirements.md §2.1). What DOES change:
+# a stack that exists but returns "None" for CloudFrontUrl (kind=output)
+# still aborts, exactly as before; and a CONFIRMED ABSENT frontend stack
+# (exit 2) is now ALSO an abort, not the announced-bootstrap "*" that
+# deploy.sh's origin resolution uses — set-cors.sh runs only AFTER the
+# frontend stack is deployed, so an absent frontend stack here is a broken
+# operator sequence, not a legitimate bootstrap (design.md §7.1).
 if [[ -n "${CLOUDFRONT_URL:-}" ]]; then
   echo "==> Using CLOUDFRONT_URL from env: $CLOUDFRONT_URL"
 else
   echo "==> Resolving CloudFrontUrl from stack '$FRONTEND_STACK' ..."
-  FRONTEND_OUTPUTS="$(
-    aws cloudformation describe-stacks \
-      --profile "$PROFILE" --region "$REGION" \
-      --stack-name "$FRONTEND_STACK" \
-      --query "Stacks[0].Outputs" --output json
-  )" || {
-    echo "ERROR: could not describe stack '$FRONTEND_STACK'." >&2
-    exit 1
-  }
-  CLOUDFRONT_URL="$(
-    jq -r '.[] | select(.OutputKey == "CloudFrontUrl") | .OutputValue' <<<"$FRONTEND_OUTPUTS"
-  )"
-  if [[ -z "$CLOUDFRONT_URL" || "$CLOUDFRONT_URL" == "null" ]]; then
-    echo "ERROR: stack output 'CloudFrontUrl' not found on '$FRONTEND_STACK'." >&2
-    exit 1
+  if CLOUDFRONT_URL="$(resolve_stack_value "$FRONTEND_STACK" \
+      "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue | [0]" \
+      output)"; then
+    :
+  else
+    rc=$?
+    case "$rc" in
+      2)
+        echo "ERROR: stack '$FRONTEND_STACK' does not exist — run deploy.sh first." >&2
+        echo "       set-cors.sh locks CORS on an ALREADY-DEPLOYED frontend; an" >&2
+        echo "       absent stack here is a broken sequence, not a bootstrap." >&2
+        exit 1
+        ;;
+      *)
+        echo "ERROR: could not resolve CloudFrontUrl from stack '$FRONTEND_STACK'." >&2
+        exit 1
+        ;;
+    esac
   fi
 fi
 

@@ -64,7 +64,7 @@
       Done when: all five clause groups have cases and every falsifier was observed red.
       Skills: `aws-serverless`
 
-- [ ] **T-5 `resolve_stack_value` and `deploy.sh` origin resolution** (deps: T-4)
+- [x] **T-5 `resolve_stack_value` and `deploy.sh` origin resolution** (deps: T-4)
       Scope: the helper with its documented contract (value on stdout; exit `0` found / `2` absent / `1` abort; the `else rc=$?; case` call shape; `None` ⇒ `2` for Parameter queries, **abort** for Output queries). Replace `ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"` with a real resolution. Migrate **both** existing `MailTransport` call sites onto the helper, which tightens them to the two-token rule.
       Traces: FR-4 (all clauses), FR-5 (all clauses incl. the `MailTransport` clause), NFR-4, DD-3, `design.md` §7.1
       Files: `infra/scripts/_guard.sh`, `infra/scripts/deploy.sh`, `infra/scripts/set-cors.sh`, `infra/scripts/tests/cases/resolve-*.*`

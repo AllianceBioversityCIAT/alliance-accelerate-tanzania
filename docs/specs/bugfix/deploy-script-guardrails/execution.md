@@ -340,3 +340,73 @@ The Reviewer swept ~25 GNU-isms (`\b \s \d \w`, `grep -P`, `sort -z`, `find -pri
 **FP-4 and FP-6 are discharged** at T-4 — export-ness and the single-override-variable clause are now driven by cases, and the conf wording is corrected.
 
 ---
+
+### T-5 — `resolve_stack_value` and `deploy.sh` origin resolution — **PASS on attempt 2 of 3**
+
+| | |
+|---|---|
+| Date | 2026-09-18 |
+| Implementer attempts | **2** |
+| Effort | `max` — changes what `deploy.sh` sends to CloudFormation |
+| Skills assigned | `aws-serverless` + `tdd` + `systematic-debugging` |
+| Requirements covered | FR-4 (all clauses), FR-5 (all clauses incl. the `MailTransport` migration), NFR-4 |
+
+**ATP-64's defect is removed.** `ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"` — a static default with no resolution at all — is replaced by a real lookup. Suite: **43 cases, 43 passed** (28 carried + 15 new).
+
+#### What shipped
+
+`resolve_stack_value` in `_guard.sh`, serving **four call sites with three different absence semantics**: `deploy.sh` origin (absent ⇒ announced `*`), `set-cors.sh` CloudFrontUrl (absent ⇒ **abort**, since it runs only after the frontend is deployed), and both `MailTransport` sites (absent ⇒ template default). Both pre-existing local `MailTransport` classifications are gone — NFR-4's "one place" now verified structurally: exactly one `*ValidationError*` match survives in the tree.
+
+**The three-way contract, honoured at all four sites.** `design.md` §7.1 prescribes `else rc=$?; case` with `$?` captured as the branch's **first statement**, because a two-way `if` cannot read a three-way return and anything before the capture clobbers it. The Reviewer verified all four: no `local`, no `||`, no pipeline, no `echo` ahead of the capture.
+
+#### Attempt 1 — Reviewer FAIL: the accepted residual, asserted in reverse
+
+Four comments claimed a **misspelled** stack name now aborts. It does not — a well-formed misspelled name yields CloudFormation's `does not exist`, so the helper returns **2** (confirmed absent) and the caller bootstraps. That is precisely the residual `tasks.md` T-5 singles out.
+
+**`_guard.sh` contradicted itself**: lines 240-249 correctly stated the residual while 234 and 274 asserted the opposite.
+
+⚠️ **The Leader's brief caused this, by scoping the prohibition to the wrong artefact type.** The T-5 brief said *"a test asserting the typo case is caught would be a false claim"* — and the Implementer wrote **no such test**; the Reviewer confirmed the tests clean. The defect landed in **comments**, because the prohibition was aimed at the artefact type where the previous instance (`judgment.md` V-2) had appeared. **Fixing the instance, not the class — the same error the Leader made three times on document sweeps, now repeated in how it writes instructions.**
+
+The rework brief was re-scoped artefact-agnostically: *no test, no comment, no header, no commit message and no report may state that a misspelled stack name is caught* — and the sweep was ordered on the **class** (`typo`, `mistyped`, `wrong name`) rather than the literal word.
+
+#### Attempt 2 — Reviewer **PASS**
+
+Four comment sites reduced to `malformed` by **deletion, not rewrite** (`judgment.md` §10's measured countermeasure). The residual block untouched — the instruction was explicit that it already says the true thing once, and *a second telling is a second chance to get it wrong*.
+
+**Reviewer PASS summary:** *"The four comment sites now say only 'malformed', leaving one consistent and true account of the misspelled-name case in `_guard.sh`; the load-bearing malformed explanation and the parameter-constraint clause both survive, and a class-level sweep of `infra/scripts/` finds no artefact of any type still claiming a well-formed typo is detected."*
+
+#### ⚠️ The class moved artefact type a **third** time — into the Leader's own document
+
+The Reviewer's advisory found the same refuted claim alive in **`design.md` §7.1 and DD-3**, contradicting §9 and §10 of the same file. Cause, again: **the Leader ordered the class sweep across `infra/` and never swept `docs/`** — scoping the sweep to the directory the finding pointed at.
+
+**Corrected immediately by the Leader** (spec documents are the Leader's to maintain), and a full class sweep of `docs/` run afterwards: every surviving mention now states the residual correctly. The Reviewer explicitly declined to gate on it — *"it predates this task's diff, the Implementer was never asked to touch it, and raising it now would ratchet the bar mid-rework"* — which is the right call and is recorded as such.
+
+#### Final verification — Leader-run
+
+| Gate | Result |
+|---|---|
+| Suite | 43 cases, 43 passed |
+| Static default removed | `deploy.sh` has an operator-override branch then a real resolution; no `ALLOWED_ORIGIN:-*` outside the comment describing the removal |
+| **`2>/dev/null \|\| true` restored in the helper** | **9 cases red**; reverted → 43/43 |
+| Class sweep, `infra/scripts/` | only the two correct survivors, both stating the typo is **not** caught |
+| Class sweep, `docs/` | run after the Leader's correction — clean |
+
+#### ADVISORY — recorded, non-gating
+
+| Finding |
+|---|
+| The paired-case technique proves the **`does not exist`** token is load-bearing, but **not** that `ValidationError` is — mutating to `does not exist` alone would leave all 43 green. `tasks.md`'s named falsifier covers only the first direction, so this is the limit of the evidence, not a spec gap |
+| The contract shape is falsifier-covered at **two of four** sites — only where rc=2 is driven. A regression at either `MailTransport` site would red nothing, since only rc=1 is exercised there |
+| `deploy.sh:39`'s `(dev default *)` parenthetical — T-5 falsified it; `tasks.md` T-7 owns that USAGE line explicitly |
+| `_guard.sh:18-23` is T-3-scoped prose now sitting beside a T-5-scoped paragraph. Each sentence is time-scoped and not strictly false |
+| An inert `assert_not_contains "SAM CALL"` — redundant, not ungated |
+
+#### 🔭 Forward pointers
+
+| ID | For | Pointer |
+|---|---|---|
+| **FP-9** | **T-6, T-7** | **Sweep the class across every artefact type and every directory, not the one the finding named.** This spec has now had the same false claim move test → comment → design document, each time because the previous sweep was scoped to where the last instance lived. Three of the Leader's own corrections failed the same way |
+| **FP-8** | **T-7** | Grew: `deploy.sh:39`'s parenthetical, `_guard.sh:18-23`'s stale scoping, plus the `migrate-seed.sh`/`teardown.sh` USAGE lines from T-4 |
+| **FP-7, FP-5, FP-1** | **T-6** | Still live — POSIX ERE only with positive controls; `env -u` for any asserted default; `*.case.sh` naming |
+
+---
