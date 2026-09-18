@@ -1,4 +1,5 @@
 // @sdd-spec contact/contact-channels (T-7)
+// @sdd-spec enhancement/email-notification-microservice (T-12)
 /**
  * T-7 — HTTP e2e proof of `POST /api/v1/contact`: submission, honeypot,
  * throttle (FR-2, FR-5, FR-6, FR-8, NFR-2, NFR-7, design.md §3 amendment 3,
@@ -32,9 +33,9 @@
  *   throttle dispatch counts are all read off this mock's call history,
  *   never off `getRecordedSends()` (the no-op transport never carries `to`).
  * - `AdminRecipientResolver` -> a jest-mocked `resolve()` returning a FIXED,
- *   known recipient list, so "reaches every resolved admin" is a real
- *   equality assertion against a value this file controls, not merely "a
- *   send happened."
+ *   known recipient list, so "is dispatched to every resolved admin" is a
+ *   real equality assertion against a value this file controls, not merely
+ *   "a send happened."
  *
  * **Throttle isolation across many `it` blocks in one file.** The suite
  * shares ONE compiled app (one `ThrottlerStorageService` instance) across
@@ -74,7 +75,7 @@ import {
 
 const CONTACT_PATH = '/api/v1/contact';
 
-/** Fixed, known recipient set — the "reaches every resolved admin" assertion below is an equality check against THIS value. */
+/** Fixed, known recipient set — the "is dispatched to every resolved admin" assertion below is an equality check against THIS value. */
 const FIXED_ADMIN_RECIPIENTS = ['admin-one@example.org', 'admin-two@example.org'];
 
 function validBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -144,8 +145,8 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
     throttlerStorage.storage.clear();
   });
 
-  describe('Valid submission reaches every resolved admin (FR-2 scenario 1, FR-3)', () => {
-    it('delivers ONE message addressed to every resolved admin recipient — not merely "a send happened"', async () => {
+  describe('Valid submission is dispatched to every resolved admin (FR-2 scenario 1, FR-3)', () => {
+    it('hands ONE message addressed to every resolved admin recipient to MailService — not merely "a send happened"', async () => {
       const res = await request(app.getHttpServer()).post(CONTACT_PATH).send(validBody());
 
       expect(res.status).toBe(202);
@@ -253,21 +254,55 @@ describe('POST /api/v1/contact (T-7 — submission, honeypot, throttle e2e)', ()
   });
 
   describe('Transport rejection returns 502 with no provider detail (FR-5, design.md §3 amendment 3)', () => {
-    it('never leaks the SDK error name, message text, or a recipient address into the 502 body', async () => {
+    // enhancement/email-notification-microservice T-12 (design.md §3):
+    // this `502` means the message could not be ENQUEUED — the broker did
+    // not confirm the publish — never that a message failed to reach an
+    // inbox. `sendContactMessageMock` here stands in for the whole
+    // transport (SES originally, the notification microservice now); the
+    // sanitization it proves is unchanged by which transport is live, and
+    // was already asserted, one layer down, against the real transport in
+    // `microservice-mail.transport.spec.ts`'s own credential-leak gates.
+    it('never leaks the transport error\'s class name, message text, or a recipient address into the 502 body', async () => {
+      // Deliberately NOT one of MicroserviceMailTransport's own sanitized
+      // error classes (those already carry no address, by construction —
+      // DD-3/DD-11 — and are covered by microservice-mail.transport.spec.ts's
+      // own credential-leak gates). This fixture stands for the case those
+      // classes exist to prevent: some lower-level rejection whose raw
+      // message happens to embed the recipient address verbatim — the
+      // property this gate proves is independent of which transport
+      // produced it.
       const leaking = new Error(
-        'Email address: admin-two@example.org is not verified in the SES sandbox (MessageRejected)',
+        'Recipient admin-two@example.org rejected: the message was refused by the broker (unroutable)',
       );
-      leaking.name = 'MessageRejected';
+      leaking.name = 'TransportRejectedError';
       sendContactMessageMock.mockRejectedValueOnce(leaking);
 
       const res = await request(app.getHttpServer()).post(CONTACT_PATH).send(validBody());
 
       expect(res.status).toBe(502);
+      // T-12 (Phase B rework, Issue 2): the Done-when clause requires the
+      // envelope be byte-identical — `toEqual`, not `toMatchObject`, so an
+      // added/renamed/changed field also reddens this, not just a dropped
+      // one. Reproduced verbatim from contact.service.ts's literal, not
+      // retyped from memory.
+      expect(res.body).toEqual({
+        statusCode: 502,
+        error: 'Bad Gateway',
+        message: 'We could not send your message right now. Please try again shortly.',
+      });
       const raw = res.text;
-      expect(raw).not.toContain('MessageRejected');
+      expect(raw).not.toContain('TransportRejectedError');
       expect(raw).not.toContain('admin-two@example.org');
-      expect(raw).not.toContain('not verified');
-      expect(raw).not.toContain('SES');
+      expect(raw).not.toContain('refused by the broker');
+      expect(raw).not.toContain('unroutable');
+      // Fifth checkpoint — provider/transport IDENTITY, not message content
+      // (design.md §3's response table, contact.service.ts's "no provider
+      // name" clause): the old gate's four checkpoints were {error name,
+      // address, message fragment, provider identity — the old
+      // `not.toContain('SES')`}. The rebuilt fixture above no longer names a
+      // provider, so this checkpoint is restated generically rather than
+      // dropped.
+      expect(raw).not.toContain('broker');
     });
   });
 

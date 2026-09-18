@@ -1341,7 +1341,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       it('a notification failure does not reject approve() — it is fire-and-forget, logged by error class name only', async () => {
         const tx = buildTx();
         wireTransaction(tx);
-        mailService.sendApproval.mockRejectedValueOnce(new Error('SES unavailable'));
+        mailService.sendApproval.mockRejectedValueOnce(new Error('mail transport unavailable'));
 
         await expect(
           service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),

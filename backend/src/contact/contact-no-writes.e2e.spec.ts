@@ -46,7 +46,7 @@
  * only on the success path, invisible to the other three).
  *
  * `MailService` and `AdminRecipientResolver` are provider-overridden purely
- * so this suite never depends on live SES or Cognito — neither override
+ * so this suite never depends on a live mail transport or Cognito — neither override
  * touches whether a Prisma call happens, which is this file's only concern.
  * `pii-boundary.spec.ts`'s sibling T-8 `describe` block is the leakage gate;
  * this file is the write gate. They are deliberately two files, matching

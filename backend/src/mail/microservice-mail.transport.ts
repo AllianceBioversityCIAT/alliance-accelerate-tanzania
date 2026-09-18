@@ -84,8 +84,8 @@ export interface MicroserviceMailEnvelope {
       /**
        * Separate `email`/`name` fields — never a `"Name" <addr>` composite
        * (FR-4's `BUT`). The microservice takes address and name as distinct
-       * fields; wrapping them the way `ses-mail.transport.ts`'s
-       * `buildSource()` does for SES would be sent as one literal address.
+       * fields; wrapping them the way the now-deleted `ses-mail.transport.ts`'s
+       * `buildSource()` did for SES would be sent as one literal address.
        */
       from: MicroserviceMailAddress;
       emailBody: MicroserviceEmailBody;
@@ -311,11 +311,11 @@ interface CachedMicroserviceConnection {
   healthy: boolean;
 }
 
-/** Module-scope cache — same singleton shape as `ses-mail.transport.ts`'s
- * `getSesClient()` / `users/cognito-admin.client.ts`'s admin client, so a
- * `no-op` or `ses` run never constructs one, and a warm Lambda invocation
- * reuses the pair across sends instead of paying a fresh TCP+TLS+AMQP
- * handshake every time (NFR-2). */
+/** Module-scope cache — same singleton shape `users/cognito-admin.client.ts`'s
+ * admin client uses (and the now-deleted `ses-mail.transport.ts`'s
+ * `getSesClient()` used), so a `no-op` run never constructs one, and a
+ * warm Lambda invocation reuses the pair across sends instead of paying a
+ * fresh TCP+TLS+AMQP handshake every time (NFR-2). */
 let cached: CachedMicroserviceConnection | undefined;
 
 /**
@@ -386,7 +386,8 @@ class MailSendMutex {
 let mailSendMutex = new MailSendMutex();
 
 /** Test seam — reset the module-scope connection cache and mutex between
- * specs, mirroring `resetSesClient()` / `resetMailTransport()`. */
+ * specs, mirroring `resetMailTransport()` (and, before T-10 deleted it,
+ * `resetSesClient()`). */
 export function resetMicroserviceMailTransportState(): void {
   cached = undefined;
   mailSendMutex = new MailSendMutex();
@@ -686,15 +687,16 @@ async function publishOnce(
 /**
  * T-4 — `MicroserviceMailTransport` (design.md §4.2, §4.3, §4.4; FR-1,
  * NFR-1, NFR-2). A plain class implementing `MailTransport`'s one method —
- * no DI, no module registration, no provider, matching `SesMailTransport`
- * and `NoOpMailTransport`. Selected by `mail-transport.factory.ts`'s
- * exhaustive switch.
+ * no DI, no module registration, no provider, matching `NoOpMailTransport`
+ * (and, before T-10 deleted it, `SesMailTransport`). Selected by
+ * `mail-transport.factory.ts`'s exhaustive switch.
  *
  * The four responsibilities from §4.2: resolve configuration lazily on
  * first send (delegated to `getMicroserviceMailConfig`); own the
  * connection (the module-scope `cached` + `mailSendMutex` above, not an
  * instance field — this class has no connection-related state of its own,
- * matching `getSesClient()`'s singleton shape); build the envelope
+ * matching the now-deleted `ses-mail.transport.ts`'s `getSesClient()`'s
+ * singleton shape); build the envelope
  * (T-2's `buildMicroserviceEnvelope`, called with an explicitly
  * destructured, narrower config — see below); publish under one bounded
  * deadline (this method).

@@ -6,41 +6,123 @@
  * clause on this task:
  *
  *  1. **Transport selection is behaviourally distinguishable.** The same
- *     `sendReceipt` call, against the SAME mocked SES client, must reach SES
- *     when `MAIL_TRANSPORT=ses` and must NOT reach it — zero calls — when
- *     `MAIL_TRANSPORT=no-op`, while resolving successfully either way. A test
- *     that only asserted an SES client was constructed would be a presence
- *     assertion (KZ-002); this asserts the call count on a shared mock.
+ *     `sendReceipt` call, against the SAME mocked microservice broker, must
+ *     reach the broker when `MAIL_TRANSPORT=microservice` and must NOT reach
+ *     it — zero calls — when `MAIL_TRANSPORT=no-op`, while resolving
+ *     successfully either way. A test that only asserted a connection was
+ *     opened would be a presence assertion (KZ-002); this asserts the
+ *     `publish` call count on a shared mock.
  *  2. **No PII, code, or body reaches log output — proven, not assumed.**
  *     Each logging test first asserts a log line WAS emitted (an empty log
  *     stream would otherwise pass a naive "no PII" check vacuously), then
  *     asserts what it does not contain.
+ *
+ * enhancement/email-notification-microservice T-10 (Phase B): this suite
+ * used to exercise the SES transport, mocked via `aws-sdk-client-mock`
+ * against `SESClient`, before SES was retired. It now exercises
+ * `MicroserviceMailTransport` through a hand-rolled `amqplib` mock — the
+ * same technique `microservice-mail.transport.spec.ts` uses for its own,
+ * much larger, connection-lifecycle suite — because this file's job stays
+ * narrower: prove `MailService.dispatch()` reaches whichever transport
+ * `MAIL_TRANSPORT` selects, not re-prove that transport's own
+ * retry/probe/mutex behaviour.
  */
+import { EventEmitter } from 'events';
+import * as amqp from 'amqplib';
 import { Logger } from '@nestjs/common';
-import { SendEmailCommand, SESClient } from '@aws-sdk/client-ses';
-import { mockClient } from 'aws-sdk-client-mock';
 
 import { MailService } from './mail.service';
 import { resetMailTransport } from './mail-transport.factory';
-import { resetSesClient } from './ses-mail.transport';
+import { resetMicroserviceMailTransportState } from './microservice-mail.transport';
 
-const sesMock = mockClient(SESClient);
+jest.mock('amqplib');
+
+interface FakeChannel extends EventEmitter {
+  checkQueue: jest.Mock;
+  publish: jest.Mock;
+  close: jest.Mock;
+}
+
+interface FakeChannelModel extends EventEmitter {
+  createConfirmChannel: jest.Mock;
+  close: jest.Mock;
+}
+
+/** A `checkQueue`-ok, `publish`-ack channel — the happy path every test
+ * below needs unless it is specifically exercising a rejection. */
+function createWorkingChannel(): FakeChannel {
+  const channel = new EventEmitter() as FakeChannel;
+  channel.checkQueue = jest
+    .fn()
+    .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
+  channel.publish = jest.fn(
+    (
+      _exchange: string,
+      _routingKey: string,
+      _content: Buffer,
+      _options: amqp.Options.Publish | undefined,
+      callback?: (err: unknown, ok: unknown) => void,
+    ) => {
+      callback?.(null, {});
+      return true;
+    },
+  );
+  channel.close = jest.fn().mockResolvedValue(undefined);
+  return channel;
+}
+
+/** Same shape, but every `publish` nacks — the "broker rejected the
+ * message" path (`MicroserviceMailPublishError`), which is never retried
+ * (DD-4: the failure is at-or-after the publish). */
+function createRejectingChannel(): FakeChannel {
+  const channel = createWorkingChannel();
+  channel.publish = jest.fn(
+    (
+      _exchange: string,
+      _routingKey: string,
+      _content: Buffer,
+      _options: amqp.Options.Publish | undefined,
+      callback?: (err: unknown, ok: unknown) => void,
+    ) => {
+      callback?.(new Error('NACK'), undefined);
+      return true;
+    },
+  );
+  return channel;
+}
+
+function mockConnect(channel: FakeChannel): void {
+  const model = new EventEmitter() as FakeChannelModel;
+  model.createConfirmChannel = jest.fn().mockResolvedValue(channel);
+  model.close = jest.fn().mockResolvedValue(undefined);
+  (amqp.connect as jest.MockedFunction<typeof amqp.connect>).mockResolvedValue(
+    model as unknown as amqp.ChannelModel,
+  );
+}
+
+function setMicroserviceEnv(): void {
+  process.env.RABBITMQ_URL = 'amqps://user:pass@broker.example.org:5671';
+  process.env.EMAIL_QUEUE_NAME = 'accelerate-tz-email';
+  process.env.MICROSERVICE_API_KEY = 'clarisa-key-123';
+  process.env.EMAIL_SENDER = 'registry@example.org';
+}
 
 describe('MailService — transport selection (NFR-10, the Disqualifying clause)', () => {
+  let channel: FakeChannel;
+
   beforeEach(() => {
-    sesMock.reset();
+    (amqp.connect as jest.MockedFunction<typeof amqp.connect>).mockReset();
+    channel = createWorkingChannel();
+    mockConnect(channel);
     resetMailTransport();
-    resetSesClient();
-    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-    process.env.AWS_REGION = 'eu-west-1';
+    resetMicroserviceMailTransportState();
+    setMicroserviceEnv();
   });
 
   it(
-    'the identical sendReceipt call reaches the mocked SES client under ' +
-      '"ses" and reaches it zero times under "no-op" — both resolve successfully',
+    'the identical sendReceipt call reaches the mocked broker under ' +
+      '"microservice" and reaches it zero times under "no-op" — both resolve successfully',
     async () => {
-      sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
-
       // Selecting the no-op transport: the call must resolve, and the send
       // must NOT distinguishably reach the network layer at all.
       process.env.MAIL_TRANSPORT = 'no-op';
@@ -49,34 +131,32 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       await expect(
         noOpService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
       ).resolves.toBeUndefined();
-      expect(sesMock.calls()).toHaveLength(0);
+      expect(channel.publish).toHaveBeenCalledTimes(0);
 
-      // Same call, same shared SES mock, only MAIL_TRANSPORT changed: now it
-      // DOES reach SES. This is the sent-vs-not-sent distinction the
-      // Disqualifying clause requires — a test that could not fail this way
-      // is not evidence.
-      process.env.MAIL_TRANSPORT = 'ses';
+      // Same call, same shared broker mock, only MAIL_TRANSPORT changed: now
+      // it DOES reach the broker. This is the sent-vs-not-sent distinction
+      // the Disqualifying clause requires — a test that could not fail this
+      // way is not evidence.
+      process.env.MAIL_TRANSPORT = 'microservice';
       resetMailTransport();
-      const sesService = new MailService();
+      const microserviceService = new MailService();
       await expect(
-        sesService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
+        microserviceService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
       ).resolves.toBeUndefined();
-      expect(sesMock.calls()).toHaveLength(1);
+      expect(channel.publish).toHaveBeenCalledTimes(1);
     },
   );
 
   it('the same distinction holds for sendVerificationCode', async () => {
-    sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
-
     process.env.MAIL_TRANSPORT = 'no-op';
     resetMailTransport();
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
-    expect(sesMock.calls()).toHaveLength(0);
+    expect(channel.publish).toHaveBeenCalledTimes(0);
 
-    process.env.MAIL_TRANSPORT = 'ses';
+    process.env.MAIL_TRANSPORT = 'microservice';
     resetMailTransport();
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
-    expect(sesMock.calls()).toHaveLength(1);
+    expect(channel.publish).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -85,9 +165,9 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   let errorSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    sesMock.reset();
+    (amqp.connect as jest.MockedFunction<typeof amqp.connect>).mockReset();
     resetMailTransport();
-    resetSesClient();
+    resetMicroserviceMailTransportState();
     process.env.MAIL_TRANSPORT = 'no-op';
     logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -193,17 +273,18 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   );
 
   it('logs a failed outcome (still without PII) when the transport rejects', async () => {
-    process.env.MAIL_TRANSPORT = 'ses';
-    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-    process.env.AWS_REGION = 'eu-west-1';
+    process.env.MAIL_TRANSPORT = 'microservice';
+    setMicroserviceEnv();
     resetMailTransport();
-    resetSesClient();
-    sesMock.on(SendEmailCommand).rejects(new Error('Throttling'));
+    resetMicroserviceMailTransportState();
+    mockConnect(createRejectingChannel());
 
     const service = new MailService();
     const email = 'applicant-secret@example.org';
 
-    await expect(service.sendReceipt(email, 'REG-2026-0099')).rejects.toThrow('Throttling');
+    await expect(service.sendReceipt(email, 'REG-2026-0099')).rejects.toThrow(
+      'The mail broker rejected the message.',
+    );
 
     const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
     expect(totalCalls).toBeGreaterThan(0);
@@ -217,12 +298,11 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     'sendContactMessage (contact/contact-channels T-1) logs kind=contact with ' +
       'reference=n/a and never the recipient address',
     async () => {
-      process.env.MAIL_TRANSPORT = 'ses';
-      process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-      process.env.AWS_REGION = 'eu-west-1';
+      process.env.MAIL_TRANSPORT = 'microservice';
+      setMicroserviceEnv();
       resetMailTransport();
-      resetSesClient();
-      sesMock.on(SendEmailCommand).resolves({ MessageId: 'test-message-id' });
+      resetMicroserviceMailTransportState();
+      mockConnect(createWorkingChannel());
 
       const service = new MailService();
       const adminEmail = 'admin-secret@example.org';
@@ -231,7 +311,6 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
         to: [adminEmail],
         subject: 'New contact submission',
         text: 'body',
-        replyTo: 'Jane Requester <jane@example.org>',
       });
 
       const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
@@ -246,18 +325,17 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   );
 
   it('sendContactMessage rethrows a transport failure unchanged', async () => {
-    process.env.MAIL_TRANSPORT = 'ses';
-    process.env.MAIL_SENDER_ADDRESS = 'registry@example.org';
-    process.env.AWS_REGION = 'eu-west-1';
+    process.env.MAIL_TRANSPORT = 'microservice';
+    setMicroserviceEnv();
     resetMailTransport();
-    resetSesClient();
-    sesMock.on(SendEmailCommand).rejects(new Error('Throttling'));
+    resetMicroserviceMailTransportState();
+    mockConnect(createRejectingChannel());
 
     const service = new MailService();
 
     await expect(
       service.sendContactMessage({ to: ['admin@example.org'], subject: 's', text: 't' }),
-    ).rejects.toThrow('Throttling');
+    ).rejects.toThrow('The mail broker rejected the message.');
 
     const emitted = emittedText();
     expect(emitted).toContain('kind=contact');

@@ -2,7 +2,6 @@
 // @sdd-spec enhancement/email-notification-microservice (T-4)
 import { MailTransport } from './mail-transport.interface';
 import { getMailTransportKind, MailTransportKind } from './mail.config';
-import { SesMailTransport } from './ses-mail.transport';
 import { NoOpMailTransport } from './no-op-mail.transport';
 import { MicroserviceMailTransport } from './microservice-mail.transport';
 
@@ -24,14 +23,14 @@ let transport: MailTransport | undefined;
  * The previous shape, `kind === 'ses' ? Ses : NoOp`, made `NoOpMailTransport`
  * the **silent fallback for every unhandled kind** — appending a branch for
  * `'microservice'` there would have regenerated that exact hazard the moment
- * `MailTransportKind` grows again (as it will in Phase B, when it narrows to
- * `'microservice' | 'no-op'`, and again if a kind is ever added). That is
- * this spec's own worst-named failure class, **D-J**: *"every request `202`,
- * zero emails, no signal anywhere"* — except one step further back, before a
- * queue is even involved: no transport would run AT ALL, silently swapped
- * for a no-op that reports success.
+ * `MailTransportKind` grew again. That is this spec's own worst-named
+ * failure class, **D-J**: *"every request `202`, zero emails, no signal
+ * anywhere"* — except one step further back, before a queue is even
+ * involved: no transport would run AT ALL, silently swapped for a no-op
+ * that reports success.
  *
- * `kind` is `MailTransportKind`, a closed 3-value union today, so the
+ * `kind` is `MailTransportKind`, a closed 2-value union as of Phase B
+ * (`'microservice' | 'no-op'` — `'ses'` was narrowed out in T-10), so the
  * `default` branch is unreachable through the type system alone — the
  * `exhaustiveCheck: never` assignment is what makes the compiler enforce
  * that every member of the union is handled above. But `getMailTransportKind()`
@@ -46,9 +45,6 @@ export function getMailTransport(): MailTransport {
   if (!transport) {
     const kind: MailTransportKind = getMailTransportKind();
     switch (kind) {
-      case 'ses':
-        transport = new SesMailTransport();
-        break;
       case 'microservice':
         transport = new MicroserviceMailTransport();
         break;

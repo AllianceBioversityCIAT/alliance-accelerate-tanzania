@@ -11,8 +11,8 @@ export interface RecordedSend {
  * T-3 — no-op transport (NFR-10, design.md §4.9).
  *
  * `send()` records that an attempt was made and resolves successfully
- * WITHOUT constructing an SES client, opening a network connection, or
- * touching any credential — zero bytes leave the process. This is what makes
+ * WITHOUT opening a connection to the mail broker, or touching any
+ * credential — zero bytes leave the process. This is what makes
  * "email disabled" a runnable configuration rather than a thought
  * experiment: selecting `MAIL_TRANSPORT=no-op` must make the applicant flow
  * complete exactly as if mail had been sent, with nothing actually sent.

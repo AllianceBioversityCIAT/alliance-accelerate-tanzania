@@ -31,7 +31,7 @@
  * the case `CONTACT_FALLBACK_RECIPIENT` exists for, and the mail transport
  * downstream adds no guard against an empty `to` list (design.md §4.6 / the
  * T-1 review forward pointer), so this resolver is the only thing standing
- * between an empty group and a malformed SES call.
+ * between an empty group and a malformed mail-transport call.
  *
  * The degradation (empty group or directory failure) is logged with no
  * requester field value and no recipient address — the log line names only
@@ -43,7 +43,7 @@
  *
  * `CONTACT_FALLBACK_RECIPIENT` is resolved lazily, at first use — inside
  * {@link getFallback}, only when `resolve()`'s fallback path is actually
- * reached — never at module initialization. This follows `getSesMailConfig()`
+ * reached — never at module initialization. This follows `getMailTransportKind()`
  * (`mail/mail.config.ts`): "Resolved lazily … not at module init, so a
  * checkout without `MAIL_TRANSPORT` set can still boot and serve every other
  * route." The same pattern holds in `auth/auth.config.ts` and
@@ -145,7 +145,7 @@ export class AdminRecipientResolver {
   /**
    * The configured fallback address — resolved lazily, at first use, only
    * when `resolve()`'s fallback path is actually reached (an empty `admin`
-   * group or a directory failure). Mirrors `getSesMailConfig()`'s
+   * group or a directory failure). Mirrors `getMailTransportKind()`'s
    * `required()` helper (`mail/mail.config.ts`): never validated at module
    * init, so a checkout without `CONTACT_FALLBACK_RECIPIENT` set can still
    * boot `AppModule` and serve every other route. Throws a clear error here,

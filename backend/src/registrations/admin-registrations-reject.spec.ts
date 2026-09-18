@@ -377,7 +377,7 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
     it('a notification failure does not reject reject() — fire-and-forget, logged by error class name only', async () => {
       const tx = buildRejectTx();
       wireRejectTransaction(tx);
-      mailService.sendRejection.mockRejectedValueOnce(new Error('SES unavailable'));
+      mailService.sendRejection.mockRejectedValueOnce(new Error('mail transport unavailable'));
 
       await expect(
         service.reject('reg-reject-1', REASON as never, ACTING_SUB),

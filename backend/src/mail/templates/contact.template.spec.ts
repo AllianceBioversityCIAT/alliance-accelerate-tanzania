@@ -23,12 +23,13 @@
  *    body — a test that would fail if stripping were reinstated — and a
  *    `message` shaped like a header-injection attempt is asserted to be
  *    harmless anyway, because it lands only in the rendered body text
- *    and never touches `to`, `subject`, or `replyTo`;
+ *    and never touches `to` or `subject` (the template's only two headers,
+ *    now that `replyTo` is gone — enhancement/email-notification-
+ *    microservice T-11, DD-7);
  *  - the empty-vs-absent-organization assertion compares the two renders
  *    for byte-for-byte equality, not merely "no crash".
  */
 import { buildContactMessage, CONTACT_PROVENANCE_LINE, CONTACT_SUBJECT, ContactSubmissionData } from './contact.template';
-import { composeReplyTo } from '../../contact/reply-to.util';
 
 function baseData(overrides: Partial<ContactSubmissionData> = {}): ContactSubmissionData {
   return {
@@ -186,18 +187,16 @@ describe('buildContactMessage (design.md §4.5, FR-4)', () => {
 
       // The payload survives verbatim as body text — proving newlines here
       // are just body structure, not a header-assembly opportunity: this
-      // function returns a flat { to, subject, text, replyTo } MailMessage,
-      // so `message` has no route into any header field but `text`.
+      // function returns a flat { to, subject, text } MailMessage, so
+      // `message` has no route into any header field but `text`.
       expect(result.text).toContain(payload);
       const bodyLines = result.text.split(/\r\n|\r|\n/);
       expect(bodyLines).toContain('Bcc: evil@example.com');
 
       // The only real headers this template produces are untouched by the
-      // payload: `to` is passed through, `subject` is the fixed constant,
-      // and `replyTo` is composed from name/email only — never from `message`.
+      // payload: `to` is passed through, `subject` is the fixed constant.
       expect(result.to).toBe('admin@example.org');
       expect(result.subject).toBe(CONTACT_SUBJECT);
-      expect(result.replyTo).toBe(composeReplyTo(baseData().name, baseData().email));
     });
   });
 
@@ -216,21 +215,6 @@ describe('buildContactMessage (design.md §4.5, FR-4)', () => {
     it('still renders the Organization label when a non-empty value is supplied', () => {
       const result = buildContactMessage('admin@example.org', baseData({ organization: 'Acme Cooperative' }));
       expect(result.text).toContain('Organization: Acme Cooperative');
-    });
-  });
-
-  describe('Reply-To composed via T-2\'s composeReplyTo, not reimplemented', () => {
-    it('matches composeReplyTo\'s own output for the same name and address', () => {
-      const data = baseData({ name: 'Jane Requester', email: 'jane@example.org' });
-      const result = buildContactMessage('admin@example.org', data);
-      expect(result.replyTo).toBe(composeReplyTo('Jane Requester', 'jane@example.org'));
-      expect(result.replyTo).toBe('Jane Requester <jane@example.org>');
-    });
-
-    it('delegates non-ASCII / quoting-trigger names to composeReplyTo unchanged', () => {
-      const data = baseData({ name: 'José "El Jefe" Örg', email: 'jose@example.org' });
-      const result = buildContactMessage('admin@example.org', data);
-      expect(result.replyTo).toBe(composeReplyTo('José "El Jefe" Örg', 'jose@example.org'));
     });
   });
 });
