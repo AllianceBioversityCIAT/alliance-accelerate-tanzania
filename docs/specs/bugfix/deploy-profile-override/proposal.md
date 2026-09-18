@@ -1,5 +1,15 @@
 # Proposal — Deploy scripts silently honour an ambient `AWS_PROFILE`
 
+> ⚠️ **SUPERSEDED 2026-09-18 — do not execute this proposal.**
+> Absorbed into **`docs/specs/bugfix/deploy-script-guardrails/`**, which specifies this
+> bug (ATP-65) together with ATP-64: both are the same root cause — `${VAR:-default}`
+> making a safety value a fallback rather than a floor — in the same header block of
+> `infra/scripts/deploy.sh`.
+> **Two claims below are now stale:** §6 defers to **OQ-INFRA-2** (CI/CD), which
+> landed 2026-09-01 (`785f079`); and the script count is **seven**, not ~6.
+> The successor's §5 records the full delta. Kept as the historical record of the
+> 2026-07-09 and 2026-08-07 incidents, which remain accurate.
+
 ## 1. Document Control
 
 | Field | Value |
