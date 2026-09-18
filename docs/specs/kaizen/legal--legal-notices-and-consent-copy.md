@@ -5,7 +5,7 @@
 | Spec | `docs/specs/archive/2026-09-15-legal--legal-notices-and-consent-copy/` |
 | Date | 2026-09-15 |
 | Branch Context | **spec branch** (`feat/legal-notices` ≠ `main`, resolved by fact against the `Default Branch:` pin, not by fallback) |
-| Status | Recorded. All shared-file edits below are **pending** the apply phase on the default branch. |
+| Status | **Applied 2026-09-18** on `main`, via an isolated `git worktree` (the checkout was occupied by another branch). All ten items below are drained; the table is kept as the record of what was written and why. |
 
 ## Measure
 
@@ -59,7 +59,7 @@ This is KZ-012's recorded countermeasure applied a second time with the same res
 
 ## Pending Items
 
-All await the apply phase on the **default branch**. Nothing below was written.
+~~All await the apply phase on the default branch.~~ **All applied 2026-09-18.** P-10 required no edit: ADR-014 was already written at T-10 and re-verified free across all twelve remote branches before the PR merged.
 
 | # | Kind | Target | Severity | Content |
 |---|---|---|---|---|

@@ -67,9 +67,15 @@ Children of this file. A module gets a child guide only when its conventions gen
 
 Mirrored for other tools by `backend/AGENTS.md` / `frontend/AGENTS.md`.
 
+## Validation dispatch
+
+**Sequential per-task Reviewers cannot see a cross-task claim.** Each audits a diff against its own task, which is the right scope and the reason they miss anything that is *not* a defect in a diff — a stale baseline, a closure claim that does not close, a ledger describing a different run than the one it recorded. One spec shipped seven Reviewer PASSes and still carried four blocking findings of that kind (`legal/legal-notices-and-consent-copy`).
+
+Before archiving, run **validators scoped by dimension, in parallel, each explicitly told not to defer to the Leader's framing.** Three dimensions that earned their keep: clause-level coverage closure across the whole spec · mutual consistency of the spec's decisions · every factual claim in the spec documents checked against the code. This is KZ-012's countermeasure, and it works because it is **structural** — an author cannot audit their own closure claim, however carefully they read.
+
 ## Spec taxonomy under `docs/specs/`
 - `general-setup/` — methodology templates (this baseline).
-- `<domain>/<feature-slug>/` — feature specs (e.g. `actors/`, `seed-map/`, `import-export/`).
+- `<domain>/<feature-slug>/` — feature specs (e.g. `actors/`, `seed-map/`, `import-export/`, `legal/`).
 - Use `enhancement/`, `bugfix/`, or `epic/` prefixes when a change is not a new domain feature.
 - `archive/<YYYY-MM-DD>-<domain>--<slug>/` — completed, archived specs (frozen records).
 
