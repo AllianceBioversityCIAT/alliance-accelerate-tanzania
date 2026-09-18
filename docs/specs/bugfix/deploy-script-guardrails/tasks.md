@@ -18,7 +18,7 @@
 
 ## Tasks
 
-- [ ] **T-1 Build the test harness** (deps: none)
+- [x] **T-1 Build the test harness** (deps: none)
       Scope: `run-tests.sh` (runner + one assertion helper + summary), the stub-`PATH` machinery, and fixture stubs for the **network-capable set only** — `aws`, `curl`, `sam`, `npm`, `npx`. Two kinds: **guard-unit** (sources the library in a subshell) and **script-integration** (runs whole scripts with the stub `PATH`, `SKIP_MIGRATE_PAUSE=yes`, stdin `</dev/null`). No fixture HTTP server; no stubbing of `awk`/`grep`/`sed`/`dirname`/`jq`.
       Traces: NFR-1, NFR-2, `design.md` §7.2
       Files: `infra/scripts/tests/run-tests.sh`, `infra/scripts/tests/stubs/*`, `infra/scripts/tests/cases/*`
