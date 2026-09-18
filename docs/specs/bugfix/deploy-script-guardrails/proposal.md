@@ -12,6 +12,7 @@
 | Status | Draft — awaiting `/akili-specify` (Bug Mode) |
 | **Parallel-safe** | **no** — see §11, sequencing against PR #75 |
 | Depends on | PR #75 (`email-ms-phase-b`) for T-1 and T-3 only; T-2 is free |
+| Jenkinsfile | Reviewed 2026-09-18 from an operator-supplied copy (§4.6). **OQ-2 resolved — T-1 unblocked** |
 | Suggested depth | **Lite** |
 | Jira | **ATP-64** (CORS) + **ATP-65** (AWS profile) |
 | Supersedes | `docs/specs/bugfix/deploy-profile-override/proposal.md` (ATP-65, 2026-08-07) — absorbed here, §5 below records what changed since |
@@ -38,10 +39,10 @@ That single event re-scopes both tickets identically:
 
 | | Filed as | Actually is, since 2026-09-01 |
 |---|---|---|
-| ATP-64 | Every backend redeploy reopens CORS | Only a manual bootstrap run does; the pipeline resolves the live origin |
+| ATP-64 | Every backend redeploy reopens CORS | **Partly true, and not only manually** — the pipeline resolves the live origin on its happy path, but fails open on a transient AWS error (§4.6) |
 | ATP-65 | Every deploy can target the wrong account | Only a manual run can; the pipeline carries its own credentials |
 
-Neither defect is fixed. Both are **latent on a fallback path** rather than active on the main one. One spec, one severity conversation, one set of guardrails for one path.
+Neither defect is fixed. ATP-65 is latent on a fallback path. **ATP-64 is not** — reading the Jenkinsfile (§4.6) shows the same mechanism alive in the pipeline's steady-state stage. One spec, one severity conversation, one set of guardrails.
 
 ## 4. Bug Diagnosis
 
@@ -70,9 +71,18 @@ validate.sh:26  set-cors.sh:40  migrate-seed.sh:36  deploy-frontend.sh:53
 deploy.sh:46    teardown.sh:48  smoke.sh:71
 ```
 
-`deploy-frontend.sh` is the sharp case and is already called out in root `CLAUDE.md`: it parses no flags at all, so a `--profile` argument is silently ignored and the ambient profile wins outright.
+**Two of the seven already carry the guard**, which changes the shape of the fix — the pattern does not have to be invented, only applied:
 
-### 4.4 Current live state — the ATP-64 exposure has closed
+| Script | Profile guard |
+|---|---|
+| `migrate-seed.sh`, `teardown.sh` | ✅ warn, then require `CONFIRM=yes` or an interactive `yes`; abort on a non-TTY |
+| `deploy.sh`, `deploy-frontend.sh`, `set-cors.sh`, `smoke.sh`, `validate.sh` | ❌ none |
+
+**The distribution is exactly backwards from the incident record.** The two guarded scripts are the ones that mutate the database and delete stacks — guarded, reasonably, because they are frightening. The two that actually caused the 2026-07-09 and 2026-08-07 incidents, `deploy.sh` and `deploy-frontend.sh`, are unguarded. `deploy-frontend.sh` is the sharp case and root `CLAUDE.md` already calls it out: it parses no flags at all, so a `--profile` argument is silently ignored and the ambient profile wins outright.
+
+Note also what the existing guard checks: the **profile name**, never the account id. It would have caught `MELIA-DEV`; it would not catch an `IBD-DEV` profile repointed at another account. Constraint 3 in §6 remains unmet by the existing pattern.
+
+### 4.4 Current live state — the observed ATP-64 exposure has closed
 
 Verified 2026-09-18 against the live dev stack:
 
@@ -87,9 +97,80 @@ and confirmed over the wire, so this is behaviour and not only a stack parameter
 | `https://evil.example.com` | `204`, **no** `access-control-allow-origin` — rejected |
 | `https://d3idqvvg0xa1r7.cloudfront.net` | `204` + `access-control-allow-origin` echoing that origin — allowed |
 
-**ATP-64 §3 ("dev is open right now") is withdrawn.** Recorded on the ticket 2026-09-18, with a suggested priority move High → Medium. The defect stands; the exposure does not.
+**ATP-64 §3 ("dev is open right now") is withdrawn as an observation.** Recorded on the ticket 2026-09-18. The defect stands; the observed open state does not.
+
+⚠️ **Do not read this as "the mechanism is gone."** §4.6 shows the pipeline can re-open CORS on its own, so this locked reading is the current state of the stack, not a property of the system.
 
 Note what this costs the spec: **the live stack is now the *correct* state, so it can no longer serve as the red evidence for a regression test.** That is a design constraint on T-2, not a footnote — see §7.
+
+## 4.6 Jenkinsfile review (2026-09-18) — the pipeline is not exempt
+
+The `Jenkinsfile` is not versioned in this repository, so every prior statement about pipeline behaviour — including the one in `docs/infrastructure.md` §3 — was written without reading it. An operator supplied a copy on 2026-09-18. Reviewing it settles OQ-2 and **overturns one conclusion this proposal carried in its first draft**.
+
+### OQ-2: answered — the guard is safe
+
+The pipeline sets `AWS_PROFILE = 'IBD-DEV'` at the top-level `environment` block, and its `AWS Auth` stage materializes a real named profile file (`writeIbdDevProfile()`) before verifying it against `sts get-caller-identity`. The Jenkinsfile's own header explains why a *file* is required: a named profile cannot be satisfied by environment credentials alone.
+
+A guard requiring `AWS_PROFILE == IBD-DEV` therefore **passes in the pipeline**. It is aligned with what the pipeline already does deliberately — the Jenkinsfile comments the `deploy-frontend.sh` flag-parsing hazard by name. **T-1 is unblocked.**
+
+### The correction: ATP-64's mechanism is live in the pipeline
+
+The steady-state `Deploy Backend` stage — the one that runs on **every ordinary merge to `main`** (`when DEPLOY_INFRA == 'false'`) — resolves the origin like this:
+
+```bash
+ALLOWED_ORIGIN="$(
+  aws cloudformation describe-stacks --stack-name "${FRONTEND_STACK}" \
+    --query "...CloudFrontUrl..." --output text --profile IBD-DEV ... 2>/dev/null || true
+)"
+if [ -z "${ALLOWED_ORIGIN}" ] || [ "${ALLOWED_ORIGIN}" = "None" ]; then
+    echo "▸ Frontend stack has no CloudFrontUrl yet — bootstrapping CORS as '*'"
+    ALLOWED_ORIGIN='*'
+fi
+```
+
+`2>/dev/null || true` **conflates "the stack does not exist" with "the call failed."** An expired token, a throttle, or an IAM denial produces the same empty string as a genuinely absent stack. The stage then deploys `AllowedOrigin=*` to the live backend and narrates it as a routine bootstrap.
+
+What makes it silent is the combination:
+
+| Step | Behaviour |
+|---|---|
+| 1 | A transient `describe-stacks` failure yields an empty origin |
+| 2 | `sam deploy` writes `AllowedOrigin=*` to the live backend and succeeds |
+| 3 | `Lock CORS` **does not run** — it is gated `when DEPLOY_INFRA == 'true'`, and this is the `false` path |
+| 4 | `Smoke` **passes** — this is ATP-64 §2, the missing CORS assertion, doing exactly what the ticket predicted |
+| 5 | CORS stays open until some later deploy happens to succeed at step 1 |
+
+**This repository has already fixed this exact bug, elsewhere.** During `email-notification-microservice` Phase B, `set-cors.sh` and `deploy.sh` were given a comment block that names the defect precisely:
+
+> *"Separate 'the describe-stacks CALL failed' from 'the stack does not exist yet' — they are not the same thing. An expired SSO token, a throttle, or an IAM denial also makes the query come back empty, and empty was previously indistinguishable from 'not found' (`2>/dev/null || true` swallowed both)."*
+
+The Jenkinsfile never received that lesson, because it is not in the repository to be swept. That is **KZ-004** (grep the withdrawn premise, not the superseded value) hitting a file no grep of this repo can reach.
+
+### Consequence: a baseline document is overstated
+
+`docs/infrastructure.md` §3 currently asserts:
+
+> *"**CORS is safe across pipeline deploys.** … The `deploy.sh` defect tracked in **ATP-64** therefore affects **manual** runs, not the pipeline."*
+
+That is true of the happy path and false of the failure path. It is an **unverifiable claim that was recorded as fact** — precisely **KZ-011** (no gate verifies the spec is *true*) and **KZ-008** (an assertion about an artefact nobody opened). Correcting it moves into T-3 scope, and the correction is narrow: the pipeline resolves the origin correctly *when the resolution succeeds*, and fails open when it does not.
+
+**Severity consequence:** the earlier recommendation of High → Medium rested on "manual runs only," which is wrong. The downgrade may still be right — the trigger needs an AWS-side failure at one specific moment, and dev holds no real PII — but it must be argued from *low probability*, not from *no mechanism*. Re-recorded on the ticket.
+
+### Out of scope, and urgent: PR #75 will fail the pipeline
+
+Found while reading the same file. Not this spec's work, but it blocks the merge this spec is sequenced behind, so it belongs in writing:
+
+| Fact | Evidence |
+|---|---|
+| The live backend stack has `MailTransport = "ses"` | `describe-stacks`, 2026-09-18 |
+| PR #75 narrows the template to `AllowedValues: [microservice]` | `git show email-ms-phase-b:infra/20-backend/template.yaml` |
+| The `Deploy Backend` stage passes only `AllowedOrigin` and `DataAuthStackName` — **never `MailTransport`** | Jenkinsfile, `Deploy Backend` |
+| SAM sends `UsePreviousValue` for any parameter absent from `--parameter-overrides` | `deploy.sh`'s own comment block says so |
+| `infra/samconfig.toml` declares no `parameter_overrides` to supply it instead | grep |
+
+So the first pipeline run after PR #75 merges will re-submit `ses` as the previous value against a template that no longer accepts it, and **CloudFormation will reject the changeset.** The `Deploy Backend` stage throws and the build fails.
+
+The fix is small — the stage must pass `MailTransport=microservice` explicitly, or the value must be corrected on the live stack before the merge — but it is **outside this repository**, in a file only the Jenkins administrator can edit. Raise it before PR #75 merges, not after.
 
 ### 4.5 Impact and scope
 
@@ -190,7 +271,8 @@ PR #75 (`email-ms-phase-b`, open, merging soon) was diffed against `main` for ev
 ### Open questions
 
 - **OQ-1** — Shared helper (`infra/scripts/_lib.sh`) or seven inline guards? A helper is less drift and one place to test; it is also a new file every script must source, which is a larger diff than the bug warrants. Recommend the helper; confirm at specify.
-- **OQ-2** — Does the Jenkins pipeline export an `AWS_PROFILE`? The Jenkinsfile is not in this repo, so a guard that aborts on divergence **could break the pipeline**. Must be answered before T-1 is written, not after it ships.
+- ~~**OQ-2** — Does the Jenkins pipeline export an `AWS_PROFILE`?~~ **Answered 2026-09-18 (§4.6): yes, `IBD-DEV`, materialized as a real profile file. The guard is safe; T-1 is unblocked.**
+- **OQ-3** *(new, §4.6)* — The `Deploy Backend` stage's own fail-open `2>/dev/null || true` is the same defect as T-1's, in a file this repository cannot change. Does T-3 amend `docs/infrastructure.md` only, or does this spec also produce a patch to hand the Jenkins administrator? Recommend the latter — a documented defect in an unversioned file is a defect nobody owns.
 
 ## 12. Approach options
 
@@ -233,4 +315,7 @@ T-2 first is the point, not an ordering convenience: it is the only task whose r
 /akili-specify bugfix/deploy-script-guardrails
 ```
 
-Bug Mode. **Answer OQ-2 before T-1 is written** — a guard that aborts on a profile mismatch is a guard that can break the pipeline, and the Jenkinsfile cannot be read from this repository.
+Bug Mode. OQ-2 is answered and T-1 is unblocked (§4.6). Two things to carry in:
+
+1. **T-3 grew.** It must correct `docs/infrastructure.md` §3's "CORS is safe across pipeline deploys", which §4.6 shows is true only of the happy path.
+2. **Not this spec, but blocking its sequence:** PR #75 will fail the pipeline's `Deploy Backend` stage on its first run (§4.6, last table). Raise with the Jenkins administrator before that merge.
