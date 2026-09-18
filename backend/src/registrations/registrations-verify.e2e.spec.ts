@@ -96,15 +96,21 @@ describe('POST /registrations/verify (T-8)', () => {
   //
   // **Real wall-clock cost, not throttle budget:** every request that
   // reaches `RegistrationsService.requestVerificationCode` now pays
-  // `VERIFICATION_CODE_RESPONSE_FLOOR_MS` (2000 ms, re-derived by T-7 —
-  // `design.md` DD-10, §12.1 — composed from `VERIFICATION_CODE_
-  // PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS`, no longer the earlier
-  // `fix/otp-mail-lambda-freeze` figure of 900 ms) of real time before
-  // responding — this file uses the app's real HTTP stack, not the unit
-  // suite's fake timers, so that time is genuinely spent. ~11 padded
-  // requests × 2000 ms is ~22 seconds added across this file's run — spread
-  // over several `it` blocks, at most 3 padded requests (~6 s) in any ONE
-  // test, well inside `testTimeout: 20000` per test (`package.json`).
+  // `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of real time before responding —
+  // this file uses the app's real HTTP stack, not the unit suite's fake
+  // timers, so that time is genuinely spent. ⚠️ *Stale value swept
+  // 2026-09-17: this comment used to hardcode "2000 ms, composed from
+  // PRESEND_ALLOWANCE + SEND_TIMEOUT" — already wrong once (T-7's
+  // measurement pass, 2026-09-16, had already moved it to 3800) before F4
+  // (2026-09-17) added a third term and moved it again. See `design.md`
+  // §12.1 for the CURRENT value, deliberately not restated here — this is
+  // exactly the second-home pattern §12 exists to prevent, demonstrated a
+  // third time in this one file.* ~11 padded requests across this file's
+  // run, spread over several `it` blocks, at most 3 padded requests in any
+  // ONE test — with §12.1's current floor, that is comfortably inside
+  // `testTimeout: 20000` per test (`package.json`); re-check this margin
+  // against §12.1 whenever the floor changes again, since it is arithmetic
+  // over a value this file does not own.
   beforeAll(async () => {
     issueCodeMock = jest.fn();
     sendMock = jest.fn().mockResolvedValue(undefined);
@@ -352,8 +358,9 @@ describe('POST /registrations/verify (T-8)', () => {
           // "Comparable", not identical — a real HTTP round trip carries
           // scheduler/GC jitter the unit suite's fake timers do not. A wide
           // but still meaningful bound: within 300 ms of each other, versus
-          // the multi-second gap an UNPADDED SES round trip could otherwise
-          // add to only the accepted path (the exact oracle FR-4 forbids).
+          // the multi-second gap an UNPADDED mail-transport round trip could
+          // otherwise add to only the accepted path (the exact oracle FR-4
+          // forbids).
           expect(Math.abs(rateLimitedElapsedMs - acceptedElapsedMs)).toBeLessThan(300);
         },
       );

@@ -6,8 +6,9 @@
  * The only caller-facing surface of the `mail` module. Each method builds a
  * message from its `templates/*.template.ts` function and dispatches it
  * through whichever `MailTransport` `MAIL_TRANSPORT` selects
- * (`mail-transport.factory.ts`) — SES or no-op. Callers cannot tell which is
- * selected except by observing whether bytes left the process.
+ * (`mail-transport.factory.ts`) — the notification microservice or no-op.
+ * Callers cannot tell which is selected except by observing whether bytes
+ * left the process.
  *
  * 3b's decision-notice templates (approval, rejection) slot in the same way:
  * add a `sendApproval`/`sendRejection` method + template function, both
@@ -80,8 +81,8 @@ export class MailService {
 
   /**
    * contact/contact-channels FR-2, FR-4 — dispatch an already-rendered
-   * contact-form message (recipients, `replyTo`, subject and body all built
-   * by the caller). Rethrows unchanged on transport failure, same as every
+   * contact-form message (recipients, subject and body all built by the
+   * caller). Rethrows unchanged on transport failure, same as every
    * other `dispatch()` caller — the contact endpoint turns that rejection
    * into its `502` (design.md §4.6). Carries no `reference` (see class docblock).
    */

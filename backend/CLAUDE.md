@@ -28,8 +28,14 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 ## Users module — no-email credential handoff (intentional)
 
 - `users` create/reset deliberately do **NOT** send Cognito email (corporate
-  `@cgiar.org` deliverability + SES sandbox limits). Instead they SUPPRESS Cognito
-  mail and **return a one-time temporary password** for the admin to share
+  `@cgiar.org` deliverability, and the pool stays on `COGNITO_DEFAULT`
+  permanently post-`email-notification-microservice` —
+  `docs/specs/enhancement/email-notification-microservice/design.md` §11's
+  `10-data-auth/template.yaml` row + OQ-10, and that spec's
+  `requirements.md` §6 — because Cognito cannot publish to the notification
+  microservice without a `CustomEmailSender` trigger, which that same §6
+  records as **deferred**). Instead they
+  SUPPRESS Cognito mail and **return a one-time temporary password** for the admin to share
   out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
   `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
   `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a
@@ -46,7 +52,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 - Jest `testRegex` accepts `.spec.ts` AND `.e2e-spec.ts`; the **canonical e2e name is `*.e2e.spec.ts`** (a hyphen-named file once sat dead for weeks — see archived `bugfix/dead-e2e-tests`).
 - E2E harness pattern (`src/test/admin-actors-crud.e2e.spec.ts` is the reference): AppModule + in-memory Prisma mock override + `TestJwtAuthGuard` + the SAME shared bootstrap helpers as production (`createValidationPipe()`, `configureBodyParser`).
-- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npm run lint` (ESLint 9 flat config `eslint.config.mjs`).
+- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npx eslint "{src,test}/**/*.ts" --quiet` (ESLint 9 flat config `eslint.config.mjs`) — **not** `npm run lint`, which is `eslint --fix` (`package.json`) and mutates the diff under review (root `CLAUDE.md` § Verification commands).
 
 ## Import template
 

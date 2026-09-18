@@ -39,8 +39,9 @@
  * intended mitigation) did not prevent it, because this handler is
  * `async` — Lambda settles the invocation when the RETURNED PROMISE
  * resolves, not via the callback that flag governs (see `lambda.ts` for
- * the corrected account of why). SES permissions were also broken until
- * shortly before this fix; fixing them turned a loud, fast `AccessDenied`
+ * the corrected account of why). SES — then the active transport — had
+ * permissions that were also broken until shortly before this fix; fixing
+ * them turned a loud, fast `AccessDenied`
  * (logged inside the pre-freeze window) into this silent one — the freeze
  * was always there, masked by an unrelated failure until it wasn't.
  *
@@ -52,7 +53,11 @@
  * the other. That reopens the oracle the original fire-and-forget design
  * existed to close: absent a compensating change, the accepted path would
  * again run measurably slower than the rate-limited one, because only the
- * accepted path pays the SES round trip. {@link
+ * accepted path pays the mail-transport round trip (SES, at the time this
+ * paragraph was written; T-10 has since deleted that transport, and the
+ * round trip is now against the notification microservice — the timing
+ * property this paragraph reasons about is unaffected by which transport
+ * is live). {@link
  * VERIFICATION_CODE_RESPONSE_FLOOR_MS} is that compensating change — BOTH
  * the rate-limited early return and the send-awaited return pad to the
  * same fixed floor, measured from this method's own entry, before the
@@ -88,10 +93,14 @@
  * send is even attempted, and a later revision of this file's own history
  * shipped precisely that gap (`1500 + ~500 > 1800`, found in review before
  * it reached production). {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS} is
- * now COMPOSED at runtime from two independently-enforced bounds rather
- * than reasoned from one incident's figure — see that constant's own
- * docblock for the current derivation, and `mail/mail-timing.ts` for the
- * single home of the inputs.
+ * now COMPOSED at runtime from every independently-enforced bound inside
+ * the padded window rather than reasoned from one incident's figure — see
+ * that constant's own docblock for the current derivation and term count
+ * (⚠️ *deliberately not stated as a number here: F4, 2026-09-17, added a
+ * term this paragraph used to undercount as "two", and restating a count
+ * here is exactly the kind of second home that goes stale the next time
+ * it changes*), and `mail/mail-timing.ts` for the single home of the
+ * inputs.
  *
  * **The residual limitation, stated honestly — narrower than it used to
  * be, not yet closed.** T-7 bounds the PRE-SEND term ({@link
@@ -134,8 +143,8 @@
  *     branch pays over the over-cap branch is exactly one `INSERT`
  *     (`emailVerification.create`) plus in-memory CSPRNG generation and one
  *     HMAC-SHA-256 computation (`generateCode`/`hashCode`) — not a query
- *     whose cost scales with the address's history (see the O(1) reasoning
- *     below).
+ *     whose cost scales with the address's history (i.e. O(1) in that
+ *     history, not O(n)).
  * (b) **{@link VERIFICATION_CODE_PRESEND_ALLOWANCE_MS} is sized on the
  *     LARGER (accepted) branch** (its own docblock in `mail/mail-timing.ts`;
  *     DD-10 Consequences). The smaller, over-cap branch therefore carries
@@ -198,6 +207,7 @@ import {
 import { getOtpHmacSecret } from './email-verification.config';
 import { MailService } from '../mail/mail.service';
 import {
+  MAIL_LOCK_WAIT_TIMEOUT_MS,
   MAIL_SEND_TIMEOUT_MS,
   VERIFICATION_CODE_PRESEND_ALLOWANCE_MS,
 } from '../mail/mail-timing';
@@ -481,7 +491,7 @@ function lookupAttemptWindowStart(now: Date): Date {
  * (`1500 + ~500 > 1800`, caught in review, never in production).
  *
  * **Composed, not measured — this is DD-10's whole point.** The value is
- * the SUM of the two bounds that now run inside the padded window, both
+ * the SUM of the THREE bounds that now run inside the padded window, all
  * enforced at runtime and imported from `mail/mail-timing.ts` — the single
  * home for every value this spec introduces (§12) — never restated as a
  * literal here:
@@ -496,17 +506,29 @@ function lookupAttemptWindowStart(now: Date): Date {
  *     divergence this floor exists to erase (T-7 advisory A3, corrected
  *     during review from an earlier, insufficient "transaction timeout"
  *     plan).
+ *   - {@link MAIL_LOCK_WAIT_TIMEOUT_MS} — corrected during D-I's review
+ *     (F4). `MicroserviceMailTransport.send` acquires the module-scope
+ *     mutex BEFORE opening the `try` that races the rest of the send
+ *     against {@link MAIL_SEND_TIMEOUT_MS} (`microservice-mail.transport.ts`'s
+ *     own comment: that race is constructed "never around the
+ *     `mailSendMutex.acquire()` call above"). The lock wait is therefore
+ *     ADDITIVE to `MAIL_SEND_TIMEOUT_MS` from a caller's point of view, not
+ *     covered by it — a term this constant omitted until F4, which is why
+ *     the floor undershot the transport's real worst case by exactly this
+ *     term's value.
  *   - {@link MAIL_SEND_TIMEOUT_MS} — the transport's own deadline (T-6),
- *     both implementations.
+ *     the one real-sending transport.
  *
- * Composing the two IN CODE — rather than writing their sum as a literal —
- * is what makes §12.3 invariant 1 (`PRESEND_ALLOWANCE + SEND_TIMEOUT ≤
- * FLOOR`) hold BY CONSTRUCTION: raising either input raises this constant
- * with it, so the two can never silently drift apart the way the pre-T-7
- * `900` (and DD-10 revision 2's `1800`) both could, and once did.
+ * Composing all three IN CODE — rather than writing their sum as a literal —
+ * is what makes §12.3 invariant 1 (`PRESEND_ALLOWANCE + LOCK_WAIT +
+ * SEND_TIMEOUT ≤ FLOOR`) hold BY CONSTRUCTION: raising any input raises this
+ * constant with it, so the terms can never silently drift apart the way the
+ * pre-T-7 `900`, DD-10 revision 2's `1800`, and this floor's own pre-F4
+ * two-term sum (`3800`, undercounting the lock wait) all could, and each
+ * once did.
  */
 export const VERIFICATION_CODE_RESPONSE_FLOOR_MS =
-  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS;
+  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_LOCK_WAIT_TIMEOUT_MS + MAIL_SEND_TIMEOUT_MS;
 
 /**
  * Thrown by {@link withPreSendAllowance} when `issueCode(...)` has not
@@ -593,9 +615,19 @@ function withPreSendAllowance<T>(promise: Promise<T>): Promise<T> {
  * that method's own comment at its `throw err;`).
  *
  * T-7 (DD-10's "second signal, retained") — a NEGATIVE remainder means the
- * two bounded terms inside the padded window (the pre-send allowance, the
- * send timeout) together still ran longer than the composed floor. That
- * should not happen once both are genuinely enforced, but "should not" is
+ * bounded terms inside the padded window — see {@link
+ * VERIFICATION_CODE_RESPONSE_FLOOR_MS}'s own docblock for the current list
+ * and count, deliberately not restated here — together still ran longer
+ * than the composed floor. ⚠️ *This paragraph used to name exactly two
+ * terms ("the pre-send allowance, the send timeout"). F4 (2026-09-17)
+ * found and closed a real gap that lived inside that undercount:
+ * `MAIL_LOCK_WAIT_TIMEOUT_MS` was a real, timed term inside this same
+ * padded window, present in neither the composed floor nor this sentence,
+ * for the entire life of this function until F4 — the negative-remainder
+ * no-op just below is exactly the mechanism that would have absorbed that
+ * missing term silently, which is what made the omission a live
+ * timing-oracle risk rather than only a documentation gap.* That should
+ * not happen once every term is genuinely enforced, but "should not" is
  * not a gate: `logger.warn` makes a residual overrun OBSERVABLE — carrying
  * the overrun in ms and, deliberately, no address, since this fires on an
  * unauthenticated public path (design.md §4.10/§6.3: "Never logged: …
@@ -672,8 +704,8 @@ export class RegistrationsService {
     }
 
     // Awaited (fix/otp-mail-lambda-freeze — see the class doc for the
-    // production incident this reverses): the SES/no-op round trip is now
-    // part of this method's own awaited chain, so Lambda cannot freeze the
+    // production incident this reverses): the mail-transport/no-op round
+    // trip is now part of this method's own awaited chain, so Lambda cannot freeze the
     // container mid-send. Failure is still only logged, never surfaced to
     // the caller — a 202 has already been decided, and a notification
     // failure must never turn into a caller-visible error (design.md
@@ -683,24 +715,29 @@ export class RegistrationsService {
     // Rework attempt 2 (FAIL 1) — preserved intent, unchanged: this used
     // to log `err.message` — but `MailService.dispatch` rethrows a
     // transport failure UNCHANGED (`mail.service.ts`, deliberate — DD-9),
-    // and the AWS SDK's own `MessageRejected` error (thrown, in this
-    // repo's documented SES-sandbox configuration, for every unverified
-    // destination address — `ses-mail.transport.ts`, `backend/CLAUDE.md`)
-    // puts the destination address VERBATIM in its `message`. That made
-    // this the only `logger.*` call in `backend/src` that interpolates an
-    // unbounded value, and would have written the applicant's email to
-    // CloudWatch — a PII leak on an unauthenticated public path
-    // (design.md §4.10/§6.3: "Never logged: … email addresses"). It was
-    // also redundant: `MailService.dispatch` already logs a bounded
+    // and a transport rejection's message can carry the destination
+    // address VERBATIM — true of AWS SES's `MessageRejected` (this repo's
+    // former SES-sandbox configuration threw exactly that, for every
+    // unverified destination address) — and this `catch` cannot assume
+    // otherwise of any transport: `MicroserviceMailTransport` sanitizes its
+    // own escaping errors to fixed messages (design.md §4.4), but
+    // `MailService.dispatch` rethrows whatever it is handed, so no
+    // transport-specific list of "safe" error shapes is relied on here.
+    // Logging `err.message` made this the only `logger.*` call in `backend/src`
+    // that interpolates an unbounded value, and would have written the
+    // applicant's email to CloudWatch —
+    // a PII leak on an unauthenticated public path (design.md §4.10/§6.3:
+    // "Never logged: … email addresses"). It was also redundant:
+    // `MailService.dispatch` already logs a bounded
     // `kind=verification-code reference=n/a status=failed` outcome line
-    // before rethrowing. Logging only the error's CLASS NAME below (an SDK
-    // discriminator like `MessageRejected`/`AccessDenied`/`TimeoutError`,
-    // never its message) adds operationally-useful detail without
-    // reintroducing the leak — see `registrations.service.spec.ts` for the
-    // regression test asserting the emitted line never contains the
-    // address. That test is unchanged by this rework: it only moved from
-    // observing a `.catch()` callback to observing a `catch` block, the
-    // logged line itself is identical.
+    // before rethrowing. Logging only the error's CLASS NAME below (a
+    // discriminator like `MessageRejected`/`AccessDenied`/`TimeoutError`/
+    // `MicroserviceMailConnectionError`, never its message) adds
+    // operationally-useful detail without reintroducing the leak — see
+    // `registrations.service.spec.ts` for the regression test asserting
+    // the emitted line never contains the address. That test is unchanged
+    // by this rework: it only moved from observing a `.catch()` callback
+    // to observing a `catch` block, the logged line itself is identical.
     try {
       await this.mailService.sendVerificationCode(rawEmail, issued.code);
     } catch (err: unknown) {
@@ -802,10 +839,37 @@ export class RegistrationsService {
    * added `Registration` column cannot leak here because there is no
    * mapping step from the row to the response for it to leak through.
    *
-   * **Receipt mail dispatches AFTER commit, fire-and-forget (DD-9, FR-14).**
-   * Mirrors `requestVerificationCode`'s established pattern exactly: not
-   * awaited, failure logged by the error's class name only, reference only
-   * — never the address.
+   * **Receipt mail dispatches AFTER commit, AWAITED (D-I, DD-9, FR-14 —
+   * closed 2026-09-17).** Until this fix it was fire-and-forget
+   * (`void … .catch()`) and depended on `context.callbackWaitsForEmptyEventLoop`
+   * in `src/lambda.ts` to survive a container freeze after the `202` — a
+   * mechanism that async Lambda handlers never actually engage (see
+   * `lambda.ts`'s handler comment). That gap was observed in production,
+   * not theorised: CloudWatch on `/aws/lambda/accelerate-tz-dev-backend-api`
+   * (2026-09-17 15:21:54) carried a `mail send attempt kind=receipt
+   * reference=REG-2026-0006` line with **zero** matching `mail send
+   * outcome` lines — the attempt-without-outcome signature `MailService`'s
+   * two-line log shape exists to surface — intermittently, alongside sibling
+   * references (`REG-2026-0002`, `REG-2026-0003`) that DID log
+   * `status=sent`, exactly the pattern a race against container freeze
+   * produces. The fix now mirrors `requestVerificationCode`'s AWAITED
+   * pattern (own `try/catch`, failure logged by the error's class name
+   * only, reference only — never the address), and CONFORMS to DD-9
+   * (commit first, dispatch after, log on failure, never rethrow) rather
+   * than requiring any change to it. ONE deliberate difference from
+   * `requestVerificationCode`: no constant-time floor. That method's floor
+   * exists because response latency there would otherwise be an oracle for
+   * whether an address is already registered (FR-4 of the archived
+   * `actors/public-self-registration` spec); this method runs only after
+   * the applicant has already proved control of the address via OTP, so
+   * there is nothing left to enumerate and a floor would only add latency
+   * for no security gain. This await is bounded — not unbounded — by
+   * `MicroserviceMailTransport.send`'s own two deadlines: the lock-wait
+   * ({@link MAIL_LOCK_WAIT_TIMEOUT_MS}) it pays BEFORE opening the race,
+   * plus {@link MAIL_SEND_TIMEOUT_MS} for everything the race covers (see
+   * {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS}'s docblock, F4, for why the
+   * two are additive, not one covering the other) — no second timeout is
+   * layered on here.
    */
   async submitRegistration(dto: RegistrationCreateDto): Promise<RegistrationCreateResponse> {
     this.assertConsentAccepted(dto.consent);
@@ -818,6 +882,18 @@ export class RegistrationsService {
     const now = new Date();
     const submitterEmail = normalizeEmail(dto.email);
 
+    // **Rework attempt 3 (Reviewer A1) — the receipt dispatch is deliberately
+    // OUTSIDE this loop's try/catch, not merely placed last inside it.**
+    // `committedReference` is set ONLY once the write transaction below has
+    // actually committed, and the loop `break`s immediately after — so
+    // nothing past this point can re-enter `isReferenceCollisionError`'s
+    // `continue` (which would allocate and write a SECOND row for one
+    // submission) or its exhaustion `503` (which would tell an applicant
+    // whose registration already committed that it failed). This holds
+    // even if `dispatchReceiptEmail` ever stopped being total — today it
+    // is (its own `try/catch` never rethrows), but this loop no longer
+    // depends on that being true forever.
+    let committedReference: string | undefined;
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_REFERENCE_ALLOCATION_ATTEMPTS; attempt += 1) {
       try {
@@ -855,8 +931,8 @@ export class RegistrationsService {
           });
         });
 
-        this.dispatchReceiptEmail(submitterEmail, reference);
-        return { reference };
+        committedReference = reference;
+        break;
       } catch (err) {
         lastError = err;
         if (isReferenceCollisionError(err)) {
@@ -890,10 +966,19 @@ export class RegistrationsService {
       }
     }
 
-    // Unreachable (the loop above always either returns or throws), kept
-    // only so TypeScript's control-flow analysis sees every path return or
+    // Unreachable (the loop above always either `break`s with
+    // `committedReference` set, or throws), kept only so TypeScript's
+    // control-flow analysis sees every path either produce a reference or
     // throw.
-    throw lastError;
+    if (committedReference === undefined) {
+      throw lastError;
+    }
+
+    // Outside the loop's try/catch (A1, above): a failure here can no
+    // longer be misread as a reference collision and retried into a
+    // duplicate row, nor swallowed into the exhaustion `503`.
+    await this.dispatchReceiptEmail(submitterEmail, committedReference);
+    return { reference: committedReference };
   }
 
   /**
@@ -930,19 +1015,41 @@ export class RegistrationsService {
   }
 
   /**
-   * DD-9 / FR-14: dispatched only after the caller's transaction has
-   * committed, never awaited, and a failure is logged by the error's CLASS
-   * NAME only — see `requestVerificationCode`'s identical, already-reviewed
-   * pattern for why (a transport failure can embed the destination address
-   * verbatim in its message).
+   * D-I, DD-9, FR-14 (closed 2026-09-17): dispatched only after the
+   * caller's transaction has committed, and — since this fix — AWAITED,
+   * not fire-and-forget. A
+   * failure is logged by the error's CLASS NAME only and never rethrown:
+   * the submission has already committed by the time this runs, so a mail
+   * failure must never turn into a caller-visible error (see
+   * `submitRegistration`'s class doc for the production incident this
+   * closes, and `requestVerificationCode`'s identical, already-reviewed
+   * logging pattern for why the message itself is never logged — a
+   * transport rejection can embed the destination address verbatim).
+   *
+   * ⚠️ **Residual path, named rather than left implicit (Reviewer advisory,
+   * D-I round 2).** "Never rethrown" describes `mailService.sendReceipt`'s
+   * own rejection. It does NOT cover `this.logger.error(...)` on the line
+   * below itself throwing — Nest's `Logger` does not document that it
+   * cannot, and this method has no `try` around its own `catch` body. Were
+   * that ever to happen, the throw propagates out of this method and — per
+   * A1's structural placement, OUTSIDE `submitRegistration`'s retry-loop
+   * `try/catch` — straight out of `submitRegistration` itself, which would
+   * report an already-committed registration as a failed request. This is
+   * the one residual path by which "a mail failure must never fail the
+   * submission" could still break. Not fixed here (wrapping a logger call
+   * in its own `try/catch` to swallow a failure of the failure-logging path
+   * is a real but separate hardening decision, not implied by this fix's
+   * scope) — recorded so it is a known, named risk rather than a silent one.
    */
-  private dispatchReceiptEmail(to: string, reference: string): void {
-    void this.mailService.sendReceipt(to, reference).catch((err: unknown) => {
+  private async dispatchReceiptEmail(to: string, reference: string): Promise<void> {
+    try {
+      await this.mailService.sendReceipt(to, reference);
+    } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration receipt send failed: errorType=${errorType} reference=${reference}`,
       );
-    });
+    }
   }
 
   /**

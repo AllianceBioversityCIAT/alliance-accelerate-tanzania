@@ -1,5 +1,7 @@
 # Proposal — Registration Information Requests & Withdrawal
 
+> **Superseded-by note (2026-09-17):** the email transport this proposal assumes (Amazon SES — §5 Infra, §8, R-3) has been replaced by the OneCGIAR Notification Microservice; see `docs/specs/enhancement/email-notification-microservice/`. Re-read the SES-specific mechanics below against that spec before building on them. The replacement has no retry past the publish and no dead-letter queue (ADR-015; `design.md` D-H) — a message it fails to relay is simply lost, unobserved by this system — so R-3's do-not-depend-on-email-as-the-only-channel concern stands, not expires.
+
 ## 1. Document Control
 
 | Field | Value |

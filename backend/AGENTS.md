@@ -13,4 +13,4 @@ Tool-agnostic mirror of `backend/CLAUDE.md`. Child of the root `../AGENTS.md` �
 7. **Import template:** `common/template-columns.ts` is the single source of truth; regenerate the byte-stable asset with `npm run generate:template` and commit it; bump `TEMPLATE_VERSION` on column changes.
 8. **Deploy:** sam build/deploy from the BUILT template dir, preserving `AllowedOrigin`; every AWS command `--profile IBD-DEV`.
 
-Verification: `npm test` · `npm run build` · `npm run lint` (ESLint 9 flat config).
+Verification: `npm test` · `npm run build` · `npx eslint "{src,test}/**/*.ts" --quiet` (ESLint 9 flat config) — **not** `npm run lint`, which runs `eslint --fix` (`package.json`) and mutates files under review.

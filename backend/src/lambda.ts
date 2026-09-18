@@ -43,7 +43,8 @@ export const handler: Handler = async (event, context) => {
   // This silently killed the registration OTP (`fix/otp-mail-lambda-freeze`,
   // 2026-09-03): `RegistrationsService.requestVerificationCode` used to
   // dispatch `MailService.sendVerificationCode` fire-and-forget ON PURPOSE
-  // — awaiting SES would have made response latency an oracle for whether
+  // — awaiting SES (the transport at the time; deleted in Phase B) would
+  // have made response latency an oracle for whether
   // an address was recently used, which FR-4 (requirements.md:245) forbids
   // as a hard `AND IT MUST` — so the in-flight SES call was frozen mid-request
   // and lost, with its own `.catch()` never running either. Observed in
@@ -70,11 +71,34 @@ export const handler: Handler = async (event, context) => {
   // now AWAITS the send inside its own try/catch (padding both branches to
   // a constant-time floor to keep FR-4's timing property — see that
   // method's class doc), so the freeze this comment describes can no
-  // longer drop it. This flag remains load-bearing regardless:
-  // `AdminRegistrationsService`'s approval/rejection notices and
-  // `RegistrationsService.submitRegistration`'s receipt email are still
-  // dispatched fire-and-forget by design (DD-9), and depend on this flag to
-  // survive a freeze after their own `202`/response is written.
+  // longer drop it. `AdminRegistrationsService.dispatchApprovalEmail`/
+  // `dispatchRejectionEmail` got the same treatment and are AWAITED too —
+  // neither settles until its own send does, so neither depends on this
+  // flag any more.
+  //
+  // **`RegistrationsService.submitRegistration`'s receipt email closed the
+  // same way, 2026-09-17 (design.md D-I).** It was the one path this
+  // comment used to describe as still depending on this flag — and that
+  // dependency was exactly as ineffective here as it was for the OTP path
+  // above, for the identical reason (an async handler's completion is
+  // governed by its returned promise, not by this flag). Observed in
+  // production, not merely inferred: CloudWatch carried a `mail send
+  // attempt kind=receipt` line with zero matching outcome line, the same
+  // attempt-without-outcome signature that caught the OTP bug, and
+  // intermittently — the signature of a race against container freeze, not
+  // a deterministic failure. `dispatchReceiptEmail` now AWAITS
+  // `MailService.sendReceipt`, bounded by the transport's own
+  // `MAIL_SEND_TIMEOUT_MS` deadline, with no constant-time floor (this path
+  // runs after OTP verification, so there is no enumeration oracle left to
+  // protect).
+  //
+  // **This flag is therefore load-bearing for ZERO paths as of this fix.**
+  // Every mail dispatch in `backend/src` is now awaited before its caller's
+  // handler returns, so nothing here still depends on
+  // `callbackWaitsForEmptyEventLoop` to survive a freeze. It is left SET
+  // regardless — a harmless backstop for whatever future fire-and-forget
+  // work gets added — rather than removed, since removing it is a
+  // behaviour change with no motivating bug and is out of this fix's scope.
   context.callbackWaitsForEmptyEventLoop = true;
 
   if (!cachedHandler) {

@@ -43,51 +43,14 @@ Parameters:
     MinValue: 20
     MaxValue: 100
 
-  # ── Cognito email (SES) parameters — admin-user-invite-and-reset spec §7.1 ──
-  # Two-phase, reversible rollout gates. Defaults preserve today's
-  # COGNITO_DEFAULT mailer behavior (empty SenderEmail / EnableSesSending=false).
-  SenderEmail:
-    Type: String
-    Default: ""
-    Description: >-
-      Project-controlled SES sender address to verify (DEP-1). Empty keeps the
-      default Cognito mailer (COGNITO_DEFAULT) — a safe no-op.
-  EnableSesSending:
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
-    Description: >-
-      Phase-B gate. When "true" (and SenderEmail set), EmailConfiguration flips to
-      DEVELOPER (send through the verified SES identity). Kept "false" for Phase A.
+  # PortalUrl (admin-user-invite-and-reset spec §7.1) — still live: the admin
+  # portal base URL used in the invitation email CTA (/login is appended).
+  # Documented in infra/README.md §3 (Shared parameters).
   PortalUrl:
     Type: String
     Default: "https://d3idqvvg0xa1r7.cloudfront.net"
     Description: >-
       Admin portal base URL used in the invitation email CTA (/login is appended).
-  CreateSenderIdentity:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true", "false"]
-    Description: >-
-      Whether CloudFormation creates/owns the SES email-address identity for
-      SenderEmail. Set "false" when the identity is managed OUTSIDE this stack
-      (verified out-of-band, or a domain/DKIM identity) so CFN doesn't try to
-      re-create an existing identity (which fails with AlreadyExists). The
-      DEVELOPER EmailConfiguration still references the identity by ARN.
-
-# ── Conditions — gate the SES identity (Phase A) and the DEVELOPER switch
-#    (Phase B). The two-gate split enables the verify-then-configure rollout. ──
-Conditions:
-  # SenderEmail provided → the identity exists (managed here or out-of-band).
-  HasSender: !Not [!Equals [!Ref SenderEmail, ""]]
-  # Create the SES identity in THIS stack only when asked (Phase A, default).
-  MakeSenderIdentity: !And
-    - !Condition HasSender
-    - !Equals [!Ref CreateSenderIdentity, "true"]
-  # Sender provided AND sending explicitly enabled → DEVELOPER email config (Phase B).
-  UseSes: !And
-    - !Condition HasSender
-    - !Equals [!Ref EnableSesSending, "true"]
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -187,18 +150,6 @@ Resources:
   # URL for callback URLs, which doesn't exist yet. Anonymous callers map to the
   # Public role and are not modeled in Cognito.
 
-  # SES sender identity (admin-user-invite-and-reset §7.1). Created in Phase A
-  # when SenderEmail is provided; creating it triggers AWS's verification email
-  # (the identity resource reaches CREATE_COMPLETE immediately — verification is
-  # the async operator step, DEP-1). No identity-policy property exists on this
-  # resource; the Cognito sending-authorization policy is attached out-of-band via
-  # `aws ses put-identity-policy` (see ses-cognito-send-policy.json + runbook).
-  SesSenderIdentity:
-    Type: AWS::SES::EmailIdentity
-    Condition: MakeSenderIdentity
-    Properties:
-      EmailIdentity: !Ref SenderEmail
-
   # Email-based sign-in, self-managed by admins (no public self-signup - these
   # are internal staff/admin identities). Strong password policy per §6.
   UserPool:
@@ -211,16 +162,25 @@ Resources:
         - email
       AutoVerifiedAttributes:
         - email
-      # Route Cognito email through SES only in Phase B (UseSes). Unset →
-      # COGNITO_DEFAULT (today's behavior). §7.1: DEVELOPER sends from the verified
-      # project identity; requires the sending-authorization policy (attached
-      # out-of-band, see SesSenderIdentity comment).
-      EmailConfiguration: !If
-        - UseSes
-        - EmailSendingAccount: DEVELOPER
-          From: !Sub "ACCELERATE Seed Registry <${SenderEmail}>"
-          SourceArn: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderEmail}"
-        - !Ref "AWS::NoValue"
+      # SES teardown (FR-6, email-notification-microservice §7.1): the pool
+      # always uses Cognito's own mailer now. No SES identity, no DEVELOPER
+      # sending account, no verification/authorization step.
+      #
+      # Live consequence for /forgot-password (infra/README.md §6): it is
+      # the principal remaining consumer of VerificationMessageTemplate below.
+      # backend/src/users/users.service.ts's create() (MessageAction:
+      # 'SUPPRESS' + pre-verified email) and resetPassword() (AdminSetUserPassword,
+      # Permanent: false, no MessageAction, sends no mail) don't reach it;
+      # update()'s AdminUpdateUserAttributes sets no email_verified against an
+      # auto-verified pool and takes no MessageAction, so whether IT reaches
+      # this template is untested here. This repo has recorded (not
+      # independently re-measured here) that COGNITO_DEFAULT sends from the
+      # shared, rate-capped, poor-reputation `no-reply@verificationemail.com`,
+      # and that its HTML handling is more limited than SES's — the branded
+      # table below was tuned against SES, so it may render degraded under
+      # COGNITO_DEFAULT in some mail clients.
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
       # Admin-managed only: staff/admin accounts are created by an admin, never via
       # public self-signup (RBAC model - no anonymous registration).
       AdminCreateUserConfig:

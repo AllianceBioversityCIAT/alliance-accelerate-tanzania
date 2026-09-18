@@ -16,7 +16,7 @@
       Traces: NFR-7, NFR-1 · `design.md` §12, DD-10
       Files: `backend/src/mail/mail-timing.ts`, `backend/src/mail/mail-timing.spec.ts`
       Verify: `cd backend && npm test -- mail-timing --silent`
-      Done when: both §12.3 invariants are asserted (`PRESEND + SEND ≤ FLOOR`; `LOCK_WAIT + PROBE < SEND`), **and each has been shown to redden** by raising a term past its container and reverting.
+      Done when: both §12.3 invariants are asserted per `design.md` §12.3's current form (⚠️ *amended 2026-09-17: this line originally spelled out `PRESEND + SEND ≤ FLOOR` and `LOCK_WAIT + PROBE < SEND` — both pre-F4. F4 (2026-09-17) added a term to invariant 1 and removed one from invariant 2; the formulas are not restated here a second time, per §12's single-home rule*), **and each has been shown to redden** by raising a term past its container and reverting.
       Gate discriminates: mutate `MAIL_SEND_TIMEOUT_MS` to exceed the floor → test fails. Demonstrate before reporting.
       Skills: `nestjs-expert`
 
@@ -104,19 +104,19 @@
       1. ✅ **ESTABLISHED LOCALLY** — one real email **delivered** for each of the five kinds, to an address **never verified with AWS**. *(This was the criterion no unit test could replace, and it is the product blocker the whole change existed to remove.)* Re-confirm on the deployed stack only for the kinds the flip could plausibly change.
       2. ✅ **ESTABLISHED LOCALLY (D-G)** — HTML visually correct per kind after the microservice's `juice` pass; the sender renders as `ACCELERATE Tanzania Seed Registry - No reply`; the `TEST - ` environment prefix is present.
       3. ⬜ **STILL REQUIRED (D-F)** — a **cold → idle → warm** sequence on the deployed stack. **A laptop cannot establish this**: it does not freeze containers, and every local run was a fresh process.
-      4. ⬜ **STILL REQUIRED (D-I)** — the **receipt**, the one fire-and-forget kind, observed as delivered **after** its `202`. Also not reachable locally: the script awaits its send.
-      5. ⬜ **STILL REQUIRED, and now load-bearing for a decision** — cold **and warm** publish latency measured **from Lambda**, plus the accepted branch's pre-send p99. ⚠️ **Measure per kind, not once:** locally `contact` (the largest payload) was slowest on all three of its runs. These numbers are what **OQ-11** is deferred until — the choice between a 3.8 s OTP floor and connecting at Lambda init.
+      4. ⬜ **STILL REQUIRED (D-I)** — the **receipt** observed as delivered **after** its `201` (⚠️ *corrected 2026-09-17, round 5: this said `202` — that status belongs to `POST /registrations/verify`; `POST /registrations`, which triggers the receipt, returns Nest's implicit default `201` for `@Post()` with no `@HttpCode` — `registrations.controller.ts` confirms both. Pre-existing and spec-wide — `requirements.md`'s D-I row and `design.md` §10's T-9 row carry the same `202`, reported for a separate pass, not swept here*). ⚠️ *Amended 2026-09-17: it was "the one fire-and-forget kind" until D-I was found in production and closed by awaiting the send — so the freeze-drop mechanism this item was written against is gone. **The item is not.** Awaiting proves the broker confirmed the publish, never that the mail arrived; D-H (accepted then dropped at SMTP) has no other evidence anywhere, so this manual observation remains its only evidence. D-G (HTML after `juice`) is different — item 2 above already established it LOCALLY; what this item alone still owes D-G is confirmation on the DEPLOYED stack specifically, where the template resolution or environment prefix could behave differently than in a local script.*
+      5. ⬜ **STILL REQUIRED, and now load-bearing for a decision** — cold **and warm** publish latency measured **from Lambda**, plus the accepted branch's pre-send p99. ⚠️ **Measure per kind, not once:** locally `contact` (the largest payload) was slowest on all three of its runs. These numbers are what **OQ-11** is deferred until — the choice between the current OTP floor (`design.md` §12.1 — not restated here; it changed once already, 2026-09-17, after this line was written) and connecting at Lambda init.
       6. ⬜ **STILL REQUIRED** — no overrun warn line (T-7) under normal load.
       7. ⬜ **STILL REQUIRED** — artifact size measured after `sam build`, under 250 MB (NFR-5).
       8. ⬜ **STILL REQUIRED** — the Secrets Manager wiring: both dynamic references resolve into the running function's configuration. Verify with the **scoped** `--query` from `infra/README.md` §7, never a bare `get-function-configuration`.
-      ✅ **UNBLOCKED** — DEP-5 answered **DEV** (product owner, 2026-09-16). Non-PROD credentials also mean the microservice prepends `TEST - ` to every subject, which is itself a confirmation signal that the right key is in use.
+      ✅ **UNBLOCKED** — DEP-5 resolved, and the question was the wrong one: there is **only a PROD queue**; no DEV queue exists (product owner, 2026-09-16 — `requirements.md`'s DEP-5 row is the authority). ⚠️ *Corrected 2026-09-17: this line said "answered **DEV**" until the product-owner attribution sweep caught it. The conclusion (unblocked) was always right; the attributed answer was not, and the `TEST - ` marking below holds for a different reason than this line gave.* Non-PROD credentials also mean the microservice prepends `TEST - ` to every subject, which is itself a confirmation signal that the right key is in use.
       ⛔ **Phase B may not start until this task is `[x]`.**
 
 ---
 
 ## Phase B — remove (every task depends on T-9)
 
-- [ ] **T-10** Retire the SES transport  (deps: T-9)
+- [x] **T-10** Retire the SES transport  (deps: T-9)
       Scope: Narrow `MailTransportKind` to `'microservice' | 'no-op'`; delete `ses-mail.transport.ts` + spec; rewrite `mail.service.spec.ts`; drop `@aws-sdk/client-ses`; flip the parameter default **and pass it explicitly on deploy**.
       Traces: FR-3 (Phase-B clause), FR-6 · `design.md` §7.3
       Files: `backend/src/mail/{mail.config.ts,mail.config.spec.ts,mail-transport.factory.ts,ses-mail.transport.ts,ses-mail.transport.spec.ts,mail.service.spec.ts}`, `backend/package.json`, **`infra/scripts/deploy.sh`**, **`infra/scripts/set-cors.sh`**
@@ -125,14 +125,14 @@
       Done when: `'ses'` is rejected; `mail.service.spec.ts` no longer imports `SendEmailCommand`/`resetSesClient`/`aws-sdk-client-mock`; the build is green.
       ⚠️ A stack can retain `MailTransport=ses` through `UsePreviousValue` — the deploy **must** pass the parameter explicitly or every send throws with no deploy-time signal.
 
-- [ ] **T-11** Remove `replyTo` end-to-end  (deps: T-9)
+- [x] **T-11** Remove `replyTo` end-to-end  (deps: T-9)
       Scope: Drop the field from `MailMessage`; stop composing it; delete `reply-to.util.ts` + spec.
       Traces: FR-5 · `design.md` DD-7
       Files: `backend/src/mail/mail-transport.interface.ts`, `mail/templates/contact.template.ts` + spec, `contact/reply-to.util.ts` + spec, `contact/contact.service.spec.ts`
       Verify: `cd backend && npm test -- contact --silent && npm run build`
       Done when: **five** assertions removed (4 in `contact.template.spec.ts`, 1 in `contact.service.spec.ts`); the `MailMessage` literal in `mail.service.spec.ts` no longer sets it (a **TS excess-property error** otherwise); `contact.template.spec.ts`'s existing *"renders the requester address as body data"* assertion is cited as the surviving guarantee; **and `contact.service.spec.ts` gains a replacement** asserting the DTO's `email` reaches the rendered body — that deleted assertion is the only one in that suite pinning the DTO→template wiring.
 
-- [ ] **T-12** Re-state the contact endpoint's failure semantics  (deps: T-9)
+- [x] **T-12** Re-state the contact endpoint's failure semantics  (deps: T-9)
       Scope: `502` means **could not enqueue**, not could not deliver.
       Traces: FR-5 · `design.md` §3
       Files: `backend/src/contact/contact.service.ts`, `contact.e2e.spec.ts`
@@ -140,22 +140,25 @@
       Done when: `202` on confirm, `502` on publish failure, envelope byte-identical; no response, log line, or comment claims delivery (FR-5's `BUT`); no recipient address, requester field, broker URL or key in the envelope or logs (FR-5's `AND IT MUST`).
       Note: `ContactForm.tsx`'s *"has been sent"* copy is **OQ-7** and is out of scope until decided.
 
-- [ ] **T-13** Tear down the SES infrastructure  (deps: T-9)
+- [x] **T-13** Tear down the SES infrastructure  (deps: T-9)
       Scope: `10-data-auth` params/conditions/`SesSenderIdentity`/the `EmailConfiguration` `!If` → unconditional `COGNITO_DEFAULT`; delete `ses-cognito-send-policy.json` and `t9-enable-ses.sh` (128 lines); **remove `ses:SendEmail` from the Lambda execution role**; remove three statements / six actions from the developer policy.
       Traces: FR-6 · `design.md` §7.1
       Files: `infra/10-data-auth/{template.yaml,ses-cognito-send-policy.json,t9-enable-ses.sh}`, `infra/20-backend/template.yaml`, `infra/policies/developer-local-test-policy.json`
       Verify: `./infra/scripts/validate.sh`
       Done when: **seven** grants gone (six developer + one Lambda); all three stacks validate.
 
-- [ ] **T-14** Sweep the withdrawn premise across code and tests  (deps: T-9)
+- [x] **T-14** Sweep the withdrawn premise across code and tests  (deps: T-9)
       Scope: The **seven-plus** sites where a rationale rests on SES. Behavior changes nowhere; only the justification.
       Traces: FR-6's `BUT it must NOT` · `design.md` §11
       Files: `backend/src/registrations/{registrations.service.ts,registrations.service.spec.ts,admin-registrations.service.ts,admin-registrations-reject.spec.ts,admin-registrations.service.spec.ts,registrations-verify.e2e.spec.ts}`
       ⚠️ **Inherited from T-7's review (advisories A1/A2/A3) — doc-accuracy fixes in files you already own.** (1) `registrations.service.ts`: delete or re-target *"(see the O(1) reasoning below)"* — a dangling pointer to a string that appears nowhere else. (2) `registrations.service.spec.ts`: it names `mail/mail-timing.ts` as the floor constant's home, but **that file explicitly says it does not define it**; and its invariant test's name both restates `800 + 1200 ≤ 2000` (contra §12) and **overclaims** — a hardcoded `2000` keeps it green, so it gates invariant 1, not composition-in-code. Trim the name to what the assertion proves. (3) Same file: *"every test in this block … now runs through that pad"* is **false** — two tests reach the deliberately unpadded third exit, one of which T-7 itself added., `backend/src/contact/{contact.service.ts,contact.e2e.spec.ts,contact-no-writes.e2e.spec.ts,admin-recipient.resolver.ts}`, `backend/src/mail/{mail.module.ts,no-op-mail.transport.ts}`, `backend/src/test/pii-boundary.spec.ts`, `backend/src/lambda.ts`, `backend/CLAUDE.md`
-      Verify: `cd backend && npm test --silent` then `grep -rniE '\bSES\b|MessageRejected|sandbox|SendEmailCommand' backend/src | grep -v archive`
-      Done when: the sweep is empty; **`contact.e2e.spec.ts`'s third leak gate** is rebuilt on a transport-agnostic fixture; `lambda.ts`'s claim that approval/rejection are fire-and-forget is corrected (**they are awaited**; only the receipt is not); the `MessageRejected` rationale in `contact.service.ts` / `admin-registrations.service.ts` / `registrations.service.ts` is restated on grounds that survive — **those comments are why the two most sensitive log lines are written as they are, and T-5's sanitization depends on them**.
+      Verify: `cd backend && npm test --silent` then `grep -rniE '\bSES\b|MessageRejected|sandbox|SendEmailCommand|getSesClient|SesMailTransport|Message\.Body|SesClient|reply[-_]?to' backend/src | grep -v archive` **and** `grep -rnE '[a-zA-Z]Ses[A-Z]|Ses[A-Z][a-z]' backend/src`
+      ⚠️ **Widened 2026-09-17 (Phase B batch-1 rework, Issue 2).** The original four-term pattern has no word boundary around camelCase "Ses" (`getSesClient`, `SesMailTransport` slipped through — found instead by a Reviewer reading `microservice-mail.transport.ts:698` and `contact.template.ts:62` by eye) and no term at all for a bare SES API field path (`Message.Body.Text.Data`, no literal "SES" substring). Added `getSesClient|SesMailTransport|Message\.Body` — chosen because these are the two concrete miss classes just found, not a guess at future ones; re-widen again the next time a miss class is found rather than trying to anticipate it here.
+      ⚠️ **Widened again 2026-09-17 (Phase B batch-1 rework, attempt 3).** Same root cause, two more instances: `\bSES\b` under `-i` still only fires on an isolated "ses" as its own token, so `resetSesClient()` (`microservice-mail.transport.ts:390`) and `SESClient({ region })` (`mail-timing.ts:65`) both still had no camelCase/bare-API-name term to catch them — `SesClient` (the `-i` flag already folds the case variants, so no bracket classes are needed) closes that. A second family had **no term at all**: `replyTo` / `reply-to.util.ts` / `composeReplyTo`, all referencing an artifact T-11 deleted — `reply[-_]?to` catches the hyphen, camelCase **and underscore** spellings — the underscore class was found live at `microservice-mail.transport.ts`'s `reply_to` on 2026-09-17, which `reply-?to` missed. Checked against the current tree, not assumed: both new terms fire on their target lines (`microservice-mail.transport.ts:390`, `mail-timing.ts:65`, and the `contact.service.ts`/`mail-transport.interface.ts`/`contact.template.ts`/`contact.template.spec.ts` reply-to references) without narrowing anything the previous pattern already caught. Re-widen again the next time a miss class is found.
+      ⚠️ **Widened a third time 2026-09-17 (T-12 remediation follow-up).** Same root cause a third time: `getSesMailConfig()` — two dead present-tense citations in `admin-recipient.resolver.ts` (`:46`, `:148`) of a symbol T-10 deleted — matched none of the four enumerated terms (`\bSES\b` needs a token boundary; `SesClient`/`getSesClient` need "Client"; `SesMailTransport` needs the full name). The previous two widenings each enumerated the exact spelling just found, which is why a third slipped through the same way. Added a **shape-based** term instead of another enumerated spelling — `[a-zA-Z]Ses[A-Z]|Ses[A-Z][a-z]`, a camelCase-identifier shape that catches any `*Ses[A-Z]…` or `Ses[A-Z][a-z]…` token regardless of what follows — run alongside the existing pattern, not replacing it (the existing terms still catch `MessageRejected`, `sandbox`, `reply[-_]?to`, none of which are camelCase-Ses shapes). Checked against the current tree: fires on exactly the two `admin-recipient.resolver.ts` sites (now fixed) plus four already-correct past-tensed references in `microservice-mail.transport.ts` (`:316`, `:390`, `:691`, `:698`) that need no change.
+      Done when: the sweep is empty; **`contact.e2e.spec.ts`'s third leak gate** is rebuilt on a transport-agnostic fixture; `lambda.ts`'s claim that approval/rejection are fire-and-forget is corrected (**they are awaited** — and as of D-I, 2026-09-17, so is the receipt; `lambda.ts` was corrected in that fix); the `MessageRejected` rationale in `contact.service.ts` / `admin-registrations.service.ts` / `registrations.service.ts` is restated on grounds that survive — **those comments are why the two most sensitive log lines are written as they are, and T-5's sanitization depends on them**.
 
-- [ ] **T-15** Amend the TRD and author the ADR  (deps: T-9)
+- [x] **T-15** Amend the TRD and author the ADR  (deps: T-9)
       Scope: C4 §12.1 and §12.2; **ADR-015**; QA-13's SES-specific wording.
       Traces: FR-6's `AND IT MUST` · `design.md` §11
       Files: `docs/trd/trd.md`
@@ -163,14 +166,14 @@
       Done when: §12.1's box no longer says SES *"sends invites / resets"* — **already false before this change**, since Cognito email is suppressed and `EnableSesSending` defaults `"false"`; the ADR records the weakened delivery guarantee, no retry/DLQ (**D-H**), the Slack subject disclosure, the plaintext-env secret exposure, and DD-10's re-derived floor.
       ⚠️ **Allocate the ADR number at apply time on the default branch, re-running the survey** (root `CLAUDE.md` § Concurrency protocol, KZ-010). `email-ms` tops out at **ADR-013**; `feat/legal-notices` holds ADR-014 unmerged. Do **not** hard-code 015 from here.
 
-- [ ] **T-16** Amend the infrastructure documents  (deps: T-9)
+- [x] **T-16** Amend the infrastructure documents  (deps: T-9)
       Scope: `infrastructure.md` §2; `infra/README.md` §6 and §2; `policies/README.md`.
       Traces: FR-6 · `design.md` §11
       Files: `docs/infrastructure.md`, `infra/README.md`, `infra/policies/README.md`
       Verify: manual review against the **running** product, not against this spec
       Done when: **§6 is deleted by content, never by line range** — ⚠️ two non-SES survivors sit inside the block and must be **relocated**: the `Known limitation — CONFIRMED-user reset code has no in-app entry page (OQ-5)` subsection, and the **`PortalUrl` parameter row**, whose only live documentation is there while the parameter itself survives. *(The previous correction rescued the first by name and then specified a range that swallowed the second — deleting by range is what keeps reintroducing this.)* §2's *"the one thing that genuinely requires AWS is real email delivery"* is withdrawn. `policies/README.md` loses **three** rows, not two, and its framing is rewritten.
 
-- [ ] **T-17** Close the spec-level premise and sync the agent guides  (deps: T-10…T-16)
+- [x] **T-17** Close the spec-level premise and sync the agent guides  (deps: T-10…T-16)
       Scope: Superseded-by pointers; guide mirroring; the final sweep.
       Traces: FR-6, OQ-9 · `design.md` §11
       Files: `docs/specs/epic/hybrid-actor-registration/proposal.md`, `docs/specs/admin/registration-info-requests/proposal.md`, `backend/CLAUDE.md`, `backend/AGENTS.md`

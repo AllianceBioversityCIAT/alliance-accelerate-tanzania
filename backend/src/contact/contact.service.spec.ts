@@ -4,12 +4,12 @@
  * design.md §1, §4.1, §4.4, DD-3).
  *
  * Both collaborators are mocked — `AdminRecipientResolver`'s own cache/
- * pagination/fallback correctness is T-5's suite, `composeReplyTo` and
- * `buildContactMessage`'s own correctness are T-2's and T-3's. This suite's
- * job is the one thing T-6 adds: resolve -> render -> AWAIT the send ->
- * return, the honeypot short-circuit reaching zero dispatches, the `502` on
- * a transport rejection, and that no log line this service emits ever
- * carries `err.message` (only `err.name`/class-name).
+ * pagination/fallback correctness is T-5's suite, `buildContactMessage`'s
+ * own correctness is T-3's. This suite's job is the one thing T-6 adds:
+ * resolve -> render -> AWAIT the send -> return, the honeypot
+ * short-circuit reaching zero dispatches, the `502` on a transport
+ * rejection, and that no log line this service emits ever carries
+ * `err.message` (only `err.name`/class-name).
  */
 import { BadGatewayException } from '@nestjs/common';
 import { AdminRecipientResolver } from './admin-recipient.resolver';
@@ -54,7 +54,15 @@ describe('ContactService.submitContact', () => {
       expect(mailService.sendContactMessage).toHaveBeenCalledTimes(1);
       const message = mailService.sendContactMessage.mock.calls[0][0];
       expect(message.to).toEqual(['admin1@example.org', 'admin2@example.org']);
-      expect(message.replyTo).toContain(dto.email);
+      // T-11 replacement (design.md DD-7): the deleted `message.replyTo`
+      // assertion was the only one in THIS suite proving the DTO's `email`
+      // reaches the rendered message — `contact.template.spec.ts` pins the
+      // same guarantee at template level ("renders the requester address as
+      // body data"), but that suite calls `buildContactMessage` directly and
+      // so cannot prove `ContactService` actually passes `dto.email` through.
+      // This asserts that wiring instead: the DTO's own address, unchanged,
+      // reaches the rendered body text `ContactService` hands to `MailService`.
+      expect(message.text).toContain(dto.email);
       expect(message.text).toContain(dto.message);
     });
 
