@@ -1489,3 +1489,37 @@ The abort was safe — it stopped before any AWS mutation. The unsafe path was t
 ⛔ *"Phase B may not start until this task is `[x]`"* — Phase B ran ahead of it on an explicit product-owner override, recorded as an override in every Phase-B commit rather than quietly satisfied. **The gate is now met in fact as well as waived in process.** Both halves stay in the record; a spec that tidies the sequence afterwards teaches the wrong thing about what happened.
 
 **T-9 → `[x]`. Every task in this spec is now closed.**
+
+## Follow-up — `CONTACT_FALLBACK_RECIPIENT`, the open choice, closed (2026-09-18)
+
+T-13 left this explicitly open, in these words: *"the address is now a free choice nobody has made. T-13 corrects the rationale; whether to change the address is a product-owner call, not a teardown edit."* This closes it.
+
+**`j.cadavid@cgiar.org` → `Justus.Ochieng@cgiar.org`** (product owner, 2026-09-18).
+
+### Why the old value was never really a decision
+
+`contact/contact-channels`'s own execution log is blunt about it: *"`CONTACT_FALLBACK_RECIPIENT`'s value was **inferred, not specified**. No spec document states it."* It was chosen because the SES sandbox allowed mail only to a verified identity, and that was the one identity the template verified — *"a fallback recipient that cannot receive mail is not a fallback."* Sound inference, and that log explicitly asked the owner to override it later.
+
+FR-6 removed SES and with it the constraint. What remained was an address selected by a reason that had died — the shape KZ-004 names, surviving because the **value** stayed correct while its **justification** went hollow.
+
+### Blast radius — measured before proposing, not after
+
+| | |
+|---|---|
+| `infra/20-backend/template.yaml` | the one live site — a **literal**, not a secret, so no Secrets Manager step and nothing to request from the platform team |
+| Tests | none depend on it: `admin-recipient.resolver.spec.ts` uses `fallback@example.com` |
+| Code | reads the variable, never the address |
+
+A repo-wide grep for the old address returns 16 lines, which looks alarming and is not: **one** is this variable. The rest are SES history in frozen archived specs, or unrelated fixtures (case-normalisation, password-reset) using it as sample data. *A grep count is not a blast radius.*
+
+### The comment changed too, and had to
+
+The line above it said this address *"is now an open product choice, not a technical necessity"* — written yesterday when it was true. Ship the new value and leave that sentence and the file starts lying again, one day after the sweep that fixed the previous lie. It now records **who chose it and when**, plus the inference it replaces, so the next reader finds a decision instead of a residue.
+
+### What this does not establish
+
+**Whether anyone reads that mailbox.** The fallback fires only when Cognito fails or the `admin` group resolves empty — rare by construction, which means a message landing there may sit unnoticed for a long time. `logDegradation()` leaves a trail when it happens, so the event is observable; whether the mail is *read* is not a property this repo can hold.
+
+Also unestablished: whether the address is a person or a team alias. A personal mailbox reopens this same question the day that person changes role — the property that would close it permanently is a shared alias, and that is a product decision, not an inference to make here.
+
+**Verification:** `./infra/scripts/validate.sh` — PASS on all three stacks. No code touched; no test depends on the value.

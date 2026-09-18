@@ -270,12 +270,19 @@ Resources:
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
           # group resolves empty or the directory call fails
-          # (AdminRecipientResolver.getFallback()). email-notification-microservice
-          # (FR-6) removed SES, so the constraint that originally selected this
-          # address — it had to be an SES-verified identity — no longer exists.
-          # The notification microservice has no such restriction; this address
-          # is now an open product choice, not a technical necessity.
-          CONTACT_FALLBACK_RECIPIENT: j.cadavid@cgiar.org
+          # (AdminRecipientResolver.getFallback()). Reached rarely by design -
+          # every normal submission goes to the live `admin` group - so a
+          # message landing here is one nobody is expecting.
+          #
+          # CHOSEN BY THE PRODUCT OWNER, 2026-09-18. The previous value
+          # (j.cadavid@cgiar.org) was never specified by anyone: it was
+          # INFERRED under the SES sandbox, where only an SES-verified
+          # identity could receive mail and that was the one identity this
+          # template verified (contact/contact-channels execution.md records
+          # the inference and asked the owner to override it). FR-6 removed
+          # SES and with it the constraint, leaving an address chosen by a
+          # dead technical reason. This value replaces it by decision.
+          CONTACT_FALLBACK_RECIPIENT: Justus.Ochieng@cgiar.org
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
