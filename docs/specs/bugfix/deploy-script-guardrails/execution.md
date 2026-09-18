@@ -100,3 +100,70 @@ Final text separates three things the failed versions conflated: **why the varia
 Not escalated yet: the total is not breached, and the overshoot is concentrated in the one line item whose value the spec argues for most directly (the tests outweighing the fix is the intended ratio for a bug whose whole problem was unverifiability). **Flagged to the user at the T-1 gate.** If T-2 and T-3 land at a similar ratio, the total will breach and the tripwire fires.
 
 ---
+
+### T-2 — `_guard.sh`, profile floor and override — **PASS on attempt 3 of 3**
+
+| | |
+|---|---|
+| Date | 2026-09-18 |
+| Implementer attempts | **3** |
+| Effort | `xhigh` → `max` → `max` |
+| Skills assigned | `aws-serverless` + **`tdd`** (Leader-assigned per task, not blanket — first task with real business rules) |
+| Exemplar cited | the existing IBD-DEV guard blocks in `migrate-seed.sh` / `teardown.sh`, with an explicit instruction on what **not** to copy (`CONFIRM` as override, the TTY branch — both forbidden by FR-1/FR-2) |
+| Requirements covered | FR-1 (all clauses), FR-2 (all clauses), NFR-3 |
+
+**Files: `infra/scripts/_guard.sh` (93) + 11 cases (`guard-profile.*.case.sh`). Suite: `Discovered 12 case(s)`, 12 passed.**
+
+#### Attempt 1 — Reviewer FAIL
+
+`_guard.sh` was correct on first build and the Reviewer confirmed it by reading: floor and override execute on `source`, `PROFILE`/`REGION` exported, `${BASH_SOURCE[0]%/*}` path resolution with no `$0`, value-carrying override, no TTY branch, no `CONFIRM`. TDD was genuine — all 11 cases written before the library existed, red at 11/12, and the Implementer disclosed strengthening three cases that would otherwise have passed vacuously on the `source: No such file` error.
+
+**FAIL — a requirement clause with no gate.** All eleven cases captured with `2>&1`, merging streams, so FR-1's *"printing the mismatch to stderr"* and FR-2's *"announces … on stderr"* were unowned.
+
+**Leader verification — decisive, and worse than "untested":** deleted **every** `>&2` from `_guard.sh` (`grep -c` → 0) and ran the suite. **All 11 cases passed.** The clause had no gate whatsoever.
+
+#### Attempt 2 — Reviewer FAIL
+
+Two cases converted to split-stream capture with two-sided assertions (text present in stderr **and** `assert_not_contains` from stdout — a one-sided assertion would still pass if the message went to both). Leader verification: the same `>&2` deletion now reds **exactly the two owning cases and no others** — precise clause ownership, no cross-contamination.
+
+**FAIL — a false factual claim in the new comments.** Both files stated *"this machine's mktemp is the BSD variant, which has no bare/no-template form (advisory A8)"*. **A8 says the opposite** — *"works on this machine"* — and three passing cases in the same suite use bare `mktemp`. The claim contradicted its own citation and the code beside it.
+
+**Leader verification:** ran bare `mktemp` (works), read `execution.md:83` (says "works on this machine"), grepped the tree (three bare uses in green cases). Reviewer correct on all three legs.
+
+#### Attempt 3 — Reviewer **PASS**
+
+**Instruction changed from "rewrite" to "delete", on this spec's own measured evidence.** `judgment.md` §10 records that in the Judgment Day rounds, every correction that deleted introduced nothing while several that rewrote introduced new defects. The brief forbade composing any replacement rationale: *"if you find yourself writing a sentence about how `mktemp` behaves on any platform, you are reproducing the defect."* The portability claim and the nonexistent "REWORK-2" reference were deleted; only the load-bearing half survives.
+
+**Second change, Leader-adjudicated from a Reviewer advisory:** `env -u` did not unset `AWS_REGION`, so the `REGION=eu-west-1` assertion would stay green even if the code's default changed, on any shell exporting that value. Same reasoning as `assert_status` in T-1: a gate that cannot fail, in a case this task delivered.
+
+**Reviewer PASS summary:** *"The correction deleted rather than rewrote, per `judgment.md` §10's countermeasure; the two surviving `mktemp` sentences are borne exactly by the code and carry no portability implication, nothing load-bearing was removed, no variant of the false claim survives anywhere in `infra/scripts/`, and `-u AWS_REGION` makes the `REGION=eu-west-1` assertion discriminating without disturbing the case's other clauses."*
+
+#### Final verification — Leader-run, quiet tree
+
+| Gate | Result | Who ran it |
+|---|---|---|
+| Full suite | 12 cases, 12 passed | **Leader** |
+| **stderr clause discriminates** | delete every `>&2` → **exactly 2 red** (`message-names-both-profiles`, `override-equal-proceeds-and-announces`), other 10 correctly green. *Before the fix the same mutation left 12/12 green* | **Leader** |
+| **`AWS_REGION` ambient leak closed** | mutate the default to `us-east-1` **with `AWS_REGION=eu-west-1` exported** → `unset-aws-profile-proceeds` reds, and only it | **Leader** |
+| FP-2 (hostile ambient profile) | whole suite green under `AWS_PROFILE=MELIA-DEV` exported | **Leader** |
+| No portability claim survives | `grep -rn "BSD\|GNU\|A8\|REWORK-2"` → no matches | **Leader** |
+| Falsifiers 1–5 (invert, unconditional, silence, boolean override, `[[ ! -t 0 ]] && return 0`) | each reds its named case | Implementer only — **not independently reproduced** |
+
+#### ADVISORY — recorded, non-gating, **not** converted into tasks
+
+| Finding |
+|---|
+| Export-ness of `PROFILE`/`REGION` is undriven — the probes run in the same process that sourced the library, so they would pass with plain assignments. Only observable at T-4 |
+| FR-2's *"single variable across all scripts"* is unobservable at T-2 (zero scripts source the guard). Structurally satisfied by DD-1; **carried to T-4** |
+| The tree is now internally inconsistent about `mktemp` templates (two files templated, two bare). The Reviewer's explicit recommendation is to **leave the prose deleted** rather than reintroduce a rationale in two of four sites |
+| `resolves-own-path-not-caller` has a faint ambient-leak shape via `GUARD_DIR`. No real shell exports it and the realistic mutation still reds — not worth a task |
+
+#### 🔭 Forward pointers — **copy into the brief of the task named**
+
+| ID | For | Pointer |
+|---|---|---|
+| **FP-4** | **T-4** | FR-2's *"single variable across all scripts, learned once"* and the **export-ness** of `PROFILE`/`REGION` both become observable only when scripts actually source the guard. T-4's enumeration must own them; neither was discharged at T-2 |
+| **FP-5** | **T-3, T-5, T-6** | The ambient-leak shape is now a known class, not a one-off: *an assertion that stays green if the code's default changes, because the operator's shell exports the expected value.* Every case asserting a **default** must `env -u` that variable. Two instances found so far (`AWS_PROFILE` at T-1's FP-2, `AWS_REGION` at T-2) |
+| **FP-1, FP-2, FP-3** | still live | See the T-1 entry — `*.case.sh` naming, ambient env, and T-4 falsifying the harness header sentence |
+
+---

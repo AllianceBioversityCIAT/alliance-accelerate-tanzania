@@ -27,7 +27,7 @@
       Done when: the runner executes, reports a count, and fails on the placeholder. No task after this one may add a test that needs network.
       Skills: `aws-serverless`
 
-- [ ] **T-2 `_guard.sh` — profile floor and override** (deps: T-1)
+- [x] **T-2 `_guard.sh` — profile floor and override** (deps: T-1)
       Scope: the library; the floor and override **execute on `source`** (`design.md` §7.1). Exports `PROFILE`/`REGION`. Resolves its own path with `${BASH_SOURCE[0]%/*}`, never `$0`. No TTY branch.
       Traces: FR-1 (all clauses), FR-2 (all clauses), NFR-3, `design.md` §7.1
       Files: `infra/scripts/_guard.sh`, `infra/scripts/tests/cases/guard-profile.*`

@@ -249,16 +249,41 @@ Every gate has a named falsifier — the input that makes it red. A gate with no
 
 **Declared gap (D-7):** no gate evaluates whether a sentence in `docs/infrastructure.md` is true. Substituted with a mandatory Reviewer re-deriving from §7.4.
 
-## 11. Budget (tripwire)
+## 11. Budget (tripwire) — **re-baselined 2026-09-18 after the tripwire fired**
 
-| Metric | Revision 1 | **Revision 2** |
-|---|---|---|
-| Tasks | 6 | **7** |
-| Net LOC | ~380 | **~470** |
-| Review rounds | 8 | **9** |
+| Metric | Revision 1 | Revision 2 | **Re-baselined (rev 3)** |
+|---|---|---|---|
+| Tasks | 6 | 7 | **7** (unchanged) |
+| Net LOC | ~380 | ~470 | **~2,500** |
+| Review rounds | 8 | 9 | **~16** |
 
-The +90 LOC reconciles as: the two-kind harness split **+60** (a second runner and its fixtures), the per-script in-situ abort runs D-3b now requires **+20**, and FR-6's two extra scenarios **+10**. Breakdown, each line owned exactly once: harness ~210, `_guard.sh` ~110, seven script edits ~50 (including deleting each local `PROFILE=` line), `smoke.sh` CORS check ~40, `aws-accounts.conf` + patch + README ~25, documentation ~35 prose lines. `smoke.sh`'s header correction is counted under documentation, not under the check.
+### Why the original number was wrong — measured, not guessed
 
-**These are estimates, not measurements** — no diff exists yet to recompute them from. `/akili-execute` measures the actuals and trips on the delta; that is what a tripwire is for (KZ-005).
+The tripwire fired at **T-2**, with **892 LOC spent against ~470 budgeted at 2 of 7 tasks**. Escalated to the product owner, who chose to continue at the re-baselined figure. The diagnosis matters more than the number, because it says which future estimates are also wrong:
 
-Not a quality cap — a tripwire. `/akili-execute` compares actuals and **escalates to the user** rather than continuing past it.
+| Line item | Budgeted | Actual | |
+|---|---|---|---|
+| `_guard.sh` | ~110 | **86** | ✅ under |
+| Harness (T-1) | ~210 | **411** | |
+| T-2 test cases | *not itemised* | **395** | 🔴 |
+
+**The production code is tracking the estimate or beating it. The entire overshoot is test cases.** The cause is structural, not drift: §11's figures were computed here, in `design.md`, **before `tasks.md` made per-clause case ownership explicit** — one case per scenario and per `BUT`/`AND IT MUST` clause, each with a demonstrated falsifier (KZ-013, and the coverage-closure rule of `docs/specs/general-setup/task.md`). T-2 owns ~9 clauses and produced 11 cases.
+
+So the rigour this spec argues for costs roughly **4× what the budget priced for tests** — in a spec whose entire problem statement was that nothing could be verified. The budget measured the fix and not the evidence.
+
+### Projection for the remaining tasks
+
+Estimates, not measurements — no diff exists for them yet:
+
+| Task | Projected |
+|---|---|
+| T-3 account assertion + cases | ~400 |
+| T-4 wire seven scripts + D-3/D-3b cases | ~350 |
+| T-5 `resolve_stack_value` + `deploy.sh` + cases | ~450 |
+| T-6 `smoke.sh` CORS + five scenario cases | ~300 |
+| T-7 docs + patch | ~150 |
+| **Remaining** | **~1,650** |
+
+Review rounds re-baselined from the measured rate: T-1 took 3, T-2 took 2 — five rounds for two tasks, against a budget of 9 for seven.
+
+**The tripwire stays armed at the new figure.** A re-baseline is not a waiver: `/akili-execute` escalates again if actuals exceed ~2,500, and a second breach would mean this diagnosis was also wrong.
