@@ -451,6 +451,10 @@ export default function AboutPage() {
             <Button variant="secondary" href="/directory">
               Browse the Directory
             </Button>
+            {/* T-10, FR-1: About page's own entry point into the contact form. */}
+            <Button variant="secondary" href="/contact">
+              Contact us
+            </Button>
           </div>
 
         </div>

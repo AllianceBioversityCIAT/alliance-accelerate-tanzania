@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual refresh — current vs proposed (ACCELERATE Seed Registry)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   MOCKUP — docs/specs/enhancement/app-visual-refresh/mockup/index.html
+   Side-by-side comparison of the SHIPPED token values against the PROPOSED
+   warm-earth surface system. Every value below is the literal token value; if
+   this mockup is approved, these are the numbers that land in globals.css.
+   Brand tokens (Royal Blue, crop colours, fonts) are UNCHANGED by design.
+   ========================================================================= */
+
+/* ---- CURRENT: shipped tokens (frontend/app/globals.css) ---- */
+.pane--current {
+  --bg:            #FFFFFF;
+  --surface:       #FFFFFF;
+  --surface-alt:   #F7F7F7;
+  --border:        #E2E2E2;
+  --fg:            #333333;
+  --muted:         #666666;
+  --restricted:    #F3F3F3;
+  --warning-ink:   #C9821B;   /* same hex as crop-sorghum — the collision */
+  --success-ink:   #2F7D32;
+  --shadow-sm:     0 1px 2px rgba(28,31,26,.06);
+  --shadow-md:     0 4px 12px rgba(28,31,26,.08);
+  --hero-wash:     #FFFFFF;
+}
+
+/* ---- PROPOSED: warm-earth surface system ---- */
+.pane--proposed {
+  --bg:            #FBF9F6;
+  --surface:       #FFFFFF;
+  --surface-alt:   #F4F0EA;
+  --border:        #E6DFD5;
+  --fg:            #2A2724;
+  --muted:         #6B6459;
+  --restricted:    #F0EBE4;
+  --warning-ink:   #8F5E10;   /* decoupled from crop-sorghum, now AA as small text */
+  --success-ink:   #2A6E2D;   /* clears AA on every tint it lands on */
+  --shadow-xs:     0 1px 2px rgba(61,47,32,.04);
+  --shadow-sm:     0 2px 4px rgba(61,47,32,.07);
+  --shadow-md:     0 6px 16px rgba(61,47,32,.10);
+  --shadow-lg:     0 16px 40px rgba(61,47,32,.14);
+  --hero-wash:     linear-gradient(168deg, #F4F0EA 0%, #FBF9F6 58%, #FFFFFF 100%);
+}
+
+/* ---- Brand tokens: identical in both panes ---- */
+:root {
+  --primary:        #1F4E8C;
+  --primary-hover:  #163A66;
+  --primary-soft:   #E8EEF6;
+  --highlight:      #29C4A9;
+  --highlight-tint: #E4F5F2;
+  --crop-sorghum:   #C9821B;
+  --crop-bean:      #7A3B2E;
+  --crop-groundnut: #8A8D2B;
+  --font-sans:      "Inter", system-ui, sans-serif;
+  --font-display:   "Montserrat", system-ui, sans-serif;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--font-sans); background: #E8E6E1; color: #2A2724;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; }
+
+.page-head {
+  max-width: 1400px; margin: 0 auto; padding: 40px 24px 8px;
+}
+.page-head h1 { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.page-head p { color: #5A544C; max-width: 70ch; line-height: 1.6; margin: 10px 0 0; }
+.page-head code { background: #DCD8D1; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
+.split {
+  max-width: 1400px; margin: 0 auto; padding: 24px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;
+}
+@media (max-width: 1080px) { .split { grid-template-columns: 1fr; } }
+
+.pane {
+  background: var(--bg); border-radius: var(--radius-lg); overflow: hidden;
+  border: 1px solid rgba(0,0,0,.08);
+  font-size: 14px; color: var(--fg);
+}
+.pane__label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 20px; font-size: 12px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; background: #2A2724; color: #FBF9F6;
+}
+.pane__label .dot { width: 8px; height: 8px; border-radius: 999px; }
+.pane--current  .pane__label .dot { background: #B3261E; }
+.pane--proposed .pane__label .dot { background: #29C4A9; }
+
+.pane__body { padding: 0 0 28px; }
+.section-tag {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); padding: 26px 20px 10px;
+}
+
+/* ---------- 1. HERO ---------- */
+.hero { background: var(--hero-wash); padding: 34px 20px 30px; }
+.pane--current .hero { background: var(--hero-wash); }
+.eyebrow {
+  display: inline-block; background: var(--primary-soft); color: var(--primary);
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 999px; margin-bottom: 14px;
+}
+.hero h2 {
+  font-size: 32px; font-weight: 800; line-height: 1.1; letter-spacing: -.025em;
+  color: var(--primary); margin-bottom: 10px;
+}
+.hero p { color: var(--muted); line-height: 1.6; margin: 0 0 18px; max-width: 44ch; }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn {
+  font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; cursor: pointer; font-family: inherit;
+}
+.btn--primary { background: var(--primary); color: #fff; }
+.btn--ghost { background: var(--surface); color: var(--primary); border-color: var(--border); }
+.pane--proposed .btn--primary { box-shadow: var(--shadow-sm); }
+
+/* ---------- 2. STAT BAND ---------- */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0 20px; }
+.stat {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 16px 14px;
+}
+.pane--current  .stat { box-shadow: var(--shadow-sm); }
+.pane--proposed .stat { box-shadow: var(--shadow-sm); }
+.stat__v { font-family: var(--font-display); font-size: 26px; font-weight: 800; color: var(--primary); }
+.stat__l { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* ---------- 3. DIRECTORY CARDS ---------- */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 15px; display: flex; flex-direction: column; gap: 9px;
+}
+.pane--current  .card { box-shadow: var(--shadow-sm); }
+.pane--proposed .card { box-shadow: var(--shadow-md); }
+.card h4 { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.card .meta { font-size: 12px; color: var(--muted); }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip {
+  font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  color: #fff; letter-spacing: .02em;
+}
+.chip--sorghum   { background: var(--crop-sorghum); }
+.chip--bean      { background: var(--crop-bean); }
+.chip--groundnut { background: var(--crop-groundnut); }
+.locked {
+  display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted);
+  background: var(--restricted); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 10px;
+}
+
+/* ---------- 4. ADMIN TABLE ---------- */
+.tablewrap {
+  margin: 0 20px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden;
+}
+.pane--proposed .tablewrap { box-shadow: var(--shadow-md); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th {
+  text-align: left; padding: 10px 12px; font-size: 10px; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted); font-weight: 600;
+  background: var(--surface-alt); border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: 0; }
+.pane--proposed tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-alt) 45%, transparent); }
+.pill { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+.pill--ok   { background: var(--highlight-tint); color: var(--success-ink); }
+.pill--warn { background: color-mix(in srgb, var(--warning-ink) 10%, #fff); color: var(--warning-ink); }
+
+/* ---------- 5. MAP FILTER RAIL ---------- */
+.maprow { display: grid; grid-template-columns: 168px 1fr; gap: 12px; padding: 0 20px; }
+.rail {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 13px;
+}
+.pane--proposed .rail { box-shadow: var(--shadow-md); }
+.rail h5 {
+  font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 9px; font-weight: 600; font-family: var(--font-sans);
+}
+.rail label { display: flex; align-items: center; gap: 7px; font-size: 12px; margin-bottom: 7px; }
+.swatch { width: 10px; height: 10px; border-radius: 999px; }
+.mapcanvas {
+  border-radius: var(--radius-md); border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at 32% 42%, rgba(41,196,169,.18), transparent 46%),
+    radial-gradient(circle at 68% 62%, rgba(31,78,140,.14), transparent 46%),
+    var(--surface-alt);
+  min-height: 152px; position: relative;
+}
+.pane--proposed .mapcanvas { box-shadow: inset 0 1px 3px rgba(61,47,32,.07); }
+.pin { position: absolute; width: 11px; height: 11px; border-radius: 999px; border: 2px solid #fff; }
+.pane--proposed .pin { box-shadow: 0 1px 4px rgba(61,47,32,.35); }
+
+/* ---------- verdict strip ---------- */
+.verdict { max-width: 1400px; margin: 0 auto 56px; padding: 0 24px; }
+.verdict table { background: #FBF9F6; border-radius: var(--radius-md); overflow: hidden; font-size: 13px; }
+.verdict thead th { background: #DCD8D1; color: #46403A; }
+.verdict td, .verdict th { border-bottom: 1px solid #E6DFD5; }
+.verdict td code { font-size: 12px; background: #F0EBE4; padding: 1px 5px; border-radius: 4px; }
+.pass { color: #2A6E2D; font-weight: 600; }
+.fail { color: #B3261E; font-weight: 600; }
+.note { font-size: 12px; color: #5A544C; margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Visual refresh — current vs proposed</h1>
+  <p>
+    Left is what ships today. Right is the proposed warm-earth surface system. Brand tokens
+    (<code>#1F4E8C</code> Royal Blue, the three crop colours, Inter + Montserrat) are
+    <strong>unchanged</strong> — only the surface, border, ink, elevation and gradient layer moves.
+    Every hex in the right pane is a literal token value from the proposal.
+  </p>
+</div>
+
+<div class="split">
+
+  <!-- ============ CURRENT ============ -->
+  <div class="pane pane--current">
+    <div class="pane__label"><span class="dot"></span> Current — shipped today</div>
+    <div class="pane__body">
+
+      <div class="hero">
+        <span class="eyebrow">Tanzania seed system</span>
+        <h2>1,000+ actors,<br>one living registry</h2>
+        <p>Search, map and analyse the sorghum, common bean and groundnut value chains.</p>
+        <div class="btn-row">
+          <button class="btn btn--primary">Explore the map</button>
+          <button class="btn btn--ghost">Browse directory</button>
+        </div>
+      </div>
+
+      <div class="section-tag">Metrics</div>
+      <div class="stats">
+        <div class="stat"><div class="stat__v">1,043</div><div class="stat__l">Actors mapped</div></div>
+        <div class="stat"><div class="stat__v">3</div><div class="stat__l">Crops tracked</div></div>
+        <div class="stat"><div class="stat__v">26</div><div class="stat__l">Regions covered</div></div>
+      </div>
+
+      <div class="section-tag">Directory</div>
+      <div class="cards">
+        <div class="card">
+          <h4>Mbeya Highland Seed Co.</h4>
+          <div class="meta">Mbeya · Mbozi District</div>
+          <div class="chips"><span class="chip chip--sorghum">Sorghum</span><span class="chip chip--bean">Bean</span></div>
+          <div class="locked">Contact restricted — sign in</div>
+        </div>
+        <div class="card">
+          <h4>Dodoma Farmer Cooperative</h4>
+          <div class="meta">Dodoma · Chamwino</div>
+          <div class="chips"><span class="chip chip--groundnut">Groundnut</span></div>
+          <div class="locked">Contact restricted — sign in</div>
+        </div>
+      </div>
+
+      <div class="section-tag">Admin console</div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Trader</th><th>Region</th><th>Consent</th></tr></thead>
+          <tbody>
+            <tr><td>Mbeya Highland Seed Co.</td><td>Mbeya</td><td><span class="pill pill--ok">Granted</span></td></tr>
+            <tr><td>Dodoma Farmer Coop.</td><td>Dodoma</td><td><span class="pill pill--warn">Unevidenced</span></td></tr>
+            <tr><td>Singida Traders Ltd.</td><td>Singida</td><td><span class="pill pill--ok">Granted</span></td></tr>
+            <tr><td>Iringa Seed Union</td><td>Iringa</td><td><span class="pill pill--warn">Unevidenced</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-tag">Seed map</div>
+      <div class="maprow">
+        <div class="rail">
+          <h5>Crop</h5>
+          <label><span class="swatch" style="background:var(--crop-sorghum)"></span> Sorghum</label>
+          <label><span class="swatch" style="background:var(--crop-bean)"></span> Common bean</label>
+          <label><span class="swatch" style="background:var(--crop-groundnut)"></span> Groundnut</label>
+        </div>
+        <div class="mapcanvas">
+          <span class="pin" style="background:var(--crop-sorghum);left:26%;top:32%"></span>
+          <span class="pin" style="background:var(--crop-bean);left:44%;top:56%"></span>
+          <span class="pin" style="background:var(--crop-groundnut);left:64%;top:38%"></span>
+          <span class="pin" style="background:var(--crop-sorghum);left:71%;top:68%"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ PROPOSED ============ -->
+  <div class="pane pane--proposed">
+    <div class="pane__label"><span class="dot"></span> Proposed — warm earth</div>
+    <div class="pane__body">
+
+      <div class="hero">
+        <span class="eyebrow">Tanzania seed system</span>
+        <h2>1,000+ actors,<br>one living registry</h2>
+        <p>Search, map and analyse the sorghum, common bean and groundnut value chains.</p>
+        <div class="btn-row">
+          <button class="btn btn--primary">Explore the map</button>
+          <button class="btn btn--ghost">Browse directory</button>
+        </div>
+      </div>
+
+      <div class="section-tag">Metrics</div>
+      <div class="stats">
+        <div class="stat"><div class="stat__v">1,043</div><div class="stat__l">Actors mapped</div></div>
+        <div class="stat"><div class="stat__v">3</div><div class="stat__l">Crops tracked</div></div>
+        <div class="stat"><div class="stat__v">26</div><div class="stat__l">Regions covered</div></div>
+      </div>
+
+      <div class="section-tag">Directory</div>
+      <div class="cards">
+        <div class="card">
+          <h4>Mbeya Highland Seed Co.</h4>
+          <div class="meta">Mbeya · Mbozi District</div>
+          <div class="chips"><span class="chip chip--sorghum">Sorghum</span><span class="chip chip--bean">Bean</span></div>
+          <div class="locked">Contact restricted — sign in</div>
+        </div>
+        <div class="card">
+          <h4>Dodoma Farmer Cooperative</h4>
+          <div class="meta">Dodoma · Chamwino</div>
+          <div class="chips"><span class="chip chip--groundnut">Groundnut</span></div>
+          <div class="locked">Contact restricted — sign in</div>
+        </div>
+      </div>
+
+      <div class="section-tag">Admin console</div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Trader</th><th>Region</th><th>Consent</th></tr></thead>
+          <tbody>
+            <tr><td>Mbeya Highland Seed Co.</td><td>Mbeya</td><td><span class="pill pill--ok">Granted</span></td></tr>
+            <tr><td>Dodoma Farmer Coop.</td><td>Dodoma</td><td><span class="pill pill--warn">Unevidenced</span></td></tr>
+            <tr><td>Singida Traders Ltd.</td><td>Singida</td><td><span class="pill pill--ok">Granted</span></td></tr>
+            <tr><td>Iringa Seed Union</td><td>Iringa</td><td><span class="pill pill--warn">Unevidenced</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-tag">Seed map</div>
+      <div class="maprow">
+        <div class="rail">
+          <h5>Crop</h5>
+          <label><span class="swatch" style="background:var(--crop-sorghum)"></span> Sorghum</label>
+          <label><span class="swatch" style="background:var(--crop-bean)"></span> Common bean</label>
+          <label><span class="swatch" style="background:var(--crop-groundnut)"></span> Groundnut</label>
+        </div>
+        <div class="mapcanvas">
+          <span class="pin" style="background:var(--crop-sorghum);left:26%;top:32%"></span>
+          <span class="pin" style="background:var(--crop-bean);left:44%;top:56%"></span>
+          <span class="pin" style="background:var(--crop-groundnut);left:64%;top:38%"></span>
+          <span class="pin" style="background:var(--crop-sorghum);left:71%;top:68%"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<div class="verdict">
+  <h3 style="font-size:18px;font-weight:800;margin-bottom:12px;">Measured contrast — computed, not estimated</h3>
+  <table>
+    <thead>
+      <tr><th>Pair (as it ships in code)</th><th>Today</th><th>Proposed</th><th>WCAG AA</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>text-warning</code> 12px — <code>ImportPreviewTable.tsx:130</code></td>
+          <td class="fail">3.14:1 FAIL</td><td class="pass">5.56:1</td><td>4.5:1 small text</td></tr>
+      <tr><td><code>text-warning</code> on its own <code>/10</code> chip — <code>:98</code></td>
+          <td class="fail">2.83:1 FAIL</td><td class="pass">4.86:1</td><td>4.5:1 small text</td></tr>
+      <tr><td><code>text-success</code> on <code>bg-highlight/20</code> — <code>UsersTable.tsx:282</code></td>
+          <td class="fail">4.35:1 FAIL</td><td class="pass">5.30:1</td><td>4.5:1 small text</td></tr>
+      <tr><td><code>fg</code> on page canvas</td>
+          <td>12.63:1</td><td class="pass">14.13:1</td><td>4.5:1 small text</td></tr>
+      <tr><td><code>muted</code> on <code>surface-alt</code></td>
+          <td>5.36:1</td><td class="pass">5.15:1</td><td>4.5:1 small text</td></tr>
+      <tr><td><code>primary</code> on page canvas</td>
+          <td>8.31:1</td><td class="pass">7.91:1</td><td>4.5:1 small text</td></tr>
+      <tr><td>Card vs page canvas (perceptual separation)</td>
+          <td>1.00:1 — none</td><td>1.05:1</td><td>n/a — not a WCAG threshold</td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    The three <span class="fail">FAIL</span> rows are <strong>pre-existing defects on main</strong>, not regressions
+    introduced here — <code>#C9821B</code> has never met AA as small text. They surface now because this change
+    re-derives every contrast pair. <code>jest-axe</code> under jsdom cannot evaluate <code>color-contrast</code>
+    (no layout engine), which is why QA-11 has been passing while these ship (Kaizen KZ-002).
+  </p>
+  <p class="note">
+    Card-vs-canvas separation of 1.05:1 is deliberately subtle — the depth comes from the recalibrated shadow
+    ladder and warm borders, not from darkening the page. A deeper canvas alternative
+    (<code>#F7F3ED</code>, separation 1.11:1) is recorded as OQ-2 in the proposal if this reads too soft on a real screen.
+  </p>
+</div>
+
+</body>
+</html>

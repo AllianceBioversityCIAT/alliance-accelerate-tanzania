@@ -10,10 +10,17 @@
 
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useActor } from './useActor';
-import type { PublicActor } from './actors';
+import type { PublicActorDetail } from './actors';
 
 // ---------------------------------------------------------------------------
 // Module-level mock — must be hoisted before imports are evaluated
+//
+// T-13 disqualifier: a bare `jest.Mock` here would let the mock silently
+// drift from the getActor() contract (a suite that goes STALE, not RED, per
+// design.md §9/DD-6). Typed by DERIVING from the real function's signature
+// (`typeof import('./actors').getActor`) rather than hand-declaring it, so
+// `useActor` and this mock cannot disagree without a compile error: if
+// `getActor`'s signature changes, this line reddens under `tsc --noEmit`.
 // ---------------------------------------------------------------------------
 
 jest.mock('./actors', () => ({
@@ -22,14 +29,20 @@ jest.mock('./actors', () => ({
 
 // Import the mocked module so we can set return values per-test
 /* eslint-disable */
-const { getActor } = require('./actors') as { getActor: jest.Mock };
+const { getActor } = require('./actors') as {
+  getActor: jest.MockedFunction<typeof import('./actors').getActor>;
+};
 /* eslint-enable */
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const VALID_ACTOR: PublicActor = {
+// Detail-set fixture (design.md §9 DD-6): useActor returns the DETAIL shape.
+// Typed explicitly as PublicActorDetail — including the contact block — so
+// a mismatch between this fixture and the real getActor() contract fails
+// `tsc --noEmit`, not silently.
+const VALID_ACTOR: PublicActorDetail = {
   id: 'actor-1',
   traderName: 'Mbeya Seeds Ltd',
   region: 'Mbeya',
@@ -38,6 +51,13 @@ const VALID_ACTOR: PublicActor = {
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -8.9, long: 33.46 },
+  sex: 'female',
+  otherCrops: null,
+  contactPerson: 'Asha Mwakalinga',
+  position: 'Managing Director',
+  phone: '+255700000000',
+  email: 'director@example.com',
+  marketLocation: 'Arusha Central Market',
 };
 
 // ---------------------------------------------------------------------------
@@ -50,9 +70,9 @@ describe('useActor()', () => {
   });
 
   it('starts with loading=true and data=null', async () => {
-    let resolveFn!: (v: PublicActor | null) => void;
+    let resolveFn!: (v: PublicActorDetail | null) => void;
     getActor.mockImplementation(
-      () => new Promise<PublicActor | null>((resolve) => { resolveFn = resolve; })
+      () => new Promise<PublicActorDetail | null>((resolve) => { resolveFn = resolve; })
     );
 
     const { result } = renderHook(() => useActor('actor-1'));
@@ -64,7 +84,7 @@ describe('useActor()', () => {
     await act(async () => { resolveFn(VALID_ACTOR); });
   });
 
-  it('sets loading=false and data=PublicActor after getActor() resolves with data', async () => {
+  it('sets loading=false and data=PublicActorDetail after getActor() resolves with data', async () => {
     getActor.mockResolvedValue(VALID_ACTOR);
 
     const { result } = renderHook(() => useActor('actor-1'));
@@ -105,9 +125,9 @@ describe('useActor()', () => {
   });
 
   it('does not update state after unmount (cleanup guard prevents post-unmount setState)', async () => {
-    let resolveFn!: (v: PublicActor | null) => void;
+    let resolveFn!: (v: PublicActorDetail | null) => void;
     getActor.mockImplementation(
-      () => new Promise<PublicActor | null>((resolve) => { resolveFn = resolve; })
+      () => new Promise<PublicActorDetail | null>((resolve) => { resolveFn = resolve; })
     );
 
     const { result, unmount } = renderHook(() => useActor('actor-1'));

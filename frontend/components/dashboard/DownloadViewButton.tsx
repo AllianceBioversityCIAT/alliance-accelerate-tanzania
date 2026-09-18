@@ -56,7 +56,9 @@ function isoDateSuffix(): string {
  * Token-styled download button for the Discovery Dashboard.
  *
  * On click:
- *   1. Calls buildDashboardCsv to produce a UTF-8 PII-free CSV string.
+ *   1. Calls buildDashboardCsv to produce a UTF-8 contact-block-free CSV
+ *      string (never phone/email/contactPerson/position/marketLocation;
+ *      does include the consent-disclosed sex/otherCrops columns).
  *   2. Wraps it in a Blob (text/csv;charset=utf-8).
  *   3. Creates a temporary object URL, attaches to a transient <a>, clicks it,
  *      and immediately revokes the object URL.
@@ -68,7 +70,7 @@ export default function DownloadViewButton({
   filenameBase = 'accelerate-tz-actors',
 }: DownloadViewButtonProps) {
   function handleDownload() {
-    // 1. Build PII-free CSV (allowlist enforced inside buildDashboardCsv).
+    // 1. Build the contact-block-free CSV (allowlist enforced inside buildDashboardCsv).
     const csv = buildDashboardCsv({ actors, kpis });
 
     // 2. Create a UTF-8 Blob.

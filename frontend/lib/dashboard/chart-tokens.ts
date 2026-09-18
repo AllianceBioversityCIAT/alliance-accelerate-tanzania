@@ -31,7 +31,8 @@ export const CROP_COLORS: Record<'sorghum' | 'common_bean' | 'groundnut', string
  *   --crop-groundnut      #8A8D2B  (olive)
  *   --color-highlight-soft #82C0C7 (soft blue-green)
  *   --color-primary       #1F4E8C  (royal blue)
- *   --color-warning       #C9821B  (amber — same hue as sorghum; kept as semantic alias)
+ *   --color-warning       #8F5E10  (amber-brown — intentionally decoupled from --crop-sorghum,
+ *                                   docs/specs/enhancement/app-visual-refresh DD-3; do not re-merge)
  */
 export const CATEGORICAL_COLORS: string[] = [
   'var(--color-accent)',

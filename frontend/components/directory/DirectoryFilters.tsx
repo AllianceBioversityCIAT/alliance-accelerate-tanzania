@@ -7,7 +7,16 @@
 // Region options come from REGIONS (reconciled to CANONICAL_REGIONS) so no
 // selected value can produce a backend 400 (OQ-1 resolved).
 //
-// NFR-3: every select has an associated <label> via htmlFor/id.
+// T-5 (enhancement/searchable-region-select, design.md §5.6): the region
+// select is the searchable `SearchableSelect` primitive rather than a native
+// `<select>` — the 31-option scroll problem FR-1 exists to fix. Crop and role
+// keep native `<select>`s (3 and ~8 options respectively — a searcher adds
+// cost with no benefit, requirements.md §6). The `<label htmlFor>` below is
+// what gives the control its accessible name now that the redundant
+// `aria-label="Filter by region"` is gone (OQ-1) — SearchableSelect's `id`
+// prop wires it to that label the same way a native `<select id>` would.
+//
+// NFR-3: every select/control has an associated <label> via htmlFor/id.
 // NFR-4: token-driven classes only — no raw hex.
 
 import type { ActorsQuery } from '@/lib/api/actors';
@@ -15,6 +24,11 @@ import { CROPS } from '@/lib/content/crops';
 import { ROLES } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
 import { REGIONS } from '@/lib/content/regions';
+import { SearchableSelect } from '@/components/ui/SearchableSelect';
+
+// Static — REGIONS never changes at runtime, so this is built once rather
+// than re-mapped on every render.
+const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -79,8 +93,13 @@ export default function DirectoryFilters({
     onChange({ ...filters, role: value !== '' ? value : undefined });
   }
 
-  function handleRegion(e: React.ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value;
+  // SearchableSelect's onChange hands back the committed option's value
+  // directly (never the typed search text — FR-3) rather than a change
+  // event, so this takes a string, not a ChangeEvent. The clear entry
+  // (`clearOptionLabel`) commits `''` via that same path, which this then
+  // maps to `undefined` — FR-5's `BUT it must NOT` send `region=` as an
+  // empty parameter.
+  function handleRegion(value: string) {
     onChange({ ...filters, region: value !== '' ? value : undefined });
   }
 
@@ -141,20 +160,14 @@ export default function DirectoryFilters({
           <label htmlFor="dir-filter-region" className={LABEL_CLASS}>
             Region
           </label>
-          <select
+          <SearchableSelect
             id="dir-filter-region"
             value={filters.region ?? ''}
             onChange={handleRegion}
-            className={SELECT_CLASS}
-            aria-label="Filter by region"
-          >
-            <option value="">All regions</option>
-            {REGIONS.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
+            options={REGION_OPTIONS}
+            clearOptionLabel="All regions"
+            placeholder="All regions"
+          />
         </div>
 
         {/* ── Clear filters button (FR-2) ───────────────────────────────────── */}

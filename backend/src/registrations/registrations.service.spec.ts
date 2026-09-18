@@ -1,0 +1,1662 @@
+// @sdd-spec actors/public-self-registration (T-8)
+// @sdd-spec fix/otp-mail-lambda-freeze
+/**
+ * `RegistrationsService.requestVerificationCode` unit tests (FR-4, FR-8,
+ * design.md §3.1 decision 1).
+ *
+ * Both collaborators are mocked — `EmailVerificationService.issueCode`'s own
+ * correctness (V-1…V-6) is T-7's suite; `MailService`'s send/log behaviour is
+ * T-3's. This suite's job is the ONE thing T-8 adds: does the cap's domain
+ * error get swallowed into an identical success, in comparable time.
+ *
+ * **`fix/otp-mail-lambda-freeze` (2026-09-03) rewrote this describe block.**
+ * The method used to dispatch mail fire-and-forget; production dropped the
+ * send silently because Lambda can freeze the container before a
+ * fire-and-forget promise settles (see `registrations.service.ts`'s class
+ * doc and `lambda.ts` for the full incident). The fix awaits the send and
+ * pads BOTH the rate-limited and accepted branches to
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS`, so every test in this block that
+ * exercises `requestVerificationCode` runs through that pad EXCEPT the two
+ * that deliberately target the method's third, unpadded exit — the
+ * "an unexpected failure (not the cap)" test below and the pre-send
+ * allowance-breach test in the `describe` T-7 added — both assert the
+ * UNPADDED path on purpose, since that exit is address-independent
+ * infrastructure failure, never part of FR-4's timing surface. Real
+ * timers would make the padded tests' pad a genuine
+ * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of wall-clock cost PER TEST (§12 is
+ * that constant's one home — it is COMPUTED in `registrations.service.ts`
+ * from a sum of `mail/mail-timing.ts`'s exports (⚠️ *not counted here on
+ * purpose — this paragraph used to say "two exports"; F4 (2026-09-17)
+ * added a third, and a restated count is exactly what goes stale the next
+ * time the term list changes, per §12's single-home rule*), so it is
+ * named here, never restated as a number) — this describe block therefore runs under Jest's
+ * modern fake timers (`beforeEach`/`afterEach` below), and every test
+ * either advances fake time past the floor with
+ * `jest.advanceTimersByTimeAsync` or asserts against a promise that has
+ * deliberately not been allowed to do so yet.
+ */
+import { createHmac } from 'node:crypto';
+import {
+  BadRequestException,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import {
+  EmailVerificationSendLimitExceededError,
+  EmailVerificationService,
+} from './email-verification.service';
+import { MailService } from '../mail/mail.service';
+import { VERIFICATION_CODE_PRESEND_ALLOWANCE_MS } from '../mail/mail-timing';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
+  RegistrationsService,
+  VERIFICATION_CODE_RESPONSE_FLOOR_MS,
+  VerificationCodePreSendAllowanceExceededError,
+} from './registrations.service';
+import { CONSENT_POLICY_VERSION } from './consent-policy';
+import * as ConsentPolicy from './consent-policy';
+import {
+  MAX_REFERENCE_ALLOCATION_ATTEMPTS,
+  buildRegistrationReference,
+} from './registration-reference.util';
+import { RegistrationCreateDto } from './dto/registration-create.dto';
+
+/** A macrotask tick — lets any pending microtask/fire-and-forget chain settle. */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+// T11-A1 — `lookupRegistration` now pseudonymises the caller IP with an HMAC
+// under `OTP_HMAC_SECRET` before it reaches the attempt counter, so this path
+// requires the secret where it previously did not. Set here at module scope
+// rather than per-`describe`: the coupling is easy for a future block to
+// forget, and forgetting it surfaces as an opaque 500, not a clear failure.
+beforeAll(() => {
+  process.env.OTP_HMAC_SECRET = 'test-only-hmac-secret-not-a-real-key-0123456789';
+});
+
+afterAll(() => {
+  delete process.env.OTP_HMAC_SECRET;
+});
+
+describe('RegistrationsService.requestVerificationCode', () => {
+  let emailVerificationService: { issueCode: jest.Mock };
+  let mailService: { sendVerificationCode: jest.Mock };
+  let service: RegistrationsService;
+
+  beforeEach(() => {
+    emailVerificationService = { issueCode: jest.fn() };
+    mailService = { sendVerificationCode: jest.fn().mockResolvedValue(undefined) };
+    // `requestVerificationCode` never touches Prisma — an empty stub is
+    // enough to satisfy the constructor for THIS describe block.
+    service = new RegistrationsService(
+      emailVerificationService as unknown as EmailVerificationService,
+      mailService as unknown as MailService,
+      {} as unknown as PrismaService,
+    );
+    // `fix/otp-mail-lambda-freeze` — every path through this method now
+    // pads to `VERIFICATION_CODE_RESPONSE_FLOOR_MS`; fake timers keep that
+    // deterministic and fast instead of costing real wall-clock time on
+    // every test in this block.
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** Advances fake time past the floor and returns once `promise` has settled. */
+  async function settleAfterFloor(promise: Promise<void>): Promise<void> {
+    await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS);
+    await promise;
+  }
+
+  describe('the under-cap path', () => {
+    it('issues a code and dispatches it by mail to the submitted address', async () => {
+      emailVerificationService.issueCode.mockResolvedValue({
+        code: '123456',
+        expiresAt: new Date(),
+      });
+
+      await settleAfterFloor(service.requestVerificationCode('Applicant@Example.com'));
+
+      expect(emailVerificationService.issueCode).toHaveBeenCalledWith('Applicant@Example.com');
+      expect(mailService.sendVerificationCode).toHaveBeenCalledWith(
+        'Applicant@Example.com',
+        '123456',
+      );
+    });
+
+    it(
+      'does not resolve until the mail dispatch settles — the send is now awaited ' +
+        '(fix/otp-mail-lambda-freeze: this used to be the fire-and-forget mitigation test; ' +
+        'that behaviour was the production bug, and this test now proves its opposite)',
+      async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '123456',
+          expiresAt: new Date(),
+        });
+        // A send that stays pending until `resolveSend()` is called below.
+        let resolveSend!: () => void;
+        mailService.sendVerificationCode.mockReturnValue(
+          new Promise<void>((resolve) => {
+            resolveSend = resolve;
+          }),
+        );
+
+        let settled = false;
+        const promise = service
+          .requestVerificationCode('slow-mail@example.com')
+          .then(() => {
+            settled = true;
+          });
+
+        // Advancing fake time by many multiples of the floor proves nothing
+        // on its own — a fire-and-forget implementation would ALSO settle
+        // once its own (much shorter) pad elapsed, floor or no floor. What
+        // proves the send is genuinely awaited is that the method stays
+        // unsettled no matter how far time is advanced, for as long as the
+        // send promise itself is unresolved.
+        await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS * 10);
+        expect(settled).toBe(false);
+
+        resolveSend();
+        await settleAfterFloor(promise);
+        expect(settled).toBe(true);
+      },
+    );
+
+    it('never throws when the mail dispatch itself fails — logged, not surfaced', async () => {
+      emailVerificationService.issueCode.mockResolvedValue({
+        code: '123456',
+        expiresAt: new Date(),
+      });
+      mailService.sendVerificationCode.mockRejectedValue(new Error('mail transport unavailable'));
+
+      const promise = service.requestVerificationCode('anyone@example.com');
+      await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('mail-failure logging never leaks the address (FAIL 1 regression)', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      errorSpy.mockRestore();
+    });
+
+    it(
+      'does not emit the applicant email even when the transport error embeds it verbatim ' +
+        '(a transport rejection can carry the recipient address in its message regardless of ' +
+        'which transport is live — see registrations.service.ts\'s MessageRejected-and-beyond ' +
+        'rationale)',
+      async () => {
+        const applicantEmail = 'applicant@example.com';
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '123456',
+          expiresAt: new Date(),
+        });
+        const transportRejection = new Error(
+          `Recipient rejected the message: ${applicantEmail} is not on the allowed sender list`,
+        );
+        transportRejection.name = 'TransportRejectedError';
+        mailService.sendVerificationCode.mockRejectedValue(transportRejection);
+
+        await settleAfterFloor(service.requestVerificationCode(applicantEmail));
+
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const [emittedLine] = errorSpy.mock.calls[0] as [string];
+        expect(emittedLine).not.toContain(applicantEmail);
+        // Bounded discriminator IS expected — the error's class name, never its message.
+        expect(emittedLine).toContain('TransportRejectedError');
+      },
+    );
+
+    it('falls back to a bounded "UnknownError" discriminator for a non-Error rejection', async () => {
+      emailVerificationService.issueCode.mockResolvedValue({
+        code: '123456',
+        expiresAt: new Date(),
+      });
+      mailService.sendVerificationCode.mockRejectedValue('applicant@example.com: rejected');
+
+      await settleAfterFloor(service.requestVerificationCode('applicant@example.com'));
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const [emittedLine] = errorSpy.mock.calls[0] as [string];
+      expect(emittedLine).not.toContain('applicant@example.com');
+      expect(emittedLine).toContain('UnknownError');
+    });
+  });
+
+  describe('the over-cap path (design.md §3.1 decision 1 — enforced silently)', () => {
+    it('resolves (never throws) when the per-email cap is exceeded', async () => {
+      emailVerificationService.issueCode.mockRejectedValue(
+        new EmailVerificationSendLimitExceededError(),
+      );
+
+      const promise = service.requestVerificationCode('over-cap@example.com');
+      await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
+    });
+
+    it('never dispatches mail when the cap is exceeded — nothing was issued to send', async () => {
+      emailVerificationService.issueCode.mockRejectedValue(
+        new EmailVerificationSendLimitExceededError(),
+      );
+
+      await settleAfterFloor(service.requestVerificationCode('over-cap@example.com'));
+
+      expect(mailService.sendVerificationCode).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('an unexpected failure (not the cap)', () => {
+    it('propagates unchanged — this is not part of the byte-identity surface, which covers ' +
+      'only known/unknown/over-cap addresses, not infrastructure failures', async () => {
+      const boom = new Error('database unavailable');
+      emailVerificationService.issueCode.mockRejectedValue(boom);
+
+      await expect(service.requestVerificationCode('anyone@example.com')).rejects.toThrow(boom);
+    });
+  });
+
+  describe(
+    'the constant-time floor (fix/otp-mail-lambda-freeze) — the rate-limited and accepted ' +
+      'paths return in the SAME padded window, restoring the timing property the await broke',
+    () => {
+      it(
+        'neither path resolves before the floor elapses, and both resolve the instant it does',
+        async () => {
+          // Rate-limited branch: `issueCode` rejects on its own first
+          // `await`, well before the floor — nothing else in this branch
+          // takes any time.
+          emailVerificationService.issueCode.mockRejectedValue(
+            new EmailVerificationSendLimitExceededError(),
+          );
+          let rateLimitedSettled = false;
+          const rateLimited = service
+            .requestVerificationCode('capped@example.com')
+            .then(() => {
+              rateLimitedSettled = true;
+            });
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS - 1);
+          expect(rateLimitedSettled).toBe(false);
+          await jest.advanceTimersByTimeAsync(1);
+          expect(rateLimitedSettled).toBe(true);
+          await rateLimited;
+
+          // Accepted branch: `issueCode` AND the mail send both resolve
+          // promptly — the send is real, awaited work now, not skipped —
+          // yet the method pays exactly the same floor as the rate-limited
+          // branch above, not floor-plus-send-time.
+          emailVerificationService.issueCode.mockResolvedValue({
+            code: '654321',
+            expiresAt: new Date(),
+          });
+          mailService.sendVerificationCode.mockResolvedValue(undefined);
+          let acceptedSettled = false;
+          const accepted = service
+            .requestVerificationCode('accepted@example.com')
+            .then(() => {
+              acceptedSettled = true;
+            });
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS - 1);
+          expect(acceptedSettled).toBe(false);
+          await jest.advanceTimersByTimeAsync(1);
+          expect(acceptedSettled).toBe(true);
+          await accepted;
+        },
+      );
+    },
+  );
+
+  describe(
+    'the pre-send allowance (T-7, design.md DD-10) — issueCode(...) is bounded ' +
+      'as a UNIT, not merely its $transaction (advisory A3)',
+    () => {
+      it(
+        'fails the request when issueCode(...) does not settle within ' +
+          'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS — reaching the existing, deliberately ' +
+          'unpadded third exit, never the over-cap one',
+        async () => {
+          // A promise that never settles — models a slow/hung database
+          // round trip, the exact case a Prisma transaction timeout alone
+          // would NOT have covered for the three steps outside it
+          // (generateCode, hashCode, emailVerification.create).
+          emailVerificationService.issueCode.mockReturnValue(new Promise<never>(() => {}));
+
+          const promise = service.requestVerificationCode('slow-db@example.com');
+          const assertion = expect(promise).rejects.toBeInstanceOf(
+            VerificationCodePreSendAllowanceExceededError,
+          );
+
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS);
+          await assertion;
+
+          // Not the cap's shape: no code was ever issued, so nothing could
+          // have been sent, and this must not silently resolve like the
+          // over-cap branch does.
+          expect(mailService.sendVerificationCode).not.toHaveBeenCalled();
+        },
+      );
+
+      it('does not fail a call that settles within the allowance — the common case is unaffected', async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '135790',
+          expiresAt: new Date(),
+        });
+
+        await settleAfterFloor(service.requestVerificationCode('prompt@example.com'));
+
+        expect(mailService.sendVerificationCode).toHaveBeenCalledWith('prompt@example.com', '135790');
+      });
+    },
+  );
+
+  describe(
+    'the negative-remainder warn line (T-7, DD-10 "second signal, retained") — ' +
+      'observable without becoming a new PII leak',
+    () => {
+      let warnSpy: jest.SpyInstance;
+
+      beforeEach(() => {
+        warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        warnSpy.mockRestore();
+      });
+
+      it(
+        'fires exactly once, carrying the overrun in ms and no address, when the ' +
+          'total elapsed time still exceeds the composed floor',
+        async () => {
+          emailVerificationService.issueCode.mockResolvedValue({
+            code: '246810',
+            expiresAt: new Date(),
+          });
+          let resolveSend!: () => void;
+          mailService.sendVerificationCode.mockReturnValue(
+            new Promise<void>((resolve) => {
+              resolveSend = resolve;
+            }),
+          );
+
+          const overrunMs = 250;
+          const promise = service.requestVerificationCode('overrun@example.com');
+          // Advance past the floor WITHOUT letting the send settle — models
+          // a send that itself overran (T-6 bounds this at the transport;
+          // this test proves the SIGNAL fires if that bound is ever
+          // breached or absent, not that it currently can be).
+          await jest.advanceTimersByTimeAsync(VERIFICATION_CODE_RESPONSE_FLOOR_MS + overrunMs);
+          resolveSend();
+          await promise;
+
+          expect(warnSpy).toHaveBeenCalledTimes(1);
+          const [emittedLine] = warnSpy.mock.calls[0] as [string];
+          expect(emittedLine).toContain(`overrunMs=${overrunMs}`);
+          expect(emittedLine).not.toContain('overrun@example.com');
+        },
+      );
+
+      it('does not fire when the response settles within the floor', async () => {
+        emailVerificationService.issueCode.mockResolvedValue({
+          code: '369121',
+          expiresAt: new Date(),
+        });
+
+        await settleAfterFloor(service.requestVerificationCode('on-time@example.com'));
+
+        expect(warnSpy).not.toHaveBeenCalled();
+      });
+    },
+  );
+});
+
+describe('the composed floor (T-7, design.md DD-10, §12.3 invariant 1)', () => {
+  // ⚠️ **Corrected 2026-09-17 (Reviewer, second round).** This block used to
+  // carry two tests, both vacuous, and this replacement is written to name
+  // that mistake rather than quietly drop it:
+  //
+  //   1. `PRESEND_ALLOWANCE + LOCK_WAIT + SEND_TIMEOUT ≤ FLOOR` — but
+  //      `VERIFICATION_CODE_RESPONSE_FLOOR_MS` is DEFINED as that exact sum
+  //      (`registrations.service.ts`). The assertion was `x <= x`: true for
+  //      every value of every term, including a `LOCK_WAIT` raised to 500.
+  //      It exercised no code.
+  //   2. A "falsifiability" test asserting `x + 1 > x` over the same `x`.
+  //      True by arithmetic identity for any finite `x` — it could not have
+  //      failed under any mutation of `mail-timing.ts`. The red/green proof
+  //      reported alongside it required ALSO hardcoding
+  //      `VERIFICATION_CODE_RESPONSE_FLOOR_MS` to a literal — decoupling the
+  //      floor from its own composition — which is not a mutation this
+  //      test, as shipped, can ever perform or protect against.
+  //
+  // **The honest claim: composing the floor in code makes invariant 1 true
+  // BY CONSTRUCTION, which is a STRONGER guarantee than a test — it cannot
+  // be violated at all, because the floor and the sum are the same
+  // expression.** No test is needed for that, and pretending one exists
+  // reintroduces exactly the defect this rewrite closes: a green gate that
+  // cannot fail (KZ-002).
+  //
+  // **What composition does NOT cover, and what nothing here can gate**: a
+  // term that exists inside the timed window but is never named in the
+  // sum. That is precisely what F4 found — `MAIL_LOCK_WAIT_TIMEOUT_MS` was
+  // real, timed, and absent from the composition for the life of this
+  // spec until 2026-09-17. Catching a MISSING term is a reading task
+  // (auditing `MicroserviceMailTransport.send` against the constants this
+  // file imports), not something any unit test can automate — there is no
+  // way to assert the absence of code that was never written.
+  //
+  // **What IS a real, falsifiable gate: the pinned target below.** Unlike
+  // the tautology above, `toBe(4000)` compares the LIVE computed value
+  // against an independent LITERAL — if any of the three constituent
+  // constants drifts, the computed floor changes and stops equalling
+  // `4000`, and the test reddens for real. This mirrors the §12-pin shape
+  // `mail-timing.spec.ts` already uses for the individual constants
+  // (`expect(MAIL_SEND_TIMEOUT_MS).toBe(3000)` etc.) — extended here to the
+  // one computed value those pins do not cover.
+  //
+  // **Not covered: that the floor stays composed.** Replacing the sum with
+  // a literal (`registrations.service.ts`) keeps this pin green — the
+  // composition itself is held by reading, not by test.
+  it('pins the composed floor to §12.1\'s value — reddens if ANY of the three constants drifts without this pin being updated to match (the real gate; see this block\'s comment for what replaced it and why)', () => {
+    expect(VERIFICATION_CODE_RESPONSE_FLOOR_MS).toBe(4000);
+  });
+});
+
+// @sdd-spec actors/public-self-registration (T-10)
+/**
+ * `RegistrationsService.submitRegistration` unit tests (FR-2 s1, FR-3 s1/s3,
+ * FR-4 s1/s2, FR-5 s1, design.md §4.1, §4.5).
+ *
+ * `EmailVerificationService.verifyCode`/`consumeCode` are mocked — their own
+ * correctness (V-1…V-6) is T-7's suite. `MailService.sendReceipt`'s own
+ * send/log behaviour is T-3's. This suite's job is what T-10 adds: the
+ * consent gate, the verify-before-transact ordering (V-1a survives), the
+ * consume-inside-the-write-transaction ordering (A23 holds), the A-1…A-5
+ * reference-allocation properties AS USED by this method (the mechanism's
+ * own properties are `registration-reference.util.spec.ts`'s job), and the
+ * `{ reference }`-only response shape.
+ *
+ * The fake Prisma below models the SAME MySQL session-variable connection
+ * scoping `email-verification.service.spec.ts` and
+ * `registration-reference.util.spec.ts` already establish for the sibling
+ * atomic-counter mechanism — reused here, not re-derived, because
+ * `allocateRegistrationReference` (called from inside this service) makes
+ * the exact same `$executeRaw`/`$queryRaw` calls those files already model.
+ */
+describe('RegistrationsService.submitRegistration', () => {
+  interface SequenceRow {
+    year: number;
+    seq: number;
+  }
+
+  interface FakeTx {
+    $executeRaw: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<number>;
+    $queryRaw: (
+      strings: TemplateStringsArray,
+    ) => Promise<Array<{ newRegSeq: number }>>;
+    registration: { create: jest.Mock };
+  }
+
+  let sequenceRows: SequenceRow[];
+  let registrationCreateSpy: jest.Mock;
+  let transactionSpy: jest.Mock;
+  let emailVerificationService: { verifyCode: jest.Mock; consumeCode: jest.Mock };
+  let mailService: { sendReceipt: jest.Mock };
+  let service: RegistrationsService;
+
+  /**
+   * `createImpl` lets a test override `tx.registration.create`'s behaviour
+   * (e.g. throw a `P2002` on the first call) while the counter/session-
+   * variable machinery below stays identical across every test.
+   */
+  function buildFakePrisma(
+    createImpl: (data: unknown) => Promise<unknown> = async () => ({}),
+  ): PrismaService {
+    registrationCreateSpy = jest.fn(createImpl);
+    transactionSpy = jest.fn(async (callback: (tx: FakeTx) => Promise<unknown>) => {
+      let sessionNewSeq: number | null = null;
+      const tx: FakeTx = {
+        $executeRaw: async (strings, ...values) => {
+          const sql = strings.join('?');
+          if (!sql.includes('RegistrationSequence')) {
+            throw new Error(`Fake tx.$executeRaw: unrecognized SQL: ${sql}`);
+          }
+          const [year] = values as [number];
+          let row = sequenceRows.find((r) => r.year === year);
+          if (!row) {
+            row = { year, seq: 1 };
+            sequenceRows.push(row);
+          } else {
+            row.seq += 1;
+          }
+          sessionNewSeq = row.seq;
+          return 1;
+        },
+        $queryRaw: async (strings) => {
+          const sql = strings.join('?');
+          if (!sql.includes('@newRegSeq')) {
+            throw new Error(`Fake tx.$queryRaw: unrecognized SQL: ${sql}`);
+          }
+          return [{ newRegSeq: sessionNewSeq as number }];
+        },
+        registration: { create: registrationCreateSpy },
+      };
+      return callback(tx);
+    });
+    return { $transaction: transactionSpy } as unknown as PrismaService;
+  }
+
+  function validDto(
+    overrides: {
+      email?: string;
+      code?: string;
+      consent?: Partial<{ accepted: boolean; policyVersion: string }>;
+      payload?: Record<string, unknown>;
+    } = {},
+  ): RegistrationCreateDto {
+    return {
+      email: overrides.email ?? 'Neema@KHSC.co.tz',
+      code: overrides.code ?? '123456',
+      consent: {
+        accepted: true,
+        policyVersion: CONSENT_POLICY_VERSION,
+        ...overrides.consent,
+      },
+      payload: {
+        traderName: 'Mbeya Seed Traders Ltd',
+        traderType: 'seed_company',
+        contactPerson: 'Neema Shirima',
+        region: 'Mbeya',
+        crops: ['sorghum', 'common_bean'],
+        capacityTons: 120,
+        phone: '+255700000000',
+        ...overrides.payload,
+      },
+    } as unknown as RegistrationCreateDto;
+  }
+
+  beforeEach(() => {
+    sequenceRows = [];
+    emailVerificationService = {
+      verifyCode: jest.fn().mockResolvedValue({ outcome: 'MATCHED', id: 'ev-row-1' }),
+      consumeCode: jest.fn().mockResolvedValue(true),
+    };
+    mailService = { sendReceipt: jest.fn().mockResolvedValue(undefined) };
+    service = new RegistrationsService(
+      emailVerificationService as unknown as EmailVerificationService,
+      mailService as unknown as MailService,
+      buildFakePrisma(),
+    );
+  });
+
+  describe('consent check (FR-3 scenario 3) — each case 400s with zero rows, before the code is ever checked', () => {
+    it('accepted: false — 400, zero rows, verifyCode never called', async () => {
+      await expect(
+        service.submitRegistration(validDto({ consent: { accepted: false } })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(emailVerificationService.verifyCode).not.toHaveBeenCalled();
+      expect(transactionSpy).not.toHaveBeenCalled();
+    });
+
+    it('accepted missing (undefined) — 400, zero rows, verifyCode never called', async () => {
+      const dto = validDto();
+      // @ts-expect-error — simulating a crafted request the DTO pipe would
+      // normally reject first; this suite proves the SERVICE's own check is
+      // not relying on the pipe alone.
+      delete dto.consent.accepted;
+
+      await expect(service.submitRegistration(dto)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(emailVerificationService.verifyCode).not.toHaveBeenCalled();
+      expect(transactionSpy).not.toHaveBeenCalled();
+    });
+
+    it('unknown policyVersion — 400, zero rows, verifyCode never called', async () => {
+      await expect(
+        service.submitRegistration(
+          validDto({ consent: { policyVersion: 'v0.0-not-a-real-version' } }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(emailVerificationService.verifyCode).not.toHaveBeenCalled();
+      expect(transactionSpy).not.toHaveBeenCalled();
+    });
+
+    it('the 400 envelope carries a per-field details entry, in the shared error shape', async () => {
+      try {
+        await service.submitRegistration(validDto({ consent: { accepted: false } }));
+        throw new Error('expected submitRegistration to reject');
+      } catch (err) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        const response = (err as BadRequestException).getResponse() as {
+          statusCode: number;
+          error: string;
+          details: Array<{ field: string }>;
+        };
+        expect(response.statusCode).toBe(400);
+        expect(response.error).toBe('Bad Request');
+        expect(response.details.some((d) => d.field === 'consent.accepted')).toBe(true);
+      }
+    });
+  });
+
+  describe('code verification (FR-4 s1/s2, V-1a) — rejected outside any transaction', () => {
+    it('a REJECTED code 400s with zero rows and no transaction is ever opened', async () => {
+      emailVerificationService.verifyCode.mockResolvedValue({ outcome: 'REJECTED' });
+
+      await expect(service.submitRegistration(validDto())).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      // V-1a's structural guarantee AS USED here: this method opens no
+      // `$transaction` at all on the mismatch path, so there is nothing for
+      // this `400` to roll back — `EmailVerificationService.verifyCode`'s
+      // OWN attempt-counter write (proven durable in its own suite) is
+      // never at risk from this caller.
+      expect(transactionSpy).not.toHaveBeenCalled();
+    });
+
+    it('a lost consume-race (consumeCode returns false) collapses into the IDENTICAL rejection shape as a REJECTED verifyCode (V-4/V-5 extended to this endpoint)', async () => {
+      emailVerificationService.consumeCode.mockResolvedValue(false);
+
+      let mismatchResponse: unknown;
+      try {
+        await service.submitRegistration(validDto());
+        throw new Error('expected submitRegistration to reject');
+      } catch (err) {
+        mismatchResponse = (err as BadRequestException).getResponse();
+      }
+
+      emailVerificationService.verifyCode.mockResolvedValue({ outcome: 'REJECTED' });
+      let rejectedResponse: unknown;
+      try {
+        await service.submitRegistration(validDto());
+        throw new Error('expected submitRegistration to reject');
+      } catch (err) {
+        rejectedResponse = (err as BadRequestException).getResponse();
+      }
+
+      expect(mismatchResponse).toEqual(rejectedResponse);
+      // No Registration row: the consume-race loser's transaction throws
+      // before `registration.create` is ever reached.
+      expect(registrationCreateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('success — one transaction, A23 (consume + create together), reference allocation, and the exact stored values', () => {
+    it('stores consentPolicyVersion and consentAcceptedAt equal to the submitted values, submitterEmail as the OTP-verified (lowercased) address, and returns ONLY { reference }', async () => {
+      const now = new Date('2026-08-06T10:15:00Z');
+      jest.useFakeTimers().setSystemTime(now);
+
+      try {
+        const dto = validDto({
+          email: 'Neema@KHSC.co.tz',
+          consent: { accepted: true, policyVersion: CONSENT_POLICY_VERSION },
+        });
+
+        const result = await service.submitRegistration(dto);
+
+        // FR-5 s1 / DC-2: the response is a literal `{ reference }` object —
+        // asserted against the fixture VALUE the mechanism actually
+        // produced, not merely "has a reference key".
+        const expectedReference = buildRegistrationReference(2026, 1);
+        expect(result).toEqual({ reference: expectedReference });
+        expect(Object.keys(result)).toEqual(['reference']);
+
+        expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+        const createArg = registrationCreateSpy.mock.calls[0][0] as {
+          data: {
+            reference: string;
+            submitterEmail: string;
+            emailVerifiedAt: Date;
+            consentAcceptedAt: Date;
+            consentPolicyVersion: string;
+            payload: Record<string, unknown>;
+          };
+        };
+        expect(createArg.data.reference).toBe(expectedReference);
+        // Lowercased — matching EmailVerification.email's own normalization
+        // (schema.prisma's "submitterEmail … Lowercased").
+        expect(createArg.data.submitterEmail).toBe('neema@khsc.co.tz');
+        expect(createArg.data.consentPolicyVersion).toBe(CONSENT_POLICY_VERSION);
+        expect(createArg.data.consentAcceptedAt).toEqual(now);
+        expect(createArg.data.emailVerifiedAt).toEqual(now);
+
+        // Positive sweep, not a 1-of-7-keys spot check: every field the
+        // applicant submitted is persisted VERBATIM, plus the schema-version
+        // marker (R2-A4) and every OMITTED optional field normalized to an
+        // explicit `null`, never a missing key (T9-A4).
+        expect(createArg.data.payload).toEqual({
+          schemaVersion: 1,
+          traderName: 'Mbeya Seed Traders Ltd',
+          traderType: 'seed_company',
+          contactPerson: 'Neema Shirima',
+          position: null,
+          district: null,
+          marketLocation: null,
+          sex: null,
+          region: 'Mbeya',
+          gpsLatitude: null,
+          gpsLongitude: null,
+          crops: ['sorghum', 'common_bean'],
+          otherCrops: null,
+          capacityTons: 120,
+          phone: '+255700000000',
+        });
+
+        // A23: consume and create ran inside the SAME `$transaction` call.
+        expect(emailVerificationService.consumeCode).toHaveBeenCalledTimes(1);
+        expect(transactionSpy).toHaveBeenCalledTimes(2); // allocation's own tx + the consume-and-create tx
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it(
+      'accepts and stores a KNOWN version that DIFFERS from the current CONSENT_POLICY_VERSION ' +
+        '(DD-7/§4.2: superseded versions stay accepted) — falsifies a hardcoded ' +
+        '`=== CONSENT_POLICY_VERSION` implementation, which the tautological single-version ' +
+        'fixture above cannot',
+      async () => {
+        const supersededVersion = 'v0.9-superseded-test-only';
+        const isKnownSpy = jest
+          .spyOn(ConsentPolicy, 'isKnownConsentPolicyVersion')
+          .mockImplementation(
+            (v: string) => v === supersededVersion || v === CONSENT_POLICY_VERSION,
+          );
+
+        try {
+          const dto = validDto({ consent: { policyVersion: supersededVersion } });
+          await service.submitRegistration(dto);
+
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+          const createArg = registrationCreateSpy.mock.calls[0][0] as {
+            data: { consentPolicyVersion: string };
+          };
+          expect(createArg.data.consentPolicyVersion).toBe(supersededVersion);
+        } finally {
+          isKnownSpy.mockRestore();
+        }
+      },
+    );
+
+    it('dispatches the receipt email with the submitter email and reference, after the transaction resolves', async () => {
+      const result = await service.submitRegistration(validDto());
+
+      expect(mailService.sendReceipt).toHaveBeenCalledWith('neema@khsc.co.tz', result.reference);
+    });
+
+    it(
+      'does not resolve until the receipt dispatch settles — the send is now awaited ' +
+        '(D-I, closed 2026-09-17: `dispatchReceiptEmail` used to be `void … .catch()`, which a ' +
+        'Lambda freeze can silently drop mid-flight after the response is written — observed in ' +
+        'production, CloudWatch carried a `mail send attempt kind=receipt` line with zero matching ' +
+        'outcome line. This test proves the opposite: submitRegistration() stays unsettled for as ' +
+        'long as the send itself is pending, so a freeze after `return` can no longer drop it. A ' +
+        'test asserting only that sendReceipt was CALLED — the previous version of this test — ' +
+        'would still pass on the fire-and-forget code this fix replaces; only blocking on ' +
+        "settlement falsifies that shape)",
+      async () => {
+        let resolveSend!: () => void;
+        mailService.sendReceipt.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            resolveSend = resolve;
+          }),
+        );
+
+        let settled = false;
+        const promise = service.submitRegistration(validDto()).then((result) => {
+          settled = true;
+          return result;
+        });
+
+        // Drain every already-queued microtask (setImmediate only runs
+        // after the microtask queue is empty) — a fire-and-forget dispatch
+        // would have let submitRegistration() fully resolve by now,
+        // however many `await`s its own chain has.
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+
+        resolveSend();
+        await promise;
+        expect(settled).toBe(true);
+      },
+    );
+
+    it('never dispatches mail when the transaction itself never commits (consent rejected before any write)', async () => {
+      await expect(
+        service.submitRegistration(validDto({ consent: { accepted: false } })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mailService.sendReceipt).not.toHaveBeenCalled();
+    });
+  });
+
+  describe(
+    'receipt-failure logging never leaks the address (rework attempt 2, FAIL 3 — mirrors ' +
+      "T-8's already-reviewed pair for the identical hazard on this SECOND mail dispatch path, " +
+      'now awaited (D-I) but still non-fatal to the submission)',
+    () => {
+      let errorSpy: jest.SpyInstance;
+
+      beforeEach(() => {
+        errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        errorSpy.mockRestore();
+      });
+
+      it(
+        'does not emit the applicant email even when the transport error embeds it verbatim ' +
+          '(a transport rejection can carry the recipient address in its message regardless of ' +
+          "which transport is live — see registrations.service.ts's MessageRejected-and-beyond " +
+          "rationale), and the submission ITSELF still succeeds (FR-14's 3a half: a send failure " +
+          'must not fail a submission)',
+        async () => {
+          const applicantEmail = 'neema@khsc.co.tz';
+          const transportRejection = new Error(
+            `Recipient rejected the message: ${applicantEmail} is not on the allowed sender list`,
+          );
+          transportRejection.name = 'TransportRejectedError';
+          mailService.sendReceipt.mockRejectedValue(transportRejection);
+
+          const result = await service.submitRegistration(validDto());
+          await tick();
+
+          expect(result.reference).toMatch(/^REG-\d{4}-\d{4,}$/);
+          expect(errorSpy).toHaveBeenCalledTimes(1);
+          const [emittedLine] = errorSpy.mock.calls[0] as [string];
+          expect(emittedLine).not.toContain(applicantEmail);
+          expect(emittedLine).toContain('TransportRejectedError');
+          expect(emittedLine).toContain(result.reference);
+        },
+      );
+
+      it('falls back to a bounded "UnknownError" discriminator for a non-Error rejection', async () => {
+        const applicantEmail = 'neema@khsc.co.tz';
+        mailService.sendReceipt.mockRejectedValue(`${applicantEmail}: rejected`);
+
+        await service.submitRegistration(validDto());
+        await tick();
+
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const [emittedLine] = errorSpy.mock.calls[0] as [string];
+        expect(emittedLine).not.toContain(applicantEmail);
+        expect(emittedLine).toContain('UnknownError');
+      });
+    },
+  );
+
+  describe('A-3 — the @unique constraint is the backstop, not the strategy: a collision is retried, bounded, never a raw 500', () => {
+    function p2002(): Prisma.PrismaClientKnownRequestError {
+      return new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`reference`)', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta: { target: ['reference'] },
+      });
+    }
+
+    it('a collision on the first attempt is retried transparently with a FRESH reference — the applicant never sees an error', async () => {
+      let calls = 0;
+      service = new RegistrationsService(
+        emailVerificationService as unknown as EmailVerificationService,
+        mailService as unknown as MailService,
+        buildFakePrisma(async () => {
+          calls += 1;
+          if (calls === 1) throw p2002();
+          return {};
+        }),
+      );
+
+      const now = new Date('2026-08-06T10:15:00Z');
+      const result = await service.submitRegistration(validDto());
+
+      expect(calls).toBe(2);
+      // Attempt 1 abandoned seq 1 (a gap — A-2 tolerates this, see
+      // registration-reference.util.ts); attempt 2 got a genuinely FRESH
+      // seq 2, never re-attempting the identical value that just collided.
+      expect(registrationCreateSpy.mock.calls[0][0].data.reference).toBe(
+        buildRegistrationReference(now.getUTCFullYear(), 1),
+      );
+      expect(registrationCreateSpy.mock.calls[1][0].data.reference).toBe(
+        buildRegistrationReference(now.getUTCFullYear(), 2),
+      );
+      expect(result.reference).toBe(buildRegistrationReference(now.getUTCFullYear(), 2));
+
+      // consumeCode ran again on the retry, re-consuming the SAME code —
+      // never a second issued code, never a second burned attempt.
+      expect(emailVerificationService.consumeCode).toHaveBeenCalledTimes(2);
+      expect(emailVerificationService.consumeCode.mock.calls[0][1]).toBe(
+        emailVerificationService.consumeCode.mock.calls[1][1],
+      );
+    });
+
+    it(
+      `bounds the retry at MAX_REFERENCE_ALLOCATION_ATTEMPTS (${MAX_REFERENCE_ALLOCATION_ATTEMPTS}) and, on ` +
+        'exhaustion, throws a controlled 503 in the documented envelope — NEVER the raw P2002 ' +
+        '(rework attempt 2, FAIL 1: an unhandled throw here serialises as a bodyless-of-`error` 500, ' +
+        'the exact envelope defect §4.4 required the throttler filter to fix)',
+      async () => {
+        const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+        try {
+          service = new RegistrationsService(
+            emailVerificationService as unknown as EmailVerificationService,
+            mailService as unknown as MailService,
+            buildFakePrisma(async () => {
+              throw p2002();
+            }),
+          );
+
+          let caught: unknown;
+          try {
+            await service.submitRegistration(validDto());
+            throw new Error('expected submitRegistration to reject');
+          } catch (err) {
+            caught = err;
+          }
+
+          expect(caught).toBeInstanceOf(ServiceUnavailableException);
+          const response = (caught as ServiceUnavailableException).getResponse() as {
+            statusCode: number;
+            error: string;
+            message: string;
+          };
+          expect(response.statusCode).toBe(503);
+          expect(response.error).toBe('Service Unavailable');
+          expect(typeof response.message).toBe('string');
+
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(MAX_REFERENCE_ALLOCATION_ATTEMPTS);
+
+          // The alarm hook a raw throw would not give an operator: a
+          // distinct, greppable line carrying ONLY `year`/`attempts` — no
+          // email, no payload field, no code.
+          const exhaustionLine = (errorSpy.mock.calls as [string][]).find(([line]) =>
+            line.includes('registration reference allocation exhausted'),
+          )?.[0];
+          expect(exhaustionLine).toBeDefined();
+          expect(exhaustionLine).toContain(`attempts=${MAX_REFERENCE_ALLOCATION_ATTEMPTS}`);
+          expect(exhaustionLine).toMatch(/year=\d{4}/);
+        } finally {
+          errorSpy.mockRestore();
+        }
+      },
+    );
+  });
+
+  describe(
+    'A1 (Reviewer advisory, structural) — the receipt dispatch sits OUTSIDE the retry ' +
+      "loop's try/catch entirely, so a failure there can never be misread as a reference " +
+      'collision and retried into a SECOND row for one submission, nor swallowed into the ' +
+      'exhaustion 503 on an already-committed registration',
+    () => {
+      it(
+        'a P2002-shaped rejection from the receipt dispatch propagates directly — it is NOT ' +
+          "caught by the loop's `isReferenceCollisionError` branch, so allocation is never " +
+          'retried and NO second row is ever created (the worst available outcome this ' +
+          "advisory closes off structurally, not by dispatchReceiptEmail's own total " +
+          'try/catch — which is stubbed out here specifically to prove the OUTER placement ' +
+          'holds even if that inner catch ever stopped being total)',
+        async () => {
+          const collisionShaped = new Prisma.PrismaClientKnownRequestError(
+            'Unique constraint failed on the fields: (`reference`)',
+            { code: 'P2002', clientVersion: 'test', meta: { target: ['reference'] } },
+          );
+          const dispatchSpy = jest
+            .spyOn(
+              service as unknown as { dispatchReceiptEmail: () => Promise<void> },
+              'dispatchReceiptEmail',
+            )
+            .mockRejectedValueOnce(collisionShaped);
+
+          await expect(service.submitRegistration(validDto())).rejects.toBe(collisionShaped);
+
+          // Exactly ONE row was ever created — the loop did not treat this
+          // as a collision, did not `continue`, and therefore never
+          // re-allocated a fresh reference and wrote a second row.
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+
+          dispatchSpy.mockRestore();
+        },
+      );
+
+      it(
+        'an ordinary (non-P2002) rejection from the receipt dispatch ALSO propagates directly ' +
+          '— never the controlled 503 the loop reserves for allocation exhaustion, which would ' +
+          'misreport an already-committed registration as failed',
+        async () => {
+          const transportFailure = new Error('mail transport unavailable');
+          const dispatchSpy = jest
+            .spyOn(
+              service as unknown as { dispatchReceiptEmail: () => Promise<void> },
+              'dispatchReceiptEmail',
+            )
+            .mockRejectedValueOnce(transportFailure);
+
+          await expect(service.submitRegistration(validDto())).rejects.toBe(transportFailure);
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+
+          dispatchSpy.mockRestore();
+        },
+      );
+    },
+  );
+});
+
+// @sdd-spec actors/public-self-registration (T-11)
+/**
+ * `RegistrationsService.lookupRegistration` unit tests (FR-6, FR-8,
+ * design.md §3.1 decision 3–4, §4.4 L-1…L-4).
+ *
+ * Each constraint (L-1…L-4) gets its OWN named describe block and its OWN
+ * evidence, per KZ-001 — a scenario-and-clause granularity, not a single
+ * green test standing in for all four. `RegistrationLookupAttempt`'s atomic
+ * counter is modelled by the SAME fake `$transaction`/session-variable
+ * shape `email-verification.service.spec.ts` and
+ * `registration-reference.util.spec.ts` already establish for the sibling
+ * `EmailSendBudget`/`RegistrationSequence` mechanisms — reused here because
+ * `incrementLookupAttempts` makes the exact same `$executeRaw`/`$queryRaw`
+ * call shape.
+ */
+describe('RegistrationsService.lookupRegistration', () => {
+  interface AttemptRow {
+    ip: string;
+    reference: string;
+    windowStartIso: string;
+    attempts: number;
+  }
+
+  interface RegistrationRow {
+    reference: string;
+    status: string;
+    reviewNote: string | null;
+    submitterEmail: string;
+    // Present so a leak of ANY of these would be visible in a test that
+    // asserts the full response object, never just its key set.
+    id: string;
+    payload: Record<string, unknown>;
+    reviewedBySub: string | null;
+    reviewedByEmail: string | null;
+  }
+
+  let attemptRows: AttemptRow[];
+  let registrationRows: RegistrationRow[];
+  let findUniqueSpy: jest.Mock;
+  let updateSpy: jest.Mock;
+  let transactionSpy: jest.Mock;
+  let service: RegistrationsService;
+
+  /** Look up this test's own recorded counter row — never ambiguous, since every seeded row carries both `ip` AND `reference`. */
+  /**
+   * T11-A1 — rows are keyed on an HMAC of the caller IP, never the address
+   * itself, so a test looking up by the plaintext IP finds nothing.
+   *
+   * This recomputes the digest **independently**, with its own `createHmac`
+   * call, rather than importing the service's `pseudonymiseCallerIp`. That is
+   * deliberate: importing the implementation would make every assertion below
+   * tautological — the test would agree with the code by construction and
+   * would keep passing if the code stopped hashing at all. An independent
+   * oracle is the same discipline T-7's V-6 test used for the OTP hash.
+   *
+   * Consequence worth knowing: if the service ever changed its domain-
+   * separation prefix, these lookups would return `undefined` and every
+   * counter assertion would fail loudly — which is the correct direction.
+   */
+  function callerKeyFor(ip: string): string {
+    return createHmac('sha256', process.env.OTP_HMAC_SECRET as string)
+      .update(`lookup-ip:${ip}`)
+      .digest('hex');
+  }
+
+  function attemptsFor(ip: string, reference: string): number | undefined {
+    const key = callerKeyFor(ip);
+    return attemptRows.find((r) => r.ip === key && r.reference === reference)?.attempts;
+  }
+
+  /**
+   * Mirrors `registrations.service.spec.ts`'s existing `buildFakePrisma` for
+   * `RegistrationSequence` exactly, for the sibling `RegistrationLookupAttempt`
+   * mechanism: a fresh fake `tx` per `$transaction` call, each with its OWN
+   * `sessionNewAttempts` closure (connection-scoped session-variable
+   * fidelity), backed by a SHARED `attemptRows` array standing in for the
+   * persisted table survives-cold-starts property L-1 depends on. Keyed on
+   * the COMPOSITE `(ip, reference, windowStart)` (rework attempt 2) — see
+   * `registrations.service.ts`'s class doc on `lookupRegistration` for why a
+   * per-caller-ONLY key was rejected.
+   */
+  function buildFakePrisma(): PrismaService {
+    transactionSpy = jest.fn(async (callback: (tx: unknown) => Promise<number>) => {
+      let sessionNewAttempts: number | null = null;
+      const tx = {
+        $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (!sql.includes('RegistrationLookupAttempt')) {
+            throw new Error(`Fake tx.$executeRaw: unrecognized SQL: ${sql}`);
+          }
+          const [ip, reference, windowStart] = values as [string, string, Date];
+          const windowStartIso = windowStart.toISOString();
+          let row = attemptRows.find(
+            (r) => r.ip === ip && r.reference === reference && r.windowStartIso === windowStartIso,
+          );
+          if (!row) {
+            row = { ip, reference, windowStartIso, attempts: 1 };
+            attemptRows.push(row);
+          } else {
+            row.attempts += 1;
+          }
+          sessionNewAttempts = row.attempts;
+          return 1;
+        },
+        $queryRaw: async (strings: TemplateStringsArray) => {
+          const sql = strings.join('?');
+          if (!sql.includes('@newLookupAttempts')) {
+            throw new Error(`Fake tx.$queryRaw: unrecognized SQL: ${sql}`);
+          }
+          return [{ newLookupAttempts: sessionNewAttempts as number }];
+        },
+      };
+      return callback(tx);
+    });
+
+    findUniqueSpy = jest.fn(async ({ where }: { where: { reference: string } }) => {
+      return registrationRows.find((r) => r.reference === where.reference) ?? null;
+    });
+
+    updateSpy = jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: {
+          ip_reference_windowStart: { ip: string; reference: string; windowStart: Date };
+        };
+        data: { attempts: number };
+      }) => {
+        const key = where.ip_reference_windowStart;
+        const windowStartIso = key.windowStart.toISOString();
+        const row = attemptRows.find(
+          (r) => r.ip === key.ip && r.reference === key.reference && r.windowStartIso === windowStartIso,
+        );
+        if (!row) {
+          throw new Error('Fake registrationLookupAttempt.update: no row for this key');
+        }
+        row.attempts = data.attempts;
+        return row;
+      },
+    );
+
+    return {
+      $transaction: transactionSpy,
+      registration: { findUnique: findUniqueSpy },
+      registrationLookupAttempt: { update: updateSpy },
+    } as unknown as PrismaService;
+  }
+
+  function seedRegistration(overrides: Partial<RegistrationRow> = {}): RegistrationRow {
+    const row: RegistrationRow = {
+      reference: 'REG-2026-0184',
+      status: 'PENDING_REVIEW',
+      reviewNote: null,
+      submitterEmail: 'neema@khsc.co.tz',
+      id: 'internal-cuid-should-never-leak',
+      payload: { traderName: 'Mbeya Seed Traders Ltd' },
+      reviewedBySub: 'admin-sub-should-never-leak',
+      reviewedByEmail: 'admin@example.com',
+      ...overrides,
+    };
+    registrationRows.push(row);
+    return row;
+  }
+
+  beforeEach(() => {
+    attemptRows = [];
+    registrationRows = [];
+    service = new RegistrationsService(
+      {} as unknown as EmailVerificationService,
+      {} as unknown as MailService,
+      buildFakePrisma(),
+    );
+  });
+
+  describe('L-1 — the bound survives cold starts and spans containers', () => {
+    it(
+      'a BRAND NEW service instance still sees the SAME accumulated attempt count for the SAME ' +
+        '(caller, reference) pair, off the SAME backing store — this rules out PER-INSTANCE state ' +
+        '(e.g. a field on `RegistrationsService` itself); it does NOT, on its own, rule out a ' +
+        'module-level in-memory singleton, which would still be per-container and still the C-4 ' +
+        'shape L-1 exists to close. The actual cross-container evidence is structural, not this ' +
+        'test alone: `incrementLookupAttempts` writes through `tx.$executeRaw` against a real, ' +
+        'named SQL table (`RegistrationLookupAttempt`, guarded by the "unrecognized SQL" throw ' +
+        'above, so this fake cannot silently degrade into an in-memory stand-in), that table is ' +
+        'declared in a committed migration, and the identical technique was proven under genuine ' +
+        'concurrent load against dev RDS for the sibling `EmailSendBudget`/`RegistrationSequence` ' +
+        'mechanisms in T-7/T-10.',
+      async () => {
+        seedRegistration();
+        const wrongEmailAttempts = LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1;
+        for (let i = 0; i < wrongEmailAttempts; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0184', 'wrong@example.com', '203.0.113.5'),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+
+        // A fresh instance, but the SAME underlying (fake-persisted) Prisma
+        // — this is the point: nothing about `RegistrationsService`'s own
+        // construction resets the counter, because the counter lives in the
+        // DB-backed table, not in this class's memory.
+        const freshContainerService = new RegistrationsService(
+          {} as unknown as EmailVerificationService,
+          {} as unknown as MailService,
+          {
+            $transaction: transactionSpy,
+            registration: { findUnique: findUniqueSpy },
+            registrationLookupAttempt: { update: updateSpy },
+          } as unknown as PrismaService,
+        );
+
+        // One more wrong attempt from the SAME caller pushes them to EXACTLY
+        // the cap-th attempt (still allowed to run the lookup) — proving the
+        // count truly carried over from the "old container".
+        await expect(
+          freshContainerService.lookupRegistration(
+            'REG-2026-0184',
+            'wrong@example.com',
+            '203.0.113.5',
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(attemptsFor('203.0.113.5', 'REG-2026-0184')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+        // And the VERY NEXT call — the (cap+1)-th — is the locked exit.
+        await expect(
+          freshContainerService.lookupRegistration(
+            'REG-2026-0184',
+            'wrong@example.com',
+            '203.0.113.5',
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(attemptsFor('203.0.113.5', 'REG-2026-0184')).toBe(
+          LOOKUP_MAX_ATTEMPTS_PER_WINDOW + 1,
+        );
+      },
+    );
+
+    it(
+      'the ATOMIC INCREMENT STATEMENT is not a check-then-act read+write — of N truly concurrent ' +
+        'calls from the SAME caller against the SAME reference, the counter advances by exactly N, ' +
+        "never fewer. This proves the FAKE's single-statement shape is not read-then-write (the " +
+        "exact defect that defeated EmailSendBudget's first two attempts, per " +
+        'email-verification.service.ts) — it does NOT, on its own, prove MySQL-level atomicity of ' +
+        'the real `INSERT … ON DUPLICATE KEY UPDATE` under contention; that is inherited from the ' +
+        "IDENTICAL technique's dev-RDS load runs in T-7 (EmailSendBudget) and T-10 " +
+        '(RegistrationSequence), not re-measured here.',
+      async () => {
+        seedRegistration();
+        const concurrentCalls = 5;
+
+        const results = await Promise.allSettled(
+          Array.from({ length: concurrentCalls }, () =>
+            service.lookupRegistration('REG-2026-0184', 'wrong@example.com', '198.51.100.9'),
+          ),
+        );
+
+        // All 5 are wrong-email guesses — every one rejects.
+        expect(results.every((r) => r.status === 'rejected')).toBe(true);
+        expect(attemptsFor('198.51.100.9', 'REG-2026-0184')).toBe(concurrentCalls);
+      },
+    );
+  });
+
+  describe('L-2 — byte-identity across all three exits, including the locked one', () => {
+    it('reference-absent, email-mismatch, and caller-over-cap (against ONE reference) all throw the IDENTICAL 404 body', async () => {
+      seedRegistration({ reference: 'REG-2026-0200', submitterEmail: 'known@example.com' });
+
+      // Exit 1: reference does not exist at all. A distinct IP, and a
+      // reference this test never targets again — its OWN counter row is
+      // irrelevant to the lock driven below (rework attempt 2: keying now
+      // includes `reference`, so a counter on `REG-2026-9999` cannot
+      // contribute to a lock on `REG-2026-0200`).
+      let absentResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-9999', 'known@example.com', '203.0.113.10');
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        absentResponse = (err as NotFoundException).getResponse();
+      }
+
+      // Exit 2: reference exists, email does not match.
+      let mismatchResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-0200', 'wrong@example.com', '203.0.113.11');
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        mismatchResponse = (err as NotFoundException).getResponse();
+      }
+
+      // Exit 3: this caller is over the lookup-attempt cap for the ONE
+      // reference this sub-test cares about — every guess below targets
+      // `REG-2026-0200` specifically, since the counter is now per
+      // (ip, reference): guessing against a DIFFERENT reference would not
+      // advance this one at all.
+      const lockedCallerIp = '203.0.113.12';
+      for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+        try {
+          await service.lookupRegistration('REG-2026-0200', 'guess@example.com', lockedCallerIp);
+        } catch {
+          // expected on every call in this loop.
+        }
+      }
+      expect(attemptsFor(lockedCallerIp, 'REG-2026-0200')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+      // The (cap + 1)-th request against THIS reference — submitting the
+      // genuinely CORRECT email this time — is the locked exit.
+      let lockedResponse: unknown;
+      try {
+        await service.lookupRegistration('REG-2026-0200', 'known@example.com', lockedCallerIp);
+        throw new Error('expected rejection');
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotFoundException);
+        lockedResponse = (err as NotFoundException).getResponse();
+      }
+
+      const expectedBody = {
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'No registration was found matching that reference and email.',
+      };
+      expect(absentResponse).toEqual(expectedBody);
+      expect(mismatchResponse).toEqual(expectedBody);
+      expect(lockedResponse).toEqual(expectedBody);
+      // Cross-equality alone would pass if all three were identically WRONG
+      // in some other way; pinning to the literal expected body rules that
+      // out for each individually too.
+    });
+
+    it(
+      'a LOCKED caller submitting the CORRECT reference+email still gets the 404 — the lock check ' +
+        'runs before correctness is ever evaluated, so "locked" and "was right" are not a second, ' +
+        'subtler distinguishable outcome',
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0300', submitterEmail: 'known@example.com' });
+        const lockedCallerIp = '203.0.113.20';
+
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+          try {
+            await service.lookupRegistration(
+              'REG-2026-0300',
+              'guess@example.com',
+              lockedCallerIp,
+            );
+          } catch {
+            // expected — driving this caller over the cap for THIS reference.
+          }
+        }
+        findUniqueSpy.mockClear();
+
+        await expect(
+          service.lookupRegistration('REG-2026-0300', 'known@example.com', lockedCallerIp),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        // The correctness check never ran at all once locked — not merely
+        // "ran and was overridden".
+        expect(findUniqueSpy).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe('L-3 — an attacker cannot deny a legitimate applicant access to their OWN status', () => {
+    it(
+      "an attacker's caller IP locking itself out against a real applicant's reference does NOT " +
+        "lock out the real applicant's own (DIFFERENT) caller IP looking up the SAME reference",
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0400', submitterEmail: 'applicant@example.com' });
+        const attackerIp = '198.51.100.50';
+        const applicantIp = '198.51.100.51';
+
+        // The attacker guesses wrong emails against the applicant's
+        // reference until THEY are locked.
+        for (let i = 0; i <= LOOKUP_MAX_ATTEMPTS_PER_WINDOW; i++) {
+          try {
+            await service.lookupRegistration('REG-2026-0400', 'guess@example.com', attackerIp);
+          } catch {
+            // expected on every one of these.
+          }
+        }
+        expect(attemptsFor(attackerIp, 'REG-2026-0400')).toBeGreaterThan(
+          LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
+        );
+
+        // The genuine applicant, from THEIR OWN IP, still succeeds — a
+        // reference-keyed (or shared) bound would have failed this.
+        const result = await service.lookupRegistration(
+          'REG-2026-0400',
+          'applicant@example.com',
+          applicantIp,
+        );
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      },
+    );
+  });
+
+  describe('L-4 — a successful lookup does not leave the caller closer to a lockout against THAT reference', () => {
+    it(
+      'after (cap - 1) failed guesses followed by ONE success, the attempt counter for that ' +
+        "(caller, reference) pair is reset to 0 — not merely 'not incremented further', an actual " +
+        'reset — proven both on the stored value and behaviourally (the caller can make cap MORE ' +
+        'failed guesses against the SAME reference afterward before being locked again)',
+      async () => {
+        seedRegistration({ reference: 'REG-2026-0500', submitterEmail: 'applicant@example.com' });
+        const callerIp = '198.51.100.60';
+
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0500', 'wrong@example.com', callerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1);
+
+        await service.lookupRegistration('REG-2026-0500', 'applicant@example.com', callerIp);
+
+        // The direct, internal proof: the stored counter is genuinely 0,
+        // not merely unchanged from its pre-success value.
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(0);
+
+        // The behavioural proof: this caller can now absorb
+        // LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1 MORE failed guesses against the
+        // SAME reference (a fresh full budget) without being locked —
+        // impossible if the earlier failed attempts had survived the success.
+        for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+          await expect(
+            service.lookupRegistration('REG-2026-0500', 'wrong-again@example.com', callerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
+        // Still not locked — the NEXT one (the cap-th SINCE the reset) is
+        // still a content-based rejection, not yet the lock.
+        expect(attemptsFor(callerIp, 'REG-2026-0500')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1);
+      },
+    );
+  });
+
+  describe(
+    'L-1 × L-4 interaction (rework attempt 2 — the FAIL this rework fixes) — a reset earned by a ' +
+      "match on the attacker's OWN reference must never reset a DIFFERENT reference's budget",
+    () => {
+      it(
+        'REGRESSION: ONE genuinely successful lookup of the attacker\'s OWN (unrelated) reference, ' +
+          'interleaved partway through a run of wrong-email guesses against a VICTIM reference, ' +
+          "does NOT reset — or otherwise affect — the victim reference's attempt counter; the " +
+          'victim reference still locks at exactly the cap, counting every guess actually made ' +
+          "against it (including the guesses made both BEFORE and AFTER the interleaved success). " +
+          "One interleave is sufficient to distinguish the two mechanisms — under attempt 1's " +
+          'per-caller-ONLY key, this exact sequence would have reset the SHARED counter back to 0 ' +
+          'partway through, so the victim reference would never have reached the cap at all.',
+        async () => {
+          seedRegistration({ reference: 'REG-2026-0900', submitterEmail: 'victim@example.com' });
+          seedRegistration({ reference: 'REG-2026-0901', submitterEmail: 'attacker@example.com' });
+          const attackerIp = '198.51.100.77';
+
+          // 9 wrong guesses against the victim's reference — one short of
+          // the cap.
+          for (let i = 0; i < LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1; i++) {
+            await expect(
+              service.lookupRegistration('REG-2026-0900', `guess-${i}@example.com`, attackerIp),
+            ).rejects.toBeInstanceOf(NotFoundException);
+          }
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(
+            LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1,
+          );
+
+          // THE INTERLEAVE: one genuinely successful lookup of the
+          // attacker's OWN reference — this is the exact call that used to
+          // reset the (attempt-1) SHARED counter.
+          const own = await service.lookupRegistration(
+            'REG-2026-0901',
+            'attacker@example.com',
+            attackerIp,
+          );
+          expect(own).toEqual({ status: 'PENDING_REVIEW' });
+          // The attacker's own reference's counter is 0 — freshly reset by
+          // its own success, exactly as L-4 requires for THAT reference —
+          // and, critically, the victim reference's counter (asserted next)
+          // is UNAFFECTED by this reset.
+          expect(attemptsFor(attackerIp, 'REG-2026-0901')).toBe(0);
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(
+            LOOKUP_MAX_ATTEMPTS_PER_WINDOW - 1,
+          );
+
+          // The 10th guess against the victim's reference — bringing it to
+          // EXACTLY the cap.
+          await expect(
+            service.lookupRegistration('REG-2026-0900', 'guess-final@example.com', attackerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+          expect(attemptsFor(attackerIp, 'REG-2026-0900')).toBe(LOOKUP_MAX_ATTEMPTS_PER_WINDOW);
+
+          // The victim reference is now genuinely locked — even the
+          // CORRECT pair is refused.
+          await expect(
+            service.lookupRegistration('REG-2026-0900', 'victim@example.com', attackerIp),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        },
+      );
+    },
+  );
+
+  describe(
+    'case-insensitive email comparison is THIS METHOD\'S OWN behaviour, not the MySQL ' +
+      "utf8mb4_unicode_ci collation's (R2-A3) — `findUnique` here is a plain in-memory mock that " +
+      'never touches a real database or its collation, so a match below can ONLY be produced by ' +
+      'this method\'s own `normalizeEmail()` call',
+    () => {
+      it('matches an email submitted in a DIFFERENT case than the stored (already-lowercased) value', async () => {
+        seedRegistration({ reference: 'REG-2026-0600', submitterEmail: 'neema@khsc.co.tz' });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0600',
+          'NEEMA@KHSC.CO.TZ',
+          '203.0.113.30',
+        );
+
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      });
+
+      it('trims surrounding whitespace the same way normalizeEmail does for storage', async () => {
+        seedRegistration({ reference: 'REG-2026-0601', submitterEmail: 'neema@khsc.co.tz' });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0601',
+          '  Neema@KHSC.co.tz  ',
+          '203.0.113.31',
+        );
+
+        expect(result).toEqual({ status: 'PENDING_REVIEW' });
+      });
+    },
+  );
+
+  describe('the success response — status and reviewNote ONLY, from FIXTURE values (not a key list)', () => {
+    it('returns { status } alone when reviewNote is null — no stray reviewNote key at all', async () => {
+      seedRegistration({
+        reference: 'REG-2026-0700',
+        submitterEmail: 'applicant@example.com',
+        status: 'AWAITING_APPLICANT',
+        reviewNote: null,
+      });
+
+      const result = await service.lookupRegistration(
+        'REG-2026-0700',
+        'applicant@example.com',
+        '203.0.113.40',
+      );
+
+      expect(result).toEqual({ status: 'AWAITING_APPLICANT' });
+      expect(Object.keys(result)).toEqual(['status']);
+    });
+
+    it('returns { status, reviewNote } when a note exists — pinned to the fixture VALUES', async () => {
+      seedRegistration({
+        reference: 'REG-2026-0701',
+        submitterEmail: 'applicant@example.com',
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+
+      const result = await service.lookupRegistration(
+        'REG-2026-0701',
+        'applicant@example.com',
+        '203.0.113.41',
+      );
+
+      expect(result).toEqual({
+        status: 'REJECTED',
+        reviewNote: 'Duplicate of an existing registry record.',
+      });
+      expect(Object.keys(result).sort()).toEqual(['reviewNote', 'status']);
+    });
+
+    it(
+      'never carries payload, id, submitterEmail, reviewedBySub, or reviewedByEmail — asserted ' +
+        'against the fixture object as a whole, not a key subtraction, so a renamed leaked key would ' +
+        'still be caught',
+      async () => {
+        seedRegistration({
+          reference: 'REG-2026-0702',
+          submitterEmail: 'applicant@example.com',
+          status: 'APPROVED',
+          reviewNote: 'Welcome to the registry.',
+          id: 'internal-cuid-should-never-leak',
+          payload: { traderName: 'Should Never Leak Ltd', phone: '+255700000099' },
+          reviewedBySub: 'admin-sub-should-never-leak',
+          reviewedByEmail: 'admin-should-never-leak@example.com',
+        });
+
+        const result = await service.lookupRegistration(
+          'REG-2026-0702',
+          'applicant@example.com',
+          '203.0.113.42',
+        );
+
+        expect(result).toEqual({
+          status: 'APPROVED',
+          reviewNote: 'Welcome to the registry.',
+        });
+        const serialized = JSON.stringify(result);
+        expect(serialized).not.toContain('internal-cuid-should-never-leak');
+        expect(serialized).not.toContain('Should Never Leak Ltd');
+        expect(serialized).not.toContain('admin-sub-should-never-leak');
+        expect(serialized).not.toContain('admin-should-never-leak@example.com');
+      },
+    );
+  });
+});

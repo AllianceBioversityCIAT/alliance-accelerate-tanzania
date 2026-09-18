@@ -22,6 +22,30 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
 - Use **MUST / SHOULD / MAY** (RFC 2119) to signal priority.
 - Each requirement traces upward (to a PRD user story / acceptance criterion) and downward (to tasks in `task.md`).
 
+- **Reconcile figures against prose (KZ-005).** Every numeric claim must be cross-checked against narrative
+  statements elsewhere in the same spec before it is published; a count that contradicts a sentence in a
+  sibling document is a defect detectable without re-measuring.
+
+- **A requirement's factual claims are load-bearing, and no gate checks them (L-1, `enhancement/usage-analytics`).**
+  Every AKILI gate verifies one direction: *does the code match the spec?* Nothing asks whether the spec is
+  **true**. A requirement that is internally consistent and externally false passes every gate the methodology
+  has — and reaches code, and visitor-facing copy, unchallenged. So: any assertion about a **third-party system**,
+  the **test harness**, or the **codebase** must cite where it was verified, or be explicitly marked unverified.
+  Two corollaries, both from real defects:
+  - **A `Verify` clause is itself a claim about the harness.** State the mutation that should redden the test *and*
+    confirm the test's render path can actually reach it. A falsifying-input clause naming a mutation the harness
+    cannot observe proves nothing while reading as rigour.
+  - **An accepted-risk or accepted-limitation list is a claim about rendered reality.** Write it from a measurement,
+    never from reasoning. One such list went 1 → 3 → 10 across two corrections; every correction came from measuring,
+    none from re-reading.
+
+- **A universal negative requires a search that could have failed (`admin/registration-review-queue`).** Before writing *"X exists nowhere"*, run a case-insensitive, multi-pattern search over the whole tree. A single case-sensitive grep is evidence for a positive claim, never for an absence.
+
+- **Cite stable anchors, not line numbers (KZ-009).** `file:line` decays on its own — every edit above the
+  cited line falsifies it, including edits made by the same task. In any persistent document, anchor citations
+  to a **symbol, a unique class or literal string, or a section title**, and use bare line numbers only in
+  transient agent reports.
+
 ## 3. Functional Requirements
 For each:
 ```
@@ -37,7 +61,7 @@ For each:
 Performance, security, accessibility (WCAG 2.1 AA), availability, cost. Each measurable (e.g. "p95 < 1s over 1,000 records").
 
 ## 5. Data & Schema Impact
-New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new **PII** field (must be added to the PII allowlist).
+New/changed entities or fields vs. `docs/trd/trd.md §3`. Flag any new field with disclosure implications and classify it in `backend/src/common/pii-consent.policy.ts` — publicly-disclosed, contact-block, never-public, or, to withhold it from `Public`, declared in `PII_ALLOWLIST` **and** omitted from `PUBLICLY_DISCLOSED_FIELDS` (and `CONTACT_BLOCK_FIELDS`, if applicable) — adding it to `PII_ALLOWLIST` alone withholds nothing: that constant has zero runtime consumers and is a declaration only. **All three of those constants are declarations that the test suite asserts against — none has a runtime consumer.** The act that actually withholds a field is **not naming it in `toPublicListItem` / `toPublicDetail`** (`backend/src/common/role-aware.serializer.ts`), which build public output by explicit literal pick; `role-aware.serializer.spec.ts` pins both projections' exact key sets, so a field added to a pick reddens there.
 
 ## 6. Out of Scope
 Explicit non-goals for this spec.
@@ -49,4 +73,4 @@ Upstream specs, AWS resources (note `IBD-DEV` profile), open questions inherited
 Anything needing user/stakeholder confirmation before `/akili-execute`.
 
 ---
-**Conventions reminder:** RBAC roles are `Public` / `Staff` / `Admin`; PII = `phone`, `email` (+ any newly flagged). All AWS commands use `--profile IBD-DEV`.
+**Conventions reminder:** RBAC roles are `Public` / `Staff` / `Admin`. Disclosure to `Public` is governed by consent and the field-partition constants in `backend/src/common/pii-consent.policy.ts` (`PII_ALLOWLIST`, `PUBLICLY_DISCLOSED_FIELDS`, `CONTACT_BLOCK_FIELDS`, `NEVER_PUBLIC_FIELDS`, as of `actors/public-profile-disclosure`) — check that module for the current policy rather than assuming any specific field is withheld from `Public`; classify any newly-introduced field there. All AWS commands use `--profile IBD-DEV`.

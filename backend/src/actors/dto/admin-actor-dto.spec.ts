@@ -88,6 +88,43 @@ describe('AdminActorCreateDto', () => {
     });
     expect(await invalidProps(dto)).toContain('gpsLatitude');
   });
+
+  // `actors/public-profile-disclosure` T-2 — a populated round-trip, not a
+  // `null` default, per the task's Disqualifier: submitting a value and
+  // reading it back is what proves the field, not merely that it validates.
+  it('passes and round-trips a non-empty contactPerson and otherCrops', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      contactPerson: 'Neema Shirima',
+      otherCrops: 'Sesame trial plot',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.contactPerson).toBe('Neema Shirima');
+    expect(dto.otherCrops).toBe('Sesame trial plot');
+  });
+
+  // T-2 MANDATORY carry-forward — explicit @MaxLength bounds, unlike the
+  // pre-existing unbounded neighbours (district/position/marketLocation/phone),
+  // which are a known, out-of-scope defect this task does not fix.
+  it.each([
+    { field: 'contactPerson', maxLength: 120 },
+    { field: 'otherCrops', maxLength: 300 },
+  ])('rejects $field over its $maxLength-char bound', async ({ field, maxLength }) => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      [field]: 'x'.repeat(maxLength + 1),
+    });
+    expect(await invalidProps(dto)).toContain(field);
+  });
+
+  it('accepts contactPerson and otherCrops exactly at their bound', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      contactPerson: 'x'.repeat(120),
+      otherCrops: 'x'.repeat(300),
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
 });
 
 describe('AdminActorUpdateDto', () => {
@@ -118,6 +155,25 @@ describe('AdminActorUpdateDto', () => {
       crops: ['common_bean', 'common_bean'],
     });
     expect(await invalidProps(dto)).toContain('crops');
+  });
+
+  // T-2 — populated round-trip on the partial-update DTO too, and the
+  // inherited @MaxLength bound must still fire through PartialType.
+  it('passes and round-trips a non-empty contactPerson and otherCrops in a partial update', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      contactPerson: 'Amina Hassan',
+      otherCrops: 'Cassava',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.contactPerson).toBe('Amina Hassan');
+    expect(dto.otherCrops).toBe('Cassava');
+  });
+
+  it('rejects an over-bound contactPerson in a partial update (inherited @MaxLength)', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      contactPerson: 'x'.repeat(121),
+    });
+    expect(await invalidProps(dto)).toContain('contactPerson');
   });
 
   it('rejects inherited validation in a partial update (malformed email)', async () => {

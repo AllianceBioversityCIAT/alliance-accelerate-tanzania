@@ -9,6 +9,8 @@
  *   (c) skeletons render (no throw) when data=null + loading=true
  *   (d) count-up enabled path: final values present in DOM with GSAP mocked (FR-4, FR-8)
  *   (e) count-up disabled while loading (FR-4): skeletons, not count animation
+ *   (f) error notice renders ONLY on a failed fetch, not while loading and not
+ *       on a successful response (ATP-50)
  */
 
 import React from 'react';
@@ -58,7 +60,7 @@ describe('MetricsBand', () => {
   // ── (a) Live values render on success ────────────────────────────────────
 
   it('renders the four live metric values when data is available', () => {
-    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false, error: false });
 
     render(<MetricsBand />);
 
@@ -88,7 +90,7 @@ describe('MetricsBand', () => {
   // ── (b) Em-dash placeholder when data is null ────────────────────────────
 
   it('renders em-dash placeholders for each stat when data is null', () => {
-    useMetrics.mockReturnValue({ data: null, loading: false });
+    useMetrics.mockReturnValue({ data: null, loading: false, error: true });
 
     // Should not throw
     expect(() => render(<MetricsBand />)).not.toThrow();
@@ -102,12 +104,16 @@ describe('MetricsBand', () => {
     expect(screen.getByText('Major crops')).toBeInTheDocument();
     expect(screen.getByText('Regions covered')).toBeInTheDocument();
     expect(screen.getByText('Actor types')).toBeInTheDocument();
+
+    // ATP-50: the dashes are kept (FR-3) AND the failure is now stated, so the
+    // visitor is not left reading four dashes with no explanation.
+    expect(screen.getByText(/temporarily unavailable/i)).toBeInTheDocument();
   });
 
   // ── (c) Skeletons render while loading (no throw) ────────────────────────
 
   it('renders without throwing when loading=true and data is null', () => {
-    useMetrics.mockReturnValue({ data: null, loading: true });
+    useMetrics.mockReturnValue({ data: null, loading: true, error: false });
 
     // Must not throw
     expect(() => render(<MetricsBand />)).not.toThrow();
@@ -128,7 +134,7 @@ describe('MetricsBand', () => {
   // present in the DOM (progressive enhancement, FR-8).
 
   it('FR-4/FR-8: final numeric values are in the DOM when data is loaded (countUp enabled, GSAP mocked)', () => {
-    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
+    useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false, error: false });
 
     render(<MetricsBand />);
 
@@ -158,7 +164,7 @@ describe('MetricsBand', () => {
   // count animations.  No value text should be present.
 
   it('FR-4: count-up is not enabled while loading — skeletons shown, no numbers', () => {
-    useMetrics.mockReturnValue({ data: null, loading: true });
+    useMetrics.mockReturnValue({ data: null, loading: true, error: false });
 
     expect(() => render(<MetricsBand />)).not.toThrow();
 
@@ -170,5 +176,41 @@ describe('MetricsBand', () => {
 
     // Labels are always visible
     expect(screen.getByText('Actors mapped')).toBeInTheDocument();
+  });
+
+  // ── (f) Error notice is scoped to the failure case (ATP-50) ──────────────
+
+  it('ATP-50: does not render the error notice while loading', () => {
+    useMetrics.mockReturnValue({ data: null, loading: true, error: false });
+
+    render(<MetricsBand />);
+
+    expect(screen.queryByText(/temporarily unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it('ATP-50: does not render the error notice on a successful all-zero response', () => {
+    // The regression this guards: an empty registry is a SUCCESSFUL response of
+    // zeros, not an error. It must render "0" four times and stay silent.
+    useMetrics.mockReturnValue({
+      data: {
+        actorsMapped: 0,
+        cropsTracked: 0,
+        regionsCovered: 0,
+        actorTypes: 0,
+        crops: [
+          { slug: 'sorghum',     mappedActors: 0 },
+          { slug: 'common_bean', mappedActors: 0 },
+          { slug: 'groundnut',   mappedActors: 0 },
+        ],
+      } as Metrics,
+      loading: false,
+      error: false,
+    });
+
+    render(<MetricsBand />);
+
+    expect(screen.getAllByText('0')).toHaveLength(4);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+    expect(screen.queryByText(/temporarily unavailable/i)).not.toBeInTheDocument();
   });
 });

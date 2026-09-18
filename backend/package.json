@@ -8,8 +8,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test": "jest --runInBand",
     "generate:template": "ts-node scripts/generate-import-template.ts",
     "prisma:generate": "prisma generate"
   },
@@ -19,7 +18,9 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/mapped-types": "^2.1.1",
     "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^6.1.0",
+    "amqplib": "^2.0.1",
     "aws-jwt-verify": "^5.2.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -70,6 +71,7 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "testTimeout": 20000
   }
 }

@@ -1,11 +1,12 @@
 // @sdd-spec admin/actor-crud-audit (T-8)
+// @sdd-spec enhancement/searchable-region-select (T-7)
 'use client';
 
 /**
  * ActorForm — shared create/edit form for the admin actor registry (FR-8).
  *
  * Covers the full Actor field set in sections: Identity, Location/GPS,
- * Capacity & support, Contact (PII), Crops, and Consent.
+ * Capacity & support, Contact (PII), Crops, and Consent & provenance.
  *
  * Client validation mirrors the backend DTOs. Server 400 field errors and
  * 409 duplicate traderId are mapped inline via aria-describedby. A change
@@ -20,7 +21,9 @@ import { useCallback, useId, useState } from 'react';
 
 import { AcknowledgeDialog } from './AcknowledgeDialog';
 import Button from '../ui/Button';
+import { SearchableSelect } from '../ui/SearchableSelect';
 
+import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
 import {
@@ -28,6 +31,8 @@ import {
   updateActor,
   type AdminActor,
   type AdminActorCreateInput,
+  type ConsentMethod,
+  type RegistrationSource,
 } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 
@@ -55,6 +60,51 @@ const CONSENT_OPTIONS = [
   { value: 'UNKNOWN', label: 'Unknown' },
 ] as const;
 
+// T-7 (design.md §5.6) — computed once at module scope, mirroring
+// RegistrationForm's REGION_OPTIONS (T-4), for SearchableSelect's `options` prop.
+const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
+
+/**
+ * T-9 (FR-2, FR-6) — mirrors the labels used by the admin actors table filter
+ * (`app/(admin)/admin/actors/page.tsx` `CONSENT_METHOD_OPTIONS`) so the same
+ * enum reads identically everywhere in the admin console. `NOT_RECORDED` is
+ * listed deliberately (it is the schema default, not an "unset" sentinel) —
+ * the select has no separate blank option, see `renderConsentMethodSelect`.
+ */
+const CONSENT_METHOD_OPTIONS: { value: ConsentMethod; label: string }[] = [
+  { value: 'NOT_RECORDED', label: 'Not recorded' },
+  { value: 'PORTAL_CHECKBOX', label: 'Portal checkbox' },
+  { value: 'SIGNED_FORM', label: 'Signed form' },
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'VERBAL_FIELD', label: 'Verbal (field)' },
+];
+
+/**
+ * T-9 (FR-6 closure) — mirrors the labels the admin actors table already
+ * renders for this field: `sourceLabel`/`SourceBadge` in `ActorsTable.tsx`
+ * and `SOURCE_OPTIONS` in `app/(admin)/admin/actors/page.tsx`. Typed against
+ * the Prisma-generated `RegistrationSource` union (not `as const`), the same
+ * discipline `CONSENT_METHOD_OPTIONS` uses, so a typo'd literal is a compile
+ * error rather than a runtime `400` from the backend's `@IsIn`.
+ */
+const REGISTRATION_SOURCE_OPTIONS: { value: RegistrationSource; label: string }[] = [
+  { value: 'TEAM_MANAGED', label: 'Team-managed' },
+  { value: 'SELF_REGISTERED', label: 'Self-registered' },
+];
+
+/**
+ * Tanzania is East Africa Time, UTC+3 year-round (no DST) — a fixed, safe
+ * offset. Single-sourced as a number: `TANZANIA_UTC_OFFSET` (the `+03:00`
+ * string `dateOnlyToInstant` anchors new/edited dates to) and
+ * `TANZANIA_UTC_OFFSET_MS` (what `instantToDateOnly` shifts by before
+ * slicing) both derive from it, so there is exactly one place that encodes
+ * "3 hours" — editing this alone keeps both directions of the round trip
+ * in sync.
+ */
+const TANZANIA_UTC_OFFSET_HOURS = 3;
+const TANZANIA_UTC_OFFSET = `+${String(TANZANIA_UTC_OFFSET_HOURS).padStart(2, '0')}:00`;
+const TANZANIA_UTC_OFFSET_MS = TANZANIA_UTC_OFFSET_HOURS * 60 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -76,8 +126,27 @@ interface FormValues {
   technicalSupport: string;
   phone: string;
   email: string;
+  /**
+   * Named natural person, published deliberately once consent is `GRANTED`
+   * (`actors/public-profile-disclosure` FR-4).
+   */
+  contactPerson: string;
+  /** Actor-declared free text, published (FR-4). */
+  otherCrops: string;
   crops: string[];
   consentStatus: string;
+  /**
+   * T-9 (FR-6 closure) — mirrors the backend `RegistrationSource` enum.
+   * Non-nullable with a schema default (`TEAM_MANAGED`) — always a real
+   * value, never a blank sentinel, exactly like `consentMethod` below.
+   */
+  registrationSource: string;
+  /** T-9 (FR-2) — mirrors the backend `ConsentMethod` enum; always a real value, never a blank sentinel. */
+  consentMethod: string;
+  /** T-9 (FR-2) — `YYYY-MM-DD`, the native shape of `<input type="date">`; empty string when unset. */
+  consentObtainedAt: string;
+  /** T-9 (FR-2) — free-text evidence pointer; empty string when unset (never required). */
+  consentReference: string;
 }
 
 export interface ActorFormProps {
@@ -116,8 +185,14 @@ function toFormValues(actor?: AdminActor): FormValues {
       technicalSupport: '',
       phone: '',
       email: '',
+      contactPerson: '',
+      otherCrops: '',
       crops: [],
       consentStatus: '',
+      registrationSource: 'TEAM_MANAGED',
+      consentMethod: 'NOT_RECORDED',
+      consentObtainedAt: '',
+      consentReference: '',
     };
   }
   return {
@@ -137,16 +212,159 @@ function toFormValues(actor?: AdminActor): FormValues {
     technicalSupport: actor.technicalSupport ?? '',
     phone: actor.phone ?? '',
     email: actor.email ?? '',
+    contactPerson: actor.contactPerson ?? '',
+    otherCrops: actor.otherCrops ?? '',
     crops: actor.crops ?? [],
     consentStatus: actor.consentStatus,
+    registrationSource: actor.registrationSource,
+    consentMethod: actor.consentMethod,
+    consentObtainedAt: instantToDateOnly(actor.consentObtainedAt),
+    consentReference: actor.consentReference ?? '',
   };
+}
+
+/**
+ * Converts the date-only value from an `<input type="date">` (`YYYY-MM-DD`)
+ * into a full RFC-3339 instant, or `null` when empty.
+ *
+ * `ActorCreateDto.consentObtainedAt` is validated server-side with
+ * `@IsDateString()` (`class-validator`'s `isISO8601`), which happily accepts
+ * a bare `YYYY-MM-DD` string — but there is no `@Type(() => Date)` on the
+ * DTO, so a date-only string reaches Prisma untransformed. Prisma's
+ * `DateTime` column requires a full instant and raises a
+ * `PrismaClientValidationError`, which is NOT a `PrismaClientKnownRequestError`
+ * — `mapPrismaError` rethrows it and Nest renders an unhandled 500, not a
+ * clean 400. Building the full instant here, client-side, avoids ever
+ * sending the bare date.
+ *
+ * Anchored at Tanzania midnight, not UTC midnight: `IsNotFutureDate`
+ * (`actor-create.dto.ts`) compares against `Date.now()` in UTC, and Tanzania
+ * (EAT, UTC+3, no DST) is far enough ahead that a UTC-midnight instant for
+ * "today" can land after the real "now" between 00:00–03:00 EAT — an admin
+ * recording consent as "today" in that window would otherwise get a
+ * spurious "must not be a future date" rejection.
+ *
+ * Only called for a date the admin actually set or changed — see
+ * {@link resolveConsentObtainedAt}, which is what `buildDto` uses to decide
+ * between this and resending the stored instant verbatim.
+ */
+function dateOnlyToInstant(dateOnly: string): string | null {
+  const trimmed = dateOnly.trim();
+  return trimmed ? `${trimmed}T00:00:00${TANZANIA_UTC_OFFSET}` : null;
+}
+
+/**
+ * Inverse of {@link dateOnlyToInstant} — extracts the `YYYY-MM-DD` Tanzania
+ * calendar date from a stored RFC-3339 instant, for display in
+ * `<input type="date">`, and as the baseline `resolveConsentObtainedAt` uses
+ * to detect whether the admin actually touched the date field. Naively
+ * slicing the UTC ISO string the API returns would be off by one day near
+ * midnight (a value written as Tanzania midnight is stored as UTC 21:00 the
+ * *previous* day) — shifting by the fixed offset before slicing keeps this
+ * calendar-date extraction correct.
+ *
+ * This round trip is NOT what keeps an untouched date from registering as a
+ * spurious provenance change server-side. `isSameValue`
+ * (`consent-provenance.policy.ts`) normalises a stored `Date` via
+ * `toISOString()` and compares the result to the submitted value as a
+ * STRING, not as an instant — so rebuilding an instant from this function's
+ * output via `dateOnlyToInstant` would still differ byte-for-byte from a
+ * stored value that carries a real time-of-day (e.g.
+ * `2026-01-15T10:30:00.000Z`, written by import or the API), and would
+ * silently rewrite it to Tanzania midnight. That is why `buildDto` never
+ * rebuilds an untouched date through this function + `dateOnlyToInstant`: it
+ * resends the stored instant verbatim instead (see
+ * {@link resolveConsentObtainedAt}), which is what actually gives
+ * `isSameValue` a byte-identical match.
+ */
+function instantToDateOnly(iso: string | null): string {
+  if (!iso) return '';
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return '';
+  const tanzaniaLocal = new Date(instant.getTime() + TANZANIA_UTC_OFFSET_MS);
+  return tanzaniaLocal.toISOString().slice(0, 10);
+}
+
+/**
+ * Decides what `buildDto` sends for `consentObtainedAt` (T-9 rework,
+ * conformance Issue 1): does the admin's current date-field value differ
+ * from what this actor already has on file?
+ *
+ * - **Untouched** (edit mode, and the field still reads back to the same
+ *   Tanzania calendar date `instantToDateOnly` derives from the stored
+ *   instant): resend `initialValues.consentObtainedAt` **verbatim**. This
+ *   preserves any stored time-of-day byte-for-byte and is what makes
+ *   `isSameValue` (`consent-provenance.policy.ts`) compare equal — avoiding
+ *   both a phantom `consentObtainedAt` entry in the audit diff and a
+ *   possible spurious FR-3 rejection on an edit that never touched consent.
+ * - **New or changed** (create mode, or the field no longer matches the
+ *   baseline): build a fresh instant via `dateOnlyToInstant`, anchored at
+ *   Tanzania midnight. This is the only path allowed to invent a
+ *   time-of-day, because it is the only path where the admin is actually
+ *   asserting a new date.
+ */
+function resolveConsentObtainedAt(
+  values: FormValues,
+  mode: 'create' | 'edit',
+  initialValues?: AdminActor,
+): string | null {
+  if (mode === 'edit' && initialValues) {
+    const storedDateOnly = instantToDateOnly(initialValues.consentObtainedAt);
+    if (storedDateOnly === values.consentObtainedAt) {
+      return initialValues.consentObtainedAt;
+    }
+  }
+  return dateOnlyToInstant(values.consentObtainedAt);
 }
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-function validate(values: FormValues): Record<string, string> {
+/**
+ * FR-3, design.md §4.1 — the client-side UX mirror of the backend's shared
+ * consent-provenance invariant (`backend/src/common/consent-provenance.policy.ts`).
+ * This is UX only (design.md §5) — it exists to give the Admin an inline
+ * error instead of a round trip, NOT as the enforcement point. T-3's server
+ * rejection is independently tested and remains the real gate.
+ *
+ * Mirrors only the two firing conditions from the backend's §4.1 truth
+ * table, never field presence:
+ *  (a) a TRANSITION into GRANTED — create mode, or edit mode where the
+ *      actor's stored `consentStatus` was not already GRANTED; or
+ *  (b) an edit that changes one of the three provenance fields away from
+ *      what the actor already has on file.
+ *
+ * The distinction this function exists to get right: a legacy actor that is
+ * ALREADY `GRANTED` with unchanged provenance — every one of the 436 live
+ * actors today (`GRANTED` + `NOT_RECORDED` + null date) — must NOT trip this
+ * guard merely by being `GRANTED`. Firing on presence/status alone would
+ * make every such actor uneditable from this form, the exact regression
+ * design.md DD-3/R-9 exists to prevent.
+ */
+function needsProvenanceCheck(
+  mode: 'create' | 'edit',
+  values: FormValues,
+  initialValues?: AdminActor,
+): boolean {
+  if (values.consentStatus !== 'GRANTED') return false;
+
+  const transitionsIntoGranted = mode === 'create' || initialValues?.consentStatus !== 'GRANTED';
+  if (transitionsIntoGranted) return true;
+
+  const baseline = toFormValues(initialValues);
+  return (
+    values.consentMethod !== baseline.consentMethod ||
+    values.consentObtainedAt !== baseline.consentObtainedAt ||
+    values.consentReference.trim() !== baseline.consentReference.trim()
+  );
+}
+
+function validate(
+  values: FormValues,
+  mode: 'create' | 'edit',
+  initialValues?: AdminActor,
+): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!values.traderId.trim()) errors.traderId = 'Trader ID is required.';
@@ -157,6 +375,15 @@ function validate(values: FormValues): Record<string, string> {
 
   if (values.email.trim() && !isValidEmail(values.email)) {
     errors.email = 'Enter a valid email address.';
+  }
+
+  if (needsProvenanceCheck(mode, values, initialValues)) {
+    if (!values.consentMethod || values.consentMethod === 'NOT_RECORDED') {
+      errors.consentMethod = 'Select how consent was obtained before granting consent.';
+    }
+    if (!values.consentObtainedAt.trim()) {
+      errors.consentObtainedAt = 'Enter the date consent was obtained before granting consent.';
+    }
   }
 
   if (values.gpsLatitude.trim()) {
@@ -183,18 +410,32 @@ function validate(values: FormValues): Record<string, string> {
   return errors;
 }
 
-function buildDto(values: FormValues): AdminActorCreateInput {
+function buildDto(
+  values: FormValues,
+  mode: 'create' | 'edit',
+  initialValues?: AdminActor,
+): AdminActorCreateInput {
   return {
     traderId: values.traderId.trim(),
     traderName: values.traderName.trim(),
     region: values.region,
     traderType: values.traderType,
     consentStatus: values.consentStatus as 'GRANTED' | 'DENIED' | 'UNKNOWN',
+    registrationSource: values.registrationSource as RegistrationSource,
+    consentMethod: values.consentMethod as ConsentMethod,
+    consentObtainedAt: resolveConsentObtainedAt(values, mode, initialValues),
+    // C-3/E-1 carry-forward: '' and null are NOT the same to isSameValue() in
+    // consent-provenance.policy.ts. Keep the trim()||null idiom so a legacy
+    // actor's stored null round-trips as null, never as '' (which would read
+    // as "changed" and re-trigger the FR-3 guard server-side on an unrelated edit).
+    consentReference: values.consentReference.trim() || null,
     district: values.district.trim() || null,
+    contactPerson: values.contactPerson.trim() || null,
     sex: values.sex || null,
     position: values.position.trim() || null,
     marketLocation: values.marketLocation.trim() || null,
     capacityTons: values.capacityTons.trim() ? Number(values.capacityTons) : null,
+    otherCrops: values.otherCrops.trim() || null,
     technicalSupport: values.technicalSupport.trim() || null,
     phone: values.phone.trim() || null,
     email: values.email.trim() || null,
@@ -288,6 +529,7 @@ function Field({ id, label, error, hint, required, children }: FieldProps) {
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
+    'shadow-xs',
     'placeholder:text-muted',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
     'disabled:cursor-not-allowed disabled:opacity-50',
@@ -376,13 +618,13 @@ export default function ActorForm({
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      const validationErrors = validate(values);
+      const validationErrors = validate(values, mode, initialValues);
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
         return;
       }
 
-      const dto = buildDto(values);
+      const dto = buildDto(values, mode, initialValues);
 
       if (needsAcknowledgement(mode, values, initialValues?.consentStatus)) {
         setPendingDto(dto);
@@ -441,12 +683,42 @@ export default function ActorForm({
     );
   };
 
+  /**
+   * T-7 (design.md §5.6) — `SearchableSelect` swapped in for the native
+   * `<select>` `renderSelect` still renders for `traderType`/`sex`/`consentStatus`, inside
+   * the SAME `Field` wrapper so the label, required asterisk, and inline
+   * error message are unchanged. `invalid`/`describedBy` are computed the
+   * same way `renderSelect` computes them for every other field, so
+   * `aria-invalid`/`aria-describedby` follow the one `errors` record with no
+   * second path. No `clearOptionLabel` — region is required here too.
+   */
+  const renderRegionField = () => {
+    const field: keyof FormValues = 'region';
+    const id = fieldId(field);
+    const error = errors[field];
+    return (
+      <Field id={id} label="Region" error={error} required>
+        <SearchableSelect
+          id={id}
+          value={values.region}
+          onChange={(next) => setField('region', next)}
+          options={REGION_OPTIONS}
+          placeholder="Select…"
+          disabled={loading}
+          invalid={!!error}
+          describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
   const renderInput = (
     field: keyof FormValues,
     label: string,
-    type: 'text' | 'email' | 'number' = 'text',
+    type: 'text' | 'email' | 'number' | 'date' = 'text',
     required = false,
     hint?: string,
+    maxLength?: number,
   ) => {
     const id = fieldId(field);
     const error = errors[field];
@@ -459,6 +731,7 @@ export default function ActorForm({
           value={value}
           onChange={(e) => setField(field, e.target.value as FormValues[typeof field])}
           disabled={loading}
+          maxLength={maxLength}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={inputClasses(!!error)}
@@ -467,7 +740,12 @@ export default function ActorForm({
     );
   };
 
-  const renderTextarea = (field: keyof FormValues, label: string, required = false) => {
+  const renderTextarea = (
+    field: keyof FormValues,
+    label: string,
+    required = false,
+    maxLength?: number,
+  ) => {
     const id = fieldId(field);
     const error = errors[field];
     const value = values[field] as string;
@@ -479,10 +757,75 @@ export default function ActorForm({
           onChange={(e) => setField(field, e.target.value as FormValues[typeof field])}
           disabled={loading}
           rows={3}
+          maxLength={maxLength}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={inputClasses(!!error)}
         />
+      </Field>
+    );
+  };
+
+  /**
+   * T-9 (FR-2) — `consentMethod` is deliberately NOT rendered via the generic
+   * `renderSelect`: that helper always prepends a blank "—" option meaning
+   * "unset". `NOT_RECORDED` already IS the schema default / "unset" value
+   * for this enum, so a second blank option would be a redundant, ambiguous
+   * second way to express the same state (and one that fails `@IsIn` server-
+   * side if ever submitted, since `''` is not a member of `ConsentMethod`).
+   */
+  const renderConsentMethodSelect = () => {
+    const id = fieldId('consentMethod');
+    const error = errors.consentMethod;
+    return (
+      <Field id={id} label="Consent method" error={error} hint="Required when publishing (Granted)">
+        <select
+          id={id}
+          value={values.consentMethod}
+          onChange={(e) => setField('consentMethod', e.target.value)}
+          disabled={loading}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
+          className={inputClasses(!!error)}
+        >
+          {CONSENT_METHOD_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    );
+  };
+
+  /**
+   * T-9 (FR-6 closure) — like `renderConsentMethodSelect`, `registrationSource`
+   * is NOT rendered via the generic `renderSelect`: that helper always
+   * prepends a blank "—" option meaning "unset", but this enum is
+   * non-nullable with a schema default (`TEAM_MANAGED`) and has no "unset"
+   * state to express. A blank option here could submit `''`, which fails
+   * the backend's `@IsIn(RegistrationSource)` with a `400`.
+   */
+  const renderRegistrationSourceSelect = () => {
+    const id = fieldId('registrationSource');
+    const error = errors.registrationSource;
+    return (
+      <Field id={id} label="Registration source" error={error}>
+        <select
+          id={id}
+          value={values.registrationSource}
+          onChange={(e) => setField('registrationSource', e.target.value)}
+          disabled={loading}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
+          className={inputClasses(!!error)}
+        >
+          {REGISTRATION_SOURCE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </Field>
     );
   };
@@ -502,93 +845,138 @@ export default function ActorForm({
         )}
 
         {/* Identity */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Identity</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {renderInput('traderId', 'Trader ID', 'text', true)}
-            {renderInput('traderName', 'Trader name', 'text', true)}
-            {renderSelect(
-              'traderType',
-              'Trader type',
-              Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
-              true,
-            )}
-            {renderSelect('sex', 'Sex', SEX_OPTIONS)}
-            {renderInput('position', 'Position')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Identity</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {renderInput('traderId', 'Trader ID', 'text', true)}
+              {renderInput('traderName', 'Trader name', 'text', true)}
+              {renderSelect(
+                'traderType',
+                'Trader type',
+                Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
+                true,
+              )}
+              {renderSelect('sex', 'Sex', SEX_OPTIONS)}
+              {renderInput('position', 'Position')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Location */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Location</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {renderSelect(
-              'region',
-              'Region',
-              REGIONS.map((r) => ({ value: r, label: r })),
-              true,
-            )}
-            {renderInput('district', 'District')}
-            {renderInput('marketLocation', 'Market location')}
-            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-            {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
-            {renderInput('gpsAltitude', 'GPS altitude', 'number')}
-            {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {renderRegionField()}
+              {renderInput('district', 'District')}
+              {renderInput('marketLocation', 'Market location')}
+              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
+              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
+              {renderInput('gpsAltitude', 'GPS altitude', 'number')}
+              {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
+            </div>
+            {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
+                cell would cap the map at ~1/3 card width on lg. Mounted
+                eagerly (FR-7): this is a desktop admin surface, and seeing a
+                wrong pin without clicking is the whole point (proposal
+                Success Criteria 2). */}
+            <div className="mt-4">
+              <CoordinatePicker
+                initiallyOpen
+                latitude={values.gpsLatitude}
+                longitude={values.gpsLongitude}
+                disabled={loading}
+                onChange={(lat, lng) => {
+                  setField('gpsLatitude', lat);
+                  setField('gpsLongitude', lng);
+                }}
+              />
+            </div>
+          </fieldset>
+        </div>
 
         {/* Capacity & support */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Capacity & support</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {renderInput('capacityTons', 'Capacity (tons)', 'number', false, 'Must be 0 or greater')}
-            {renderTextarea('technicalSupport', 'Technical support required')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Capacity & support</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput('capacityTons', 'Capacity (tons)', 'number', false, 'Must be 0 or greater')}
+              {renderTextarea('technicalSupport', 'Technical support required')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Contact */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Contact</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {renderInput('phone', 'Phone')}
-            {renderInput('email', 'Email', 'email')}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput('contactPerson', 'Contact person', 'text', false, undefined, 120)}
+              {renderInput('phone', 'Phone')}
+              {renderInput('email', 'Email', 'email')}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Crops */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Crops</legend>
-          <div className="flex flex-wrap gap-4">
-            {CROP_NAMES.map((crop) => {
-              const id = `${baseId}-crop-${crop.value}`;
-              const checked = values.crops.includes(crop.value);
-              return (
-                <div key={crop.value} className="flex items-center gap-2">
-                  <input
-                    id={id}
-                    type="checkbox"
-                    value={crop.value}
-                    checked={checked}
-                    onChange={() => toggleCrop(crop.value)}
-                    disabled={loading}
-                    className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  />
-                  <label htmlFor={id} className="text-sm text-fg">
-                    {crop.label}
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-        </fieldset>
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Crops</legend>
+            <div className="flex flex-wrap gap-4">
+              {CROP_NAMES.map((crop) => {
+                const id = `${baseId}-crop-${crop.value}`;
+                const checked = values.crops.includes(crop.value);
+                return (
+                  <div key={crop.value} className="flex items-center gap-2">
+                    <input
+                      id={id}
+                      type="checkbox"
+                      value={crop.value}
+                      checked={checked}
+                      onChange={() => toggleCrop(crop.value)}
+                      disabled={loading}
+                      className="h-4 w-4 rounded border-border text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                    />
+                    <label htmlFor={id} className="text-sm text-fg">
+                      {crop.label}
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {renderInput(
+                'otherCrops',
+                'Other crop(s)',
+                'text',
+                false,
+                undefined,
+                300,
+              )}
+            </div>
+          </fieldset>
+        </div>
 
-        {/* Consent */}
-        <fieldset className="rounded-md border border-border p-4 sm:p-6">
-          <legend className="px-2 text-sm font-semibold text-fg">Consent</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
-          </div>
-        </fieldset>
+        {/* Consent & provenance */}
+        <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="mb-4 text-base font-semibold text-fg">Consent & provenance</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {renderRegistrationSourceSelect()}
+              {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
+              {renderConsentMethodSelect()}
+              {renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
+              {renderInput(
+                'consentReference',
+                'Consent reference',
+                'text',
+                false,
+                'Optional — e.g. document ID or email thread',
+              )}
+            </div>
+          </fieldset>
+        </div>
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">

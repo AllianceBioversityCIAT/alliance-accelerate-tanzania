@@ -1,0 +1,386 @@
+[
+  {
+    "id": "1-home-hero",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/1-home-hero__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "1-home-hero",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/1-home-hero__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "1-home-hero",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/1-home-hero__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "2-directory",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/2-directory__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "2-directory",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/2-directory__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "2-directory",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/2-directory__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "3-admin-actors",
+    "status": "SKIPPED_NO_CREDENTIALS"
+  },
+  {
+    "id": "4-import-preview",
+    "status": "SKIPPED_NO_CREDENTIALS"
+  },
+  {
+    "id": "5-map",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/5-map__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "5-map",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/5-map__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "5-map",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/5-map__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "6-footer",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/6-footer__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "6-footer",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/6-footer__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "6-footer",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/6-footer__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "7-dialog",
+    "status": "SKIPPED_NO_CREDENTIALS"
+  },
+  {
+    "id": "8-dashboard",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/8-dashboard__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "8-dashboard",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/8-dashboard__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "8-dashboard",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/8-dashboard__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "9-register-form",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/9-register-form__375.png",
+    "legendMeta": {
+      "legends": [
+        {
+          "text": "Identity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Location",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Crops & capacity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Contact",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Data protection & consent",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        }
+      ],
+      "label": {
+        "fontWeight": "500",
+        "fontSize": "14px"
+      }
+    }
+  },
+  {
+    "id": "9-register-form",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/9-register-form__768.png",
+    "legendMeta": {
+      "legends": [
+        {
+          "text": "Identity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Location",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Crops & capacity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Contact",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Data protection & consent",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        }
+      ],
+      "label": {
+        "fontWeight": "500",
+        "fontSize": "14px"
+      }
+    }
+  },
+  {
+    "id": "9-register-form",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/9-register-form__1440.png",
+    "legendMeta": {
+      "legends": [
+        {
+          "text": "Identity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Location",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Crops & capacity",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Contact",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        },
+        {
+          "text": "Data protection & consent",
+          "h": 24,
+          "lineHeight": 24,
+          "lines": 1,
+          "fontWeight": "600",
+          "fontSize": "16px",
+          "background": "rgb(255, 255, 255)"
+        }
+      ],
+      "label": {
+        "fontWeight": "500",
+        "fontSize": "14px"
+      }
+    }
+  }
+]

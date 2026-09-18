@@ -1,0 +1,28 @@
+```markdown
+# Visual Gate Report (T6) — `enhancement/app-visual-refresh`
+
+Based on a thorough review of the provided rendered captures across all breakpoints (1440, 768, 375) against the `MOCKUP` specifications and design document, here is the visual audit report:
+
+### Q1: Fidelity (Canvas vs Cards)
+**PASS.** The warm-earth surface system is correctly implemented. The main canvas background is successfully rendering as the warm off-white (`#FBF9F6`), while the cards (directory cards, dashboard panels, etc.) remain pure white (`#FFFFFF`). The intended 1.05:1 perceptual separation is present, providing a premium, subtle depth that perfectly matches the right-hand "Proposed" pane in the mockups.
+
+### Q2: Elevation Ladder on Dense Data
+**PASS.** The recalibrated shadow ladder (`shadow-sm`, `shadow-md`, etc.) works effectively. Reviewing the `8-dashboard` captures, the shadows provide crisp, clean separation between the white cards and the warm canvas without introducing visual clutter. The data density is well-supported by the new elevation strategy.
+
+### Q3: Responsive Integrity (768px & 375px)
+**PASS.** The visual refresh holds up structurally across mobile and tablet breakpoints. The relationship between the warm canvas and white cards remains consistent when elements stack vertically in the `2-directory`, `6-footer`, and `8-dashboard` views at 375px and 768px.
+
+### Q4: VF-4 Regression (Map Modal Wash)
+**INCONCLUSIVE / CANNOT VERIFY.** The capture provided for `5-map__375.png` shows the map in its default state (with the "Filters & list" button visible at the top). It does not show the filter modal/bottom-sheet in an *open* state. Therefore, it is impossible to visually verify if the `--color-backdrop` wash (the semi-transparent overlay) is correctly applied behind the modal. 
+
+### Q5: Section Structure (Register Form)
+**FAIL.** There is a glaring visual bug on the `9-register-form` captures (visible at all widths). The `<legend>` elements ("Identity" and "Location") are using a solid white background to mask the top border of the fieldset card. Because the page canvas behind the card is now warm (`#FBF9F6`), the top half of this white mask extends above the card and creates a highly visible, mismatched rectangular white artifact against the off-white canvas. The legend background needs to either be transparent, match the canvas, or the layout structure needs adjustment so it doesn't span the boundary between card and canvas.
+
+### Q6: Unprompted Observations
+*   **Mobile Map Legend Bug:** In `5-map__375.png`, the map's legend (the translucent box showing "Seed Company", "Cooperative", etc.) is floating on the far-left edge of the screen, overlapping the zoom controls, and appears partially cut-off/squished. This looks like a responsive layout defect where desktop-style floating elements are persisting poorly on mobile.
+
+---
+
+### **FINAL STATUS: FAIL**
+The spec cannot pass the visual gate until the register form legend artifacts are fixed, the mobile map layout issues are resolved, and the mobile filter modal wash (VF-4) is explicitly verified in an open state.
+```

@@ -122,8 +122,13 @@ DB_PASS_ENC="$(jq -rn --arg p "$DB_PASS" '$p | @uri')"
 # TLS posture (dev): the connection is encrypted, but the RDS server cert chain is
 # NOT verified. Prisma's MySQL (Rust) engine cannot reliably trust a custom CA via
 # the URL (sslcert) or NODE_EXTRA_CA_CERTS, so strict verification is impractical
-# on this stack. Acceptable for dev (SG-restricted endpoint, seeded non-PII data);
-# verified TLS (RDS Proxy / IAM auth) is deferred to infra/network-hardening.
+# on this stack. Acceptable for dev (dev-only endpoint, and no real applicant
+# PII today — product owner, 2026-09-17: DEV holds test data only, no public
+# registration or contact submission from a real person received yet; the
+# self-registration write path is live and unauthenticated on this same
+# environment, so this can change without anyone acting or noticing);
+# verified TLS (RDS Proxy / IAM auth) is deferred to
+# infra/network-hardening.
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_ENC}@${RDS_ENDPOINT}:${RDS_PORT}/${DB_NAME}?sslaccept=accept_invalid_certs"
 
 # Scrub the raw secret material now that the (encoded) URL is built.

@@ -15,7 +15,12 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import { ActorAuditAction, ActorAuditLog, Prisma } from '@prisma/client';
+import {
+  ActorAuditAction,
+  ActorAuditLog,
+  Prisma,
+  Registration,
+} from '@prisma/client';
 import { AdminActor } from './admin-actor.serializer';
 
 /** Acting admin identity snapshotted into each audit row. */
@@ -35,6 +40,21 @@ const AUDITABLE_FIELDS = [
   'region',
   'district',
   'traderType',
+  // `actors/public-profile-disclosure` T-2 — `contactPerson` and
+  // `otherCrops` joined `AdminActor`/the create/update DTOs as admin-editable,
+  // publicly-disclosable actor data (FR-4), the same standing as every other
+  // scalar above. They belong in THIS constant for exactly the reason the
+  // docblock above gives for every other member: they are actor data, not
+  // row metadata. Before this fix they were silently excluded, so an update
+  // that changed only one of them produced an empty diff and `logUpdate`
+  // wrote NO audit row at all (not a row missing a field) — meaning
+  // `contactPerson`, a third party's name now publicly disclosed and
+  // admin-editable, could be changed or erased with zero trace. `buildSnapshot`
+  // iterates this same constant, so the gap also silently affected
+  // `logCreate`/`logDelete`/`logBulkDelete`/`logImport`/
+  // `logRegistrationApprove` snapshots.
+  'contactPerson',
+  'otherCrops',
   'sex',
   'position',
   'marketLocation',
@@ -47,6 +67,13 @@ const AUDITABLE_FIELDS = [
   'gpsAltitude',
   'gpsAccuracy',
   'consentStatus',
+  // T-3 — registration source & consent provenance (FR-1, FR-2, NFR-6):
+  // flow through this existing diff/snapshot machinery unchanged
+  // (design.md §4.6) rather than a parallel audit path.
+  'registrationSource',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
 ] as const;
 
 type AuditableField = (typeof AUDITABLE_FIELDS)[number];
@@ -63,11 +90,41 @@ const DECIMAL_FIELDS: readonly AuditableField[] = [
   'gpsAccuracy',
 ] as const;
 
+/**
+ * T-3 — Date fields serialized to ISO strings in the `changes` JSON. Without
+ * this, two `Date` instances representing the same instant (e.g. an
+ * unrelated update's before/after `consentObtainedAt`, refetched from Prisma
+ * on both sides) would fail `valuesEqual`'s reference/array checks and
+ * produce a spurious diff entry on every update to an actor that has this
+ * field set — mirrors why `DECIMAL_FIELDS` is compared as strings.
+ */
+const DATE_FIELDS: readonly AuditableField[] = ['consentObtainedAt'] as const;
+
 /** Full-snapshot envelope. */
 interface SnapshotEnvelope {
   kind: 'snapshot';
   values: Record<string, unknown>;
 }
+
+/**
+ * T-4 (rework, attempt 2) — the provenance fields `bulkSetConsent` fills on
+ * ONE actor during an unlock, computed by the caller from what that actor's
+ * row was actually missing (`design.md` DD-4, corrected after two Reviewer
+ * FAILs on attempt 1's `consentMethod === NOT_RECORDED`-only partition).
+ *
+ * Replaces the earlier batch-uniform `fill: { ids, consentMethod, ... }`
+ * shape, which could only express "these ids get the full batch value" and
+ * therefore claimed a `consentMethod` change in the audit for a row that
+ * only had its `consentObtainedAt` filled. A key **absent** here means that
+ * field was left untouched on this actor — present-but-unchanged is not
+ * possible by construction, since the caller only sets a key when the row's
+ * own value was missing.
+ */
+export type ConsentFillPatch = Partial<{
+  consentMethod: string;
+  consentObtainedAt: string | Date;
+  consentReference: string | null;
+}>;
 
 @Injectable()
 export class ActorAuditService {
@@ -156,11 +213,24 @@ export class ActorAuditService {
   }
 
   /**
-   * Record `BULK_CONSENT` audit entries for actors whose status really changes.
+   * Record `BULK_CONSENT` audit entries for actors whose status and/or
+   * provenance really changes.
    *
-   * Rows already at the target `status` are skipped (empty-diff skip per row).
-   * All remaining rows are inserted with a single `createMany` (NFR-6), and the
-   * typed `acknowledged` flag is persisted on every row.
+   * Rows with no field change at all are skipped (empty-diff skip per row,
+   * same convention as {@link logUpdate}). All remaining rows are inserted
+   * with a single `createMany` (NFR-6), and the typed `acknowledged` flag is
+   * persisted on every row.
+   *
+   * T-4 (rework, attempt 2) — `patches` is a per-actor {@link ConsentFillPatch}
+   * map, computed ONCE by the caller from the same per-row missing-field
+   * partition that drives the write (`design.md` DD-4). Diffing directly off
+   * that map — rather than off a single batch-uniform value — means the
+   * audit entry can only ever claim a field change the write actually made:
+   * a row present in `patches` with only `consentObtainedAt` set produces a
+   * diff naming `consentObtainedAt` alone, never a phantom `consentMethod`
+   * change. A row absent from `patches` (not in the fill set at all) is
+   * diffed on `consentStatus` alone, so an already-evidenced actor's audit
+   * entry correctly shows no provenance change (R-8).
    */
   async logBulkConsent(
     tx: Prisma.TransactionClient,
@@ -168,17 +238,66 @@ export class ActorAuditService {
     status: string,
     acting: ActingAdmin,
     acknowledged: boolean,
+    patches?: ReadonlyMap<string, ConsentFillPatch>,
   ): Promise<{ count: number }> {
-    const changedRows = beforeRows.filter(
-      (row) => row.consentStatus !== status,
-    );
+    const entries = beforeRows
+      .map((row) => {
+        const fields: Record<string, { from: unknown; to: unknown }> = {};
 
-    if (changedRows.length === 0) {
+        if (row.consentStatus !== status) {
+          fields.consentStatus = { from: row.consentStatus, to: status };
+        }
+
+        const patch = patches?.get(row.id);
+        if (patch) {
+          if (
+            patch.consentMethod !== undefined &&
+            !this.valuesEqual(row.consentMethod, patch.consentMethod)
+          ) {
+            fields.consentMethod = {
+              from: row.consentMethod,
+              to: patch.consentMethod,
+            };
+          }
+
+          if (patch.consentObtainedAt !== undefined) {
+            const fromObtainedAt = this.serializeValue(
+              'consentObtainedAt',
+              row.consentObtainedAt,
+            );
+            const toObtainedAt = this.serializeValue(
+              'consentObtainedAt',
+              patch.consentObtainedAt,
+            );
+            if (!this.valuesEqual(fromObtainedAt, toObtainedAt)) {
+              fields.consentObtainedAt = {
+                from: fromObtainedAt,
+                to: toObtainedAt,
+              };
+            }
+          }
+
+          if (patch.consentReference !== undefined) {
+            const toReference = patch.consentReference ?? null;
+            if (!this.valuesEqual(row.consentReference ?? null, toReference)) {
+              fields.consentReference = {
+                from: row.consentReference ?? null,
+                to: toReference,
+              };
+            }
+          }
+        }
+
+        return { row, fields };
+      })
+      .filter(({ fields }) => Object.keys(fields).length > 0);
+
+    if (entries.length === 0) {
       return { count: 0 };
     }
 
     return tx.actorAuditLog.createMany({
-      data: changedRows.map((row) => ({
+      data: entries.map(({ row, fields }) => ({
         actorId: row.id,
         traderId: row.traderId,
         traderName: row.traderName,
@@ -187,9 +306,7 @@ export class ActorAuditService {
         actingEmail: acting.email ?? null,
         changes: {
           kind: 'diff',
-          fields: {
-            consentStatus: { from: row.consentStatus, to: status },
-          },
+          fields,
         } as unknown as Prisma.InputJsonValue,
         acknowledged,
       })),
@@ -262,6 +379,130 @@ export class ActorAuditService {
     });
   }
 
+  /**
+   * Record a `REGISTRATION_APPROVE` audit entry (FR-16, FR-12 audit clause,
+   * design.md §6.7, DD-6).
+   *
+   * `logCreate` cannot be reused: it hardcodes `action: CREATE` and takes no
+   * action parameter. This is additive, not a refactor of `logCreate`.
+   *
+   * The `changes` envelope is pinned **identical in shape to `logCreate`'s**
+   * — a full snapshot of the created actor — because approval *is* a create,
+   * just with a distinct provenance and authority (a self-registration
+   * adjudicated by an Admin, rather than a direct admin create). Reusing the
+   * exact shape means `SnapshotDetails` on the frontend renders it with no
+   * new narrowing branch, and it satisfies `ActorHistoryPanel`'s `isSnapshot`
+   * check the same way `logCreate`'s does.
+   *
+   * `reference` (the originating registration's human-readable reference,
+   * e.g. `REG-2026-0184`) is accepted for parity with the pinned call-site
+   * signature (design.md §6.2 step 7) and with {@link logRegistrationReject},
+   * but is deliberately NOT duplicated into the envelope: FR-12 requires
+   * `actor.consentReference` to already equal it by the time this is called,
+   * and `consentReference` is already an `AUDITABLE_FIELDS` member captured
+   * by {@link buildSnapshot} — adding it again would invent a field outside
+   * §6.7's pinned table rather than reuse `logCreate`'s shape.
+   *
+   * **DEC-1 (Leader decision, user-approved at the Phase A gate,
+   * `admin/registration-review-queue` T-8).** This row sets
+   * `acknowledged: true` — the typed consent-acknowledgement flag
+   * `logBulkConsent`/`logImport` already persist. FR-12's approve gate *is*
+   * a typed consent acknowledgement, re-validated server-side
+   * (`AdminRegistrationsService.assertAcknowledgement`), so the spec's most
+   * consequential consent write records its own gate. This is ADDITIVE to
+   * the pinned envelope: `acknowledged` is a separate top-level column
+   * §6.7 never addresses, and the `changes` value above is UNCHANGED —
+   * still `logCreate`'s exact snapshot shape.
+   */
+  async logRegistrationApprove(
+    tx: Prisma.TransactionClient,
+    actor: AdminActor,
+    acting: ActingAdmin,
+    _reference: string,
+  ): Promise<ActorAuditLog> {
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: actor.id,
+        traderId: actor.traderId,
+        traderName: actor.traderName,
+        action: ActorAuditAction.REGISTRATION_APPROVE,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+        // DEC-1 — additive; the `changes` envelope above is untouched.
+        acknowledged: true,
+      },
+    });
+  }
+
+  /**
+   * Record a `REGISTRATION_REJECT` audit entry (FR-16, FR-13 audit clause,
+   * design.md §6.7, DD-6).
+   *
+   * There is no actor to snapshot — rejection creates nothing (FR-13). The
+   * envelope is instead **snapshot-shaped** over the registration's
+   * reviewable facts: the reference, the submitted organisation name, and
+   * the structured rejection reason. Snapshot-shaped rather than a third
+   * envelope kind, so it stays legible to `ActorHistoryPanel`'s existing
+   * `isSnapshot` narrowing without widening it.
+   *
+   * The row's top-level identity columns deliberately do NOT name a real
+   * actor: `actorId` = the **registration** id, `traderId` = the reference,
+   * `traderName` = the submitted organisation name. `ActorAuditLog.actorId`
+   * is deliberately FK-less (design.md §6.7), so this bends no constraint —
+   * and because the actor-history read path filters on `actorId` against a
+   * real `Actor` row, a rejection row's registration-id `actorId` can never
+   * match any actor's history query. That is the carried-forward FR-16
+   * clause (`BUT a REGISTRATION_REJECT row must NOT appear in any actor's
+   * history`), asserted here at the persistence layer since no UI can ever
+   * render this row to assert it against.
+   */
+  async logRegistrationReject(
+    tx: Prisma.TransactionClient,
+    registration: Pick<Registration, 'id' | 'reference' | 'payload' | 'rejectionReason'>,
+    acting: ActingAdmin,
+  ): Promise<ActorAuditLog> {
+    const traderName = this.extractSubmittedTraderName(registration.payload);
+
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: registration.id,
+        traderId: registration.reference,
+        traderName,
+        action: ActorAuditAction.REGISTRATION_REJECT,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: {
+            reference: registration.reference,
+            traderName,
+            reason: registration.rejectionReason ?? null,
+          },
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * Read `traderName` out of a registration's untyped JSON `payload`
+   * (`RegistrationPayloadDto`'s field, §6.3's projection table). Defensive
+   * only: a real registration always carries this field by the time it
+   * reaches adjudication (FR-2), but `payload` is stored as `Prisma.JsonValue`
+   * with no compile-time shape.
+   */
+  private extractSubmittedTraderName(payload: Prisma.JsonValue): string {
+    if (
+      payload !== null &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      typeof (payload as Record<string, unknown>).traderName === 'string'
+    ) {
+      return (payload as Record<string, unknown>).traderName as string;
+    }
+    return '';
+  }
+
   private buildSnapshot(actor: AdminActor): SnapshotEnvelope {
     const values: Record<string, unknown> = {};
     for (const field of AUDITABLE_FIELDS) {
@@ -297,6 +538,10 @@ export class ActorAuditService {
   private serializeValue(field: AuditableField, value: unknown): unknown {
     if (DECIMAL_FIELDS.includes(field)) {
       return value === null || value === undefined ? null : String(value);
+    }
+    if (DATE_FIELDS.includes(field)) {
+      if (value === null || value === undefined) return null;
+      return value instanceof Date ? value.toISOString() : value;
     }
     return value;
   }

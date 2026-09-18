@@ -15,7 +15,7 @@ You will be assigned exactly one. Use the project's real command; never invent a
 | Suite | Runner & location | Command (agent-lean) |
 |---|---|---|
 | **backend-unit** | Jest + ts-jest, `*.spec.ts` beside the source in `backend/src/**` | `cd backend && npm test -- --silent` (narrow with a path, e.g. `… --silent actors`) |
-| **backend-e2e** | Jest + **Supertest**, `backend/test/` via `test/jest-e2e.json` | `cd backend && npm run test:e2e -- --silent` |
+| **backend-e2e** | Jest + **Supertest**, `backend/src/test/*.e2e.spec.ts` (there is no `backend/test/` and no `jest-e2e.json`) | `cd backend && npm test -- --silent` — the same command as backend-unit; the e2e files run under it |
 | **frontend-unit** | Jest + **@testing-library/react** + **jest-axe**, jsdom, config `frontend/jest.config.ts`, setup `frontend/jest.setup.ts` | `cd frontend && npm test -- --silent` |
 
 **No Playwright/E2E-browser suite exists in this repo.** If a scenario genuinely needs one, that is a TRD stack decision implemented as a spec task — report `AUTOMATION_DEFERRED`, do not scaffold a framework on your own initiative.
@@ -59,7 +59,7 @@ You will be assigned exactly one. Use the project's real command; never invent a
 
 These are the scenarios this project fails on most expensively. If your slice touches any of them, they are mandatory assertions, not optional extras:
 
-- **PII boundary (QA-1):** for **every** public read path (`/actors`, `/actors/:id`, `/actors/geo`, `/export`, `/metrics`), assert the response contains **none** of `phone`, `email`, `sex`, `position`, `marketLocation`, `technicalSupport`, `traderId`, `gpsAltitude`, `gpsAccuracy`. Assert over **HTTP**, not on the service return value — the serializer is the boundary being tested.
+- **PII boundary (QA-1):** for **every** public read path (`/actors`, `/actors/:id`, `/actors/geo`, `/export`, `/metrics`), assert the response contains **none** of `NEVER_PUBLIC_FIELDS` (`traderId`, `gpsAltitude`, `gpsAccuracy`, `registrationSource`, `consentMethod`, `consentObtainedAt`, `consentReference`, `technicalSupport`) — this set is absent everywhere, consent notwithstanding. Additionally, on **list, geo, export, or `/metrics`** only, assert the response contains **none** of `CONTACT_BLOCK_FIELDS` (`phone`, `email`, `position`, `marketLocation`, `contactPerson`). On `/actors/:id`, assert the opposite for a `GRANTED` actor: `PUBLICLY_DISCLOSED_FIELDS` (the contact block plus `sex`, `otherCrops`) **MUST be present by value** — and assert the full response is **absent** (404) for a non-`GRANTED` actor. Assert over **HTTP**, not on the service return value — the serializer is the boundary being tested.
 - **Consent gating (QA-2):** assert non-`GRANTED` actors appear in **no** public response **and are excluded from `/metrics` counts**, and that `gps` is `null` for them.
 - **RBAC (QA-3):** assert `staff` receives `403` on admin-only routes, with the error envelope and **no** stack trace.
 - **Import partial failure (QA-9):** assert a bad row **never** corrupts committed rows, and that `{ inserted, updated, failed: [{ row, errors }] }` reports per row.

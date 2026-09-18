@@ -7,7 +7,7 @@
 
 1. **Public-first clarity.** The default experience is read-only and instantly legible to a non-technical donor, researcher, or partner. No login wall in front of public data.
 2. **Data integrity over decoration.** This is a registry; correctness, legibility of tabular and geospatial data, and honest empty/error states matter more than ornament.
-3. **Trust through restraint with PII.** PII is never shown speculatively. Protected fields render as an explicit, consistent "restricted" affordance for unauthorized roles — never blank, never fake.
+3. **Consent, not role, gates disclosure — and never speculatively.** A public visitor sees a consenting actor's full profile, contact details included, one actor at a time on that actor's page — never in the directory, map, or CSV, which structurally cannot carry contact data regardless of consent. A field the actor never supplied renders as an em-dash, not blank, not fabricated, and never a "restricted" affordance — there is nothing left on the profile to restrict.
 4. **Map and list are equals.** Spatial and tabular views of the same dataset stay synchronized in language, filters, and terminology.
 5. **Accessible by default.** WCAG 2.1 AA: keyboard navigable, sufficient contrast, labeled controls, respects reduced motion.
 
@@ -15,46 +15,153 @@
 
 ```
 /                         Landing / Public Registry Portal (metrics + entry points)
+/about                    About the project — narrative (challenge, demand-led model, crops
+                           & value chains, partners, enterprise case studies), CTAs into
+                           /map, /directory and /contact
 /directory                Searchable, paginated actor directory (list/table)
-/directory/[id]           Actor profile page (public-safe by default)
+/profile?id=              Actor profile page — full contact block (contactPerson, position,
+                           phone, email, marketLocation) shown only for a GRANTED actor;
+                           404 for a non-consented or unknown id. Never NEVER_PUBLIC_FIELDS.
 /map                      Seed Maps — interactive geospatial view + filters
-/admin                    Admin/Staff console (auth-gated)
+/dashboard                Discovery Dashboard — KPIs + filtered actor view, with a CSV
+                           download of the current view (public columns only: traderName,
+                           region, district, traderType, capacityTons, crops, sex,
+                           otherCrops — never the contact block: contactPerson, position,
+                           phone, email, marketLocation).
+                           NOT the admin export: no role-aware scope, no filter builder.
+/register                 Public self-registration form (Identity · Location · Crops & capacity ·
+                           Contact · Data protection & consent) + in-flow OTP verification step
+/register/submitted       Receipt — reference code (?ref=), save-and-lookup instructions
+/register/status          Status lookup by reference + email — status and reviewer note only
+/contact                  Public contact form — relays to the current Cognito `admin` group,
+                           no sign-in required
+/cookies                  Cookie Notice — the factual inventory of the cookies this site
+                           actually sets today (Google Analytics only, and only after
+                           consent), plus the interactive client island
+                           (ConsentChoiceControl) to change a prior consent choice. This is
+                           where the consent banner's policy link lands.
+/terms                    Terms of Use — CIAT's approved text, v1.0. Presents no acceptance
+                           control: nobody accepts this document, only the consent policy
+                           is accepted, and only by an applicant registering an organisation.
+                           Ships with Legal's own unfilled fields (an "Insert Date" effective
+                           date, an unfilled contact block) — see the note below the block.
+/privacy                  Privacy Policy — CIAT's approved text, v1.0. Covers the registry as a
+                           whole: what is collected, why, the public nature of publication,
+                           international storage, data-subject rights, and Legal's own
+                           Cookies section carried verbatim with an onward pointer to
+                           /cookies. The narrow-scope limitation clause it used to carry was
+                           REMOVED once the approved policy made it false. No client island —
+                           the consent-change control lives on /cookies. Also carries one
+                           engineering-authored section ("Messages sent through the contact
+                           form", three sub-headings) satisfying an obligation the contact
+                           form's own acknowledgement makes. Ships with Legal's unfilled
+                           fields — see the note below the block.
+/admin                    Admin/Staff console — a route PREFIX, not a page: there is
+                          no /admin index. The brand mark links to /admin/actors.
   /admin/actors           Actor management table (CRUD)
   /admin/actors/new       Create actor (validated form)
-  /admin/actors/[id]/edit Edit actor (validated form)
-  /admin/import           CSV bulk import
-  /admin/export           Filtered CSV export
+  /admin/actors/edit?id=  Edit actor (validated form). Query param, never a [param]
+                          segment — the static export forbids dynamic segments
+                          (frontend/CLAUDE.md), and the tree contains none.
+  /admin/actors/import    CSV bulk import
+  /admin/registrations    Adjudication queue for self-registration submissions (Admin only)
+  /admin/registrations/review?id=  Registration detail — approve/reject/dismiss-duplicate (Admin only)
   /admin/users            User & role management (Admin only)
 /login                    Cognito-backed sign-in (Staff/Admin)
+/forgot-password          Self-service password reset request (Staff/Admin) — email → reset
+                           code → new password, via Cognito; reached from /login, not part
+                           of the public top nav
 ```
+
+> **Not built (A-92, corrected 2026-09-02).** This block previously listed
+> `/admin/actors/[id]/edit`, `/admin/import` and `/admin/export`. The first two ship
+> at different paths — `?id=` rather than a `[param]` segment (which
+> `frontend/CLAUDE.md` forbids outright, and of which the tree contains **zero**), and
+> `/admin/actors/import` rather than `/admin/import`.
+>
+> **No `/admin/export` screen exists** — no page under `frontend/app/(admin)/`, and no
+> export route on any backend controller. **A role-aware, PII-scoped admin export is
+> unbuilt.** Listing it here as though it shipped is what sent agents looking for files
+> nobody wrote, so the row was removed rather than annotated — together with §3's
+> "Compliant share" flow and §4's Export screen row, which documented the same unbuilt
+> screen. When an admin export is built it gets re-entered in all three places.
+>
+> ⚠️ **CSV export is NOT absent from the codebase, and an earlier version of this note
+> said it was.** `frontend/lib/dashboard/csv.ts`'s `buildDashboardCsv`, surfaced by
+> `components/dashboard/DownloadViewButton.tsx` on `/dashboard`, is shipped and tested.
+> It is a **different artefact**: public audience, an explicit public-column allowlist
+> (`traderName`, `region`, `district`, `traderType`, `capacityTons`, `crops`, `sex`,
+> `otherCrops` — the last two are consent-disclosed, not "PII-free" in the old
+> allowlist's terms, but never the contact block: `contactPerson`, `position`, `phone`,
+> `email`, `marketLocation`), no role-aware scope and no filter builder — so it does not
+> replace the admin export and the removed rows must not be repointed at it. *(The false claim was written while
+> correcting other false claims, on the strength of a **case-sensitive** grep that could
+> not match `buildDashboardCsv`. A universal negative — "this exists nowhere" — needs a
+> stronger search than a positive one; caught by the A-92 review round.)*
+
+> **Drift repaired (D-11, 2026-09-15).** `/about` and `/forgot-password` both shipped —
+> in `frontend/app/(public)/about/page.tsx` and `frontend/app/(public)/forgot-password/page.tsx`
+> respectively — but neither appeared anywhere in this section or in §4's Screen
+> Inventory (verified: zero occurrences of either string before this correction). This
+> is exactly the A-92 failure mode above, on two different routes: a route map that
+> omits a shipped path sends agents looking for files that exist somewhere else, or
+> nowhere they think to look. Repaired in passing while this block was already open for
+> `/cookies` and `/terms` (`docs/specs/legal/legal-notices-and-consent-copy/`, T-10);
+> neither page's existence is new, only this document's account of it.
 
 ## 3. Primary User Flows
 
-- **Explore (Public):** Landing → see metrics → Directory (search/filter/paginate) → Actor profile (PII hidden) → optionally jump to Map centered on that actor.
+- **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (renders only for a `GRANTED` actor — Contact section included; a non-consented actor's profile route 404s, so the whole page is absent, not the section masked) → optionally jump to Map centered on that actor.
+  - The consent banner **overlays** the landing page, it does not gate it: every public route stays reachable while the decision is pending, and the choice persists so the banner is not shown again.
 - **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
 - **Bulk seed (Admin):** Login → Admin → Import → upload CSV → preview mapping + validation summary → confirm → per-row result report.
-- **Compliant share (Admin/Staff):** Admin → Export → choose filters + scope → download CSV (PII included/excluded per role).
 
 ## 4. Screen Inventory
 
 | Screen | Audience | Core content |
 |---|---|---|
 | Landing | Public | Hero, 3–4 metric stat cards, CTA into Directory & Map, crop legend. |
+| About | Public | Project narrative: hero, the challenge (3% formal-sector clause), the demand-led model (`PillarCards`), crops & value chains (per-crop cards with representative varieties), partners (`PartnerWall`), four enterprise case studies, an "About this registry" section with CTAs into Map / Directory / Contact, and a credits/sources block attributing field figures and linking the Alliance project page. |
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
-| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; PII block gated by role. |
+| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
+| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a CSV of the current filter that never carries an actor's contact block (`lib/dashboard/csv.ts`) — structural, since it is built from the same list projection as the directory and map. Public audience — distinct from the unbuilt role-aware admin export. |
+| Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |
+| Registration Receipt | Public | The reference code as selectable text (never an image), a copy action, a save-this instruction, a link to status lookup — nothing else, since the submit response carries only the reference. |
+| Registration Status | Public | Lookup by reference + email; renders status and the reviewer's note only. Byte-identical result for an unknown reference, a mismatched email, or a lockout. |
 | Admin Actors | Staff / Admin | Dense data table with row actions (edit; delete = Admin). |
 | Actor Form | Staff / Admin | Sectioned, validated create/edit form incl. GPS + PII fields. |
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
-| Export | Staff / Admin | Filter builder, role-aware scope notice, download button. |
+| Admin Registrations Queue | Admin | Dense, URL-synced table (cards on mobile) of self-registration submissions — reference, applicant, type, region, submitted date, duplicate count, status; segmented by `PENDING_REVIEW` / `APPROVED` / `REJECTED` only. |
+| Admin Registration Detail | Admin | Reference code header, full submitted payload — every field on it is copied to the actor record on approval and becomes publicly visible, since approval sets `consentStatus: GRANTED` (`actors/public-profile-disclosure` FR-4); no per-field marking, one table-wide caption, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
+| Forgot password | Staff / Admin | Self-service password reset request, via Cognito: step 1 collects an email and requests a reset code (neutral, enumeration-safe notice either way); step 2 collects the code plus a new password (email pre-filled, editable) and confirms the reset, then routes to `/login?reset=success`. Accessible error region (`role="alert"`, `aria-live="assertive"`) on failure; no code or password ever placed in a URL. |
+| Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
+| Cookie Notice | Public | The factual inventory of what this site's cookies actually set today: Google Analytics only, and only once consent is given (never before) — the four signals it collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and the `ConsentChoiceControl` island to change a prior choice, rendered as a sibling **immediately after** the "Changing your choice" section — outside that section's `aria-labelledby` region, not within it. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load — and that the site does not delete cookies already set. This is where the consent banner's link — accessible name "cookie notice" — lands. |
+| Terms of Use | Public | CIAT's approved Terms, **v1.0**. Purpose, registry content, no-verification/no-endorsement, responsibility for submitted information, public nature, user conduct (including a no-scraping clause), third-party interactions, IP, privacy pointer, profile removal, availability, warranty disclaimer, liability limit, indemnification, use of the CIAT name, dispute resolution (UNCITRAL arbitration, Nairobi) and privileges-and-immunities reservation. **Presents no acceptance control** — nobody accepts this document; only the consent policy is accepted, and only by an applicant registering an organisation. Ships with Legal's own unfilled fields (`Insert Date`, `Insert Email`, `Insert Address`, `Insert Telephone Number`) — **not yet publishable**; see the note below §4. |
+| Privacy | Public | CIAT's approved Privacy Policy, **v1.0**, covering the registry as a whole: who is responsible, what is collected, how, why, the public nature of publication, business and location data, international storage (Ireland), legal basis, accuracy and authority, sharing, retention, data-subject rights, security, **Legal's Cookies section carried verbatim** with an onward pointer to Cookie Notice, contact, and change history. The narrow-scope limitation clause it previously carried was **removed** once the approved policy made it false. No client island. **Plus one engineering-authored section** — *Messages sent through the contact form*, with three sub-headings (who receives it · relayed and not stored · not consent to publish) — placed before Contact Us. These are **three** engineering facts; the fourth part of that obligation, what a submission collects, is discharged by Legal's own *Information We Collect*. Ships with Legal's unfilled fields — **not yet publishable**. |
+
+> **Both legal pages ship with Legal's own unfilled fields and are NOT yet publishable.**
+> `/terms` and `/privacy` render `Effective Insert Date`, `Insert CIAT Legal Entity`, `Insert Email`, `Insert Address`,
+> `Insert Telephone Number` and blank contact values — CIAT delivered the texts with those fields outstanding, and
+> engineering carries Legal's prose verbatim rather than inventing values. The consequence is concrete: a data subject
+> following either document's contact instructions today reaches a blank.
+>
+> The placeholder tripwire in `backend/src/registrations/consent-policy.ts` matches the literal word `placeholder` and is
+> **structurally blind** to this, which is Legal's own placeholder idiom. An inventory test per document pins the exact set
+> of unfilled tokens: adding one reddens, filling one requires updating the list, and an empty list is the signal that the
+> document may be published. *(Recorded 2026-09-15 from `docs/specs/legal/legal-notices-and-consent-copy/validation-report.md`,
+> finding O-1 — three independent validators found the gate certifying the defect it existed to catch.)*
 
 ## 5. Navigation Model
 
-- **Public top nav:** Logo · Home · Directory · Map · (Sign in). Sticky, condenses to a hamburger on mobile.
-- **Admin shell:** left sidebar (Actors · Import · Export · Users) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile.
+- **Public top nav:** Logo · Discovery Map · Dashboard · Directory · About · Contact · Register your organisation · (Sign in). Sticky; the full bar renders from **`lg` (1024px)** and condenses to a hamburger below it — tablet included. `NAV_LINKS` in `frontend/components/shell/Header.tsx` is the single source for both the desktop bar and the mobile drawer — no second, divergent list. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`; `AuthSlot` (Sign in) is a sibling outside `NAV_LINKS`.
+  - **No "Home" entry, and no brand descriptor**, both removed 2026-08-31. The brand lockup is itself the link to `/` and its `aria-label` names it as home, so a "Home" item duplicated an adjacent control; the "Tanzania Seed Registry" descriptor beside the logo cost ~196px of a row that has only 1216px to spend.
+  - **Why `lg` and not `md`.** Measured in a real browser, not estimated: the row's min-content width was **1270px** against a container ceiling of **1216px** — `max-w-7xl` caps usable width, so it never grows with the viewport and there is no screen wide enough. The bar overflowed at **every** width ≥768 (+526px at 768, +278px at 1024, +22px at 1280), spilling into the page gutter above that. After the fix the row needs 935px at 1024 (**41px slack**) and 1015px at 1280+ (**201px slack**). Recorded in `docs/specs/contact/contact-channels/execution.md`, T-10 DC-9 closure.
+  - **Adding a nav entry is not free.** The 1216px ceiling is fixed. Before adding one, measure the row's min-content width rather than assuming headroom exists — this bar was already over budget with six entries and nobody noticed.
+- **Admin shell:** left sidebar (Users · Actors · Registrations) + top bar with user menu, role badge, and "View public site". Sidebar collapses on tablet/mobile. **Registrations** is a single `NAV_ITEMS` entry (`{ label: 'Registrations', href: '/admin/registrations', enabled: true }`) with no separate role field — the shell's `RequireRole allow={['Admin']}` already keeps `Staff` from ever seeing the sidebar, so every entry in it is implicitly Admin-only.
 - **Cross-links:** Directory rows link to profiles; profiles link to the map; map popups link to profiles. One consistent breadcrumb pattern in Admin.
 
 ## 6. Layout Patterns
@@ -64,6 +171,8 @@
 - **Directory:** card grid on mobile, table on `md+`.
 - **Forms:** single-column on mobile, two-column section grid on `lg+`; grouped fieldsets (Identity · Location/GPS · Commercial · Contact/PII).
 - **Map page:** filter rail (left/collapsible) + map canvas; result count and active-filter chips above the map.
+- **Consent overlay bar:** until the visitor has chosen, the public shell carries a persistent `fixed bottom-0 inset-x-0` bar above all page content — `z-[1100]`, which clears the map legend's `z-[1000]`. It is the only fixed bottom overlay in the system.
+  - **Footer-clearance rule — measure, never estimate.** A fixed bottom overlay must have its **live** height reserved by the shell: `PublicShellFrame` reads the banner's *border-box* height via `ResizeObserver` and applies it as `padding-bottom` on the shell column. Reserving a hardcoded or reasoned-about height is what produced the occlusion defect this rule exists to prevent — the accepted-occlusion set went 1 → 3 → 10 across two corrections, and every correction came from measuring a rendered page, never from re-reading the design. Use `contentRect` and you lose the border.
 
 ## 7. Design Tokens
 
@@ -78,22 +187,28 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 --color-accent:         #008BDB;  /* blue — secondary CTA / links (large text & UI only) */
 --color-highlight:      #29C4A9;  /* teal-green highlight / tint backgrounds */
 --color-highlight-soft: #82C0C7;  /* muted teal, soft accent */
+--color-highlight-tint: #E4F5F2;  /* ~10% highlight over white — success/badge tint backgrounds */
 --color-bean:           #7A3B2E; /* common bean — crop accent 3 */
---color-bg:             #FFFFFF;  /* clean white page base */
---color-surface:        #FFFFFF;
---color-surface-alt:    #F7F7F7;  /* alternating section background */
---color-fg:             #333333;  /* primary body text */
---color-muted:          #666666;  /* secondary text */
---color-border:         #E2E2E2;
---color-success:        #2F7D32;  /* keep green — success semantics, not brand */
---color-warning:        #C9821B;
+--color-bg:             #FBF9F6;  /* warm sand page canvas — was pure white (DD-2, app-visual-refresh) */
+--color-surface:        #FFFFFF;  /* card/panel — unchanged; lifts off the warmer canvas */
+--color-surface-alt:    #F4F0EA;  /* alternating section background, warm */
+--color-fg:             #2A2724;  /* primary body text, warm ink — also the footer's dark surface */
+--color-backdrop:       rgba(42, 39, 36, 0.40);  /* modal/backdrop wash — 40% of --color-fg */
+--color-muted:          #6B6459;  /* secondary text, warm */
+--color-border:         #E6DFD5;  /* warm hairline */
+--color-success:        #2A6E2D;  /* keep green — success semantics, not brand; AA on its tints */
+--color-warning:        #8F5E10;  /* AA at 12px; intentionally decoupled from --crop-sorghum — see below */
 --color-danger:         #B3261E;
---color-restricted-bg:  #F3F3F3;  /* PII restricted chip background (neutral) */
+--color-danger-soft:    #F5E3E2;  /* ~10% danger over white — error banners / badge backgrounds */
+--color-restricted-bg:  #F0EBE4;  /* neutral hover/panel surface — Button secondary hover, Hero home panel; name is a carryover from the deleted PII-restricted chip it no longer serves (`actors/public-profile-disclosure` OQ-4) */
 
-/* Crop legend (used by map + chips) */
---crop-sorghum:  #C9821B;
---crop-bean:     #7A3B2E;
---crop-groundnut:#8A8D2B;
+/* Crop legend (used by map + chips) — unaffected by --color-warning's move, see below */
+--crop-sorghum:         #C9821B;
+--crop-bean:            #7A3B2E;
+--crop-groundnut:       #8A8D2B;
+--crop-sorghum-soft:    #F9F0E4;  /* ~12% over white — CropImage panel backgrounds */
+--crop-bean-soft:       #EFE7E6;
+--crop-groundnut-soft:  #F1F1E6;
 
 /* Typography */
 --font-sans: "Inter", system-ui, sans-serif;
@@ -104,8 +219,15 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 /* Geometry */
 --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:9999px;
---shadow-sm:0 1px 2px rgba(28,31,26,.06);
---shadow-md:0 4px 12px rgba(28,31,26,.08);
+--shadow-xs: 0 1px 2px   rgba(61,47,32,.12);  /* warm elevation ladder — chips, inputs at rest */
+--shadow-sm: 0 2px 4px   rgba(61,47,32,.07);  /* cards, stat tiles */
+--shadow-md: 0 6px 16px  rgba(61,47,32,.10);  /* raised cards, table containers */
+--shadow-lg: 0 16px 40px rgba(61,47,32,.14);  /* dialogs, popovers, map rail */
+
+/* Atmospheric gradients — canvas-rooted, token-driven so a future .dark scope
+   inherits them automatically. */
+--gradient-hero: linear-gradient(168deg, var(--color-surface-alt) 0%, var(--color-bg) 58%, var(--color-surface) 100%);
+--gradient-band: linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface-alt) 100%);
 
 /* Spacing scale: Tailwind default (4px base). */
 
@@ -135,13 +257,21 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 **Reduced-motion rule:** All motion gated on `prefers-reduced-motion: no-preference` via `gsap.matchMedia()`. Users with the OS reduced-motion preference receive the final, static state immediately — no animation, no fades, no count-ups (WCAG 2.1 AA §2.3.3, §2.2.2).
 
-> **Accent usage (contrast):** `--color-primary` (Royal Blue `#1F4E8C`) passes WCAG AA on white for normal text/UI (~7:1; AAA for large text). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`.
+> **Accent usage (contrast):** `--color-primary` (Royal Blue `#1F4E8C`) passes WCAG AA on white for normal text/UI (~7:1; AAA for large text). `--color-accent` (blue, ~3.6:1 on white) and `--color-highlight` (teal, ~2.0:1) do **not** meet AA for small body text — use them only for large text, UI accents, buttons, borders, and tint backgrounds. Body text uses `--color-fg`/`--color-muted`. `--color-warning` (`#8F5E10`) **is** small-text-safe — it clears 4.5:1 on `surface`, `bg`, `surface-alt` and its own 10%-alpha chip.
+>
+> **Marker-vs-ink threshold split (`app-visual-refresh`):** `--color-warning` and `--crop-sorghum` used to share `#C9821B`, under two incompatible thresholds — small-text ink needs WCAG 1.4.3's 4.5:1, while a map marker/legend swatch is a non-text fill under WCAG 1.4.11's 3:1 floor. They are now **two independent tokens**, intentionally distinct despite the shared history — do not re-merge them in a future cleanup.
+>
+> **Hero scrim vs. `--gradient-hero` are different mechanisms.** `Hero.tsx`'s `from-fg/70` scrim sits over a photograph and exists purely for text legibility; `--gradient-hero`/`--gradient-band` are atmospheric canvas washes with no text over them. The app intentionally carries both — one is not a replacement for the other.
+>
+> **Dark-scope shadow alphas (open, OQ-4):** the elevation ladder's alpha steps (`.12`/`.07`/`.10`/`.14`) are calibrated against the current light, warm canvas. A future `.dark` scope will likely need higher alphas and/or a lighter shadow base — a translucent dark shadow barely registers against an already-dark background — so the ladder as authored here is not expected to carry over unchanged.
+>
+> **Ladder order is geometric, not by alpha:** the four rungs are ordered by offset/blur (`xs` 1px/2px → `sm` 2px/4px → `md` 6px/16px → `lg` 16px/40px); `--shadow-xs` deliberately carries a higher alpha (`.12`) than `--shadow-sm` (`.07`) because it must register across a much smaller 2px footprint, and it remains the geometrically lightest rung.
 
 ## 8. Component Inventory
 
-Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **PII block** (gated reveal / restricted chip) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton.
+Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **Profile contact section** (`ProfileContact` — always-rendered `<dl>`, em-dash for an unsupplied value; supersedes the deleted always-locked PII block/restricted chip, `actors/public-profile-disclosure` FR-6) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6).
 
-> Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, PII block, Map popup, Import result) on top.
+> Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, Profile contact section, Map popup, Import result) on top.
 
 ## 9. Responsive Behavior
 
@@ -163,7 +293,7 @@ Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + e
 ## 12. Design Decisions
 
 - **DD-1:** Leaflet (not Mapbox/Google) — zero per-load billing for a public donor-funded platform. Crop colors drive marker styling.
-- **DD-2:** PII shows as an explicit "Restricted — sign in to view" chip for unauthorized roles, never as blank space, to make protection legible and intentional.
+- **DD-2:** *(Superseded by `actors/public-profile-disclosure` FR-6 — the always-locked "Restricted — sign in to view" panel is deleted; consent, not role, now gates disclosure, and a consenting actor's contact section always renders.)* A field the actor never supplied still renders its label with an em-dash placeholder rather than being hidden — protection through consent stays legible, but there is no longer a role-gated chip on this surface to make it so.
 - **DD-3:** Directory uses cards-on-mobile / table-on-desktop rather than a horizontally scrolling table on small screens.
 - **DD-4:** Earth + growth palette tied to the three crops, used consistently across chips, legend, and map markers so crop is recognizable everywhere.
 - **DD-5:** Admin uses a persistent left-sidebar shell distinct from the public top-nav, signaling a different mode.

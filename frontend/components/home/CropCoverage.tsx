@@ -6,6 +6,14 @@
 // Maps the static CROPS content array to live CropMetric data by matching slug
 // values.  Falls back to null when metrics are unavailable (FR-4 / DD-3).
 //
+// Error state (ATP-50, sibling of MetricsBand):
+//   CROPS' three slugs are exactly the three the API always returns, so on a
+//   successful response every card finds its metric — even an all-zero one,
+//   which renders "0". An em-dash after loading therefore means the fetch
+//   failed, and one status line below the grid says so instead of leaving three
+//   dashes unexplained. Worded per-crop, not copied from MetricsBand: a visitor
+//   who failed both fetches must not read the same sentence twice.
+//
 // Responsive grid (NFR-2):
 //   mobile (<md) : 1 column stacked
 //   ≥md/lg       : 3 columns side-by-side
@@ -30,7 +38,7 @@ import { useReveal } from '@/lib/motion/useReveal';
 // ---------------------------------------------------------------------------
 
 export default function CropCoverage() {
-  const { data, loading } = useMetrics();
+  const { data, loading, error } = useMetrics();
 
   // Section header reveal — single element, no stagger (FR-5).
   const headerRef = useReveal<HTMLDivElement>({ stagger: 0 });
@@ -101,6 +109,23 @@ export default function CropCoverage() {
             );
           })}
         </div>
+
+        {/*
+          Error notice (ATP-50) — a SIBLING of the grid, never a child: gridRef's
+          useReveal targets ':scope > *', so a child would be pulled into the
+          stagger and counted as a fourth grid column.
+          Light surface here (bg-bg), so text-muted — the ChartCard status
+          precedent — rather than MetricsBand's inverted text-bg/80 (NFR-4).
+        */}
+        {error && (
+          <p
+            className="mt-6 text-sm text-muted text-center leading-snug"
+            role="status"
+            aria-live="polite"
+          >
+            Per-crop counts are temporarily unavailable. Please try again shortly.
+          </p>
+        )}
 
       </div>
     </section>

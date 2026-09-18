@@ -11,15 +11,22 @@
 #     2. Resolve FrontendBucketName + CloudFrontUrl from the 30-frontend stack
 #        outputs, then DERIVE the CloudFront distribution Id from the domain
 #        (override via DISTRIBUTION_ID) — the template doesn't output the Id.
-#     3. Build: `NEXT_PUBLIC_API_BASE_URL=<ApiBaseUrl> npm run build` in frontend/
-#        (static export → out/). The API URL is injected at BUILD time (NEXT_PUBLIC_*).
+#     3. Build: `npm run build` in frontend/ (static export → out/) with FOUR
+#        NEXT_PUBLIC_* values injected at BUILD time — NEXT_PUBLIC_API_BASE_URL,
+#        NEXT_PUBLIC_COGNITO_USER_POOL_ID, NEXT_PUBLIC_COGNITO_CLIENT_ID, and
+#        NEXT_PUBLIC_GA_MEASUREMENT_ID. Static export bakes these into the bundle;
+#        they cannot be changed after the build without rebuilding.
+#        GA_MEASUREMENT_ID is the one build value NOT sourced from a stack output
+#        (it defaults in-script) — a GA4 measurement ID is public by design and
+#        deliberately does not belong in SSM/Secrets Manager (trd.md §8).
 #     4. Sync: `aws s3 sync out/ s3://<bucket> --delete` (prune removed files;
 #        the bucket is private — OAC serves it).
 #     5. Invalidate: `aws cloudfront create-invalidation --paths "/*"` so viewers
 #        immediately get the new build (mitigates stale-cache, design.md §9).
 #
-#   API URL, bucket, distribution Id, and CloudFront URL are non-secret wiring
-#   values — they are echoed as progress. No secrets are touched (NFR-2).
+#   All SEVEN echoed values are non-secret wiring: API URL, Cognito user-pool Id,
+#   Cognito client Id, bucket, distribution Id, CloudFront URL, and the GA4
+#   measurement Id. They are echoed as progress. No secrets are touched (NFR-2).
 #
 # PREREQUISITES
 #   - The 20-backend and 30-frontend stacks are deployed (CREATE/UPDATE_COMPLETE),
@@ -36,6 +43,8 @@
 #   ./infra/scripts/deploy-frontend.sh
 #   API_BASE_URL=https://abc.execute-api.eu-west-1.amazonaws.com ./infra/scripts/deploy-frontend.sh
 #   DISTRIBUTION_ID=E123ABC ./infra/scripts/deploy-frontend.sh
+#   GA_MEASUREMENT_ID=G-XXXXXXXXXX ./infra/scripts/deploy-frontend.sh
+#   GA_MEASUREMENT_ID= ./infra/scripts/deploy-frontend.sh   # build with analytics OFF
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -46,6 +55,13 @@ REGION="${AWS_REGION:-eu-west-1}"
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
+
+# GA4 measurement ID (usage-analytics T-7). Not a secret — a GA4 measurement ID
+# is transmitted to every visitor in the page source, so a committed default is
+# correct (unlike the SSM/Secrets Manager-gated values in docs/trd/trd.md §8).
+# Override via env; the committed default keeps a forgotten override from
+# silently shipping a build with no analytics.
+GA_MEASUREMENT_ID="${GA_MEASUREMENT_ID:-G-8E35GQG2SV}"
 
 # Resolve infra/ + frontend/ paths relative to this script so it runs from any CWD.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -148,15 +164,21 @@ echo "    CognitoClient  = $COGNITO_CLIENT_ID"
 echo "    Bucket         = $BUCKET"
 echo "    DistributionId = $DIST_ID"
 echo "    CloudFrontUrl  = $CLOUDFRONT_URL"
+if [[ -n "$GA_MEASUREMENT_ID" ]]; then
+  echo "    GaMeasurementId= $GA_MEASUREMENT_ID"
+else
+  echo "    GaMeasurementId= not set — building without analytics"
+fi
 echo
 
 # ── Step 1: Build the static export with the API URL baked in (build-time env) ─
-echo "==> Building the static export (NEXT_PUBLIC_API_BASE_URL injected at build time) ..."
+echo "==> Building the static export (4 NEXT_PUBLIC_* values injected at build time) ..."
 (
   cd "$FRONTEND_DIR"
   NEXT_PUBLIC_API_BASE_URL="$API_BASE_URL" \
   NEXT_PUBLIC_COGNITO_USER_POOL_ID="$COGNITO_USER_POOL_ID" \
   NEXT_PUBLIC_COGNITO_CLIENT_ID="$COGNITO_CLIENT_ID" \
+  NEXT_PUBLIC_GA_MEASUREMENT_ID="$GA_MEASUREMENT_ID" \
     npm run build
 )
 
