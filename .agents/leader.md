@@ -56,7 +56,7 @@ Your sole responsibility is to coordinate execution of an approved spec by orche
 
 ## 🧭 Project-Specific Guardrails (must enforce on every task)
 - **AWS profile:** any task touching AWS must use `--profile IBD-DEV`. Reject Implementer work that omits it.
-- **PII protection:** `phone`/`email` must never reach the `Public` role. Read-path tasks must include a PII-omission check before PASS.
+- **PII protection:** consent (`GRANTED`) gates disclosure, not field identity — `phone`/`email` are public on the single-actor detail read only when the actor consented, and must never reach `Public` on any list/bulk path (`/actors`, map, dashboard, CSV export) or when consent is not `GRANTED`. `NEVER_PUBLIC_FIELDS` must never reach `Public` on any path regardless of consent. Read-path tasks must include a PII-boundary check (right fields present on detail, contact block absent from list, never-public fields absent everywhere) before PASS.
 - **Static export:** the Next.js frontend uses static export — flag any introduction of SSR/Next route handlers as drift.
 - **Design tokens:** UI tasks must use tokens from `docs/ux-ui/design.md §7`. Hardcoded colors/geometry are a FAIL.
 - **Stack lock:** Prisma (ORM), Leaflet (maps), Cognito (auth) are mandated — substitutions are drift, escalate via Pivot Protocol.
@@ -73,6 +73,14 @@ After each task completes (whether on first pass or after self-correction), repo
 6. **Next step:** the next eligible task and a prompt to continue, pause, or skip.
 
 Keep this report concise. The full audit trail belongs in `execution.md`, not in chat.
+
+**Recompute every figure at the moment you report it (KZ-005, `enhancement/map-coordinate-picker`).** Counts, budgets, sizes, round totals — a number carried between turns is recall, not measurement, and it drifts upward. This binds hardest on your own ledger, because it is the one document no Reviewer audits: that spec reported its review-round count from memory across three consecutive gates (real 5, reported 7; real 10, reported 12–14) and **escalated a budget on the inflated figure**.
+
+**Establish quiet before measuring (KZ-010, `actors/public-profile-disclosure`).** A build, test run, or SAM validate taken while any delegate is active is not a slow measurement, it is a **wrong** one. Before measuring, confirm no worker is running *and* confirm the invocation's own concurrency — a bare `npm test` may be parallel. Re-measure once on a quiet tree before treating a single failure as real, and once more before treating a single pass as evidence.
+
+**Routing test: scope, then causation (`actors/public-profile-disclosure`).** Before routing a finding out of a spec, answer both — (1) is it in scope? and (2) **did this spec cause it?** A finding that fails (1) but passes (2) belongs *inside* the spec: use the budget-tripwire escalation, not the advisory queue. *"No FR/NFR mentions it"* decides who pays, never whether it is a defect.
+
+**When scope is cut mid-spec, re-derive every design decision whose rationale cited the removed surface (`contact/contact-channels`).** A mechanism that outlives its reason is a defect, not inertia — and it will be defended by the findings it generates.
 
 ---
 
@@ -180,5 +188,13 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 1. **Skills and effort per suite are your decision**, exactly as above — deviations recorded in the test report's Summary.
 2. **author ≠ tester:** prefer spawning each Tester on a **different model than the Implementer** that wrote the code. A preference, not a hard rule — note it when they collapse.
 3. **Adjudicate results:** a `PRODUCT_BUG` is evidence, not noise. Carry it through as a failure with remediation; **never** let a Tester rewrite a red test to pass.
-4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (`cd backend && npm run test:e2e -- --silent`), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
+4. Suites in this repo partition as: **backend-unit** (`cd backend && npm test -- --silent`), **backend-e2e** (no separate command — these files run under `cd backend && npm test -- --silent`, so backend-unit and backend-e2e are one invocation and must not be assigned as two independent suites), **frontend-unit** (`cd frontend && npm test -- --silent`). See `.agents/tester.md`.
 5. You write no tests yourself.
+
+## Deferring a check on environment grounds (KZ-003)
+
+Before holding a task at `[~]` because a visual or behavioral check "needs the live stack, a login, or seeded data", **test that assumption**: if the component takes plain props (its token or session is used only for mutations), a throwaway harness page renders it with no stack, no database, and no auth. Presentational surfaces are almost never actually blocked — and a check deferred on a false blocker is a check that finds real defects late.
+
+## Applying a correction — both directions (KZ-004)
+
+**Never work the site list a finding hands you.** Grep the superseded value across every spec document before declaring an amendment applied, and in the same change mark as resolved every document that *quotes* the corrected figure — correcting a sibling falsifies anything citing it.

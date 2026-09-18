@@ -1,0 +1,27 @@
+### Q1
+The rendered app shows strong overall fidelity to the `MOCKUP` captures across all widths. The typography scale, core color palette, and general component layout (e.g., cards, dashboard KPIs, and map overlays) match the design comps closely. At 1440px, the layouts maintain their expected structural grids. At 768px and 375px, the surfaces adapt logically (e.g., filter grids collapsing to single columns, maps taking full viewport width) in ways that align with standard responsive design patterns.
+
+### Q2
+In both `9-register-form` and `4-import-preview`, the input fields, selects, and internal card/fieldset containers lack a visible `shadow-xs`. They rely entirely on flat background fills (white) and thin gray borders to define their edges. The `shadow-xs` specification is imperceptible in these contexts against the backgrounds, making the elements functionally flat.
+
+### Q3
+In `7-dialog`, the `shadow-md` on the main dialog panel ("Delete Arusha Acacia Bean Seed Co.?") is highly visible, creating a strong elevation effect that clearly separates it from the dimmed page backdrop. Conversely, the internal elements have no discernible shadow, maintaining a flat appearance inside the elevated dialog. This creates a clear hierarchical distinction between the modal container and its contents.
+
+### Q4
+The visibility of the VF-4 legend artifact in `9-register-form` is prominent and constitutes a visual defect. The borders of the fieldset containers strike horizontally straight through the text of the legends ("Identity", "Location", "Crops & capacity"). The legend backgrounds fail to mask or break the border line, causing the line to intersect the typography, which impairs legibility and creates an unpolished appearance.
+
+### Q5
+CANNOT VERIFY — The captures for `1-home-hero` (at all widths) only show the topmost hero section and the immediate start of section 4 ("Is your organisation part of the seed system?"). Sections 5, 6, and 7 are not visible in any of the provided `1-home-hero` captures, making it impossible to analyze their structural and visual separation.
+
+### Q6
+At 768px, there is a clear responsive integrity issue with horizontal overflow in the public top navigation bar. In captures like `8-dashboard__768` and `2-directory__768`, the top navigation links do not fit within the viewport width, causing the rightmost items to clip (e.g., the "Directory" link is cut off and displays as "Directo"). At 375px, this issue is resolved as the navigation properly collapses into a hamburger menu icon. No significant clipping was observed in the 375px data card lists.
+
+### Q7
+On data surfaces (such as `3-admin-actors`), the warning color `#8F5E10` (used for text like "Not recorded — no evidence") provides adequate contrast against the white backgrounds and remains legible. It is distinctly different from the success states (e.g., the light green "Published" badges) and danger states (e.g., the red "Failed" badges or "Delete" actions). While legible and functionally distinct, the color appears more muddy (brownish) rather than a vibrant warning orange.
+
+### TOP DEFECTS
+1. **Responsive Navigation Clipping (768px):** The public top navigation bar overflows horizontally at 768px, truncating navigation links (e.g., "Directory" clips to "Directo").
+2. **Fieldset Legend Artifact:** In the register form, the fieldset borders strike horizontally through the legend text ("Identity", "Location", "Crops & capacity") due to a lack of background masking on the legend elements.
+
+### STATUS
+FAILED — Visual layout defects present (Navigation clipping at 768px and fieldset legend artifact) requiring correction before proceeding.

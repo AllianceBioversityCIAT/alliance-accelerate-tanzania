@@ -11,21 +11,31 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 ## Data & migrations
 
-- Prisma + MySQL. Migrations are **additive-only** unless a spec explicitly says otherwise; rehearse locally first (docker `accelerate-mysql` on localhost:3306, `.env` → `mysql://user:pass@localhost:3306/accelerate`).
-- RDS dev apply: `npx prisma migrate deploy` with `DATABASE_URL` **composed in-process** from Secrets Manager (see `../infra/scripts/migrate-seed.sh` for the canonical pattern — resolve stack outputs → read secret → URL-encode → pass inline). Never write the URL to a file or print it. Beware: `migrate-seed.sh` also seeds — don't run it whole against a live DB.
+- Prisma + MySQL. Migrations are **additive-only** unless a spec explicitly says otherwise.
+- **Rehearsal target — describes what this team actually does (amended 2026-08-05).** Rehearse on whatever MySQL 8 your `backend/.env` `DATABASE_URL` points at. In practice that is usually the **shared dev RDS**, not a local container: `docs/infrastructure.md` §6 lists a dev RDS instance as a legitimate local-route database, and checkouts here frequently have no local MySQL at all. A local docker MySQL (`accelerate-mysql` on `localhost:3306`) is still the **safer** rehearsal target and is preferred when one is running — but it is not a precondition, and a guide that mandated it would be describing a step most checkouts cannot perform.
+  - **Know what `migrate dev` does to a shared target:** it reads `DATABASE_URL` **from `.env`** and **provisions a shadow database** on the server it points at. That is acceptable on dev RDS and is what this project does; it is **never** acceptable against PROD.
+  - **Always additive, always inspect the emitted SQL before it lands.** On a shared target the blast radius is other people's work, so a reset or drift prompt is an **abort-and-report** condition — never answer it. `prisma migrate reset` and `db push` are forbidden against RDS.
+  - *Why this was rewritten:* the previous text mandated local-first rehearsal and reserved RDS for `migrate deploy` only. Execution of `actors/public-self-registration` T-1 (2026-08-05) found no local MySQL in the checkout, applied via `migrate dev` against dev RDS, and only then discovered the rule — a rule nobody could follow is worse than an honest one. See that spec's `execution.md` → T-1 *Runbook deviation*.
+- **PROD / governed RDS apply:** `npx prisma migrate deploy` with `DATABASE_URL` **composed in-process** from Secrets Manager (see `../infra/scripts/migrate-seed.sh` for the canonical pattern — resolve stack outputs → read secret → URL-encode → pass inline). Never write the URL to a file or print it. Beware: `migrate-seed.sh` also seeds — don't run it whole against a live DB.
 - `binaryTargets` includes `rhel-openssl-3.0.x` for the Lambda runtime — don't remove it.
 
 ## PII & RBAC (release gates)
 
-- PII fields (`phone`, `email`, `sex`, `position`, `marketLocation`, `technicalSupport`) exit ONLY through Admin-gated routes/serializers (`admin-actor.serializer.ts`); public reads go through `common/role-aware.serializer.ts` + `pii-consent.policy.ts`. `src/test/pii-boundary.spec.ts` green is a hard release gate.
+- Consent (`consentStatus = GRANTED`) gates disclosure of every field an actor supplied, not field identity (`actors/public-profile-disclosure`). `common/pii-consent.policy.ts` holds four constants: `PUBLICLY_DISCLOSED_FIELDS` (`phone`, `email`, `sex`, `position`, `marketLocation`, `contactPerson`, `otherCrops`) MUST be present, by value, on the single-actor detail read (`GET /api/v1/actors/:id`) for a `GRANTED` actor; its subset `CONTACT_BLOCK_FIELDS` (`phone`, `email`, `position`, `marketLocation`, `contactPerson`) MUST be absent — by key and by value — from the list read (`GET /api/v1/actors`) under every filter/page/page-size, so the map/dashboard/CSV structurally cannot carry it; `NEVER_PUBLIC_FIELDS` MUST be absent from every public path regardless of consent; `PII_ALLOWLIST` is retained, **empty**, as the one-file re-restriction point if legal narrows disclosure again. `technicalSupport` lives in `NEVER_PUBLIC_FIELDS` for a *different* reason than its old neighbours: it's unreviewed staff-authored free text, not an actor PII declaration. Public reads go through `common/role-aware.serializer.ts`'s two projections (`toPublicListItem`, `toPublicDetail`); the `Admin` projection (`admin-actor.serializer.ts`) gained `contactPerson` and `otherCrops` under this revision — its gating is unchanged, and it still exits only through Admin-gated routes. `src/test/pii-boundary.spec.ts` green is a hard release gate.
 - Guard stack: `JwtAuthGuard` + `RolesGuard` + `@Roles('Admin')` class-level on admin controllers. The access token carries only `sub` — the acting admin's email is resolved server-side via `actors/acting-admin.resolver.ts` (Cognito ListUsers, cached per container, null on failure). **Never trust client-sent identity.**
 - Audit: every admin write creates `ActorAuditLog` rows **inside the same `$transaction`** via `actor-audit.service.ts` (diff for updates — empty diff writes no row; snapshots for create/delete/import; bulk ops batch with `createMany`). Audit JSON contains PII → admin-only surface.
 
 ## Users module — no-email credential handoff (intentional)
 
 - `users` create/reset deliberately do **NOT** send Cognito email (corporate
-  `@cgiar.org` deliverability + SES sandbox limits). Instead they SUPPRESS Cognito
-  mail and **return a one-time temporary password** for the admin to share
+  `@cgiar.org` deliverability, and the pool stays on `COGNITO_DEFAULT`
+  permanently post-`email-notification-microservice` —
+  `docs/specs/enhancement/email-notification-microservice/design.md` §11's
+  `10-data-auth/template.yaml` row + OQ-10, and that spec's
+  `requirements.md` §6 — because Cognito cannot publish to the notification
+  microservice without a `CustomEmailSender` trigger, which that same §6
+  records as **deferred**). Instead they
+  SUPPRESS Cognito mail and **return a one-time temporary password** for the admin to share
   out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
   `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
   `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a
@@ -36,11 +46,13 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
   write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
   sign-in/reset. Keep new email inputs normalized.
 
+**`src/contact/` is stateless and Prisma-free — and that is disciplinary, not structural.** `PrismaModule` is `@Global()`, so nothing prevents a write from that module; the zero-writes property is held by `contact-no-writes.e2e.spec.ts` alone. Treat that spec as the guard, and if you add persistence there, know you are removing the only thing enforcing it.
+
 ## Testing conventions
 
 - Jest `testRegex` accepts `.spec.ts` AND `.e2e-spec.ts`; the **canonical e2e name is `*.e2e.spec.ts`** (a hyphen-named file once sat dead for weeks — see archived `bugfix/dead-e2e-tests`).
 - E2E harness pattern (`src/test/admin-actors-crud.e2e.spec.ts` is the reference): AppModule + in-memory Prisma mock override + `TestJwtAuthGuard` + the SAME shared bootstrap helpers as production (`createValidationPipe()`, `configureBodyParser`).
-- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npm run lint` (ESLint 9 flat config `eslint.config.mjs`).
+- Targeted runs: `npm test -- <pattern>`. Full gates: `npm test && npm run build && npx eslint "{src,test}/**/*.ts" --quiet` (ESLint 9 flat config `eslint.config.mjs`) — **not** `npm run lint`, which is `eslint --fix` (`package.json`) and mutates the diff under review (root `CLAUDE.md` § Verification commands).
 
 ## Import template
 

@@ -105,10 +105,22 @@ export default function ActorPopup({ actor }: ActorPopupProps) {
         {actor.capacityTons != null ? `${actor.capacityTons} t` : '—'}
       </p>
 
-      {/* View Profile — FR-7 / design.md §5: deep-links to the Profile route */}
+      {/*
+        View Profile — FR-7 / design.md §5: deep-links to the Profile route.
+
+        `!text-primary-fg` — the `!` is load-bearing, do not drop it. This
+        popup is injected into Leaflet's DOM, so `leaflet.css`'s
+        `.leaflet-container a { color: #0078A8 }` applies to this anchor.
+        That selector is (0,1,1) — a class plus an element — while Tailwind's
+        `.text-primary-fg` utility is (0,1,0), so Leaflet's blue wins the
+        cascade and the label rendered blue even though the token itself has
+        always been #FFFFFF. The important flag is what defeats a third-party
+        stylesheet we do not control; the colour still comes from the token,
+        never a hardcoded literal.
+      */}
       <a
         href={`/profile?id=${actor.id}`}
-        className="inline-block rounded-sm bg-primary px-3 py-1 text-xs font-medium text-primary-fg hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        className="inline-block rounded-sm bg-primary px-3 py-1 text-xs font-medium !text-primary-fg hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         View Profile
       </a>

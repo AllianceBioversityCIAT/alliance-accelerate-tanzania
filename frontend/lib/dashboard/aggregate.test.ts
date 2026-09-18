@@ -22,6 +22,8 @@ function makeActor(overrides: Partial<PublicActor> & Pick<PublicActor, 'id'>): P
     traderType: 'cooperative',
     crops: ['sorghum'],
     capacityTons: null,
+    sex: null,
+    otherCrops: null,
     ...overrides,
   };
 }

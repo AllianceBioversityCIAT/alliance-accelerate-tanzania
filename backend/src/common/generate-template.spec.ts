@@ -19,7 +19,9 @@ import {
   generateTemplateBuffer,
 } from '../../scripts/generate-import-template';
 import {
+  CONSENT_METHOD_VALUES,
   CROP_YES_NO,
+  REGISTRATION_SOURCE_VALUES,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
 } from './template-columns';
@@ -68,6 +70,19 @@ describe('generate-import-template', () => {
     expect(text).toContain(CANONICAL_REGIONS[CANONICAL_REGIONS.length - 1]);
   });
 
+  it('lists the allowed values for the T-6 enum columns on the Instructions sheet (FR-5)', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const instructions = workbook.getWorksheet('Instructions');
+    const text = collectText(instructions!);
+
+    for (const value of REGISTRATION_SOURCE_VALUES) {
+      expect(text).toContain(value);
+    }
+    for (const value of CONSENT_METHOD_VALUES) {
+      expect(text).toContain(value);
+    }
+  });
+
   it('backs the constrained columns with a hidden Lists sheet of allowed values', async () => {
     const workbook = await loadGeneratedWorkbook();
     const lists = workbook.getWorksheet('Lists');
@@ -80,6 +95,48 @@ describe('generate-import-template', () => {
     // Crop YES/NO list (Lists column D, shared shape of the three crop columns).
     const cropColumn = CROP_YES_NO.map((_, i) => lists!.getCell(i + 1, 4).value);
     expect(cropColumn).toEqual([...CROP_YES_NO]);
+  });
+
+  // T-4 (public-profile-disclosure) — Contact Person and Other Crops, v3.
+
+  it('writes the Contact Person and Other Crops headers to the Data sheet, after every existing column', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const dataSheet = workbook.getWorksheet('Data');
+    expect(dataSheet).toBeDefined();
+
+    const headerRow = dataSheet!.getRow(1);
+    expect(TEMPLATE_HEADERS[TEMPLATE_HEADERS.length - 2]).toBe('Contact Person');
+    expect(TEMPLATE_HEADERS[TEMPLATE_HEADERS.length - 1]).toBe('Other Crops');
+    expect(headerRow.getCell(TEMPLATE_HEADERS.length - 1).value).toBe('Contact Person');
+    expect(headerRow.getCell(TEMPLATE_HEADERS.length).value).toBe('Other Crops');
+  });
+
+  it('lists Contact Person and Other Crops on the Instructions sheet as optional free text with no allowed-value list (FR-5)', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const instructions = workbook.getWorksheet('Instructions');
+    expect(instructions).toBeDefined();
+
+    const rows: Array<Record<number, unknown>> = [];
+    instructions!.eachRow((row) => {
+      rows.push({
+        1: row.getCell(1).value,
+        2: row.getCell(2).value,
+        3: row.getCell(3).value,
+        4: row.getCell(4).value,
+      });
+    });
+
+    const contactPersonRow = rows.find((r) => r[1] === 'Contact Person');
+    const otherCropsRow = rows.find((r) => r[1] === 'Other Crops');
+    expect(contactPersonRow).toBeDefined();
+    expect(otherCropsRow).toBeDefined();
+    // Required: No; Format/guidance names the bound; Allowed values: '—'
+    // (free text, not a dropdown) — this row IS the Instructions-sheet half
+    // of FR-5's "headers, allowed-value lists, and parser agree" clause.
+    expect(contactPersonRow![2]).toBe('No');
+    expect(contactPersonRow![4]).toBe('—');
+    expect(otherCropsRow![2]).toBe('No');
+    expect(otherCropsRow![4]).toBe('—');
   });
 
   it('exposes buildTemplateWorkbook returning the three template sheets', () => {

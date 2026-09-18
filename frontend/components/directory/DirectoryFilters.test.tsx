@@ -1,8 +1,8 @@
 /**
- * Unit tests for DirectoryFilters — T-4, FR-2, NFR-3.
+ * Unit tests for DirectoryFilters — T-4, T-5, FR-2, FR-5, NFR-3.
  *
  * Covers:
- *   (a) renders three labeled selects (crop, role, region)
+ *   (a) renders three labeled selects/controls (crop, role, region)
  *   (b) selecting a crop calls onChange with crop set and others preserved
  *   (c) selecting a role calls onChange with role set
  *   (d) selecting a region calls onChange with region set
@@ -11,10 +11,20 @@
  *   (g) "Clear filters" button shown when at least one filter is active
  *   (h) activating "Clear filters" calls onClear
  *   (i) region options match the canonical set (OQ-1)
+ *
+ * T-5 (enhancement/searchable-region-select): the region control is now
+ * `SearchableSelect`, a combobox rather than a native `<select>`, so region
+ * interaction goes through `user-event` (open → click an option) instead of
+ * `fireEvent.change`. Crop and role are unchanged native `<select>`s and keep
+ * `fireEvent.change`. The region control's accessible name is now its
+ * visible "Region" label — the redundant `aria-label="Filter by region"` is
+ * removed (OQ-1) — so region lookups use `/^region$/i`, not `/filter by
+ * region/i`.
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DirectoryFilters from './DirectoryFilters';
 import { REGIONS } from '@/lib/content/regions';
 import type { ActorsQuery } from '@/lib/api/actors';
@@ -40,10 +50,10 @@ describe('DirectoryFilters', () => {
     expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
   });
 
-  it('renders a region select with label', () => {
+  it('renders a region control labeled by its visible "Region" label (OQ-1 — the accessible name is the visible label, not a redundant aria-label)', () => {
     render(<DirectoryFilters filters={EMPTY_FILTERS} onChange={jest.fn()} onClear={jest.fn()} />);
 
-    expect(screen.getByLabelText(/filter by region/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 
   // ── (b) Selecting crop calls onChange ─────────────────────────────────────
@@ -83,19 +93,43 @@ describe('DirectoryFilters', () => {
 
   // ── (d) Selecting region calls onChange ───────────────────────────────────
 
-  it('calls onChange with region set when a region is selected', () => {
+  it('calls onChange with region set when a region option is picked', async () => {
+    const user = userEvent.setup();
     const onChange = jest.fn();
     render(
       <DirectoryFilters filters={EMPTY_FILTERS} onChange={onChange} onClear={jest.fn()} />,
     );
 
-    fireEvent.change(screen.getByLabelText(/filter by region/i), {
-      target: { value: 'Dodoma' },
-    });
+    await user.click(screen.getByLabelText(/^region$/i));
+    await user.click(screen.getByRole('option', { name: 'Dodoma' }));
 
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ region: 'Dodoma' }),
     );
+  });
+
+  // ── (d') Clearing region emits undefined, never '' (FR-5 BUT it must NOT) ──
+
+  it('calls onChange with region: undefined — never an empty string — when "All regions" is picked', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(
+      <DirectoryFilters
+        filters={{ region: 'Dodoma' }}
+        onChange={onChange}
+        onClear={jest.fn()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^region$/i));
+    await user.click(screen.getByRole('option', { name: 'All regions' }));
+
+    // Assert on the value handed to onChange — the emitted query object —
+    // not on any internal component state. That distinction is the exact
+    // defect FR-5's `BUT it must NOT` clause guards against.
+    const call = onChange.mock.calls[0][0] as Pick<ActorsQuery, 'crop' | 'role' | 'region'>;
+    expect(call.region).toBeUndefined();
+    expect(call.region).not.toBe('');
   });
 
   // ── (e) Selecting "All …" clears that field ────────────────────────────────
@@ -191,24 +225,30 @@ describe('DirectoryFilters', () => {
 
   // ── (i) Region options equal the canonical set (OQ-1) ─────────────────────
 
-  it('region select contains exactly the canonical region strings', () => {
+  it('region control lists exactly the canonical region strings', async () => {
+    const user = userEvent.setup();
     render(
       <DirectoryFilters filters={EMPTY_FILTERS} onChange={jest.fn()} onClear={jest.fn()} />,
     );
 
-    const select = screen.getByLabelText(/filter by region/i) as HTMLSelectElement;
-    // Collect all option values (skip empty "All regions" option).
-    const optionValues = Array.from(select.options)
-      .map((o) => o.value)
-      .filter((v) => v !== '');
+    await user.click(screen.getByLabelText(/^region$/i));
 
-    expect(optionValues).toEqual(REGIONS);
+    // Scoped to the region listbox — a bare `screen.getAllByRole('option')`
+    // also picks up the crop/role native <select>s' <option> elements, which
+    // carry the same implicit role. Strips a leading "✓" (option.value === ''
+    // matches the unset region filter, so the clear entry renders checked).
+    const optionLabels = within(screen.getByRole('listbox'))
+      .getAllByRole('option')
+      .map((o) => o.textContent?.replace(/^✓/, '') ?? '')
+      .filter((label) => label !== 'All regions');
+
+    expect(optionLabels).toEqual(REGIONS);
     // Spot-check canonical strings from CANONICAL_REGIONS (OQ-1 resolution).
-    expect(optionValues).toContain('Kagera');
-    expect(optionValues).toContain('Manyara');
-    expect(optionValues).toContain('Rukwa');
-    expect(optionValues).toContain('Songwe');
-    expect(optionValues).toContain('Kaskazini Unguja');
-    expect(optionValues).toContain('Kusini Pemba');
+    expect(optionLabels).toContain('Kagera');
+    expect(optionLabels).toContain('Manyara');
+    expect(optionLabels).toContain('Rukwa');
+    expect(optionLabels).toContain('Songwe');
+    expect(optionLabels).toContain('Kaskazini Unguja');
+    expect(optionLabels).toContain('Kusini Pemba');
   });
 });

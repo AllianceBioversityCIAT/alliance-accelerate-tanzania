@@ -12,12 +12,22 @@
  *   - Calls bare /api/v1/actors when no query is provided
  */
 
-import { getActor, getActors, type PublicActor, type PublicActorList } from './actors';
+import {
+  getActor,
+  getActors,
+  type PublicActor,
+  type PublicActorDetail,
+  type PublicActorList,
+} from './actors';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
+// List-set fixture (design.md §9 DD-6): drives getActors()/VALID_LIST. Typed
+// explicitly as PublicActor (the list-item alias), never `any` or a bare
+// mock, so a field the list set does NOT carry (e.g. `phone`) is a compile
+// error here rather than a silently-stale fixture.
 const VALID_ACTOR: PublicActor = {
   id: 'actor-1',
   traderName: 'Mbeya Seeds Ltd',
@@ -27,6 +37,21 @@ const VALID_ACTOR: PublicActor = {
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -8.9, long: 33.46 },
+  sex: 'female',
+  otherCrops: null,
+};
+
+// Detail-set fixture (design.md §9 DD-6): drives getActor()'s cases below.
+// Typed explicitly as PublicActorDetail — the published set, contact block
+// included — so type drift here is a compile error, not a stale-but-green
+// test (T-13's disqualifier).
+const VALID_ACTOR_DETAIL: PublicActorDetail = {
+  ...VALID_ACTOR,
+  contactPerson: 'Asha Mwakalinga',
+  position: 'Managing Director',
+  phone: '+255700000000',
+  email: 'director@example.com',
+  marketLocation: 'Arusha Central Market',
 };
 
 const VALID_LIST: PublicActorList = {
@@ -303,13 +328,15 @@ describe('getActor()', () => {
     process.env = ORIGINAL_ENV;
   });
 
-  it('returns the PublicActor when fetch resolves HTTP 200 with valid JSON', async () => {
+  it('returns the PublicActorDetail (published set, contact block included) when fetch resolves HTTP 200 with valid JSON', async () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
-    global.fetch = makeFetchOk(VALID_ACTOR);
+    global.fetch = makeFetchOk(VALID_ACTOR_DETAIL);
 
     const result = await getActor('actor-1');
 
-    expect(result).toEqual(VALID_ACTOR);
+    expect(result).toEqual(VALID_ACTOR_DETAIL);
+    expect(result?.phone).toBe('+255700000000');
+    expect(result?.email).toBe('director@example.com');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/actors/actor-1',
       { headers: { Accept: 'application/json' } }

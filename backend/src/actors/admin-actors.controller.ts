@@ -19,6 +19,7 @@ import { AuthUser } from '../auth/auth.types';
 import {
   ActorsAdminService,
   AdminActorList,
+  BulkConsentResult,
   BulkResult,
 } from './actors-admin.service';
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
@@ -77,12 +78,15 @@ export class AdminActorsController {
   bulkSetConsent(
     @Body() dto: BulkConsentDto,
     @CurrentUser() user: AuthUser,
-  ): Promise<BulkResult> {
+  ): Promise<BulkConsentResult> {
     return this.actorsAdminService.bulkSetConsent(
       dto.ids,
       dto.consentStatus,
       user.sub,
       dto.acknowledged,
+      dto.consentMethod,
+      dto.consentObtainedAt,
+      dto.consentReference,
     );
   }
 

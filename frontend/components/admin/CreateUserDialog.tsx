@@ -22,6 +22,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createUser } from '@/lib/api/users';
 import { AuthFailureError } from '@/lib/api/client';
+import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
 import { RoleSelect, type RoleValue } from './RoleSelect';
 import { CredentialHandoff } from './CredentialHandoff';
 
@@ -62,7 +63,6 @@ export function CreateUserDialog({
 }: CreateUserDialogProps) {
   const router    = useRouter();
   const titleId   = 'create-user-dialog-title';
-  const dialogRef = useRef<HTMLDivElement>(null);
   const emailRef  = useRef<HTMLInputElement>(null);
 
   const [email,        setEmail]        = useState('');
@@ -90,48 +90,20 @@ export function CreateUserDialog({
 
   // ── Focus trap ────────────────────────────────────────────────────────────
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // In the handoff view, dismissing still refreshes the list.
-        if (created) {
-          setCreated(null);
-          onSuccess();
-        } else {
-          onCancel();
-        }
-        return;
-      }
-      if (e.key !== 'Tab') return;
+  // In the handoff view, dismissing still refreshes the list — Escape must
+  // dismiss the handoff and call onSuccess(), not treat it as a cancel.
+  const handleEscape = useCallback(() => {
+    if (created) {
+      setCreated(null);
+      onSuccess();
+    } else {
+      onCancel();
+    }
+  }, [onCancel, created, onSuccess]);
 
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-      ).filter((el) => !el.hasAttribute('disabled'));
-
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last  = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    [onCancel, created, onSuccess]
+  const { dialogRef, onKeyDown: handleKeyDown } = useDialogFocusTrap<HTMLDivElement>(
+    onCancel,
+    handleEscape
   );
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -190,7 +162,7 @@ export function CreateUserDialog({
       firstBtn?.focus();
     });
     return () => cancelAnimationFrame(id);
-  }, [created]);
+  }, [created, dialogRef]);
 
   if (!open) return null;
 
@@ -198,7 +170,7 @@ export function CreateUserDialog({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-50 bg-fg/40"
+        className="fixed inset-0 z-50 bg-backdrop"
         aria-hidden="true"
         onClick={created ? handleDone : onCancel}
       />
@@ -213,7 +185,7 @@ export function CreateUserDialog({
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
-          'rounded-md bg-surface p-6 shadow-md border border-border',
+          'rounded-md bg-surface p-6 shadow-lg border border-border',
         ].join(' ')}
       >
         {created ? (

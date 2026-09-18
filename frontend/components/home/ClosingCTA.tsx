@@ -9,7 +9,7 @@
 // Z-order (back → front):
 //   1. Poster image  — next/image fill, absolute inset-0, -z-10 (always rendered)
 //   2. <video>       — absolute inset-0, -z-10 (conditional: no-preference + SSR=off)
-//   3. Scrim         — absolute inset-0, bg-fg/70 (decorative, keeps text AA)
+//   3. Scrim         — absolute inset-0, bg-fg + opacity-70 (keeps body copy AA)
 //   4. Content       — relative z-10 (heading + body + CTAs unchanged from T-3)
 //
 // Reduced-motion / autoplay gate (NFR-5):
@@ -95,8 +95,18 @@ export default function ClosingCTA() {
         </video>
       )}
 
-      {/* ── Token scrim (above poster/video, below content) ── */}
-      <div className="absolute inset-0 bg-fg/70" aria-hidden="true" />
+      {/*
+        ── Token scrim (above poster/video, below content) ──
+        `bg-fg opacity-70`, NOT `bg-fg/70`. Every semantic colour in
+        tailwind.config.ts is `var(--color-x)`, an arbitrary value Tailwind
+        cannot compose an alpha into, so a `/NN` modifier on a token emits no
+        rule at all and the element renders fully TRANSPARENT — this scrim did
+        not exist. `opacity` is a real utility and applies. The div has no
+        children, so opacity on it is exactly a 70% fg layer.
+        This is load-bearing, not decoration: without it the body copy measured
+        3.62:1 over the video (16px/400 needs 4.5:1). Do not shorten it back.
+      */}
+      <div className="absolute inset-0 bg-fg opacity-70" aria-hidden="true" />
 
       {/* ── Content (relative z-10) — w-full so it fills the flex row and centres ── */}
       <div className="relative z-10 w-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
@@ -145,6 +155,27 @@ export default function ClosingCTA() {
             ].join(' ')}
           >
             About the project
+          </Link>
+
+          {/* T-10, FR-1: home page's own entry point into the contact form —
+              same hand-crafted secondary-on-dark treatment as "About the
+              project" above (Button's secondary variant is light-surfaced
+              and would be unreadable here). */}
+          <Link
+            href="/contact"
+            className={[
+              'inline-flex items-center gap-2 px-5 py-2.5',
+              'text-sm font-medium leading-none',
+              'rounded-md',
+              'border border-bg/40 text-bg',
+              'transition-colors motion-reduce:transition-none',
+              'hover:bg-bg/10',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bg',
+              'focus-visible:ring-offset-2 focus-visible:ring-offset-fg',
+              'whitespace-nowrap',
+            ].join(' ')}
+          >
+            Contact us
           </Link>
 
         </div>

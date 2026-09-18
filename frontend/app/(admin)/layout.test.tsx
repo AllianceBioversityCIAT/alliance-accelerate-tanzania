@@ -174,13 +174,24 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
 
   // ── Shell chrome: brand link + mobile menu toggle ─────────────────────────
 
-  it('brand mark links to /admin/actors (there is no /admin index page)', () => {
+  it('brand mark leaves the console for the public site', () => {
     renderAdminLayout(ADMIN_SESSION);
 
     const brand = screen.getByRole('link', {
-      name: /accelerate tanzania — admin console/i,
+      name: /accelerate tanzania — view public site/i,
     });
-    expect(brand).toHaveAttribute('href', '/admin/actors');
+    expect(brand).toHaveAttribute('href', '/');
+  });
+
+  it('renders "Admin console" as a heading, not a link', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    expect(
+      screen.getByRole('heading', { name: /admin console/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /^admin console$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders the mobile menu toggle collapsed and expands it on click', () => {
@@ -201,19 +212,24 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     expect(aside!.className).not.toMatch(/(?:^|\s)hidden(?:\s|$)/);
   });
 
-  it('the expanded mobile menu offers a "View public site" link', () => {
+  it('the public-site link is in the top bar at every width', () => {
     renderAdminLayout(ADMIN_SESSION);
 
-    fireEvent.click(screen.getByRole('button', { name: /open admin menu/i }));
+    // Previously this lived only in the expanded mobile menu because the top
+    // bar's link was sm+. The top-bar button is now unconditional, so the
+    // public site is reachable without opening the menu.
+    const link = screen.getByRole('link', { name: 'View public site' });
+    expect(link).toHaveAttribute('href', '/');
+    expect(document.getElementById('admin-sidebar')!.contains(link)).toBe(false);
+  });
+
+  it('identity and sign-out live in the sidebar, not the top bar', () => {
+    renderAdminLayout(ADMIN_SESSION);
 
     const aside = document.getElementById('admin-sidebar');
-    const links = Array.from(aside!.querySelectorAll('a')).map((a) => ({
-      text: a.textContent,
-      href: a.getAttribute('href'),
-    }));
-    expect(links).toContainEqual(
-      expect.objectContaining({ href: '/' }),
-    );
+    const signOut = screen.getByRole('button', { name: /sign out of admin/i });
+    expect(aside!.contains(signOut)).toBe(true);
+    expect(aside!.textContent).toContain(ADMIN_SESSION.user!.name);
   });
 
   // ── Loading — no premature redirect (NFR-7) ────────────────────────────────

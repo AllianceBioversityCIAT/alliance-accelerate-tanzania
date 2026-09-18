@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ResolveContactRecipientsFromAdminGroup",
+      "Effect": "Allow",
+      "Action": "cognito-idp:ListUsersInGroup",
+      "Resource": "arn:aws:cognito-idp:eu-west-1:ACCOUNT_ID:userpool/USER_POOL_ID"
+    },
+    {
+      "Sid": "ReadStackOutputsAndCallerIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

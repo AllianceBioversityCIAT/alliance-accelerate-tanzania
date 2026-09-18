@@ -1,4 +1,5 @@
 // @sdd-spec admin/user-management (T-8)
+// @sdd-spec admin/registration-review-queue (T-12)
 'use client';
 
 import Link from 'next/link';
@@ -15,8 +16,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Users',   href: '/admin/users',  enabled: true  },
-  { label: 'Actors',  href: '/admin/actors', enabled: true  },
+  { label: 'Users',         href: '/admin/users',         enabled: true },
+  { label: 'Actors',        href: '/admin/actors',        enabled: true },
+  { label: 'Registrations', href: '/admin/registrations', enabled: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -27,10 +29,17 @@ const NAV_ITEMS: NavItem[] = [
  * AdminSidebar — persistent left navigation for the admin shell.
  *
  * Active item: marked with aria-current="page" based on the current route.
- * Enabled items: Users, Actors. (The former Import/Export "soon" placeholders
- * were removed 2026-07-10 at the user's request: actor import shipped inside
- * the Actors console at /admin/actors/import, and export has no spec yet. The
- * disabled-item rendering branch below is kept for future placeholders.)
+ * Enabled items: Users, Actors, Registrations. (The former Import/Export
+ * "soon" placeholders were removed 2026-07-10 at the user's request: actor
+ * import shipped inside the Actors console at /admin/actors/import, and
+ * export has no spec yet. The disabled-item rendering branch below is kept
+ * for future placeholders.)
+ *
+ * Registrations (admin/registration-review-queue T-12): a genuinely one-line
+ * NAV_ITEMS entry. NavItem gains no role field — the shell's
+ * <RequireRole allow={['Admin']}> in app/(admin)/layout.tsx already means
+ * Staff never sees this sidebar at all, so per-item gating here would be a
+ * mechanism the shell already makes redundant (FR-9 scenario 5).
  *
  * Tokens only; no hardcoded colors/geometry.
  */

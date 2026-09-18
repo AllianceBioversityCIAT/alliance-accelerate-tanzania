@@ -28,11 +28,12 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 |---|---|---|
 | **`10-data-auth`** | `AWS::RDS::DBInstance` | MySQL primary datastore. Instance class and storage are stack parameters. |
 | | `AWS::SecretsManager::Secret` + `SecretTargetAttachment` | DB credentials — never committed, never in env files checked into git. |
-| | `AWS::EC2::SecurityGroup` | DB ingress, restricted to the Lambda SG and a parameterized `DevCidr`. |
+| | `AWS::EC2::SecurityGroup` | DB ingress on 3306: the template declares two rules — the operator `DevCidr`, and `0.0.0.0/0` — any address on the internet — added to admit the (non-VPC-attached) Lambda, per the resource's own comment ("outside-VPC Lambda - DD-2; dev-only, harden later"). **There is no Lambda-scoped security group.** See §4 and `infra/README.md` §11. |
 | | `AWS::Cognito::UserPool` + `UserPoolClient` | Identity and JWT issuance. |
 | | `AWS::Cognito::UserPoolGroup` ×2 | `admin` and `staff` role groups. Anonymous callers are `Public`. |
-| | `AWS::SES::EmailIdentity` | Transactional sender for invites and password resets. Creation is conditional (`CreateSenderIdentity`) so an externally-managed identity can be adopted instead. |
-| **`20-backend`** | `AWS::Serverless::Function` | The single NestJS handler (`backend/src/lambda.ts`). VPC-attached to reach RDS. |
+| **`20-backend`** | `AWS::Serverless::Function` | The single NestJS handler (`backend/src/lambda.ts`). **Not** VPC-attached — the resource declares no `VpcConfig` (DD-2: free internet egress, no NAT). It reaches RDS's public endpoint over the open internet, TLS-encrypted, certificate chain unverified. |
+| | `AWS::SecretsManager::Secret` (`OtpHmacSecret`) | HMAC key for hashing registration OTP codes at rest, owned by this stack but provisioned for `actors/public-self-registration` (T3-A1, archived) — resolved into the Lambda only via a `{{resolve:secretsmanager:...}}` dynamic reference, never a literal. |
+| | `AWS::SecretsManager::Secret` (`MailMicroserviceSecret`) | Config for the OneCGIAR notification-microservice mail transport (`enhancement/email-notification-microservice`, T-8). Its keys are injected into the Lambda only via `{{resolve:secretsmanager:...}}` dynamic references — never a literal; the key set itself is defined solely by that resource's own `GenerateSecretString` in `infra/20-backend/template.yaml` (the single authority, restated once, self-checking, as `CONSUMED_SECRET_KEYS` in `infra/README.md` §7). Other mail config such as `EMAIL_SENDER` stays a template literal by design — it is not one of this secret's keys. |
 | | `AWS::Serverless::HttpApi` | API Gateway HTTP API fronting the function; CORS locked to the CloudFront origin (`AllowedOrigin`). |
 | **`30-frontend`** | `AWS::S3::Bucket` | Static export output (`frontend/out/`). Not public — reached only via OAC. |
 | | `AWS::CloudFront::OriginAccessControl` | The bucket's only read path. |
@@ -51,14 +52,28 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 | Validate all templates | `./infra/scripts/validate.sh` |
 | Deploy all three stacks, ordered + idempotent | `./infra/scripts/deploy.sh` |
 | Run migrations + seed | `./infra/scripts/migrate-seed.sh` |
-| Build + publish the frontend to S3/CloudFront | `./infra/scripts/deploy-frontend.sh` |
+| Build + publish the frontend to S3/CloudFront | `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh` — this script reads `AWS_PROFILE` and **parses no flags**, so a `--profile` argument is silently ignored and an ambient profile wins |
 | Lock API CORS to the CloudFront origin | `./infra/scripts/set-cors.sh` |
 | Post-deploy smoke check | `./infra/scripts/smoke.sh` |
 | Tear down | `./infra/scripts/teardown.sh` |
 
 Full runbook: `infra/README.md`.
 
-**CI/CD:** none currently — deploys are operator-run from a workstation holding the `IBD-DEV` profile. **Open question OQ-INFRA-2:** whether to move to a pipeline (GitHub Actions + OIDC role assumption) before a production environment exists.
+**CI/CD:** a Jenkins pipeline, since 2026-09-01. A push to `main` runs `.github/workflows/jenkins-trigger.yml`, which POSTs to the `tanzania-main` job on `automation.prms.cgiar.org`; the job clones, lints, tests, deploys and smoke-tests. **The `Jenkinsfile` is not versioned in this repository** — it lives on the Jenkins server, so the deploy path cannot be read from the codebase. Treat that as a known gap when reasoning about what a merge will do.
+
+Three of its behaviours change what a merge means, and none of them are visible from the repo:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `DEPLOY_INFRA` | **`false`** | The `Deploy Infra (10 + 30)` stage is **skipped**. A change to `infra/10-data-auth/` or `infra/30-frontend/` — including any CloudFront setting — **does not ship on an ordinary merge**. It must be flipped to `true` for that build. |
+| `RUN_MIGRATIONS` | `true` | `prisma migrate deploy` + seed run against RDS. |
+| `RUN_SMOKE` | `true` | `infra/scripts/smoke.sh` runs post-deploy and fails the build closed. |
+
+The backend (`20-backend`) and the web assets (`Deploy Web` → `deploy-frontend.sh`) **do** deploy on every merge to `main`.
+
+**CORS is safe across pipeline deploys.** The steady-state `Deploy Backend` stage resolves the live `CloudFrontUrl` from the frontend stack's outputs and passes it as `AllowedOrigin`, precisely so a redeploy never regresses to the permissive `*` bootstrap default. The `*` default is used only on the bootstrap path (`DEPLOY_INFRA=true`, via `deploy.sh`), where the frontend stack may not exist yet, and a dedicated `Lock CORS` stage runs `set-cors.sh` afterwards on exactly that path. The `deploy.sh` defect tracked in **ATP-64** therefore affects **manual** runs, not the pipeline.
+
+Operator-run deploys from a workstation remain possible and are documented in `infra/README.md`; they are no longer the only path, and they are no longer the normal one.
 
 **Governed, not improvised:** agents never invent a deploy. Any cloud change goes through these scripts and templates. A change that needs a resource not in §2 is an infrastructure spec, not an inline action.
 
@@ -67,8 +82,9 @@ Full runbook: `infra/README.md`.
 - **Transport:** HTTPS end to end — CloudFront for the frontend, API Gateway for the API.
 - **Frontend origin:** the S3 bucket is private; CloudFront OAC is the only read path, enforced by bucket policy.
 - **API CORS:** locked to the CloudFront origin via the `AllowedOrigin` parameter (`set-cors.sh` applies it post-deploy, once the distribution domain is known).
-- **Database reachability:** RDS sits behind a security group admitting the Lambda's SG plus a parameterized `DevCidr` for operator access. It is never publicly open.
+- **Database reachability:** the stack declares RDS as publicly accessible (`PubliclyAccessible: true`) with a security group open to `0.0.0.0/0` on 3306, alongside the operator `DevCidr` rule — there is no Lambda-scoped security group, because the Lambda is not VPC-attached (DD-2). As declared, port 3306 accepts connections from any address; the controls standing between the internet and the data are **credentials and TLS** (encrypted, but the server certificate chain is **not** verified — `DB_SSL: accept_invalid_certs`, `infra/20-backend/template.yaml`), not the network. This is a deliberate, recorded dev-only trade-off, not an accident. It is also not a live observation — this document describes what the stack declares, not a live security-group check. The deferred hardening (drop the `0.0.0.0/0` rule, move the Lambda into the VPC, private RDS, verify the certificate chain) is tracked in `infra/README.md` §11 (`infra/network-hardening`).
 - **Secrets:** DB credentials in Secrets Manager; Cognito and runtime config injected as Lambda environment variables from stack outputs. Nothing secret is committed — `.env` files are local-only and `.env.example` carries placeholders.
+- **Frontend build-time config (a separate channel from the above).** The static export has no runtime environment: `deploy-frontend.sh` bakes **four** `NEXT_PUBLIC_*` values into the bundle at build time — API base URL, Cognito user-pool Id, Cognito client Id, and the GA4 measurement Id. Three resolve from CloudFormation stack outputs; **`GA_MEASUREMENT_ID` is the first frontend build value that does not**, and defaults in-script instead. That is deliberate, not drift: a GA4 measurement ID ships in the page source of every visitor, so it is public by construction and does not belong in SSM/Secrets Manager, which `docs/trd/trd.md` §8 reserves for DB credentials and Cognito config. Because these are baked, changing any of them requires a **rebuild and redeploy** — not a variable update.
 - **Authorization:** Cognito JWT validated in NestJS guards; RBAC by group (`admin`, `staff`, else `Public`). **PII and consent gating are enforced server-side in the data layer and serializer** — see `docs/trd/trd.md` §8. Network controls are not the PII boundary.
 - **Lambda ↔ RDS concurrency:** the connection strategy must stay safe under Lambda concurrency (constrained pool today; RDS Proxy is the recommended path if concurrency grows) — `docs/trd/trd.md` §11.
 
@@ -78,7 +94,7 @@ Full runbook: `infra/README.md`.
 2. **SAM only.** No Terraform, CDK, or console-clicked resources — a resource that exists only in the console is invisible to the next deploy and will be destroyed or duplicated.
 3. **Stack order is `10` → `20` → `30`.** `20` consumes `10`'s exports; `30`'s origin is wired into `20`'s CORS afterwards.
 4. **Static export only.** The frontend must remain a pure static artifact — introducing Next.js SSR/ISR/route handlers breaks S3/CloudFront hosting outright.
-5. **No secrets in git.** Secrets Manager or SSM; `.env` stays local.
+5. **No secrets in git.** Secrets Manager or SSM; `.env` stays local. **The converse is also a rule:** a value that is public by construction — anything baked into the client bundle and therefore readable by every visitor — must *not* be put in Secrets Manager or SSM. Doing so implies a confidentiality it does not have and adds a deploy dependency for nothing. The GA4 measurement Id is the current instance (§4).
 6. **Tag propagation** via `samconfig.toml` — do not strip the `Project` tag.
 
 ## 6. Local Environment
@@ -91,10 +107,18 @@ The contract for starting the local stack. **This project has no Docker Compose 
 | **Database** | A MySQL 8 the developer supplies. Either a local install, a container (`docker run --name accelerate-mysql -e MYSQL_ROOT_PASSWORD=… -e MYSQL_DATABASE=accelerate -p 3306:3306 -d mysql:8`), or a dev RDS instance. Point `DATABASE_URL` in `backend/.env` at it. |
 | **Fallback route (no Docker)** | The primary route already is the no-Docker route. Only the database choice changes — a native MySQL install or the dev RDS endpoint (requires the `DevCidr` ingress rule). |
 | **Pre-check** | `node -v` (Node 20+ required) and a reachable `DATABASE_URL`. If using a container, `docker info` first — on failure (daemon off, not installed), surface it and offer: start Docker, install MySQL natively, or point at dev RDS. **Never block silently.** |
-| **Env setup** | `cp backend/.env.example backend/.env` · `cp frontend/.env.example frontend/.env.local` |
+| **Env setup** | `cp backend/.env.example backend/.env` · `cp frontend/.env.example frontend/.env.local`. Both examples ship working local defaults. **`DATABASE_URL` must be edited** to match the MySQL you supplied — and, **for any admin work, so must `NEXT_PUBLIC_COGNITO_USER_POOL_ID` and `NEXT_PUBLIC_COGNITO_CLIENT_ID` in `frontend/.env.local`.** ⚠️ *Corrected 2026-09-09: this sentence read "only `DATABASE_URL` must be edited", which is false for `/login` and every `/admin` route — `RequireRole` reads `useSessionContext()`, and with no Cognito config `session.role` stays `Public` and the route redirects. The two variables were absent from `frontend/.env.example` entirely, so a fresh checkout following this contract to the letter **could not sign in as admin at all**. Both are now documented there.* `backend/.env.example` sets `PORT=3001` deliberately — `main.ts` defaults to **3000**, the same port as the Next.js dev server, so an unset `PORT` makes whichever process starts second fail to bind. |
 | **Seed / reset data** | `cd backend && npx prisma migrate reset` (drops, re-migrates, re-seeds) · seeders: `prisma/seed.ts`, `prisma/seed-data.ts`, `prisma/seed-synthetic.ts` |
 | **Health check** | `curl http://localhost:3001/api/v1/health` · frontend reachable at `http://localhost:3000` |
 | **URLs / ports** | Frontend `http://localhost:3000` · Backend `http://localhost:3001` · MySQL `3306` |
+
+**Cross-origin note.** Locally the frontend (`:3000`) and API (`:3001`) are different origins, so the browser blocks calls between them without a CORS header. `main.ts` enables CORS for `LOCAL_CORS_ORIGIN` (default `http://localhost:3000`).
+
+`lambda.ts` sets none, and must not — but **not because the deployed API is same-origin**. It is not. `30-frontend`'s distribution declares a single origin (the S3 bucket, via OAC) and a single default cache behaviour: there is **no `/api` path pattern and no API Gateway origin**, so CloudFront does not proxy the API. The deployed browser call is cross-origin too.
+
+What makes the Lambda's own CORS unnecessary is that **API Gateway already owns it**: `20-backend` declares `CorsConfiguration.AllowOrigins: [!Ref AllowedOrigin]`, locked to the CloudFront origin by `scripts/set-cors.sh` after `30` is deployed (§3, §5 step 5). Adding a second CORS layer inside the Lambda would duplicate — and could contradict — a header API Gateway already emits.
+
+> *Corrected 2026-08-31.* The paragraph this replaces asserted the CloudFront-proxies-`/api` topology, which contradicted §3 and §4 of this same document and is refuted by `infra/30-frontend/template.yaml`. Recorded rather than silently overwritten: it was introduced the same day, in the one change that deliberately shipped without a Reviewer.
 
 **Boundary rule.** The local environment is **disposable**: agents may freely start it, seed it, reset it, and drop its database to verify work. Deployments to cloud/PROD are **governed** — they follow §1–5 (components, IaC, deploy scripts defined at constitution time) and are never improvised by an agent.
 
@@ -107,6 +131,7 @@ The contract for starting the local stack. **This project has no Docker Compose 
 | ID | Question |
 |---|---|
 | OQ-INFRA-1 | Production account, domain, and dev→prod promotion path are undecided. Only the `IBD-DEV` dev environment exists. |
-| OQ-INFRA-2 | Move operator-run deploys to CI/CD (GitHub Actions + OIDC) before provisioning production? |
+| ~~OQ-INFRA-2~~ | **Resolved 2026-09-01** — deploys moved to a Jenkins pipeline triggered from GitHub Actions (§3). Not the GitHub-Actions-plus-OIDC shape this question proposed: the pipeline authenticates with credentials bridged into a file-based `IBD-DEV` profile, because the seven scripts in `infra/scripts/` and `infra/samconfig.toml` all require a named profile to exist as a file. The successor question is **OQ-INFRA-5**. |
 | OQ-INFRA-3 | Add a committed `docker-compose.dev.yml` to make the local primary route a single command? |
 | OQ-INFRA-4 | Adopt RDS Proxy before Lambda concurrency grows, or keep the constrained connection pool? (`docs/trd/trd.md` §11) |
+| OQ-INFRA-5 | The `Jenkinsfile` is not versioned in this repository, so the deploy path cannot be reviewed, diffed, or reasoned about from the codebase — and `DEPLOY_INFRA=false` means an infra change can merge without shipping. Vendor it into the repo, or accept the gap deliberately and record where the authoritative copy lives? |

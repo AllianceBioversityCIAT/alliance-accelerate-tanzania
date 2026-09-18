@@ -30,6 +30,8 @@ const ACTOR_A: PublicActor = {
   capacityTons: 500,
   crops: ['sorghum'],
   gps: { lat: -6.17, long: 35.74 },
+  sex: null,
+  otherCrops: null,
 };
 
 const ACTOR_B: PublicActor = {
@@ -41,6 +43,8 @@ const ACTOR_B: PublicActor = {
   capacityTons: null,
   crops: ['common_bean'],
   gps: null,
+  sex: null,
+  otherCrops: null,
 };
 
 const ACTORS = [ACTOR_A, ACTOR_B];
@@ -218,6 +222,9 @@ describe('DiscoverRail', () => {
 
     expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/filter by region/i)).toBeInTheDocument();
+    // T-5 (enhancement/searchable-region-select): the region control's
+    // accessible name is now its visible "Region" label — the redundant
+    // aria-label="Filter by region" was removed (OQ-1).
+    expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 });

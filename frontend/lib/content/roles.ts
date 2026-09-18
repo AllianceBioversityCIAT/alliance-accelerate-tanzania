@@ -22,23 +22,34 @@ export interface RoleMeta {
    * Defined in tailwind.config.ts + design.md §7 — never a raw hex string.
    *
    * Token mapping rationale (design.md §7):
-   *   seed_company       → primary        (Royal Blue — primary brand, lead actor)
-   *   cooperative        → success        (green — community/growth)
-   *   ngo                → accent         (blue — external/support)
-   *   offtaker           → crop-sorghum   (amber — commercial grain purchaser)
-   *   research_institute → muted          (grey — knowledge/neutral)
-   *   informal_trader    → bean           (brown — smallholder market actor)
+   *   seed_company             → primary        (Royal Blue — primary brand, lead actor)
+   *   cooperative              → success        (green — community/growth)
+   *   ngo                      → accent         (blue — external/support)
+   *   offtaker                 → crop-sorghum   (amber — commercial grain purchaser)
+   *   research_institute       → muted          (grey — knowledge/neutral)
+   *   informal_trader          → bean           (brown — smallholder market actor)
+   *   humanitarian             → highlight      (teal — INGO/development actor, chunk 1 FR-4)
+   *   digital_service_provider → highlight-soft (muted teal — chunk 1 FR-4)
+   *   qds_producer             → crop-groundnut (olive — quality-declared-seed producer, chunk 1 FR-4)
+   *   bulk_buyer               → warning        (ochre — commercial bulk purchaser, chunk 1 FR-4)
+   *
+   * `danger` stays unused (spec `public-self-registration` §1.3/§5.7 — reserved
+   * for destructive UI semantics, not a role color).
    */
   colorToken: string;
 }
 
 export const ROLES: Record<TraderType, RoleMeta> = {
-  seed_company:       { label: 'Seed Company',       colorToken: 'primary' },
-  cooperative:        { label: 'Cooperative',         colorToken: 'success' },
-  ngo:                { label: 'NGO',                 colorToken: 'accent' },
-  offtaker:           { label: 'Offtaker',            colorToken: 'crop-sorghum' },
-  research_institute: { label: 'Research Institute',  colorToken: 'muted' },
-  informal_trader:    { label: 'Informal Trader',     colorToken: 'bean' },
+  seed_company:             { label: 'Seed Company',              colorToken: 'primary' },
+  cooperative:              { label: 'Cooperative',                colorToken: 'success' },
+  ngo:                      { label: 'NGO',                        colorToken: 'accent' },
+  offtaker:                 { label: 'Offtaker',                   colorToken: 'crop-sorghum' },
+  research_institute:       { label: 'Research Institute',         colorToken: 'muted' },
+  informal_trader:          { label: 'Informal Trader',            colorToken: 'bean' },
+  humanitarian:             { label: 'Humanitarian / INGO',        colorToken: 'highlight' },
+  digital_service_provider: { label: 'Digital Service Provider',   colorToken: 'highlight-soft' },
+  qds_producer:             { label: 'QDS Producer',               colorToken: 'crop-groundnut' },
+  bulk_buyer:               { label: 'Bulk Buyer',                 colorToken: 'warning' },
 };
 
 /**

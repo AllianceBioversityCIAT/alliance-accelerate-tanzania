@@ -1,0 +1,110 @@
+[
+  {
+    "id": "3-admin-actors",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/3-admin-actors__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "3-admin-actors",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/3-admin-actors__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "3-admin-actors",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/3-admin-actors__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "4-import-preview",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/4-import-preview__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "4-import-preview",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/4-import-preview__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "4-import-preview",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/4-import-preview__1440.png",
+    "legendMeta": null
+  },
+  {
+    "id": "7-dialog",
+    "width": "375",
+    "status": "OK",
+    "real": {
+      "inner": 375,
+      "dpr": 2,
+      "docW": 375
+    },
+    "file": "./captures/7-dialog__375.png",
+    "legendMeta": null
+  },
+  {
+    "id": "7-dialog",
+    "width": "768",
+    "status": "OK",
+    "real": {
+      "inner": 768,
+      "dpr": 2,
+      "docW": 768
+    },
+    "file": "./captures/7-dialog__768.png",
+    "legendMeta": null
+  },
+  {
+    "id": "7-dialog",
+    "width": "1440",
+    "status": "OK",
+    "real": {
+      "inner": 1440,
+      "dpr": 2,
+      "docW": 1440
+    },
+    "file": "./captures/7-dialog__1440.png",
+    "legendMeta": null
+  }
+]

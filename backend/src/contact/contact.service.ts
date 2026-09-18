@@ -1,0 +1,133 @@
+// @sdd-spec contact/contact-channels (T-6)
+/**
+ * T-6 — `ContactService` (FR-2, FR-3, FR-5, FR-7, FR-8, design.md §1, §3,
+ * §4.1, §4.4, DD-3, DD-4).
+ *
+ * The single method this task adds, `submitContact`, is where every earlier
+ * task in this spec converges: T-4's DTO, T-5's recipient resolver, T-3's
+ * template, and T-1's `MailService.sendContactMessage`. *(T-3's template
+ * originally also called `composeReplyTo`, T-2's `Reply-To` composer;
+ * enhancement/email-notification-microservice T-11 removed that field
+ * end-to-end — design.md DD-7 — so the template no longer calls it.)*
+ * Order, exactly as design.md §1's diagram states it: resolve recipients ->
+ * render one message -> **await** the send -> return. No branch of this
+ * method leaves the send unawaited — DD-3 retired fire-and-forget dispatch
+ * for this feature entirely, so unlike
+ * `RegistrationsService.requestVerificationCode`'s deliberately-unawaited
+ * `void … .catch(...)` shape, this method's `sendContactMessage` call sits
+ * directly in its own `try`/`await`, and a rejection is what becomes the
+ * `502` FR-5 requires the visitor to see.
+ *
+ * **What the `502` asserts, restated (enhancement/email-notification-
+ * microservice FR-5, design.md §3).** `sendContactMessage` now dispatches
+ * onto a message broker queue, not a synchronous send to an inbox — so a
+ * `502` here means the message **could not be enqueued** (the broker did
+ * not confirm the publish within the send deadline), never that a message
+ * was enqueued but failed to reach an inbox. Symmetrically, the `202` this
+ * method's normal return produces asserts only "durably accepted by the
+ * broker", not delivery. Neither this method, `MailService`, nor the
+ * transport it dispatches through observes anything past the broker's
+ * confirm — there is no delivery signal anywhere in this call chain for a
+ * response, log line, or comment to claim.
+ *
+ * **The honeypot branch returns before anything is resolved or dispatched
+ * (FR-8).** A filled `website` field short-circuits this method with no call
+ * to `AdminRecipientResolver.resolve()`, no template render, and no
+ * `MailService` call at all — "zero dispatches" is therefore not a race this
+ * method has to avoid, it is a code path that structurally cannot reach the
+ * dispatch call. The controller's `@HttpCode(202)` is unconditional, so the
+ * honeypot branch's plain `return` produces the identical response a
+ * successful send does; there is no second status code anywhere in this
+ * method for a caller to distinguish.
+ *
+ * **The 502 envelope, and what it deliberately omits.** `err.name` (a
+ * bounded, class-name-only value) is the only thing this method logs from a
+ * transport failure — never `err.message`. `registrations.service.ts`
+ * records why: a transport rejection's message can carry the destination
+ * address verbatim — true of AWS SES's `MessageRejected` and equally true
+ * of a broker/queue rejection or any future transport, so there is no
+ * transport-specific list of "safe" error shapes to maintain — and
+ * `MailService.dispatch` rethrows unchanged, so that error reaches this
+ * `catch` block exactly as it would reach `RegistrationsService`'s. The
+ * thrown `BadGatewayException`'s body
+ * carries a fixed, friendly `message` and no `error`-derived text at all —
+ * no provider name, no status code, no stack, no recipient address (design.md
+ * §3's response table and §6's "Error logging" row; the §3.2 this once cited
+ * belonged to a design revision that was later restructured).
+ */
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { AdminRecipientResolver } from './admin-recipient.resolver';
+import { ContactCreateDto } from './dto/contact-create.dto';
+import { MailService } from '../mail/mail.service';
+import { buildContactMessage } from '../mail/templates/contact.template';
+
+@Injectable()
+export class ContactService {
+  private readonly logger = new Logger(ContactService.name);
+
+  constructor(
+    private readonly adminRecipientResolver: AdminRecipientResolver,
+    private readonly mailService: MailService,
+  ) {}
+
+  /**
+   * FR-2, FR-3, FR-5, FR-7, FR-8. Returns normally (the controller's `202`)
+   * on both a genuine successful enqueue and a filled honeypot; throws a
+   * `502` only when the transport itself rejects the enqueue attempt (see
+   * the class docblock's "What the `502` asserts" note — not a delivery
+   * failure). Never issues a database
+   * query anywhere in this method — FR-7's gate (DC-4) depends on that
+   * holding for this path exactly as it does for the throttled and
+   * validation-rejected paths, which never reach this service at all.
+   */
+  async submitContact(dto: ContactCreateDto): Promise<void> {
+    if (this.isHoneypotFilled(dto)) {
+      this.logHoneypotRejection();
+      return;
+    }
+
+    const recipients = await this.adminRecipientResolver.resolve();
+    const message = buildContactMessage(recipients, {
+      name: dto.name,
+      email: dto.email,
+      organization: dto.organization,
+      category: dto.category,
+      subject: dto.subject,
+      message: dto.message,
+    });
+
+    try {
+      await this.mailService.sendContactMessage(message);
+    } catch (err) {
+      // Class name only, never `err.message` — see the class docblock and
+      // `registrations.service.ts`'s identical, already-reviewed rationale:
+      // a transport rejection can carry the destination address verbatim in
+      // its message (AWS SES's `MessageRejected` did; a broker/queue
+      // rejection can just as easily), so only the class name is safe to
+      // log.
+      const errorType = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.error(`contact message send failed: errorType=${errorType}`);
+      throw new BadGatewayException({
+        statusCode: 502,
+        error: 'Bad Gateway',
+        message: 'We could not send your message right now. Please try again shortly.',
+      });
+    }
+  }
+
+  /**
+   * FR-8: any non-empty `website` value is treated as filled — an absent
+   * field or an empty string is not. No length check here or anywhere else
+   * on this field (design.md §4.1.1, DC-4/DC-5): a cap would make the trap
+   * self-identifying, which is exactly what the 32 KB request-body cap
+   * (`common/payload-cap.config.ts`) exists to bound instead.
+   */
+  private isHoneypotFilled(dto: ContactCreateDto): boolean {
+    return typeof dto.website === 'string' && dto.website.length > 0;
+  }
+
+  /** FR-8: log the rejection kind only — no field values, ever. */
+  private logHoneypotRejection(): void {
+    this.logger.warn('contact submission rejected: honeypot field was populated');
+  }
+}

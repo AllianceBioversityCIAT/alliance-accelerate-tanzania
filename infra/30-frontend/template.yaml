@@ -95,6 +95,55 @@ Resources:
         }
 
   # ════════════════════════════════════════════════════════════════════════════
+  # Response headers policy - security headers on every document (ATP-33)
+  # ════════════════════════════════════════════════════════════════════════════
+  # Written out rather than referencing AWS's managed SecurityHeadersPolicy by
+  # id: the managed id cannot be read with the developer credential, and HSTS
+  # needs an explicit `Preload: false` here (see below), which an opaque managed
+  # id would neither express nor guarantee.
+  #
+  # Deliberately ABSENT, both recorded so a later reader does not read them as
+  # oversights:
+  #   - Content-Security-Policy. The map loads Leaflet tiles from an external
+  #     host and the page loads GA4; a CSP that misses either breaks them, and
+  #     sometimes only in some browsers. It goes out in Report-Only first, as
+  #     its own change.
+  #   - Permissions-Policy. The obvious value would be denying geolocation, but
+  #     the map is expected to gain a "locate me" capability; denying it here
+  #     would fail later with no visible error and no obvious cause. If one is
+  #     ever added, `geolocation=(self)` is the correct value.
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-security-headers"
+        Comment: Security response headers for the ACCELERATE Tanzania frontend.
+        SecurityHeadersConfig:
+          # CloudFront already redirects HTTP -> HTTPS, which leaves the FIRST
+          # request of a session in the clear. This closes that window.
+          # Preload is false ON PURPOSE: the site is on a shared
+          # *.cloudfront.net domain, and preloading is submitted per-domain and
+          # effectively irreversible. Revisit when a custom domain is adopted.
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Preload: false
+            Override: true
+          # nosniff. The platform serves CSV exports, so a sniffed download is
+          # the concrete case here, not a theoretical one.
+          ContentTypeOptions:
+            Override: true
+          # Clickjacking cover for the admin panel, which deletes and imports.
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          # The design forbids sensitive data in URLs; this keeps the URL from
+          # leaking outward on navigation.
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+
+  # ════════════════════════════════════════════════════════════════════════════
   # CloudFront Distribution - the public HTTPS entry point (FR-5, NFR-4; DD-5)
   # ════════════════════════════════════════════════════════════════════════════
   # Single private-S3 origin via OAC; redirect-to-HTTPS; the rewrite function on
@@ -129,6 +178,7 @@ Resources:
           Compress: true
           # AWS managed "CachingOptimized" cache policy.
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
           FunctionAssociations:
             - EventType: viewer-request
               FunctionARN: !GetAtt RewriteFunction.FunctionMetadata.FunctionARN
