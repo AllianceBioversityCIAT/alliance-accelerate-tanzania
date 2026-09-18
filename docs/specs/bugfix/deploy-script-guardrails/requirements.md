@@ -1,7 +1,7 @@
 # Requirements — Deploy-script guardrails
 
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
-- Status: **Draft** — revision 2 (Judgment Day round 1 applied)
+- Status: **Draft** — revision 3 (Judgment Day rounds 1 and 2 applied)
 - Author / Date: AKILI (Leader) on behalf of Daniela Gómez — 2026-09-18
 - Type: **Bug** (Bug Mode) · Depth: **Standard**
 - Related: `docs/infrastructure.md` §3–§5, root `CLAUDE.md` § Hard constraints, `proposal.md` §4.6, `judgment.md`
@@ -32,13 +32,15 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 
 | Site | Classify-on-error-text? | Silent-`*` fallback? |
 |---|---|---|
-| `deploy.sh` → `MailTransport` | ✅ present (`*ValidationError*` branch) | n/a |
-| `set-cors.sh` → `MailTransport` | ✅ present, ends `exit 1` — *"Refusing to guess"* | n/a |
+| `deploy.sh` → `MailTransport` | ✅ present — `*ValidationError*` branch, ends `exit 1` *"Refusing to guess"* | n/a |
+| `set-cors.sh` → `MailTransport` | ✅ present — the same block, same wording | n/a |
 | `set-cors.sh` → `CloudFrontUrl` | ❌ absent | ❌ **none** — it hard-fails, so there is no defect |
 | **`deploy.sh` → `ALLOWED_ORIGIN`** | ❌ absent | 🔴 **the defect** — `ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-*}"`, a static default with no resolution at all |
 | **Jenkinsfile → `Deploy Backend`** | ❌ absent | 🔴 **the defect** — `2>/dev/null \|\| true` then `*` |
 
-**Two defect sites, not four.** The pattern to apply already exists in two places — which is itself the duplication NFR-4 exists to remove.
+**Two defect sites, not four.** The pattern to apply already exists in two places — itself the duplication NFR-4 removes. Note the precision: revision 1's claim was false *for the origin* in both scripts, and **inverted** for `MailTransport` — it said the pattern was missing where it was in fact present twice.
+
+⚠️ **Both existing copies match `*ValidationError*` alone**, without the absent-stack phrase FR-5 now requires. So collapsing them into the shared helper **tightens their behaviour**, which is intentional and separately tested (FR-5's last clause) rather than a silent side effect.
 
 ### 2.2 Defect classes this spec can produce, and the gate for each
 
@@ -46,7 +48,8 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 |---|---|---|---|
 | **D-1** | A guard present but unable to fire | Guard-unit tests assert a **non-zero exit** under the violating env | Invert the comparison ⇒ red |
 | **D-2** | A guard firing when it should not, breaking the pipeline | A guard-unit test asserts exit `0` under `AWS_PROFILE=IBD-DEV` | Make the guard unconditional ⇒ red |
-| **D-3** | The guard applied to some scripts and not others | Enumerate `infra/scripts/*.sh`, **excluding leading-underscore library files**, and assert each sources the guard **before its first external command** | Add an unguarded script, or move a `source` line below the first `aws` call ⇒ red |
+| **D-3** | The guard applied to some scripts and not others | Two-part. **(a)** Enumerate `infra/scripts/*.sh`, **excluding leading-underscore library files**, and assert each sources the guard **before its first external command** (defined in `design.md` §7.2). **(b)** For **every** enumerated script, an integration run with `AWS_PROFILE=MELIA-DEV` must exit non-zero — the guard is proven *in situ*, per script, not only in isolation | Add an unguarded script ⇒ (a) red. Source the guard but never let it run in one script ⇒ **(b) red** |
+| **D-3b** | The account assertion sourced but never invoked in a writing script | Each writing script gets an integration run whose `sts` stub returns a foreign account; all must exit non-zero | Omit the `assert_account` call from one script ⇒ red |
 | **D-4** | Shell mechanics — `set -e`, subshell exit-code capture, unquoted expansion | Tests **execute** the scripts; the helper contract in `design.md` §7.1 is asserted directly | Replace `if VAR="$(…)"; then` with `VAR=$(…) \|\| true` ⇒ red |
 | **D-5** | The CORS check passing only because the live stack is correct | A **stubbed `curl`** returns a permissive `Access-Control-Allow-Origin`; the test asserts the **`RESULTS` line**, never the exit code | That stub is the test's default input |
 | **D-6** | An account assertion that cannot see a same-named stack in another account | Stubbed `aws` returns a foreign account id **and** a matching stack name | Assert the stack name instead of the account ⇒ red |
@@ -78,6 +81,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
   - GIVEN the override is set but does **not** match the effective profile WHEN a script runs THEN it exits non-zero — an override authorises **one named profile**, never "any".
   - BUT it must NOT accept `AWS_PROFILE` or `CONFIRM` as the override; the variable that caused the bug cannot be the variable that authorises it.
   - AND IT MUST be a single variable across all scripts, learned once.
+  - **Interaction with FR-3, stated because a conjunctive constraint set can break where its members meet (KZ-007):** an overridden profile MUST still carry a row in `infra/aws-accounts.conf`, and its account assertion still runs. The override authorises a *different profile*, never an *unverified account* — otherwise it would disarm FR-3, reproducing the `CONFIRM` composite §6.1 diagnoses one level up. A profile with no row aborts, naming the file.
 
 ### FR-3: The account is asserted, not inferred from the profile name
 
@@ -86,7 +90,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 - **Acceptance criteria:**
   - GIVEN the resolved account id differs from the expected account WHEN a writing script runs THEN it exits non-zero.
   - AND IT MUST do so **even when a stack of the expected name exists there** — the collision case is the actual danger.
-  - BUT it must NOT gate `validate.sh`, which writes nothing and creates no resources: root `CLAUDE.md` lists it as the canonical agent-run infra check, and giving a read-only linter a live STS dependency would defeat its purpose. `validate.sh` gets **FR-1 and FR-2, not FR-3**.
+  - BUT it must NOT gate the **read-only** scripts. The criterion is mechanical: a script that issues no AWS call which creates, modifies, or deletes a resource does not assert the account. That selects exactly **`validate.sh`** (template linting) and **`smoke.sh`** (assertions over live endpoints; FR-6 requires it stay read-only). Both get **FR-1 and FR-2, not FR-3** — giving a read-only check a live STS dependency defeats the property that makes it safe to run in the agent loop.
   - BUT it must NOT hardcode the account id in any script; it is read from one configuration file, so a future Prod account is a config change (**OQ-INFRA-1**).
   - AND IT MUST be exercisable with no network access, or FR-3 cannot be proven at all.
 
@@ -103,13 +107,15 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 ### FR-5: A failed lookup is not an absent resource
 
 - **Description:** Every resolution of a live value MUST distinguish "the call failed" from "the thing does not exist", and MUST fail closed on the former.
-- **Rationale / Source:** The root cause shared by both defect sites in §2.1. The pattern exists in this repo for `MailTransport` and its comment names the defect: *"An expired SSO token, a throttle, or an IAM denial also makes the query come back empty, and empty was previously indistinguishable from 'not found'."*
+- **Rationale / Source:** The root cause of the **Jenkinsfile** site in §2.1 — and the hazard FR-4's *new* origin resolution must not introduce. The `deploy.sh` site has no lookup at all today, so it cannot yet conflate a failed call with an absent stack; adding a resolution without this rule is precisely how it would acquire the Jenkinsfile's defect. The pattern exists in this repo for `MailTransport` and its comment names the defect: *"An expired SSO token, a throttle, or an IAM denial also makes the query come back empty, and empty was previously indistinguishable from 'not found'."*
 - **Acceptance criteria:**
   - GIVEN `describe-stacks` fails with an expired-token or access-denied error WHEN `deploy.sh` resolves the origin THEN it **aborts** rather than falling back to `*`.
   - GIVEN it fails with CloudFormation's absent-stack message WHEN `deploy.sh` resolves the origin THEN it treats the stack as absent and applies the announced `*` bootstrap.
-  - BUT it must NOT classify on `ValidationError` alone. That class also covers a malformed or misspelled stack name, so a typo in `FRONTEND_STACK` would be read as "absent" and deploy `*` — the precise failure this requirement forbids. The match MUST require **both** `ValidationError` **and** the absent-stack phrasing.
+  - BUT it must NOT classify on `ValidationError` alone. That class also covers a **malformed** stack name and parameter-constraint violations, which are failures, not absences. The match MUST require **both** `ValidationError` **and** the literal absent-stack phrasing `does not exist`.
+  - **Accepted residual risk, stated because the two-token rule does not remove it:** a *well-formed but misspelled* stack name **is** a nonexistent stack to CloudFormation and produces the identical `does not exist` message. No error-text rule can separate it from a genuine bootstrap. The residual failure is visible rather than silent — `deploy.sh` would go on to create a stack under the typo'd name — and is accepted on that basis.
   - BUT it must NOT use `2>/dev/null || true`, or any construct collapsing the two.
   - AND IT MUST classify on the **error text**, never on emptiness, because both failure modes produce an empty string.
+  - AND IT MUST apply the same two-token rule to the **existing `MailTransport` call sites** once they move to the shared helper. Today both classify on `ValidationError` alone, so this refactor tightens their behaviour as a side effect; that change is intentional and MUST be covered by its own test rather than riding along untested.
 
 ### FR-6: `smoke.sh` asserts the CORS boundary
 
@@ -120,6 +126,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
   - GIVEN the API echoes the disallowed origin back in `Access-Control-Allow-Origin` WHEN `smoke.sh` runs THEN the CORS check FAILs — an echo is a permissive answer, not a rejection.
   - GIVEN a well-formed preflight for a disallowed origin returns `2xx`/`204` with **no** `Access-Control-Allow-Origin` WHEN `smoke.sh` runs THEN the CORS check PASSes.
   - BUT it must NOT PASS on a refused connection, a non-2xx status, or a `5xx` — all return no `Access-Control-Allow-Origin` while proving nothing. A transport-level failure MUST be reported as FAIL, not silently read as a rejection.
+  - **The PASS direction is itself gated.** A check that unconditionally emits FAIL would satisfy every failure clause above and redden every pipeline build after merge (`RUN_SMOKE=true` fails closed). Its falsifier — make the check unconditional — is obvious and therefore mandatory, not optional.
   - AND IT MUST send a real preflight — `Origin` **plus** `Access-Control-Request-Method` — because API Gateway's HTTP API auto-answers CORS only for genuine preflights; a bare `OPTIONS` matches no route.
   - AND IT MUST use the existing `pass()`/`fail()` accounting so a CORS failure is summarised rather than aborting the run.
   - AND IT MUST remain read-only, so it stays runnable with the development `IBD-DEV` credential.
@@ -131,14 +138,14 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 - **Acceptance criteria:**
   - GIVEN the change has landed WHEN a reader consults `docs/infrastructure.md` §3 THEN it describes the pipeline's fail-open path rather than asserting blanket safety.
   - AND IT MUST date-stamp every claim about the `Jenkinsfile`.
-  - AND IT MUST update `smoke.sh`'s own header and its `SMOKE PASSED` summary line, which become false once a CORS assertion exists — a script's self-description is a KZ-008 surface like any other.
+  - AND IT MUST update **every script self-description this change falsifies**, not only `smoke.sh`'s — a script's own header is a KZ-008 surface like any other, and a sweep that stops at the one document a finding named is the KZ-004 defect. The known set: `smoke.sh`'s header and its `SMOKE PASSED` summary line; `deploy.sh`'s `ALLOWED_ORIGIN='*'` USAGE line and its "permissive `*` for the dev bootstrap" comment; `teardown.sh`'s and `migrate-seed.sh`'s `CONFIRM=yes AWS_PROFILE=other` USAGE lines.
   - BUT it must NOT claim the `Jenkinsfile` defect is fixed — this spec cannot change that file (§6).
 
 ## 4. Non-Functional Requirements
 
 | ID | Requirement | Measure |
 |---|---|---|
-| **NFR-1** | The harness introduces **no new installable dependency**. `bats` and `shellcheck` are absent and are not vendored. Permitted: `bash`, coreutils, and the tools the scripts under test already require (`curl`, `jq`, `awk`) — all of which the harness **stubs** rather than calls. | The suite runs on a clean checkout with no `npm i`, no `brew install`, no `pip install` |
+| **NFR-1** | The harness introduces **no new installable dependency**. `bats` and `shellcheck` are absent and are not vendored. It stubs exactly the **network-capable** commands (`design.md` §7.2) and runs the text tools (`awk`, `grep`, `sed`, `dirname`) for real — stubbing `awk` would make the `aws-accounts.conf` parsing gate test a fiction. | The suite runs on a clean checkout with no `npm i`, no `brew install`, no `pip install` |
 | **NFR-2** | Tests are **hermetic** — no AWS calls, no credentials, no live stack, **no outbound network of any kind**. | The suite passes with no AWS credentials and with networking disabled |
 | **NFR-3** | The change is **pipeline-compatible**. | A guard-unit test asserts exit `0` under the pipeline's exact env (`AWS_PROFILE=IBD-DEV`) |
 | **NFR-4** | Guard logic lives in **one place**. The `MailTransport` classification currently duplicated in `deploy.sh` and `set-cors.sh` collapses into the shared helper. | D-3's enumeration, plus zero remaining local copies of the classification block |
@@ -177,8 +184,15 @@ Every claim about a system outside this repository, with where it was verified (
 
 ## 8. Open Questions
 
-**None.** OQ-1 (produce the Jenkinsfile patch, CORS resolution only) and OQ-2 (commit `infra/aws-accounts.conf`) were settled by the product owner on 2026-09-18. The spec is decidable as written.
+**None.** Two were opened at specify time and both were settled by the product owner on 2026-09-18:
+
+- **OQ-SPEC-1** — produce the Jenkinsfile patch, scoped to the CORS resolution only. *(Supersedes the proposal's OQ-3; the `MailTransport` blocker is documented, not patched.)*
+- **OQ-SPEC-2** — commit `infra/aws-accounts.conf`. *(New at specify time; corresponds to no proposal question.)*
+
+Deliberately renumbered: the proposal's own OQ-1 and OQ-2 are different questions — "shared helper vs. seven inline guards" and "does the pipeline export `AWS_PROFILE`?" — both already closed in `proposal.md`. Reusing those labels would send a reader tracing "OQ-2" to a different, already-answered question.
+
+The spec is decidable as written.
 
 ## 9. Depth: Standard
 
-The proposal estimated **Lite** on a two-file scope, before anyone had checked whether shell scripts could be tested in this repository at all. They cannot — there is no harness, no `bats`, no `shellcheck`. Building a dependency-free, hermetic one (NFR-1/NFR-2) is what makes this Standard, and it is not padding: without it every requirement here degrades to a presence-assertion, which is the defect class this spec exists to stop producing.
+The proposal estimated **Lite** on a seven-script, guard-clause scope, before anyone had checked whether shell scripts could be tested in this repository at all. They cannot — there is no harness, no `bats`, no `shellcheck`. Building a dependency-free, hermetic one (NFR-1/NFR-2) is what makes this Standard, and it is not padding: without it every requirement here degrades to a presence-assertion, which is the defect class this spec exists to stop producing.

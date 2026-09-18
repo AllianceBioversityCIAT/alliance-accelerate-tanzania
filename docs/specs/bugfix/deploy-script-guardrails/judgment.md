@@ -3,7 +3,7 @@
 - Date: 2026-09-18 · Round: **1** · Mode: blind dual review
 - Target (immutable): `requirements.md` + `design.md` as of commit `7064864`
 - Judges: two independent read-only auditors, different models from each other **and** from the design's author (author ≠ auditor, KZ-012)
-- Terminal state: **ESCALATED ⚠️** — see §4
+- Terminal state after round 2: **ESCALATED ⚠️** — lineage exhausted, see §9
 
 ## 1. Tally
 
@@ -69,3 +69,82 @@ CORRECTION not run — blocked on rebase onto merged main
 ```
 
 **JUDGMENT: ESCALATED ⚠️**
+
+
+---
+
+# Round 2 — re-judgment of the rewritten documents
+
+- Date: 2026-09-18 · Target: `requirements.md` + `design.md` at commit `5b1bdfa` · Same two judges, same models
+
+## 7. Tally
+
+| | Judge A | Judge B |
+|---|---|---|
+| SEVERE | 2 | 3 |
+| WARNING | 2 | 12 |
+| SUGGESTION | 1 | 6 |
+| **Total** | **5** | **21** |
+
+**Fix-caused: the majority.** Judge B marked 13 of 21 as introduced by the round-1 rewrite; Judge A marked 2 of 5. That ratio is the finding worth carrying to Kaizen — see §10.
+
+## 8. Round-2 disposition
+
+### Confirmed by both — fixed
+
+| ID | Finding | Fix applied |
+|---|---|---|
+| **C-4** | `resolve_stack_value`'s three-way exit contract is unusable with the two-way `if` the design mandated. `1` and `2` both land in `else`; reading `$?` works only as the branch's first statement | §7.1 now prescribes the full `else rc=$?; case` shape, and classifies success-with-`None` for Parameter vs Output queries |
+| **C-5** | **`migrate-seed.sh` does not have `teardown.sh`'s `CONFIRM` coupling.** `CONFIRM` appears there once, in the profile guard, with no second authorisation to couple to. A factual falsehood inside §6.1 — the section that carries FR-2's "sharpest justification" | Claim deleted and the correction recorded in place |
+| **C-6** | D-3's "before its first external command" had no operational definition; every script header contains `aws cloudformation`, `sam build`, `npm run build` in prose | §7.2 defines it: strip comments and blanks, match the network-capable set, and resolve the library path with `${BASH_SOURCE[0]%/*}` so the guard line does not trip its own rule |
+
+### Single-judge, verified by the orchestrator, fixed anyway
+
+| ID | Finding | Fix applied |
+|---|---|---|
+| **V-1** | **Nothing proved the scripts *invoke* the guard.** Exempting `validate.sh` from FR-3 made the account assertion a call; the gates asserted a `source` line and tested functions in isolation. All seven could source the guard, never run it, and every gate stays green — with `deploy-frontend.sh`, the script behind the July incident, fully unguarded | §7.1 splits it: floor and override run **on `source`**; `assert_account` is explicit. D-3 gains **(b)** an in-situ abort run per script and **D-3b** a foreign-account run per *writing* script |
+| **V-2** | **The two-token rule does not catch a misspelled stack name.** A well-formed typo *is* a nonexistent stack to CloudFormation and yields the identical `does not exist` text. FR-5 claimed the rule prevented exactly that | Claim corrected — two tokens separate absence from *other* `ValidationError`s (malformed name, constraint violation). The typo case is recorded as accepted residual risk in §9; the gate is renamed to "malformed" |
+| **V-3** | FR-6 had gates for three FAIL directions and none for PASS. A check that unconditionally FAILs satisfied every gate and would red every pipeline build | PASS and `500` rows added; §7.2's "four scenarios" corrected to five |
+| **V-4** | The stub set contradicted itself — NFR-1 said `awk` was stubbed, §7.2 excluded it. Stubbing `awk` would make the conf-parsing gate a test of the stub | Stub set defined as the **network-capable** commands only; text tools run real |
+| **V-5** | `PROFILE="${AWS_PROFILE:-IBD-DEV}"` — the line §1 calls the defect — survived in all seven scripts; NFR-4's "one place" was loosely false | `_guard.sh` exports `PROFILE`/`REGION`; the seven local lines are deleted |
+| **V-6** | The refactor tightens `MailTransport`'s classification as an untested side effect (both copies match `ValidationError` alone today) | FR-5 gains a clause and §10 a gate row |
+| **V-7** | The D-7 excerpt supports one of four Jenkinsfile claims; revision 2 implied all four | §7.4 states which claim it carries and which remain operator-copy-only |
+| **V-8** | `smoke.sh`'s `[PASS]` goes to stdout and `[FAIL]` to stderr — a test capturing stdout alone never sees a failure | The named observable is the summary line, captured `2>&1` |
+| **V-9** | No risk row for a wrong committed account id; every test stubs `sts`, so a mistyped id passes the suite and fails closed on every real run | §9 row added, with an operator-run transcript as the task's evidence |
+| **V-10** | FR-7 named only `smoke.sh`'s header; `deploy.sh`, `teardown.sh` and `migrate-seed.sh` USAGE lines are also falsified | FR-7 extended to the full known set |
+| **V-11** | The read-only exemption selected `validate.sh` but not `smoke.sh`, which is equally read-only by FR-6's own clause | Criterion restated mechanically; both exempt |
+| **V-12** | Override × FR-3 interaction undefined (KZ-007) | FR-2 states it: an overridden profile still needs a conf row and still asserts its account |
+| **V-13** | The round-1 fabricated quote was replaced by a characterisation the proposal also does not bear ("two-file scope") | Corrected to the scope the proposal actually states |
+| **V-14** | The non-TTY falsifier still could not produce red | The honest mutation is named |
+| **V-15** | Specify-time OQ-1/OQ-2 collided with different questions of the same name in `proposal.md` | Renumbered `OQ-SPEC-1`/`OQ-SPEC-2` with the supersession noted |
+| **V-16** | Budget prose did not reconcile with its own delta; one line counted twice | Reconciled, each line owned once, and marked estimates rather than measurements |
+
+### Not fixed — carried forward
+
+| ID | Finding | Why carried |
+|---|---|---|
+| N-1 | No `§7` row for the bootstrap-path stage order (`Smoke` before or after `Lock CORS` on `DEPLOY_INFRA=true`). If `Smoke` runs between them, the new check reds the first bootstrap build | Requires reading the operator's `Jenkinsfile` again. Recorded as an unverified pipeline claim rather than guessed (KZ-011) |
+
+## 9. Terminal receipt
+
+```
+TARGET        requirements.md + design.md
+ROUNDS        2 of 2 — lineage exhausted
+ROUND 1       24 findings · 3 SEVERE confirmed by both · all fixed
+ROUND 2       26 findings · 3 confirmed by both · 16 single-judge verified and fixed · 1 carried
+FIX-CAUSED    13 of 21 on Judge B's count — the majority of round 2
+CONTRADICTIONS 1 (round 1, smoke.sh check count) — resolved by orchestrator verification
+```
+
+**JUDGMENT: ESCALATED ⚠️** — not because a defect stands unaddressed, but because the two-round ceiling is reached and N-1 needs an artefact outside this repository. `/akili-specify` Phase 3 may proceed; N-1 belongs in `tasks.md` as a prerequisite on the documentation task.
+
+## 10. Signal for Kaizen
+
+**Round 2 found more defects than round 1, and most were introduced by round 1's fixes.** That is not noise — it is the measured recurrence of KZ-008 (×7, "an assertion about an artefact is a defect when the artefact does not bear it") and the 100 %-fix-defect rate recorded there at ×5.
+
+Two shapes recurred specifically:
+
+1. **Fixing a KZ-002 gate introduced a new KZ-002 gate.** Round 1's C-2 fix (exclude `_guard.sh` from the enumeration) created C-6 (no definition of "first external command") and V-1 (assert the `source` line, never the invocation). The correction moved the blind spot rather than removing it.
+2. **A correction replaced a false quotation with a false paraphrase** (round 1 S-3 → round 2 V-13). The document stopped quoting something the proposal did not say and started summarising something it also did not say.
+
+The countermeasure both rounds support is the one KZ-008 already records and this spec keeps re-learning: **where a correction can be made by deleting the false text rather than replacing it, delete.** Every fix in round 2 that deleted (C-5, V-13) introduced nothing; several that rewrote did.
