@@ -410,3 +410,71 @@ The Reviewer's advisory found the same refuted claim alive in **`design.md` §7.
 | **FP-7, FP-5, FP-1** | **T-6** | Still live — POSIX ERE only with positive controls; `env -u` for any asserted default; `*.case.sh` naming |
 
 ---
+
+### T-6 — `smoke.sh` CORS check — **PASS on attempt 1** ✅ *(the only task in this spec that needed no rework)*
+
+| | |
+|---|---|
+| Date | 2026-09-18 |
+| Implementer attempts | **1** |
+| Effort | `max` |
+| Skills assigned | `aws-serverless` + `tdd` |
+| Requirements covered | FR-6 (all seven clauses), DD-5 |
+
+**This is the detector, and it is the only fix in this spec that reaches the live pipeline failure mode without anyone editing the Jenkins server** — `RUN_SMOKE=true` already calls `smoke.sh`, so the check ships into CI on merge. `proposal.md` §4.6 records it as **step 4 of a live five-step failure mode**: without it, nothing reports that step 2 (a permissive `*` deployed on a transient lookup failure) ever happened.
+
+New **Check 6** at `smoke.sh:287`; Summary renumbered to **Check 7** at 362. Five new cases. Suite: **48 cases, 48 passed**.
+
+#### The assertion-target trap — proved empirically, both directions
+
+Judgment Day found this in the spec's own design (`judgment.md` C-3) and called it the most valuable finding of the review. T-6 is where it was demonstrated rather than argued. **Both halves run by the Leader:**
+
+| | Result |
+|---|---|
+| Delete Check 6 entirely → run suite | **exactly the 5 `smoke-cors.*` cases red**, nothing else. Reverted → 48/48 |
+| Delete Check 6 → run `smoke.sh` in a stubbed environment | **`EXIT=1`** — the frontend and S3 checks fail on their own |
+
+So **an exit-code assertion would have stayed green with the check non-existent.** The rule is empirically necessary, not stylistic. Second reason, equally load-bearing: `pass()` writes to stdout and `fail()` to **stderr**, so a test capturing stdout alone would never see a failure — hence the summary line captured `2>&1` as the named observable.
+
+#### A real bug the Implementer found and fixed while running falsifiers
+
+`grep '^HTTP_STATUS:'` and `grep -i '^access-control-allow-origin:'` both exit 1 on no-match. Under `smoke.sh`'s own `set -euo pipefail` that **aborted the whole script** before reaching `pass()`/`fail()` — silently killing the clean-204 PASS case, the refused-connection case and the 500 case. Fixed with `|| true` on both pipelines.
+
+**The Leader asked whether that reintroduces FR-5's conflation in miniature** ("the call failed" read as "the thing is absent"). The Reviewer's answer, and it is a good one: no, and the asymmetry resolves safely — the status check is evaluated **first**, so any grep-wide breakage fail-closes before the ACAO comparisons are reached; and crucially this is `|| true` **without** `2>/dev/null`, so a real grep error still prints. FR-5 forbids the construct that *hides the error text* **and** collapses the two.
+
+#### Reviewer findings worth keeping
+
+**Falsifier 2's nuance resolved in the code's favour.** The Implementer reported that deleting the echoed-origin `elif` left the boolean outcome correct via a catch-all. The Reviewer showed that mutation is **narrower** than the one `tasks.md` names: removing every comparison but `== "*"` also removes the catch-all, so an echoed 204 reaches `PASS` and the case reds cleanly. The clause is gated by its named falsifier, and the narrower survival is genuine defence in depth. It further found `assert_contains "ECHOED BACK"` is **the only gate on the value-extraction path** — reaching that branch requires both `${CORS_ACAO_LINE#*:}` and the `sed -E` trim to work; dropping the assertion would *lose* coverage, not tighten attribution.
+
+**The positive-control argument accepted as a genuine decomposition,** not an argument standing in for a control: each matcher has a case that flips colour if it goes inert (presence → `permissive-star-fails`; value extraction → `echoed-origin-fails`; status → `clean-rejection-passes`).
+
+#### ⚠️ The Leader's reasoning on the T-7 boundary was wrong, and the Reviewer corrected it
+
+The Leader argued from the T-4 precedent that T-6 should fix `smoke.sh`'s PURPOSE block and `SMOKE PASSED` line because T-6 falsifies them. **The Reviewer read the source and showed the precedent cuts the other way:** T-4's own advisory table says *"`migrate-seed.sh:30` and `teardown.sh:42` USAGE lines are now false … **Correctly left to T-7**"*, and T-5 recorded the same call for `deploy.sh:39`. What T-4 fixed in-task was the `# ── Config` comment sitting **directly over the lines it deleted** — in-hunk prose, not a T-7-owned file header.
+
+**The consistent rule, now stated:** *in-hunk prose belongs to the task that writes the hunk; a self-description that `tasks.md` T-7 names by string belongs to T-7, recorded as an advisory handle.* The Leader cited the precedent from recall; the Reviewer read it.
+
+#### 📋 Declared ungated clause — not hidden, not silently passed
+
+**FR-6's "real preflight" clause is implemented but has no gate.** The five stubs dispatch on `*"-X OPTIONS"*` only, so deleting `-H "Access-Control-Request-Method: GET"` leaves all 48 cases green. The Reviewer judged it **not a conformance gap** — `tasks.md` T-6 scopes cases to the five directions and its Done-when does not require it — but the coverage-closure table lists the clause as T-6-owned.
+
+**Disposition: declared as an accepted coverage gap rather than adjudicated in.** Re-opening a task after its PASS verdict would ratchet the bar post-hoc — the same move the Reviewer rightly declined at T-5. Closing it costs **one extra `case` arm in any stub**, and T-7 adds no cases, so it belongs to a follow-up rather than to this spec's remaining task. Recorded here so it is a known gap with a price, not an unacknowledged blind spot.
+
+#### ADVISORY — recorded, non-gating
+
+| Finding |
+|---|
+| **`infra/README.md` §"Step 6 — end-to-end smoke" carries a per-check table that T-6 falsifies by omission.** `infra/README.md` is in T-7's Files, but FR-7's *enumerated* known set does not name this table — so this is **a new instance of the class, found by exactly the cross-artefact sweep FP-9 demands** |
+| The new comment asserts *"`RUN_SMOKE=true` already calls this script"* — sourced from `docs/infrastructure.md` and DD-5, but an out-of-repo claim that is **not** date-stamped and not in `requirements.md` §7's KZ-011 table |
+| No `--max-time` on the preflight `curl`. Consistent with every other `curl` in the file, so pre-existing — but this check is the one newly reaching CI, where a hanging endpoint becomes a **stuck** build rather than a red one |
+| The grep-*error* path (as distinct from no-match) is driven by no case and, hermetically, could not be |
+
+#### 🔭 Forward pointers for T-7
+
+| ID | Pointer |
+|---|---|
+| **FP-8** *(grown again)* | `deploy.sh:39`'s `(dev default *)`; `_guard.sh:18-23`'s T-3-scoped prose; `migrate-seed.sh:30` and `teardown.sh:42` USAGE lines; `smoke.sh`'s PURPOSE block (still enumerating 1…6) and its `SMOKE PASSED` line; **`infra/README.md`'s per-check table** |
+| **FP-9** | Sweep the **class across every artefact type and directory**, not FR-7's enumerated set. The `infra/README.md` table is proof the enumerated set is incomplete — FR-7 names a "known set" and the sweep must exceed it |
+| **FP-10** *(new)* | T-7 must **date-stamp** the `RUN_SMOKE` claim and add it to `requirements.md` §7's KZ-011 verification table, alongside **N-1** (the bootstrap-path stage order, still unanswered and still requiring the operator's Jenkinsfile) |
+
+---

@@ -283,7 +283,83 @@ else
   fail "Direct S3 object → $s3_code (expected 403 — bucket may be public!)"
 fi
 
-# ── Check 6: Summary — print each result; non-zero exit if any failed ─────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Check 6: CORS boundary (FR-6) — a disallowed Origin must get a real
+# rejection, never a permissive answer. Sends a GENUINE preflight — Origin
+# PLUS Access-Control-Request-Method — because API Gateway's HTTP API
+# auto-answers CORS only for a real preflight; a bare OPTIONS matches no
+# route and would prove nothing. Read-only: no state is mutated.
+#
+# Five directions, every one summarised via pass()/fail() rather than
+# aborting the run (so this check reaches the pipeline with no Jenkinsfile
+# change — RUN_SMOKE=true already calls this script, DD-5):
+#   permissive ACAO: *                          -> FAIL
+#   echoed     ACAO: <the disallowed origin>     -> FAIL
+#   refused    the connection never completes    -> FAIL (proves nothing)
+#   5xx        no ACAO, but a server/transport
+#              failure                           -> FAIL (not a rejection)
+#   clean      2xx/204, no ACAO at all            -> PASS
+# The PASS direction is not optional: a check that unconditionally FAILs
+# would satisfy every row above and redden every pipeline build after
+# merge, since RUN_SMOKE=true fails closed.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> Check: CORS boundary (FR-6) ..."
+
+CORS_DISALLOWED_ORIGIN="https://cors-smoke-check.invalid"
+
+CORS_RAW=""
+CORS_TRANSPORT_OK=1
+if CORS_RAW="$(
+  curl -sS -D - -o /dev/null -w '\nHTTP_STATUS:%{http_code}\n' \
+    -X OPTIONS \
+    -H "Origin: $CORS_DISALLOWED_ORIGIN" \
+    -H "Access-Control-Request-Method: GET" \
+    "$API_BASE_URL/api/v1/actors" 2>&1
+)"; then
+  :
+else
+  CORS_TRANSPORT_OK=0
+fi
+
+# Normalise CRLF (real HTTP header dumps use them) before parsing.
+CORS_HEADERS="$(printf '%s' "$CORS_RAW" | tr -d '\r')"
+
+CORS_STATUS="$(printf '%s\n' "$CORS_HEADERS" | grep '^HTTP_STATUS:' | tail -n1 || true)"
+CORS_STATUS="${CORS_STATUS#HTTP_STATUS:}"
+
+# Header name matched case-insensitively (API Gateway's casing is not
+# contractual); the value is taken as everything after the FIRST colon via
+# bash's own `${var#*:}`, never a regex — safe even though the origin value
+# itself contains colons ("https://..."). `|| true` on both grep pipelines:
+# a rejection that carries no ACAO header (the PASS direction) or a
+# transport failure that carries no headers at all (refused/5xx) makes
+# grep's "no match" exit 1, which — unguarded, under this script's own
+# `set -euo pipefail` — would abort the whole run instead of reaching
+# pass()/fail() below. The absence itself is legitimate data, not an error.
+CORS_ACAO_LINE="$(printf '%s\n' "$CORS_HEADERS" | grep -i '^access-control-allow-origin:' | tail -n1 || true)"
+CORS_ACAO=""
+if [[ -n "$CORS_ACAO_LINE" ]]; then
+  CORS_ACAO="${CORS_ACAO_LINE#*:}"
+  CORS_ACAO="$(printf '%s' "$CORS_ACAO" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+fi
+
+if [[ "$CORS_TRANSPORT_OK" -ne 1 ]]; then
+  fail "CORS boundary: preflight to $API_BASE_URL failed (refused connection) — proves nothing, not a rejection"
+elif [[ -z "$CORS_STATUS" ]]; then
+  fail "CORS boundary: preflight returned no readable HTTP status"
+elif [[ "$CORS_ACAO" == "*" ]]; then
+  fail "CORS boundary: disallowed origin got a permissive 'Access-Control-Allow-Origin: *'"
+elif [[ "$CORS_ACAO" == "$CORS_DISALLOWED_ORIGIN" ]]; then
+  fail "CORS boundary: disallowed origin was ECHOED BACK in Access-Control-Allow-Origin — an echo is a permissive answer, not a rejection"
+elif [[ "$CORS_STATUS" != 2* ]]; then
+  fail "CORS boundary: preflight returned $CORS_STATUS (non-2xx) — a server/transport failure is not a rejection"
+elif [[ -n "$CORS_ACAO" ]]; then
+  fail "CORS boundary: disallowed origin unexpectedly got a non-empty Access-Control-Allow-Origin ('$CORS_ACAO')"
+else
+  pass "CORS boundary: disallowed origin got a clean $CORS_STATUS rejection (no Access-Control-Allow-Origin)"
+fi
+
+# ── Check 7: Summary — print each result; non-zero exit if any failed ─────────
 echo
 echo "==> Smoke summary:"
 for r in "${RESULTS[@]}"; do

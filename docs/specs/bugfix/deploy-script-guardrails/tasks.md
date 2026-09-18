@@ -74,7 +74,7 @@
       **Accepted residual, not a gate:** a *well-formed misspelled* stack name is indistinguishable from a genuine absence — CloudFormation returns the same `does not exist`. Do not write a test claiming otherwise (`judgment.md` V-2).
       Skills: `aws-serverless`, `tdd`, `systematic-debugging`
 
-- [ ] **T-6 `smoke.sh` CORS check** (deps: T-1)
+- [x] **T-6 `smoke.sh` CORS check** (deps: T-1)
       Scope: a new **Check 6** using the existing `pass()`/`fail()` accounting; **Summary renumbers to 7**. Sends a real preflight — `Origin` **plus** `Access-Control-Request-Method` — because the HTTP API auto-answers only genuine preflights. Read-only.
       Traces: FR-6 (all five directions), DD-5, `design.md` §7.2
       Files: `infra/scripts/smoke.sh`, `infra/scripts/tests/cases/smoke-cors.*`
