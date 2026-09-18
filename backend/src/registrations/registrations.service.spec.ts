@@ -25,8 +25,11 @@
  * timers would make the padded tests' pad a genuine
  * `VERIFICATION_CODE_RESPONSE_FLOOR_MS` of wall-clock cost PER TEST (§12 is
  * that constant's one home — it is COMPUTED in `registrations.service.ts`
- * from `mail/mail-timing.ts`'s two exports, so it is named here, never
- * restated as a number) — this describe block therefore runs under Jest's
+ * from a sum of `mail/mail-timing.ts`'s exports (⚠️ *not counted here on
+ * purpose — this paragraph used to say "two exports"; F4 (2026-09-17)
+ * added a third, and a restated count is exactly what goes stale the next
+ * time the term list changes, per §12's single-home rule*), so it is
+ * named here, never restated as a number) — this describe block therefore runs under Jest's
  * modern fake timers (`beforeEach`/`afterEach` below), and every test
  * either advances fake time past the floor with
  * `jest.advanceTimersByTimeAsync` or asserts against a promise that has
@@ -45,10 +48,7 @@ import {
   EmailVerificationService,
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
-import {
-  MAIL_SEND_TIMEOUT_MS,
-  VERIFICATION_CODE_PRESEND_ALLOWANCE_MS,
-} from '../mail/mail-timing';
+import { VERIFICATION_CODE_PRESEND_ALLOWANCE_MS } from '../mail/mail-timing';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
@@ -421,23 +421,56 @@ describe('RegistrationsService.requestVerificationCode', () => {
   );
 });
 
-describe(
-  'the composed floor (T-7, design.md DD-10, §12.3 invariant 1) — against the LIVE constant',
-  () => {
-    it(
-      'VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS ≤ ' +
-        'VERIFICATION_CODE_RESPONSE_FLOOR_MS holds for the live constants ' +
-        '(§12.3 invariant 1 — gates invariant 1 only: a hardcoded floor value ' +
-        'would keep this green too, so it does not prove the floor is composed ' +
-        'in code)',
-      () => {
-        expect(VERIFICATION_CODE_PRESEND_ALLOWANCE_MS + MAIL_SEND_TIMEOUT_MS).toBeLessThanOrEqual(
-          VERIFICATION_CODE_RESPONSE_FLOOR_MS,
-        );
-      },
-    );
-  },
-);
+describe('the composed floor (T-7, design.md DD-10, §12.3 invariant 1)', () => {
+  // ⚠️ **Corrected 2026-09-17 (Reviewer, second round).** This block used to
+  // carry two tests, both vacuous, and this replacement is written to name
+  // that mistake rather than quietly drop it:
+  //
+  //   1. `PRESEND_ALLOWANCE + LOCK_WAIT + SEND_TIMEOUT ≤ FLOOR` — but
+  //      `VERIFICATION_CODE_RESPONSE_FLOOR_MS` is DEFINED as that exact sum
+  //      (`registrations.service.ts`). The assertion was `x <= x`: true for
+  //      every value of every term, including a `LOCK_WAIT` raised to 500.
+  //      It exercised no code.
+  //   2. A "falsifiability" test asserting `x + 1 > x` over the same `x`.
+  //      True by arithmetic identity for any finite `x` — it could not have
+  //      failed under any mutation of `mail-timing.ts`. The red/green proof
+  //      reported alongside it required ALSO hardcoding
+  //      `VERIFICATION_CODE_RESPONSE_FLOOR_MS` to a literal — decoupling the
+  //      floor from its own composition — which is not a mutation this
+  //      test, as shipped, can ever perform or protect against.
+  //
+  // **The honest claim: composing the floor in code makes invariant 1 true
+  // BY CONSTRUCTION, which is a STRONGER guarantee than a test — it cannot
+  // be violated at all, because the floor and the sum are the same
+  // expression.** No test is needed for that, and pretending one exists
+  // reintroduces exactly the defect this rewrite closes: a green gate that
+  // cannot fail (KZ-002).
+  //
+  // **What composition does NOT cover, and what nothing here can gate**: a
+  // term that exists inside the timed window but is never named in the
+  // sum. That is precisely what F4 found — `MAIL_LOCK_WAIT_TIMEOUT_MS` was
+  // real, timed, and absent from the composition for the life of this
+  // spec until 2026-09-17. Catching a MISSING term is a reading task
+  // (auditing `MicroserviceMailTransport.send` against the constants this
+  // file imports), not something any unit test can automate — there is no
+  // way to assert the absence of code that was never written.
+  //
+  // **What IS a real, falsifiable gate: the pinned target below.** Unlike
+  // the tautology above, `toBe(4000)` compares the LIVE computed value
+  // against an independent LITERAL — if any of the three constituent
+  // constants drifts, the computed floor changes and stops equalling
+  // `4000`, and the test reddens for real. This mirrors the §12-pin shape
+  // `mail-timing.spec.ts` already uses for the individual constants
+  // (`expect(MAIL_SEND_TIMEOUT_MS).toBe(3000)` etc.) — extended here to the
+  // one computed value those pins do not cover.
+  //
+  // **Not covered: that the floor stays composed.** Replacing the sum with
+  // a literal (`registrations.service.ts`) keeps this pin green — the
+  // composition itself is held by reading, not by test.
+  it('pins the composed floor to §12.1\'s value — reddens if ANY of the three constants drifts without this pin being updated to match (the real gate; see this block\'s comment for what replaced it and why)', () => {
+    expect(VERIFICATION_CODE_RESPONSE_FLOOR_MS).toBe(4000);
+  });
+});
 
 // @sdd-spec actors/public-self-registration (T-10)
 /**
@@ -758,21 +791,48 @@ describe('RegistrationsService.submitRegistration', () => {
       },
     );
 
-    it('dispatches the receipt email AFTER the transaction resolves, fire-and-forget (DD-9)', async () => {
-      let resolveSend!: () => void;
-      mailService.sendReceipt.mockReturnValue(
-        new Promise<void>((resolve) => {
-          resolveSend = resolve;
-        }),
-      );
-
+    it('dispatches the receipt email with the submitter email and reference, after the transaction resolves', async () => {
       const result = await service.submitRegistration(validDto());
 
-      // Reaching this line with the send still pending IS the proof — if
-      // the method awaited the send, this call would hang.
       expect(mailService.sendReceipt).toHaveBeenCalledWith('neema@khsc.co.tz', result.reference);
-      resolveSend();
     });
+
+    it(
+      'does not resolve until the receipt dispatch settles — the send is now awaited ' +
+        '(D-I, closed 2026-09-17: `dispatchReceiptEmail` used to be `void … .catch()`, which a ' +
+        'Lambda freeze can silently drop mid-flight after the response is written — observed in ' +
+        'production, CloudWatch carried a `mail send attempt kind=receipt` line with zero matching ' +
+        'outcome line. This test proves the opposite: submitRegistration() stays unsettled for as ' +
+        'long as the send itself is pending, so a freeze after `return` can no longer drop it. A ' +
+        'test asserting only that sendReceipt was CALLED — the previous version of this test — ' +
+        'would still pass on the fire-and-forget code this fix replaces; only blocking on ' +
+        "settlement falsifies that shape)",
+      async () => {
+        let resolveSend!: () => void;
+        mailService.sendReceipt.mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            resolveSend = resolve;
+          }),
+        );
+
+        let settled = false;
+        const promise = service.submitRegistration(validDto()).then((result) => {
+          settled = true;
+          return result;
+        });
+
+        // Drain every already-queued microtask (setImmediate only runs
+        // after the microtask queue is empty) — a fire-and-forget dispatch
+        // would have let submitRegistration() fully resolve by now,
+        // however many `await`s its own chain has.
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+
+        resolveSend();
+        await promise;
+        expect(settled).toBe(true);
+      },
+    );
 
     it('never dispatches mail when the transaction itself never commits (consent rejected before any write)', async () => {
       await expect(
@@ -785,7 +845,8 @@ describe('RegistrationsService.submitRegistration', () => {
 
   describe(
     'receipt-failure logging never leaks the address (rework attempt 2, FAIL 3 — mirrors ' +
-      "T-8's already-reviewed pair for the identical hazard on this SECOND fire-and-forget mail path)",
+      "T-8's already-reviewed pair for the identical hazard on this SECOND mail dispatch path, " +
+      'now awaited (D-I) but still non-fatal to the submission)',
     () => {
       let errorSpy: jest.SpyInstance;
 
@@ -934,6 +995,64 @@ describe('RegistrationsService.submitRegistration', () => {
       },
     );
   });
+
+  describe(
+    'A1 (Reviewer advisory, structural) — the receipt dispatch sits OUTSIDE the retry ' +
+      "loop's try/catch entirely, so a failure there can never be misread as a reference " +
+      'collision and retried into a SECOND row for one submission, nor swallowed into the ' +
+      'exhaustion 503 on an already-committed registration',
+    () => {
+      it(
+        'a P2002-shaped rejection from the receipt dispatch propagates directly — it is NOT ' +
+          "caught by the loop's `isReferenceCollisionError` branch, so allocation is never " +
+          'retried and NO second row is ever created (the worst available outcome this ' +
+          "advisory closes off structurally, not by dispatchReceiptEmail's own total " +
+          'try/catch — which is stubbed out here specifically to prove the OUTER placement ' +
+          'holds even if that inner catch ever stopped being total)',
+        async () => {
+          const collisionShaped = new Prisma.PrismaClientKnownRequestError(
+            'Unique constraint failed on the fields: (`reference`)',
+            { code: 'P2002', clientVersion: 'test', meta: { target: ['reference'] } },
+          );
+          const dispatchSpy = jest
+            .spyOn(
+              service as unknown as { dispatchReceiptEmail: () => Promise<void> },
+              'dispatchReceiptEmail',
+            )
+            .mockRejectedValueOnce(collisionShaped);
+
+          await expect(service.submitRegistration(validDto())).rejects.toBe(collisionShaped);
+
+          // Exactly ONE row was ever created — the loop did not treat this
+          // as a collision, did not `continue`, and therefore never
+          // re-allocated a fresh reference and wrote a second row.
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+
+          dispatchSpy.mockRestore();
+        },
+      );
+
+      it(
+        'an ordinary (non-P2002) rejection from the receipt dispatch ALSO propagates directly ' +
+          '— never the controlled 503 the loop reserves for allocation exhaustion, which would ' +
+          'misreport an already-committed registration as failed',
+        async () => {
+          const transportFailure = new Error('mail transport unavailable');
+          const dispatchSpy = jest
+            .spyOn(
+              service as unknown as { dispatchReceiptEmail: () => Promise<void> },
+              'dispatchReceiptEmail',
+            )
+            .mockRejectedValueOnce(transportFailure);
+
+          await expect(service.submitRegistration(validDto())).rejects.toBe(transportFailure);
+          expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+
+          dispatchSpy.mockRestore();
+        },
+      );
+    },
+  );
 });
 
 // @sdd-spec actors/public-self-registration (T-11)

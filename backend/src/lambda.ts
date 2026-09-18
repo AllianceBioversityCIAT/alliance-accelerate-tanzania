@@ -74,11 +74,31 @@ export const handler: Handler = async (event, context) => {
   // longer drop it. `AdminRegistrationsService.dispatchApprovalEmail`/
   // `dispatchRejectionEmail` got the same treatment and are AWAITED too —
   // neither settles until its own send does, so neither depends on this
-  // flag any more. This flag remains load-bearing for exactly one path:
-  // `RegistrationsService.submitRegistration`'s receipt email
-  // (`dispatchReceiptEmail`) is still dispatched fire-and-forget by design
-  // (DD-9), and depends on this flag to survive a freeze after the
-  // `202`/response is written.
+  // flag any more.
+  //
+  // **`RegistrationsService.submitRegistration`'s receipt email closed the
+  // same way, 2026-09-17 (design.md D-I).** It was the one path this
+  // comment used to describe as still depending on this flag — and that
+  // dependency was exactly as ineffective here as it was for the OTP path
+  // above, for the identical reason (an async handler's completion is
+  // governed by its returned promise, not by this flag). Observed in
+  // production, not merely inferred: CloudWatch carried a `mail send
+  // attempt kind=receipt` line with zero matching outcome line, the same
+  // attempt-without-outcome signature that caught the OTP bug, and
+  // intermittently — the signature of a race against container freeze, not
+  // a deterministic failure. `dispatchReceiptEmail` now AWAITS
+  // `MailService.sendReceipt`, bounded by the transport's own
+  // `MAIL_SEND_TIMEOUT_MS` deadline, with no constant-time floor (this path
+  // runs after OTP verification, so there is no enumeration oracle left to
+  // protect).
+  //
+  // **This flag is therefore load-bearing for ZERO paths as of this fix.**
+  // Every mail dispatch in `backend/src` is now awaited before its caller's
+  // handler returns, so nothing here still depends on
+  // `callbackWaitsForEmptyEventLoop` to survive a freeze. It is left SET
+  // regardless — a harmless backstop for whatever future fire-and-forget
+  // work gets added — rather than removed, since removing it is a
+  // behaviour change with no motivating bug and is out of this fix's scope.
   context.callbackWaitsForEmptyEventLoop = true;
 
   if (!cachedHandler) {

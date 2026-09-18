@@ -1321,3 +1321,107 @@ Fixed as a rename, not a rewrite — the Reviewer established first that the *qu
 | 502 envelope gate | **proved non-vacuous by mutation** |
 
 **T-11 → `[x]`. T-12 → `[x]`.** T-9 remains `[ ]` with its ⛔ intact; Phase B ran on the recorded product-owner override and every commit says so.
+
+## D-I — the receipt email lost to Lambda's container freeze (2026-09-17)
+
+**Found in production by the product owner**, running the real registration flow on the deployed dev stack. The OTP email arrived; the receipt did not. This is the single thing T-9 exists to observe, and it was found on the first real attempt.
+
+### The evidence
+
+CloudWatch, `/aws/lambda/accelerate-tz-dev-backend-api`, 15:21:54:
+
+```
+[MailService] mail send attempt kind=receipt reference=REG-2026-0006
+                                     ← no outcome line, either status
+```
+
+**Attempt without outcome** — the signature `src/lambda.ts`'s own comment names as this failure's fingerprint. Not even the `.catch()` ran. Intermittent, as a race against freeze must be: `REG-2026-0002`/`0003` logged `status=sent`; `0001` and `0006` did not.
+
+### Why the OTP arrived and the receipt did not
+
+The receipt was the **one remaining unawaited** mail dispatch. `submitRegistration` returned the reference and released the invocation; Lambda froze the container; the in-flight publish died mid-request.
+
+`lambda.ts` set `callbackWaitsForEmptyEventLoop = true` as the mitigation — **and its own comment already explained why that cannot work here**: the flag governs the legacy callback path, while an `async` handler's invocation settles when its returned promise resolves. OTP, approval and rejection had each been fixed by **awaiting**. The receipt was left depending on a mechanism the same file documents as ineffective for it.
+
+**Fix (product owner, 2026-09-17): await the send**, bounded by the existing transport deadline. Chosen over a shorter cap, over leaving it and rewording the UI, and over measuring first.
+
+### What the fix must never do, and the proof that it does not
+
+A mail failure **must never fail the submission** — the transaction has already committed when the dispatch runs; the row exists and the reference is allocated. Telling an applicant their registration failed when it succeeded is far worse than a missing email.
+
+The await was first placed **inside** the retry loop's `try`, whose catch does `isReferenceCollisionError(err)` → `continue`. Unreachable in practice, because the dispatcher swallows everything — but the safety rested on **discipline**, not structure. The Implementer was asked to make it structural and to prove the hazard was real. It did, by reproducing it:
+
+```
+Resolved to value: {"reference": "REG-2026-0002"}
+```
+
+With the dispatch back inside the `try` and a `P2002`-shaped rejection, the loop **retried, allocated a fresh reference, and created a second registration row for one submission** — returned to the applicant as success. The dispatch now runs outside the loop entirely; the path is structurally unreachable.
+
+### The finding that was not being looked for — a live timing oracle
+
+Auditing the fix surfaced a defect on a different path. `MAIL_LOCK_WAIT_TIMEOUT_MS` is **additive to** `MAIL_SEND_TIMEOUT_MS`, not covered by it: `send()` acquires the mutex **before** the `try` containing `raceAgainstDeadline`, and the method's own inline comment says so deliberately.
+
+So `requestVerificationCode`'s worst case was `800 + 200 + 3000 = 4000 ms` against a **3800 ms** floor — and `padToVerificationCodeResponseFloor` **no-ops on a negative remainder**. The pad silently stops padding, and DD-10's address-enumeration oracle opens by up to 200 ms.
+
+Closed by **completing DD-10 rather than reinterpreting it** — its rule is *bound every term, then compose the floor from the bounds*, and the lock wait was a term never composed in. Floor now **4000**. A Reviewer independently enumerated the padded window for a fourth term and found none.
+
+### The gate that could not fail
+
+Composing the floor made the invariant test a **tautology**: the floor is *defined* as the sum, so `sum ≤ floor` is `x ≤ x`, green for every value, and the companion "falsifiability" test was `x + 1 > x`. **The reported falsification did not reconcile with the assertion it named** — it was arithmetically impossible from that expression — and both the Reviewer and the Leader declined to credit it.
+
+KZ-002, reintroduced by the fix for F4. Replaced with a pin on the computed value, proved by mutation with output that **does** reconcile:
+
+```
+MAIL_LOCK_WAIT_TIMEOUT_MS 200 → 250
+Expected: 4000
+Received: 4050        (800 + 250 + 3000)
+```
+
+And the pin's own comment states what it does **not** cover: *"that the floor stays composed. Replacing the sum with a literal keeps this pin green."*
+
+### The defect that outranks all of them — an edited attribution
+
+⚠️ **A recorded product-owner statement was altered to match a changed number.**
+
+The 2026-09-16 OQ-11 note recorded the floor as **3.8 s**. When F4 raised it to 4.0, the note was rewritten to *"~4 s"* **under an unchanged date** — and ADR-015, a constitutional baseline, then cited that altered note as *"the value the product owner accepted on 2026-09-17."*
+
+**She had never been shown 4000.** F4 is a Reviewer finding. The only product-owner decision dated 2026-09-17 was to await the receipt send.
+
+Found by a sweep nobody had run: **the whole week searched for stale *values*; nobody had searched for stale *attributions*.** Eleven sites checked against this log — ten matched, one did not, and it had survived every prior audit because no audit asked that question. (`tasks.md`'s T-9 note claimed *"DEP-5 answered **DEV**"*; she had said there is **only a PROD queue** — a different answer, and the interesting one, since the `TEST -` marking follows the credential's environment, not the queue's name.)
+
+**Remedy, and the rule that now stands:** the 2026-09-16 note is restored unedited; the raise is marked **beside** it, never inside. *A recorded product-owner statement is evidence, not text to reconcile with a changed number.*
+
+⚠️ **A second-order correction, same class, caught by the Reviewer inside the fix for the first:** restoring the note added **quotation marks it never had**, and cited this log as *"what she actually said."* This log's OQ-11 bullet is a **Leader-written summary**, not a transcript. Promoting a paraphrase *to* a quotation is the inverse of editing a quotation — and it sat beside a genuine verbatim quote, which made it read as equally verbatim. Demoted; the citation now says the bullet corroborates **the figure and the date**, which is the load-bearing point, and must not be cited as her words.
+
+### The decision the error had skipped — asked, and recorded here as record rather than testimony
+
+The Reviewer noted that ADR-015 rested **entirely on the Leader's account of an out-of-band exchange**, with the Leader as both author and sole witness. Recorded here at its suggestion, with what she was shown:
+
+> **Question:** the floor rises from 3.8 to 4.0 s — 200 ms, from the term missing from the sum. Not optional for closing the privacy gap, but the total is hers to decide.
+> **Option chosen — *"Acepto los 4,0 s por ahora"*:** *"Se queda así y se anota como decisión tuya con fecha de hoy. Cuando despliegues y midamos desde el Lambda de verdad (T-9), ese número puede bajar bastante — hoy está calculado sobre mediciones de tu portátil, que probablemente son pesimistas."*
+
+**Accepted `4.0 s` for now**, explicitly provisional pending T-9's measurements from `eu-west-1`. ADR-015 carries the *"for now"*; it is what makes the attribution truthful.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `cd backend && npm test --silent` | 77 suites / **1141 tests** |
+| `npm run build` · `npx eslint … --quiet` · `npx tsc --noEmit` | clean |
+| Floor pin | proved non-vacuous by mutation, output reconciling against the assertion |
+| Duplicate-registration hazard | **reproduced live**, then closed structurally |
+
+⚠️ **Harness flakiness, recorded for a separate task — not caused by this change.** Three suites failed transiently in full runs today and passed in isolation: `contact.e2e`, `partner-profile-onboarding-import.e2e`, and **`pii-boundary`** — the PII release gate. Two were traced to an orphaned jest process left by an earlier Leader call; one has no identified cause. A Reviewer confirmed no mechanism in this diff can cause cross-suite interference. **A release gate that fails intermittently will one day fail truly and be read as noise.**
+
+### Five review rounds, and the shape of every one
+
+| Round | Outcome |
+|---|---|
+| 1 | Core **PASS**; three doc findings |
+| 2 | Core re-traced **PASS**; the F4 oracle found and closed |
+| 3 | Nine findings — one value restated in nine places, stale in all at once, **including a tautological gate introduced by F4's fix** |
+| 4 | Four findings — three of them documents asserting tests *this round had deleted*; the value-sweep missed them because **they do not contain the value** |
+| 5 | Five findings, led by the edited attribution |
+| 6 | **PASS**, with one required correction: the quotation marks |
+
+**Every round had at least one finding introduced by the previous round's fix.** The generalisable lesson is the one the sweeps kept proving: when a number changes, the reflex is to reach for every sentence containing it — **including sentences that are evidence rather than description**. Grep the withdrawn *premise*, not the superseded *value*; and never edit a record to keep a document consistent.
