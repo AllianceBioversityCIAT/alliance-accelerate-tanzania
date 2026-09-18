@@ -52,10 +52,11 @@
 #                       defined in design.md §7.2. It makes deploy.sh take
 #                       the explicit skip branch at its `SKIP_MIGRATE_PAUSE`
 #                       check rather than the non-interactive fallback below
-#                       it. It is NOT what prevents a hang: that prompt, and
-#                       migrate-seed.sh's own, are both `[[ -t 0 ]]`-gated,
-#                       so the stdin redirection below is what actually
-#                       makes a hang impossible.
+#                       it. It is NOT what prevents a hang: that prompt is
+#                       `[[ -t 0 ]]`-gated on its own (migrate-seed.sh has no
+#                       prompt of its own since T-4 removed its profile-
+#                       override branch), so the stdin redirection below is
+#                       what actually makes a hang impossible.
 #   stdin               /dev/null — so no case can block on a `read`
 #
 #   Nothing here touches AWS_PROFILE or credentials: individual cases set

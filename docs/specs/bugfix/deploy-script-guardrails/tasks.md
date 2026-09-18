@@ -48,7 +48,7 @@
       **Evidence this task must carry beyond the suite:** every test stubs `sts`, so a mistyped account id passes the whole suite and then fails closed on every real run (`design.md` §9). The completion report **must** include an operator-run `aws sts get-caller-identity --profile IBD-DEV` transcript showing the committed id matches. Without it this task is not done.
       Skills: `aws-serverless`, `tdd`
 
-- [ ] **T-4 Wire the guard into all seven scripts** (deps: T-3)
+- [x] **T-4 Wire the guard into all seven scripts** (deps: T-3)
       Scope: `source` the library as the first statement after `set -euo pipefail` in all seven; **delete each local `PROFILE="${AWS_PROFILE:-IBD-DEV}"` line**; add `assert_account` to the five **writing** scripts only — `validate.sh` and `smoke.sh` are read-only and exempt. Remove the `CONFIRM=yes` profile-override branch from `migrate-seed.sh` and `teardown.sh`, leaving `teardown.sh`'s destruction confirmation untouched.
       Traces: FR-1, FR-2, FR-3 read-only exemption, NFR-4, DD-4, DD-6, `design.md` §7.1
       Files: all seven `infra/scripts/*.sh`

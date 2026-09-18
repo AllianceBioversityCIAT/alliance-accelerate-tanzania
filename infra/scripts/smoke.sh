@@ -67,9 +67,9 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/_guard.sh"
+
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 

@@ -32,29 +32,11 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
-DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/_guard.sh"
+assert_account
 
-# ── IBD-DEV guard (hard constraint: every AWS action uses IBD-DEV) ───────────
-# If a non-IBD-DEV profile is in play, refuse to proceed without an explicit
-# confirmation (CONFIRM=yes env, or an interactive "yes" on a TTY).
-if [[ "$PROFILE" != "IBD-DEV" ]]; then
-  echo "WARNING: AWS profile is '$PROFILE', not 'IBD-DEV' (the mandated profile)." >&2
-  if [[ "${CONFIRM:-}" == "yes" ]]; then
-    echo "         CONFIRM=yes set — proceeding against '$PROFILE'." >&2
-  elif [[ -t 0 ]]; then
-    read -r -p "         Continue against '$PROFILE'? Type 'yes' to proceed: " reply
-    if [[ "$reply" != "yes" ]]; then
-      echo "Aborted: profile is not IBD-DEV and confirmation was not given." >&2
-      exit 1
-    fi
-  else
-    echo "Aborted: profile is not IBD-DEV. Re-run with CONFIRM=yes to override." >&2
-    exit 1
-  fi
-fi
+DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 
 echo "==> Using AWS profile '$PROFILE' in region '$REGION'."
 echo "==> Resolving RDS wiring from stack '$DATA_AUTH_STACK' ..."

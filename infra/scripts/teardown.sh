@@ -44,9 +44,9 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/_guard.sh"
+assert_account
 
 # Stack names — single source of truth is infra/README.md conventions.
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
@@ -59,25 +59,6 @@ echo "        1. $FRONTEND_STACK   (S3 + CloudFront)   [bucket emptied first]"
 echo "        2. $BACKEND_STACK   (Lambda + HTTP API)"
 echo "        3. $DATA_AUTH_STACK   (RDS + Secrets Manager + Cognito)"
 echo
-
-# ── IBD-DEV guard (hard constraint: every AWS action uses IBD-DEV — NFR-1) ───
-# If a non-IBD-DEV profile is in play, warn and require explicit confirmation
-# before going any further (CONFIRM=yes env, or an interactive 'yes' on a TTY).
-if [[ "$PROFILE" != "IBD-DEV" ]]; then
-  echo "WARNING: AWS profile is '$PROFILE', not 'IBD-DEV' (the mandated profile)." >&2
-  if [[ "${CONFIRM:-}" == "yes" ]]; then
-    echo "         CONFIRM=yes set — proceeding against '$PROFILE'." >&2
-  elif [[ -t 0 ]]; then
-    read -r -p "         Continue against '$PROFILE'? Type 'yes' to proceed: " reply
-    if [[ "$reply" != "yes" ]]; then
-      echo "Aborted: profile is not IBD-DEV and confirmation was not given." >&2
-      exit 1
-    fi
-  else
-    echo "Aborted: profile is not IBD-DEV. Re-run with CONFIRM=yes to override." >&2
-    exit 1
-  fi
-fi
 
 # ── Strong destruction confirmation guard ────────────────────────────────────
 # Teardown is irreversible, so require an explicit, unambiguous confirmation:

@@ -22,9 +22,8 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# shellcheck disable=SC1091
+source "${BASH_SOURCE[0]%/*}/_guard.sh"
 
 # Resolve infra/ root relative to this script so it runs from any CWD.
 INFRA_DIR="$(cd "$(dirname "$0")/.." && pwd)"

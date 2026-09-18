@@ -254,3 +254,89 @@ Note: `matching-account-proceeds` reds under the neuter mutation, which means it
 | **FP-1, FP-3** | still live | `*.case.sh` naming; T-4 falsifies the harness header sentence, T-7 sweeps it |
 
 ---
+
+### T-4 — Wire the guard into all seven scripts — **PASS on attempt 2 of 3**
+
+| | |
+|---|---|
+| Date | 2026-09-18 |
+| Implementer attempts | **2** |
+| Effort | `max` — modifies all seven operator scripts, incl. `teardown.sh` |
+| Skills assigned | `aws-serverless` + `tdd` |
+| Requirements covered | FR-1, FR-2, FR-3 read-only exemption, NFR-4; **FP-4 discharged** (first observable here) |
+
+**This is the task where the guard stops being a library and starts protecting.** Suite: `Discovered 28 case(s)`, 28 passed.
+
+#### What shipped
+
+All seven scripts source `_guard.sh` as the first statement after `set -euo pipefail`; the seven local `PROFILE=`/`REGION=` resolutions are **deleted** (NFR-4's "one place" is now true, not aspirational); `assert_account` added to the **five writing** scripts; `validate.sh` and `smoke.sh` exempt per FR-3's read-only clause; the `CONFIRM=yes` profile-override branch removed from `migrate-seed.sh` and `teardown.sh`. Eight new `wire.*.case.sh`.
+
+The Implementer also deleted each script's `# ── Config (overridable via env…)` comment — it described exactly the two deleted lines and would otherwise have sat falsely over unrelated stack-name blocks. Reviewer judged the deletion correct.
+
+#### ⚠️ The safety-critical edit, verified twice
+
+`teardown.sh` has **two consecutive `CONFIRM` blocks**. The first is the profile override (deleted). The second is the destruction confirmation that stops an unattended run from permanently deleting the RDS instance and all three stacks (**untouched**).
+
+- **Leader:** `git diff HEAD -- infra/scripts/teardown.sh` touches no line containing `destroy`, `destruction`, `permanently deletes`, or `refusing to tear down`. The deleted block is exactly the profile-override `if`.
+- **Reviewer:** confirmed structurally, and called `wire.migrate-seed-confirm-removed-teardown-destruction-intact` *"the strongest single case in the task"* — it drives the destruction gate **functionally**, with a valid profile and a passing account check, and asserts via `assert_not_contains` that the abort came from the destruction gate rather than the floor. That case can never reach `sam delete`.
+
+#### Attempt 1 — Reviewer FAIL: a gate that could not fire
+
+Clause (a)'s **positional** half used `[[ "$content" =~ \b(aws|sam|curl|npm|npx)\b ]]`. `\b` is a GNU-libc regex extension; bash `=~` compiles through the system `regcomp`, and on BSD the backslash is discarded, leaving a pattern that requires a **literal `b`** on both sides. It matched nothing in any script. The positional branch never executed and the case **degraded to presence-only** — which `design.md` §7.2 forbids in writing: *"Asserting mere presence would pass a script that sources the guard on its last line."*
+
+And the case's own header asserted the opposite: *"a genuinely misordered guard still reddens this case."* **A dead gate with a comment guaranteeing it works** — the two failure modes of this spec in one line.
+
+⚠️ **How the Reviewer found it, recorded because the method is the lesson.** It has no shell. It derived the defect by *reading* — `\b` is glibc-only, bash routes `=~` through system `regcomp`, BSD discards the backslash — then **declined to assert it**, wrote *"this is a reading-derived claim and needs one line to settle"*, and named the exact command. The Leader ran it:
+
+```
+[[ "aws s3 sync x y" =~ \b(aws|sam|curl|npm|npx)\b ]]                               → NOMATCH
+[[ "aws s3 sync x y" =~ (^|[^[:alnum:]_])(aws|sam|curl|npm|npx)([^[:alnum:]_]|$) ]]  → MATCH
+[[ "sammy npmrc"     =~ (^|[^[:alnum:]_])(aws|sam|curl|npm|npx)([^[:alnum:]_]|$) ]]  → NOMATCH
+```
+
+It also **anticipated the wrong fix**: warned against `[[:<:]]`/`[[:>:]]`, BSD's own word boundaries, because *"that fixes macOS and breaks Linux — the same defect wearing the opposite sign."* The Jenkins agent is Linux; that fix would have passed locally and failed in CI.
+
+Second half of the finding: **no falsifier had been run against that half.** `design.md` §10 names it — *"move a `source` below the first `aws` call ⇒ red"* — and the demonstrated falsifier ("add an unguarded script") exercised only the source-missing branch, never the regex.
+
+#### Attempt 2 — Reviewer **PASS**
+
+Portable POSIX ERE; a **matcher positive control** independent of any script's content; the §10 falsifier actually run; the header rewritten to describe the portable pattern and the platform mechanism.
+
+**Two advisories adjudicated in** on the standing standard (a gate that cannot fail for the clause it claims):
+- `assert_contains "PROFILE=IBD-DEV"` was a substring match against a child `env` dump already containing `AWS_PROFILE=IBD-DEV` — it would have passed with `export` removed, which is precisely what it claimed to prove. Anchored to `^PROFILE=IBD-DEV$`.
+- A second GNU-ism, `\s*`, in another case. Harmless today, but leaving a second instance of a class that had just cost a round is indefensible. Normalised to `[[:space:]]*` with its own positive control.
+
+**Reviewer PASS summary:** *"Clause (a)'s positional gate now fires — the pattern is portable POSIX ERE valid under both BSD and glibc regcomp, the §10 falsifier's reported line numbers (33/45) recompute exactly from `validate.sh`, and the 28-case count reconciles against the tree. Both adjudicated advisories discriminate, every sentence of the rewritten header checks out, and a full sweep of `infra/` turns up no third GNU-ism outside explanatory comments."*
+
+The Reviewer swept ~25 GNU-isms (`\b \s \d \w`, `grep -P`, `sort -z`, `find -printf`, `mapfile`, `${var^^}`, `readlink -f`, `stat -c`, `declare -A`, …) and found **no third instance** — the KZ-004 class-sweep, done properly.
+
+#### Final verification — Leader-run, quiet tree
+
+| Gate | Result |
+|---|---|
+| Suite | 28 cases, 28 passed |
+| **In-situ abort, the real scripts** | `AWS_PROFILE=MELIA-DEV ./<each>.sh` → **all seven exit 1**, naming both profiles, before any AWS call |
+| No local `PROFILE=` survives | `grep "AWS_PROFILE:-IBD-DEV" infra/scripts/*.sh` → only `_guard.sh` |
+| **§10 positional falsifier** | moved `validate.sh`'s source below an external invocation → `ASSERT FAIL [enumeration]: … line at 33, before its source line at 45`; reverted → green. **The same mutation passed before this rework** |
+| `teardown.sh` destruction guard | no destruction line added or removed in the diff |
+
+#### ADVISORY — recorded, non-gating
+
+| Finding |
+|---|
+| The matcher control holds a **textual duplicate** of the loop's pattern rather than a shared variable. It reds on a *platform* regression (the historical defect) but not on an *edit* regression — reverting the loop alone to `\b` leaves the control green. Hoisting to `EXT_CMD_RE=…` would couple them structurally |
+| The `REGION` pattern in `wire.no-remaining-local-profile-region-lines` has no positive control of its own; the mechanism is proven by the `PROFILE` one |
+| `migrate-seed.sh:30` and `teardown.sh:42` USAGE lines are now false (`CONFIRM=yes AWS_PROFILE=other` aborts rather than overriding). **Correctly left to T-7**, recorded here so the sweep has a written handle |
+
+#### 🔭 Forward pointers
+
+| ID | For | Pointer |
+|---|---|---|
+| **FP-7** | **T-5, T-6** | **Every regex in a case must be POSIX ERE.** This machine is BSD, the Jenkins agent is glibc, and a pattern valid on one can be silently inert on the other — `\b` cost a full round as a dead gate. Forbidden: `\b \s \d \w`, `grep -P`, `[[:<:]]`. And **every matcher needs a positive control**, or its failure is invisible |
+| **FP-8** | **T-7** | The false USAGE lines in `migrate-seed.sh` and `teardown.sh`, plus everything in the T-4 advisory table |
+| **FP-5** | **T-5, T-6** | Still live — every case asserting a **default** must `env -u` that variable |
+| **FP-1** | all | `*.case.sh` or the file is skipped silently |
+
+**FP-4 and FP-6 are discharged** at T-4 — export-ness and the single-override-variable clause are now driven by cases, and the conf wording is corrected.
+
+---
