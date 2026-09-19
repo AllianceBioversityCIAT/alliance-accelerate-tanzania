@@ -36,7 +36,10 @@
 #   ./infra/scripts/deploy.sh
 #   VPC_ID=vpc-abc DEV_CIDR=203.0.113.7/32 ./infra/scripts/deploy.sh
 #   SKIP_MIGRATE_PAUSE=yes ./infra/scripts/deploy.sh   # don't pause at step 2
-#   ALLOWED_ORIGIN='*' ./infra/scripts/deploy.sh       # backend CORS (dev default *)
+#   ALLOWED_ORIGIN='*' ./infra/scripts/deploy.sh       # backend CORS override — there is
+#                                                       # no default any more; '*' is an
+#                                                       # announced bootstrap fallback only
+#                                                       # (see resolve_stack_value, below)
 #   MAIL_TRANSPORT=microservice ./infra/scripts/deploy.sh  # explicit, matches the current default
 # ---------------------------------------------------------------------------
 

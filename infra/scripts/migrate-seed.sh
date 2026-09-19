@@ -27,7 +27,11 @@
 # USAGE
 #   ./infra/scripts/migrate-seed.sh
 #   AWS_PROFILE=IBD-DEV AWS_REGION=eu-west-1 ./infra/scripts/migrate-seed.sh
-#   CONFIRM=yes AWS_PROFILE=other ./infra/scripts/migrate-seed.sh   # override the IBD-DEV guard
+#   AWS_PROFILE=other ALLOW_NON_IBD_DEV_PROFILE=other ./infra/scripts/migrate-seed.sh
+#                                              # targets another profile — CONFIRM does
+#                                              # NOT authorise this any more; a mismatched
+#                                              # or absent ALLOW_NON_IBD_DEV_PROFILE aborts
+#                                              # naming both profiles (_guard.sh)
 # ---------------------------------------------------------------------------
 
 set -euo pipefail

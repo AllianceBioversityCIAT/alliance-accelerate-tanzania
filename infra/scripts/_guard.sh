@@ -17,10 +17,7 @@
 #   assert_account is an EXPLICIT function call, not something that runs on
 #   `source` — see the section below for why. Wiring calls to it into the
 #   five writing infra/scripts/*.sh scripts (the "every operator script it
-#   protects" above) is T-4's job, not T-3's. As of T-3, zero scripts
-#   source this file or call assert_account — that is expected, not a gap;
-#   the not-yet-present resolve_stack_value above is the one remaining
-#   genuine gap.
+#   protects" above) is T-4's job, not T-3's.
 #
 # WHAT RUNS ON SOURCE (no call required — this is the point of FR-1/FR-2)
 #   1. Resolve PROFILE from AWS_PROFILE, defaulting to the mandated
@@ -98,8 +95,7 @@ fi
 # does NOT run on `source`. FR-3 exempts the two read-only scripts
 # (validate.sh, smoke.sh); an assertion that ran automatically on source
 # could not honour that exemption without adding a flag, so every WRITING
-# script must call assert_account itself. Wiring that call into the five
-# writing scripts is T-4's job — as of T-3, nothing calls it.
+# script must call assert_account itself.
 #
 # The expected account id is never a literal in this file (or in any
 # infra/scripts/*.sh file) — it is read from infra/aws-accounts.conf, one

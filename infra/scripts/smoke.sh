@@ -34,7 +34,13 @@
 #     4. Frontend (FR-5/6)  — CloudFront serves "/" and "/map" → 200.
 #     5. S3 privacy (DD-5)  — a DIRECT S3 object URL → 403 (private bucket; only
 #                             CloudFront via OAC may read).
-#     6. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
+#     6. CORS boundary (FR-6, bugfix/deploy-script-guardrails T-6) — a GENUINE
+#                             preflight from a disallowed origin against
+#                             /api/v1/actors must get a real rejection: FAILs on
+#                             a permissive `*`, an echoed-back origin, a refused
+#                             connection, or a non-2xx/5xx with no ACAO; PASSes
+#                             only on a clean 2xx/204 with no ACAO at all.
+#     7. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
 #
 #   NOTE — "renders LIVE data" is only partially machine-checkable here. The pages
 #   serve over HTTPS but the actor/metrics DATA is fetched client-side by JS, so
@@ -292,7 +298,8 @@ fi
 #
 # Five directions, every one summarised via pass()/fail() rather than
 # aborting the run (so this check reaches the pipeline with no Jenkinsfile
-# change — RUN_SMOKE=true already calls this script, DD-5):
+# change — RUN_SMOKE=true already calls this script per the operator-supplied
+# Jenkinsfile, read 2026-09-18; requirements.md §7, DD-5):
 #   permissive ACAO: *                          -> FAIL
 #   echoed     ACAO: <the disallowed origin>     -> FAIL
 #   refused    the connection never completes    -> FAIL (proves nothing)
@@ -372,6 +379,6 @@ if [[ "$FAILS" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> SMOKE PASSED — API healthy + PII-safe, frontend served, S3 private."
+echo "==> SMOKE PASSED — API healthy + PII-safe, CORS rejects disallowed origins, frontend served, S3 private."
 echo "    Final step: open $CLOUDFRONT_URL in a browser and confirm the metrics"
 echo "    band + map render LIVE seeded data (not the offline fallback) — FR-6."

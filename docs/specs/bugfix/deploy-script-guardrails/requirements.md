@@ -177,6 +177,7 @@ Every claim about a system outside this repository, with where it was verified (
 | `migrate-seed.sh` and `teardown.sh` carry a profile guard; the other five do not | grep for `!= "IBD-DEV"` across `infra/scripts/`, 2026-09-18 |
 | `smoke.sh` accepts `API_BASE_URL`, `CLOUDFRONT_URL` and `BUCKET` from the environment | its own `USAGE` block, re-read against merged `main` 2026-09-18 |
 | Neither `bats` nor `shellcheck` is installed | `which bats shellcheck` → not found, 2026-09-18 |
+| `RUN_SMOKE=true` causes the pipeline to invoke `infra/scripts/smoke.sh` post-deploy, so T-6's new CORS check reaches CI with no `Jenkinsfile` change | `Jenkinsfile` — operator-supplied copy, read 2026-09-18; `docs/infrastructure.md` §3's `RUN_SMOKE` row states the same. *(FP-10 — this claim was carried in `smoke.sh`'s own comment undated before this row existed.)* |
 
 **Assumption, unverifiable from here:** the `Jenkinsfile` copy reviewed is the one deployed on `automation.prms.cgiar.org`.
 

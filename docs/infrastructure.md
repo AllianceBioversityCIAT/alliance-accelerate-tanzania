@@ -52,7 +52,7 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 | Validate all templates | `./infra/scripts/validate.sh` |
 | Deploy all three stacks, ordered + idempotent | `./infra/scripts/deploy.sh` |
 | Run migrations + seed | `./infra/scripts/migrate-seed.sh` |
-| Build + publish the frontend to S3/CloudFront | `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh` — this script reads `AWS_PROFILE` and **parses no flags**, so a `--profile` argument is silently ignored and an ambient profile wins |
+| Build + publish the frontend to S3/CloudFront | `AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh` — this script reads `AWS_PROFILE` and **parses no flags**, so a `--profile` argument is silently ignored. An ambient non-`IBD-DEV` `AWS_PROFILE` no longer wins silently either: it sources the shared profile floor (`infra/scripts/_guard.sh`, `bugfix/deploy-script-guardrails`) and **aborts** unless `ALLOW_NON_IBD_DEV_PROFILE` matches it exactly |
 | Lock API CORS to the CloudFront origin | `./infra/scripts/set-cors.sh` |
 | Post-deploy smoke check | `./infra/scripts/smoke.sh` |
 | Tear down | `./infra/scripts/teardown.sh` |
@@ -71,7 +71,20 @@ Three of its behaviours change what a merge means, and none of them are visible 
 
 The backend (`20-backend`) and the web assets (`Deploy Web` → `deploy-frontend.sh`) **do** deploy on every merge to `main`.
 
-**CORS is safe across pipeline deploys.** The steady-state `Deploy Backend` stage resolves the live `CloudFrontUrl` from the frontend stack's outputs and passes it as `AllowedOrigin`, precisely so a redeploy never regresses to the permissive `*` bootstrap default. The `*` default is used only on the bootstrap path (`DEPLOY_INFRA=true`, via `deploy.sh`), where the frontend stack may not exist yet, and a dedicated `Lock CORS` stage runs `set-cors.sh` afterwards on exactly that path. The `deploy.sh` defect tracked in **ATP-64** therefore affects **manual** runs, not the pipeline.
+**CORS is safe only when the origin lookup succeeds — the steady-state stage fails open, not closed.** *(Corrected 2026-09-19 — see `bugfix/deploy-script-guardrails`.)* The steady-state `Deploy Backend` stage (`when DEPLOY_INFRA == 'false'`, the path every ordinary merge takes) resolves `AllowedOrigin` like this, transcribed from the operator-supplied `Jenkinsfile` on **2026-09-18** (quoted verbatim in `docs/specs/bugfix/deploy-script-guardrails/design.md` §7.4):
+
+```bash
+ALLOWED_ORIGIN="$(
+  aws cloudformation describe-stacks --stack-name "${FRONTEND_STACK}" \
+    --query "...CloudFrontUrl..." --output text --profile IBD-DEV ... 2>/dev/null || true
+)"
+if [ -z "${ALLOWED_ORIGIN}" ] || [ "${ALLOWED_ORIGIN}" = "None" ]; then
+    echo "▸ Frontend stack has no CloudFrontUrl yet — bootstrapping CORS as '*'"
+    ALLOWED_ORIGIN='*'
+fi
+```
+
+`2>/dev/null || true` **conflates "the stack does not exist" with "the call failed."** An expired token, a throttle, or an IAM denial produces the same empty string as a genuinely absent stack, and either one falls back to `*`. `Lock CORS` does **not** repair this path — it is gated `when DEPLOY_INFRA == 'true'`, and this is the `false` path. So the correct statement is: the pipeline resolves the live origin *when the lookup succeeds*; it fails open to `*` on **any** lookup failure, transient or not, not only on a genuine first-time bootstrap. The `deploy.sh` defect tracked in **ATP-64** is therefore not confined to manual runs — the identical fail-open shape is live in the pipeline too, as of the 2026-09-18 reading. `infra/jenkins/deploy-backend-cors.patch` is an advisory fix for the Jenkins administrator (CORS resolution only; see `infra/jenkins/README.md`); it is **not applied by this repository**, so this gap is open until the administrator lands it. On the bootstrap path itself (`DEPLOY_INFRA=true`), see **OQ-INFRA-6** below for an unresolved, related ordering question.
 
 Operator-run deploys from a workstation remain possible and are documented in `infra/README.md`; they are no longer the only path, and they are no longer the normal one.
 
@@ -81,7 +94,7 @@ Operator-run deploys from a workstation remain possible and are documented in `i
 
 - **Transport:** HTTPS end to end — CloudFront for the frontend, API Gateway for the API.
 - **Frontend origin:** the S3 bucket is private; CloudFront OAC is the only read path, enforced by bucket policy.
-- **API CORS:** locked to the CloudFront origin via the `AllowedOrigin` parameter (`set-cors.sh` applies it post-deploy, once the distribution domain is known).
+- **API CORS:** locked to the CloudFront origin via the `AllowedOrigin` parameter (`set-cors.sh` applies it post-deploy, once the distribution domain is known). This is the intended steady state, not a standing guarantee: §3 records that the pipeline's own `Deploy Backend` stage can fail open to a permissive `AllowedOrigin=*` on a transient origin-lookup failure, as of the 2026-09-18 `Jenkinsfile` reading. An operator running `deploy.sh` gets the in-repo fix for the equivalent case (`resolve_stack_value`, `infra/scripts/_guard.sh`); the pipeline does not, until the advisory patch (`infra/jenkins/deploy-backend-cors.patch`) is applied upstream.
 - **Database reachability:** the stack declares RDS as publicly accessible (`PubliclyAccessible: true`) with a security group open to `0.0.0.0/0` on 3306, alongside the operator `DevCidr` rule — there is no Lambda-scoped security group, because the Lambda is not VPC-attached (DD-2). As declared, port 3306 accepts connections from any address; the controls standing between the internet and the data are **credentials and TLS** (encrypted, but the server certificate chain is **not** verified — `DB_SSL: accept_invalid_certs`, `infra/20-backend/template.yaml`), not the network. This is a deliberate, recorded dev-only trade-off, not an accident. It is also not a live observation — this document describes what the stack declares, not a live security-group check. The deferred hardening (drop the `0.0.0.0/0` rule, move the Lambda into the VPC, private RDS, verify the certificate chain) is tracked in `infra/README.md` §11 (`infra/network-hardening`).
 - **Secrets:** DB credentials in Secrets Manager; Cognito and runtime config injected as Lambda environment variables from stack outputs. Nothing secret is committed — `.env` files are local-only and `.env.example` carries placeholders.
 - **Frontend build-time config (a separate channel from the above).** The static export has no runtime environment: `deploy-frontend.sh` bakes **four** `NEXT_PUBLIC_*` values into the bundle at build time — API base URL, Cognito user-pool Id, Cognito client Id, and the GA4 measurement Id. Three resolve from CloudFormation stack outputs; **`GA_MEASUREMENT_ID` is the first frontend build value that does not**, and defaults in-script instead. That is deliberate, not drift: a GA4 measurement ID ships in the page source of every visitor, so it is public by construction and does not belong in SSM/Secrets Manager, which `docs/trd/trd.md` §8 reserves for DB credentials and Cognito config. Because these are baked, changing any of them requires a **rebuild and redeploy** — not a variable update.
@@ -135,3 +148,4 @@ What makes the Lambda's own CORS unnecessary is that **API Gateway already owns 
 | OQ-INFRA-3 | Add a committed `docker-compose.dev.yml` to make the local primary route a single command? |
 | OQ-INFRA-4 | Adopt RDS Proxy before Lambda concurrency grows, or keep the constrained connection pool? (`docs/trd/trd.md` §11) |
 | OQ-INFRA-5 | The `Jenkinsfile` is not versioned in this repository, so the deploy path cannot be reviewed, diffed, or reasoned about from the codebase — and `DEPLOY_INFRA=false` means an infra change can merge without shipping. Vendor it into the repo, or accept the gap deliberately and record where the authoritative copy lives? |
+| OQ-INFRA-6 | **Unresolved, not guessed (KZ-011).** On the bootstrap path (`DEPLOY_INFRA=true`), `Deploy Backend` legitimately writes `AllowedOrigin=*` (the frontend stack genuinely does not exist yet), and the later `Lock CORS` stage repairs it. `infra/scripts/tests`' new smoke check (`bugfix/deploy-script-guardrails`, T-6) asserts that a disallowed origin gets a real CORS rejection — so **if `Smoke` runs between `Deploy Backend` and `Lock CORS`**, it would fail the first bootstrap build on that legitimate, temporary `*`. Whether it does is not derivable from anything in this repository: it needs the operator's `Jenkinsfile` stage ordering on the `DEPLOY_INFRA=true` path, which was not read for this question as of 2026-09-18. Settle by reading that ordering before the next bootstrap run, or by asking the Jenkins administrator directly. |

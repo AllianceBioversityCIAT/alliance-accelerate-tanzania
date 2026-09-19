@@ -478,3 +478,98 @@ The Leader argued from the T-4 precedent that T-6 should fix `smoke.sh`'s PURPOS
 | **FP-10** *(new)* | T-7 must **date-stamp** the `RUN_SMOKE` claim and add it to `requirements.md` §7's KZ-011 verification table, alongside **N-1** (the bootstrap-path stage order, still unanswered and still requiring the operator's Jenkinsfile) |
 
 ---
+
+### T-7 — Documentation sync and the Jenkinsfile patch — **PASS on attempt 2 of 3**
+
+| | |
+|---|---|
+| Date | 2026-09-19 |
+| Implementer attempts | **2** |
+| Effort | `max` — D-7 is the one defect class here with **no automated gate** |
+| Skills assigned | `cognitive-doc-design` + `aws-serverless` |
+| Requirements covered | FR-7 (all four clauses), NFR-5; **FP-8, FP-9, FP-10 discharged**; N-1 recorded as **OQ-INFRA-6** |
+
+**Mandatory Reviewer**, per root `CLAUDE.md` — and for the deeper reason `requirements.md` §2.2 gives: D-7 is *unmeasurable and substituted, not waived*, and the Reviewer **is** the substitute. No command can do what it did here.
+
+#### What shipped
+
+`docs/infrastructure.md` §3's overstated *"CORS is safe across pipeline deploys"* corrected from `design.md` §7.4's verbatim block; §4 cross-referenced; **OQ-INFRA-6** added. `infra/README.md` Step 6 table gains a CORS row; Step 2 and §10 prose corrected. Root `CLAUDE.md`'s `deploy-frontend.sh` clause and `validate.sh` note. Five script self-descriptions. `requirements.md` §7 gains the FP-10 row. New `infra/jenkins/deploy-backend-cors.patch` + README — **CORS resolution only**, advisory, date-stamped.
+
+**The patch's hardest half, verified by the Reviewer:** it reproduces `resolve_stack_value`'s **Output-query** semantics, so a success-with-`None` aborts rather than bootstrapping `*` — *"the harder half of the contract and the one most likely to have been got wrong."* Its `-` block matches §7.4 **character for character**.
+
+#### Attempt 1 — Reviewer FAIL: the purest instance of the spec's own class
+
+`infra/README.md:144` still told the operator that `deploy.sh` *"defaults `AllowedOrigin` to `*` for the dev bootstrap"* — **the exact claim this same diff had corrected in `deploy.sh:39`.** The correction and the uncorrected claim shipped together, in a file FR-7 names by string and inside NFR-5's permitted paths.
+
+**Tenth instance of the class in this spec, in the task whose only job was to eliminate it.**
+
+The Reviewer also rejected the charitable reading in advance: line 90 of the same README already states the CFN parameter's default correctly and separately, and 144 sits in a list whose subject is `deploy.sh`'s four steps — *"if the Leader prefers the charitable reading, the sentence still needs disambiguating, because the ambiguity is the defect."*
+
+#### Attempt 2 — Reviewer **PASS**
+
+Fixed, and the Reviewer **re-derived the replacement from `deploy.sh:70–94` rather than from the sentence**, confirming the non-obvious point that `rc=2` is the *only* route to `*`, because for an Output query the helper does not fold success-with-`None` into absence.
+
+`_guard.sh:99`'s *"as of T-3, nothing calls it"* **deleted**, on the basis that **FP-8 named `_guard.sh` and only the `18-23` instance had been discharged** — a partially-discharged forward pointer is the KZ-004 partial-landing shape. Not adjudicated from the advisory the Reviewer declined to gate.
+
+#### The class sweep, finally done properly
+
+The Leader demanded a sweep with **a verdict per hit**, not a search. Ten hit groups returned, one false (fixed), nine defended individually — e.g. `README:90` is TRUE *because it describes the CFN parameter's default and matches `template.yaml:14` verbatim*; `set-cors.sh:7-9` is TRUE *because it is bootstrap-tensed and that script aborts outright on an absent frontend stack*.
+
+**That is the difference between a sweep and a search.** The Leader's three failed sweeps this session all returned "clean" because they grepped a remembered string; this one enumerates what it found and defends each decision not to touch it.
+
+#### The NFR-5 vs. mirror-docs tension — Reviewer-adjudicated
+
+The Implementer found the same stale claims in `AGENTS.md` and `frontend/CLAUDE.md` and **did not fix them**, because NFR-5 confines the diff. The Reviewer read both and corrected the Leader's framing — they are **not the same case**:
+
+| File | Verdict |
+|---|---|
+| `AGENTS.md:21` | **Still TRUE but incomplete.** *"`--profile` passed to it is silently ignored"* remains so; it omits the new floor |
+| `frontend/CLAUDE.md:65` | **FALSE.** *"Never deploy with a leaked non-IBD-DEV profile (the script warns; heed it)."* The script now **aborts**. The falsehood points the wrong way — it tells a future agent that catching a leaked profile is *their* job, when the guard fails closed |
+
+**Judgment: obey NFR-5.** Its first reason is the one worth keeping: *"the whole point of this spec is that a stated gate must bind even when the agent can see a good reason to step around it; a Reviewer who waives a measure because the intent seems satisfied is doing the thing the spec exists to stop."* Plus: `frontend/CLAUDE.md:65` was falsified by **T-4**, not T-7, and the error is **fail-safe in direction**.
+
+**Condition attached and honoured here:** *"a deliberate scope decision that leaves no written trace is indistinguishable from a missed sweep."* Both quotes are recorded verbatim above as a named follow-up.
+
+#### 📋 Declared residuals — disposed of deliberately, not by silence
+
+| ID | Residual | Disposition |
+|---|---|---|
+| **A5** | `wire.migrate-seed-confirm-removed-teardown-destruction-intact.case.sh:9-20` still says the USAGE line *"is left for T-7, deliberately"* — T-7 has now swept it. Also makes the Leader's own `Verify` grep over-broad: it returns this comment, not nothing | **Not fixed.** Historical-tensed, like the `_guard.sh:20` note the Reviewer accepted. Re-opening post-PASS would ratchet the bar — the move declined at T-5 and T-6. Recorded for follow-up |
+| **A6** | FR-7 requires date-stamping **every** Jenkinsfile claim; `docs/infrastructure.md:66-72`'s flag table carries none | **Deliberately not fixed, on the Reviewer's advice:** only `RUN_SMOKE` has an attested reading date. *"Stamping the other two would manufacture a date, which is the exact class of false claim this spec exists to remove."* Either re-read the operator's copy or leave it undated **knowingly** |
+| **A7** | `docs/infrastructure.md:151` calls it *"`infra/scripts/tests`' new smoke check"*; the check is `smoke.sh` Check 6 and the tests are its cases | Path attribution imprecision. Recorded |
+| **FR-6 preflight** | Carried from T-6: the clause is implemented but ungated — deleting the `Access-Control-Request-Method` header leaves all 48 green. Price: one stub `case` arm | Recorded at T-6, unchanged |
+| **N-1 / OQ-INFRA-6** | The bootstrap-path stage order — **still unresolved and unresolvable from this repository** | Recorded as an open risk naming what would settle it, with **no assertion either way** |
+
+#### ⚠️ The boundary of this PASS, in the Reviewer's own words
+
+> *"No test in this suite changes colour if any sentence I just judged is false. The 48/48 green corroborates the scripts' **behaviour**, not the **truth of the prose** — my reading is the only gate D-7 has."*
+
+It enumerated exactly what its reading covered, and marked the three Jenkinsfile claims in `requirements.md` §7 as **operator-copy-only — not confirmed.**
+
+---
+
+## Summary — spec complete
+
+**All seven tasks `[x]`.** 48 test cases, 48 passing, hermetic (no AWS, no credentials, no network).
+
+| Ticket | Status |
+|---|---|
+| **ATP-65** | **Closed.** All seven scripts abort on a foreign profile before any AWS call — verified on the real scripts, not only in tests. The account is asserted, not inferred from the profile name, including the collision case a name check cannot see |
+| **ATP-64** | **Closed in this repository.** The static `*` default is gone; the origin resolves live and fails closed on a failed lookup. `smoke.sh` Check 6 is the detector, and it reaches CI on merge with no Jenkins-server change |
+| **Jenkinsfile** | **Open by construction.** Advisory patch supplied; this repo cannot land it |
+
+### Rework economics — the finding worth carrying to Kaizen
+
+**Eleven rework rounds across seven tasks. Not one was the mechanism being wrong.**
+
+| Cause | Rounds |
+|---|---|
+| A false documentation claim | **8** |
+| A gate that could not fire | **2** |
+| A requirement clause with no gate | **1** |
+
+Production code: **454 lines**, against ~290 estimated — 56% over. Tests: **2,941 lines**, against a line item that never priced per-clause ownership. **Ratio 6.5 : 1.**
+
+**Three of the eleven were the Leader's**, and all three were the same error in different clothes: a universal negative drawn from a `grep … | head -5`; a correction applied to the cited site while the same premise survived four lines above; and a prohibition scoped to the artefact type where the last instance lived, so the defect moved artefact type. **Fixing the instance instead of the class** — while instructing subordinates to do the opposite.
+
+The countermeasure the evidence supports, recorded at `judgment.md` §10 and confirmed six more times since: **where a correction can be made by deleting the false text rather than replacing it, delete.** Every deletion in this spec introduced nothing. Several rewrites introduced the next defect.

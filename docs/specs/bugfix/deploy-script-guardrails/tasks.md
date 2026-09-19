@@ -85,7 +85,7 @@
       Done when: all five directions have cases; `API_BASE_URL`, `CLOUDFRONT_URL` and `BUCKET` are preset so Check 1 makes no live lookup.
       Skills: `aws-serverless`, `tdd`
 
-- [ ] **T-7 Documentation sync and the Jenkinsfile patch** (deps: T-4, T-5, T-6)
+- [x] **T-7 Documentation sync and the Jenkinsfile patch** (deps: T-4, T-5, T-6)
       Scope: correct `docs/infrastructure.md` §3's *"CORS is safe across pipeline deploys"* to describe the fail-open path; update §4; `infra/README.md`; root `CLAUDE.md` (it documents `validate.sh` as the infra verify command and `deploy-frontend.sh`'s profile behaviour, both changed). Sweep **every falsified script self-description**: `smoke.sh`'s header and `SMOKE PASSED` line, `deploy.sh`'s `ALLOWED_ORIGIN='*'` USAGE line and its bootstrap comment, `teardown.sh`'s and `migrate-seed.sh`'s `CONFIRM=yes AWS_PROFILE=other` USAGE lines. Add `infra/jenkins/deploy-backend-cors.patch` + README — **CORS resolution only**, never the `MailTransport` parameter beside it.
       Traces: FR-7 (all clauses), NFR-5, `design.md` §7.4
       Files: `docs/infrastructure.md`, `infra/README.md`, `CLAUDE.md`, four `infra/scripts/*.sh` headers, `infra/jenkins/*`

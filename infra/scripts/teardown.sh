@@ -39,7 +39,11 @@
 # USAGE
 #   ./infra/scripts/teardown.sh                 # interactive — prompts to type 'yes'
 #   CONFIRM=yes ./infra/scripts/teardown.sh     # non-interactive confirmation
-#   CONFIRM=yes AWS_PROFILE=other ./infra/scripts/teardown.sh   # also clears IBD-DEV guard
+#   AWS_PROFILE=other ALLOW_NON_IBD_DEV_PROFILE=other CONFIRM=yes ./infra/scripts/teardown.sh
+#                                                # targets another profile — CONFIRM alone
+#                                                # no longer does; it aborts naming both
+#                                                # profiles unless ALLOW_NON_IBD_DEV_PROFILE
+#                                                # matches AWS_PROFILE exactly (_guard.sh)
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
