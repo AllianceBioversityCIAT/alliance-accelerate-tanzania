@@ -71,9 +71,10 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
 - [ ] **T-3** Add `sendInvitation` / `sendAdminReset` and the `sub` resolution helper  (deps: T-1, T-2)
       Scope: two `MailService` methods beside `sendApproval`, each handing to the private `dispatch(kind, message)`. Plus a small helper that extracts `sub` from a Cognito attribute list and **returns undefined when absent**.
       Traces: FR-1, FR-5, **NFR-1**; design.md §5.2 (DD-3 as corrected by J-4)
-      Files: `backend/src/mail/mail.service.ts` (+ `.spec.ts`), the helper beside it
+      Files: `backend/src/mail/mail.service.ts` (+ `.spec.ts`) · `backend/src/users/cognito-sub.util.ts` (+ `.spec.ts`)
+      *(Helper relocated from `mail/` to `users/` during execution — its only consumers are `create()` and `resetPassword()`, `users/temp-password.util.ts` already sets the util pattern there, and placing a Cognito-attribute concern in `mail/` would create a `users → mail` dependency for it. See execution.md.)*
       Skills: `nestjs-expert`
-      Verify: `cd backend && npx jest src/mail --silent`
+      Verify: `cd backend && npx jest src/mail src/users --silent`
       Falsifier: make the helper fall back to the `Username`/`id` when `sub` is absent — the NFR-1 test asserting no `@` appears in any logged string must redden.
       Disqualifier: a test that only checks the helper's return value proves nothing about NFR-1. The assertion must be over **what `dispatch` logged**, captured from the logger, not over the helper in isolation.
       Done when: logged strings contain neither the password nor the body nor any `@`; `sub` is the reference when resolvable; **`undefined` — never `id` — when not** (J-4's fallback rule, the thing that actually protects NFR-1).

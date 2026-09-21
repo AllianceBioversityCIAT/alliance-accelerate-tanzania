@@ -256,3 +256,17 @@ It spot-checked 5 of the 6 itemised claims at source plus two the list omitted, 
 4. **`backend/CLAUDE.md` — two independently-worded "today" clauses** (*"users.service.ts today calls no MailService method"* and *"today the Admin-guarded response is the only one"*), added by T-9 itself
 
 Sites 1–3 were flagged by T-9's Implementer and its first Reviewer; **site 4 was flagged by the second Reviewer, which observed that the pointer as filed covered only 1–3** — the task's own edits had created new instances of the very thing the pointer tracks. Per KZ-004 the sweep is over the **premise**, not the phrase.
+
+---
+
+## Leader corrections to the spec (continued)
+
+### T-3: the `sub` helper moved from `mail/` to `users/`
+
+`tasks.md` placed the Cognito `sub`-extraction helper "beside" `mail.service.ts`. Resolved before spawning rather than left ambiguous in the brief:
+
+- Its **only** consumers are `UsersService.create()` and `resetPassword()` (T-4/T-5) — `MailService` never calls it.
+- `backend/src/users/temp-password.util.ts` already establishes the util pattern in that module.
+- Placing a Cognito-attribute concern in `mail/` would create a `users → mail` dependency purely to reach it.
+
+Moved to `backend/src/users/cognito-sub.util.ts`; T-3's `Verify` widened to `npx jest src/mail src/users --silent` so the relocated file stays inside the task's own gate. Decomposition judgment, recorded — no scope added.
