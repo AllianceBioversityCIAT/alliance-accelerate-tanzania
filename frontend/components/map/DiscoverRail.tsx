@@ -72,12 +72,12 @@ function CountCaption({
   truncated,
   shown,
   total,
-}: {
+}: Readonly<{
   loading: boolean;
   truncated: boolean;
   shown: number;
   total: number;
-}) {
+}>) {
   // Don't announce a count while loading.
   if (loading) return <span className="sr-only">Loading actor count</span>;
 
