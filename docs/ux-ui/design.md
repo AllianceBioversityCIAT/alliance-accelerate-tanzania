@@ -28,7 +28,7 @@
                            region, district, traderType, capacityTons, crops, sex,
                            otherCrops — never the contact block: contactPerson, position,
                            phone, email, marketLocation).
-                           NOT the admin export: no role-aware scope, no filter builder.
+                           NOT the admin export (cancelled, PRD §5): no role-aware scope, no filter builder.
 /register                 Public self-registration form (Identity · Location · Crops & capacity ·
                            Contact · Data protection & consent) + in-flow OTP verification step
 /register/submitted       Receipt — reference code (?ref=), save-and-lookup instructions
@@ -81,10 +81,10 @@
 >
 > **No `/admin/export` screen exists** — no page under `frontend/app/(admin)/`, and no
 > export route on any backend controller. **A role-aware, PII-scoped admin export is
-> unbuilt.** Listing it here as though it shipped is what sent agents looking for files
+> unbuilt, and as of 2026-09-21 it is cancelled — out of MVP scope (PRD §5, ATP-53).** Listing it here as though it shipped is what sent agents looking for files
 > nobody wrote, so the row was removed rather than annotated — together with §3's
 > "Compliant share" flow and §4's Export screen row, which documented the same unbuilt
-> screen. When an admin export is built it gets re-entered in all three places.
+> screen. It is no longer pending: reviving it is new scope, and only then does it get re-entered in all three places.
 >
 > ⚠️ **CSV export is NOT absent from the codebase, and an earlier version of this note
 > said it was.** `frontend/lib/dashboard/csv.ts`'s `buildDashboardCsv`, surfaced by
@@ -126,7 +126,7 @@
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
 | Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
-| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a CSV of the current filter that never carries an actor's contact block (`lib/dashboard/csv.ts`) — structural, since it is built from the same list projection as the directory and map. Public audience — distinct from the unbuilt role-aware admin export. |
+| Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a CSV of the current filter that never carries an actor's contact block (`lib/dashboard/csv.ts`) — structural, since it is built from the same list projection as the directory and map. Public audience — distinct from the role-aware admin export, which is cancelled (PRD §5 Out of Scope). |
 | Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |
 | Registration Receipt | Public | The reference code as selectable text (never an image), a copy action, a save-this instruction, a link to status lookup — nothing else, since the submit response carries only the reference. |
 | Registration Status | Public | Lookup by reference + email; renders status and the reviewer's note only. Byte-identical result for an unknown reference, a mismatched email, or a lockout. |

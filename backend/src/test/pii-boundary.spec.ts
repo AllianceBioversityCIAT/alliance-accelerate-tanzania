@@ -67,15 +67,21 @@ import { AuthUser } from '../auth/auth.types';
  *
  * **`registration-source-and-consent` T-7 scope note.** FR-8/NFR-1 and that
  * spec's `tasks.md` T-7 done-criteria name FOUR public paths: `/actors`,
- * `/actors/:id`, `/actors/geo`, `/metrics`. `/actors/geo` is documented in
+ * `/actors/:id`, `/actors/geo`, `/metrics`. `/actors/geo` was documented in
  * `docs/trd/trd.md` (QA-1/QA-6) as a planned lightweight map-points endpoint
  * but is **not implemented** anywhere in `backend/src` — there is no
- * controller, route, or service for it. This mirrors the FR-7 scope
+ * controller, route, or service for it, **and as of 2026-09-21 there will not
+ * be** (ATP-68): the map reads the ordinary paginated `/actors`, and measuring
+ * the narrow projection put its saving at 7 KB gzipped per 1 000 actors, so it
+ * was dropped rather than built. Its rows are gone from TRD §4, §5, QA-1 and
+ * QA-6. This mirrors the FR-7 scope
  * correction already recorded in that spec's `requirements.md` (the admin
- * export it names is likewise unimplemented). This suite therefore covers
- * the three public paths that exist (`/actors`, `/actors/:id`, `/metrics`);
- * `/actors/geo` cannot be asserted over HTTP until it is built, and building
- * it is out of that spec's scope.
+ * export it names is likewise unimplemented — and as of 2026-09-21 it is
+ * CANCELLED, out of MVP scope: PRD §5, ATP-53. Its `/export` row is gone from
+ * `docs/trd/trd.md` §4 and from QA-1, so no future agent should expect a path
+ * here for it). This suite therefore covers
+ * the three public paths that exist (`/actors`, `/actors/:id`, `/metrics`) —
+ * which is now the COMPLETE set, not a shortfall against a fourth still owed.
  *
  * **`actors/public-self-registration` T-12/T-13, appended below this
  * describe block as SIBLING top-level `describe`s, never nested inside it.**

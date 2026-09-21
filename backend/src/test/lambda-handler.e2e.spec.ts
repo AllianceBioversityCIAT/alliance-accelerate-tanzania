@@ -22,6 +22,8 @@
  * testing module).
  */
 
+import { gunzipSync } from 'node:zlib';
+
 import type { Context } from 'aws-lambda';
 import * as ExcelJS from 'exceljs';
 
@@ -173,6 +175,78 @@ describe('Lambda handler (serverless-http) body-parsing', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.statusCode).not.toBe(500);
+  });
+});
+
+// --- ATP-68: response compression through the REAL handler -----------------
+
+/**
+ * `configureCompression` (ATP-68) makes the API emit `Content-Encoding: gzip`.
+ * That is only safe in Lambda if the gzip BYTES reach API Gateway base64-encoded
+ * with `isBase64Encoded: true`; returned as a UTF-8 string they arrive corrupt.
+ *
+ * `serverless-http@3.2.0` classifies a response binary by `content-encoding`
+ * before it looks at content-type, so it does this unprompted — but that is a
+ * property of a dependency's internals, exactly the kind of thing a major
+ * upgrade changes silently. Asserted here, through the real handler, because
+ * supertest decompresses transparently and would show nothing.
+ *
+ * The import preview is used as the large-body route because this suite's
+ * Prisma mock already supports it; the compression middleware is global, so
+ * the route is incidental.
+ */
+describe('Response compression through the real handler (ATP-68)', () => {
+  /** Enough rows that the JSON report clears COMPRESSION_THRESHOLD_BYTES. */
+  const ROWS = 120;
+
+  /**
+   * Drive the real handler with a large import-preview body under a given
+   * Accept-Encoding, and hand back the raw Lambda result — unparsed, because
+   * how the body is encoded is the thing under test.
+   */
+  async function invokeLargeBody(acceptEncoding: string, idPrefix: string) {
+    const fileBase64 = await buildWorkbook(
+      Array.from({ length: ROWS }, (_, i) => validRow({ traderId: `${idPrefix}-${i}` })),
+    );
+    const event = apiGatewayV2Event({
+      method: 'POST',
+      path: IMPORT_PATH,
+      body: JSON.stringify({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' }),
+      headers: { 'accept-encoding': acceptEncoding },
+    });
+
+    return (await handler(event, mockContext, () => {})) as {
+      statusCode: number;
+      body: string;
+      isBase64Encoded?: boolean;
+      headers?: Record<string, string>;
+    };
+  }
+
+  it('returns gzip BASE64-ENCODED, and the bytes decode back to the real JSON', async () => {
+    const res = await invokeLargeBody('gzip', 'TZ-GZ');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.['content-encoding']).toBe('gzip');
+
+    // The half that actually breaks in production if serverless-http changes:
+    // gzip bytes handed back as a plain string are unrecoverable.
+    expect(res.isBase64Encoded).toBe(true);
+
+    const decoded = JSON.parse(
+      gunzipSync(Buffer.from(res.body, 'base64')).toString('utf8'),
+    );
+    expect(decoded.mode).toBe('preview');
+    expect(decoded.totals.rows).toBe(ROWS);
+  });
+
+  it('returns plain, non-base64 JSON when the client does not accept gzip', async () => {
+    const res = await invokeLargeBody('identity', 'TZ-PLAIN');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.['content-encoding']).toBeUndefined();
+    expect(res.isBase64Encoded).toBeFalsy();
+    expect(JSON.parse(res.body).totals.rows).toBe(ROWS);
   });
 });
 
