@@ -15,6 +15,16 @@ Parameters:
       (step 3); locked to the CloudFront URL on the set-cors redeploy (step 5,
       FR-6, DD-6).
     Default: "*"
+  PublicAppBaseUrl:
+    Type: String
+    Description: >-
+      Public base URL of the web application, used to build the applicant-facing
+      links in mail templates (ATP-67 — the registration receipt's status-lookup
+      link). Leave EMPTY to inherit AllowedOrigin, which the pipeline already
+      resolves to the live CloudFront URL on every steady-state deploy; set it
+      explicitly once the app moves to its own domain, or whenever the CORS
+      origin and the public URL stop being the same value. No trailing slash.
+    Default: ""
   DataAuthStackName:
     Type: String
     Description: >-
@@ -43,6 +53,15 @@ Parameters:
     AllowedValues:
       - microservice
     Default: microservice
+
+Conditions:
+  # ATP-67 — when PublicAppBaseUrl is left empty, fall back to AllowedOrigin.
+  # The pipeline's steady-state Deploy Backend stage resolves the live
+  # CloudFrontUrl into AllowedOrigin already, so this wires the receipt
+  # email's link correctly with NO pipeline change. On the bootstrap path
+  # AllowedOrigin is "*", which is not a usable link — mail.config.ts rejects
+  # it rather than mailing "*/register/status/" to an applicant.
+  HasExplicitPublicAppBaseUrl: !Not [!Equals [!Ref PublicAppBaseUrl, ""]]
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -236,6 +255,16 @@ Resources:
             Fn::Sub: "${DataAuthStackName}-UserPoolId"
           COGNITO_CLIENT_ID: !ImportValue
             Fn::Sub: "${DataAuthStackName}-UserPoolClientId"
+          # ATP-67 — public base URL for applicant-facing links in mail
+          # templates (the registration receipt's status lookup). Was a
+          # hardcoded CloudFront domain inside receipt.template.ts; a domain
+          # move would have left the email pointing at the old address with
+          # nothing failing. Defaults to AllowedOrigin, which the pipeline
+          # already sets to the live CloudFront URL.
+          PUBLIC_APP_BASE_URL: !If
+            - HasExplicitPublicAppBaseUrl
+            - !Ref PublicAppBaseUrl
+            - !Ref AllowedOrigin
           # T3-A1 - mail transport + OTP HMAC key (design.md §4.3). AWS_REGION
           # is deliberately NOT set here - it is reserved by the Lambda runtime.
           # MAIL_TRANSPORT is the MailTransport PARAMETER (T-8); Phase B (T-10)

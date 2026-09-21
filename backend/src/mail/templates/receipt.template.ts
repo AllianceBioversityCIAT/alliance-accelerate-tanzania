@@ -1,5 +1,6 @@
 // @sdd-spec actors/public-self-registration (T-3)
 import { MailMessage } from '../mail-transport.interface';
+import { getPublicAppBaseUrl } from '../mail.config';
 import { renderEmailHtml } from './email-layout';
 
 /**
@@ -11,10 +12,26 @@ import { renderEmailHtml } from './email-layout';
  * email, is the flow's actual guarantee, and this copy must not promise a
  * review round-trip this chunk does not implement (design.md §5.4, D-10).
  */
-/** Single source for the status-lookup link used by both parts (ATP-67 will change this value). */
-const STATUS_LOOKUP_URL = 'https://d3idqvvg0xa1r7.cloudfront.net/register/status/';
+/** Path the status-lookup link points at, under the public app base URL. */
+const STATUS_LOOKUP_PATH = '/register/status/';
+
+/**
+ * ATP-67 — resolved per call, from `PUBLIC_APP_BASE_URL`, rather than the
+ * CloudFront domain that used to be a module constant here.
+ *
+ * Per call and not at module load on purpose: `getPublicAppBaseUrl` throws
+ * on a missing or unusable value, and a module-level throw would take down
+ * anything that merely IMPORTS this file — including test suites that never
+ * send a receipt. Resolved here, the blast radius is one email, and
+ * `RegistrationsService.dispatchReceiptEmail` already catches and logs it.
+ */
+function statusLookupUrl(): string {
+  return `${getPublicAppBaseUrl()}${STATUS_LOOKUP_PATH}`;
+}
 
 export function buildReceiptMessage(to: string, reference: string): MailMessage {
+  const STATUS_LOOKUP_URL = statusLookupUrl();
+
   return {
     to,
     reference,
