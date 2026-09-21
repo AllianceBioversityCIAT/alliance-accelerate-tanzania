@@ -48,14 +48,14 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
 
 ## 5. Tasks
 
-- [ ] **T-1** Add the invitation email template  (deps: none)
+- [x] **T-1** Add the invitation email template  (deps: none)
       Scope: `invitation.template.ts` — subject, plain-text part, HTML via `renderEmailHtml` with the §5.1 block list. Link resolved **per call** from `getPublicAppBaseUrl()`, never at module load.
       Traces: FR-1 (scenario 1: the temp-password `AND`, the link `AND`, the no-hardcoded-host `BUT`), NFR-3, NFR-4; design.md §5.1
       Files: `backend/src/mail/templates/invitation.template.ts` (+ `.spec.ts`)
       Skills: `nestjs-expert`
       Verify: `cd backend && npx jest src/mail/templates/invitation.template.spec.ts --silent`
       Falsifier (must be run and seen to redden): hardcode a host in the link — the no-hardcoded-host test must fail. Then unset `PUBLIC_APP_BASE_URL` — the refusal test must fail if the resolution was moved to module load.
-      Disqualifier: if the suite passes with `PUBLIC_APP_BASE_URL` unset, the resolution is at module load and the test is not exercising FR-1's link clause. That is a FAIL, not a pass.
+      Disqualifier: the refusal tests must FAIL when resolution is moved to module load. *(Corrected during T-1 execution — this originally read "if the suite passes with `PUBLIC_APP_BASE_URL` unset, the resolution is at module load", which describes a state that cannot occur: with the variable unset, a module-load resolution throws at import and the suite fails to run rather than passing. The Reviewer caught the Leader's task text, not the diff — KZ-011's exact shape.)*
       Done when: the spec mirrors `receipt.template.spec.ts` — derived link in **both** parts, trailing-slash normalisation, refusal on `*`/absent/non-http, and a guard that no hardcoded host appears.
 
 - [ ] **T-2** Add the admin-reset email template  (deps: none)
@@ -65,7 +65,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Skills: `nestjs-expert`
       Verify: `cd backend && npx jest src/mail/templates/admin-reset.template.spec.ts --silent`
       Falsifier: as T-1.
-      Disqualifier: as T-1.
+      Disqualifier: as T-1 (see the correction recorded there — the original wording described an impossible state).
       Done when: same criteria as T-1, and the copy is distinguishable from the invitation (a reset is not a welcome).
 
 - [ ] **T-3** Add `sendInvitation` / `sendAdminReset` and the `sub` resolution helper  (deps: T-1, T-2)
