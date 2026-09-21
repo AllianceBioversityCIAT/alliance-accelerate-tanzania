@@ -68,7 +68,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: as T-1 (see the correction recorded there — the original wording described an impossible state).
       Done when: same criteria as T-1, and the copy is distinguishable from the invitation (a reset is not a welcome).
 
-- [ ] **T-3** Add `sendInvitation` / `sendAdminReset` and the `sub` resolution helper  (deps: T-1, T-2)
+- [x] **T-3** Add `sendInvitation` / `sendAdminReset` and the `sub` resolution helper  (deps: T-1, T-2)
       Scope: two `MailService` methods beside `sendApproval`, each handing to the private `dispatch(kind, message)`. Plus a small helper that extracts `sub` from a Cognito attribute list and **returns undefined when absent**.
       Traces: FR-1, FR-5, **NFR-1**; design.md §5.2 (DD-3 as corrected by J-4)
       Files: `backend/src/mail/mail.service.ts` (+ `.spec.ts`) · `backend/src/users/cognito-sub.util.ts` (+ `.spec.ts`)

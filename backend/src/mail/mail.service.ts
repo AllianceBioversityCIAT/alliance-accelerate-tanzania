@@ -42,6 +42,8 @@ import { buildVerificationCodeMessage } from './templates/verification-code.temp
 import { buildReceiptMessage } from './templates/receipt.template';
 import { buildApprovalMessage } from './templates/approval.template';
 import { buildRejectionMessage } from './templates/rejection.template';
+import { buildInvitationMessage } from './templates/invitation.template';
+import { buildAdminResetMessage } from './templates/admin-reset.template';
 
 @Injectable()
 export class MailService {
@@ -77,6 +79,47 @@ export class MailService {
    */
   async sendRejection(to: string, reference: string): Promise<void> {
     await this.dispatch('rejection', buildRejectionMessage(to, reference));
+  }
+
+  /**
+   * auth/account-access-emails T-3 — FR-1: send the invitation email
+   * `UsersService.create()` will dispatch after a new Staff/Admin account
+   * is created (T-4, design.md §5.3 — **not yet built as of this task**;
+   * `users.service.ts`'s `create()` today calls no `MailService` method).
+   *
+   * `reference` is expected to be the created user's Cognito `sub`,
+   * resolved by that future caller via `../users/cognito-sub.util.ts`'s
+   * `resolveCognitoSub` — **never** the account's `id`/`Username`, which is
+   * the email address in this system (NFR-1; design.md §5.2 DD-3 as
+   * corrected by judgment round 1's J-4). Optional: when the caller could
+   * not resolve a `sub` it passes none, and {@link dispatch} logs
+   * `reference=n/a` rather than a substitute.
+   */
+  async sendInvitation(
+    to: string,
+    temporaryPassword: string,
+    reference?: string,
+  ): Promise<void> {
+    await this.dispatch('invitation', buildInvitationMessage(to, temporaryPassword, reference));
+  }
+
+  /**
+   * auth/account-access-emails T-3 — FR-5: send the new temporary password
+   * `UsersService.resetPassword()` will dispatch after an admin-initiated
+   * reset (T-5, design.md §5.2/§5.3 — **not yet built as of this task**;
+   * `users.service.ts`'s `resetPassword()` today calls no `MailService`
+   * method). Same `reference` contract as {@link sendInvitation}: the
+   * target user's Cognito `sub`, which that future caller will resolve via
+   * an `AdminGetUser` call (already imported and used by
+   * `UsersService.get()`) rather than the `id` already in scope at that
+   * call site — the same email-shaped value NFR-1 forbids logging.
+   */
+  async sendAdminReset(
+    to: string,
+    temporaryPassword: string,
+    reference?: string,
+  ): Promise<void> {
+    await this.dispatch('admin-reset', buildAdminResetMessage(to, temporaryPassword, reference));
   }
 
   /**

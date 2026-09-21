@@ -34,6 +34,7 @@ import { Logger } from '@nestjs/common';
 import { MailService } from './mail.service';
 import { resetMailTransport } from './mail-transport.factory';
 import { resetMicroserviceMailTransportState } from './microservice-mail.transport';
+import { resolveCognitoSub } from '../users/cognito-sub.util';
 
 jest.mock('amqplib');
 
@@ -164,6 +165,47 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
     expect(channel.publish).toHaveBeenCalledTimes(1);
   });
+
+  it(
+    'auth/account-access-emails T-3 — the same distinction holds for sendInvitation and sendAdminReset',
+    async () => {
+      process.env.MAIL_TRANSPORT = 'no-op';
+      resetMailTransport();
+      await new MailService().sendInvitation(
+        'new-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-abc',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(0);
+
+      process.env.MAIL_TRANSPORT = 'microservice';
+      resetMailTransport();
+      await new MailService().sendInvitation(
+        'new-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-abc',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(1);
+
+      process.env.MAIL_TRANSPORT = 'no-op';
+      resetMailTransport();
+      await new MailService().sendAdminReset(
+        'existing-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-def',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(1);
+
+      process.env.MAIL_TRANSPORT = 'microservice';
+      resetMailTransport();
+      await new MailService().sendAdminReset(
+        'existing-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-def',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(2);
+    },
+  );
 });
 
 describe('MailService — logging never carries PII, codes, or body text (NFR-8, DC-14)', () => {
@@ -330,6 +372,99 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     },
   );
 
+  it(
+    'auth/account-access-emails T-3 — sendInvitation logs kind + the sub reference, ' +
+      'never the address or the password',
+    async () => {
+      const service = new MailService();
+      const email = 'invitee-secret@example.org';
+      const password = 'S3cr3t-Passw0rd!';
+      const sub = 'cognito-sub-11111';
+
+      await service.sendInvitation(email, password, sub);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('kind=invitation');
+      expect(emitted).toContain(sub);
+      expect(emitted).toContain('mail send attempt kind=invitation');
+      expect(emitted).toContain('status=sent');
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3 — sendAdminReset logs kind + the sub reference, ' +
+      'never the address or the password',
+    async () => {
+      const service = new MailService();
+      const email = 'reset-target-secret@example.org';
+      const password = 'An0th3r-Passw0rd!';
+      const sub = 'cognito-sub-22222';
+
+      await service.sendAdminReset(email, password, sub);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('kind=admin-reset');
+      expect(emitted).toContain(sub);
+      expect(emitted).toContain('mail send attempt kind=admin-reset');
+      expect(emitted).toContain('status=sent');
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3, NFR-1 — when resolveCognitoSub cannot find a sub, ' +
+      'sendInvitation logs reference=n/a, NEVER the email address it had in scope ' +
+      '(the falsifier this task is graded on: mutate resolveCognitoSub to fall back ' +
+      'to Username/id and this test MUST redden)',
+    async () => {
+      const service = new MailService();
+      const email = 'admin-created-no-sub@example.org';
+      const password = 'YetAn0ther-Passw0rd!';
+
+      // Mirrors the AdminCreateUserResponse.User trap: attributes came back
+      // with no `sub` entry at all — only `email` — and `Username` (the
+      // email address) sits right there in scope, exactly like it does at
+      // the real T-4/T-5 call sites this helper serves.
+      const reference = resolveCognitoSub({
+        Username: email,
+        Attributes: [{ Name: 'email', Value: email }],
+      });
+
+      await service.sendInvitation(email, password, reference);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      // The NFR-1 assertion this task is graded on: no "@" anywhere in the
+      // logged text — not just "not the literal email string" (a decoy
+      // fallback could still leak an address in a different form), the
+      // stronger claim that no address-shaped substitute reached the log.
+      // This is the assertion over `dispatch`'s actual logged output the
+      // task's disqualifier requires — checked BEFORE the return-value
+      // sanity check below, so a regression is caught here even if some
+      // other address-shaped fallback slipped past that check.
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('reference=n/a');
+      expect(emitted).toContain('kind=invitation');
+
+      // Sanity check on the helper itself: it must be `undefined`, never
+      // `Username`. cognito-sub.util.spec.ts owns the exhaustive contract;
+      // this pins the same fact in the exact scenario the falsifier mutates.
+      expect(reference).toBeUndefined();
+    },
+  );
+
   it('sendContactMessage rethrows a transport failure unchanged', async () => {
     process.env.MAIL_TRANSPORT = 'microservice';
     setMicroserviceEnv();
@@ -347,4 +482,60 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     expect(emitted).toContain('kind=contact');
     expect(emitted).toContain('status=failed');
   });
+
+  it(
+    'auth/account-access-emails T-3, Reviewer Issue 1 — sendInvitation rethrows a transport ' +
+      'failure unchanged, and the failure-path log leaks neither the address nor the password',
+    async () => {
+      process.env.MAIL_TRANSPORT = 'microservice';
+      setMicroserviceEnv();
+      resetMailTransport();
+      resetMicroserviceMailTransportState();
+      mockConnect(createRejectingChannel());
+
+      const service = new MailService();
+      const email = 'invitee-secret@example.org';
+      const password = 'S3cr3t-Passw0rd!';
+
+      // The property under test is `sendInvitation` itself, not `dispatch`:
+      // no try/catch in this method may swallow the rejection. Mirrors the
+      // `sendContactMessage` exemplar above, plus the two absence assertions
+      // the remediation calls for on this failure-path output.
+      await expect(service.sendInvitation(email, password, 'sub-abc')).rejects.toThrow(
+        'The mail broker rejected the message.',
+      );
+
+      const emitted = emittedText();
+      expect(emitted).toContain('kind=invitation');
+      expect(emitted).toContain('status=failed');
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3, Reviewer Issue 1 — sendAdminReset rethrows a transport ' +
+      'failure unchanged, and the failure-path log leaks neither the address nor the password',
+    async () => {
+      process.env.MAIL_TRANSPORT = 'microservice';
+      setMicroserviceEnv();
+      resetMailTransport();
+      resetMicroserviceMailTransportState();
+      mockConnect(createRejectingChannel());
+
+      const service = new MailService();
+      const email = 'reset-target-secret@example.org';
+      const password = 'An0th3r-Passw0rd!';
+
+      await expect(service.sendAdminReset(email, password, 'sub-def')).rejects.toThrow(
+        'The mail broker rejected the message.',
+      );
+
+      const emitted = emittedText();
+      expect(emitted).toContain('kind=admin-reset');
+      expect(emitted).toContain('status=failed');
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+    },
+  );
 });

@@ -270,3 +270,78 @@ Sites 1–3 were flagged by T-9's Implementer and its first Reviewer; **site 4 w
 - Placing a Cognito-attribute concern in `mail/` would create a `users → mail` dependency purely to reach it.
 
 Moved to `backend/src/users/cognito-sub.util.ts`; T-3's `Verify` widened to `npx jest src/mail src/users --silent` so the relocated file stays inside the task's own gate. Decomposition judgment, recorded — no scope added.
+
+---
+
+### T-3 — `sendInvitation` / `sendAdminReset` + the Cognito `sub` helper
+
+**Status:** in progress · **Attempts so far:** 1 (FAIL) · Date: 2026-09-21
+
+**Leader decisions.** Skills `nestjs-expert` **+ `tdd`** — a deliberate override (the task lists only `nestjs-expert`). `.agents/leader.md` says `tdd` earns its cost on PII rules, and T-3's disqualifier is a *test-design* constraint (assert over what the logger emitted, not the helper's return value); writing that assertion first is what forces it. Effort `xhigh` — **not `max`**, because the rule is *never `max` a cheaper tier, escalate the tier instead*, and the Implementer is T2. Helper relocated to `users/` before spawning (see the correction above).
+
+**Files:** `mail/mail.service.ts` (+43) · `mail/mail.service.spec.ts` (+135) · `users/cognito-sub.util.ts` (new, 67) · `users/cognito-sub.util.spec.ts` (new, 73). `users.service.ts` untouched.
+
+**Verification:** 16 suites / 187 tests — Leader re-ran, identical. `eslint --quiet` clean.
+
+**Falsifier — run and reddened**, with output that is itself the proof: mutating the helper to `?? source?.Username` produced
+`reference=admin-created-no-sub@example.org` in the captured log text, tripping `expect(emitted).not.toContain('@')`. The Reviewer reconciled that output against `dispatch()`'s two format strings and the fixture address and credited the mutation as real.
+
+#### Attempt 1 — Reviewer `FAIL` (2 issues)
+
+**What held.** `resolveCognitoSub` read line by line: `Username` is never referenced, strict `===`, no coercion; the Reviewer found no input that returns an address except an attribute literally named `sub` holding one, which is upstream and contrary to how Cognito issues `sub`. The `Attributes: []` edge fails **safe** (lost correlation, never a leak). Log capture is genuine and complete — the spies patch `Logger.prototype`, `emittedText()` flattens both, an anti-vacuity `totalCalls > 0` guard is present, and the falsifier's two-line output independently proves both the attempt and outcome lines are captured. Every itemised claim verified at source. Tense discipline held throughout; **the T-1 failure class did not recur.**
+
+> **Issue 1 — the single `(B)` is not a structural gap, and it hides a real hole.** "dispatch rethrows" splits into two claims: `dispatch`'s own rethrow (out of scope, genuinely covered) and **"no swallowing in the new methods"** — a property of `sendInvitation`/`sendAdminReset`, squarely in T-3's scope, provable without touching `dispatch`. Today **no test in the suite would change colour if either new method wrapped its `await this.dispatch(...)` in a swallowing `try`/`catch`**: the transport-selection test asserts only publish counts, and every logging test runs under `no-op`, which never rejects. The exemplar sits **45 lines below** the new tests (`sendContactMessage rethrows a transport failure unchanged`).
+> **This is T-1's first FAIL made real.** That gate was about a comment instructing a future task to swallow inside `MailService`; here the property is simply unguarded. A swallow pins `emailSent` to `true` and defeats FR-3's "not sent" scenario and FR-4's signal — with the whole suite green.
+> The Implementer's reason — *"existing tests already exercise that private method"* — is precisely the *structurally covered* framing `tasks.md` §2 names as insufficient.
+> **Violated Rule:** `tasks.md` §2 and **KZ-013**; consequentially FR-3/FR-4.
+
+> **Issue 2 — the comment justifying the forbidden field gives a false reason, and the false reason invites the edit that disarms the guard.** `CognitoAttributeSource`'s docblock says `Username` is accepted *"so either raw SDK response object can be passed through unmodified."* Not true: TypeScript's excess-property check applies only to **fresh object literals**, so raw `AdminCreateUserCommandOutput.User` / `AdminGetUserCommandOutput` assign to a parameter typed with only `Attributes?`/`UserAttributes?` whether or not the field is declared.
+> **What the field actually buys is the tests** — three specs pass object *literals* carrying `Username`, and those literals are what make the J-4 scenario expressible. A reader who discovers raw objects assign without it will delete it as dead weight and silently disarm the falsifier.
+> **Violated Rule:** `judgment.md` J-4; `design.md` §5.2; root `CLAUDE.md` § Reviewer dispatch; the comment-truth standard that closed T-1.
+
+**On the design question the Leader put to the Reviewer** (*is putting the email-shaped field inside the helper's own input type acceptable?*): it **weighed it and answered keep the field**, showing the Leader's proposed alternatives are worse. Dropping `Username` buys a compile-time guard but **disarms all three behavioural tests**, so a future editor who re-widens the type and adds the fallback in one commit meets a fully green suite. Narrowing to `AttributeType[]` is the strongest structural guard but pushes design §5.2's `UserAttributes`-vs-`Attributes` trap out to the T-4/T-5 call sites — *"precisely where this class of mistake is made. Net loss."* **Only the stated reason is wrong, not the shape.**
+
+**ADVISORY (recorded):**
+1. No test drives the **error** path for the two new kinds, so `status=failed` is unasserted for them. Issue 1's fix closes it for free.
+2. `resolveCognitoSub` trusts the value of an attribute named `sub`. Upstream, and exactly what §5.2 prescribes.
+3. `Attributes: []` beside a populated `UserAttributes` resolves to `undefined` — safe direction, documented by a precedence test.
+4. **🔭 Carry into T-5's brief.** The util quotes `users.service.ts`'s docblock including *"does not echo `Username`"*. **The SDK contradicts it** — `AdminGetUserResponse.Username` is a required member. The quotation is faithful and attributed, and the load-bearing half is true, so it is a **pre-existing inaccuracy inherited by citation**, not introduced here. T-5 is the task that will call `AdminGetUser` and could act on the false belief.
+5. As of this diff the helper's only actual consumer is `mail.service.spec.ts`, which reaches from `mail/` into `users/` — correct and load-bearing (it is what lets the falsifier redden a `MailService` test), but it is the mirror of the dependency the relocation avoided, and the placement rationale does not mention it.
+6. `mail.service.ts`'s class docblock still says the reference is `"n/a"` only *"for the verification-code message"*. Two new kinds can now log `n/a`, and doing so is the NFR-1-protecting behaviour.
+
+#### Attempt 2 — Reviewer `PASS` ✅
+
+**Fixes:** two `rejects.toThrow` tests closing the swallow hole, with the `@`/password assertions folded onto the failure-path output; and the `CognitoAttributeSource` docblock's justification replaced. **Type unchanged** — the prior Reviewer had already weighed narrowing it and concluded the current shape is the correct trade.
+
+**Verification:** 16 suites / **189 tests** (187 + 2) — Leader re-ran. `eslint --quiet` clean. `grep` confirmed no residual `try`/`catch` in either new method and the interface's three fields intact.
+
+**Reviewer verdict: `STATUS: PASS`.** It verified rather than accepted:
+- Traced the new tests through the **real** path — real `MailService` → real private `dispatch` → real `getMailTransport()` → real `MicroserviceMailTransport`, with only `amqplib` mocked — and confirmed the rejecting channel is wired byte-for-byte like two pre-existing passing tests.
+- Confirmed the `@`/password assertions genuinely range over the **failure** line, because each test independently pins `status=failed` (emitted only by `dispatch`'s `catch`) into the captured stream. Attempt 1's ADVISORY 1 closed as predicted.
+- Checked the new docblock's reasoning **against the SDK types and this `tsconfig.json`** rather than accepting it: `exactOptionalPropertyTypes` is not set, so raw responses assign either way; and because the transform is `ts-jest`, removing the field would break the spec literals at **test-run** time, not merely under `tsc`. Both load-bearing claims true.
+
+**⚠️ Leader-run measurement, closing the Reviewer's ADVISORY 1.** The Reviewer flagged that the `sendAdminReset` arm's discrimination was **inferred from structural symmetry, not measured** — the Implementer had mutated only `sendInvitation`. It noted a second mutation would remove the inference. The Leader ran it: wrapping `sendAdminReset`'s dispatch in a swallowing `try`/`catch` reddens **its own test and only that one** (`Tests: 1 failed, 14 passed`), with `sendInvitation`'s arm staying green. Reverted; 189/189.
+
+Recorded because it is this spec's recurring lesson in miniature: a sound inference is not an observation, and the observation cost thirty seconds.
+
+**ADVISORY (carried, not acted on):**
+1. Closed by the Leader measurement above.
+2. The spies patch `Logger.prototype`, so a future `Logger.log`/`error` from the transport carrying the fixture broker URL (which contains `@`) would redden these tests for a reason unrelated to NFR-1. Safe today — the transport uses `logger.warn`, unspied, and sanitizes. Same exposure the pre-existing `logs a failed outcome` test already carries.
+3. **🔭 Carry into T-5's brief** (persists from attempt 1): `cognito-sub.util.ts` quotes `users.service.ts`'s *"does not echo `Username`"*, which the SDK contradicts — `AdminGetUserResponse.Username` is a **required** member. Inherited by citation, not introduced here. T-5 calls `AdminGetUser` and could act on the false belief.
+4. `mail.service.ts`'s class docblock still says `reference="n/a"` applies only to the verification-code message; three kinds can now log it.
+
+---
+
+### T-3 — FINAL: `[x]` PASS
+
+**Attempts:** 2 · **Date:** 2026-09-21
+
+**Requirements covered:** FR-1 and FR-5 (the dispatch methods), **NFR-1** (the spec's privacy property), and design §5.2's corrected DD-3 including both typed traps.
+
+**Final verification:** 16 suites / 189 tests · `eslint --quiet` clean · three mutations demonstrated to redden their named tests — the `Username` fallback (Implementer), the `sendInvitation` swallow (Implementer), and the `sendAdminReset` swallow (Leader).
+
+**Why this task mattered most.** NFR-1 is the property a blind dual review caught the *design* getting backwards (J-4): the original DD-3 said log the Cognito `sub` as a non-PII id, when the `id` in scope **is** the email address. The falsifier's red output is the proof the guard works — `reference=admin-created-no-sub@example.org` appearing in a captured log line, tripping `not.toContain('@')`.
+
+**Issues encountered.** One prose defect (a false justification for a type field — ninth of the spec's prose FAILs) and, newly, **one real coverage hole**: nothing would have caught a swallowing `catch` in the two new methods, which is T-1's first FAIL made real rather than merely instructed. Its exemplar sat 45 lines below the new tests in the same file, and the reason it was missed was the *"structurally covered"* framing `tasks.md` §2 names as insufficient.
+
+**Leader decisions:** `tdd` assigned over the task's listed skills (recorded above); effort `xhigh` held at the T2 ceiling rather than escalating the tier, since the retry's fixes were precise rather than hard; the `sub` helper relocated to `users/` before spawning.
