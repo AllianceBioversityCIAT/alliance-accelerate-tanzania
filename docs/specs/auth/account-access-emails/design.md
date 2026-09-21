@@ -35,10 +35,12 @@ The asymmetry is the whole design. For invitation and admin reset, Cognito's mai
 
 Two existing `Admin`-guarded endpoints gain one field each. No new routes.
 
+> ⚠️ **Corrected after judgment round 1 (J-1).** This table named `POST /api/v1/users/:id/reset-password`, which does not exist. The route is `@Post(':id/password')` in `users.controller.ts`. This section is the contract an Implementer works from, so a wrong path here means the real handler never gains `emailSent` — FR-3 and FR-5 would fail silently.
+
 | Endpoint | Today | After |
 |---|---|---|
 | `POST /api/v1/users` | `{ user, temporaryPassword }` | `{ user, temporaryPassword, emailSent }` |
-| `POST /api/v1/users/:id/reset-password` | `{ temporaryPassword }` | `{ temporaryPassword, emailSent }` |
+| `POST /api/v1/users/:id/password` | `{ temporaryPassword }` | `{ temporaryPassword, emailSent }` |
 
 `emailSent` is a boolean: the transport accepted the message. **It is not a delivery receipt** — the microservice offers none on this path (`email-notification-microservice` D-H), and D-6 in the requirements records that gap. The field name says `sent`, not `delivered`, deliberately.
 
@@ -63,11 +65,29 @@ Two methods added beside `sendApproval` / `sendRejection`, with the identical sh
 
 `dispatch` already logs `kind` and `reference` and **never the body** — the discipline NFR-1 depends on. It is preserved, not re-derived.
 
-**Correlation id (DD-3).** `MailMessage.reference` is optional and the contact path passes none, logging `reference=n/a`. That is unusable for operations here: a failed invitation would be indistinguishable from any other. These two paths pass the **Cognito `sub`** as the reference — an opaque identifier, the same pseudonymous shape as the registration reference the other paths log, and **not** the email address. An operator can then correlate a failure to a user without the log ever carrying PII.
+**Correlation id (DD-3).** `MailMessage.reference` is optional and the contact path passes none, logging `reference=n/a`. That is unusable for operations here: a failed invitation would be indistinguishable from any other. These two paths pass the Cognito **`sub` attribute** as the reference — opaque, the same pseudonymous shape the other paths log, and not the email address.
+
+> ⚠️ **Corrected after judgment round 1 (J-4) — the original version of this decision was wrong in the worst direction.** It said "pass the Cognito `sub`" as though `sub` were already in hand. It is not, and what *is* in hand is the email:
+>
+> - `create()` calls `AdminCreateUser` with `Username: dto.email`, and `users.serializer.ts` derives the public `id` from `user.Username`. **The `id` this system passes around IS the email address.**
+> - `resetPassword(id)` has only that same email-shaped `id` in scope, and `AdminSetUserPasswordResponse` is an **empty interface** — it returns no attributes at all.
+>
+> Followed literally, the original DD-3 would have written a plaintext address to every attempt and outcome line: the exact NFR-1 violation it claimed to prevent.
+
+**The `sub` must therefore be obtained explicitly, and the implementation must not substitute `id` when it is absent:**
+
+| Flow | Where `sub` comes from |
+|---|---|
+| `create()` | `AdminCreateUserResponse.User.Attributes`, the entry whose `Name` is `sub` |
+| `resetPassword()` | An `AdminGetUser` call — the command is **already imported and used** by `UsersService.get()`. One extra Cognito round trip on a rare admin action is the price of not logging an address. |
+
+⚠️ **Two traps, both typed:** `User` and `Attributes` are **optional** in `AdminCreateUserResponse`, and `AdminGetUser` exposes the attribute list as **`UserAttributes`, not `Attributes`** — a difference this codebase already documents in `users.service.ts`'s `get()`. When `sub` cannot be resolved, the dispatch passes **no reference at all** (logging `n/a`, as contact does) and **MUST NOT** fall back to `id`. Losing correlation is acceptable; logging an address is not.
 
 ### 5.3 `UsersService`
 
 `create()` and `resetPassword()` each gain a dispatch step after the Cognito call succeeds.
+
+**Ordering is prescribed, not left to the Implementer (J/A-6).** In `create()` the dispatch goes **last — after the optional `AdminAddUserToGroup`**, not between the two Cognito calls. Both calls sit inside one outer `try` that routes any failure through `mapCognitoError`; dispatching between them means a group-assignment failure turns the whole request into an error response **after a live credential has already been emailed**, leaving a Cognito user the API reports as not created. That is precisely the state FR-4's boundary clause forbids, reached through a different Cognito call than the one FR-4 was written about.
 
 - **Awaited, inside its own `try`/`catch`** (NFR-2). Not fire-and-forget. This project has lost mail to a frozen Lambda execution environment twice — the registration OTP and the receipt — and `context.callbackWaitsForEmptyEventLoop` does not protect an `async` handler. The established shape is `RegistrationsService.dispatchReceiptEmail`; copy it.
 - **The `catch` swallows and logs, then reports `emailSent: false`** (FR-4). The Cognito user already exists and cannot be un-created; failing the request would report a false negative and invite a duplicate-create retry.
@@ -90,6 +110,8 @@ Token discipline per `docs/ux-ui/design.md` §7. ⚠️ **No `/NN` opacity modif
 
 The password is shown in **both** states (FR-2). The failure is presented as a *delivery* failure, never as a failure to create the user (FR-3's negative clause).
 
+⚠️ **One existing string must change (J/B-7).** `CredentialHandoff.tsx` currently reads *"This password is shown only once. Share it securely (not by email)."* This feature makes that instruction false in the common case, and leaving it beside a new "the invitation was emailed" line would put the same screen in contradiction with itself. Revise it in the same task, not as a follow-up.
+
 ## 7. Security & RBAC
 
 | Concern | Handling |
@@ -105,7 +127,7 @@ The password is shown in **both** states (FR-2). The failure is presented as a *
 | Change | Stack | Ships on an ordinary merge? |
 |---|---|---|
 | Templates, `MailService`, `UsersService`, UI | `20-backend` + web assets | ✅ Yes |
-| Retire `InviteMessageTemplate` + `PortalUrl` (FR-7) | `10-data-auth` | ❌ **No — needs `DEPLOY_INFRA=true`** |
+| Retire `InviteMessageTemplate` + `PortalUrl` (FR-7) | `10-data-auth` **and `infra/README.md` §3** | ❌ **No — needs `DEPLOY_INFRA=true`** (the README edit merges normally; the pool change does not) |
 | `CustomEmailSender` trigger (FR-6) | `10-data-auth` + new Lambda + KMS | ❌ **No** |
 
 ⚠️ **`DEPLOY_INFRA` defaults to `false`.** Merging FR-7 changes the repository, not the deployed pool. Any task touching `10-data-auth` must say so in its own text (NFR-5), and FR-7 is not "done" until a build with that flag has run.
@@ -118,7 +140,9 @@ The password is shown in **both** states (FR-2). The failure is presented as a *
 
 Invitation and admin reset are sent by our backend through `MailService`. `/forgot-password` keeps Cognito's flow and re-routes its mail.
 
-**Rejected — route everything through a `CustomEmailSender` trigger.** Clean, but nothing ships until an infra deploy runs with a non-default flag, and with `SUPPRESS` retained the trigger would never fire for invitations anyway. Coupling the half that needs no infrastructure to the half that does delays it for no benefit.
+**Rejected — route everything through a `CustomEmailSender` trigger.** Clean, but nothing ships until an infra deploy runs with a non-default flag, and coupling the half that needs no infrastructure to the half that does delays it for no benefit. **That reason stands on its own and is the reason of record.**
+
+> ⚠️ **Claim withdrawn from the load-bearing position (J-3).** This paragraph also asserted *"with `SUPPRESS` retained the trigger would never fire for invitations anyway."* That is an **unverified claim about Cognito's internals** — the same class this design marks as unverified in DD-6 and FR-6, asserted here as settled fact. It is now recorded as **unverified** and the rejection above does not depend on it. If it turns out the trigger *does* fire under `SUPPRESS`, Option A becomes viable for invitations too and DD-1 should be revisited — which is exactly the reconsideration an unmarked claim would have foreclosed.
 
 **Rejected — reimplement `/forgot-password` on the registration OTP machinery.** Cheapest and most dangerous. It re-derives enumeration resistance, code lifetime, replay protection and throttling on an account-takeover path. This project built that once, carefully, for registration — but "verify an address before submitting a form" and "take over an administrator account" are not the same stakes. **Do not reimplement auth to avoid a CloudFormation change.**
 
@@ -126,7 +150,11 @@ Invitation and admin reset are sent by our backend through `MailService`. `/forg
 
 The product owner asked for "a new password by email". Counter-recommended and accepted 2026-09-21.
 
-Emailing a new password invalidates the current one the moment **anyone** submits the form. An attacker who knows only an administrator's address can lock them out repeatedly without ever reading the inbox. Cognito's code flow leaves the existing password valid until the code is used. **The delivery channel is the defect; the security shape is not.**
+Emailing a new password invalidates the current one the moment **anyone** submits the form. An attacker who knows only an administrator's address can lock them out repeatedly without ever reading the inbox. **That property belongs to the *shape* — it holds for any "email a fresh password" design, on any provider — so the argument does not rest on Cognito specifics.**
+
+The complementary claim, that **Cognito's code flow leaves the existing password valid until the code is used**, is standard documented `ForgotPassword`/`ConfirmForgotPassword` behaviour but is ⚠️ **uncited here (J-3)**. It is not load-bearing: even if Cognito behaved otherwise, the reasoning above would still reject minting a password on request. Cite it when Phase 2 is designed.
+
+**The delivery channel is the defect; the security shape is not.**
 
 ### DD-3: Log the Cognito `sub` as the correlation id, never the address
 
@@ -140,11 +168,23 @@ The admin needs one bit at exactly the moment the password is shown. A separate 
 
 **⚠️ Reversion challenge (Step 2.3) — this removes behaviour the codebase ships. Question asked: what does removing it break?**
 
-**Answer, and it is not nothing.** The template is unreachable from the application (invitations are suppressed), but it is *not* unreachable absolutely: a user created directly in the **AWS console** does trigger it. Removing it means such a user receives Cognito's unbranded default email instead of the branded one.
+**Answer, and it is not nothing.** The template is unreachable from the application (invitations are suppressed), but it is likely *not* unreachable absolutely: a user created directly in the **AWS console** is understood to trigger it. Removing it would then mean such a user receives Cognito's unbranded default email instead of the branded one.
+
+> ⚠️ **Marked unverified (J-3).** "Console-created users trigger `InviteMessageTemplate`" is a claim about Cognito, not about this repository, and it is uncited. It is recorded as a *possible* consequence rather than a certain one. **The decision below does not depend on which way it resolves** — if the claim is false, the template is simply dead in every case and removing it costs nothing at all.
 
 That is an acceptable trade, and the reason is that the alternative is worse: the branded template's CTA points at a hardcoded domain that will go stale, so keeping it preserves a *branded email containing a broken link* on exactly the path nobody monitors. Unbranded-and-correct beats branded-and-wrong.
 
+⚠️ **Second site, added after judgment round 1 (J-2).** FR-7's clause is *"no reference to either from any other file"*, and `infra/README.md` §3 documents `PortalUrl` in its Shared-parameters table. The original version of this decision discussed only the CloudFormation template, which would have retired the parameter while leaving a live document describing it — the stale-reference failure ATP-67 was cited to avoid, reproduced inside the change that cites it. **Both files are in scope, and the sweep is the premise, not the string (KZ-004):** grep `PortalUrl` and read every hit.
+
 **Recorded consequence:** console-created users get a plain Cognito invitation over the unreliable channel. The supported path is the admin console, and that path is covered by FR-1. If console creation ever becomes a supported workflow, this decision must be revisited — it is not a permanent judgement that the template had no value.
+
+### DD-7: `backend/CLAUDE.md`'s handoff rationale is annotated as superseded, not rewritten
+
+Resolves `requirements.md` Q-3, which delegated this to design. The original design deferred it again to task execution (J/A-4) — a decision delegated twice is a decision nobody makes.
+
+**Annotate, do not rewrite.** That section explains *why* the no-email handoff exists; its reasoning was correct when written and the premise it rested on ("Cognito mail is unusable") is what changed, not the reasoning. This repository's established practice for exactly this situation is to record the supersession in place rather than overwrite it — `docs/infrastructure.md` and `docs/ux-ui/design.md` both carry corrections in that form, and overwriting would destroy the explanation of why the codebase looked the way it did.
+
+So: the section keeps its text, gains a dated superseded-by note pointing at this spec, and has its **forward-looking instruction** corrected — the sentence telling future agents *not* to send email must not survive, since that is the part an agent will act on. Per **KZ-004**, the sweep is over the *premise* ("Cognito mail is unusable"), not the phrase: the archived `admin-user-invite-and-reset` rationale rests on it too and must be read, though as a frozen archive record it is annotated, never edited.
 
 ### DD-6: Phase 2 is a verification spike before it is an implementation
 
@@ -158,20 +198,20 @@ Phase 2 therefore begins with a spike that answers three questions with citation
 |---|---|---|
 | R-1 | "Sent" read as "delivered" | Field named `sent`; §4 states it explicitly; D-6 records the gap; a manual inbox check is required at the HITL pause. |
 | R-2 | `emailSent: true` under `no-op` misleads a local developer | Documented at the field and in §4. |
-| R-3 | The microservice rejects this message shape | A-1 in requirements. **Confirm before building the templates** — the shape matches approvals, but that is an assumption until exercised. |
+| R-3 | ~~The microservice rejects this message shape~~ **CLOSED at design time (J-5)** | `requirements.md` §12 A-1 required this be *"confirmed in design, not assumed"*, and the original text deferred it to implementation instead. It was closable by reading the repo: `buildMicroserviceEnvelope(message, config)` in `microservice-mail.transport.ts` takes only a `MailMessage` and builds the wire envelope identically **regardless of message kind** — `text` verbatim, `html` into `socketFile`, and `reference` never leaves the process at all. Approvals, rejections and receipts already ride that exact shape in production. **No DTO change is needed and no runtime confirmation is owed.** |
 | R-4 | The premise sweep is missed | `backend/CLAUDE.md`'s "no-email credential handoff (intentional)" section and the archived `admin-user-invite-and-reset` rationale both rest on "Cognito mail is unusable". Per **KZ-004**, grep the *premise*, not the phrase. Owned by a named task. |
 | R-5 | FR-7 merged and believed live | NFR-5 + §8. Stated in the task text, not only here. |
 | R-6 | Phase 2 designed from memory | DD-6. |
 
 ## 11. Budget & Sizing (Step 2.4)
 
-Estimated **against the finished design**, not the pre-design guess.
+Estimated **against the finished design**, not the pre-design guess. *(Round count corrected from "3–4" to 4 after judgment round 1 (J/A-3): the phases are strictly sequential — Phase 2 cannot even be designed until the spike runs — so 2 + 2 is additive and the lower bound was unreachable. A budget that does not reconcile with its own components is a poor argument for anything, least of all for narrowing scope.)*
 
 | | Tasks | LOC (incl. tests) | Review rounds |
 |---|---|---|---|
 | **Phase 1** | 9 | ~640 | 2 |
 | **Phase 2** | 4 | ~230 + infra | 2 |
-| **Total** | **13** | **~870** | **3–4** |
+| **Total** | **13** | **~870** | **4** |
 
 ### ⚠️ Sizing finding: this spec should be narrowed to Phase 1
 
