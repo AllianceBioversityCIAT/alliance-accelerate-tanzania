@@ -259,7 +259,7 @@ The classes this spec can actually produce, and what catches each. A class with 
 
 | # | Question | Blocking? |
 |---|---|---|
-| Q-1 | Is it acceptable that `/forgot-password` stays on the 50/day capped channel until Phase 2 lands? The admin-initiated reset (FR-5) is the interim workaround from Phase 1 onward. | No — Phase 1 proceeds either way |
+| Q-1 | **ANSWERED 2026-09-21 — yes, accepted.** `/forgot-password` stays on the `COGNITO_DEFAULT` 50/day channel until Phase 2 lands; the admin-initiated reset (FR-5) is the interim route for a locked-out administrator from Phase 1 onward. Product owner accepted the recommendation. ⚠️ **This is an accepted risk, not a solved problem** — during the interim a self-service reset may silently fail to arrive, and the user has no signal that it did. | Closed |
 | Q-2 | Should the invitation carry the password at all, or only the link? **Answered: carry it** (product owner, 2026-09-21). Recorded because it is the decision a future reader will question. | No |
 | Q-3 | Does `backend/CLAUDE.md`'s "no-email credential handoff (intentional)" section get rewritten or annotated as superseded? Per **KZ-004**, the *premise* must be swept, not just the phrase. | No — design decides |
 
