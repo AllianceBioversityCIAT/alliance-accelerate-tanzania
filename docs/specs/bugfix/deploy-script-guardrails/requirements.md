@@ -1,7 +1,7 @@
 # Requirements — Deploy-script guardrails
 
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
-- Status: **Draft** — revision 3 (Judgment Day rounds 1 and 2 applied)
+- Status: **Done** — revision 3 (Judgment Day rounds 1 and 2 applied); validated 2026-09-21, see `validation-report.md`
 - Author / Date: AKILI (Leader) on behalf of Daniela Gómez — 2026-09-18
 - Type: **Bug** (Bug Mode) · Depth: **Standard**
 - Related: `docs/infrastructure.md` §3–§5, root `CLAUDE.md` § Hard constraints, `proposal.md` §4.6, `judgment.md`
@@ -106,12 +106,14 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 
 ### FR-5: A failed lookup is not an absent resource
 
-- **Description:** Every resolution of a live value MUST distinguish "the call failed" from "the thing does not exist", and MUST fail closed on the former.
+- **Description:** Every resolution of a live value **that feeds a write parameter** MUST distinguish "the call failed" from "the thing does not exist", and MUST fail closed on the former.
+- ⚠️ **Scope narrowed at validation (2026-09-21, V-03).** This Description originally read *"Every resolution of a live value"*, which was **over-broad**: §2.1's defect inventory examined only `deploy.sh`, `set-cors.sh` and the Jenkinsfile, and T-5's Files list excludes `teardown.sh`. The independent auditor found `teardown.sh` still conflates the two — `stack_exists` (`>/dev/null 2>&1`) and its outputs fallback (`2>/dev/null … || FRONTEND_OUTPUTS="[]"`) read an expired token, a throttle or an IAM denial as *"already gone, skipping"*, then print `Teardown complete. All three stacks deleted (or already absent)` and exit **0** — a **false success**, though it deletes nothing. See the accepted residual below.
 - **Rationale / Source:** The root cause of the **Jenkinsfile** site in §2.1 — and the hazard FR-4's *new* origin resolution must not introduce. The `deploy.sh` site has no lookup at all today, so it cannot yet conflate a failed call with an absent stack; adding a resolution without this rule is precisely how it would acquire the Jenkinsfile's defect. The pattern exists in this repo for `MailTransport` and its comment names the defect: *"An expired SSO token, a throttle, or an IAM denial also makes the query come back empty, and empty was previously indistinguishable from 'not found'."*
 - **Acceptance criteria:**
   - GIVEN `describe-stacks` fails with an expired-token or access-denied error WHEN `deploy.sh` resolves the origin THEN it **aborts** rather than falling back to `*`.
   - GIVEN it fails with CloudFormation's absent-stack message WHEN `deploy.sh` resolves the origin THEN it treats the stack as absent and applies the announced `*` bootstrap.
   - BUT it must NOT classify on `ValidationError` alone. That class also covers a **malformed** stack name and parameter-constraint violations, which are failures, not absences. The match MUST require **both** `ValidationError` **and** the literal absent-stack phrasing `does not exist`.
+  - **Accepted residual, `teardown.sh` (recorded at validation, V-03):** its idempotent-skip conflation is **not** fixed by this spec. The failure mode is a *false success on a read* — it reports stacks as already absent and deletes nothing, rather than deleting the wrong thing — so it is loud in outcome (the stacks are still there) and destroys nothing. Closing it means giving `stack_exists` the same two-token classification, which is a **write-path change to the most destructive script in the repo** and belongs in its own spec with its own review, not in a documentation remediation.
   - **Accepted residual risk, stated because the two-token rule does not remove it:** a *well-formed but misspelled* stack name **is** a nonexistent stack to CloudFormation and produces the identical `does not exist` message. No error-text rule can separate it from a genuine bootstrap. The residual failure is visible rather than silent — `deploy.sh` would go on to create a stack under the typo'd name — and is accepted on that basis.
   - BUT it must NOT use `2>/dev/null || true`, or any construct collapsing the two.
   - AND IT MUST classify on the **error text**, never on emptiness, because both failure modes produce an empty string.
@@ -177,6 +179,8 @@ Every claim about a system outside this repository, with where it was verified (
 | `migrate-seed.sh` and `teardown.sh` carry a profile guard; the other five do not | grep for `!= "IBD-DEV"` across `infra/scripts/`, 2026-09-18 |
 | `smoke.sh` accepts `API_BASE_URL`, `CLOUDFRONT_URL` and `BUCKET` from the environment | its own `USAGE` block, re-read against merged `main` 2026-09-18 |
 | Neither `bats` nor `shellcheck` is installed | `which bats shellcheck` → not found, 2026-09-18 |
+| The **local** `IBD-DEV` profile resolves to account `569113802249` | `aws sts get-caller-identity --profile IBD-DEV`, run 2026-09-18 and again by the Implementer at T-3 |
+| ⚠️ **Which account the PIPELINE's `IBD-DEV` resolves to** | **UNVERIFIED.** The Jenkinsfile materializes a profile *named* `IBD-DEV` from the Jenkins credential `prms-test-aws-creds`; only the laptop profile was ever checked. **The product owner stated on 2026-09-21 that the account used locally for testing is not the one that runs everything in AWS**, so this cannot be assumed equal. **What settles it:** the pipeline's own `AWS Auth` stage already runs `sts get-caller-identity` — one line of any recent green build's console output. **Consequence if it differs:** `assert_account` fails closed on the first pipeline build that invokes a writing script, and the one-row-per-profile-**name** format in `infra/aws-accounts.conf` cannot express two accounts under one name (V-02: a duplicate row is silently ignored), so that case needs a design decision, not a config edit |
 | `RUN_SMOKE=true` causes the pipeline to invoke `infra/scripts/smoke.sh` post-deploy, so T-6's new CORS check reaches CI with no `Jenkinsfile` change | `Jenkinsfile` — operator-supplied copy, read 2026-09-18; `docs/infrastructure.md` §3's `RUN_SMOKE` row states the same. *(FP-10 — this claim was carried in `smoke.sh`'s own comment undated before this row existed.)* |
 
 **Assumption, unverifiable from here:** the `Jenkinsfile` copy reviewed is the one deployed on `automation.prms.cgiar.org`.

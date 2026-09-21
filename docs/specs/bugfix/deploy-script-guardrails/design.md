@@ -1,7 +1,7 @@
 # Design — Deploy-script guardrails
 
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
-- Status: **Draft** — revision 3 (Judgment Day rounds 1 and 2 applied)
+- Status: **Done** — revision 3 (Judgment Day rounds 1 and 2 applied); validated 2026-09-21, see `validation-report.md`
 - Author / Date: AKILI (Leader) — 2026-09-18
 - Depth: **Standard** · Type: **Bug**
 - Related: `requirements.md` FR-1…FR-7, `proposal.md` §4.6, `judgment.md`, `docs/infrastructure.md` §3–§5
@@ -219,7 +219,8 @@ Nothing in this repository depends on it: no test covers the coupling (there are
 
 | Risk | Mitigation |
 |---|---|
-| The guard breaks the pipeline | The pipeline sets `AWS_PROFILE = 'IBD-DEV'`, the floor value (verified). NFR-3 pins it with a guard-unit test |
+| The guard breaks the pipeline **(FR-1, the floor)** | The pipeline sets `AWS_PROFILE = 'IBD-DEV'`, the floor value (verified). NFR-3 pins it with a guard-unit test |
+| ⚠️ **The guard breaks the pipeline (FR-3, the account assertion)** | **This row previously did not exist, and the row above was read as covering it. It does not.** NFR-3's measure is a guard-unit test that **stubs `sts`**, so it structurally cannot observe an account mismatch in CI. If the pipeline's `IBD-DEV` resolves to an account absent from `infra/aws-accounts.conf`, `assert_account` fails closed on the first build that invokes a writing script. Unverified — see `requirements.md` §7's UNVERIFIED row and `validation-report.md` V-01. Added at validation, 2026-09-21 |
 | CloudFormation wording changes ⇒ guard fails closed on a real bootstrap | DD-3 accepted risk; the string is asserted in a test, so the change is visible |
 | Stubs diverge from the real tools, so tests pass against a fiction | **Accepted and recorded — the residual KZ-002 in this design.** The stubs reproduce observed output (the absent-stack text is quoted from a real failure in `deploy-profile-override/proposal.md` §3), but they prove the *scripts'* logic, never the CLIs' behaviour. No test here can catch an AWS CLI behaviour change |
 | **The committed account id is wrong, and no gate can see it** | Every test stubs `sts`, so a placeholder or mistyped id in `aws-accounts.conf` passes the entire suite and then fails closed on every real run — the "sign reversed" shape again. Mitigation is procedural, not automated: the task that creates the file carries an operator-run `aws sts get-caller-identity --profile IBD-DEV` transcript as its evidence |
@@ -269,13 +270,15 @@ The tripwire fired at **T-2** (892 vs ~470) and again at **T-5** (3,395 vs ~2,50
 
 **Re-baseline 1 diagnosed:** production code tracks or beats its estimate; the entire overshoot is test cases, because §11 was computed before `tasks.md` required per-clause ownership. **Measured again at T-5, that diagnosis is confirmed and sharper:**
 
-| | Lines |
-|---|---|
-| Production — seven scripts + `_guard.sh` + `aws-accounts.conf` | **454** |
-| Test cases | **2,941** |
-| Ratio | **6.5 : 1** |
+| | Lines, as of T-5 | **Final, re-measured 2026-09-21** |
+|---|---|---|
+| Production — seven scripts + `_guard.sh` + `aws-accounts.conf` | 454 | **550** |
+| Test cases | 2,941 | **3,236** |
+| Ratio | 6.5 : 1 | **5.8 : 1** |
 
-Production for the *entire spec* fits in 454 lines against an original estimate of ~290 — **56% over, not 600%**. The estimate for the fix was roughly right. The estimate for the evidence was wrong by an order of magnitude.
+⚠️ The middle column is the **T-5** measurement. It was republished as final in `execution.md`'s Summary without its qualifier, which the independent validation auditor caught as a KZ-005 ×2 instance. The final column is the measured total; note the true ratio is **lower** — the T-5 figure overstated the split.
+
+Production for the *entire spec* fits in **550** lines against an original estimate of ~290 — **90% over, not 600%**. The estimate for the fix was roughly right. The estimate for the evidence was wrong by an order of magnitude.
 
 **What was actually wrong was the projection, not the diagnosis.** Re-baseline 1 projected ~1,650 for the five remaining tasks; four of them consumed ~2,470. The error was projecting **per task** while cases scale **per clause × per call site**:
 
@@ -296,4 +299,4 @@ T-7 is cheap for a structural reason, not an optimistic one: it adds no clauses 
 
 ### The standing question this raises for the methodology
 
-A 6.5 : 1 evidence-to-fix ratio is either the correct price of a spec whose thesis is that nothing was verifiable, or a signal that per-clause case ownership over-generates on tasks with many call sites. This spec is not the place to settle it — but it is a measured data point worth carrying to Kaizen, alongside the finding that **every one of the seven rework rounds so far was spent on documentation or on a gate that could not fire, and none on the mechanism being wrong.**
+A **5.8 : 1** evidence-to-fix ratio (re-measured at validation 2026-09-21: production **+550**, tests **+3,236** — the 6.5 : 1 figure previously here was the T-5 snapshot and **overstated** the split) is either the correct price of a spec whose thesis is that nothing was verifiable, or a signal that per-clause case ownership over-generates on tasks with many call sites. This spec is not the place to settle it — but it is a measured data point worth carrying to Kaizen, alongside the finding that **every rework round was spent on documentation or on a gate that could not fire, and none on the mechanism being wrong.** *(A round count was asserted here and did not recompute; the figures — 16 review rounds, 9 FAIL verdicts — live in `execution.md`'s Summary with the counting rule beside them.)*

@@ -1,10 +1,10 @@
 # Tasks — Deploy-script guardrails
 
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
-- Status: **Draft** · Depth: **Standard** · Type: **Bug** (Bug Mode)
+- Status: **Done** · Depth: **Standard** · Type: **Bug** (Bug Mode) · validated 2026-09-21
 - Author / Date: AKILI (Leader) — 2026-09-18
 - Source: `requirements.md` FR-1…FR-7 · `design.md` §7 · `judgment.md` (2 rounds, ESCALATED)
-- Budget (`design.md` §11): **7 tasks · ~470 LOC · 9 review rounds** — `/akili-execute` escalates on breach
+- Budget: ⚠️ **superseded — see `design.md` §11 re-baseline 2 (~4,300 LOC · ~20 rounds).** The figure originally here (~470 / 9) was breached at T-2 and again at T-5; actuals measured at validation are production +550, tests +3,236, 16 review rounds
 
 ## Conventions for this spec
 
@@ -125,11 +125,15 @@ Every requirement's scenarios **and** every `BUT it must NOT` / `AND IT MUST` cl
 | Item | Why it has no gate |
 |---|---|
 | **D-7** — is a documentation sentence true? | Structurally unmeasurable. Substituted with T-7's mandatory Reviewer and its re-derivation brief |
-| **N-1** — bootstrap-path stage order | Needs an artefact outside this repository. T-7 must ask, not assume |
+| ~~**N-1** — bootstrap-path stage order~~ | **RESOLVED 2026-09-21.** The stage order is `Deploy Backend → Deploy Web → Lock CORS → Smoke`, verified against a copy of the `Jenkinsfile` that day. **`Smoke` runs after `Lock CORS`**, so T-6's check cannot red the first bootstrap build. Recorded in `docs/infrastructure.md` OQ-INFRA-6 |
+| **FR-6's "real preflight" clause** *(added at validation, V-04)* | Implemented at `smoke.sh:323` but **ungated** — the five stubs dispatch on `-X OPTIONS` alone, so deleting the `Access-Control-Request-Method` header leaves all 48 cases green. Declared at T-6 rather than adjudicated in post-PASS. Price to close: one `case` arm in any stub |
+| **FR-7's "date-stamp every Jenkinsfile claim"** *(added at validation, V-04)* | Knowingly unmet for the `DEPLOY_INFRA` / `RUN_MIGRATIONS` rows of `docs/infrastructure.md`'s flag table. **Deliberately left undated rather than dated falsely** — only `RUN_SMOKE` had an attested reading date at T-7. Stamping the others would have manufactured a date, which is the class this spec exists to remove |
 
-## Estimated LOC and PR strategy
+## Estimated LOC and PR strategy — ⚠️ historical, superseded
 
-**~470 LOC**, of which ~210 is the test harness — the tests outweigh the fix, which is the correct ratio for a bugfix whose whole problem was that nothing could be verified.
+> Written before execution. The estimate below was wrong by roughly 8× on the test column and the tripwire fired twice. **Actuals: production +550, tests +3,236, 16 review rounds.** Kept as the record of what was estimated, not as guidance.
+
+*Estimated at the time:* **~470 LOC**, of which ~210 the test harness. **Actual, measured 2026-09-21: production +550, tests +3,236 — a 5.8 : 1 split.** The tests outweighing the fix is the correct shape for a bugfix whose whole problem was that nothing could be verified; the estimate simply never priced per-clause case ownership.
 
 **Recommend two PRs.** The 400-LOC threshold is exceeded and the two halves have different reviewers and different risk:
 

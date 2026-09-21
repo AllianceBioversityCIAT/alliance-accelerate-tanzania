@@ -4,7 +4,7 @@
 - Started: 2026-09-18
 - Leader: AKILI (opus, T1) · Implementer: `akili-implementer` (sonnet, T2) · Reviewer: `akili-reviewer` (opus, T3)
 - Author ≠ auditor enforced by the `.claude/agents/` wrapper model bindings, not by convention
-- Budget (`design.md` §11): 7 tasks · ~470 LOC · 9 review rounds
+- Budget: ⚠️ **superseded** — `design.md` §11 was re-baselined twice (~470 → ~2,500 → ~4,300). Actuals at validation: production **+550**, tests **+3,236**, **16** review rounds
 
 ---
 
@@ -560,15 +560,34 @@ It enumerated exactly what its reading covered, and marked the three Jenkinsfile
 
 ### Rework economics — the finding worth carrying to Kaizen
 
-**Eleven rework rounds across seven tasks. Not one was the mechanism being wrong.**
+**The counting rule, stated because three documents previously gave three different numbers none of which recomputed** (KZ-005, found at validation): a **review round** is one Implementer attempt plus its Reviewer verdict; a **FAIL** is a Reviewer `STATUS: FAIL`.
 
-| Cause | Rounds |
+| Measure | Recomputed from the per-task attempt log (3,3,3,2,2,1,2) |
 |---|---|
-| A false documentation claim | **8** |
+| Review rounds | **16** |
+| Reviewer FAIL verdicts | **9** |
+| Tasks passing on attempt 1 | **1** (T-6) |
+
+**Not one of the nine FAILs was the mechanism being wrong.**
+
+| Cause of FAIL | Count |
+|---|---|
+| A false documentation claim | **6** |
 | A gate that could not fire | **2** |
 | A requirement clause with no gate | **1** |
 
-Production code: **454 lines**, against ~290 estimated — 56% over. Tests: **2,941 lines**, against a line item that never priced per-clause ownership. **Ratio 6.5 : 1.**
+*(Five further defects of the same classes were Leader-adjudicated into a rework round rather than issued as separate FAILs, which is why earlier prose said "eleven" — that figure counted adjudications alongside verdicts without saying so.)*
+
+**Figures re-measured on a quiet tree at validation (2026-09-21), superseding the T-5 snapshot this Summary previously republished as final:**
+
+| | Lines added |
+|---|---|
+| Production — the seven scripts + `_guard.sh` + `aws-accounts.conf` | **550** |
+| Advisory Jenkins patch (not applied) | 102 |
+| Tests | **3,236** |
+| **Ratio tests : production** | **5.8 : 1** |
+
+⚠️ The previous figures (454 / 2,941 / 6.5:1) were the **T-5 measurement republished without its qualifier** — `design.md` §11 labelled them *"measured again at T-5"* and this Summary dropped that. The five T-6 cases are exactly the 295-line difference in the tests column. Found by the independent validation auditor as a KZ-005 ×2 instance (*the same measurement published twice, both presented as measured*). Note the corrected ratio is **lower** than the one published: the original figure overstated how lopsided the split was.
 
 **Three of the eleven were the Leader's**, and all three were the same error in different clothes: a universal negative drawn from a `grep … | head -5`; a correction applied to the cited site while the same premise survived four lines above; and a prohibition scoped to the artefact type where the last instance lived, so the defect moved artefact type. **Fixing the instance instead of the class** — while instructing subordinates to do the opposite.
 

@@ -1,6 +1,8 @@
 # Validation Report — Deploy-script guardrails
 
-## Verdict: **NOT READY to archive** — pending a documentation-only pre-archive pass, plus three code follow-ups
+## Verdict: **READY WITH FOLLOW-UPS** — the documentation pass is applied; four code items carried
+
+> **Updated 2026-09-21 after remediation.** The original verdict was **NOT READY**; remediations 1–7 below are now applied and one open question was resolved by evidence that arrived after the audit. Four code follow-ups are carried as separate work.
 
 **8 PASS · 8 WARN · 0 FAIL · 0 BLOCKED**, plus 4 new advisories and 11 carried forward.
 
@@ -177,3 +179,58 @@ No `## Constitution Impact` blocks in `execution.md` — no module was created o
 **Nothing found here requires touching a script to archive**, unless the V-01 build-log line returns a different account, in which case the one-name/one-account model needs a design decision before anything else.
 
 **The finding this validation most vindicates** is the one the spec kept re-learning: **every WARN above is a defect in a claim, not in a mechanism.** Eight of eight. The code the auditor could not break by reading; the record it could, in eight places.
+
+
+---
+
+# Remediation applied — 2026-09-21
+
+## Documentation pass: 7 of 7 done
+
+| # | Finding | What was done |
+|---|---|---|
+| 1 | **V-01** | `requirements.md` §7 gains **two** rows: the local profile's verified account, and an explicit **UNVERIFIED** row for the pipeline's, naming the product owner's 2026-09-21 statement, what settles it (one line of any green build's `AWS Auth` console output), and the consequence if it differs. `design.md` §9 gains a **new row** for FR-3 — the row above it was being read as covering the account assertion and does not, because NFR-3's gate stubs `sts` |
+| 2 | **V-03** | FR-5's Description narrowed to *"every resolution that feeds a **write parameter**"*, with the original over-broad wording and the reason recorded. `teardown.sh`'s conflation declared an **accepted residual**, with why it is not fixed here: it is a write-path change to the most destructive script in the repo and belongs in its own spec with its own review |
+| 3 | **V-04** | `tasks.md`'s "Declared uncovered" table gains FR-6's ungated preflight clause and FR-7's knowingly-undated flag rows |
+| 4 | **V-05** | Re-measured on a quiet tree. **Production +550 · tests +3,236 · ratio 5.8 : 1.** The published 454 / 2,941 / 6.5:1 was the T-5 snapshot. Corrected in `execution.md` **and** in `design.md` §11's diagnosis table, which now shows both columns side by side |
+| 5 | **V-06** | **Counting rule stated** (a round is one Implementer attempt plus its Reviewer verdict; a FAIL is a `STATUS: FAIL`) and recomputed from the attempt log: **16 review rounds, 9 FAIL verdicts, 1 task passing on attempt 1.** The earlier "eleven" counted five Leader adjudications alongside verdicts without saying so |
+| 6 | **V-07** | Supersession pointers in `tasks.md` and `execution.md` headers; the PR-strategy section marked historical with the actuals beside the estimate |
+| 7 | **V-08** | `Status: Draft` → **Done** in all three documents |
+
+## An open question closed by evidence that arrived after the audit
+
+**N-1 / OQ-INFRA-6 — RESOLVED.** The stage order, verified against a copy of the `Jenkinsfile` on 2026-09-21, is:
+
+```
+… → Deploy Backend → Deploy Web → Lock CORS → Smoke
+```
+
+**`Smoke` runs after `Lock CORS`**, so T-6's CORS check cannot red the first bootstrap build — the permissive `*` is already replaced by the time it looks. Recorded in `docs/infrastructure.md` and in `tasks.md`'s coverage table. **A7's path misattribution was corrected in the same edit.**
+
+## One correction the same evidence forced, beyond the audit's findings
+
+`docs/infrastructure.md`'s flag table said `RUN_SMOKE=true` means *"`smoke.sh` runs post-deploy and **fails the build closed**"*. True but misleading: smoke runs **last, after `Deploy Web`** — it turns the build red and notifies, but **nothing rolls back and the code is already live.** It *alerts*; it does not prevent. The gates that prevent — lint, backend tests, `sam validate` — all run before any deploy stage. Corrected, because this spec now leans on that check and the distinction decides how much protection anyone should believe they have.
+
+## The correction-closure sweep caught two of my own partial landings
+
+Run per `/akili-specify` → *Correction Closure*, forward and backward. It found **two survivors of the very defect being remediated**:
+
+- `design.md` §11's **diagnosis table** still carried `2,941` / `6.5:1` / `454` — I had corrected the prose four lines below it and left the table
+- `tasks.md`'s PR-strategy section still carried `~470 LOC` inside a section whose **header** I had just marked "historical"
+
+Both fixed. **This is the fourth time in this spec that a correction landed only where the finding pointed** — and the first time the sweep, rather than a later reviewer, was what caught it. That is the sweep working as designed.
+
+## Carried as code follow-ups — a separate spec
+
+| Priority | Item |
+|---|---|
+| **1** | **A-02** — `assert_account` and `resolve_stack_value` capture with `2>&1`; an AWS CLI that succeeds while warning on stderr aborts a correct run or pollutes a deploy parameter. **The Jenkins patch this spec shipped already does it correctly with a temp file** |
+| 2 | **A-01** — `${BASH_SOURCE[0]%/*}` breaks `cd infra/scripts && bash <script>`; confirmed by execution. `design.md` §7.2's stated reason for avoiding `dirname` is also false |
+| 3 | **V-02** — the conf parser silently takes the first of duplicate keys; it should abort naming the file |
+| 4 | **`frontend/CLAUDE.md:65`** — a live falsehood in a guide that trains agents (*"the script warns; heed it"* — it aborts), left by an NFR-5 scope decision the Reviewer upheld on condition it be recorded |
+
+**V-01 remains open and is not a code item until answered:** if the pipeline's account differs, the one-row-per-profile-name format needs a design decision, not a config edit.
+
+## Revised archive readiness
+
+**Ready with follow-ups.** Nothing outstanding requires touching a script to archive. `/akili-archive` may proceed; the four items above carry forward, and V-01 should be answered before the next pipeline deploy rather than before the archive.
