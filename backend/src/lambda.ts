@@ -8,6 +8,7 @@ import { createValidationPipe } from './common/validation-pipe';
 import { configureBodyParser } from './common/body-parser.config';
 import { configurePayloadCap } from './common/payload-cap.config';
 import { configureSecurityHeaders } from './common/security-headers.config';
+import { configureCompression } from './common/compression.config';
 
 /**
  * Serverless entrypoint — one Lambda wrapping the whole NestJS app behind
@@ -26,6 +27,11 @@ async function bootstrapHandler(): Promise<ReturnType<typeof serverlessExpress>>
   // FIRST — see main.ts and security-headers.config.ts: the headers must
   // cover error responses, so this precedes every other `app.use`.
   configureSecurityHeaders(app);
+
+  // ATP-68 — gzip/deflate above 1 KB. After the security headers (which must
+  // stay first) and before the body parsers. API Gateway HTTP APIs do not
+  // compress for us, so this is the only place it can happen.
+  configureCompression(app);
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(createValidationPipe());
   configurePayloadCap(app);

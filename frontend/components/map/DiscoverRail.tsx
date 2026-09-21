@@ -30,6 +30,12 @@ export interface DiscoverRailProps {
    * Used for the count header. Falls back to actors.length when undefined.
    */
   total?: number;
+  /**
+   * True when the server holds more matching actors than `actors` contains —
+   * the hook hit its page ceiling (ATP-68). When set, the count header states
+   * the shortfall instead of captioning a partial map with the full `total`.
+   */
+  truncated?: boolean;
   /** True while useActors is in-flight. */
   loading: boolean;
   /** True when getActors() resolved to null (API failure, DD-6). */
@@ -87,6 +93,7 @@ function LoadingRows() {
 export default function DiscoverRail({
   actors,
   total,
+  truncated = false,
   loading,
   error,
   filters,
@@ -103,6 +110,13 @@ export default function DiscoverRail({
   // Count to display: prefer total from the pagination envelope (authoritative
   // server-side count); fall back to the length of the returned actors array.
   const displayCount = total ?? actors.length;
+
+  // ATP-68: when the fetch was truncated, `total` describes the registry and
+  // `actors.length` describes the map. Captioning the map with `total` is the
+  // bug this replaces — a 1 200-actor registry rendered 1 000 markers under
+  // the words "1200 actors shown", with nothing on screen saying otherwise.
+  const shownCount = actors.length;
+  const isTruncated = truncated && total != null && shownCount < total;
 
   // ── Rail body (shared between mobile panel and desktop rail) ─────────────────
 
@@ -176,10 +190,22 @@ export default function DiscoverRail({
             {loading ? (
               // Don't announce count while loading.
               <span className="sr-only">Loading actor count</span>
+            ) : isTruncated ? (
+              <>
+                Showing {shownCount} of {displayCount} actors
+              </>
             ) : (
               <>{displayCount} actor{displayCount !== 1 ? 's' : ''} shown</>
             )}
           </p>
+          {/* ATP-68 — the ceiling is stated, never silent. Rendered only when
+              the fetch actually fell short, so the ordinary case is unchanged. */}
+          {!loading && isTruncated && (
+            <p className="mt-1 text-xs text-warning">
+              This map is showing the first {shownCount}. Narrow the filters to
+              see the rest.
+            </p>
+          )}
         </div>
 
         {/* ── Mobile toggle button (NFR-2) ─────────────────────────────────── */}

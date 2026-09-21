@@ -17,7 +17,19 @@ import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+/**
+ * Raised 100 → 500 on 2026-09-21 (ATP-68). The map is the binding consumer:
+ * it plots every matching actor, so it pays one round trip per page, in
+ * SEQUENCE. Measured at 5 000 actors with 150 ms of added latency, 100/page
+ * meant 50 requests and a 15.1 s map; 500/page means 10 requests and 5.2 s.
+ * The cost is bounded — a 500-row page measured 140 KB uncompressed and
+ * ~19 KB gzipped, well inside API Gateway's 10 MB response limit — and the
+ * projection is unchanged, so this widens no PII surface: the list set still
+ * never names the contact block, at any page size (CLAUDE.md, Hard constraints).
+ * Keep this and frontend DASH_PAGE_SIZE in step; the frontend's own comment
+ * says it must not exceed this value.
+ */
+const MAX_PAGE_SIZE = 500;
 
 export class ListQueryDto {
   /** Crop slug filter (sorghum | common_bean | groundnut). */

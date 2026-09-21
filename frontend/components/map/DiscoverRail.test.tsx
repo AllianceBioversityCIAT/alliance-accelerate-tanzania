@@ -102,6 +102,75 @@ describe('DiscoverRail', () => {
     expect(screen.queryByText(/1 actors shown/i)).not.toBeInTheDocument();
   });
 
+  // ── (a2) Truncation (ATP-68) ───────────────────────────────────────────────
+  //
+  // The bug this pins: with 1 200 actors in the registry the hook stopped at
+  // its page ceiling, the map drew 1 000 markers, and this header read
+  // "1200 actors shown". The count was the registry's, the map was partial,
+  // and nothing on screen said so.
+
+  it('states the shortfall instead of the full total when truncated', () => {
+    render(
+      <DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={1200} truncated />,
+    );
+
+    expect(screen.getByText(/showing 2 of 1200 actors/i)).toBeInTheDocument();
+    // The bare full-count caption must NOT survive alongside it.
+    expect(screen.queryByText(/1200 actors shown/i)).not.toBeInTheDocument();
+  });
+
+  it('tells the user what to do about it when truncated', () => {
+    render(
+      <DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={1200} truncated />,
+    );
+
+    expect(screen.getByText(/narrow the filters/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about truncation when the fetch was complete', () => {
+    render(
+      <DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={2} truncated={false} />,
+    );
+
+    expect(screen.getByText(/2 actors shown/i)).toBeInTheDocument();
+    expect(screen.queryByText(/narrow the filters/i)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about truncation when truncated is omitted entirely', () => {
+    // Defaults to false — the prop is additive, so every existing caller that
+    // does not pass it keeps the old caption exactly.
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={7} />);
+
+    expect(screen.getByText(/7 actors shown/i)).toBeInTheDocument();
+    expect(screen.queryByText(/showing 2 of 7/i)).not.toBeInTheDocument();
+  });
+
+  it('suppresses the truncation notice while loading', () => {
+    render(
+      <DiscoverRail
+        {...DEFAULT_PROPS}
+        actors={ACTORS}
+        total={1200}
+        truncated
+        loading
+      />,
+    );
+
+    expect(screen.queryByText(/narrow the filters/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/showing 2 of 1200/i)).not.toBeInTheDocument();
+  });
+
+  it('does not claim truncation when truncated is set but nothing is missing', () => {
+    // Guards the inverse failure: a stale/over-eager flag must not produce
+    // "Showing 2 of 2 actors".
+    render(
+      <DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={2} truncated />,
+    );
+
+    expect(screen.getByText(/2 actors shown/i)).toBeInTheDocument();
+    expect(screen.queryByText(/narrow the filters/i)).not.toBeInTheDocument();
+  });
+
   // ── (b) Count fallback: actors.length when total is undefined ─────────────
 
   it('falls back to actors.length for count when total is undefined', () => {
