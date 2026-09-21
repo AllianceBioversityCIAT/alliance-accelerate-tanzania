@@ -75,3 +75,45 @@ export function getMicroserviceMailConfig(): MicroserviceMailConfig {
     senderName: process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -',
   };
 }
+
+/**
+ * ATP-67 — the application's public base URL, used to build the links mail
+ * templates send applicants back to (today: the registration status lookup
+ * in `templates/receipt.template.ts`).
+ *
+ * Read lazily, same contract as everything above: a checkout without it set
+ * still boots and serves every route, and only a template that actually
+ * needs a link pays the cost.
+ *
+ * **Why it throws rather than defaulting to the current CloudFront domain.**
+ * It used to BE that domain, hardcoded in the template, and ATP-67 exists
+ * because that fails in the worst possible way: when the app moves, the
+ * email keeps pointing applicants at the old address, and no test and no
+ * build catches it — an applicant just never reaches their status page.
+ * Keeping a hardcoded fallback would preserve exactly that failure. A throw
+ * is caught and logged by `RegistrationsService.dispatchReceiptEmail`, so a
+ * misconfiguration costs the receipt email, not the registration.
+ *
+ * The URL is validated, not just read: an unset, non-http, or placeholder
+ * value would otherwise ship a broken link to a real applicant. `*` is
+ * rejected explicitly because `AllowedOrigin` — the value the deployed stack
+ * derives this from — is literally `*` on the bootstrap deploy path.
+ *
+ * Returns with NO trailing slash, so callers append their own path.
+ */
+export function getPublicAppBaseUrl(): string {
+  const value = required('PUBLIC_APP_BASE_URL');
+
+  if (!/^https?:\/\/[^\s*]+$/.test(value)) {
+    throw new Error(
+      'Invalid PUBLIC_APP_BASE_URL — expected an absolute http(s) URL for the ' +
+        'public application (e.g. https://example.cloudfront.net). Refusing to ' +
+        'build an applicant-facing link from it (ATP-67). The deployed stack ' +
+        'derives this from the backend stack\'s PublicAppBaseUrl parameter, ' +
+        'which falls back to AllowedOrigin — a bootstrap deploy leaves that as ' +
+        '"*", which is not a usable link.',
+    );
+  }
+
+  return value.replace(/\/+$/, '');
+}

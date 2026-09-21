@@ -105,6 +105,12 @@ function setMicroserviceEnv(): void {
   process.env.EMAIL_QUEUE_NAME = 'accelerate-tz-email';
   process.env.MICROSERVICE_API_KEY = 'clarisa-key-123';
   process.env.EMAIL_SENDER = 'registry@example.org';
+  // ATP-67 — the receipt template resolves its status-lookup link from this
+  // rather than the CloudFront domain it used to hardcode. It throws when
+  // absent or unusable, by design, so every test that builds a receipt must
+  // supply it. Reaching the transport is what these tests assert; the link's
+  // own content is asserted in templates/receipt.template.spec.ts.
+  process.env.PUBLIC_APP_BASE_URL = 'https://app.example.org';
 }
 
 describe('MailService — transport selection (NFR-10, the Disqualifying clause)', () => {
