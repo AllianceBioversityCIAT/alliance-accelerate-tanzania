@@ -27,6 +27,18 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 ## Users module — no-email credential handoff (intentional)
 
+> ⚠️ **Superseded-by note (2026-09-21, `auth/account-access-emails`, DD-7).** The
+> premise below — that no channel exists reliable enough to email this credential —
+> no longer holds: that spec has `MailService` (already used for approval/receipt
+> mail) dispatch this same credential by email (FR-1, FR-5). **This is in progress,
+> not shipped:** check `docs/specs/auth/account-access-emails/tasks.md` §5 for
+> current status before assuming email dispatch exists — `users.service.ts`
+> today calls no `MailService` method and still only `SUPPRESS`es and returns
+> the password, exactly as described below. The reasoning that follows was correct
+> when written and remains the record of *why* the no-email handoff exists; only
+> the forward-looking instruction never to email it has been withdrawn (next
+> paragraph).
+
 - `users` create/reset deliberately do **NOT** send Cognito email (corporate
   `@cgiar.org` deliverability, and the pool stays on `COGNITO_DEFAULT`
   permanently post-`email-notification-microservice` —
@@ -39,9 +51,13 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
   out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
   `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
   `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a
-  deliberate exception to "never return a plaintext password" — do **not** revert
-  it to email. The temp password (`users/temp-password.util.ts`, CSPRNG) must
-  never be logged/stored/audited; it exits only via the Admin-guarded response.
+  deliberate exception to "never return a plaintext password". **The instruction
+  to never revert it to email is withdrawn** (see the dated note above) — do not
+  treat "no email" as standing guidance; follow the linked spec's task status
+  instead. The temp password (`users/temp-password.util.ts`, CSPRNG) must
+  **never** be logged, stored, or audited — that rule is absolute and this spec
+  does not touch it (NFR-1). Its **exits** do change: today the Admin-guarded
+  response is the only one; under FR-1/FR-5 it also travels in the mail body.
 - The Cognito pool is **case-sensitive** (immutable `UsernameConfiguration`) — the
   write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
   sign-in/reset. Keep new email inputs normalized.

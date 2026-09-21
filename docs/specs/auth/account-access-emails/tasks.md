@@ -129,7 +129,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: supertest **cannot** reproduce this — it never exercises `serverless-http`. A version of this test written against supertest is worthless however green; it must go through the real handler.
       Done when: the falsifier reddens it, and the suite passes with the `await` restored.
 
-- [ ] **T-9** Retire the dead Cognito template and sweep the premise it rested on  (deps: none)
+- [x] **T-9** Retire the dead Cognito template and sweep the premise it rested on  (deps: none)
       Scope: remove `InviteMessageTemplate` and `PortalUrl` from `infra/10-data-auth/template.yaml` **and** the `PortalUrl` row from `infra/README.md` §3 (J-2). Annotate — do **not** rewrite — `backend/CLAUDE.md`'s "no-email credential handoff (intentional)" section per DD-7, correcting its forward-looking instruction. *(The `docs/trd/trd.md` §4 response-shape update moved to T-6 during execution — see execution.md. Documenting `emailSent` from here would assert a field that does not exist until T-6 builds it.)*
       Traces: **FR-7 (incl. `AND IT MUST` leave no reference from any other file, and `BUT it must NOT` be described as live before the deploy)**, DD-5, DD-7; design.md §8, §9
       Files: `infra/10-data-auth/template.yaml`, `infra/README.md`, `backend/CLAUDE.md`

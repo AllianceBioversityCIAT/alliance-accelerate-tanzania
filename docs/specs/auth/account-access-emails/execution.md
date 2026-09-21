@@ -184,3 +184,75 @@ It spot-checked 5 of the 6 itemised claims at source plus two the list omitted, 
 4. Two template literals with no interpolation.
 
 **⚠️ Leader note on concurrency — the isolation was not airtight.** T-2's Reviewer was instructed not to read `backend/CLAUDE.md` (T-9 was mid-edit). It complied, and reported that **the harness injected the file's full contents into its context anyway, twice**, including T-9's in-flight edit. Nothing in the audit depended on it, so the verdict stands — but the mitigation was incomplete, and a future parallel wave should not assume a "do not read X" instruction isolates a worker from X.
+
+---
+
+### T-9 — Retire the dead Cognito invitation template and sweep the premise
+
+**Status:** in progress · **Attempts so far:** 1 (FAIL) · Date: 2026-09-21 · Ran **in parallel with T-2**
+
+**Leader decisions.** Skills `aws-serverless` + `cognitive-doc-design`; effort `high` (touches a constitutional baseline and turns on the KZ-004 premise sweep, which had just caused T-1's second FAIL). Scope corrected before launch — see "Leader corrections" above: the `docs/trd/trd.md` bullet moved to T-6.
+
+**Files:** `infra/10-data-auth/template.yaml`, `infra/README.md`, `backend/CLAUDE.md`.
+
+**Verification:** grep before → hits in both infra files; grep after → clean outside `docs/specs/**`. `validate.sh` → PASS on all three stacks, reported explicitly as *"the template parses"* and not as evidence of deployment.
+
+#### Attempt 1 — Reviewer `FAIL` (3 issues)
+
+**What held:** both symbols gone; FR-7's J-2 clause discharged **wider than claimed** — the Reviewer re-ran the grep itself and independently established two things the report did not: no `infra/scripts/*.sh` passes `PortalUrl` as a `--parameter-overrides` value (*"that would have broken `sam deploy` on the next `DEPLOY_INFRA=true` run"*), and `infra/README.md` §6's prose carries no invite-template reference either. Every factual claim in the `backend/CLAUDE.md` note verifies. DD-7's annotate-not-rewrite is structurally satisfied. The premise-sweep disposition (leave `users.service.ts` / `temp-password.util.ts` alone) is correct — *"editing them would itself have been the scope violation."*
+
+> **Issue 1 — the `template.yaml` comment reintroduces the J-3 defect AND describes an undeployed change as live.** The clause *"a console-created user **now gets** Cognito's unbranded default invitation"* fails twice: DD-5 **as corrected by J-3** says only that such users are *"understood to trigger it"* and records the consequence as *possible, not certain* — the comment converts that to flat fact; and `now … instead of` asserts a change in pool behaviour that has not happened, since `10-data-auth` deploys only under `DEPLOY_INFRA=true`. FR-7's negative clause is *"must NOT be described **anywhere** as live before that deploy has run"*.
+> The Reviewer's sharpest point is the internal inconsistency: **the comment seven lines above it, in the same resource, hedges correctly** (*"This repo has recorded (not independently re-measured here)…"*, *"whether IT reaches this template is untested here"*), and **the sibling `backend/CLAUDE.md` edit in the same diff gets the not-shipped framing exactly right.** So this is a regression against discipline already practised in the file being edited — and it lands in config, which gets no judgment-day pass.
+> **Violated Rule:** FR-7 (`BUT it must NOT`); DD-5's J-3 marker; `judgment.md` J-3.
+
+> **Issue 2 — the `backend/CLAUDE.md` tail lets an absolute security rule read as conditional.** *"…must never be logged/stored/audited; it exits only via the Admin-guarded response **while this remains the active path**."* Strict syntax attaches the adjunct to the second clause only, but a semicolon coordinates, and the qualifier is sentence-final **and bolded**. The standard for a file that trains every future agent is not *"what does careful parsing yield"* but *"can a hurried reader take the weaker reading"* — they can.
+> **The direction of the misreading is what makes it gating.** "Never logged" is NFR-1, absolute, and its blast radius **expands** at exactly the moment the qualifier suggests it lapses: once FR-1/FR-5 land, the credential enters a dispatch path with attempt/outcome log lines — the very path where **J-4** caught a near-miss that would have logged a plaintext address as the correlation id.
+> **Violated Rule:** NFR-1; root `CLAUDE.md` § constitutional-baseline blast radius.
+
+> **Issue 3 — `"This **was** a deliberate exception"` is now false, and is a rewrite rather than an annotation.** FR-2 requires the response to **continue** returning the temporary password (*"SHALL continue to return"*), so the exception to "never return a plaintext password" is not past — it persists after this spec ships. DD-7 authorised correcting the **forward-looking instruction**; the tense of a still-true statement of record was not in scope, and flipping it tells a future agent the exception has ended.
+> **Violated Rule:** FR-2; DD-7 (*"the section keeps its text"*).
+
+**ADVISORY (recorded):**
+1. Scope confirmed only as far as reading allows — the Reviewer cannot enumerate a working-tree diff, so *"exactly three files"* rests on the Leader's extraction. `validate.sh` PASS is likewise the Implementer's account; its meaning is narrow and the Implementer said so correctly.
+2. **The premise sweep needs an explicit handoff or it dies here.** `users.service.ts`'s module and `create()` docstrings and `temp-password.util.ts` carry the same withdrawn premise. Correctly outside T-9's Files list — but T-4's and T-5's task text says nothing about docstrings, so *"absent an instruction in their briefs the premise survives in the very file the feature rewrites."* **Carried as a forward pointer below.**
+3. No breadcrumb at the `Parameters:` block for an operator diffing against a deployed stack that still has `PortalUrl`. Optional.
+
+**🔭 FORWARD POINTER — T-4 and T-5 briefs MUST carry this.** `backend/src/users/users.service.ts` (module docstring + `create()` docstring) and `backend/src/users/temp-password.util.ts` state the withdrawn premise *"@cgiar.org deliverability, therefore no email"*. They are accurate **today** and become false the moment T-4/T-5 wire the dispatch. Two independent sources flagged it — T-9's Implementer and its Reviewer. Per KZ-004 the sweep is over the **premise**, not the phrase. A pointer filed here is not carried by having been filed; the brief carries it or nobody does.
+
+#### Attempt 2 — Reviewer `PASS` ✅
+
+**Fixes:** the three prose defects, in two files. Nothing structural touched.
+
+**Leader-run verification** (not the Implementer's account this time — the Reviewer has no `Bash` and attempt 1's advisory noted the gap): grep gate empty outside `archive/` and `docs/specs/`; `./infra/scripts/validate.sh` PASS on all three stacks; `sed` on `backend/CLAUDE.md:53` confirms `This is a deliberate exception`.
+
+**Reviewer verdict: `STATUS: PASS`.** Notable in how it judged rather than what it concluded:
+
+- **On over-hedging** (the risk I flagged): it found the comment avoids it **structurally**, not by luck. The rationale is two-pronged — *"No application path sent it"* is asserted **flatly**, and only the console-user *consequence* carries the hedge. So the retirement stands even if the hedged claim resolves false, which is exactly DD-5's *"if the claim is false, the template is simply dead in every case."* **The hedge attaches to the consequence, never to the decision.**
+- **On the deploy clause**, it verified rather than read: `DEPLOY_INFRA` appears nowhere under `infra/`, and it established why that is legitimate — it is a Jenkins flag, and `docs/infrastructure.md` records that the `Jenkinsfile` is not versioned here. It then confirmed the default is `false` and that the skipped stage is the one owning `infra/10-data-auth/`.
+- **On NFR-1** it read the paragraph as a hurried agent would and found the structure inverted in the right direction: the old defect was a sentence-final bolded adjunct after a semicolon; now **the absolute claim is the one that ends its sentence**, and the only temporal language sits in a separate sentence under a distinct bolded subject. It also grepped every use of the credential in `users.service.ts` (L164/174/191, L307/313/318) to confirm *"today the Admin-guarded response is the only one"* — **no logger call touches it**.
+- **On DD-7** it scanned the whole section for a residual "do not email" directive and found none; all four original citations survive.
+
+**ADVISORY (recorded):**
+1. *"not independently re-measured here"* faintly implies a prior measurement exists — true for the sibling comment, not for this claim, which J-3 calls uncited. The adjacent ⚠️ marker dominates and resolves it. Register nit. The Reviewer explicitly recommends **keeping** the ⚠️ glyph in config: *"it makes the hedge harder to skim past in config — which is where attempt 1 failed."*
+2. **The forward pointer was incomplete — extended below.**
+3. Attempt 1's breadcrumb advisory remains unaddressed and optional.
+
+---
+
+### T-9 — FINAL: `[x]` PASS
+
+**Attempts:** 2 · **Date:** 2026-09-21 · Ran in parallel with T-2
+
+**Requirements covered:** FR-7, all three clauses — both symbols gone; the `AND IT MUST` no-other-reference clause discharged repo-wide (the Reviewer's own grep found hits only under `docs/specs/**` and the frozen archive); the `BUT it must NOT` describe-as-live clause satisfied by the `DEPLOY_INFRA=true` precondition. DD-5 and DD-7 honoured.
+
+**Final verification:** grep gate clean · `validate.sh` PASS ×3 stacks · both run by the Leader.
+
+**⚠️ FR-7 is authored, NOT deployed.** `10-data-auth` ships only under `DEPLOY_INFRA=true`, which is not the pipeline default. The repository no longer carries the template; the live Cognito pool still does. This is recorded per NFR-5 and is the task's own disqualifier — do not read the `[x]` as "the pool changed".
+
+**🔭 FORWARD POINTER (extended — supersedes the one filed under T-9 attempt 1).** Four sites carry claims that go false the moment T-4/T-5 wire the dispatch. **T-4's and T-5's briefs must carry all four:**
+1. `backend/src/users/users.service.ts` — module docstring (*"no email"*, *"@cgiar.org poor deliverability"*)
+2. `backend/src/users/users.service.ts` — `create()` docstring, same premise
+3. `backend/src/users/temp-password.util.ts` — docstring, same premise
+4. **`backend/CLAUDE.md` — two independently-worded "today" clauses** (*"users.service.ts today calls no MailService method"* and *"today the Admin-guarded response is the only one"*), added by T-9 itself
+
+Sites 1–3 were flagged by T-9's Implementer and its first Reviewer; **site 4 was flagged by the second Reviewer, which observed that the pointer as filed covered only 1–3** — the task's own edits had created new instances of the very thing the pointer tracks. Per KZ-004 the sweep is over the **premise**, not the phrase.
