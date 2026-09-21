@@ -14,11 +14,14 @@
 # variable and abort with the floor's message instead, or announce with
 # different wording).
 #
-# The five WRITING scripts go on to call assert_account next, and
-# MELIA-DEV has no row in infra/aws-accounts.conf, so they abort there
-# (FR-2's own FR-3-interaction clause, T-3's job) — that is a correct and
-# EXPECTED second outcome, not a contradiction: this case only asserts
-# that the floor/override step, common to all seven, behaved identically.
+# The five WRITING scripts go on to call announce_account next (T-8),
+# which makes an unstubbed `sts get-caller-identity` call — no
+# STUB_AWS_SCRIPT is configured here — and fails soft (FR-3′): it prints
+# that the call failed and continues, never aborting on it. Each script
+# then reaches its own next external command, also unstubbed, and dies
+# there instead. That is a correct and EXPECTED second outcome, not a
+# contradiction: this case only asserts that the floor/override step,
+# common to all seven, behaved identically.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 

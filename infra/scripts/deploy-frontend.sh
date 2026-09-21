@@ -51,7 +51,7 @@ set -euo pipefail
 
 # shellcheck disable=SC1091
 source "${BASH_SOURCE[0]%/*}/_guard.sh"
-assert_account
+announce_account
 
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"

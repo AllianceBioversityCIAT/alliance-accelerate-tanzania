@@ -2,6 +2,20 @@
 
 ## Verdict: **READY WITH FOLLOW-UPS** — the documentation pass is applied; four code items carried
 
+> ## ⚠️ Superseded in part by the Pivot — read this first
+>
+> **After this report was written, FR-3 was withdrawn** (product owner + infrastructure owner, 2026-09-21; `execution.md` → `## Pivot Record: FR-3`). Consequences for the findings below:
+>
+> | Finding | New status |
+> |---|---|
+> | **V-01** (pipeline account never verified) | **Closed by removal, not by verification.** There is no expected account any more, so the question no longer needs an answer |
+> | **V-02** (parser silently took the first duplicate key) | **Closed by removal** — the parser and its config file are deleted |
+> | **A-02** (`2>&1` on the capture path) | **Site 1 of 2 closed by removal.** `resolve_stack_value` remains and is still a carried follow-up |
+>
+> **Closed by removal is not the same as closed by verification**, and this report says so rather than letting the distinction disappear.
+>
+> Also stale here: **every "48 cases" figure below is now 47** (six retired, five added across T-8's rounds), and the line-count figures are pending a re-measure after T-8 lands. The verdict below predates T-8 and does not account for it.
+>
 > **Updated 2026-09-21 after remediation.** The original verdict was **NOT READY**; remediations 1–7 below are now applied and one open question was resolved by evidence that arrived after the audit. Four code follow-ups are carried as separate work.
 
 **8 PASS · 8 WARN · 0 FAIL · 0 BLOCKED**, plus 4 new advisories and 11 carried forward.

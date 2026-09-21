@@ -1,5 +1,16 @@
 # Design — Deploy-script guardrails
 
+
+> ## ⚠️ Pivot, 2026-09-21 — FR-3 withdrawn
+>
+> **The account assertion (`assert_account`) and `infra/aws-accounts.conf` are removed.** FR-3 is superseded by **FR-3′**: the resolved account is *announced* before a write, never asserted. FR-1's profile floor is unchanged and remains the prevention.
+>
+> Reason, in one line: FR-3's only unique coverage was a profile *named* `IBD-DEV` pointing at a different account — **which is what the Jenkins pipeline creates by design**, so the check's unique value was also its most probable false positive.
+>
+> Full reasoning, alternatives considered, and the disclosed conflict of interest: `execution.md` → **`## Pivot Record: FR-3`**.
+>
+> Any FR-3 statement below that this banner contradicts is superseded by it.
+
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
 - Status: **Done** — revision 3 (Judgment Day rounds 1 and 2 applied); validated 2026-09-21, see `validation-report.md`
 - Author / Date: AKILI (Leader) — 2026-09-18
@@ -14,8 +25,8 @@ One shared guard, sourced by every script; one hermetic test harness that can ac
 
 | Piece | What it is | Serves |
 |---|---|---|
-| `infra/scripts/_guard.sh` | Sourced library: profile floor, value-carrying override, account assertion, and a stack-query helper with a defined exit-code contract | FR-1, FR-2, FR-3, FR-5, NFR-4 |
-| `infra/aws-accounts.conf` | One `profile=account_id` row per environment, **parsed** (not sourced) | FR-3 |
+| `infra/scripts/_guard.sh` | Sourced library: profile floor, value-carrying override, **account announcement**, and a stack-query helper with a defined exit-code contract | FR-1, FR-2, **FR-3′**, FR-5, NFR-4 |
+| ~~`infra/aws-accounts.conf`~~ | **Withdrawn by the Pivot.** No account id is versioned under `infra/` — enforced by `guard-account.no-account-id-literal-in-infra`. One historical instance predates this spec and is deliberately out of scope: `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`, a frozen archive record that must not be edited. | ~~FR-3~~ |
 | `infra/scripts/tests/` | Dependency-free bash harness: **guard-unit** tests plus **script-integration** tests against a stubbed `PATH` | NFR-1, NFR-2, every gate in `requirements.md` §2.2 |
 | `deploy.sh` origin resolution | Replaces the static `*` default; `*` only on a confirmed-absent frontend stack, announced | FR-4, FR-5 |
 | `smoke.sh` CORS check | New Check 6; Summary renumbers to 7 | FR-6 |
@@ -67,7 +78,7 @@ So an operator setting `CONFIRM=yes` for the ordinary reason — running teardow
 
 Sourced (not executed) as the first statement after `set -euo pipefail`. Four responsibilities:
 
-**Sourcing is not running, and the design must say which is which** (`judgment.md` F-01). The profile floor and override **execute on `source`** — no call required, so a script cannot source the guard and forget to use it. The account assertion is an explicit `assert_account` call, because FR-3 exempts the read-only scripts and an auto-running assertion could not be exempted without a flag. That split is what D-3 and D-3b test: **(a)** the `source` line's presence and position, **(b)** an in-situ abort run per script, and **(c)** a foreign-account abort run per *writing* script. Because the floor runs on `source`, guard-unit tests must invoke it in a subshell — a sourced `exit` would otherwise kill the test runner.
+**Sourcing is not running, and the design must say which is which** (`judgment.md` F-01). The profile floor and override **execute on `source`** — no call required, so a script cannot source the guard and forget to use it. The account **announcement** is an explicit `announce_account` call, because FR-3′ exempts the read-only scripts and an auto-running announcement could not be exempted without a flag. *(Until the 2026-09-21 Pivot this was `assert_account`, an abort-on-mismatch assertion; the call-site shape is unchanged, the behaviour is not.)* That split is what D-3 tests: **(a)** the `source` line's presence and position, and **(b)** an in-situ abort run per script. *(A third clause covering a foreign-account abort per writing script existed until the 2026-09-21 Pivot; **D-3b and its cases are withdrawn**, replaced by an in-situ run proving each writing script reaches and prints the announcement.)* Because the floor runs on `source`, guard-unit tests must invoke it in a subshell — a sourced `exit` would otherwise kill the test runner.
 
 `_guard.sh` also **exports `PROFILE` and `REGION`**, and the seven local `PROFILE="${AWS_PROFILE:-IBD-DEV}"` lines are deleted. Leaving them would keep a second resolution path in every script — the very line §1 names as the defect — and make NFR-4's "one place" false (`judgment.md` F-21). The library resolves its own path with `${BASH_SOURCE[0]%/*}`, never `$0`, which in a sourced file names the *caller*.
 
@@ -75,7 +86,7 @@ Sourced (not executed) as the first statement after `set -euo pipefail`. Four re
 |---|---|---|
 | Profile floor | Runs on `source`. Compare the effective profile to `IBD-DEV`; abort non-zero on divergence unless the override matches. **No TTY branch** — non-interactive fails closed | FR-1 |
 | Override | `ALLOW_NON_IBD_DEV_PROFILE` must **equal** the effective `AWS_PROFILE`; set-but-different aborts. Never `AWS_PROFILE`, never `CONFIRM`. Announces on stderr | FR-2 |
-| `assert_account` | Explicit call. `sts get-caller-identity` → compare to the expected account; abort on mismatch **regardless of stack names**. **Not called by `validate.sh` or `smoke.sh`** — the two read-only scripts | FR-3 |
+| `announce_account` | Explicit call. `sts get-caller-identity` → **print** the account and effective profile to stderr; **never abort**, and fail **soft** if the call itself fails. **Not called by `validate.sh` or `smoke.sh`** — the two read-only scripts | **FR-3′** |
 | `resolve_stack_value` | Query a stack Parameter *or* Output; classify failures | FR-5 |
 
 **`resolve_stack_value` contract** — stated, because an undefined one is the D-4 hazard this spec names:
@@ -114,18 +125,18 @@ No shell test harness, no `bats`, no `shellcheck` (verified 2026-09-18). NFR-1 f
 
 | Kind | What it runs | Covers |
 |---|---|---|
-| **Guard-unit** | Sources `_guard.sh` in isolation and calls its functions directly | Both directions of FR-1/FR-2/FR-3, including NFR-3's pass path |
+| **Guard-unit** | Sources `_guard.sh` in isolation and calls its functions directly | Both directions of FR-1/FR-2, the announcement behaviour of **FR-3′** (which has no abort direction), and NFR-3's pass path |
 | **Script-integration** | Executes whole scripts with a stubbed `PATH`, `SKIP_MIGRATE_PAUSE=yes`, and stdin `</dev/null` | FR-4, FR-5, FR-6, D-3, D-4 — the guard *in situ* |
 
 **The device: a stubbed `PATH`.** Each test prepends a fixture directory holding executables that print scripted output and exit with scripted status. The real scripts run unmodified (DD-2).
 
-**The stub set is exactly the network-capable commands: `aws`, `curl`, `sam`, `npm`, `npx`.** That is what makes NFR-2 hold by construction rather than by hope. The text tools a script reaches — `awk`, `grep`, `sed`, `dirname`, `jq` — **run for real**: they touch no network, and stubbing `awk` in particular would turn the "`aws-accounts.conf` is parsed, not sourced" gate into a test of the stub rather than of the guard.
+**The stub set is exactly the network-capable commands: `aws`, `curl`, `sam`, `npm`, `npx`.** That is what makes NFR-2 hold by construction rather than by hope. The text tools a script reaches — `awk`, `grep`, `sed`, `dirname`, `jq` — **run for real**: they touch no network, and stubbing a text tool turns any gate depending on it into a test of the stub rather than of the guard.
 
 That reaches the cases the proposal called hard:
 
 | Case | Stub behaviour | Proves |
 |---|---|---|
-| **Wrong account, right stack name** | `sts get-caller-identity` → foreign account; `describe-stacks` → success for the expected name | FR-3's collision clause — what a name check cannot see |
+| ~~Wrong account, right stack name~~ | — | **Withdrawn with FR-3, 2026-09-21. The harness no longer reaches this case and no longer claims to.** |
 | **Origin resolution, three ways** | `describe-stacks` → a `CloudFrontUrl`; → the absent-stack message; → an expired-token error | FR-4 and FR-5 **without deploy rights** |
 | **CORS check** | `curl` → a permissive `ACAO`, an echoed origin, a clean `204` rejection, a `500`, and a refused connection | FR-6's five directions — four FAIL, one PASS |
 | **Uniform application** | none | D-3 (below) |
@@ -139,19 +150,14 @@ That reaches the cases the proposal called hard:
 - **Exclusion:** the glob `infra/scripts/*.sh` matches `_guard.sh`, which cannot source itself. Files whose basename begins with `_` are libraries and are skipped — a convention, so a future `_lib.sh` is covered without editing the test.
 - **Position, not presence, with the comparison defined:** after stripping comment and blank lines, no line matching `\b(aws|sam|curl|npm|npx)\b` — the network-capable set — may precede the `source` line. The stripping clause is not a detail: every script opens with a 20–60 line header whose USAGE examples contain `aws cloudformation`, `sam build` and `npm run build` in prose, so a naive scan would classify a comment as the first external command. The `source` path itself uses `${BASH_SOURCE[0]%/*}`, a shell expansion rather than a call to `dirname`, so the guard line does not trip its own rule. Asserting mere presence would pass a script that sources the guard on its last line — the KZ-002 shape in miniature.
 
-### 7.3 Where the expected account id comes from — settled
+### ~~7.3 Where the expected account id comes from~~ — **WITHDRAWN 2026-09-21**
 
-FR-3 needs an expected account id. `infra/samconfig.toml` carries no account id (it sets `profile`, `region`, `confirm_changeset`, `capabilities`, `resolve_s3`, `tags` and `lint`), and no account id is versioned in any **other** configuration or executable file — see the correction below for what the specify-time search got wrong.
+This section specified the committed `infra/aws-accounts.conf`, its `awk` parsing, and the product owner's decision to version an account id. **All of it is withdrawn by the Pivot** (`execution.md` → `## Pivot Record: FR-3`); the file is deleted. No account id is versioned under `infra/` — enforced by `guard-account.no-account-id-literal-in-infra`. One historical instance predates this spec and is deliberately out of scope: `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`, a frozen archive record that must not be edited.
 
-**Decided 2026-09-18 by the product owner: commit `infra/aws-accounts.conf`.** Chosen over an operator-local file because a guard that silently does not run on a fresh clone is a guard that does not exist (root `CLAUDE.md`: *"A gate that cannot run cannot fail"*).
+Two things from it are worth keeping as recorded lessons rather than as design:
 
-⚠️ **Correction, 2026-09-18 (T-3 review).** This section previously called it *"the first AWS account id versioned in this repository, a deliberate recorded first"*. **That was false, and it was presented to the product owner as part of the decision.** `569113802249` has been versioned since **2026-08-05** in `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md` (*"account `569113802249` (IBD-DEV), eu-west-1"*).
-
-The defect was in the search, not the reasoning: the specify-time sweep was a single `grep` piped through `head -5`, and a **universal negative was drawn from a truncated result**. `docs/specs/general-setup/requirements.md` § Writing Standards already forbids exactly this — *"A universal negative requires a search that could have failed… A single case-sensitive grep is evidence for a positive claim, never for an absence."*
-
-**What is true, and what the decision actually rests on:** `infra/samconfig.toml` carries no account id, and no account id is versioned in any **other** configuration or executable file. The only prior occurrence is a prose mention inside a frozen archive record that nothing reads or executes. Committing the id into a file a guard parses at runtime is still a different act from a historical note — so the decision stands, but it stands on this narrower ground, not on a "first".
-
-**It is parsed, never sourced.** `IBD-DEV=123456789012` is not a valid bash assignment — the hyphen is illegal in an identifier — so `source`-ing it under `set -euo pipefail` would abort **every script on a correct profile**: a fail-closed guard against correct input, the "sign reversed" shape KZ-002 records (`judgment.md` S-6). `_guard.sh` reads the row with `awk -F=`, and a missing or malformed row is an abort with a message naming the file.
+- **`IBD-DEV=…` is not a valid bash assignment** — the hyphen is illegal in an identifier — so such a file must be *parsed*, never `source`d. Sourcing it under `set -euo pipefail` would have aborted every script on a **correct** profile: a guard with the sign reversed.
+- The format keyed on profile **name**, so two accounts under one name were inexpressible, and a duplicate row was **silently ignored** (validation V-02). That unexpressibility is part of why FR-3 was withdrawn rather than extended.
 
 ### 7.4 The Jenkinsfile — quoted verbatim, patched narrowly
 
@@ -202,7 +208,7 @@ Driven by §6.1. `CONFIRM` keeps its destruction-confirmation role; it stops aut
 ### DD-5: `smoke.sh` gets a check, not a new script
 The CORS assertion belongs where the other assertions live, using the same `pass()`/`fail()` accounting, so a failure is summarised rather than aborting the run, and so the pipeline picks it up with **no Jenkinsfile change** — `RUN_SMOKE=true` already calls `smoke.sh`. **This is the one fix that reaches the live failure mode without anyone editing the Jenkins server.** It becomes Check 6 and Summary renumbers to 7; the current header numbers 1–6 with Summary at 6, so appending "Check 7" after a block called "6. Summary" would be immediately stale.
 
-### DD-6: `validate.sh` gets FR-1 and FR-2 but not FR-3
+### DD-6: `validate.sh` gets FR-1 and FR-2 but not FR-3 — **the reasoning survives the Pivot, now governing FR-3′**
 Its header states it "makes NO changes and creates NO resources", and root `CLAUDE.md` lists it as the canonical agent-run infra check. FR-3's own trigger is "before any write". Giving a read-only linter a live STS dependency and a config-file read would defeat the property that makes it safe to run in the agent loop. **Rejected:** uniformity for its own sake (`judgment.md` S-11).
 
 ## 8.1 Reversion challenge (DD-4)
@@ -220,10 +226,10 @@ Nothing in this repository depends on it: no test covers the coupling (there are
 | Risk | Mitigation |
 |---|---|
 | The guard breaks the pipeline **(FR-1, the floor)** | The pipeline sets `AWS_PROFILE = 'IBD-DEV'`, the floor value (verified). NFR-3 pins it with a guard-unit test |
-| ⚠️ **The guard breaks the pipeline (FR-3, the account assertion)** | **This row previously did not exist, and the row above was read as covering it. It does not.** NFR-3's measure is a guard-unit test that **stubs `sts`**, so it structurally cannot observe an account mismatch in CI. If the pipeline's `IBD-DEV` resolves to an account absent from `infra/aws-accounts.conf`, `assert_account` fails closed on the first build that invokes a writing script. Unverified — see `requirements.md` §7's UNVERIFIED row and `validation-report.md` V-01. Added at validation, 2026-09-21 |
+| ~~The guard breaks the pipeline (FR-3, the account assertion)~~ | **Eliminated by the Pivot, 2026-09-21 — not mitigated.** This row was added at validation to record that NFR-3's gate stubs `sts` and so could not observe an account mismatch in CI. FR-3 is withdrawn; there is no account assertion left to break the pipeline. FR-3′ announces and never aborts, so it cannot fail a build |
 | CloudFormation wording changes ⇒ guard fails closed on a real bootstrap | DD-3 accepted risk; the string is asserted in a test, so the change is visible |
 | Stubs diverge from the real tools, so tests pass against a fiction | **Accepted and recorded — the residual KZ-002 in this design.** The stubs reproduce observed output (the absent-stack text is quoted from a real failure in `deploy-profile-override/proposal.md` §3), but they prove the *scripts'* logic, never the CLIs' behaviour. No test here can catch an AWS CLI behaviour change |
-| **The committed account id is wrong, and no gate can see it** | Every test stubs `sts`, so a placeholder or mistyped id in `aws-accounts.conf` passes the entire suite and then fails closed on every real run — the "sign reversed" shape again. Mitigation is procedural, not automated: the task that creates the file carries an operator-run `aws sts get-caller-identity --profile IBD-DEV` transcript as its evidence |
+| ~~The committed account id is wrong, and no gate can see it~~ — **eliminated by the Pivot: there is no committed account id** | Every test stubs `sts`, so a placeholder or mistyped id in `aws-accounts.conf` passes the entire suite and then fails closed on every real run — the "sign reversed" shape again. Mitigation is procedural, not automated: the task that creates the file carries an operator-run `aws sts get-caller-identity --profile IBD-DEV` transcript as its evidence |
 | A well-formed but misspelled stack name reads as absent | Accepted residual (`requirements.md` FR-5). No error-text rule can separate a typo from a genuine bootstrap; the failure is visible rather than silent |
 | The Jenkinsfile changes upstream, invalidating the patch and the docs | Every claim is date-stamped (FR-7); the patch README says it is advisory and unversioned upstream |
 | Doc claims are false again | D-7: no automated gate. Mandatory Reviewer on the doc task, re-deriving from §7.4's verbatim block, not from this spec |
@@ -240,9 +246,9 @@ Every gate has a named falsifier — the input that makes it red. A gate with no
 | Override proceeds **and** announces | unit | Silence the announcement ⇒ red |
 | Override set but ≠ `AWS_PROFILE` aborts | unit | Treat the override as boolean ⇒ red |
 | `AWS_PROFILE`/`CONFIRM` rejected as override | unit | Accept either ⇒ red |
-| Account mismatch aborts with a matching stack name | unit | Assert the stack name instead of the account ⇒ red |
-| `validate.sh` runs with no STS call | integration | Invoke the account assertion from it ⇒ the `aws` stub records an `sts` call ⇒ red |
-| `aws-accounts.conf` parsed, not sourced | unit | `source` it ⇒ aborts on a correct profile ⇒ red |
+| ~~Account mismatch aborts with a matching stack name~~ | — | **Withdrawn with FR-3.** Replaced by: *the announcement prints the account and does not change the exit status* ⇒ make it abort on mismatch ⇒ red |
+| `validate.sh` and `smoke.sh` run with no STS call | integration | Invoke `announce_account` from either ⇒ the `aws` stub records an `sts` call ⇒ red. *(Unchanged by the Pivot: DD-6's reasoning now governs FR-3′.)* |
+| ~~`aws-accounts.conf` parsed, not sourced~~ | — | **Withdrawn with FR-3** — the file is deleted |
 | Absent stack ⇒ announced `*` | integration | Abort instead ⇒ red |
 | Failed lookup ⇒ **abort**, not `*` | integration | Restore `2>/dev/null \|\| true` ⇒ red |
 | **Malformed** stack name ⇒ abort, not `*` | integration | Match `ValidationError` alone ⇒ red. *(A well-formed **typo** is indistinguishable from absence — accepted residual, §9, not a gate)* |
@@ -270,9 +276,9 @@ The tripwire fired at **T-2** (892 vs ~470) and again at **T-5** (3,395 vs ~2,50
 
 **Re-baseline 1 diagnosed:** production code tracks or beats its estimate; the entire overshoot is test cases, because §11 was computed before `tasks.md` required per-clause ownership. **Measured again at T-5, that diagnosis is confirmed and sharper:**
 
-| | Lines, as of T-5 | **Final, re-measured 2026-09-21** |
+| | Lines, as of T-5 | Re-measured 2026-09-21, **pre-Pivot** — ⚠️ pending re-measure after T-8 |
 |---|---|---|
-| Production — seven scripts + `_guard.sh` + `aws-accounts.conf` | 454 | **550** |
+| Production — seven scripts + `_guard.sh` *(plus `aws-accounts.conf`, since deleted)* | 454 | 550 → pending |
 | Test cases | 2,941 | **3,236** |
 | Ratio | 6.5 : 1 | **5.8 : 1** |
 

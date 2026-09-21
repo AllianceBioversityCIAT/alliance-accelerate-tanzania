@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 #
-# _guard.sh — ACCELERATE Tanzania Seed Registry (infra/scripts, T-2 → T-3)
+# _guard.sh — ACCELERATE Tanzania Seed Registry (infra/scripts, T-2 → T-3 → T-8)
 # ---------------------------------------------------------------------------
 # PURPOSE
 #   The single shared guard library for infra/scripts/*.sh (design.md §7.1;
-#   requirements.md FR-1, FR-2, FR-3, FR-5; NFR-4). This file is meant to be
+#   requirements.md FR-1, FR-2, FR-3′, FR-5; NFR-4). This file is meant to be
 #   SOURCED, never executed, as the first statement after
 #   `set -euo pipefail` in every operator script it protects — sourcing,
 #   not a function call a caller could forget, is what makes the profile
 #   floor and override unconditional.
 #
-#   T-2, T-3, and T-5 together deliver all four of the library's
-#   responsibilities: the profile floor, the override, assert_account, and
-#   (as of T-5) resolve_stack_value.
+#   T-2, T-5, and T-8 together deliver the library's current
+#   responsibilities: the profile floor and the override (T-2),
+#   resolve_stack_value (T-5), and announce_account (T-8, FR-3′). T-3's
+#   assert_account — an account ASSERTION, comparing the resolved account
+#   against a committed expected value — shipped, was reviewed, and passed,
+#   then was withdrawn by the Pivot recorded in execution.md
+#   (`## Pivot Record: FR-3`) and replaced by T-8's announce_account: an
+#   ANNOUNCEMENT, with nothing to compare against.
 #
-#   assert_account is an EXPLICIT function call, not something that runs on
-#   `source` — see the section below for why. Wiring calls to it into the
-#   five writing infra/scripts/*.sh scripts (the "every operator script it
-#   protects" above) is T-4's job, not T-3's.
+#   announce_account is an EXPLICIT function call, not something that runs
+#   on `source` — see the section below for why. It is called by the five
+#   writing infra/scripts/*.sh scripts only (T-8); validate.sh and smoke.sh
+#   remain exempt (DD-6, unchanged by the Pivot).
 #
 # WHAT RUNS ON SOURCE (no call required — this is the point of FR-1/FR-2)
 #   1. Resolve PROFILE from AWS_PROFILE, defaulting to the mandated
@@ -57,10 +62,13 @@
 #   itself isn't in this same directory. ${BASH_SOURCE[0]%/*} is this
 #   file's own path with its last path segment stripped, independent of
 #   $0, of the caller's cwd, and of how the caller was itself invoked.
-#   GUARD_DIR is not exported — only this file's own functions need it.
-#   assert_account (below) uses it to locate infra/aws-accounts.conf one
-#   directory up from this file, never relative to the caller or to the
-#   script's own cwd.
+#   GUARD_DIR is not exported. T-3's assert_account was its one reader,
+#   using it to locate infra/aws-accounts.conf one directory up from this
+#   file; withdrawn with assert_account by the Pivot (T-8) — no function in
+#   this file reads GUARD_DIR any more. Kept because the resolution itself
+#   is proven correct on its own by
+#   guard-profile.resolves-own-path-not-caller.case.sh, independent of any
+#   one caller.
 # ---------------------------------------------------------------------------
 
 GUARD_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
@@ -90,77 +98,66 @@ if [[ "$PROFILE" != "IBD-DEV" ]]; then
   fi
 fi
 
-# ── 3. Account assertion (FR-3) ─────────────────────────────────────────
-# EXPLICIT CALL ONLY — unlike the floor/override above, assert_account
-# does NOT run on `source`. FR-3 exempts the two read-only scripts
-# (validate.sh, smoke.sh); an assertion that ran automatically on source
-# could not honour that exemption without adding a flag, so every WRITING
-# script must call assert_account itself.
+# ── 3. Account announcement (FR-3′) ─────────────────────────────────────
+# EXPLICIT CALL ONLY — unlike the floor/override above, announce_account
+# does NOT run on `source`. FR-3′ exempts the two read-only scripts
+# (validate.sh, smoke.sh); an announcement that ran automatically on
+# source could not honour that exemption without adding a flag, so every
+# WRITING script must call announce_account itself, before its first
+# write.
 #
-# The expected account id is never a literal in this file (or in any
-# infra/scripts/*.sh file) — it is read from infra/aws-accounts.conf, one
-# directory above this one (design.md §7.3; requirements.md FR-3's "not
-# hardcoded" clause). A future Prod account is therefore a one-line
-# addition to that config file, never a code change (OQ-INFRA-1).
+# THIS IS AN ALERT, NOT A GATE (execution.md `## Pivot Record: FR-3`;
+# requirements.md FR-3′). T-3's assert_account compared the resolved
+# account against a committed expected value and aborted on mismatch;
+# that comparison — and the config file it read from — is withdrawn.
+# There is no expected account any more, and this function must never
+# grow one back: it only PRINTS the resolved account id and the effective
+# profile to stderr, and NEVER changes the exit status.
+#   - success: prints the account and profile, returns 0.
+#   - `sts get-caller-identity` failure: prints that the call failed and
+#     why, and STILL returns 0 — fail SOFT. The announcement is
+#     observability; its own failure cannot be a gate.
+# Callers must never wrap this call in `||` or inspect its return value —
+# there is nothing meaningful to inspect.
 #
-# That config file is PARSED with `awk -F=`, and is NEVER `source`d: a row
-# shaped like `IBD-DEV=<account id>` is not a valid bash assignment (a
-# hyphen is illegal in a bash identifier), so `source`-ing it under
-# `set -euo pipefail` would abort every script on a *correct* profile —
-# a fail-closed guard against CORRECT input, the sign-reversed shape
-# KZ-002 / judgment.md S-6 records. (No account id is quoted here or
-# anywhere in infra/scripts/*.sh — see infra/aws-accounts.conf, which is
-# the one place it is allowed to appear, and is not itself a .sh file.)
-assert_account() {
-  local conf="$GUARD_DIR/../aws-accounts.conf"
+# Captured via a temp file, never `2>&1` (validation finding A-02 named
+# assert_account, this function's predecessor, as one of the two sites in
+# this codebase making that mistake; the fix here is the same device
+# infra/jenkins/deploy-backend-cors.patch already uses for the other).
+announce_account() {
+  local err_file rc=0 account err
+  # The temp-file ACQUISITION is itself fallible (an unwritable TMPDIR, an
+  # exhausted template) and, unlike the `aws` call below, was not
+  # originally guarded: a bare `err_file="$(mktemp)"` assignment propagates
+  # mktemp's failure straight into the caller's `set -euo pipefail`,
+  # turning the announcement's own bookkeeping into a gate — exactly what
+  # FR-3′ forbids. Guard it the same way as the `aws` call: capture the
+  # failure explicitly and return 0 before doing anything else.
+  if ! err_file="$(mktemp 2>/dev/null)"; then
+    echo "==> Could not create a temp file for the account announcement — skipping it (FR-3′; informational only)." >&2
+    return 0
+  fi
+  account="$(aws sts get-caller-identity --profile "$PROFILE" --region "$REGION" --query Account --output text 2>"$err_file")" || rc=$?
+  # Both of these are bare statements too. `err="$(cat "$err_file")"` is a
+  # plain (non-`local`) assignment, so under `set -e` a failing `cat` (the
+  # file vanishing between creation and here, a permissions change) would
+  # abort the caller the same way the unguarded mktemp did — guard it the
+  # same way. `rm -f` already swallows "no such file", but not e.g. a
+  # parent directory that turned read-only; `|| true` makes it
+  # unconditionally non-fatal, matching "the announcement is
+  # observability, never a gate" for every statement in this function, not
+  # just the `aws` call.
+  err="$(cat "$err_file" 2>/dev/null || true)"
+  rm -f "$err_file" 2>/dev/null || true
 
-  if [[ ! -f "$conf" ]]; then
-    echo "ERROR: account config file not found: $conf (FR-3 requires infra/aws-accounts.conf)." >&2
-    exit 1
+  if [[ "$rc" -eq 0 ]]; then
+    echo "==> Resolved AWS account: $account (profile '$PROFILE')." >&2
+  else
+    echo "==> Could not resolve the AWS account for profile '$PROFILE' via sts get-caller-identity: $err" >&2
+    echo "==> Continuing without it — this announcement is informational only (FR-3′; no account is asserted)." >&2
   fi
 
-  # Comment and blank lines are skipped before matching, so a line like
-  # "# IBD-DEV=note" can never be mistaken for a real row. A row whose key
-  # does not match $PROFILE is ignored, including a row using AWS_PROFILE
-  # itself as the value would be — this reads only PROFILE.
-  local expected
-  expected="$(awk -F= -v key="$PROFILE" '
-    /^[[:space:]]*#/ { next }
-    /^[[:space:]]*$/ { next }
-    $1 == key { print $2; exit }
-  ' "$conf")"
-
-  if [[ -z "$expected" ]]; then
-    echo "ERROR: no account id configured for AWS profile '$PROFILE' in $conf." >&2
-    echo "       Add a '$PROFILE=<12-digit account id>' row to that file." >&2
-    exit 1
-  fi
-
-  # Malformed: a row exists but its value is not exactly 12 digits — an
-  # AWS account id always is. Abort rather than comparing a value that
-  # could never match, naming the same file as the missing-row case above.
-  if [[ ! "$expected" =~ ^[0-9]{12}$ ]]; then
-    echo "ERROR: malformed account id for AWS profile '$PROFILE' in $conf: '$expected' (expected exactly 12 digits)." >&2
-    exit 1
-  fi
-
-  local actual
-  if ! actual="$(aws sts get-caller-identity --profile "$PROFILE" --region "$REGION" --query Account --output text 2>&1)"; then
-    echo "ERROR: could not resolve the AWS account for profile '$PROFILE': $actual" >&2
-    exit 1
-  fi
-
-  if [[ "$actual" != "$expected" ]]; then
-    # The collision clause (FR-3's hardest one): a stack of the expected
-    # name existing under $actual is NOT evidence of safety — only the
-    # account id is trusted here, never a stack name, which can and does
-    # collide across accounts.
-    echo "ERROR: AWS profile '$PROFILE' resolved to account '$actual', but $conf expects account '$expected' for that profile." >&2
-    echo "       Aborting — a matching stack name in the wrong account proves nothing (FR-3)." >&2
-    exit 1
-  fi
-
-  echo "==> assert_account: profile '$PROFILE' verified against expected account $expected." >&2
+  return 0
 }
 
 # ── 4. resolve_stack_value — a stack Parameter or Output, with a defined

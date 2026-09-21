@@ -16,7 +16,7 @@
 # status-only check for the wrong reason (KZ-002).
 #
 # No STUB_AWS_SCRIPT is configured: the guard's profile floor makes no AWS
-# call at all before aborting (assert_account, if reached, would be the
+# call at all before aborting (announce_account, if reached, would be the
 # first one) — a `source` that reaches an aws/sam/curl call before
 # aborting would make this run hang/fail loudly against the unconfigured
 # stub (exit 127, "no STUB_..._SCRIPT configured"), which is itself a

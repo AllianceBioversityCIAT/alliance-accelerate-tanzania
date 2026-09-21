@@ -4,9 +4,10 @@
 # ---------------------------------------------------------------------------
 # FR-1 clause: GIVEN AWS_PROFILE=MELIA-DEV WHEN any script runs THEN it
 # exits non-zero BEFORE any AWS call. _guard.sh's floor makes no AWS call at
-# all (assert_account is T-3's job), so this proves the claim with actual
-# evidence rather than by construction: a scripted `aws` stub is wired in
-# via STUB_AWS_SCRIPT, and the case asserts its marker was never written.
+# all (announce_account, called later by the five writing scripts, is
+# T-8's job), so this proves the claim with actual evidence rather than by
+# construction: a scripted `aws` stub is wired in via STUB_AWS_SCRIPT, and
+# the case asserts its marker was never written.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 

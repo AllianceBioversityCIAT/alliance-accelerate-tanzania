@@ -1,5 +1,16 @@
 # Tasks — Deploy-script guardrails
 
+
+> ## ⚠️ Pivot, 2026-09-21 — FR-3 withdrawn
+>
+> **The account assertion (`assert_account`) and `infra/aws-accounts.conf` are removed.** FR-3 is superseded by **FR-3′**: the resolved account is *announced* before a write, never asserted. FR-1's profile floor is unchanged and remains the prevention.
+>
+> Reason, in one line: FR-3's only unique coverage was a profile *named* `IBD-DEV` pointing at a different account — **which is what the Jenkins pipeline creates by design**, so the check's unique value was also its most probable false positive.
+>
+> Full reasoning, alternatives considered, and the disclosed conflict of interest: `execution.md` → **`## Pivot Record: FR-3`**.
+>
+> Any FR-3 statement below that this banner contradicts is superseded by it.
+
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
 - Status: **Done** · Depth: **Standard** · Type: **Bug** (Bug Mode) · validated 2026-09-21
 - Author / Date: AKILI (Leader) — 2026-09-18
@@ -38,7 +49,8 @@
       Done when: every clause above has a case, and each named falsifier was run and observed red.
       Skills: `aws-serverless`, `tdd`
 
-- [x] **T-3 `aws-accounts.conf` and `assert_account`** (deps: T-2)
+- [x] ~~**T-3 `aws-accounts.conf` and `assert_account`**~~ → **superseded by T-8** (deps: T-2)
+      ⚠️ **This task shipped, was reviewed, and passed on attempt 3. FR-3 was then withdrawn by the Pivot (2026-09-21).** Left `[x]` because it was genuinely completed; the work it produced is being removed by **T-8** below. Its `execution.md` entry stands as the record.
       Scope: the committed config file and the explicit `assert_account` function. **Parsed with `awk -F=`, never sourced** — `IBD-DEV=…` is not a valid bash assignment and sourcing it would abort every script on a *correct* profile. A missing or malformed row aborts, naming the file. An overridden profile still needs a row and still asserts (FR-2's interaction clause).
       Traces: FR-3 (all clauses), FR-2 interaction clause, `design.md` §7.3
       Files: `infra/aws-accounts.conf`, `infra/scripts/_guard.sh`, `infra/scripts/tests/cases/guard-account.*`
@@ -49,6 +61,7 @@
       Skills: `aws-serverless`, `tdd`
 
 - [x] **T-4 Wire the guard into all seven scripts** (deps: T-3)
+      ⚠️ **Partly superseded by T-8 (2026-09-21):** clause (c) — a foreign-account abort per writing script — and every `assert_account` reference below are withdrawn with FR-3. The wiring itself, clauses (a), (b), (d) and (e), stands.
       Scope: `source` the library as the first statement after `set -euo pipefail` in all seven; **delete each local `PROFILE="${AWS_PROFILE:-IBD-DEV}"` line**; add `assert_account` to the five **writing** scripts only — `validate.sh` and `smoke.sh` are read-only and exempt. Remove the `CONFIRM=yes` profile-override branch from `migrate-seed.sh` and `teardown.sh`, leaving `teardown.sh`'s destruction confirmation untouched.
       Traces: FR-1, FR-2, FR-3 read-only exemption, NFR-4, DD-4, DD-6, `design.md` §7.1
       Files: all seven `infra/scripts/*.sh`
@@ -94,6 +107,25 @@
       **⚠️ N-1, carried from `judgment.md`, blocks the `Smoke` claim:** on the bootstrap path (`DEPLOY_INFRA=true`), `Deploy Backend` writes `*` legitimately and `Lock CORS` repairs it. If `Smoke` runs **between** them, T-6's check reds the first bootstrap build. The stage order is not derivable from anything in this repository. **Ask the Jenkins administrator before writing any doc sentence about bootstrap smoke behaviour; if unanswered, record it as an open risk rather than asserting either way** (KZ-011).
       Skills: `cognitive-doc-design`, `aws-serverless`
 
+- [~] **T-8 Execute the Pivot: withdraw the account assertion, announce instead** (deps: T-3, T-4, T-5, T-7)
+      Scope: remove `assert_account` from `_guard.sh` and its five call sites; **delete `infra/aws-accounts.conf`**; add `announce_account`, called by the same five **writing** scripts, which prints the resolved account and effective profile to **stderr** and **never** changes the exit status. Retire or convert the eight `guard-account.*.case.sh` cases.
+      Traces: **FR-3′** (all five clauses), DD-6 (its reasoning now governs FR-3′), `execution.md` → `## Pivot Record: FR-3`
+      Files: `infra/scripts/_guard.sh`, the five writing scripts, `infra/aws-accounts.conf` (**deleted**), `infra/scripts/tests/cases/guard-account.*`
+      Verify: `./infra/scripts/tests/run-tests.sh`
+      Clause ownership — one case each:
+        · a writing script prints the account **and** the effective profile on **stderr**, not stdout
+        · it does **not** change the exit status — a run whose only notable event is the announcement still exits 0
+        · **`sts` failing does not fail the script** — the announcement says so and the script continues (fail **soft**; the announcement is observability, so its own failure cannot be a gate)
+        · `validate.sh` and `smoke.sh` make **no** `sts` call — proven by the stub marker, as T-4 did
+        · **no account id literal anywhere** in `infra/` — widen T-3's static check to cover the deleted `.conf`'s absence too
+      Falsifiers, each run red then green:
+        · make the announcement abort on a mismatch ⇒ the never-aborts case reds
+        · send the announcement to stdout ⇒ the stderr case reds
+        · let an `sts` failure propagate under `set -e` ⇒ the fail-soft case reds
+        · call `announce_account` from `validate.sh` ⇒ the no-STS case reds
+      **⚠️ Do not re-introduce a prevention.** FR-3′ is deliberately an **alert**. If you find yourself adding a comparison, a threshold, or an expected value, you are rebuilding the requirement the Pivot withdrew. There is no expected account any more — nothing to compare against.
+      Skills: `aws-serverless`, `tdd`
+
 ---
 
 ## Dependency Graph
@@ -113,7 +145,8 @@ Every requirement's scenarios **and** every `BUT it must NOT` / `AND IT MUST` cl
 |---|---|---|
 | FR-1 | 4 (proceed · abort · non-TTY fails closed · names both profiles) | T-2, in-situ in T-4(b) |
 | FR-2 | 6 (match proceeds+announces · mismatch aborts · not `AWS_PROFILE` · not `CONFIRM` · single variable · **FR-3 interaction**) | T-2; interaction in T-3 |
-| FR-3 | 5 (mismatch aborts · collision case · read-only exemption · no literal id · provable offline) | T-3; exemption in T-4(d) |
+| ~~FR-3~~ | ~~5~~ | **Withdrawn 2026-09-21** — see the Pivot Record. T-3's entry stands as the record of work that shipped and was then removed |
+| **FR-3′** | 5 (announces on stderr · never aborts · read-only scripts exempt · no versioned account id · fails soft) | **T-8** |
 | FR-4 | 4 (resolved origin · announced bootstrap · not on failed lookup · explicit override wins) | T-5 |
 | FR-5 | 6 (abort on failure · absent ⇒ bootstrap · two tokens · no `2>/dev/null` · classify on text · **`MailTransport` sites**) | T-5 |
 | FR-6 | 7 (permissive · echoed · clean PASS · not on refused/non-2xx/5xx · real preflight · `pass()`/`fail()` accounting · read-only) | T-6 |
@@ -126,7 +159,7 @@ Every requirement's scenarios **and** every `BUT it must NOT` / `AND IT MUST` cl
 |---|---|
 | **D-7** — is a documentation sentence true? | Structurally unmeasurable. Substituted with T-7's mandatory Reviewer and its re-derivation brief |
 | ~~**N-1** — bootstrap-path stage order~~ | **RESOLVED 2026-09-21.** The stage order is `Deploy Backend → Deploy Web → Lock CORS → Smoke`, verified against a copy of the `Jenkinsfile` that day. **`Smoke` runs after `Lock CORS`**, so T-6's check cannot red the first bootstrap build. Recorded in `docs/infrastructure.md` OQ-INFRA-6 |
-| **FR-6's "real preflight" clause** *(added at validation, V-04)* | Implemented at `smoke.sh:323` but **ungated** — the five stubs dispatch on `-X OPTIONS` alone, so deleting the `Access-Control-Request-Method` header leaves all 48 cases green. Declared at T-6 rather than adjudicated in post-PASS. Price to close: one `case` arm in any stub |
+| **FR-6's "real preflight" clause** *(added at validation, V-04)* | Implemented at `smoke.sh:323` but **ungated** — the five stubs dispatch on `-X OPTIONS` alone, so deleting the `Access-Control-Request-Method` header leaves the whole suite green. Declared at T-6 rather than adjudicated in post-PASS. Price to close: one `case` arm in any stub |
 | **FR-7's "date-stamp every Jenkinsfile claim"** *(added at validation, V-04)* | Knowingly unmet for the `DEPLOY_INFRA` / `RUN_MIGRATIONS` rows of `docs/infrastructure.md`'s flag table. **Deliberately left undated rather than dated falsely** — only `RUN_SMOKE` had an attested reading date at T-7. Stamping the others would have manufactured a date, which is the class this spec exists to remove |
 
 ## Estimated LOC and PR strategy — ⚠️ historical, superseded

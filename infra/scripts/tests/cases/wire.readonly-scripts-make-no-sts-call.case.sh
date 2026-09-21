@@ -2,12 +2,14 @@
 #
 # wire.readonly-scripts-make-no-sts-call.case.sh (T-4, script-integration)
 # ---------------------------------------------------------------------------
-# requirements.md FR-3's read-only exemption; design.md DD-6; tasks.md T-4
-# clause (d).
+# requirements.md FR-3′'s read-only exemption; design.md DD-6 (its
+# reasoning now governs FR-3′, unchanged by the Pivot); tasks.md T-4
+# clause (d), reconfirmed unchanged at T-8.
 #
 # validate.sh and smoke.sh get FR-1/FR-2 (they source _guard.sh) but MUST
-# NOT call assert_account. This is proven with the stub marker technique
-# (design.md §7.2's own recommendation for clause (d)), not by inspection:
+# NOT call announce_account (T-3's withdrawn assert_account, before it).
+# This is proven with the stub marker technique (design.md §7.2's own
+# recommendation for clause (d)), not by inspection:
 # STUB_AWS_SCRIPT is configured to touch a marker file on EVERY invocation
 # (not merely one matching "sts get-caller-identity") and then exit
 # non-zero. Both scripts are expected to make ZERO `aws` invocations of any
@@ -23,7 +25,7 @@
 # configured: they fail loudly (the curl stub's own "unconfigured" exit
 # 127) and are caught by smoke.sh's own pass()/fail() accounting, so the
 # script still runs to completion. This case does not assert smoke.sh's
-# overall exit status — only that assert_account was never reached.
+# overall exit status — only that announce_account was never reached.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 

@@ -31,12 +31,11 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$TESTS_DIR/lib/assert.sh"
 
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-INFRA_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
-
-# Read the expected account for IBD-DEV from the real, committed conf file
-# at run time — never as a literal in this test's own source (FR-3;
-# guard-account.no-account-id-literal-in-scripts greps this directory).
-EXPECTED_ACCOUNT="$(awk -F= '$1=="IBD-DEV"{print $2; exit}' "$INFRA_DIR/aws-accounts.conf")"
+# announce_account (FR-3′) has nothing to compare an account
+# against any more — any well-formed value works here. Picked to look
+# nothing like a real account id (guard-account.no-account-id-literal-in-infra
+# greps this whole directory tree and must not find one).
+STS_ACCOUNT="000000000001"
 
 # ── migrate-seed.sh: zero CONFIRM mentions in the code (comments stripped) ─
 code_only="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$SCRIPTS_DIR/migrate-seed.sh")"
@@ -53,17 +52,18 @@ assert_contains 'CONFIRM=yes set — proceeding with teardown.' "$teardown_conte
 assert_contains "refusing to tear down unattended" "$teardown_content" "teardown.sh's unattended-refusal path survives verbatim"
 
 # ── teardown.sh: the destruction gate still functionally fires, in situ ────
-# A valid profile AND a valid account (assert_account passes) still hits
-# the destruction confirmation and aborts non-interactively with no
-# CONFIRM — proving the two guards are independent and the second was not
-# collapsed into (or bypassed by) the first's removal.
+# A valid profile, past announce_account's (fail-soft, never-aborting)
+# account announcement, still hits the destruction confirmation and aborts
+# non-interactively with no CONFIRM — proving the two guards are
+# independent and the second was not collapsed into (or bypassed by) the
+# first's removal.
 RECIPE="$(mktemp)"
 trap 'rm -f "$RECIPE"' EXIT
 cat > "$RECIPE" <<EOF2
 #!/usr/bin/env bash
 case "\$1 \$2" in
   "sts get-caller-identity")
-    echo "$EXPECTED_ACCOUNT"
+    echo "$STS_ACCOUNT"
     exit 0
     ;;
   *)
@@ -83,6 +83,6 @@ output="$(
 status=$?
 set -e
 
-assert_status 1 "$status" "teardown.sh: valid profile+account still requires destruction confirmation"
+assert_status 1 "$status" "teardown.sh: valid profile, past the account announcement, still requires destruction confirmation"
 assert_contains "refusing to tear down unattended" "$output" "teardown.sh: destruction gate is what aborted (not the deleted profile gate)"
 assert_not_contains "IBD-DEV, but this project requires" "$output" "teardown.sh: not aborted by the (correctly passing) profile floor"

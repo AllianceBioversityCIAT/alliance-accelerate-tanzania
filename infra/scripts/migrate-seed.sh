@@ -38,7 +38,7 @@ set -euo pipefail
 
 # shellcheck disable=SC1091
 source "${BASH_SOURCE[0]%/*}/_guard.sh"
-assert_account
+announce_account
 
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
 

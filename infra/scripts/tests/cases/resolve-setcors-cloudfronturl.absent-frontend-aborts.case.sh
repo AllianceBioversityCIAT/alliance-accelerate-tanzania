@@ -21,13 +21,11 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$TESTS_DIR/lib/assert.sh"
 
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-INFRA_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)"
-
-# Read the expected account for IBD-DEV from the real, committed conf file
-# at run time — never as a literal in this test's own source (FR-3;
-# guard-account.no-account-id-literal-in-scripts greps this very
-# directory tree and must not find one).
-EXPECTED_ACCOUNT="$(awk -F= '$1=="IBD-DEV"{print $2; exit}' "$INFRA_DIR/aws-accounts.conf")"
+# announce_account (FR-3′) has nothing to compare an account
+# against any more — any well-formed value works here. Picked to look
+# nothing like a real account id (guard-account.no-account-id-literal-in-infra
+# greps this whole directory tree and must not find one).
+STS_ACCOUNT="000000000001"
 
 AWS_RECIPE="$(mktemp)"
 trap 'rm -f "$AWS_RECIPE"' EXIT
@@ -36,7 +34,7 @@ cat > "$AWS_RECIPE" <<EOF2
 #!/usr/bin/env bash
 case "\$1 \$2" in
   "sts get-caller-identity")
-    echo "$EXPECTED_ACCOUNT"
+    echo "$STS_ACCOUNT"
     exit 0
     ;;
   "cloudformation describe-stacks")

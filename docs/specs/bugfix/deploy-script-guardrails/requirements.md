@@ -1,5 +1,16 @@
 # Requirements — Deploy-script guardrails
 
+
+> ## ⚠️ Pivot, 2026-09-21 — FR-3 withdrawn
+>
+> **The account assertion (`assert_account`) and `infra/aws-accounts.conf` are removed.** FR-3 is superseded by **FR-3′**: the resolved account is *announced* before a write, never asserted. FR-1's profile floor is unchanged and remains the prevention.
+>
+> Reason, in one line: FR-3's only unique coverage was a profile *named* `IBD-DEV` pointing at a different account — **which is what the Jenkins pipeline creates by design**, so the check's unique value was also its most probable false positive.
+>
+> Full reasoning, alternatives considered, and the disclosed conflict of interest: `execution.md` → **`## Pivot Record: FR-3`**.
+>
+> Any FR-3 statement below that this banner contradicts is superseded by it.
+
 - Spec path: `docs/specs/bugfix/deploy-script-guardrails/`
 - Status: **Done** — revision 3 (Judgment Day rounds 1 and 2 applied); validated 2026-09-21, see `validation-report.md`
 - Author / Date: AKILI (Leader) on behalf of Daniela Gómez — 2026-09-18
@@ -49,7 +60,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 | **D-1** | A guard present but unable to fire | Guard-unit tests assert a **non-zero exit** under the violating env | Invert the comparison ⇒ red |
 | **D-2** | A guard firing when it should not, breaking the pipeline | A guard-unit test asserts exit `0` under `AWS_PROFILE=IBD-DEV` | Make the guard unconditional ⇒ red |
 | **D-3** | The guard applied to some scripts and not others | Two-part. **(a)** Enumerate `infra/scripts/*.sh`, **excluding leading-underscore library files**, and assert each sources the guard **before its first external command** (defined in `design.md` §7.2). **(b)** For **every** enumerated script, an integration run with `AWS_PROFILE=MELIA-DEV` must exit non-zero — the guard is proven *in situ*, per script, not only in isolation | Add an unguarded script ⇒ (a) red. Source the guard but never let it run in one script ⇒ **(b) red** |
-| **D-3b** | The account assertion sourced but never invoked in a writing script | Each writing script gets an integration run whose `sts` stub returns a foreign account; all must exit non-zero | Omit the `assert_account` call from one script ⇒ red |
+| ~~**D-3b**~~ | ~~The account assertion sourced but never invoked~~ — **withdrawn with FR-3.** Replaced by FR-3′'s equivalent: each writing script gets an in-situ run proving it **reaches and prints** the announcement | Omit the `announce_account` call from one script ⇒ red |
 | **D-4** | Shell mechanics — `set -e`, subshell exit-code capture, unquoted expansion | Tests **execute** the scripts; the helper contract in `design.md` §7.1 is asserted directly | Replace `if VAR="$(…)"; then` with `VAR=$(…) \|\| true` ⇒ red |
 | **D-5** | The CORS check passing only because the live stack is correct | A **stubbed `curl`** returns a permissive `Access-Control-Allow-Origin`; the test asserts the **`RESULTS` line**, never the exit code | That stub is the test's default input |
 | **D-6** | An account assertion that cannot see a same-named stack in another account | Stubbed `aws` returns a foreign account id **and** a matching stack name | Assert the stack name instead of the account ⇒ red |
@@ -81,18 +92,27 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
   - GIVEN the override is set but does **not** match the effective profile WHEN a script runs THEN it exits non-zero — an override authorises **one named profile**, never "any".
   - BUT it must NOT accept `AWS_PROFILE` or `CONFIRM` as the override; the variable that caused the bug cannot be the variable that authorises it.
   - AND IT MUST be a single variable across all scripts, learned once.
-  - **Interaction with FR-3, stated because a conjunctive constraint set can break where its members meet (KZ-007):** an overridden profile MUST still carry a row in `infra/aws-accounts.conf`, and its account assertion still runs. The override authorises a *different profile*, never an *unverified account* — otherwise it would disarm FR-3, reproducing the `CONFIRM` composite §6.1 diagnoses one level up. A profile with no row aborts, naming the file.
+  - ~~**Interaction with FR-3**~~ — **moot since the Pivot (2026-09-21).** This clause required an overridden profile to carry a row in `infra/aws-accounts.conf` and still pass the account assertion, so that the override could authorise *a different profile* but never *an unverified account*. **FR-3 is withdrawn and the file is deleted**, so there is no account assertion for an override to disarm. FR-3′ announces unconditionally — an overridden profile gets its account printed like any other, which is the behaviour the clause was protecting, now free. *Recorded rather than deleted: the KZ-007 reasoning it embodied is why the override was made value-carrying in the first place, and that decision stands.*
 
-### FR-3: The account is asserted, not inferred from the profile name
+### ~~FR-3: The account is asserted~~ — **WITHDRAWN 2026-09-21. Superseded by FR-3′.**
 
-- **Description:** Before any AWS call that **writes**, scripts MUST assert the resolved account id via `sts get-caller-identity` against the expected account, and abort on mismatch.
-- **Rationale / Source:** ATP-65 constraint 3. A name check catches `MELIA-DEV`; it cannot catch an `IBD-DEV` profile repointed at another account, and stack names collide across accounts.
+> The original requirement — *"before any AWS call that writes, scripts MUST assert the resolved account id via `sts get-caller-identity` against the expected account, and abort on mismatch"* — was **implemented, reviewed, passed, and is now withdrawn by a Pivot.** See `execution.md` → `## Pivot Record: FR-3`. It is recorded here rather than deleted because it shipped and was then removed; a reader of the git history needs to find it.
+
+### FR-3′: The resolved account is announced before any write
+
+- **Description:** Before any AWS call that **writes**, scripts MUST print the resolved AWS account id to stderr. They MUST NOT abort on it.
+- **Rationale / Source:** The Pivot. Three findings drove it:
+  1. **The documented incident does not need an account check.** ATP-65's 2026-07-09 event created a stack in account `494418445156` — *the operator's personal account*, reached by a profile **not** named `IBD-DEV`. FR-1's profile floor alone prevents it. So does the 2026-08-07 near-miss (`MELIA-DEV`).
+  2. **The account assertion's only unique coverage is the scenario CI creates by design.** It catches exactly one case a name check cannot: a profile *named* `IBD-DEV` pointing at a different account. The Jenkinsfile **materializes** such a profile from a Jenkins credential, and the product owner confirmed on 2026-09-21 that those accounts are not the same. The check's unique value was therefore also its most probable false positive — and a guard whose likeliest trigger is legitimate operation is a guard that gets disabled, which teaches people to route around guards.
+  3. **It was over-built, and its removal is evidence of that.** Withdrawing it closes three open validation findings at once: **V-01** (the pipeline's account was never verifiable), **V-02** (the config parser silently took the first of duplicate keys), and one of the two **A-02** sites (`assert_account` captured with `2>&1`).
 - **Acceptance criteria:**
-  - GIVEN the resolved account id differs from the expected account WHEN a writing script runs THEN it exits non-zero.
-  - AND IT MUST do so **even when a stack of the expected name exists there** — the collision case is the actual danger.
-  - BUT it must NOT gate the **read-only** scripts. The criterion is mechanical: a script that issues no AWS call which creates, modifies, or deletes a resource does not assert the account. That selects exactly **`validate.sh`** (template linting) and **`smoke.sh`** (assertions over live endpoints; FR-6 requires it stay read-only). Both get **FR-1 and FR-2, not FR-3** — giving a read-only check a live STS dependency defeats the property that makes it safe to run in the agent loop.
-  - BUT it must NOT hardcode the account id in any script; it is read from one configuration file, so a future Prod account is a config change (**OQ-INFRA-1**).
-  - AND IT MUST be exercisable with no network access, or FR-3 cannot be proven at all.
+  - GIVEN any writing script runs WHEN it reaches the point before its first write THEN it prints the resolved account id and the effective profile to **stderr**.
+  - BUT it must NOT abort, warn-and-prompt, or change its exit status on the basis of that value.
+  - BUT it must NOT gate the **read-only** scripts — `validate.sh` and `smoke.sh` announce nothing, for the same reason DD-6 gave: a live STS dependency defeats the property that makes `validate.sh` safe to run in the agent loop.
+  - BUT it must NOT read any expected account from configuration. **No account id is versioned under `infra/` — enforced by `guard-account.no-account-id-literal-in-infra`. One historical instance predates this spec and is deliberately out of scope: `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`, a frozen archive record that must not be edited.**
+  - ⚠️ *This is the third occurrence in this spec of the same false universal negative* — at specify time, again at T-3, and again in the Pivot, each time in a **new artefact** after the previous instance was corrected. The correct form is the one above: scoped to what a gate actually enforces.
+  - AND IT MUST fail **soft**: if `sts get-caller-identity` fails, the script says so and continues. The announcement is observability, never a gate — so its own failure cannot be one.
+- **⚠️ Stated limit, because this is an alert and not a prevention.** FR-1 *prevents* the documented failure mode. FR-3′ only makes the residual — a repointed `IBD-DEV` — **visible**. For the July incident visibility would not have helped: an RDS instance ran ~30 days *because nobody looked*. This is proportionate to a rare, self-inflicted misconfiguration and is not more than that.
 
 ### FR-4: A permissive CORS origin is a deliberate act
 
@@ -147,7 +167,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 
 | ID | Requirement | Measure |
 |---|---|---|
-| **NFR-1** | The harness introduces **no new installable dependency**. `bats` and `shellcheck` are absent and are not vendored. It stubs exactly the **network-capable** commands (`design.md` §7.2) and runs the text tools (`awk`, `grep`, `sed`, `dirname`) for real — stubbing `awk` would make the `aws-accounts.conf` parsing gate test a fiction. | The suite runs on a clean checkout with no `npm i`, no `brew install`, no `pip install` |
+| **NFR-1** | The harness introduces **no new installable dependency**. `bats` and `shellcheck` are absent and are not vendored. It stubs exactly the **network-capable** commands (`design.md` §7.2) and runs the text tools (`awk`, `grep`, `sed`, `dirname`) for real — stubbing a text tool would make any gate that depends on it a test of the stub rather than of the code. | The suite runs on a clean checkout with no `npm i`, no `brew install`, no `pip install` |
 | **NFR-2** | Tests are **hermetic** — no AWS calls, no credentials, no live stack, **no outbound network of any kind**. | The suite passes with no AWS credentials and with networking disabled |
 | **NFR-3** | The change is **pipeline-compatible**. | A guard-unit test asserts exit `0` under the pipeline's exact env (`AWS_PROFILE=IBD-DEV`) |
 | **NFR-4** | Guard logic lives in **one place**. The `MailTransport` classification currently duplicated in `deploy.sh` and `set-cors.sh` collapses into the shared helper. | D-3's enumeration, plus zero remaining local copies of the classification block |
@@ -179,8 +199,8 @@ Every claim about a system outside this repository, with where it was verified (
 | `migrate-seed.sh` and `teardown.sh` carry a profile guard; the other five do not | grep for `!= "IBD-DEV"` across `infra/scripts/`, 2026-09-18 |
 | `smoke.sh` accepts `API_BASE_URL`, `CLOUDFRONT_URL` and `BUCKET` from the environment | its own `USAGE` block, re-read against merged `main` 2026-09-18 |
 | Neither `bats` nor `shellcheck` is installed | `which bats shellcheck` → not found, 2026-09-18 |
-| The **local** `IBD-DEV` profile resolves to account `569113802249` | `aws sts get-caller-identity --profile IBD-DEV`, run 2026-09-18 and again by the Implementer at T-3 |
-| ⚠️ **Which account the PIPELINE's `IBD-DEV` resolves to** | **UNVERIFIED.** The Jenkinsfile materializes a profile *named* `IBD-DEV` from the Jenkins credential `prms-test-aws-creds`; only the laptop profile was ever checked. **The product owner stated on 2026-09-21 that the account used locally for testing is not the one that runs everything in AWS**, so this cannot be assumed equal. **What settles it:** the pipeline's own `AWS Auth` stage already runs `sts get-caller-identity` — one line of any recent green build's console output. **Consequence if it differs:** `assert_account` fails closed on the first pipeline build that invokes a writing script, and the one-row-per-profile-**name** format in `infra/aws-accounts.conf` cannot express two accounts under one name (V-02: a duplicate row is silently ignored), so that case needs a design decision, not a config edit |
+| ~~The local `IBD-DEV` profile resolved to a specific account~~ | **No longer load-bearing.** FR-3 is withdrawn, so nothing is asserted against an expected account. The id is deliberately **not** restated here. Retained only as the record that a check was performed while FR-3 stood |
+| ~~Which account the PIPELINE's `IBD-DEV` resolves to~~ | **MOOT since the Pivot, 2026-09-21 — it no longer needs an answer.** FR-3 is withdrawn, so no expected account exists and nothing compares against one; FR-3′ prints whatever the credential resolves to. Validation finding **V-01 is closed by removal, not by verification.** The original text follows, because it is what prompted the Pivot: ~~**UNVERIFIED.** The Jenkinsfile materializes a profile *named* `IBD-DEV` from the Jenkins credential `prms-test-aws-creds`; only the laptop profile was ever checked. **The product owner stated on 2026-09-21 that the account used locally for testing is not the one that runs everything in AWS**, so this cannot be assumed equal. **What settles it:** the pipeline's own `AWS Auth` stage already runs `sts get-caller-identity` — one line of any recent green build's console output. **Consequence if it differs:** `assert_account` fails closed on the first pipeline build that invokes a writing script, and the one-row-per-profile-**name** format in `infra/aws-accounts.conf` cannot express two accounts under one name (V-02: a duplicate row is silently ignored), so that case needs a design decision, not a config edit |
 | `RUN_SMOKE=true` causes the pipeline to invoke `infra/scripts/smoke.sh` post-deploy, so T-6's new CORS check reaches CI with no `Jenkinsfile` change | `Jenkinsfile` — operator-supplied copy, read 2026-09-18; `docs/infrastructure.md` §3's `RUN_SMOKE` row states the same. *(FP-10 — this claim was carried in `smoke.sh`'s own comment undated before this row existed.)* |
 
 **Assumption, unverifiable from here:** the `Jenkinsfile` copy reviewed is the one deployed on `automation.prms.cgiar.org`.
@@ -192,7 +212,7 @@ Every claim about a system outside this repository, with where it was verified (
 **None.** Two were opened at specify time and both were settled by the product owner on 2026-09-18:
 
 - **OQ-SPEC-1** — produce the Jenkinsfile patch, scoped to the CORS resolution only. *(Supersedes the proposal's OQ-3; the `MailTransport` blocker is documented, not patched.)*
-- **OQ-SPEC-2** — commit `infra/aws-accounts.conf`. *(New at specify time; corresponds to no proposal question.)*
+- ~~**OQ-SPEC-2**~~ — settled 2026-09-18 as *commit `infra/aws-accounts.conf`*, then **REVERSED 2026-09-21 by the Pivot: the file is deleted.** No account id is versioned under `infra/` — enforced by `guard-account.no-account-id-literal-in-infra`. One historical instance predates this spec and is deliberately out of scope: `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`, a frozen archive record that must not be edited. *(New at specify time; corresponds to no proposal question.)*
 
 Deliberately renumbered: the proposal's own OQ-1 and OQ-2 are different questions — "shared helper vs. seven inline guards" and "does the pipeline export `AWS_PROFILE`?" — both already closed in `proposal.md`. Reusing those labels would send a reader tracing "OQ-2" to a different, already-answered question.
 

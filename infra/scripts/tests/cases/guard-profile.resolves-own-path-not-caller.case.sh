@@ -4,9 +4,11 @@
 # ---------------------------------------------------------------------------
 # design.md §7.1 design point: "The library resolves its own path with
 # ${BASH_SOURCE[0]%/*}, never $0, which in a sourced file names the
-# caller." Not named as a task falsifier, but load-bearing for T-3 (which
-# will use this resolved directory to locate infra/aws-accounts.conf), so
-# it is proven now while the library is small.
+# caller." Not named as a task falsifier, but proven now while the library
+# is small — GUARD_DIR was originally consumed by T-3's assert_account to
+# locate infra/aws-accounts.conf; T-8 withdrew both (the Pivot), but the
+# resolution itself is unchanged and still worth pinning independently of
+# any one caller.
 #
 # Proof: source _guard.sh from a `bash -c` invocation whose own $0 is set
 # to an unrelated, non-path string and whose cwd has been changed to /tmp.

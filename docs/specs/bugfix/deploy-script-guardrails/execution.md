@@ -548,13 +548,20 @@ It enumerated exactly what its reading covered, and marked the three Jenkinsfile
 
 ---
 
-## Summary — spec complete
+## Summary — ⚠️ superseded by the Pivot, see `## Pivot Record: FR-3` and **T-8**
+
+> **This block was written when the spec had seven tasks and 48 cases, and it is now false in three ways** (found by the T-8 Reviewer). It is corrected in place rather than rewritten, because it is the record of what was believed at that moment:
+> - *"All seven tasks"* → there are **eight**; **T-8 is open** until its Reviewer PASS
+> - *"48 test cases, 48 passing"* → **47**
+> - The ATP-65 row credited closure partly to the account assertion, **which the Pivot removed**
+>
+> Root `CLAUDE.md`'s *evidence before checkbox* rule is why this matters: a Summary asserting completion ahead of T-8's verdict is an unfalsifiable completion.
 
 **All seven tasks `[x]`.** 48 test cases, 48 passing, hermetic (no AWS, no credentials, no network).
 
 | Ticket | Status |
 |---|---|
-| **ATP-65** | **Closed.** All seven scripts abort on a foreign profile before any AWS call — verified on the real scripts, not only in tests. The account is asserted, not inferred from the profile name, including the collision case a name check cannot see |
+| **ATP-65** | **Closed by the profile floor.** All seven scripts abort on a foreign profile before any AWS call — verified on the real scripts, not only in tests. *(This row originally also credited the account assertion and its collision case; **the Pivot withdrew that mechanism**, and the analysis in the Pivot Record is that the floor alone prevents the documented incident, which was a **differently-named** profile pointing at a personal account.)* |
 | **ATP-64** | **Closed in this repository.** The static `*` default is gone; the origin resolves live and fails closed on a failed lookup. `smoke.sh` Check 6 is the detector, and it reaches CI on merge with no Jenkins-server change |
 | **Jenkinsfile** | **Open by construction.** Advisory patch supplied; this repo cannot land it |
 
@@ -582,7 +589,7 @@ It enumerated exactly what its reading covered, and marked the three Jenkinsfile
 
 | | Lines added |
 |---|---|
-| Production — the seven scripts + `_guard.sh` + `aws-accounts.conf` | **550** |
+| Production — the seven scripts + `_guard.sh` *(and, at the time of measuring, `aws-accounts.conf`, since deleted by the Pivot)* | 550 → ⚠️ **pending re-measure after T-8** |
 | Advisory Jenkins patch (not applied) | 102 |
 | Tests | **3,236** |
 | **Ratio tests : production** | **5.8 : 1** |
@@ -592,3 +599,136 @@ It enumerated exactly what its reading covered, and marked the three Jenkinsfile
 **Three of the eleven were the Leader's**, and all three were the same error in different clothes: a universal negative drawn from a `grep … | head -5`; a correction applied to the cited site while the same premise survived four lines above; and a prohibition scoped to the artefact type where the last instance lived, so the defect moved artefact type. **Fixing the instance instead of the class** — while instructing subordinates to do the opposite.
 
 The countermeasure the evidence supports, recorded at `judgment.md` §10 and confirmed six more times since: **where a correction can be made by deleting the false text rather than replacing it, delete.** Every deletion in this spec introduced nothing. Several rewrites introduced the next defect.
+
+---
+
+## Pivot Record: FR-3 — the account assertion is withdrawn
+
+**Date:** 2026-09-21 · **Trigger:** infrastructure owner + product owner, agreeing · **Approved by:** product owner, same day
+
+### The blocker
+
+FR-3 shipped, was reviewed, and passed at T-3. Then validation (V-01) found its expected-account premise was never verified for the pipeline, and the product owner supplied the missing fact: **the account used locally for testing is not the one that runs everything in AWS.** The infrastructure owner's position — *the account number can change, so validating on it and committing it are both unnecessary* — was put to the Leader for an opinion.
+
+### Analysis — the Leader agreed, on a stronger ground than the one offered
+
+| # | Finding |
+|---|---|
+| 1 | **The documented incident does not need an account check.** ATP-65's 2026-07-09 event created a stack in `494418445156` — *the operator's personal account*, reached by a profile **not** named `IBD-DEV`. FR-1's profile floor alone prevents it. So does the 2026-08-07 near-miss (`MELIA-DEV`). FR-3 added nothing to either |
+| 2 | **Its only unique coverage is the scenario CI creates by design.** FR-3 catches exactly one case a name check cannot: a profile *named* `IBD-DEV` pointing elsewhere. The Jenkinsfile **materializes** such a profile from a credential, and those accounts differ. **The check's unique value was also its most probable false positive** — and a guard whose likeliest trigger is legitimate operation is a guard that gets disabled, which teaches people to route around guards ([[process-proportionality]]: a gate that cries wolf is worse than no gate) |
+| 3 | **Its removal closes three open validation findings**, which is itself evidence it was over-built: **V-01** (pipeline account never verifiable), **V-02** (parser silently took the first of duplicate keys), and one of two **A-02** sites (`assert_account` captured with `2>&1`) |
+
+**The infrastructure owner's reason was about the cost of keeping it correct. The decisive one is prior: it could not be kept correct without crying wolf.**
+
+⚠️ **Conflict of interest disclosed.** The Leader recommended committing the account id at the Phase-2 gate **and gave the product owner a false premise while doing so** — it claimed the id would be the repository's first, which was untrue (`design.md` §7.3 correction). It therefore had a stake in not defending FR-3 from sunk cost, and says so rather than letting the analysis stand unqualified.
+
+### Alternatives considered
+
+| Option | Why not |
+|---|---|
+| **Keep FR-3, add the CI account as a second row** | The format keys on profile **name**; two accounts under one name is inexpressible, and a duplicate row is silently ignored (V-02). Fixing the format to hold a list weakens the assert into an allow-list — which is most of the way to removing it, with all the maintenance kept |
+| **Keep FR-3, use a distinct profile name in CI** | Requires editing the `Jenkinsfile`, which this repository does not version. It would put the guard's correctness in a file no gate here can read |
+| **Delete FR-3 outright, announce nothing** | Loses the residual (a repointed `IBD-DEV`) with no substitute. Cheap, and slightly cheaper than what was chosen |
+| **Withdraw FR-3, replace with an announcement** ✅ | Chosen. Zero maintenance, zero false positives, the account lands in the operator's terminal and the Jenkins log |
+
+### Revised direction — FR-3′
+
+Before any write, the five writing scripts **print** the resolved account and effective profile to stderr, and **never abort on it**. It fails **soft**: if `sts` fails, say so and continue — the announcement is observability, so its own failure cannot be a gate.
+
+`infra/aws-accounts.conf` is **deleted** at the product owner's instruction. **No account id is versioned under `infra/`** — enforced by `guard-account.no-account-id-literal-in-infra`. One historical instance predates this spec and is deliberately out of scope: `docs/specs/archive/2026-08-05-import-export--partner-profile-onboarding/archive-summary.md`, a frozen archive record that must not be edited.
+
+⚠️ **This sentence originally read *"No account id is versioned in this repository"* — the same false universal negative this spec has now produced three times**, at specify time, at T-3, and here, each time in a **new artefact** after the previous instance was corrected. The retrospective below names that mechanism, and the Pivot Record repeated it while being written. The scoped form above is the only one a gate supports.
+
+**⚠️ The limit, stated because this is an alert and not a prevention** (the distinction `docs/infrastructure.md` was just corrected to make about `smoke.sh`): FR-1 **prevents** the documented failure mode. FR-3′ only makes the residual **visible**, and for the July incident visibility would not have helped — an RDS instance ran ~30 days *because nobody looked*.
+
+### What is amended, and what is deliberately not
+
+| Document | Treatment |
+|---|---|
+| `requirements.md`, `design.md`, `tasks.md` | **Amended** — they are normative |
+| `execution.md`'s T-1…T-7 entries | **Left as written.** They are the audit trail of what happened, and FR-3 *did* ship, get reviewed, and pass. Rewriting them would falsify the record |
+| `judgment.md`, `validation-report.md` | **Left as written**, same reason — a frozen judgment and a frozen audit |
+
+A sweep of ~70 FR-3 references across six documents informed this split: editing every one would have been the partial-landing defect at scale, and the historical ones must not change.
+
+---
+
+## HALT: T-8 — three attempts, Reviewer FAIL on each
+
+**Date:** 2026-09-21 · **Status:** `[~]` · **Working tree deliberately NOT rolled back — see "Why the automatic rollback was not run".**
+
+### Attempt history
+
+| # | Verdict | What failed | Whose |
+|---|---|---|---|
+| 1 | FAIL | `announce_account`'s `mktemp` acquisition was an unguarded assignment, so a `mktemp` failure aborted the caller under `set -euo pipefail` — **the announcement became a gate**, the one thing FR-3′ forbids. Introduced *by* the correct A-02 fix that replaced `2>&1` with a temp file | Implementer |
+| 2 | FAIL | (a) *"No account id is versioned in this repository"* — the **fourth** occurrence of the same false universal negative, at six sites. (b) `design.md` still claimed test coverage T-8 had retired: D-3b, the collision case, *"both directions of FR-3"* | **Leader ×2** |
+| 3 | FAIL | (a) Two allow-list entries cited by no case outside the gate itself, with a header claiming they were derived by grepping — **self-fulfillingly false**. (b) The scan under-reports adjacent matches, which is an **evasion**, not a nit | Implementer |
+
+### What is correct and working right now
+
+Verified by the Leader on a quiet tree after attempt 3:
+
+- **The Pivot is executed.** `assert_account` is gone, all five call sites migrated, `infra/aws-accounts.conf` deleted.
+- **The real account id appears nowhere under `infra/`** — not contiguous, not fragmented. Verified by direct grep, independently of the gate.
+- **`announce_account` is fail-soft as a class.** A stubbed failing `mktemp` yields exit 0, the skip message, and execution continues. The Implementer's own sweep found a second leak (`err="$(cat …)"`, a plain assignment) beyond the one the Reviewer named.
+- **Suite: 47 cases, 47 passing.** A planted 12-digit run under `infra/` reds the gate; removing it greens.
+
+### The two open defects, both in one test file
+
+**H-1 — two dead allow-list entries, and a header that misdescribes its own derivation.** `222222222222` and `333333333333` appear in **zero** files outside `guard-account.no-account-id-literal-in-infra.case.sh`. Measured, not inferred. The header claims the list was *"derived by grepping this tree"* — which cannot work for a list that lives **inside the scanned tree**: the grep returns the draft's own literals and confirms the list instead of deriving it. They are also structurally un-removable from `ALLOWED_IDS` alone, since the header line would then flag the file as its own violation.
+
+**H-2 — the scan can be evaded by adjacency.** `NEEDLE_RE` = `(^|[^0-9])[0-9]{12}([^0-9]|$)` **consumes** its boundary characters, and `grep -o` resumes after each match, so two 12-digit runs separated by a single non-digit yield **one** match. Confirmed by the Leader with the one-line falsifier the Reviewer supplied:
+
+```
+$ printf '%s\n' "fixtures: 111111111111 999888777666" | grep -oE '(^|[^0-9])[0-9]{12}([^0-9]|$)'
+ 111111111111
+```
+
+**The forbidden id is invisible.** So a line reading `# fixtures: 111111111111 <real id>` under `infra/` would pass the gate green with the id versioned — structurally the same evasion (reconstructible residency defeating the scan) that was rejected in attempts 1 and 2, moved from split-assignment form into adjacency form.
+
+**The remediation is a like-for-like swap, not a redesign:** extract with `grep -rnoE '[0-9]{12,}'` (no boundary characters consumed, so adjacent runs both report), then reject any hit whose digit length ≠ 12 — identical semantics, POSIX ERE, still `\b`-free per FP-7. Plus a control asserting **two** matches from one line carrying two separated runs, since the existing control uses `grep -qE`, which answers match/no-match and can never detect a multiplicity shortfall.
+
+### Why the automatic rollback was NOT run
+
+`/akili-execute` Step 4 prescribes `git restore . && git clean -fd` on HALT, so a user is never left holding broken code. **Executing it here would have been the wrong call, and the Leader is recording the deviation rather than taking it silently:**
+
+1. **The code is not broken.** 47/47 green, the Pivot executed, the account assertion removed, the id gone from `infra/`.
+2. **It would discard work the product owner approved.** The Pivot was her decision and the infrastructure owner's; rolling back would restore `assert_account` and `aws-accounts.conf` against an explicit instruction.
+3. **The Reviewer said so itself:** *"the mechanism, the id removal, and the Issue-1/Issue-3 fixes are all correct and should survive any rollback decision the user makes."*
+
+The rule's purpose — do not leave the user with a broken tree — is better served by **not** executing it. The decision is escalated rather than assumed.
+
+### Leader's hypothesis on the root cause
+
+**Not spec ambiguity, and not under-thinking.** Every T-8 attempt fixed what it was given and introduced one new defect **at the edge of the same mechanism**: the A-02 fix introduced the `mktemp` gate; the universal-negative narrowing was falsified by the artefact it cited; the inverted gate's allow-list was self-fulfillingly derived and its scan evadable by adjacency.
+
+The pattern across the whole spec is now measured: **the mechanism is almost always right on the first attempt, and the claim describing it is almost always wrong.** Eleven of the sixteen review rounds died on a documentation claim or a gate that could not fire; none on the mechanism.
+
+The one countermeasure with a measured success record is not care — it is **execution**: the Implementer caught what would have been the *fifth* iteration of the false-negative claim by running a grep over its own draft, not by re-reading it. That is the first instance in this spec of a claim being caught **before** review.
+
+### ⚠️ Addendum — the same Reviewer then issued a second, contradicting verdict
+
+After the FAIL above, **the same Reviewer agent delivered a second report on the same artefacts: `STATUS: PASS`.** Both are recorded; neither is discarded.
+
+| | First verdict | Second verdict |
+|---|---|---|
+| Allow-list entries unused, header self-fulfilling | **gating FAIL** | advisory — *"complete, but not minimal, and its stated justification is measurably wrong"* |
+| Scan evadable by adjacency | **gating FAIL** | advisory — *"much lower severity"* |
+
+**The second verdict resolves against itself.** On the adjacency finding it states: *"**I derived this by reading, not by running it**; it should be confirmed by execution before anyone acts on it."*
+
+**The Leader had already run it**, using the one-line falsifier the first verdict supplied:
+
+```
+$ printf '%s\n' "fixtures: 111111111111 999888777666" | grep -oE '(^|[^0-9])[0-9]{12}([^0-9]|$)'
+ 111111111111
+```
+
+**The forbidden id is invisible.** The PASS's own stated condition is therefore met — and met **against** the PASS. The defect is measured, not reasoned.
+
+The allow-list finding is likewise measured: `222222222222` and `333333333333` appear in **zero** files under `infra/` outside the gate itself.
+
+**Disposition: the HALT stands.** Not because a verdict was picked, but because the only *executed* evidence supports it. Recorded here because a Leader that quietly takes the favourable of two contradicting audits has destroyed the reason for having an auditor.
+
+**Proportionality, stated honestly so the escalation is not overweighted.** The system is correct **today**: the real id is absent from `infra/`, verified by direct grep independently of the gate. What is defective is the *guard*, which is weaker than it claims — a latent hole, not a live breach. The fix is a like-for-like scan swap, not a redesign.
