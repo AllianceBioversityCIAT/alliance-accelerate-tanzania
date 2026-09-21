@@ -31,6 +31,13 @@
 #                             NEVER_PUBLIC_FIELDS/CONTACT_BLOCK_FIELDS split, as
 #                             asserted over HTTP by
 #                             backend/src/test/pii-boundary.spec.ts.
+#     3b. Large page + gzip (ATP-68) — GET /actors?pageSize=500 → 200 (a 400
+#                             means the deployed backend still caps at 100 and the
+#                             map renders BLANK — the version-skew guard); the
+#                             response carries Content-Encoding: gzip and
+#                             decompresses to valid JSON (the Lambda/API Gateway
+#                             base64 path, unreachable from supertest); and the
+#                             PII boundary is re-asserted at that page size.
 #     4. Frontend (FR-5/6)  — CloudFront serves "/" and "/map" → 200.
 #     5. S3 privacy (DD-5)  — a DIRECT S3 object URL → 403 (private bucket; only
 #                             CloudFront via OAC may read).
@@ -248,6 +255,70 @@ if [[ -n "$ACTORS_BODY" ]]; then
   fi
 else
   fail "PII boundary (actors): no body to scan (health check failed)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Check 3b: ATP-68 — the two properties local tests CANNOT reach.
+#
+# Both are deploy-path properties, and both fail CLOSED here because both have
+# a total-failure mode rather than a degradation:
+#
+#   (a) pageSize=500 must return 200. The map requests 500 per page
+#       (frontend DASH_PAGE_SIZE). Against a backend still capped at 100 the
+#       DTO answers 400, getActors() returns null, and the map renders its
+#       error state — a BLANK MAP, not a slow one. This is the version-skew
+#       guard: if the web assets ship ahead of the Lambda, this check is what
+#       catches it.
+#
+#   (b) gzip must survive the Lambda → API Gateway path. Nothing compressed
+#       before ATP-68; an HttpApi (v2) has no MinimumCompressionSize, so
+#       compression happens inside the Lambda and the gzip bytes must reach
+#       API Gateway base64-encoded (serverless-http classifies by
+#       content-encoding). Returned as a UTF-8 string they arrive CORRUPT and
+#       every consumer breaks. supertest decompresses transparently and would
+#       never show it; only a live probe can.
+#
+# (c) is the PII boundary re-asserted at the NEW page size. The contact block
+# is absent from the list projection structurally, not per-request, so this
+# should be free — which is exactly why it is worth pinning after a page-size
+# change touched this endpoint.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> Check: large-page + compression on /actors (ATP-68) ..."
+
+BIG_PAGE_URL="$API_BASE_URL/api/v1/actors?page=1&pageSize=500"
+
+big_code="$(curl -s -o /dev/null -w "%{http_code}" "$BIG_PAGE_URL" || true)"
+if [[ "$big_code" == "200" ]]; then
+  pass "GET /actors?pageSize=500 → 200 (backend cap is 500, not a stale 100)"
+else
+  fail "GET /actors?pageSize=500 → $big_code (expected 200; a 400 means the deployed backend still caps at 100 — the map will render BLANK)"
+fi
+
+# Ask for gzip explicitly and read the response header, without decompressing.
+big_enc="$(
+  curl -s -D - -o /dev/null -H 'Accept-Encoding: gzip' "$BIG_PAGE_URL"     | tr -d '\r'     | awk -F': ' 'tolower($1) == "content-encoding" { print tolower($2) }'     | tail -n 1 || true
+)"
+if [[ "$big_enc" == *gzip* ]]; then
+  pass "GET /actors?pageSize=500 with Accept-Encoding: gzip → Content-Encoding: gzip"
+else
+  fail "GET /actors?pageSize=500 → Content-Encoding '${big_enc:-<none>}' (expected gzip; compression is not reaching the wire)"
+fi
+
+# Integrity: --compressed makes curl decompress, so valid JSON out the far side
+# proves the bytes survived the Lambda/API Gateway encoding round trip intact.
+BIG_BODY=""
+if BIG_BODY="$(curl -fsS --compressed "$BIG_PAGE_URL")" \
+  && jq -e '(.data | type == "array") and (.pageSize == 500)' >/dev/null 2>&1 <<<"$BIG_BODY"; then
+  pass "gzipped /actors body decompresses to valid JSON with pageSize=500 (not corrupt)"
+else
+  fail "gzipped /actors body did NOT decompress to the expected JSON — suspect base64/binary handling on the Lambda path"
+  BIG_BODY=""
+fi
+
+if [[ -n "$BIG_BODY" ]]; then
+  assert_no_pii "actors pageSize=500" "$BIG_BODY" "${NEVER_PUBLIC_FIELDS[@]}" "${CONTACT_BLOCK_FIELDS[@]}"
+else
+  fail "PII boundary (actors pageSize=500): no body to scan (large-page check failed)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
