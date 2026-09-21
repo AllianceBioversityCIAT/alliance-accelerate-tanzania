@@ -56,6 +56,46 @@ export interface DiscoverRailProps {
   onSelectActor: (id: string) => void;
 }
 
+// ── Count caption (FR-4, ATP-68) ─────────────────────────────────────────────
+
+/**
+ * The one line under "Discover actors" that says how many there are.
+ *
+ * Three cases, written as guard clauses rather than a nested ternary (S3358)
+ * — and the middle one is load-bearing: when the fetch was truncated, `total`
+ * describes the REGISTRY and `shown` describes the MAP. Captioning a partial
+ * map with `total` is the bug this replaces (ATP-68), where 1 200 registry
+ * actors rendered 1 000 markers under the words "1200 actors shown".
+ */
+function CountCaption({
+  loading,
+  truncated,
+  shown,
+  total,
+}: {
+  loading: boolean;
+  truncated: boolean;
+  shown: number;
+  total: number;
+}) {
+  // Don't announce a count while loading.
+  if (loading) return <span className="sr-only">Loading actor count</span>;
+
+  if (truncated) {
+    return (
+      <>
+        Showing {shown} of {total} actors
+      </>
+    );
+  }
+
+  return (
+    <>
+      {total} actor{total !== 1 ? 's' : ''} shown
+    </>
+  );
+}
+
 // ── Skeleton rows (loading state, FR-7) ───────────────────────────────────────
 
 function LoadingRows() {
@@ -187,16 +227,12 @@ export default function DiscoverRail({
             aria-live="polite"
             aria-atomic="true"
           >
-            {loading ? (
-              // Don't announce count while loading.
-              <span className="sr-only">Loading actor count</span>
-            ) : isTruncated ? (
-              <>
-                Showing {shownCount} of {displayCount} actors
-              </>
-            ) : (
-              <>{displayCount} actor{displayCount !== 1 ? 's' : ''} shown</>
-            )}
+            <CountCaption
+              loading={loading}
+              truncated={isTruncated}
+              shown={shownCount}
+              total={displayCount}
+            />
           </p>
           {/* ATP-68 — the ceiling is stated, never silent. Rendered only when
               the fetch actually fell short, so the ordinary case is unchanged. */}
