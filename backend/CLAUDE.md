@@ -30,14 +30,19 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 > ⚠️ **Superseded-by note (2026-09-21, `auth/account-access-emails`, DD-7).** The
 > premise below — that no channel exists reliable enough to email this credential —
 > no longer holds: that spec has `MailService` (already used for approval/receipt
-> mail) dispatch this same credential by email (FR-1, FR-5). **This is in progress,
-> not shipped:** check `docs/specs/auth/account-access-emails/tasks.md` §5 for
-> current status before assuming email dispatch exists — `users.service.ts`
-> today calls no `MailService` method and still only `SUPPRESS`es and returns
-> the password, exactly as described below. The reasoning that follows was correct
-> when written and remains the record of *why* the no-email handoff exists; only
-> the forward-looking instruction never to email it has been withdrawn (next
-> paragraph).
+> mail) dispatch this same credential by email (FR-1, FR-5). **This is partially
+> shipped:** check `docs/specs/auth/account-access-emails/tasks.md` §5 for
+> current status — `users.service.ts`'s `create()` now dispatches
+> `MailService.sendInvitation` (T-4) and no longer matches the paragraph below;
+> `resetPassword()` is unchanged and still calls no `MailService` method. It
+> issues no suppression directive either — unlike `create()`'s
+> `AdminCreateUserCommand`, its `AdminSetUserPasswordCommand` has no
+> `MessageAction` field at all, so there is nothing to `SUPPRESS`: Cognito
+> simply never emails for this action. It still only returns the password,
+> exactly as that paragraph describes, pending T-5's identical dispatch. The
+> reasoning that follows was correct when written and remains the record of
+> *why* the no-email handoff exists; only the forward-looking instruction
+> never to email it has been withdrawn (next paragraph).
 
 - `users` create/reset deliberately do **NOT** send Cognito email (corporate
   `@cgiar.org` deliverability, and the pool stays on `COGNITO_DEFAULT`
@@ -46,18 +51,23 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
   `10-data-auth/template.yaml` row + OQ-10, and that spec's
   `requirements.md` §6 — because Cognito cannot publish to the notification
   microservice without a `CustomEmailSender` trigger, which that same §6
-  records as **deferred**). Instead they
-  SUPPRESS Cognito mail and **return a one-time temporary password** for the admin to share
+  records as **deferred**). Instead they avoid Cognito's own mailer and
+  **return a one-time temporary password** for the admin to share
   out-of-band: create → `AdminCreateUser MessageAction:SUPPRESS` +
-  `TemporaryPassword` → `{ user, temporaryPassword }`; reset →
-  `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }`. This is a
+  `TemporaryPassword` → `{ user, temporaryPassword }` (a real suppression —
+  `AdminCreateUser` has a `MessageAction` to suppress); reset →
+  `AdminSetUserPassword(Permanent:false)` → `{ temporaryPassword }` (nothing
+  to suppress there — that command has no `MessageAction` field, so Cognito
+  never emails for it in the first place). This is a
   deliberate exception to "never return a plaintext password". **The instruction
   to never revert it to email is withdrawn** (see the dated note above) — do not
   treat "no email" as standing guidance; follow the linked spec's task status
   instead. The temp password (`users/temp-password.util.ts`, CSPRNG) must
   **never** be logged, stored, or audited — that rule is absolute and this spec
-  does not touch it (NFR-1). Its **exits** do change: today the Admin-guarded
-  response is the only one; under FR-1/FR-5 it also travels in the mail body.
+  does not touch it (NFR-1). Its **exits** change per-method, not both at once:
+  `create()`'s temporary password now also travels in the invitation mail body
+  (FR-1, T-4, shipped); `resetPassword()`'s exit is still the Admin-guarded
+  response only, until T-5 adds the identical dispatch (FR-5).
 - The Cognito pool is **case-sensitive** (immutable `UsernameConfiguration`) — the
   write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
   sign-in/reset. Keep new email inputs normalized.

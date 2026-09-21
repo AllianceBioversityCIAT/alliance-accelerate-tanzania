@@ -10,18 +10,40 @@
  * enforced BEFORE any Cognito call in `setRole`/`remove`, and those
  * `HttpException`s are rethrown unchanged rather than mapped.
  *
- * Credential handoff is admin-mediated, NOT email-based: recipients are
- * corporate @cgiar.org inboxes with poor deliverability, so `create` and
- * `resetPassword` suppress all Cognito email, generate a temporary password, and
- * RETURN it once for the admin to share out-of-band. That returned value is a
- * secret — it is never logged, stored, or placed in an error message; it exits
- * ONLY through the Admin-guarded HTTP response body.
+ * Credential handoff combines an admin-mediated fallback with an emailed
+ * invitation. **The premise this section used to rest on — that Cognito
+ * mail is unusable for corporate `@cgiar.org` inboxes, so email must never
+ * be sent — no longer holds** (`backend/CLAUDE.md`'s "Users module —
+ * no-email credential handoff" section carries the dated superseded-by
+ * note; `auth/account-access-emails` design.md §2 is the record of what
+ * changed: a working channel, `MailService`'s microservice transport,
+ * already exists). `create()` now dispatches an invitation email itself
+ * (auth/account-access-emails T-4, design.md §5.3 — this task); `AdminCreateUser`
+ * still runs with `MessageAction: 'SUPPRESS'`, which was always about
+ * suppressing Cognito's OWN poorly-deliverable mailer, never about
+ * avoiding email as a channel altogether. `resetPassword()` will gain the
+ * identical dispatch in T-5 (design.md §5.2/§5.3) — **not yet built as of
+ * this task**; it still issues no `MailService` call at all (its
+ * `AdminSetUserPasswordCommand` has no `MessageAction` field to suppress in
+ * the first place — Cognito never emails for this action, so there is
+ * nothing being suppressed, unlike `create()`'s `AdminCreateUserCommand`)
+ * and still only returns the password, exactly as the paragraph below
+ * describes.
  *
- * Design refs: design.md §3 (API/Cognito map), §4 (service), §6 (no leakage,
- * anti-lockout). Requirements: FR-1..FR-8, FR-10.
+ * Either way, the temporary password is generated once and RETURNED to the
+ * admin as the guaranteed fallback (FR-2) whether or not the email sends —
+ * that returned value is a secret — it is never logged, stored, or placed
+ * in an error message; it exits ONLY through the Admin-guarded HTTP
+ * response body and (for `create()`, as of this task) the invitation email
+ * body itself.
+ *
+ * Design refs: design.md §3 (API/Cognito map), §4 (service), §5 (mail
+ * dispatch, auth/account-access-emails), §6 (no leakage, anti-lockout).
+ * Requirements: FR-1..FR-8, FR-10 (admin/user-management); FR-1, FR-3, FR-4,
+ * NFR-1, NFR-2 (auth/account-access-emails).
  */
 
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
@@ -43,11 +65,13 @@ import {
 } from './cognito-admin.client';
 import { mapCognitoError } from './cognito-error.mapper';
 import { generateTemporaryPassword } from './temp-password.util';
+import { resolveCognitoSub } from './cognito-sub.util';
 import { AdminUser, toAdminUser } from './users.serializer';
 import { ASSIGNABLE_ROLES, SettableRole } from './users.constants';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { MailService } from '../mail/mail.service';
 
 /** The list response: a page of users plus the opaque next-page token (design §3). */
 export interface ListUsersResult {
@@ -59,10 +83,25 @@ export interface ListUsersResult {
  * Result of {@link UsersService.create}: the serialized user plus the one-time
  * temporary password the admin shares out-of-band. The password is a secret and
  * is returned ONLY in the Admin-guarded create response body.
+ *
+ * `emailSent` (auth/account-access-emails T-4, design.md §4/§5.3, FR-3) is
+ * `true` only when the invitation transport accepted the message — it is
+ * **not** a delivery receipt (no channel available here offers one; see
+ * `requirements.md` §9 D-6) and is `true` under `MAIL_TRANSPORT=no-op`
+ * (local dev), same as every other flow in this codebase. `temporaryPassword`
+ * is always populated regardless of this flag (FR-2's fallback) — the
+ * caller must never read `emailSent: false` as "user not created" (FR-4).
+ * `emailSent` already flows to the client unchanged: `UsersController.create`
+ * returns this interface as-is (no separate response DTO narrows it). What
+ * `auth/account-access-emails` T-6 still owns is the *documented* contract
+ * (`docs/trd/trd.md` — there is no OpenAPI/Swagger artifact in this repo),
+ * the `:id/password` reset half, and the frontend types that
+ * consume this field — not this field's presence on the wire.
  */
 export interface CreateUserResult {
   user: AdminUser;
   temporaryPassword: string;
+  emailSent: boolean;
 }
 
 /**
@@ -76,6 +115,16 @@ export interface ResetPasswordResult {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
+  /**
+   * `mailService` (auth/account-access-emails T-4/T-5, design.md §5.3) is
+   * the ONLY new dependency this spec adds to a service that previously
+   * took none — every other method above is unaffected and still talks
+   * only to Cognito.
+   */
+  constructor(private readonly mailService: MailService) {}
+
   /**
    * FR-1 — paginated user list with per-user group join. Issues `ListUsers`,
    * then `AdminListGroupsForUser` per returned user, and serializes each with
@@ -145,16 +194,49 @@ export class UsersService {
   }
 
   /**
-   * FR-3 — create a user with an admin-mediated credential handoff (no email).
-   * A cryptographically-random temporary password is generated and passed to
-   * `AdminCreateUser` with `MessageAction: 'SUPPRESS'`, so Cognito sends NO
-   * invite email (recipients are @cgiar.org inboxes with poor deliverability).
-   * The email attribute is pre-verified so the account is immediately usable.
-   * The user is left in `FORCE_CHANGE_PASSWORD` and must change the password at
-   * first sign-in. When a role is supplied, the user is added to that group.
-   * Returns the serialized user plus the temporary password for the admin to
-   * share out-of-band — that password is a secret and is returned only here,
-   * never logged or stored.
+   * FR-1/FR-3 — create a user, generate a temporary password, and email that
+   * user an invitation (auth/account-access-emails T-4, design.md §5.3). A
+   * cryptographically-random temporary password is generated and passed to
+   * `AdminCreateUser` with `MessageAction: 'SUPPRESS'` — Cognito's OWN invite
+   * mailer stays suppressed, unchanged (design.md §5.4); that was always about
+   * avoiding Cognito's poorly-deliverable channel, never about avoiding email
+   * as a channel altogether. The email attribute is pre-verified so the
+   * account is immediately usable, and the user is left in
+   * `FORCE_CHANGE_PASSWORD`, so it must change at first sign-in (FR-1
+   * scenario 1's `AND IT MUST`) — unchanged, since nothing here alters the
+   * `AdminCreateUser` call's password-permanence behaviour. When a role is
+   * supplied, the user is added to that group.
+   *
+   * **The invitation dispatch runs LAST, after the optional
+   * `AdminAddUserToGroup` call above** (design.md §5.3, judgment round 1's
+   * J/A-6) — not between the two Cognito calls. Both Cognito calls share the
+   * one outer `try` routed through `mapCognitoError`; dispatching earlier
+   * would let a group-assignment failure turn this whole request into an
+   * error response AFTER a live credential had already been emailed, which is
+   * exactly the state FR-4's "must NOT leave a Cognito user the API reports
+   * as not created" clause forbids. That `AdminAddUserToGroup` call — not
+   * the dispatch itself — is the actual hazard this ordering guards against:
+   * {@link dispatchInvitationEmail} never rethrows, so a MAIL failure can
+   * never turn this request into an error response, but that says nothing
+   * about a *Cognito* call throwing after the email already went out — which
+   * is exactly what running the dispatch before `AdminAddUserToGroup` would
+   * risk. The ordering is deliberate and pinned by a test, not incidental.
+   *
+   * The reference `MailService` logs on failure is
+   * `resolveCognitoSub(created.User)` — the Cognito `sub`, or `undefined`
+   * when it cannot be resolved. It is **never** `dto.email`,
+   * `created.User?.Username`, or the serialized `id`: in this system that
+   * value IS the email address (`users.serializer.ts`'s `toAdminUser` derives
+   * `id` from `Username`, which the `AdminCreateUserCommand` call below sets
+   * to `dto.email`), and substituting it here would write a plaintext
+   * address to every failed-invitation log line — the exact leak NFR-1
+   * forbids and that judgment round 1's J-4 caught in this design.
+   *
+   * Returns the serialized user, the temporary password (FR-2's fallback —
+   * always populated, whether or not the email sends, never logged or
+   * stored, and exits only through this Admin-guarded response body and the
+   * invitation email body), and `emailSent` (FR-3) — a boolean signal that
+   * the transport accepted the message, not a delivery receipt.
    */
   async create(dto: CreateUserDto): Promise<CreateUserResult> {
     try {
@@ -188,9 +270,63 @@ export class UsersService {
         groups.push(dto.role);
       }
 
-      return { user: toAdminUser(created.User ?? {}, groups), temporaryPassword };
+      // Dispatch LAST — see the docstring above (design.md §5.3, J/A-6).
+      const emailSent = await this.dispatchInvitationEmail(
+        dto.email,
+        temporaryPassword,
+        resolveCognitoSub(created.User),
+      );
+
+      return {
+        user: toAdminUser(created.User ?? {}, groups),
+        temporaryPassword,
+        emailSent,
+      };
     } catch (err) {
       mapCognitoError(err);
+    }
+  }
+
+  /**
+   * FR-1/FR-3/FR-4/NFR-1/NFR-2 — send `create()`'s invitation email, awaited
+   * inside its own `try`/`catch` that swallows and logs (NFR-2, FR-4).
+   * Mirrors `RegistrationsService.dispatchReceiptEmail`'s shape (that method
+   * is the established exemplar design.md §5.3 names) — same awaited-inside-
+   * its-own-try/catch, swallow-and-log discipline; NOT identical, since this
+   * method returns `boolean` (`emailSent`, FR-3) where the exemplar returns
+   * `void`, because `create()`'s caller needs the outcome and
+   * `dispatchReceiptEmail`'s does not. Never fire-and-forget, because this
+   * Lambda's execution environment can freeze
+   * the instant an invocation settles, and `context.callbackWaitsForEmptyEventLoop`
+   * does not protect an `async` handler — this has silently dropped an
+   * unawaited send twice already in this project (the registration OTP and
+   * the receipt).
+   *
+   * `MailService.sendInvitation` / its private `dispatch()` already logs the
+   * attempt/outcome lines with `reference` (or `n/a`) and never the body
+   * (`mail.service.ts`); the line below is this caller's OWN failure record,
+   * and — like the exemplar it mirrors — logs only an error-name
+   * discriminator and the same `reference`, never `to` and never
+   * `temporaryPassword`.
+   *
+   * Returns `true` when the transport accepted the message, `false` on any
+   * rejection — never throws, so a mail-transport failure can never fail
+   * `create()`'s request (FR-4).
+   */
+  private async dispatchInvitationEmail(
+    to: string,
+    temporaryPassword: string,
+    sub: string | undefined,
+  ): Promise<boolean> {
+    try {
+      await this.mailService.sendInvitation(to, temporaryPassword, sub);
+      return true;
+    } catch (err: unknown) {
+      const errorType = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.error(
+        `invitation email send failed: errorType=${errorType} reference=${sub ?? 'n/a'}`,
+      );
+      return false;
     }
   }
 

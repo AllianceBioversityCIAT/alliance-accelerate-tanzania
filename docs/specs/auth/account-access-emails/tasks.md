@@ -79,7 +79,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: a test that only checks the helper's return value proves nothing about NFR-1. The assertion must be over **what `dispatch` logged**, captured from the logger, not over the helper in isolation.
       Done when: logged strings contain neither the password nor the body nor any `@`; `sub` is the reference when resolvable; **`undefined` — never `id` — when not** (J-4's fallback rule, the thing that actually protects NFR-1).
 
-- [ ] **T-4** Dispatch the invitation from `UsersService.create()`  (deps: T-3)
+- [x] **T-4** Dispatch the invitation from `UsersService.create()`  (deps: T-3)
       Scope: resolve `sub` from `AdminCreateUserResponse.User.Attributes`; dispatch **last, after the optional `AdminAddUserToGroup`**; awaited inside its own `try`/`catch` that swallows and logs; return `emailSent`.
       Traces: FR-1, FR-3 (both scenarios), **FR-4 (all four clauses, incl. the `BUT NOT 5xx` and the `AND IT MUST NOT leave a Cognito user the API reports as not created`)**, NFR-2; design.md §5.3
       Files: `backend/src/users/users.service.ts` (+ `.spec.ts`)

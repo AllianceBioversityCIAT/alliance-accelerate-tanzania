@@ -345,3 +345,90 @@ Recorded because it is this spec's recurring lesson in miniature: a sound infere
 **Issues encountered.** One prose defect (a false justification for a type field — ninth of the spec's prose FAILs) and, newly, **one real coverage hole**: nothing would have caught a swallowing `catch` in the two new methods, which is T-1's first FAIL made real rather than merely instructed. Its exemplar sat 45 lines below the new tests in the same file, and the reason it was missed was the *"structurally covered"* framing `tasks.md` §2 names as insufficient.
 
 **Leader decisions:** `tdd` assigned over the task's listed skills (recorded above); effort `xhigh` held at the T2 ceiling rather than escalating the tier, since the retry's fixes were precise rather than hard; the `sub` helper relocated to `users/` before spawning.
+
+---
+
+### T-4 — Dispatch the invitation from `UsersService.create()`
+
+**Status:** in progress · **Attempts so far:** 1 (FAIL) · Date: 2026-09-21
+
+**Leader decisions.** Skills `nestjs-expert`, `error-handling-patterns` **+ `tdd`** (override — the disqualifier is a test-design constraint). Effort `xhigh`.
+
+**Declared deviation, adjudicated and CONFIRMED:** `users.module.ts` gained `imports: [MailModule]`, outside the assigned Files list. Necessary — Nest modules are encapsulated, so `MailService` cannot resolve without it and every route on the controller would 500. Minimal (`MailModule` already exports `MailService`; neither module's surface changed) and flagged by the Implementer rather than hidden.
+
+> ⚠️ **Leader correction.** I told the Reviewer that `users.e2e.spec.ts` is what proves this wiring. **It is not** — that spec builds a testing module from `UsersController` plus a *mocked* `UsersService`, so it is blind to the DI gap. What actually proves it is the set of specs that bootstrap the real `AppModule` (`lambda-handler.e2e.spec.ts`, the admin e2e suites), where `UsersModule` is eagerly instantiated and a missing import fails bootstrap outright. The conclusion held; the stated reason was wrong — the tenth instance in this spec of a claim that sounds right and is not.
+
+**Verification (Leader re-ran both):** `npx jest src/users` → 6 suites / 56 tests. `npm test -- --silent` → **82 suites / 1196 tests**. ⚠️ A **stale jest process, alive 1h50m** from an earlier run, was found and killed before these runs — it explains the long-standing *"Jest did not exit"* warnings and is exactly the contention the root `CLAUDE.md` concurrency protocol describes. *(A separate Leader misdiagnosis is recorded for honesty: I briefly concluded the suite was hanging, when in fact I had wrapped it in `timeout`, which does not exist on macOS — the command was failing instantly, not blocking.)*
+
+**Four falsifiers run, reddened, reverted** — including one **self-initiated** (a stray `AdminSetUserPassword(Permanent:true)`, strengthening FR-1's `FORCE_CHANGE_PASSWORD` clause). The Reviewer found falsifier 1 discriminating in **both** directions: moving the dispatch earlier than `AdminCreateUser` also reddens a different test.
+
+#### Attempt 1 — Reviewer `FAIL` (2 issues)
+
+**What held.** Trap 1 clean — the Reviewer traced every path to the log line and found no route by which the address can become the reference; the `undefined` branch reaches `reference=n/a` through both `dispatch` and `UsersService`'s own line. Trap 2 clean — dispatch is genuinely last, with only the pure `toAdminUser` projection after it. The disqualifier is **satisfied on all four** assertions, unlike T-3's under-asserted clause. The `(B)` on FR-1 s2 is **genuinely structural**, and the Reviewer re-ran the grep rather than accepting it: `NEW_PASSWORD_REQUIRED|RespondToAuthChallenge|AdminInitiateAuth|ChallengeName` returns **zero** matches under `backend/src`; sign-in is handled entirely in `frontend/lib/auth/auth-client.ts`. Crucially it also checked that the property is not left unguarded — the only way T-4 *could* falsify it (permanentizing the credential) is covered by (A).
+
+> **Issue 1 — a comment asserts a test guard that does not exist, plus two misstated facts.** The new spec docblock says *"`resetPassword`'s own tests above are UNCHANGED and deliberately still assert no `MailService` call happens from that method."* That describe block contains **no reference to `mailService` at all** — nothing would change colour if `resetPassword` dispatched today. *"UNCHANGED"* is true; *"deliberately still assert"* is false, and it is the **"structurally covered" framing `tasks.md` §2 names as insufficient — asserted this time as a fact rather than offered as a defence.** "above" is also wrong (the block is ~230 lines below).
+> Same class in `users.service.ts`: *"The controller response shape … are T-6's scope, not built as of this task."* The controller returns `this.usersService.create(dto)` unmodified, typed `Promise<CreateUserResult>` — **`emailSent` is already on the wire.** T-6 adds the reset half, the frontend types and the TRD entry; it does not add the field to this response.
+> **Violated Rule:** `tasks.md` §2 / KZ-013; the comment-truth standard that produced this spec's T-1 and T-3 FAILs.
+
+> **Issue 2 — the premise sweep stopped at the two docstrings the brief named, leaving four now-false markers inside T-4's own files.** All in `users.service.spec.ts`: the file docblock (*"NO email"*), the FR-3 section banner (*"no-email admin-mediated handoff"*), a **test title** (*"...+ a temp password (NO email)..."*) whose own body 45 lines later asserts `sendInvitation` was called once, and an inline *"// No email is ever requested."* Each was true only of **Cognito's** mailer.
+> **Violated Rule:** **KZ-004** as restated under T-9 (*"the sweep is over the premise, not the phrase"*) and in this task's own brief.
+
+**ADVISORY (recorded):** the docstring overclaims that the dispatch is *"safe wherever it sits in this outer `try`"* — the J/A-6 hazard is the **group-add** throwing after a credential was emailed, which "never rethrows" does nothing to prevent; *"never rethrows"* is also absolute where the cited exemplar names its residual (a throwing `logger.error` would escape into `mapCognitoError`). *"Mirrors … exactly"* is a small overclaim (it returns `boolean`). A positional anchor says "two lines above" for something ~15 lines below (KZ-009).
+
+**🔭 Leader dispatch decision on the two out-of-scope false sites.** This diff falsified two files outside T-4's Files list. The Implementer flagged `temp-password.util.ts` (correct) but not these:
+1. **`backend/CLAUDE.md`** — T-9's own superseded-by note now reads falsely: *"`users.service.ts` today calls no `MailService` method."* It is a **constitutional baseline**, it is false as of this diff, and no remaining task owns it. **Folded into T-4's rework by Leader decision** — the task that falsified it fixes it. My forward pointer named this as site 4 but the brief passed it along as *"already annotated by T-9"* rather than *"your change will make it false"*; that framing error is mine.
+2. **`users.controller.ts:61`** — *"`POST /api/v1/users` — create a user (FR-3). No email is sent."* **Assigned to T-6**, which owns that file and will edit it anyway.
+
+#### Attempt 2 — Reviewer `FAIL` (1 issue) — ⚠️ **and the defect is the Leader's**
+
+**What held.** All four Cognito-scoped rewrites verified TRUE at source, including the test title: `(Cognito's own mailer)` attaches to `"SUPPRESS"` and makes no no-email claim, so its body asserting `sendInvitation` was called once is **consistent, not contradictory** — the correct repair of attempt 1's `(NO email)`. `backend/CLAUDE.md` correct on both sentences and still an annotation under DD-7; the Reviewer verified the second sentence the Implementer found on its own initiative end-to-end, down to `invitation.template.ts` putting the credential in both the text part and the callout. The premise sweep verified by the Reviewer's **own** grep rather than accepted: nothing describing `create()` is left false. `CreateUserResult`'s restatement confirmed at source — no narrowing DTO, no global `ClassSerializerInterceptor`, so `emailSent` genuinely is on the wire today.
+
+> **Issue — the new assertion is documented as a tripwire over T-5, and it cannot fire on T-5.** Both docblocks say it *"must go red the day T-5 adds that call"*. But **T-5 dispatches `MailService.sendAdminReset`**, not `sendInvitation` — the method T-3 authored *for this exact caller*. The `beforeEach` mock declares only `sendInvitation`, so T-5's `await this.mailService.sendAdminReset(...)` throws a `TypeError` **inside the T-4-shaped swallowing `try`/`catch` that T-5 inherits by its own Scope**, gets logged, `resetPassword` resolves normally, and the assertion stays **green**.
+> The line therefore pins a **permanently-true** property (`resetPassword` never sends an *invitation*) while instructing a future implementer that it is a temporary guard to be replaced — *"the precise 'tripwire a future implementer would silently delete' the brief names as worse than none."*
+> The supporting mutation varied `sendInvitation` — **the wrong variable**. It proves the assertion is live; it does not corroborate what the docblock claims it guards.
+> **Violated Rule:** `tasks.md` §2 / **KZ-002** (*"a gate that cannot fail is not a gate"*); the comment-truth standard.
+
+> ⚠️ **This is a Leader defect, the third in this spec.** The assertion was **my recommendation**, and I named it "T-5's tripwire" without checking which method T-5 dispatches. The Implementer followed the recommendation faithfully and inherited the error — exactly as it faithfully reproduced my wrong Disqualifier text in T-1. Verified myself before recording: `mail.service.ts` has both `sendInvitation` (:98) and `sendAdminReset` (:117), and the mock at `users.service.spec.ts:91` declares only the former.
+> **Pattern worth naming:** attempt 1's defect was *"a docblock asserts a guard that does not exist."* Attempt 2 made the guard exist and attached a **new false claim about what it guards** — the same defect one level deeper. That is the shape KZ-008 records seven times: the correction introducing the next instance.
+
+**ADVISORY (recorded):**
+1. `users.service.ts` cites *"(TRD/OpenAPI)"* — there is **no OpenAPI or Swagger artifact anywhere in this repository**, and T-6's Files list names only `docs/trd/trd.md`. A future agent will hunt for a document that does not exist.
+2. `backend/CLAUDE.md` and `users.service.ts` both say `resetPassword()` *"still only `SUPPRESS`es Cognito mail"*. It issues **no** suppression directive — `AdminSetUserPassword` has no `MessageAction` and sends nothing. Restates the section's pre-existing shorthand, so it misleads nobody about behaviour, but attributes a mechanism the method does not use.
+3. **🔭 Leader dispatch needed — `temp-password.util.ts`.** It still carries the withdrawn premise, and its docstring's instruction that callers return the credential *"ONLY in the Admin-guarded HTTP response body"* is now **exceeded by `create()`**. Correctly outside T-4's Files list and correctly declared by the Implementer — but **no remaining task owns that file** (T-9 closed; T-5 and T-6 do not touch it), so absent assignment it survives the spec. Same shape as the `backend/CLAUDE.md` site. **Folded into attempt 3** by Leader decision, on the same principle: the task that falsified it fixes it.
+4. Attempt 1's three advisories persist and were not in the rework brief (re-recorded, not new): *"safe wherever it sits in this outer `try`"*, *"Mirrors … exactly"* (it returns `boolean`), and a *"two lines above"* anchor pointing ~20 lines below (**KZ-009**).
+
+#### Attempt 3 — Reviewer `PASS` ✅
+
+**Fixes:** the tripwire widened to `sendAdminReset` (the method T-5 actually dispatches) with the mock declaring both; the correct falsifier run; both docblocks rewritten; `temp-password.util.ts` corrected (Leader scope extension); five advisories fixed. The Implementer additionally found, fixed and **declared** a second occurrence of the "SUPPRESS" misattribution in `backend/CLAUDE.md` that nobody had flagged.
+
+**Verification (Leader):** `npx jest src/users --silent` → 6 suites / 56 tests. Mock and `temp-password.util.ts` corrections confirmed by grep.
+
+**Reviewer verdict: `STATUS: PASS`,** with two pieces of analysis worth keeping:
+- **Why the widened tripwire genuinely fires:** a `jest.fn()` records the invocation in `mock.calls` **before** the call returns and independently of what any downstream `catch` does — so the swallow *cannot* hide it. The previously-dead path is closed: with the property `undefined`, the call threw `TypeError` **before any recording**, the helper's `catch` ate it, and the only assertion pinned a permanently-true property.
+- **A second escape route checked, unprompted:** if T-5 resolves `sub` via `AdminGetUser` first, that command is unstubbed here and resolves empty, so T-5's attribute read throws into `resetPassword`'s `catch` → `mapCognitoError` (typed `: never`) → the call **rejects**. Red either way.
+
+It verified every advisory correction at source rather than accepting it: **no OpenAPI/Swagger artifact exists anywhere** in the repo (grep returns only the correction itself and this log); `AdminSetUserPasswordRequest` has exactly four members and **no `MessageAction`**; `dispatchReceiptEmail` is `Promise<void>`, awaited, swallow-and-log — so *"same shape, returns `boolean` where the exemplar returns `void`"* is exact. No regressions from attempts 1–2.
+
+**ADVISORY (recorded):**
+1. **🔭 Carry into T-5's brief — this one can cause an FR-4 violation.** `users.service.spec.ts`'s mock comment attributes the swallow to the wrong frame: it says T-5's call *"would throw a `TypeError` inside `resetPassword`'s own swallowing `catch`"*. **`resetPassword`'s only `catch` calls `mapCognitoError`, typed `: never` — it always throws, never swallows.** The swallowing `catch` belongs to the T-4-shaped dispatch helper that T-5 inherits. The Reviewer did not gate on it, but named the consequence precisely: *"a T-5 implementer who believes `resetPassword`'s `catch` swallows could inline the dispatch there, where a mail rejection becomes a **500** — precisely FR-4's `BUT it must NOT return a 5xx`."*
+2. **⚠️ Out of this spec's scope entirely — needs a separate ticket, NOT folded into a task.** `admin-registrations.service.ts` describes `RegistrationsService.dispatchReceiptEmail` as *"still-fire-and-forget"*. That went false on 2026-09-17 when `registrations.service.ts` began awaiting it (the D-I fix). T-4's new docblock cites the same method as the **awaited** exemplar, so **the repository now holds two contradicting descriptions of one method**. No task in this spec owns that file, and an advisory may not mint a task — recorded here and raised to the user.
+3. `users.controller.ts:61` (*"No email is sent"*) — false as of this diff, already assigned to **T-6**. Line 109's identical claim for `:id/password` stays true until T-5.
+4. `temp-password.util.ts` keeps the withdrawn rationale ahead of its correction (DD-7's annotate-don't-rewrite pattern, so not a defect); a one-line "see the correction below" pointer at the top would remove the ordering hazard.
+
+---
+
+### T-4 — FINAL: `[x]` PASS
+
+**Attempts:** 3 · **Date:** 2026-09-21
+
+**Requirements covered:** FR-1 (scenario 1's `AND IT MUST`), FR-3 (both scenarios), **FR-4 (all four clauses, asserted together in one test)**, NFR-1, NFR-2 at unit level. FR-1 scenario 2 recorded as a **(B)** with a structural reason the Reviewer re-verified by its own grep: no backend route participates in Cognito's sign-in challenge flow at all.
+
+**Final verification:** 6 suites / 56 tests · full backend suite 82 suites / 1196 tests · eslint clean · build clean. **Five mutations demonstrated to redden their named tests** — dispatch moved between the Cognito calls, `try`/`catch` removed, reference falling back to `dto.email`, a stray `AdminSetUserPassword(Permanent:true)` (self-initiated), and `sendAdminReset` inserted into `resetPassword`.
+
+**Deviation confirmed:** `users.module.ts` gained `imports: [MailModule]` — necessary (Nest modules are encapsulated), minimal, flagged not hidden, and proven by the e2e suites that bootstrap the real `AppModule`.
+
+**⚠️ Two of this task's four defects were the Leader's.** Recorded rather than diluted:
+- The brief passed `backend/CLAUDE.md` along as *"already annotated by T-9"* instead of *"your change will falsify it"*.
+- **The tripwire was my recommendation**, and I named it "T-5's tripwire" without checking which method T-5 dispatches. The Implementer followed it faithfully and inherited the error — the same shape as T-1, where it faithfully reproduced my wrong Disqualifier text.
+
+**The pattern, now with enough data to state plainly:** across five tasks this spec has produced **eleven FAILs, ten of them prose and one a coverage hole**. Zero were logic defects. Three of the eleven originated in Leader-authored text. The cause is structural, not incidental: this spec's deliverable is largely *normative text about a system that changes underneath it*, and the only gate that reads text is a Reviewer who chooses to look. `tasks.md` §2's rules and the brief-level future-tense rule both measurably reduce it — T-2 passed first time under them — but they do not eliminate it.
