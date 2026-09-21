@@ -81,6 +81,8 @@ Two methods added beside `sendApproval` / `sendRejection`, with the identical sh
 | `create()` | `AdminCreateUserResponse.User.Attributes`, the entry whose `Name` is `sub` |
 | `resetPassword()` | An `AdminGetUser` call — the command is **already imported and used** by `UsersService.get()`. One extra Cognito round trip on a rare admin action is the price of not logging an address. |
 
+⚠️ **Grounded in repo precedent, not an AWS citation (round 2 note).** That Cognito returns a `sub` entry *inside* the attribute array is corroborated by code already running here — `acting-admin.resolver.ts` filters `ListUsers` by `sub` and its fixtures show `sub` living in that same `Attributes` shape — but the SDK docstrings promise only "the user's attributes". Same class of claim as the three J-3 marked; recorded to the same standard. It is **safe either way**: if `sub` is absent the fallback below applies, and the fallback is the thing that protects NFR-1.
+
 ⚠️ **Two traps, both typed:** `User` and `Attributes` are **optional** in `AdminCreateUserResponse`, and `AdminGetUser` exposes the attribute list as **`UserAttributes`, not `Attributes`** — a difference this codebase already documents in `users.service.ts`'s `get()`. When `sub` cannot be resolved, the dispatch passes **no reference at all** (logging `n/a`, as contact does) and **MUST NOT** fall back to `id`. Losing correlation is acceptable; logging an address is not.
 
 ### 5.3 `UsersService`

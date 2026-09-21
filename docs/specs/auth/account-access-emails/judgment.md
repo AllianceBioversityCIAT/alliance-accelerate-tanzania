@@ -58,3 +58,39 @@ Recorded so the next reader knows what was checked and held: `dispatch()`'s logg
 **Round 1 complete. Awaiting the user's decision before applying corrections** (protocol: ask before round-one correction).
 
 Terminal state not yet reached — neither `approved` nor `escalated`.
+
+---
+
+## Round 2 — scoped re-judgment
+
+Same two judges, same blind protocol, scope narrowed to the nine corrections (commit `9c47c72`) and to one question above all: **did any fix introduce a new defect?** That category matters here because it is a documented failure mode on this project — KZ-008 records seven recurrences, including corrections that introduced a fresh defect while closing the previous one.
+
+| Judge | Closed | Not closed | Fix-caused |
+|---|---|---|---|
+| A | **9** | 0 | 0 |
+| B | **9** | 0 | 0 |
+
+Both re-verified against the code and the AWS SDK types rather than against the design's own assertions. Unanimous on all nine.
+
+### One residual, raised by Judge B and acted on
+
+B closed J-4 but noted that one link in its replacement mechanism — that Cognito returns a `sub` entry *inside* the attribute array — rests on repo precedent (`acting-admin.resolver.ts` filters `ListUsers` by `sub`; its fixtures show `sub` in that same shape) rather than on a cited AWS guarantee. B deliberately did not fail it.
+
+**Marked anyway**, in §5.2, to the same standard J-3 imposed on three sibling claims. Leaving it unmarked would have reproduced the exact inconsistency J-3 existed to correct, inside the fix for J-4. The claim is also safe either way: if `sub` is absent, the "pass no reference, never fall back to `id`" rule applies, and that rule — not the `sub` lookup — is what protects NFR-1.
+
+## Terminal receipt
+
+| Field | Value |
+|---|---|
+| Target | `docs/specs/auth/account-access-emails/design.md` |
+| Rounds used | 1 of 2 correction rounds, 1 of 2 scoped re-judgments |
+| Round 1 | 5 severe (3 confirmed by both, 2 single-judge and orchestrator-verified), 4 info |
+| Corrections applied | 9 |
+| Round 2 | 18/18 verdicts `CLOSED`; **0 fix-caused** |
+| Contradictions between judges | None, in either round |
+| Skill resolution | `akili-reviewer` ×2, read-only (Read/Grep/Glob), Sonnet — author was Opus |
+| Artifacts | this ledger · `design.md` commits `bbf2e91` (reviewed) → `9c47c72` (corrected) |
+
+**What the review bought.** Five real defects in a design its own author believed sound, including one — J-4 — that would have shipped the precise privacy violation the document claimed to prevent, and which only one of the two judges saw. Blind duplication, not consensus, is what surfaced it.
+
+## JUDGMENT: APPROVED ✅
