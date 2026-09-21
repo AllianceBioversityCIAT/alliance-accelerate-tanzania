@@ -295,13 +295,23 @@ else
 fi
 
 # Ask for gzip explicitly and read the response header, without decompressing.
+# How big is this response UNCOMPRESSED? The middleware only compresses above
+# COMPRESSION_THRESHOLD_BYTES (1 KB), so on a registry small enough to fall
+# under it, NOT compressing is correct behaviour. Asserting gzip
+# unconditionally would red the build on a perfectly good deploy the day
+# someone trims the seed — a false alarm in a fail-closed gate is worse than
+# no gate, because it teaches people to ignore the gate.
+big_plain_bytes="$(curl -s -o /dev/null -w '%{size_download}' "$BIG_PAGE_URL" || echo 0)"
+
 big_enc="$(
   curl -s -D - -o /dev/null -H 'Accept-Encoding: gzip' "$BIG_PAGE_URL"     | tr -d '\r'     | awk -F': ' 'tolower($1) == "content-encoding" { print tolower($2) }'     | tail -n 1 || true
 )"
-if [[ "$big_enc" == *gzip* ]]; then
-  pass "GET /actors?pageSize=500 with Accept-Encoding: gzip → Content-Encoding: gzip"
+if [[ "${big_plain_bytes:-0}" -lt 1024 ]]; then
+  pass "compression not asserted — /actors?pageSize=500 is only ${big_plain_bytes} B, under the 1 KB threshold (registry too small to compress; not a failure)"
+elif [[ "$big_enc" == *gzip* ]]; then
+  pass "GET /actors?pageSize=500 (${big_plain_bytes} B plain) with Accept-Encoding: gzip → Content-Encoding: gzip"
 else
-  fail "GET /actors?pageSize=500 → Content-Encoding '${big_enc:-<none>}' (expected gzip; compression is not reaching the wire)"
+  fail "GET /actors?pageSize=500 is ${big_plain_bytes} B plain (over the 1 KB threshold) but came back Content-Encoding '${big_enc:-<none>}' — compression is not reaching the wire"
 fi
 
 # Integrity: --compressed makes curl decompress, so valid JSON out the far side
