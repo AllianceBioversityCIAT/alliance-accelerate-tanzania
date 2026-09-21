@@ -150,3 +150,37 @@ T-9 (`deps: none`) was scoped to update `docs/trd/trd.md` §4 for the new respon
 That is the same defect class that cost T-1 three attempts: **a document asserting something the codebase does not bear** (KZ-008). It would have been written by an Implementer faithfully following an approved task, exactly as in T-1's second FAIL.
 
 Moved the single bullet to T-6, which is where the field comes into existence. T-9 keeps the Cognito retirement and the premise sweep and stays dependency-free. No new scope — one bullet relocated between two approved tasks to fix a sequencing defect found in flight.
+
+---
+
+### T-2 — Add the admin-reset email template
+
+**Status:** `[x]` PASS · **Attempts:** 1 · **Date:** 2026-09-21 · Ran **in parallel with T-9** (disjoint files, disjoint toolchains)
+
+**Leader decisions.** Skills `nestjs-expert`; effort `medium`. Exemplar chosen deliberately: the **just-approved `invitation.template.ts`**, not `receipt.template.ts` — same shape, and it already embodies the comment discipline that took T-1 three attempts to reach. The brief also carried the two new rules introduced after T-1 (future tense + design reference for any claim about a later task; an itemised file+symbol verification list as the deliverable).
+
+**Files:** `backend/src/mail/templates/admin-reset.template.ts` (103 lines, new) · `admin-reset.template.spec.ts` (164 lines, new). Nothing else.
+
+**Verification:** 12/12 on the task suite; full backend suite 81 suites / 1178 tests; `eslint --quiet` clean; `npm run build` clean.
+
+**Falsifiers — both run, reddened, mutation confirmed applied, reverted byte-identical:**
+1. Hardcoded host → 7 failed / 5 passed, including the named target.
+2. Hoisted resolution to module load → the whole suite failed to run at import.
+
+**Reviewer verdict: `STATUS: PASS` (first attempt).**
+
+It did not take the done-when on trust. Rather than checking that a distinguishability test exists, it **read both templates side by side** and judged the copy: *"reset the password on your **existing** account"* vs *"**created** an account for you"*; callout *"**New** temporary password"* with *"your **previous password no longer works**"*. It singled out the closing note as the sign of real judgment rather than string-swapping — the invitation's *"you can ignore this message"* would be **actively wrong advice on a reset**, since the password has already changed, and it was replaced with *"contact your administrator"*. It further confirmed the three tests are discriminating by checking the invitation's own output fails all three.
+
+It spot-checked 5 of the 6 itemised claims at source plus two the list omitted, and **reconciled Falsifier 1's arithmetic exactly**: hardcoding the host would fail tests 1, 2, 5, 6, 7, 8, 9 and leave 3, 4 and the three distinguishability tests green — 7/5, precisely as reported. *"That arithmetic could not come out right by accident, so I credit the mutation as real."*
+
+**The T-1 failure class did not recur.** Every forward claim is future-tense with its design reference and marked not-yet-built; every present-tense claim about another file verifies. The Reviewer specifically checked the T-1 near-miss and found it corrected at the root: this comment places the swallowing `try`/`catch` in `UsersService` and says explicitly that `MailService.dispatch` rethrows — the correct instruction for T-3/T-5, preserving FR-3/FR-4 observability.
+
+**Requirements covered:** FR-5's dispatch `THEN` (T-2's half — the message exists and carries password + link), NFR-3, NFR-4. T-5's clauses (`emailSent`, `Permanent: false` pinned by test, `sub` resolution) correctly absent.
+
+**ADVISORY (recorded, not acted on — advisories never gate and never become tasks):**
+1. Test title `'carries the new temporary password in both parts (FR-5 AND)'` cites a clause that does not exist — FR-5's scenario has two `AND`s, neither about the email's contents. The behaviour **is** required, by FR-5's *Description*. The exemplar's `(FR-1 scenario 1 AND)` was accurate; this copy of it is not. A false citation in a test title, same class as T-1's failures but non-gating.
+2. Carried from the approved T-1 exemplar: the `signInUrl` docblock's blast-radius reasoning attributes containment to `MailService.dispatch` rethrowing, when the `getPublicAppBaseUrl` throw actually fires at build time inside the send method, before `dispatch` is entered. True as written, slightly wrong mechanism. **Fix in both or neither** — it is inherited, not introduced.
+3. `{@link ../templates/invitation.template.ts | buildInvitationMessage}` — redundant path on a sibling, and a TSDoc file-path link resolves to no symbol.
+4. Two template literals with no interpolation.
+
+**⚠️ Leader note on concurrency — the isolation was not airtight.** T-2's Reviewer was instructed not to read `backend/CLAUDE.md` (T-9 was mid-edit). It complied, and reported that **the harness injected the file's full contents into its context anyway, twice**, including T-9's in-flight edit. Nothing in the audit depended on it, so the verdict stands — but the mitigation was incomplete, and a future parallel wave should not assume a "do not read X" instruction isolates a worker from X.

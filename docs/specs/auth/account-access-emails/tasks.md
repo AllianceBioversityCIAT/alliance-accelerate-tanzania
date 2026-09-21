@@ -58,7 +58,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: the refusal tests must FAIL when resolution is moved to module load. *(Corrected during T-1 execution — this originally read "if the suite passes with `PUBLIC_APP_BASE_URL` unset, the resolution is at module load", which describes a state that cannot occur: with the variable unset, a module-load resolution throws at import and the suite fails to run rather than passing. The Reviewer caught the Leader's task text, not the diff — KZ-011's exact shape.)*
       Done when: the spec mirrors `receipt.template.spec.ts` — derived link in **both** parts, trailing-slash normalisation, refusal on `*`/absent/non-http, and a guard that no hardcoded host appears.
 
-- [ ] **T-2** Add the admin-reset email template  (deps: none)
+- [x] **T-2** Add the admin-reset email template  (deps: none)
       Scope: `admin-reset.template.ts`, same construction as T-1.
       Traces: FR-5 (the dispatch `THEN`), NFR-3, NFR-4; design.md §5.1
       Files: `backend/src/mail/templates/admin-reset.template.ts` (+ `.spec.ts`)
