@@ -199,23 +199,32 @@ describe('Response compression through the real handler (ATP-68)', () => {
   /** Enough rows that the JSON report clears COMPRESSION_THRESHOLD_BYTES. */
   const ROWS = 120;
 
-  it('returns gzip BASE64-ENCODED, and the bytes decode back to the real JSON', async () => {
+  /**
+   * Drive the real handler with a large import-preview body under a given
+   * Accept-Encoding, and hand back the raw Lambda result — unparsed, because
+   * how the body is encoded is the thing under test.
+   */
+  async function invokeLargeBody(acceptEncoding: string, idPrefix: string) {
     const fileBase64 = await buildWorkbook(
-      Array.from({ length: ROWS }, (_, i) => validRow({ traderId: `TZ-GZ-${i}` })),
+      Array.from({ length: ROWS }, (_, i) => validRow({ traderId: `${idPrefix}-${i}` })),
     );
     const event = apiGatewayV2Event({
       method: 'POST',
       path: IMPORT_PATH,
       body: JSON.stringify({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' }),
-      headers: { 'accept-encoding': 'gzip' },
+      headers: { 'accept-encoding': acceptEncoding },
     });
 
-    const res = (await handler(event, mockContext, () => {})) as {
+    return (await handler(event, mockContext, () => {})) as {
       statusCode: number;
       body: string;
       isBase64Encoded?: boolean;
       headers?: Record<string, string>;
     };
+  }
+
+  it('returns gzip BASE64-ENCODED, and the bytes decode back to the real JSON', async () => {
+    const res = await invokeLargeBody('gzip', 'TZ-GZ');
 
     expect(res.statusCode).toBe(200);
     expect(res.headers?.['content-encoding']).toBe('gzip');
@@ -232,22 +241,7 @@ describe('Response compression through the real handler (ATP-68)', () => {
   });
 
   it('returns plain, non-base64 JSON when the client does not accept gzip', async () => {
-    const fileBase64 = await buildWorkbook(
-      Array.from({ length: ROWS }, (_, i) => validRow({ traderId: `TZ-PLAIN-${i}` })),
-    );
-    const event = apiGatewayV2Event({
-      method: 'POST',
-      path: IMPORT_PATH,
-      body: JSON.stringify({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' }),
-      headers: { 'accept-encoding': 'identity' },
-    });
-
-    const res = (await handler(event, mockContext, () => {})) as {
-      statusCode: number;
-      body: string;
-      isBase64Encoded?: boolean;
-      headers?: Record<string, string>;
-    };
+    const res = await invokeLargeBody('identity', 'TZ-PLAIN');
 
     expect(res.statusCode).toBe(200);
     expect(res.headers?.['content-encoding']).toBeUndefined();
