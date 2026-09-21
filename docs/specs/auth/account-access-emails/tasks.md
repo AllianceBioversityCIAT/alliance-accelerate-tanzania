@@ -101,7 +101,8 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
 - [ ] **T-6** Extend the response contract with `emailSent`  (deps: T-4, T-5)
       Scope: `CreateUserResult` / `ResetPasswordResult`, the controller responses on `@Post()` and **`@Post(':id/password')`** — the real route, not `/reset-password` (J-1) — and the frontend API types.
       Traces: FR-3; design.md §4
-      Files: `backend/src/users/users.service.ts`, `backend/src/users/users.controller.ts`, `frontend/lib/api/users.ts` (+ tests)
+      Files: `backend/src/users/users.service.ts`, `backend/src/users/users.controller.ts`, `frontend/lib/api/users.ts`, `docs/trd/trd.md` (+ tests)
+      Also: update `docs/trd/trd.md` §4 for the new response shape — **moved here from T-9 during execution**, because the field must exist before a baseline document asserts it.
       Skills: `api-design-principles`, `nestjs-expert`
       Verify: `cd backend && npx jest src/users --silent && npm run build` · `cd frontend && npx tsc --noEmit`
       Falsifier: drop `emailSent` from one of the two interfaces — `tsc --noEmit` must fail at the consuming call site. If it does not, the frontend is not actually typed against this contract and the gate is blind.
@@ -129,9 +130,9 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Done when: the falsifier reddens it, and the suite passes with the `await` restored.
 
 - [ ] **T-9** Retire the dead Cognito template and sweep the premise it rested on  (deps: none)
-      Scope: remove `InviteMessageTemplate` and `PortalUrl` from `infra/10-data-auth/template.yaml` **and** the `PortalUrl` row from `infra/README.md` §3 (J-2). Annotate — do **not** rewrite — `backend/CLAUDE.md`'s "no-email credential handoff (intentional)" section per DD-7, correcting its forward-looking instruction. Update `docs/trd/trd.md` §4 for the response shape.
+      Scope: remove `InviteMessageTemplate` and `PortalUrl` from `infra/10-data-auth/template.yaml` **and** the `PortalUrl` row from `infra/README.md` §3 (J-2). Annotate — do **not** rewrite — `backend/CLAUDE.md`'s "no-email credential handoff (intentional)" section per DD-7, correcting its forward-looking instruction. *(The `docs/trd/trd.md` §4 response-shape update moved to T-6 during execution — see execution.md. Documenting `emailSent` from here would assert a field that does not exist until T-6 builds it.)*
       Traces: **FR-7 (incl. `AND IT MUST` leave no reference from any other file, and `BUT it must NOT` be described as live before the deploy)**, DD-5, DD-7; design.md §8, §9
-      Files: `infra/10-data-auth/template.yaml`, `infra/README.md`, `backend/CLAUDE.md`, `docs/trd/trd.md`
+      Files: `infra/10-data-auth/template.yaml`, `infra/README.md`, `backend/CLAUDE.md`
       Skills: `aws-serverless`, `cognitive-doc-design`
       Verify: `grep -rn "PortalUrl\|InviteMessageTemplate" --exclude-dir=archive . | grep -v node_modules` returns **only** intentional historical mentions · `./infra/scripts/validate.sh`
       Falsifier: the grep above **is** the falsifier — it currently returns hits in two files (`template.yaml`, `README.md:91`). Run it before the change and confirm it does; a grep that returns nothing beforehand is searching wrong.

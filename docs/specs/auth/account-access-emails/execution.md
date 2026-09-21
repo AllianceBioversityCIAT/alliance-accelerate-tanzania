@@ -138,3 +138,15 @@ Corrected in both T-1 and T-2 (T-2 said "as T-1" and would have inherited it). *
 - ⚠️ **The second FAIL was caused by the Leader.** T-1's original Disqualifier text was wrong; the Implementer faithfully reproduced it in a code comment; the Leader corrected `tasks.md` and did not sweep for the comment quoting it (**KZ-004** — *a correction is not applied when its cited site is fixed*). Recorded as the Leader's, not diluted into "the Implementer's sweep missed it".
 
 **Process change carried into T-2 onward (brief wording only — no change to `tasks.md`, no new scope).** Every T-1 defect shared one shape: a comment describing a contract with a task that does not exist yet, written in the present tense. Each subsequent Implementer brief will carry an explicit rule — *any claim about a later task is written in the future tense with its design reference, never as "already"* — and will require the itemised verification list that finally closed T-1. This attacks the cause rather than paying a Reviewer to catch the same class six more times.
+
+---
+
+## Leader corrections to the spec (continued)
+
+### T-9 → T-6: the TRD §4 response-shape update was sequenced wrong
+
+T-9 (`deps: none`) was scoped to update `docs/trd/trd.md` §4 for the new response shape. But `emailSent` is created by **T-6**, and T-9 is independent of it — so running T-9 first, as its own dependency graph invites, would have had an Implementer document a field that does not exist.
+
+That is the same defect class that cost T-1 three attempts: **a document asserting something the codebase does not bear** (KZ-008). It would have been written by an Implementer faithfully following an approved task, exactly as in T-1's second FAIL.
+
+Moved the single bullet to T-6, which is where the field comes into existence. T-9 keeps the Cognito retirement and the premise sweep and stays dependency-free. No new scope — one bullet relocated between two approved tasks to fix a sequencing defect found in flight.
