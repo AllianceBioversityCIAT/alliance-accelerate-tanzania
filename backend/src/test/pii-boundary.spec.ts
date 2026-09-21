@@ -72,7 +72,10 @@ import { AuthUser } from '../auth/auth.types';
  * but is **not implemented** anywhere in `backend/src` — there is no
  * controller, route, or service for it. This mirrors the FR-7 scope
  * correction already recorded in that spec's `requirements.md` (the admin
- * export it names is likewise unimplemented). This suite therefore covers
+ * export it names is likewise unimplemented — and as of 2026-09-21 it is
+ * CANCELLED, out of MVP scope: PRD §5, ATP-53. Its `/export` row is gone from
+ * `docs/trd/trd.md` §4 and from QA-1, so no future agent should expect a path
+ * here for it). This suite therefore covers
  * the three public paths that exist (`/actors`, `/actors/:id`, `/metrics`);
  * `/actors/geo` cannot be asserted over HTTP until it is built, and building
  * it is out of that spec's scope.
