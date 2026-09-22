@@ -63,7 +63,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 | ~~**D-3b**~~ | ~~The account assertion sourced but never invoked~~ — **withdrawn with FR-3.** Replaced by FR-3′'s equivalent: each writing script gets an in-situ run proving it **reaches and prints** the announcement | Omit the `announce_account` call from one script ⇒ red |
 | **D-4** | Shell mechanics — `set -e`, subshell exit-code capture, unquoted expansion | Tests **execute** the scripts; the helper contract in `design.md` §7.1 is asserted directly | Replace `if VAR="$(…)"; then` with `VAR=$(…) \|\| true` ⇒ red |
 | **D-5** | The CORS check passing only because the live stack is correct | A **stubbed `curl`** returns a permissive `Access-Control-Allow-Origin`; the test asserts the **`RESULTS` line**, never the exit code | That stub is the test's default input |
-| **D-6** | An account assertion that cannot see a same-named stack in another account | Stubbed `aws` returns a foreign account id **and** a matching stack name | Assert the stack name instead of the account ⇒ red |
+| ~~**D-6**~~ | ~~An account assertion that cannot see a same-named stack in another account~~ — **withdrawn with FR-3, 2026-09-21.** There is no account assertion, so the defect class does not exist and its gate retires with the collision case. *Missed by the Pivot's first sweep because this row names neither `assert_account` nor `aws-accounts.conf`: the sweep matched the names, not the concept (re-validation R-07).* | — |
 | **D-7** | **A documentation claim that is false** | ❌ **no automated gate exists** | — |
 
 **On D-5's assertion target.** Asserting `smoke.sh`'s **exit code** would be a gate that passes with the defect present: with the network stubbed or absent, other checks fail and the script exits non-zero **whether or not a CORS check exists**. The gate therefore asserts the specific `[FAIL] CORS…` / `[PASS] CORS…` line. This is the single most important correction Judgment Day produced — the first revision's gate was exactly the KZ-002 shape this spec was written to stop.
@@ -181,7 +181,7 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 
 - **The `Jenkinsfile` itself.** Not versioned here. This spec produces an advisory patch for the administrator (`design.md` §7.4) but cannot land the fix and must not claim to.
 - **The PR #75 / `MailTransport` merge blocker.** Raised with the Jenkins administrator on 2026-09-18 by the product owner; PR #75 has since merged. Documented, never patched here.
-- Provisioning a Prod environment (**OQ-INFRA-1**), beyond not blocking it in FR-3.
+- Provisioning a Prod environment (**OQ-INFRA-1**). FR-3′ cannot block it — it reads no configuration and asserts nothing, so a new account needs no change here at all. *(Previously read "beyond not blocking it in FR-3".)*
 - Network hardening — the `0.0.0.0/0` rule on 3306, VPC-attaching the Lambda (`infra/README.md` §11).
 - Any change to `infra/10-*`, `20-*`, `30-*` templates.
 

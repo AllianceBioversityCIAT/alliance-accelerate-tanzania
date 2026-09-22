@@ -14,7 +14,7 @@
 >
 > **Closed by removal is not the same as closed by verification**, and this report says so rather than letting the distinction disappear.
 >
-> Also stale here: **every "48 cases" figure below is now 47** (six retired, five added across T-8's rounds), and the line-count figures are pending a re-measure after T-8 lands. The verdict below predates T-8 and does not account for it.
+> Also stale here: the case count moved to 47 mid-Pivot and is **48** again after T-8 rounds 4–6; the line-count figures were re-measured after round 4 and live in `design.md` §11 (production **+369** net, tests **+3,224** net, **8.7 : 1**). The verdict below predates T-8 — **see the delta re-validation appended at the end of this report.**
 >
 > **Updated 2026-09-21 after remediation.** The original verdict was **NOT READY**; remediations 1–7 below are now applied and one open question was resolved by evidence that arrived after the audit. Four code follow-ups are carried as separate work.
 
@@ -248,3 +248,60 @@ Both fixed. **This is the fourth time in this spec that a correction landed only
 ## Revised archive readiness
 
 **Ready with follow-ups.** Nothing outstanding requires touching a script to archive. `/akili-archive` may proceed; the four items above carry forward, and V-01 should be answered before the next pipeline deploy rather than before the archive.
+---
+
+# Delta re-validation — 2026-09-21, post-Pivot
+
+**Verdict: READY WITH FOLLOW-UPS.** The one FAIL and all four WARNs are remediated.
+
+Run because the report above was written when the spec had **seven** tasks and **predates the Pivot entirely** — and, more sharply, because **FR-3′ had never been validated as a requirement.** The T-8 Reviewer audited its *diff*; clause-granular coverage, cross-document coherence and design conformance are a different pass.
+
+**Independence, disclosed:** no auditor was clean. One model implemented all eight tasks; another issued two contradicting verdicts on T-8; the one used had performed the original validation **and** reviewed T-8 round 4. It was given the conflict in writing and scoped to what it had not ruled on, and it applied that — carrying its prior findings forward instead of re-deriving them, and marking that the FAIL concerned a case written in T-8 round 1 that its round-4 brief had not covered.
+
+**Result: 9 PASS · 4 WARN · 1 FAIL · 0 BLOCKED.**
+
+## The FAIL — a claimed gate that could not fire, closed in two rounds
+
+**R-01.** FR-3′ clause 1 requires the announcement to print the account id **and the effective profile**. The profile half had **no discriminating gate**, and the owning case's header claimed one. The case ran with `AWS_PROFILE=MELIA-DEV` plus the override, and **FR-2's override banner already prints that profile on `source`** — so the assertion was satisfied by a different message entirely.
+
+**Leader-executed confirmation:** deleting ` (profile '$PROFILE')` from `_guard.sh:154` left **all 48 cases green.**
+
+The class then turned out to have **two** instances. The Implementer's sweep found the second — `wire.insitu-announce-account` asserted `IBD-DEV` in merged output, satisfiable by each script's own banner and, for `deploy.sh`/`set-cors.sh`, by the `aws` stub's `"STUB: unexpected aws invocation: … --profile IBD-DEV …"` text — and correctly flagged it instead of fixing it out of scope. A sixth round closed it **by deletion**: the in-situ case's job is reachability per script, which its account-id token already proves; the both-tokens clause now has exactly one owner.
+
+**Closed, and demonstrated rather than asserted:**
+
+| Mutation on `_guard.sh:154` | Cases red |
+|---|---|
+| remove the **profile** half | **exactly 1** — its sole owner |
+| remove the **account** half | **3** — the legitimately shared half |
+| *(before the fix, the profile mutation reddened **0**)* | |
+
+**The inverse sweep found no further instances.** Every `assert_contains` in all 48 cases was checked against every non-mechanism emitter — the guard's other messages, the five scripts' banners, the stub error text. One adjacent out-of-class observation was flagged and deliberately not acted on: `wire.profile-region-exported-to-child-process`'s `REGION=eu-west-1` substring could collide with a host `AWS_DEFAULT_REGION`, which is a host-environment risk rather than this class.
+
+## The four WARNs — all the Leader's, all the same shape
+
+| ID | Finding | Remediation |
+|---|---|---|
+| **R-07** | `requirements.md`'s **D-6** still described the account assertion as a live defect class with a live gate. **The Pivot's sweep missed it because the row names neither `assert_account` nor `aws-accounts.conf`** — it described the concept without naming it, and the sweep matched names. §6 likewise still said *"beyond not blocking it in FR-3"* | Both struck, with the sweep's own failure recorded in the row |
+| **R-08** | `tasks.md` kept FR-2's FR-3-interaction clause live, and the dependency graph omitted T-8 | Clause marked moot; graph now carries `T-8` with its four dependencies and why it has them |
+| **R-09** | Six more sites asserting superseded figures as current — including two saying *"the corrected ratio is **lower**"*. **8.7 is higher than 6.5: the number was fixed and the sentence interpreting it was left, pointing the opposite way** | Deleted, not reworded. The interpretation outliving its number is recorded as such |
+| **R-10** | T-8 had no `### T-8` heading — its record lives in a HALT block, an addendum and three rounds — so a mechanical *8 tasks / 8 entries* check failed, and the HALT still read `Status: [~]` with no closing marker | Heading added, noting the record is deliberately in three parts; the `[~]` marked superseded. **Check now reconciles: 8 / 8** |
+
+## What the re-validation confirmed as sound
+
+FR-3′ clauses 2–5 each owned by a case that fails for the right reason: never-changes-exit-status, the read-only exemption proven by marker over *any* `aws` call, the account-id scan closing H-1/H-2 for the class with a re-verified complete-and-minimal allow-list, and fail-soft driven on three paths (`sts` failure, `mktemp` failure, and the guarded `cat`/`rm`). `announce_account` is genuinely an alert: no comparison, no threshold, no expected value, no config read, `return 0` on every path. All five writing scripts call it as the statement immediately after `source`, before any write. The baseline documents took no dependency on FR-3, so the Pivot falsified none of them.
+
+## Carried follow-ups — unchanged, all confirmed still present
+
+| Priority | Item |
+|---|---|
+| 1 | **A-02 site 2** — `resolve_stack_value` still captures with `2>&1`; site 1 closed by the Pivot |
+| 2 | **A-01** — `${BASH_SOURCE[0]%/*}` breaks `cd infra/scripts && bash <script>` |
+| 3 | **`frontend/CLAUDE.md:65`** — *"the script warns; heed it"*; the script aborts. A live falsehood in a guide root `CLAUDE.md` says trains every agent |
+| 4 | Gate robustness: `${hit##*:}` extraction · `.aws-sam/` inside the scanned tree · the multiplicity control covers `DIGIT_RUN_RE` but not the gate's loop |
+
+## Archive readiness
+
+**Ready with follow-ups.** Nothing outstanding requires touching a script to archive. `/akili-archive` may proceed.
+
+**One figure worth carrying to Kaizen, because it is now measured twice:** of the twenty-plus review rounds this spec consumed, **not one died on the mechanism being wrong.** They died on false claims and on gates that could not fire — and the only countermeasure with a success record is not care but **execution**: every instance caught before review in this spec was caught by running a command against a draft, never by re-reading it.

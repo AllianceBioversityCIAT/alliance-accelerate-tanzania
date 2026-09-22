@@ -6,12 +6,28 @@
 # requirements.md FR-3′; design.md §7.1/DD-6; tasks.md T-8.
 #
 # For each of the FIVE WRITING scripts, a successful `sts` stub's account
-# id must appear on the script's stderr, together with the effective
-# profile — proving announce_account is not just defined (_guard.sh) but
-# actually WIRED IN and CALLED at each of these five call sites, in situ,
-# using the real scripts from their real location (DD-2, no test-only
-# seam) — the same standard T-4's wire.insitu-abort-account-mismatch
-# applied to the now-withdrawn assert_account.
+# id must appear on the script's stderr — proving announce_account is not
+# just defined (_guard.sh) but actually WIRED IN and REACHED at each of
+# these five call sites, in situ, using the real scripts from their real
+# location (DD-2, no test-only seam) — the same standard T-4's
+# wire.insitu-abort-account-mismatch applied to the now-withdrawn
+# assert_account.
+#
+# ROUND-6 NARROWING — this case proves REACHABILITY per script, not
+# message content. It used to also assert "IBD-DEV" appeared in each
+# script's combined output, intending that as a same-message check of the
+# effective profile. It wasn't: every one of the five scripts' own later
+# output already contains "IBD-DEV" independent of the announcement — a
+# banner for three of them, and for deploy.sh/set-cors.sh specifically
+# also the aws stub's own "STUB: unexpected aws invocation: ... --profile
+# IBD-DEV ..." text once the case's deliberately-unstubbed next command
+# is rejected. So the assertion passed regardless of whether
+# announce_account ever printed the profile itself — it added the
+# appearance of coverage, not coverage. The both-tokens-on-one-line claim
+# is now owned exclusively by the guard-unit case
+# guard-account.announce-includes-account-and-profile.case.sh, which runs
+# announce_account in isolation with nothing else able to emit either
+# token. One clause, one owner.
 #
 # This case does NOT assert each script's overall exit status. Unlike
 # assert_account, announce_account never aborts (FR-3′ is fail-soft), so
@@ -59,5 +75,4 @@ for name in "${WRITING_SCRIPTS[@]}"; do
   )"
 
   assert_contains "888888888888" "$output" "$name: the announcement reaches sts and names the resolved account, in situ"
-  assert_contains "IBD-DEV" "$output" "$name: the announcement names the effective profile, in situ"
 done

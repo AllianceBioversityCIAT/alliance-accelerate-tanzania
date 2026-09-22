@@ -552,7 +552,7 @@ It enumerated exactly what its reading covered, and marked the three Jenkinsfile
 
 > **This block was written when the spec had seven tasks and 48 cases, and it is now false in three ways** (found by the T-8 Reviewer). It is corrected in place rather than rewritten, because it is the record of what was believed at that moment:
 > - *"All seven tasks"* → there are **eight**; T-8 closed with a PASS in round 4 (2026-09-21)
-> - *"48 test cases, 48 passing"* → **47**
+> - *"48 test cases, 48 passing"* → was **47** after the Pivot retired six cases, and is **48** again after T-8 rounds 4–6
 > - The ATP-65 row credited closure partly to the account assertion, **which the Pivot removed**
 >
 > Root `CLAUDE.md`'s *evidence before checkbox* rule is why this matters: a Summary asserting completion ahead of T-8's verdict is an unfalsifiable completion.
@@ -653,9 +653,20 @@ A sweep of ~70 FR-3 references across six documents informed this split: editing
 
 ---
 
+### T-8 — Execute the Pivot: withdraw the account assertion, announce instead — **PASS on round 6**
+
+| | |
+|---|---|
+| Date | 2026-09-21 |
+| Rounds | **6** — three attempts, a HALT, then rounds 4, 5 and 6 each authorised individually |
+| Effort | `max` throughout |
+| Requirements covered | **FR-3′** (all five clauses), DD-6's reasoning re-pointed |
+
+⚠️ **This task's record is deliberately in three parts**, because its history is not a single loop: the `## HALT` block below (rounds 1–3), the `### ⚠️ Addendum` (the Reviewer's two contradicting verdicts), and `### Round 4` onward. A mechanical "one `### T-` per task" check previously failed on T-8 for want of this heading — re-validation R-10.
+
 ## HALT: T-8 — three attempts, Reviewer FAIL on each
 
-**Date:** 2026-09-21 · **Status:** `[~]` · **Working tree deliberately NOT rolled back — see "Why the automatic rollback was not run".**
+**Date:** 2026-09-21 · **Status at the time:** `[~]` — ⚠️ **superseded: the task went on to PASS in round 6; see `### Round 4` onward below.** · **Working tree deliberately NOT rolled back — see "Why the automatic rollback was not run".**
 
 ### Attempt history
 

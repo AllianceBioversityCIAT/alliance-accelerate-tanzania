@@ -131,9 +131,11 @@
 ## Dependency Graph
 
 ```
-T-1 → T-2 → T-3 → T-4 → T-5 → T-7
-T-1 → T-6 ─────────────────────↑
+T-1 → T-2 → T-3 → T-4 → T-5 → T-7 → T-8
+T-1 → T-6 ─────────────────────↑     ↑
 ```
+
+`T-8` (the Pivot) depends on T-3, T-4, T-5 and T-7 — it withdraws what T-3 built, unwires it from what T-4 wired, and amends what T-7 documented.
 
 `T-6` needs only the harness, so it can run in parallel with `T-2`…`T-5`. It is also the task that reaches the live failure mode without anyone editing the Jenkins server, which makes it the best candidate to land first if the spec is ever split.
 
@@ -144,7 +146,7 @@ Every requirement's scenarios **and** every `BUT it must NOT` / `AND IT MUST` cl
 | Requirement | Clauses | Owner |
 |---|---|---|
 | FR-1 | 4 (proceed · abort · non-TTY fails closed · names both profiles) | T-2, in-situ in T-4(b) |
-| FR-2 | 6 (match proceeds+announces · mismatch aborts · not `AWS_PROFILE` · not `CONFIRM` · single variable · **FR-3 interaction**) | T-2; interaction in T-3 |
+| FR-2 | 6 (match proceeds+announces · mismatch aborts · not `AWS_PROFILE` · not `CONFIRM` · single variable · ~~FR-3 interaction~~ **moot since the Pivot** — no account assertion exists for an override to disarm) | T-2 |
 | ~~FR-3~~ | ~~5~~ | **Withdrawn 2026-09-21** — see the Pivot Record. T-3's entry stands as the record of work that shipped and was then removed |
 | **FR-3′** | 5 (announces on stderr · never aborts · read-only scripts exempt · no versioned account id · fails soft) | **T-8** |
 | FR-4 | 4 (resolved origin · announced bootstrap · not on failed lookup · explicit override wins) | T-5 |
