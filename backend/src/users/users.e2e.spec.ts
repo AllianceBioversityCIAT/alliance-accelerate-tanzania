@@ -65,13 +65,14 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
     create: jest.fn().mockResolvedValue({
       user: { id: 'created' },
       temporaryPassword: 'Temp-Pass-16chars',
+      emailSent: true,
     }),
     update: jest.fn().mockResolvedValue({ id: 'x' }),
     setRole: jest.fn().mockResolvedValue({ id: 'x' }),
     remove: jest.fn().mockResolvedValue(undefined),
     resetPassword: jest
       .fn()
-      .mockResolvedValue({ temporaryPassword: 'Temp-Pass-16chars' }),
+      .mockResolvedValue({ temporaryPassword: 'Temp-Pass-16chars', emailSent: true }),
   };
 
   beforeAll(async () => {
@@ -166,7 +167,7 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
         .expect(403);
     });
 
-    it('201 for authenticated Admin with a { user, temporaryPassword } body', async () => {
+    it('201 for authenticated Admin with a { user, temporaryPassword, emailSent } body', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/users')
         .set('Authorization', bearer('Admin'))
@@ -176,6 +177,12 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
       expect(res.body).toHaveProperty('user');
       expect(res.body).toHaveProperty('temporaryPassword');
       expect(typeof res.body.temporaryPassword).toBe('string');
+      // auth/account-access-emails T-6 falsifier: emailSent must reach the
+      // wire unchanged from what UsersService.create resolves. Strip it from
+      // the controller's returned object and this assertion reddens.
+      expect(res.body).toHaveProperty('emailSent');
+      expect(typeof res.body.emailSent).toBe('boolean');
+      expect(res.body.emailSent).toBe(true);
     });
   });
 
@@ -209,9 +216,11 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
     });
   });
 
-  // FR-7 reset (POST :id/password) — same class-level guard, but unlike the
-  // other writes it returns 200 with a `{ temporaryPassword }` body (no-email
-  // admin-mediated handoff), so it also asserts the status/body contract.
+  // `admin/user-management` FR-7 reset (POST :id/password) — same class-level guard, but unlike the
+  // other writes it returns 200 with a `{ temporaryPassword, emailSent }`
+  // body (admin-mediated handoff PLUS an application-level admin-reset email,
+  // auth/account-access-emails T-5), so it also asserts the status/body
+  // contract.
   describe('POST /api/v1/users/:id/password', () => {
     it('401 without a token', async () => {
       await request(app.getHttpServer())
@@ -233,12 +242,18 @@ describe('Users RBAC matrix (HTTP e2e, mocked verifier + service)', () => {
         .expect(403);
     });
 
-    it('200 with { temporaryPassword } for authenticated Admin', async () => {
+    it('200 with { temporaryPassword, emailSent } for authenticated Admin', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/users/some-id/password')
         .set('Authorization', bearer('Admin'))
         .expect(200);
-      expect(res.body).toEqual({ temporaryPassword: 'Temp-Pass-16chars' });
+      // auth/account-access-emails T-6 falsifier: emailSent must reach the
+      // wire unchanged from what UsersService.resetPassword resolves. Strip
+      // it from the controller's returned object and this assertion reddens.
+      expect(res.body).toEqual({
+        temporaryPassword: 'Temp-Pass-16chars',
+        emailSent: true,
+      });
       expect(usersServiceMock.resetPassword).toHaveBeenCalledWith('some-id');
     });
   });

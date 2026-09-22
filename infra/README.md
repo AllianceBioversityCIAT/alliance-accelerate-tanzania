@@ -88,7 +88,6 @@ Stack names, region, and shared parameters referenced by every script/template.
 |---|---|---|
 | `DevCidr` | 10-data-auth (T-2) | Operator public IP as a `/32` CIDR — the admin/migration ingress rule on `3306`. Auto-detected at deploy time (OQ-6), override via `DEV_CIDR`. |
 | `AllowedOrigin` | 20-backend (T-3, T-8) | CORS allow-origin for the HTTP API. Default `*` for the dev bootstrap; locked to the CloudFront URL in step 5 (FR-6, DD-6). |
-| `PortalUrl` | 10-data-auth, `bugfix/admin-user-invite-and-reset` §7.1 | Admin portal base URL used in the invitation email CTA (`/login` is appended). Default is the current dev CloudFront URL. |
 
 ### Cross-stack wiring (outputs → params)
 

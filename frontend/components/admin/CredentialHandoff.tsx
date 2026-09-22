@@ -4,19 +4,26 @@
 /**
  * CredentialHandoff — one-time display of a user's sign-in credentials.
  *
- * The backend now RETURNS a temporary password (create + reset) instead of
- * emailing the user. This presentational block shows the email + temporary
- * password once so the admin can share them securely out-of-band. It is NOT a
- * modal — callers wrap it in their own dialog panel.
+ * The backend RETURNS a temporary password (create + reset) AND attempts to
+ * email it (auth/account-access-emails). This presentational block shows the
+ * email + temporary password once so the admin can share them securely
+ * out-of-band, and states whether the invitation/reset email actually went
+ * out. It is NOT a modal — callers wrap it in their own dialog panel.
  *
  * Security / UX:
  *   - The temporary password is display-only; never persisted, logged, or
  *     written to the URL. Copy uses the clipboard API only, guarded for absence.
- *   - A clear warning explains the once-only nature and first sign-in reset.
+ *   - The password is shown regardless of `emailSent` (FR-2) — the not-sent
+ *     branch is the case where the admin most needs it, so it is never hidden
+ *     or de-emphasised there.
+ *   - A failed send is presented as a *delivery* failure only, never as a
+ *     failure to create/reset the user (FR-3's negative clause) — the
+ *     Cognito account already exists by the time this view renders.
  *
  * Accessibility (WCAG 2.1 AA / §10):
  *   - Labelled value rows (email + password) via <dl>.
- *   - Warning rendered in a role="note" region.
+ *   - Send status and the persistent note both rendered in role="note"
+ *     regions.
  *   - Focusable Copy + Done buttons; copy feedback announced via aria-live.
  */
 
@@ -31,6 +38,12 @@ interface CredentialHandoffProps {
   email: string;
   /** One-time temporary password returned by the API. */
   temporaryPassword: string;
+  /**
+   * Whether the invitation/reset email was accepted by the mail transport
+   * (auth/account-access-emails FR-3). The password above is shown
+   * regardless of this value (FR-2) — never gate its visibility on it.
+   */
+  emailSent: boolean;
   /** Heading for the block (e.g. "User created — share these credentials"). */
   title: string;
   /** Called when the admin dismisses the handoff. */
@@ -44,6 +57,7 @@ interface CredentialHandoffProps {
 export function CredentialHandoff({
   email,
   temporaryPassword,
+  emailSent,
   title,
   onDone,
 }: CredentialHandoffProps) {
@@ -100,13 +114,30 @@ export function CredentialHandoff({
         </div>
       </dl>
 
-      {/* Warning — shown once, share securely */}
+      {/* Send status (FR-3) — shown whether or not the email went out; a
+          failed send reads as a delivery failure, never as a failure to
+          create/reset the user. */}
+      {emailSent ? (
+        <p role="note" className="text-sm text-success">
+          An email with this password was sent to the user.
+        </p>
+      ) : (
+        <p
+          role="note"
+          className="rounded-md border border-warning bg-surface-alt px-3 py-2 text-sm text-warning"
+        >
+          The email could not be sent — this did not affect the account.
+          Share this password with the user directly.
+        </p>
+      )}
+
+      {/* Persistent note — shown once, regardless of send status (FR-2) */}
       <p
         role="note"
-        className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-fg"
+        className="rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-fg"
       >
-        This password is shown only once. Share it securely (not by email). The
-        user must set a new password at first sign-in.
+        This password is shown only once. Save it now — the user must set a
+        new password at first sign-in.
       </p>
 
       {/* Actions */}

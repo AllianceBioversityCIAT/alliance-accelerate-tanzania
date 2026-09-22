@@ -43,15 +43,6 @@ Parameters:
     MinValue: 20
     MaxValue: 100
 
-  # PortalUrl (admin-user-invite-and-reset spec §7.1) — still live: the admin
-  # portal base URL used in the invitation email CTA (/login is appended).
-  # Documented in infra/README.md §3 (Shared parameters).
-  PortalUrl:
-    Type: String
-    Default: "https://d3idqvvg0xa1r7.cloudfront.net"
-    Description: >-
-      Admin portal base URL used in the invitation email CTA (/login is appended).
-
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
   # T-2 - RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
@@ -185,54 +176,15 @@ Resources:
       # public self-signup (RBAC model - no anonymous registration).
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
-        # Branded English invitation email (FR-2). Table-based, inline styles only
-        # (email-client-safe). MUST contain {username} + {####} or Cognito rejects
-        # it. PortalUrl is CFN-substituted; {username}/{####} are Cognito placeholders
-        # (no ${...}, so safe inside !Sub). CTA links to ${PortalUrl}/login.
-        InviteMessageTemplate:
-          EmailSubject: "Your ACCELERATE Seed Registry admin account"
-          EmailMessage: !Sub |
-            <!DOCTYPE html>
-            <html lang="en">
-              <body style="margin:0;padding:0;background-color:#F7F7F7;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F7F7F7;">
-                  <tr>
-                    <td align="center" style="padding:24px 12px;">
-                      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
-                        <tr>
-                          <td style="background-color:#1F4E8C;padding:20px 32px;">
-                            <span style="color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">ACCELERATE Seed Registry</span>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">
-                            <p style="margin:0 0 16px;">Welcome! An administrator has created an account for you on the ACCELERATE Seed Registry admin portal.</p>
-                            <p style="margin:0 0 8px;">Use these credentials to sign in for the first time:</p>
-                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;">
-                              <tr>
-                                <td style="padding:16px 20px;color:#333333;font-size:15px;line-height:1.8;">
-                                  <div><span style="color:#666666;">Username:</span> <strong>{username}</strong></div>
-                                  <div><span style="color:#666666;">Temporary password:</span> <strong>{####}</strong></div>
-                                </td>
-                              </tr>
-                            </table>
-                            <table role="presentation" cellpadding="0" cellspacing="0">
-                              <tr>
-                                <td style="border-radius:6px;background-color:#1F4E8C;">
-                                  <a href="${PortalUrl}/login" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;">Sign in to the portal</a>
-                                </td>
-                              </tr>
-                            </table>
-                            <p style="margin:24px 0 4px;color:#666666;font-size:13px;line-height:1.6;">Or open this link: ${PortalUrl}/login</p>
-                            <p style="margin:16px 0 0;color:#666666;font-size:13px;line-height:1.6;">You will be asked to set a new password when you first sign in. If you did not expect this email, you can safely ignore it.</p>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                </table>
-              </body>
-            </html>
+        # The branded Cognito invitation email config retired here (this pool's
+        # invite mail, not the account-access-emails backend one) — FR-7/DD-5,
+        # docs/specs/auth/account-access-emails/design.md. No application path
+        # sent it (MessageAction: 'SUPPRESS' in users.service.ts's create()); a
+        # console-created user is understood (not independently re-measured
+        # here — ⚠️ unverified, DD-5/J-3) to receive Cognito's unbranded
+        # default invitation instead of a branded template whose link would
+        # go stale — once a DEPLOY_INFRA=true deploy applies this template
+        # change. Merging it does not change the deployed pool.
       Policies:
         PasswordPolicy:
           MinimumLength: 12
