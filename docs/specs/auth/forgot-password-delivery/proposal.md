@@ -6,7 +6,7 @@
 |---|---|
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Type | Change |
-| Status | **Approved to specify** — 2026-09-22, decisions in §13.1 |
+| Status | **Route re-opened** — 2026-09-22, after `judgment.md` escalated the Option A design (§12) |
 | Approval Mode | gated |
 | Author | Leader (Claude Opus 5), with Daniela Gómez |
 | Created | 2026-09-22 |
@@ -156,15 +156,54 @@ ATP-71 made admin-initiated reset work. A stranded user asks an admin.
 | ❌ | Not self-service; costs an admin's time and blocks the user until someone answers. |
 | ❌ | Leaves a visible **Forgot password** button that does not work — arguably worse than not offering it. |
 
-## 12. Recommended approach
+## 12. Recommended approach — **REVISED 2026-09-22 after judgment-day escalated the first design**
 
-**Option A, and the reasoning is security ownership, not cost.**
+> **The original recommendation was Option A, and it was wrong.** A design was written against it, two blind judges reviewed it independently, and they agreed on **14 findings** with **zero contradictions** (`judgment.md`). Three were not defects in how the design was written — they were consequences of Option A itself. The recommendation is therefore re-opened here rather than repaired downstream.
 
-Option B is genuinely tempting — the machinery exists, it avoids every condition in §2.1, and it lives on the stack we can iterate on. But a password reset is an account-takeover path, and the properties Cognito gives for free are precisely the ones that are easy to get subtly wrong: constant-time responses that don't reveal whether an address exists, attempt throttling per user rather than per IP, single-use codes, and expiry that cannot be extended by replay. `registrations.service.ts`'s OTP is a *registration* flow — a weakness there costs a spurious registration; the same weakness on password reset costs an account.
+### What the judgment established
 
-C-1's cost is small **today** (§2.3) and the trade is honest: we accept a standing obligation to handle every pool email in exchange for not writing our own credential-reset state machine.
+| Confirmed finding | Consequence for Option A |
+|---|---|
+| The awaited microservice reply needs an `id` + `reply_to`; `buildMicroserviceEnvelope` **omits `id` by contract**, and both its docblock and `enhancement/email-notification-microservice` FR-2 record that omission as deliberate | The honest-outcome mechanism is not available without amending a settled contract |
+| Cognito's trigger response ceiling is **not configurable**, and Cognito **retries** on timeout | The timeout path yields **duplicate codes plus an error**, not a clean failure |
+| `10-data-auth` cannot reach the broker credentials, the queue name, the API key, the sender identity or `PUBLIC_APP_BASE_URL` — all live in `20-backend`, which deploys **after** it | The function cannot be configured where the trigger forces it to live |
+| `10-data-auth` has **no SAM transform and no build step** | Hosting a Lambda there is a toolchain change, unbudgeted |
+| The trigger is all-or-nothing, and `users.service.ts::update()` can emit `CustomEmailSender_VerifyUserAttribute` | Failing loudly on unhandled sources **breaks a shipped admin feature** |
+| `UpdateUserPool` resets every live setting absent from the template | The most dangerous step in the change, with no mechanism designed for it |
 
-⚠️ **This is a recommendation, not a decision. It is the user's to overrule** — and Option B is defensible if the team would rather own straightforward code than an AWS trigger with a KMS dependency. If B is chosen, its spec must budget real work for the four security properties above and name how each is gated.
+**Seven of the fourteen findings do not exist under Option B.** No trigger, no KMS key, no Cognito ceiling, no all-or-nothing, no pool-wide update, no toolchain change, no cross-stack configuration problem.
+
+### The argument that drove the original recommendation was false — measured, not re-reasoned
+
+§12 originally rejected Option B on one ground: that a password reset is an account-takeover path, and Cognito gives for free the properties that are easy to get subtly wrong. **Those properties are already implemented in this codebase, in production, and tested** — verified by reading, not assumed:
+
+| Property I claimed we would have to build | Where it already exists |
+|---|---|
+| Code expiry | `email-verification.service.ts:279`, enforced in the lookup itself (`expiresAt: { gt: now }`, `:305`) |
+| Single use | `consumedAt: null` in the same lookup |
+| Attempt limiting | `OTP_MAX_ATTEMPTS = 5` (`:184`), checked per row (`:310`) |
+| **Constant-time comparison** | `safeEqualHex` (`:310`) |
+| Plaintext never stored | HMAC-SHA-256 `codeHash`; the schema comment states it outright |
+| Send-rate limiting | `EmailVerificationSendLimitExceededError` (`:197`) |
+| Request throttling | `RegistrationsThrottleGuard` (20 / 60 s) |
+| **Timing-oracle resistance** | `padToVerificationCodeResponseFloor` + `VERIFICATION_CODE_RESPONSE_FLOOR_MS` — built across two review rounds specifically to close an address-enumeration timing channel |
+
+The last row inverts the original argument completely. Judgment finding **C-3** established that Option A **opens** a multi-second timing oracle — KMS decrypt, AMQP connect, a per-message CLARISA HTTP call, then SMTP — and that the countermeasure **cannot** be applied there, because Cognito owns the response and there is nowhere in our code to pad. Option B runs in the one place that countermeasure already lives.
+
+So the security comparison does not favour Option A. It favours Option B, and my original reasoning had it backwards because I asserted what Cognito provides instead of checking what we already had.
+
+### Recommendation: **Option B**
+
+Build the reset flow in `20-backend`, on the `EmailVerificationService` machinery already serving public registration.
+
+⚠️ **What Option B still owes, stated so it is not discovered later:**
+
+1. **A second reset mechanism must not coexist.** Cognito's own `ForgotPassword` stays reachable unless it is explicitly closed off at the app client. That is a deliberate deliverable, not a detail.
+2. **The OTP machinery is a *registration* flow today.** Its constants were tuned for that risk profile — a spurious registration, not a stolen account. Every constant must be re-justified for this use, not inherited by proximity.
+3. **`AdminSetUserPassword` with `Permanent: true`** becomes the final step. That call now has its IAM grant (fixed 2026-09-22, `0f8c8f6`) — but D-4's lesson stands: no suite exercises IAM.
+4. **The enumeration surface moves to our endpoints.** The response floor exists, but it must be composed for *this* flow, not reused blindly — `mail-timing.ts`'s own history records a floor that was found insufficient because a term was omitted.
+
+⚠️ **Still a recommendation, still the user's to overrule.** Option A remains implementable if the team prefers Cognito to own the state machine — but it now carries fourteen documented findings, of which six are severe, and the three structural ones would have to be designed around rather than written around.
 
 ## 13. Risks, dependencies and open questions
 
@@ -202,4 +241,12 @@ The user asked whether this spec should also address the fact that a send can be
 
 ## 15. Next step
 
-`/akili-specify auth/forgot-password-delivery` — **after** Q-1 and the Option A/B/C decision are answered. Both change what gets specified, and §12 is explicitly overrulable.
+**Confirm the revised §12 recommendation (Option B), then re-run `/akili-specify auth/forgot-password-delivery`.**
+
+The existing `requirements.md` largely survives a route change — FR-1 through FR-5 are behaviour contracts, not mechanisms. The exceptions, which must be revisited rather than carried forward:
+
+- **FR-4's identical-failure clause** — judgment finding C-3 showed it is in direct tension with the honest-failure clause beside it. Under Option B both live in our code, so the tension is resolvable; under Option A it was not. It still has to be resolved explicitly.
+- **NFR-4** (KMS grants) becomes moot under Option B and should be struck rather than left to confuse.
+- **NFR-5's** coupled-deploy warning survives and becomes *more* important, not less: it is now the only reason this spec touches `10-data-auth` at all.
+
+`design.md` is superseded in full. It is retained unedited as the input `judgment.md` audited — rewriting it would leave that ledger describing a document that no longer exists.
