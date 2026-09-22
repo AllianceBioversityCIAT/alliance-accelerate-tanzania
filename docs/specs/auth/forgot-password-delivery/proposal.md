@@ -6,7 +6,7 @@
 |---|---|
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Type | Change |
-| Status | Draft — awaiting approval |
+| Status | **Approved to specify** — 2026-09-22, decisions in §13.1 |
 | Approval Mode | gated |
 | Author | Leader (Claude Opus 5), with Daniela Gómez |
 | Created | 2026-09-22 |
@@ -176,6 +176,22 @@ C-1's cost is small **today** (§2.3) and the trade is honest: we accept a stand
 | R-4 | The microservice reports outcome **after** the real SMTP send (verified in its source: `mailer.service.ts::sendMail` awaits `transporter.sendMail` before returning, and `@MessagePattern('send')` is RPC-capable). A Lambda that publishes fire-and-forget will not know whether the code was delivered — the same limitation ATP-71 recorded. Worth deciding deliberately this time. |
 | Q-1 | Is self-service reset **required**, or is admin-mediated reset (now working) acceptable for a pool of staff/admin users only? Option C is only embarrassing because the button exists; removing the button is a third answer nobody has priced. |
 | Q-2 | If Option A: does the function handle **every** `triggerSource` (C-1), or explicitly no-op the ones the pool cannot currently emit and fail loudly if one arrives? |
+
+## 13.1 Decisions taken (Daniela Gómez, 2026-09-22) — these close §13's open questions
+
+**Q-1 — Is self-service reset required? → YES. Build it.**
+Reason given, recorded because it is the reason and not the conclusion that should survive: *an admin may not be available when someone is locked out*, and then the user is simply stuck. Admin-mediated reset (ATP-71) is a fallback, not a substitute. **Option C is rejected** and removing the button is off the table.
+
+**Q-2 — What does the function do with trigger sources the pool cannot currently emit? → FAIL LOUDLY.**
+An unrecognised `triggerSource` must raise, not be silently ignored. Rationale accepted as proposed: if someone later enables MFA, a silent no-op means users stop receiving codes and nobody learns why. A loud failure surfaces the gap on the day the setting changes. This is the same failure mode as ATP-71's missing IAM grant — broken for months, invisible, because nothing complained.
+
+**Q-3 (raised by the user, and in scope) — the false `status: sent`.**
+The user asked whether this spec should also address the fact that a send can be reported as successful when the microservice later rejects it (ATP-71's D-6 recorded this: the app logged `status=sent` and the microservice's alert arrived 800 ms later with *"No valid emails found in TO or CC"*).
+
+**Ruling: in scope for THIS flow, and out of scope for ATP-71's admin flows.**
+
+- **In scope here.** The self-service screen tells the user *"check your email"*. If the send failed, that sentence strands a user who by definition has no admin to fall back on — the exact scenario Q-1 was decided on. And §13's R-4 established, from the microservice's own source, that it replies **after** the real SMTP send (`mailer.service.ts::sendMail` awaits `transporter.sendMail` before returning; the handler is `@MessagePattern('send')`, which is RPC-capable). So an honest outcome is obtainable here. The latency objection that blocks this for admin operations is weakest in this flow: **the user is already waiting for that email.**
+- **Out of scope for ATP-71's `CredentialHandoff`.** Different screen, different module, a spec already closed and merged. If this spec builds reply-consumption into the transport, adopting it there becomes a small separate change — which is the right shape for it.
 
 ## 14. Success criteria
 
