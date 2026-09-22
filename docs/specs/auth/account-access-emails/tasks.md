@@ -122,7 +122,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: ⚠️ **No `/NN` opacity modifier on a semantic token** — they emit **no CSS** in this project, so a test asserting the class is present passes while nothing renders (`docs/specs/quick/quick-log.md`). If styling uses one, the test is a presence-assertion over an inert class: use `opacity-*` or a solid token.
       Done when: both branches show the password; the failure reads as a delivery failure; the retired string appears nowhere.
 
-- [ ] **T-8** Prove the dispatch survives the Lambda freeze class  (deps: T-4, T-5)
+- [x] **T-8** Prove the dispatch survives the Lambda freeze class  (deps: T-4, T-5)
       Scope: extend `lambda-handler.e2e.spec.ts` — the **only** harness that reproduces this class — to drive a user-create through the real `lambda.ts` handler and assert the send completed before the handler resolved.
       Traces: **NFR-2**, requirements §9 D-4; design.md §5.3
       Files: `backend/src/test/lambda-handler.e2e.spec.ts`

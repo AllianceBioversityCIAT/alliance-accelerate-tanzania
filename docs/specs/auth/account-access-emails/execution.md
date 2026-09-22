@@ -693,3 +693,50 @@ It also corrected my guess about the weakness. The risk is not brittleness again
 ### Repo-wide finding surfaced by this task, deliberately NOT fixed here
 
 **32 sites use `/NN` opacity modifiers on semantic tokens, and every one emits no CSS.** Measured with a control: `bg-warning` and `border-warning` emit normally; `bg-warning/10` and `border-warning/40` emit nothing; a control token declared `rgb(var(--x) / <alpha-value>)` emits correctly. Cause: every colour in `tailwind.config.ts` is a bare `var(--color-*)` and no token uses the `<alpha-value>` form. Backgrounds and borders silently do not render, including seven on the public `about` page, and **no test catches it** because the class *is* present in the DOM. The fix is to change the token declaration form and the CSS variables to channel values — small, but it touches every token at once. Out of ATP-71's scope; raised separately.
+
+---
+
+## T-8 — Prove the dispatch survives the Lambda freeze class
+
+**Status:** `[x]` · **Attempts:** 2 (plus one infrastructure abort) · **Reviewer:** PASS on attempt 2 · Implementer `sonnet` / Reviewer `opus`
+
+### Infrastructure abort, not a work FAIL
+
+The first spawn died on an API error before writing anything. Per the runtime-failure fallback the Leader verified the tree **before** retrying: `git status --porcelain` empty, both `await`s present. That check was not ceremony — T-8's falsifier requires temporarily deleting the `await` that carries NFR-2, so an agent dying mid-falsifier would leave a fire-and-forget dispatch in production code beside a green test asserting the opposite. The worst possible end state for this spec, and the reason the retry brief added "verify with `git diff --quiet` and **cite the result**".
+
+### What the test proves, and why only this harness can
+
+`lambda-handler.e2e.spec.ts` drives the real `lambda.ts` handler with a synthetic API Gateway v2 event. supertest never touches `serverless-http`, so a dispatch lost to the execution environment freezing is invisible to every supertest suite however green. Both dispatch sites are covered — `create()` (T-4) and `resetPassword()` (T-5).
+
+### The defect that mattered, and it was the Leader's
+
+Attempt 1's comments claimed `mockContext.callbackWaitsForEmptyEventLoop = false` "mirrors production" and "makes the freeze hazard real". **That premise came from the Leader's brief**, which the Implementer faithfully transcribed. It is false three ways, and the Reviewer proved each: `lambda.ts:108` sets the flag **`true`** unconditionally as the handler's first statement, so the mock's value is overwritten before any request handling; the flag is inert under Jest regardless; and **`lambda.ts:62-74` and `:101-107` already record at length that this flag is load-bearing for zero paths — including that an earlier revision of that very comment was wrong about this same flag and had to be corrected.** The brief reintroduced the identical wrong attribution one file over.
+
+**Leader defect #8, same species as the other seven: asserting a mechanism without opening the file that implements it.** What made this one worse than a wrong citation is where it landed — it promised a future maintainer a structural guarantee at exactly the point where the real mechanism did not have one.
+
+### The ruling that upgraded the test from lucky to sound
+
+The Reviewer's central finding was not the comment. It traced **why attempt 1's falsifier reddened at all** and found the answer was incidental: the create response sits under `COMPRESSION_THRESHOLD_BYTES = 1024`, so `compression` engages no zlib threadpool work, and `ServerlessResponse.end()` settles via `process.nextTick` without reaching the event loop's check phase. The `setImmediate`-deferred mock separated the two cases **only because of that**. A response crossing 1 KB, a post-controller async interceptor, or a `serverless-http` upgrade would each have silently converted the gate into a test that passes for correct and broken code alike.
+
+Attempt 2 adopted the structural form the Reviewer specified: the transport's promise **never resolves on its own**, the test starts `invoke()` without awaiting, drains the loop, asserts the handler's promise has **not** settled while the send is held, then releases. The Reviewer then went looking for an escape hatch and documented that none exists — `MailService.dispatch()` awaits the transport bare with no race or deadline (the real `MAIL_SEND_TIMEOUT_MS` race lives in the transport the mock replaces), and no global interceptor, guard, or timeout exists anywhere on the users path. With the `await` present the handler's promise **cannot** settle.
+
+### Falsifier — both dispatch sites, independently
+
+Attempt 1 mutated only `create()`; its reset test reddened via shared-counter contamination, which the Reviewer correctly called weaker evidence. Attempt 2 mutated each site on its own:
+
+- `users.service.ts:340` (`sendInvitation`) → red at `lambda-handler.e2e.spec.ts:665`, `expect(settled).toBe(false)`, `Expected: false / Received: true`
+- `users.service.ts:543` (`sendAdminReset`) → red at `:715`, same assertion
+
+Restored after each, `git diff --quiet backend/src/users/users.service.ts` clean both times, final green 13/13. Attempt 1's evidence carried a consistent **+1 line offset** from the committed file, proving it had been run against a different revision — the Reviewer caught it, and attempt 2's line numbers reconcile exactly against disk. *"The falsifier was run against the final artifact"* is the one claim this task could not afford to leave uncorroborated.
+
+### Full backend suite, finally confirmed
+
+Attempt 1 left `npm test` unrun. That mattered specifically here: a module-level `jest.mock` of the mail transport factory is exactly the seam that can disturb neighbouring suites, and the new mock **never self-resolves**, so any pre-existing path that sent mail would now hang. Attempt 2: **82 suites, 1203 tests green**. The Reviewer additionally checked the hazard by route and confirmed none of the four pre-existing describe blocks can reach `MailService`.
+
+**Leader-verified independently, tree quiet:** `lambda-handler.e2e.spec.ts` 13/13 · `npm run build` clean · `npx eslint "{src,test}/**/*.ts" --quiet` clean · `git diff --quiet backend/src/users/users.service.ts` clean · only the spec file modified.
+
+### ADVISORY — carried, not actioned
+
+1. **Two comments still overclaim slightly.** "regardless of how the rest of the response pipeline happens to be scheduled" (`:126-127`) and "not by counting event-loop turns" (`:40-41`) are true of the **positive** direction, now airtight, but not of the falsifier direction, which needs `drainEventLoop(20)` to out-run the response pipeline. The *block* is structural; the *drain* is a 20-turn budget against a path that today does no async I/O — roughly 10× the 1–2 turns it needs. ⚠️ **The named condition to re-check: if the create response ever crosses `COMPRESSION_THRESHOLD_BYTES = 1024`, zlib threadpool work enters the falsifier path and the budget stops being free.**
+2. **The Reviewer withdrew its own earlier advice.** It had recommended `expect(sendCount).toBe(1)` in the prior round as the defence against a leaked send faking a green. Under the new mock that property is held structurally — nothing resolves without an explicit release — so the assertion is now close to tautological. Keep it (it pins "released exactly once") but the protective comments at `:672-673`/`:722-723` slightly overstate what it proves.
+3. The pre-existing "Jest did not exit" open-handle warning is present on the baseline. Note for anyone investigating: a *failed* `expect(settled).toBe(false)` leaves `invokePromise` permanently unsettled and one send unreleased, which would contribute to it on a red run though not on a green one.
