@@ -8,7 +8,7 @@
 | Jira | **ATP-71** |
 | Scope | **Phase 1 only** — invitation + admin-initiated reset. `/forgot-password` (FR-6, NFR-5) is Phase 2 and is **deliberately not decomposed here**; see §4. |
 | Design | [`design.md`](./design.md) — approved by judgment day, `judgment.md` |
-| Budget | 9 tasks · ~640 LOC · 2 review rounds. `/akili-execute` escalates on exceeding this rather than continuing. |
+| Budget | **Estimated** 9 tasks · ~640 LOC · 2 review rounds. `/akili-execute` escalates on exceeding this rather than continuing. **Actual (corrected 2026-09-22, ATP-71 three-dimension validation pass):** ~690 LOC (§7 below already showed this, uncommented) and **21 Reviewer verdicts** — T-1 ×3, T-2 ×1, T-3 ×2, T-4 ×3, T-5 ×3, T-6 ×3, T-7 ×2, T-8 ×2, T-9 ×2, recounted from `execution.md`'s attempt headers. **No escalation fired at any point in this run**, on either axis — recorded here rather than left standing as met. |
 | Branch | `feat/atp-71-account-access-emails` |
 
 ## 1. Dependency Graph
@@ -81,7 +81,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
 
 - [x] **T-4** Dispatch the invitation from `UsersService.create()`  (deps: T-3)
       Scope: resolve `sub` from `AdminCreateUserResponse.User.Attributes`; dispatch **last, after the optional `AdminAddUserToGroup`**; awaited inside its own `try`/`catch` that swallows and logs; return `emailSent`.
-      Traces: FR-1, FR-3 (both scenarios), **FR-4 (all four clauses, incl. the `BUT NOT 5xx` and the `AND IT MUST NOT leave a Cognito user the API reports as not created`)**, NFR-2; design.md §5.3
+      Traces: FR-1, FR-3 (both scenarios), **FR-4 (all four clauses, incl. the `BUT NOT 5xx` and the `AND IT MUST NOT leave a Cognito user the API reports as not created`)**, **NFR-1** *(added 2026-09-22 — the `dto.email`-fallback falsifier for the create site is this task's, and the §6 coverage table omitted it)*, NFR-2; design.md §5.3
       Files: `backend/src/users/users.service.ts` (+ `.spec.ts`)
       Skills: `nestjs-expert`, `error-handling-patterns`
       Verify: `cd backend && npx jest src/users --silent`
@@ -96,8 +96,9 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Skills: `nestjs-expert`
       Verify: `cd backend && npx jest src/users --silent`
       Falsifier: pass the method's `id` argument as the reference — the NFR-1 no-`@`-in-logs assertion must redden. **This is the single most important falsifier in the spec**: `id` *is* the email, and it is sitting right there in scope.
+      *(Cross-referenced 2026-09-22 — this text predates the §5.2 amendment made during this task's own execution and covers only its first clause. §5.2 as amended has a second clause: a thrown `AdminGetUser` must degrade to `sub = undefined` rather than fail the request, and that degrading `catch` must itself never log `id`. Both are gated — interpolating `id` into the degrading `catch`'s own log line must independently redden the no-`@` assertion — but as a separate mutation from the one above; see `execution.md`'s T-5 attempt 2/3 for why the two are not the same gate.)*
       Disqualifier: if the `AdminGetUser` call is mocked to always return a `sub`, the absent-`sub` path is untested. Both branches must be exercised.
-      Done when: `Permanent: false` is unchanged (the account still requires a change at next sign-in, pinned by a test); `sub` resolves through `AdminGetUser`; the absent-`sub` path passes no reference and never the `id`.
+      Done when: `Permanent: false` is unchanged (the account still requires a change at next sign-in, pinned by a test); `sub` resolves through `AdminGetUser`; the absent-`sub` path passes no reference and never the `id`. **Per the §5.2 amendment:** a thrown `AdminGetUser` degrades to `sub = undefined` without failing the reset, and the `catch` that performs that degradation never logs `id` — each pinned by its own test.
 
 - [x] **T-6** Extend the response contract with `emailSent`  (deps: T-4, T-5)
       Scope: `CreateUserResult` / `ResetPasswordResult`, the controller responses on `@Post()` and **`@Post(':id/password')`** — the real route, not `/reset-password` (J-1) — and the frontend API types.
@@ -152,8 +153,9 @@ Closes at **scenario and clause** granularity. A gap may not be discharged by ci
 | FR-1 s1 | link from `PUBLIC_APP_BASE_URL` | T-1 |
 | FR-1 s1 | `AND IT MUST` leave `FORCE_CHANGE_PASSWORD` | T-4 |
 | FR-1 s1 | `BUT NOT` any hardcoded host | T-1 |
-| FR-1 s2 | recipient forced to set a new password | T-4 |
-| FR-2 | password shown with copy affordance | T-7 |
+| FR-1 s1 | `THEN` an email is dispatched to that address | T-1, T-4; `users.service.spec.ts:253` asserts `sendInvitation` `toHaveBeenCalledWith('invitee@example.com', …)` *(added during the ATP-71 three-dimension validation pass, 2026-09-22 — this clause had no row at all, though FR-5's identical clause did)* |
+| FR-1 s2 | recipient forced to set a new password | Covered by **unchanged pre-existing code**, not this spec's diff — `frontend/components/auth/LoginForm.test.tsx:160,174,189,216` (`status: 'new_password_required'`) *(corrected 2026-09-22 — previously credited to T-4 with no `(B)` marker; `execution.md`'s T-4 entry recorded it as an unevaluable `(B)` on a grep that was scoped to `backend/src` and so could not see this frontend coverage. Retracted; see `execution.md` T-4 FINAL.)* |
+| FR-2 | password shown with copy affordance | Covered by **unchanged pre-existing code** — the Copy button (`CredentialHandoff.tsx:98-108`) predates this spec and no test in `frontend/` asserts it *(corrected 2026-09-22 — the row previously credited T-7, which touched this component but added no test over the Copy button itself; not a gap this spec introduced, and no test is added here — see the spec's scope fences)* |
 | FR-2 | `AND IT MUST` be shown either way | T-7 |
 | FR-3 sent | states it was emailed | T-7 |
 | FR-3 not-sent | states it could not be sent | T-7 |
@@ -170,7 +172,7 @@ Closes at **scenario and clause** granularity. A gap may not be discharged by ci
 | FR-7 | neither symbol appears | T-9 |
 | FR-7 | `AND IT MUST` leave no reference in any other file | T-9 *(the `infra/README.md` site, J-2)* |
 | FR-7 | `BUT NOT` described as live before the deploy | T-9 *(disqualifier)* |
-| NFR-1 | never in logs | T-3, T-5 |
+| NFR-1 | never in logs | T-3, **T-4**, T-5 *(T-4 added 2026-09-22 — it ran the `dto.email`-fallback falsifier for the create site, `users.service.spec.ts` "Falsifier 3", asserting no `@` in the emitted log line; the row previously omitted it)* |
 | NFR-1 | `BUT NOT` in `ActorAuditLog` | T-4, T-5 — **(B) unevaluable gap:** neither path touches `ActorAuditLog`; no code exists to test. Structural, and recorded as such rather than counted as verified. |
 | NFR-2 | awaited dispatch | T-8 |
 | NFR-3 | no hardcoded host | T-1, T-2 |

@@ -10,7 +10,7 @@
 | Author | AKILI (Leader) on behalf of Daniela Gómez |
 | **Type** | **Change** |
 | **Approval Mode** | **gated** |
-| Status | Draft — awaiting approval |
+| Status | **Approved 2026-09-21** (`judgment.md:96` — JUDGMENT: APPROVED ✅); Phase 1 implemented, all 9 tasks in `tasks.md` §5 marked `[x]` as of 2026-09-21. §9's D-6 manual inbox check (`tasks.md` §3) remains **pending**, performed by the user against DEV, not by any automated gate. |
 | Proposal | [`proposal.md`](./proposal.md) |
 | **Depends on** | **ATP-67 / PR #80** — `PUBLIC_APP_BASE_URL` and `getPublicAppBaseUrl()`. ⚠️ Open at the time of writing; the branch is cut from it, so the code is present here but not yet on `main`. |
 | **Parallel-safe** | **no** — `users`, `mail`, and `10-data-auth` are shared surfaces |
@@ -120,6 +120,8 @@ The self-service row was a **recorded decision**, not an oversight — `docs/spe
 - GIVEN the transport accepted the message
 - WHEN the handoff view renders
 - THEN it states that the invitation was emailed
+
+> ⚠️ **Wording superseded during T-7 execution — annotated, not rewritten (three-dimension validation, ATP-71 correction pass, 2026-09-22).** The shipped copy is deliberately **path-neutral** — *"An email with this password was sent to the user."* (`CredentialHandoff.tsx`) — never the word "invitation". `CredentialHandoff` serves **both** the create flow and the admin-initiated reset flow (design.md §6), and §4's Glossary defines **Invitation** and **Admin-initiated reset** as distinct terms, so "invitation" provably excludes the reset path FR-5 shares this same component with. The scenario's literal `THEN` above is therefore narrower than what shipped; the shipped behaviour is the correct one; the deviation was deliberate, discovered and accepted during T-7 (see `execution.md`'s T-7 entry), not a defect. Left as written above so the history survives — do **not** "restore" the word `invitation` here, which would redden `page.test.tsx:459` (`expect(screen.queryByText(/invitation/i)).not.toBeInTheDocument()` on the reset path) and misdescribe that path.
 
 #### Scenario: Not sent
 
@@ -273,9 +275,10 @@ The classes this spec can actually produce, and what catches each. A class with 
 | FR-4 | A send failure never fails the operation | 1 | D-3, D-4 |
 | FR-5 | Admin-initiated reset emails the new password | 1 | D-1, D-3, D-6 |
 | FR-6 | Self-service reset uses the reliable channel | **2** | D-8, D-9 |
-| FR-7 | Dead Cognito invitation template retired | 1 (effect: 2) | D-8 |
+| FR-7 | Dead Cognito invitation template retired | 1 (authored; live only after a `DEPLOY_INFRA=true` deploy — not "Phase 2") | D-8 |
 | NFR-1 | Credential never logged, stored, or audited | 1 | D-2 |
 | NFR-2 | The send is awaited | 1 | D-4 |
 | NFR-3 | No hardcoded host in any link | 1 | D-1 |
 | NFR-4 | Emails render in real clients | 1 | D-7 |
-| NFR-5 | Phase 2's deploy dependency is stated | 2 | D-8 |
+| NFR-5 (FR-7 instance) | `10-data-auth` deploy dependency stated — FR-7's instance | 1 | D-8 — discharged by T-9 |
+| NFR-5 (FR-6 instance) | `10-data-auth` deploy dependency stated — FR-6's instance | 2 | D-8 |

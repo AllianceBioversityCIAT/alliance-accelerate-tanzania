@@ -4,16 +4,17 @@ import { getPublicAppBaseUrl } from '../mail.config';
 import { renderEmailHtml } from './email-layout';
 
 /**
- * FR-1 — the invitation `UsersService.create()` will dispatch to a
- * newly-created Staff/Admin user once wired up (T-4, deps T-3, design.md
- * §5.3 — not yet built as of this task).
+ * FR-1 — the invitation `UsersService.create()` dispatches to a
+ * newly-created Staff/Admin user (T-4, deps T-3, design.md §5.3 — as of
+ * T-1 this was not yet wired up; T-4 (shipped) now dispatches it from
+ * `users.service.ts::create()`, at :340).
  *
  * Carries the temporary password (FR-1 scenario 1, Q-2 "carry it") and a
  * sign-in link built from `PUBLIC_APP_BASE_URL` (FR-1's link `AND`, NFR-3).
  * `MessageAction: 'SUPPRESS'` is already set on `create()`'s
  * `AdminCreateUser` call (`users.service.ts`) and stays unchanged (design.md
- * §5.4) — so today Cognito sends the recipient no invitation mail at all;
- * once T-4 dispatches this template, it becomes the only invitation mail
+ * §5.4) — so Cognito itself still sends the recipient no invitation mail;
+ * now that T-4 dispatches this template, it is the only invitation mail
  * the recipient gets, replacing the manual handoff, not Cognito's own
  * mailer.
  */

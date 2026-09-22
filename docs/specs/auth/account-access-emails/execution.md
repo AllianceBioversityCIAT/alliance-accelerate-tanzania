@@ -8,7 +8,7 @@
 | Jira | **ATP-71** |
 | Branch | `feat/atp-71-account-access-emails` |
 | Approval Mode | **gated** |
-| Budget | 9 tasks · ~640 LOC · 2 review rounds (`design.md` §11) |
+| Budget | **Estimated:** 9 tasks · ~640 LOC · 2 review rounds (`design.md` §11). **Actual (corrected 2026-09-22, ATP-71 three-dimension validation pass):** ~690 LOC (`tasks.md` §7) and **21 Reviewer verdicts** — T-1 ×3, T-2 ×1, T-3 ×2, T-4 ×3, T-5 ×3, T-6 ×3, T-7 ×2, T-8 ×2, T-9 ×2, recounted from this file's own attempt headers. **No escalation is recorded anywhere in this run**, on either the LOC or the review-round axis, though both materially exceeded the estimate — a documented gate that never fired is exactly the defect class this spec spent nine tasks correcting elsewhere. |
 | Leader | Opus 5 (T1) |
 | Implementer | `akili-implementer` wrapper → **Sonnet** (T2) |
 | Reviewer | `akili-reviewer` wrapper → **Opus** (T3) — differs from the Implementer by configuration, not by discipline |
@@ -125,7 +125,7 @@ Corrected in both T-1 and T-2 (T-2 said "as T-1" and would have inherited it). *
 
 ### T-1 — FINAL: `[x]` PASS
 
-**Attempts:** 3 · **Reviewer invocations:** 4 (one per attempt, plus the judgment-day pair ran earlier against the design, not this task) · **Date:** 2026-09-21
+**Attempts:** 3 · **Reviewer invocations:** 3 (one per attempt) · **Date:** 2026-09-21 · *(Corrected 2026-09-22, ATP-71 three-dimension validation pass — this previously read "4 (one per attempt, plus the judgment-day pair ran earlier against the design, not this task)". One-per-attempt over 3 attempts is 3; the judgment-day pair judged `design.md`, not this task, so it was never a T-1 Reviewer invocation to begin with and does not belong in this count at all — "4" was unreachable under either reading.)*
 
 **Requirements covered:** FR-1 scenario 1 — the temp-password `AND`, the link `AND`, the no-hardcoded-host `BUT`; NFR-3; NFR-4. *(FR-1's `AND IT MUST` `FORCE_CHANGE_PASSWORD` clause and scenario 2 belong to T-4 per the `tasks.md` §6 coverage table and are correctly untouched here.)*
 
@@ -421,7 +421,9 @@ It verified every advisory correction at source rather than accepting it: **no O
 
 **Attempts:** 3 · **Date:** 2026-09-21
 
-**Requirements covered:** FR-1 (scenario 1's `AND IT MUST`), FR-3 (both scenarios), **FR-4 (all four clauses, asserted together in one test)**, NFR-1, NFR-2 at unit level. FR-1 scenario 2 recorded as a **(B)** with a structural reason the Reviewer re-verified by its own grep: no backend route participates in Cognito's sign-in challenge flow at all.
+**Requirements covered:** FR-1 (scenario 1's `AND IT MUST`), FR-3 (both scenarios), **FR-4 (all four clauses, asserted together in one test)**, NFR-1, NFR-2 at unit level.
+
+**⚠️ FR-1 scenario 2's `(B)` retracted (corrected 2026-09-22, ATP-71 three-dimension validation pass).** This entry originally recorded scenario 2 ("recipient forced to set a new password") as an unevaluable `(B)`, on a grep — `NEW_PASSWORD_REQUIRED|RespondToAuthChallenge|AdminInitiateAuth|ChallengeName` — that the Reviewer re-ran and confirmed returns zero matches. **That grep was scoped to `backend/src`.** The clause is genuinely, and pre-existingly, closed by frontend tests unrelated to this spec's diff: `frontend/components/auth/LoginForm.test.tsx:160,174,189,216` each assert `status: 'new_password_required'` drives the new-password field. Not a gap; not this task's coverage to claim either — it is unchanged pre-existing code. See `tasks.md` §6's corrected row.
 
 **Final verification:** 6 suites / 56 tests · full backend suite 82 suites / 1196 tests · eslint clean · build clean. **Five mutations demonstrated to redden their named tests** — dispatch moved between the Cognito calls, `try`/`catch` removed, reference falling back to `dto.email`, a stray `AdminSetUserPassword(Permanent:true)` (self-initiated), and `sendAdminReset` inserted into `resetPassword`.
 
@@ -495,7 +497,7 @@ The axis that actually decides it: **what does the call buy?** `AdminAddUserToGr
 
 **ADVISORY (recorded, with two Leader decisions):**
 1. **`users.service.ts` `get()`'s docstring still asserts `AdminGetUserCommandOutput` "does not echo `Username`"** — the Reviewer verified it **false** against this checkout (`AdminGetUserResponse.Username` is a **required** member). T-5 did **not** act on the false belief (`resolveResetSub` reads attributes and never substitutes), so no defect follows — but the sentence is **in T-5's own file** and `cognito-sub.util.ts` **quotes it verbatim, propagating it**. Forward-pointed into this brief twice already. **Leader decision: fixed in attempt 3** — the file is open, it is one line, and leaving a verified-false claim that another file quotes is how this spec's defects reproduce.
-2. **The `"not yet built as of this task"` family** — `cognito-sub.util.ts`, `mail.service.ts`, `invitation.template.ts`, `admin-reset.template.ts` all carry self-timestamping parentheticals that T-4 and T-5 have now partly outrun. The Reviewer checked them, found the convention **consistent with the precedent T-4 set**, and explicitly declined to fail on it. **Leader decision: leave them.** The parenthetical is the convention's own disclaimer; sweeping five sites for a convention that already self-limits would be churn, not correctness. Recorded so the next reader knows it was considered and declined, not missed.
+2. **The `"not yet built as of this task"` family** — `cognito-sub.util.ts`, `mail.service.ts`, `invitation.template.ts`, `admin-reset.template.ts` all carry self-timestamping parentheticals that T-4 and T-5 have now **fully** outrun (corrected 2026-09-22, ATP-71 three-dimension validation pass — this previously read "partly outrun", understating what the archive was accepting: T-4 and T-5 had by this point wired both dispatch call sites completely, leaving nothing these parentheticals' future tense still described accurately). The Reviewer checked them, found the convention **consistent with the precedent T-4 set**, and explicitly declined to fail on it. **Leader decision at the time: leave them.** The parenthetical is the convention's own disclaimer; sweeping five sites for a convention that already self-limits would be churn, not correctness. **Since fixed:** the ATP-71 correction pass (item A of that review) rewrote all five sites in the past tense with the shipping task named, closing what this advisory had left open.
 3. `users.controller.ts:109` now false — T-6's file, declared not discovered.
 
 #### Attempt 3 — Reviewer `PASS` ✅
@@ -740,3 +742,45 @@ Attempt 1 left `npm test` unrun. That mattered specifically here: a module-level
 1. **Two comments still overclaim slightly.** "regardless of how the rest of the response pipeline happens to be scheduled" (`:126-127`) and "not by counting event-loop turns" (`:40-41`) are true of the **positive** direction, now airtight, but not of the falsifier direction, which needs `drainEventLoop(20)` to out-run the response pipeline. The *block* is structural; the *drain* is a 20-turn budget against a path that today does no async I/O — roughly 10× the 1–2 turns it needs. ⚠️ **The named condition to re-check: if the create response ever crosses `COMPRESSION_THRESHOLD_BYTES = 1024`, zlib threadpool work enters the falsifier path and the budget stops being free.**
 2. **The Reviewer withdrew its own earlier advice.** It had recommended `expect(sendCount).toBe(1)` in the prior round as the defence against a leaked send faking a green. Under the new mock that property is held structurally — nothing resolves without an explicit release — so the assertion is now close to tautological. Keep it (it pins "released exactly once") but the protective comments at `:672-673`/`:722-723` slightly overstate what it proves.
 3. The pre-existing "Jest did not exit" open-handle warning is present on the baseline. Note for anyone investigating: a *failed* `expect(settled).toBe(false)` leaves `invokePromise` permanently unsettled and one send unreleased, which would contribute to it on a red run though not on a green one.
+
+---
+
+## Scope and numbering decisions carried outside any single task (added 2026-09-22, ATP-71 three-dimension validation pass)
+
+Two standing decisions that this log had not previously stated in one place, though both were live throughout the run.
+
+### (a) The Phase-1 narrowing was accepted by the user
+
+`design.md` §11 offered narrowing this spec to Phase 1 (9 tasks, ~640 LOC) as **"a recommendation, not a decision. It is the user's to overrule."** — Phase 2 (`/forgot-password`, FR-6/NFR-5) becomes a sibling spec opened by the DD-6 verification spike. `tasks.md`'s own Document Control records the outcome operationally: *"Scope | **Phase 1 only** — invitation + admin-initiated reset. `/forgot-password` (FR-6, NFR-5) is Phase 2 and is **deliberately not decomposed here**."* All nine Phase-1 tasks were decomposed, executed, and closed on that basis, with FR-6/NFR-5 retained in `requirements.md` §7/§8 as recorded intent rather than dropped. Recorded here as the accepted disposition, so a future reader does not mistake the absence of Phase 2 tasks for an oversight.
+
+**Where the acceptance actually lives — stated plainly, because the validation pass flagged it as a provenance gap.** The user accepted the narrowing **in session**, in response to the Q-1 question `/akili-specify` raised at the design gate. It was **not** written into any spec artefact at the time, which is why validator 2 could correctly report a gated spec proceeding on an explicitly-unadjudicated recommendation: the adjudication happened, the record of it did not. This paragraph is that record, written after the fact and labelled as such. The Implementer applying these corrections flagged, correctly, that it could find no in-repo citation for the acceptance — that flag is the reason this paragraph exists in this form rather than asserting a citation that does not exist.
+
+### (b) The DD-1 ADR remains unallocated — deliberately, not by omission
+
+`design.md` §9 records that an ADR for DD-1 is warranted but its number is **not allocated** from this branch, per root `CLAUDE.md`'s Concurrency protocol: a shared monotonic id must be allocated on the default branch, after re-checking unmerged branches, never from a spec branch. `docs/trd/trd.md` §12.5 still ends at `ADR-015` as of this correction pass (2026-09-22) — confirming nothing has been allocated in the interim. This is **open, not dropped**: the ADR entry is owed at merge time, on `main`, following the same re-check the root guide prescribes. No number is allocated here, consistent with that rule.
+
+---
+
+## D-6 — the manual inbox check (added 2026-09-22, ATP-71 three-dimension validation pass)
+
+**Status: PENDING.** This is the spec's own stated precondition for "done" and it has **not** been met as of this correction pass. Nothing above substitutes for it — every `[x]` in `tasks.md` §5 closes a task's own automated gate; none of them closes D-6.
+
+**Why no task closes it.** `requirements.md` §9 D-6: *"The message dispatches but never arrives ... A mock assertion proves dispatch, not delivery (KZ-002)."* `tasks.md` §3: *"Every test below can be green while no email reaches a human."* No automated gate exists for this class, by design — it is not an oversight to fill in later.
+
+**The check, restated verbatim from `tasks.md` §3** (*"Before this spec is called done, at the HITL pause"*):
+1. Create a real user against DEV.
+2. Open the recipient's mailbox.
+3. Confirm the email arrived.
+4. Follow its link through to a successful sign-in.
+5. Record the result.
+
+**Who performs it:** the user, against DEV — not an agent, and not simulated here. This section is a placeholder for that record, not the record itself.
+
+**Result:** *(not yet recorded — fill in after the check is performed)*
+- Date/time:
+- Environment:
+- Invitation path (FR-1) — arrived? sign-in succeeded?
+- Admin-reset path (FR-5) — arrived? sign-in succeeded?
+- Any deviation from the expected copy or link behaviour:
+
+Until this section carries a result, treat `requirements.md`'s Document Control "Approved... Phase 1 implemented" status as covering the automated gates only — D-6 stands outside all of them, exactly as designed.

@@ -103,6 +103,8 @@ The ruling already existed in **§5.3**, written for `create()` and never applie
 
 **Ordering is prescribed, not left to the Implementer (J/A-6).** In `create()` the dispatch goes **last — after the optional `AdminAddUserToGroup`**, not between the two Cognito calls. Both calls sit inside one outer `try` that routes any failure through `mapCognitoError`; dispatching between them means a group-assignment failure turns the whole request into an error response **after a live credential has already been emailed**, leaving a Cognito user the API reports as not created. That is precisely the state FR-4's boundary clause forbids, reached through a different Cognito call than the one FR-4 was written about.
 
+> ⚠️ **Over-claimed, annotated during the ATP-71 three-dimension validation pass (2026-09-22) — not rewritten.** This paragraph's FR-4 citation reaches further than FR-4 actually goes. FR-4's boundary clause sits under *"GIVEN the mail transport will reject every message"* — it is scoped to the **mail-send path**, not to `AdminAddUserToGroup` failing, which is pre-existing Cognito behaviour this spec did not change and does not touch. The §5.2 amendment (below, added during T-5) reaches the correct ruling on this exact question for `AdminGetUser` and states the general principle this paragraph should have used instead: *"`AdminAddUserToGroup` is a required state change, so failing the request is honest."* What this ordering rule actually removes is narrower than "the state FR-4 forbids" — it removes only the **"a live credential was already emailed" conjunct** from that failure; a group-assignment failure after `create()` remains a request-failing error either way, dispatch-ordering aside, and always has been. The ordering choice is still correct and still required (T-4 pins it with a falsifier) — only the breadth of the reason given here was wrong.
+
 - **Awaited, inside its own `try`/`catch`** (NFR-2). Not fire-and-forget. This project has lost mail to a frozen Lambda execution environment twice — the registration OTP and the receipt — and `context.callbackWaitsForEmptyEventLoop` does not protect an `async` handler. The established shape is `RegistrationsService.dispatchReceiptEmail`; copy it.
 - **The `catch` swallows and logs, then reports `emailSent: false`** (FR-4). The Cognito user already exists and cannot be un-created; failing the request would report a false negative and invite a duplicate-create retry.
 - **The credential is passed to the template and to the response, and nowhere else** (NFR-1) — not to the logger, not to `ActorAuditLog`.
@@ -113,12 +115,14 @@ The ruling already existed in **§5.3**, written for `create()` and never applie
 
 ## 6. Frontend Design
 
-One component changes: the credential-handoff view reached from `CreateUserDialog` (and its reset equivalent).
+One component changes, with **two call sites, not two components**: the credential-handoff view (`CredentialHandoff.tsx`), reached from `CreateUserDialog.tsx:192` (create) **and** `app/(admin)/admin/users/page.tsx:497` (reset — the flow T-5 made email). *(Corrected during the ATP-71 three-dimension validation pass, 2026-09-22 — the original wording, "and its reset equivalent", implied a second component and is the root cause of the FR-3 wording issue annotated below: because one component serves both flows, its copy must be path-neutral.)*
 
 | State | Renders |
 |---|---|
 | `emailSent: true` | The existing password + copy affordance, plus a confirmation line that the invitation was emailed |
 | `emailSent: false` | The same, plus a `text-warning` line stating the email could not be sent and the password must be shared directly |
+
+> ⚠️ **Annotated, not rewritten (ATP-71 correction pass, 2026-09-22).** The row above describes the sent-state copy as naming "the invitation" — read literally, that excludes the reset call site this same section just established. Because `CredentialHandoff` is one component serving both flows, the copy that shipped is deliberately **path-neutral**: *"An email with this password was sent to the user."* (`CredentialHandoff.tsx`), never the word "invitation". `requirements.md` FR-3's Sent scenario carries the identical annotation, with the same reasoning and the same instruction not to "restore" the word.
 
 Token discipline per `docs/ux-ui/design.md` §7. ⚠️ **No `/NN` opacity modifier on a semantic token** — they emit no CSS in this project (recorded in `docs/specs/quick/quick-log.md`); use `opacity-*` or an existing solid token.
 
@@ -131,7 +135,7 @@ The password is shown in **both** states (FR-2). The failure is presented as a *
 | Concern | Handling |
 |---|---|
 | A credential now travels by email | Accepted by the product owner. Single-use; `FORCE_CHANGE_PASSWORD` is retained, so possession of the mail without a prompt change yields nothing lasting. |
-| Credential in logs | NFR-1. `dispatch` logs `kind` + `sub` only. A test asserts the logged strings contain neither the password nor the body. |
+| Credential in logs | NFR-1. `dispatch` logs `kind` + a reference: the resolved Cognito `sub` when one is available, and **no reference at all** (`reference=n/a`) when it is not. *(Corrected during the ATP-71 three-dimension validation pass, 2026-09-22 — this row previously said "`sub` only", which describes only the success path. §5.2 as amended and `judgment.md` J-4 establish that it is the **fallback to no reference** — never a substitution of `id` — that actually protects NFR-1, since the `id` in scope at both call sites is the email address.)* A test asserts the logged strings contain neither the password, the body, nor any `@`. |
 | Credential in the response | Unchanged from today — `Admin`-guarded route, `JwtAuthGuard` + `RolesGuard`. |
 | Enumeration | Unchanged. These are `Admin`-only routes; the caller already knows the address. **`/forgot-password`'s** enumeration resistance is Cognito's and stays Cognito's — one of the reasons Phase 2 re-routes rather than reimplements. |
 | Actor PII | Untouched. No actor record is read or written; `pii-consent.policy.ts` is not involved. |
@@ -148,7 +152,9 @@ The password is shown in **both** states (FR-2). The failure is presented as a *
 
 ## 9. Decision Records (ADR-style)
 
-> **ADR numbering:** an ADR for DD-1 is warranted, but the number is **not allocated here.** Root `CLAUDE.md` § Concurrency protocol forbids allocating a shared monotonic id from a spec branch. `ADR-015` is the highest on `main` as of 2026-09-21 (`origin/dev` carries no real TRD divergence). Allocate at apply time, on the default branch, after re-checking unmerged branches.
+> **ADR numbering:** an ADR for DD-1 is warranted, but the number is **not allocated here.** Root `CLAUDE.md` § Concurrency protocol forbids allocating a shared monotonic id from a spec branch. `ADR-015` is the highest on `main` as of 2026-09-21 (`origin/dev` carries no real TRD divergence). Allocate at apply time, on the default branch, after re-checking unmerged branches. **Still unallocated as of this correction pass (2026-09-22)** — `docs/trd/trd.md` §12.5 still ends at `ADR-015`; this is open, not dropped (see `execution.md`'s corrections section for the recorded reason).
+
+> **Numbering note (added during the ATP-71 three-dimension validation pass, 2026-09-22):** the entries below appear as DD-1…DD-5, **DD-7, DD-6** — DD-7 was appended later, resolving `requirements.md` Q-3, after DD-6 already existed and was cited by number in `requirements.md` FR-6, `tasks.md`, and `execution.md`. It was placed after DD-5 rather than renumbered ahead of DD-6 to avoid invalidating those citations. The list below is in **insertion order, not numeric order** — noted here rather than reordered, for the same reason.
 
 ### DD-1: Split delivery by who generates the credential
 

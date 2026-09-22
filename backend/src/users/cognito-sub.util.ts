@@ -7,8 +7,9 @@
  *
  * Relocated here from `mail/` by Leader decision (tasks.md T-3): its only
  * consumers are `UsersService.create()` and `UsersService.resetPassword()`
- * (T-4/T-5 — design.md §5.3; **not yet built as of this task**, and
- * `users.service.ts` today calls no `MailService` method), and this module
+ * (T-4/T-5 — design.md §5.3; as of T-3 this was not yet built — T-4 and
+ * T-5 (both shipped) now dispatch `sendInvitation`/`sendAdminReset` from
+ * `users.service.ts::create()`/`::resetPassword()`), and this module
  * already sets the util-file pattern for a Cognito-credential helper —
  * `temp-password.util.ts` sits beside this file for the same reason.
  *

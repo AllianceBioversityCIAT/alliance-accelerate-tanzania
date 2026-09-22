@@ -107,10 +107,13 @@ export interface CreateUserResult {
 
 /**
  * Response for POST /api/v1/users/:id/password (reset endpoint is
- * `admin/user-management` FR-7; this typed-body shape — replacing the old
- * `204 void` — was originally `bugfix/admin-user-invite-and-reset` design.md
- * §5.1, FR-6, whose `{ action: 'RESET' | 'REINVITE' }` shape was superseded
- * after deployment by PR #45 — see archive-summary.md §10; `emailSent` added by
+ * `admin/user-management` FR-7 — whose own text says "the admin never sees
+ * or sets a plaintext password through this endpoint"; that guarantee is
+ * likewise superseded by the temp-password handoff, same as FR-3 above).
+ * This typed-body shape — replacing the old `204 void` — was originally
+ * `bugfix/admin-user-invite-and-reset` design.md §5.1, FR-6, whose
+ * `{ action: 'RESET' | 'REINVITE' }` shape was superseded after deployment
+ * by PR #45 — see archive-summary.md §10; `emailSent` added by
  * auth/account-access-emails T-5/T-6, design.md §4).
  * The backend RETURNS a new temporary password once so the admin can share
  * it out-of-band, AND dispatches an admin-reset email — it does both, not

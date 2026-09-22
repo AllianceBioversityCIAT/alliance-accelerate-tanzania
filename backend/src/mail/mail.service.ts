@@ -83,12 +83,13 @@ export class MailService {
 
   /**
    * auth/account-access-emails T-3 — FR-1: send the invitation email
-   * `UsersService.create()` will dispatch after a new Staff/Admin account
-   * is created (T-4, design.md §5.3 — **not yet built as of this task**;
-   * `users.service.ts`'s `create()` today calls no `MailService` method).
+   * `UsersService.create()` dispatches after a new Staff/Admin account is
+   * created (T-4, design.md §5.3 — as of T-3 this was not yet built; T-4
+   * (shipped) now dispatches `sendInvitation` from
+   * `users.service.ts::create()`, at :340).
    *
    * `reference` is expected to be the created user's Cognito `sub`,
-   * resolved by that future caller via `../users/cognito-sub.util.ts`'s
+   * resolved by that caller via `../users/cognito-sub.util.ts`'s
    * `resolveCognitoSub` — **never** the account's `id`/`Username`, which is
    * the email address in this system (NFR-1; design.md §5.2 DD-3 as
    * corrected by judgment round 1's J-4). Optional: when the caller could
@@ -105,14 +106,15 @@ export class MailService {
 
   /**
    * auth/account-access-emails T-3 — FR-5: send the new temporary password
-   * `UsersService.resetPassword()` will dispatch after an admin-initiated
-   * reset (T-5, design.md §5.2/§5.3 — **not yet built as of this task**;
-   * `users.service.ts`'s `resetPassword()` today calls no `MailService`
-   * method). Same `reference` contract as {@link sendInvitation}: the
-   * target user's Cognito `sub`, which that future caller will resolve via
-   * an `AdminGetUser` call (already imported and used by
-   * `UsersService.get()`) rather than the `id` already in scope at that
-   * call site — the same email-shaped value NFR-1 forbids logging.
+   * `UsersService.resetPassword()` dispatches after an admin-initiated
+   * reset (T-5, design.md §5.2/§5.3 — as of T-3 this was not yet built;
+   * T-5 (shipped) now dispatches `sendAdminReset` from
+   * `users.service.ts::resetPassword()`, at :543). Same `reference`
+   * contract as {@link sendInvitation}: the target user's Cognito `sub`,
+   * which that caller resolves via an `AdminGetUser` call (already
+   * imported and used by `UsersService.get()`) rather than the `id`
+   * already in scope at that call site — the same email-shaped value
+   * NFR-1 forbids logging.
    */
   async sendAdminReset(
     to: string,

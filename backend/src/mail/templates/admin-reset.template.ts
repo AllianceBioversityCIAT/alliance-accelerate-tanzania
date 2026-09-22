@@ -4,15 +4,14 @@ import { getPublicAppBaseUrl } from '../mail.config';
 import { renderEmailHtml } from './email-layout';
 
 /**
- * FR-5 — the admin-initiated reset. `UsersService.resetPassword()` will
- * dispatch this template once wired up (T-5, deps T-3, design.md §5.3 — not
- * yet built as of this task); it will resolve the recipient's `sub` via
- * `AdminGetUser` (already imported and used by `UsersService.get()`,
- * `users.service.ts`) rather than pass the caller's `id`, which is the
- * email address (design.md §5.2 DD-3/J-4). `MailService.sendAdminReset`,
- * the method that will call `buildAdminResetMessage` and hand the result to
- * the already-existing private `dispatch()` (`mail.service.ts`), is also
- * T-3 and does not exist yet.
+ * FR-5 — the admin-initiated reset. `UsersService.resetPassword()`
+ * dispatches this template (T-5, deps T-3, design.md §5.3 — as of T-2 this
+ * was not yet wired up; T-5 (shipped) now resolves the recipient's `sub`
+ * via `AdminGetUser` (already imported and used by `UsersService.get()`,
+ * `users.service.ts`) rather than passing the caller's `id`, which is the
+ * email address (design.md §5.2 DD-3/J-4). `MailService.sendAdminReset`
+ * calls `buildAdminResetMessage` and hands the result to the
+ * already-existing private `dispatch()` (`mail.service.ts`) — built in T-3.
  *
  * Unlike {@link ../templates/invitation.template.ts | buildInvitationMessage},
  * this is sent to a user who **already has an account** — an administrator

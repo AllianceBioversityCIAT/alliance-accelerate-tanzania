@@ -51,7 +51,7 @@ The project has a **proven** email channel: the OneCGIAR notification microservi
 | # | Outcome | Observable by |
 |---|---|---|
 | O-1 | An admin creates a user; that user receives an email with the temporary password and a working link to the sign-in screen, and signs in from it. | Creating a user and reading the inbox. |
-| O-2 | The admin still sees the temporary password on screen, as a fallback. | The existing handoff view is unchanged. |
+| O-2 | The admin still sees the temporary password on screen, as a fallback. | The password remains visible on the credential-handoff view (FR-2) — *(observable corrected 2026-09-22, ATP-71 three-dimension validation pass; the substance of O-2 is unchanged)*. The **view itself was changed**, not left as-is: `design.md` §6 and `judgment.md` J/B-7 required revising the string *"Share it securely (not by email)"*, which this feature makes false in the common case, and T-7 added a required `emailSent` prop plus the sent/not-sent status lines (`design.md` §6, FR-3). This cell previously read "The existing handoff view is unchanged," which the shipped diff contradicts. |
 | O-3 | The admin is told whether the email was sent, so they know when to relay it manually. | New state in the handoff view. |
 | O-4 | A send failure never fails user creation. | The user exists in Cognito regardless. |
 | O-5 | An admin-initiated reset behaves the same way as O-1…O-4. | Same. |
