@@ -338,7 +338,25 @@ Resources:
                 - cognito-idp:AdminAddUserToGroup
                 - cognito-idp:AdminRemoveUserFromGroup
                 - cognito-idp:AdminListGroupsForUser
-                - cognito-idp:AdminResetUserPassword
+                # ⚠️ `AdminSetUserPassword`, NOT `AdminResetUserPassword`.
+                # These are two different Cognito actions and the code has
+                # called the former since `feature/admin-credential-handoff`
+                # (PR #45, commit 5fb371b) replaced Cognito's own
+                # code-based reset with the returned-temporary-password
+                # handoff — `users.service.ts::resetPassword` issues
+                # `AdminSetUserPasswordCommand({ Permanent: false })`.
+                # This policy was written before that change and was never
+                # updated, so every admin password reset got AccessDenied
+                # from Cognito, which `cognito-error.mapper.ts` does not map
+                # and therefore surfaced as a bare 500 — with NO log line,
+                # since Nest does not log deliberately-thrown HttpExceptions.
+                # Found by `auth/account-access-emails` D-6, the manual
+                # end-to-end delivery check, on 2026-09-22: the invitation
+                # flow worked (AdminCreateUser IS granted) and the reset
+                # flow 500'd. Nothing automated could have caught it — the
+                # unit suites mock the Cognito client, so IAM is never
+                # exercised.
+                - cognito-idp:AdminSetUserPassword
                 # contact/contact-channels (T-11, FR-3): the contact form's
                 # AdminRecipientResolver lists the `admin` group's current
                 # members to resolve live recipients. Missing grants fail at
