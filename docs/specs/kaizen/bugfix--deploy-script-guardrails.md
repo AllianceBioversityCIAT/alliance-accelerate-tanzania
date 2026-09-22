@@ -97,6 +97,36 @@ the resolution is a **dated written amendment to the measure**, never a
 judgement call in the moment. A judgment-day WARNING naming a
 measure-vs-intent gap should be resolved before execution, not carried.
 
+### L-3 — A linter rule is a claim about code that the linter cannot evaluate (High, Product + Methodology)
+
+**Root cause.** SonarCloud raised `shelldre:S7682` — *"Add an explicit
+return statement at the end of the function"* — on `is_account_id_shaped`,
+whose body was `[[ "$1" =~ ^[0-9]{12}$ ]]` as the last command. The
+function is a **predicate**: its exit status *is* the test's result.
+Satisfying the rule the obvious way, by appending `return 0`, makes it
+**always true** — every 13-or-more-digit run is then accepted as
+account-id-shaped and the length filter is silently disarmed. That is the
+exact defect class this spec exists to remove, and it would have arrived
+*through* a code-quality tool, on a PR whose Quality Gate had already
+passed.
+
+**Evidence.** Mutation **M7**: applying the naive fix reddens
+`guard-account.no-account-id-literal-in-infra`'s `[positive control]`
+assertion. Run and confirmed 2026-09-22, not reasoned about.
+
+**Why it is distinct.** KZ-002 is about a gate that cannot fail; L-1 about
+a falsifier run in the wrong environment. This is a third shape: an
+**external** rule, correct in general, whose literal application to this
+construct inverts a security check. The rule cannot tell a predicate from a
+procedure, and nothing in the toolchain asks it to.
+
+**Countermeasure.** A static-analysis finding on a function whose **exit
+status is its return value** is remediated by making the return explicit
+*and correct* (`if …; then return 0; fi; return 1`), never by appending an
+unconditional return — and the fix is verified by mutating in the naive
+form and watching the suite redden. The reasoning is recorded at the
+function, so the next agent meeting the same warning does not re-derive it.
+
 ## Noted, not a lesson
 
 - **The Pivot landed on a better argument than the one it was given.** The stated reason was "the account can change". The operative reason: the assertion's only unique coverage was the scenario CI creates by design, so its unique value *was* its most probable false positive. Worth noting as a reasoning pattern, not standardisable.
@@ -133,3 +163,33 @@ Both **L-1** and **L-2** are AKILI-level, not project-level:
 
 - **L-1** extends KZ-002, which is already in the methodology's own templates. The extension is that the *proof procedure* needs its environment pinned — a gap in the rule as written, and the rule's own countermeasure is what produced the false confidence.
 - **L-2** concerns how requirements are authored and amended, not this repository's code. `judgment.md` S-13 shows the design-review pass can *detect* a measure-vs-intent gap and that the methodology has no step which forces its resolution before execution.
+
+
+---
+
+## Post-archive addendum — SonarCloud on PR #82 (2026-09-22)
+
+Five new issues, all `MAINTAINABILITY` in **test files**, on a PR whose
+**Quality Gate had already passed**. Total reported effort: 17 minutes. All
+five fixed.
+
+| Rule | Where | Fix |
+|---|---|---|
+| `shelldre:S7682` ×2 | `account-id-scan.sh` — `is_account_id_shaped`, `extract_digit_run` | Explicit returns. **The two are not the same fix** — see L-3: one is a predicate whose status is its value, the other's status is meaningless because callers read stdout |
+| `shelldre:S7679` | `is_account_id_shaped` | `$1` assigned to a local |
+| `shelldre:S1192` ×2 | the gate case — `'111111111111'` ×5, `'s/^/  | /'` ×4 | `FIXTURE_ALLOWED_ID` and `INDENT_CAPTURED`. The fixture constant is deliberately an **allow-listed** value: a fresh 12-digit literal here would violate the rule this file enforces, since the scan covers this file too |
+
+**One self-inflicted error, caught by the suite in seconds.** The first
+attempt defined `FIXTURE_ALLOWED_ID` beside the allow-list, *below* the
+control that reads it — `unbound variable` under `set -u`. Moved above
+every reader; the reason is recorded at the definition.
+
+**Verification.** 50/50 green. Four mutations re-run after the change: the
+naive S7682 fix (**M7**, the L-3 trap) reddens `[positive control]`;
+reverting the extractor reddens `[extraction control]`; dropping
+`--exclude-dir=.aws-sam` reddens `[scan control (c)]`; restored, zero reds.
+
+**Why this addendum is here and not in `execution.md`.** The spec folder is
+an archived, frozen record. This file is the living retrospective, so a
+post-archive change to the spec's code is recorded here — and L-3 above is
+the lesson it produced.

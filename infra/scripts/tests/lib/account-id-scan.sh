@@ -55,8 +55,25 @@ DIGIT_RUN_RE='[0-9]{12,}'
 
 # is_account_id_shaped <string>
 #   True iff <string> is made up of exactly 12 digits and nothing else.
+#
+# THE RETURN IS SPELLED OUT, AND IT IS NOT `return 0` (SonarCloud
+# shelldre:S7682, shelldre:S7679). This is a PREDICATE: before this form it
+# read `[[ "$1" =~ ^[0-9]{12}$ ]]` as the last command, so the function's
+# exit status WAS the test's result. S7682 asks for an explicit return at
+# the end of a function — and satisfying it the obvious way, by appending
+# `return 0`, makes this predicate ALWAYS TRUE: every 13-or-more-digit run
+# would then be accepted as account-id-shaped and the length filter would
+# be silently disarmed, which is the exact defect class this spec exists to
+# remove. The if/return form below satisfies the rule and keeps the
+# semantics identical; the positive controls in
+# guard-account.no-account-id-literal-in-infra.case.sh redden immediately
+# if it ever regresses to an unconditional return.
 is_account_id_shaped() {
-  [[ "$1" =~ ^[0-9]{12}$ ]]
+  local candidate="$1"
+  if [[ "$candidate" =~ ^[0-9]{12}$ ]]; then
+    return 0
+  fi
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -79,7 +96,14 @@ is_account_id_shaped() {
 # extract_digit_run <grep -rno hit>
 #   Echoes the trailing run of digits from a `path:line:digits` hit.
 extract_digit_run() {
-  printf '%s' "${1##*[^0-9]}"
+  local hit="$1"
+  printf '%s' "${hit##*[^0-9]}"
+  # Unlike is_account_id_shaped above, this function's exit status carries
+  # no meaning — every caller reads its STDOUT through `$(...)`. An
+  # explicit `return 0` is therefore both what S7682 asks for and the
+  # correct contract: it also stops a stray printf failure from aborting a
+  # caller running under `set -e`.
+  return 0
 }
 
 # ---------------------------------------------------------------------------

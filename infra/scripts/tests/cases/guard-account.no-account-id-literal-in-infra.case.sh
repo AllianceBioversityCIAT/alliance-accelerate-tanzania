@@ -130,6 +130,20 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# The sed script every failure path below uses to indent captured output
+# (SonarCloud shelldre:S1192 — it appeared four times).
+INDENT_CAPTURED='s/^/  | /'
+
+# The one allow-listed id the controls reuse wherever a 12-digit literal is
+# needed (SonarCloud shelldre:S1192 — it appeared five times). Deliberately
+# an ALLOW-LISTED value and never a fresh one: a new 12-digit literal in
+# this file would violate the very rule the file enforces, because the scan
+# below covers this file too. Defined HERE, above every control that reads
+# it — the first attempt at this refactor put it beside the allow-list
+# further down and the suite caught it immediately as an unbound variable
+# under `set -u`.
+FIXTURE_ALLOWED_ID="111111111111"
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$TESTS_DIR/lib/assert.sh"
@@ -170,14 +184,18 @@ if is_account_id_shaped "12345678901"; then
   echo "ASSERT FAIL [positive control]: is_account_id_shaped wrongly accepts an 11-digit run" >&2
   exit 1
 fi
-if ! is_account_id_shaped "111111111111"; then
+if ! is_account_id_shaped "$FIXTURE_ALLOWED_ID"; then
   echo "ASSERT FAIL [positive control]: is_account_id_shaped rejects a genuine 12-digit run" >&2
   exit 1
 fi
 
 # ── The fixture allow-list (see header — every entry cited elsewhere) ──────
+# Entries other than FIXTURE_ALLOWED_ID (defined at the top of this file)
+# stay literal: they appear once each, and the header's claim that every
+# entry is cited by some OTHER case file is checked against these literals
+# by hand.
 ALLOWED_IDS=(
-  "111111111111"
+  "$FIXTURE_ALLOWED_ID"
   "444444444444"
   "555555555555"
   "888888888888"
@@ -199,15 +217,15 @@ is_allowed() {
 # the path's own digits onto the match, producing an over-long string that
 # the shape check CLEARS. Both fixtures below use an allow-listed id so
 # this file plants no fresh 12-digit literal under infra/.
-if [[ "$(extract_digit_run "a/b.sh:42:111111111111")" != "111111111111" ]]; then
+if [[ "$(extract_digit_run "a/b.sh:42:$FIXTURE_ALLOWED_ID")" != "$FIXTURE_ALLOWED_ID" ]]; then
   echo "ASSERT FAIL [extraction control]: plain hit mis-extracted" >&2
   exit 1
 fi
-if [[ "$(extract_digit_run "we:ird/pa9th:7:111111111111")" != "111111111111" ]]; then
+if [[ "$(extract_digit_run "we:ird/pa9th:7:$FIXTURE_ALLOWED_ID")" != "$FIXTURE_ALLOWED_ID" ]]; then
   echo "ASSERT FAIL [extraction control]: a colon and digits in the PATH leak into the extracted id — this is exactly the defect F-4a closes" >&2
   exit 1
 fi
-if [[ "$(extract_digit_run "trailing9digits9:12:111111111111")" != "111111111111" ]]; then
+if [[ "$(extract_digit_run "trailing9digits9:12:$FIXTURE_ALLOWED_ID")" != "$FIXTURE_ALLOWED_ID" ]]; then
   echo "ASSERT FAIL [extraction control]: digits immediately before the separator leak into the extracted id" >&2
   exit 1
 fi
@@ -258,7 +276,7 @@ printf 'AccountId: %s\n' "$forbidden" > "$control_root/versioned/template.yaml"
 #     non-digit: the H-2 shape, now exercised through the real scan loop
 #     rather than only through the matcher (this is what the multiplicity
 #     control could not reach).
-printf 'fixtures: 111111111111 %s end\n' "$forbidden" > "$control_root/versioned/adjacent.txt"
+printf 'fixtures: %s %s end\n' "$FIXTURE_ALLOWED_ID" "$forbidden" > "$control_root/versioned/adjacent.txt"
 # (c) The same id inside the gitignored SAM build tree MUST NOT be
 #     reported — it is generated output, not versioned content.
 printf 's3://bucket/%s/packaged.yaml\n' "$forbidden" > "$control_root/.aws-sam/build/packaged.yaml"
@@ -267,17 +285,17 @@ control_hits="$(scan_for_account_ids "$control_root")"
 
 if ! printf '%s' "$control_hits" | grep -q 'versioned/template.yaml'; then
   echo "ASSERT FAIL [scan control (a)]: a forbidden id in versioned content was NOT reported — the scan cannot discriminate, so its clean result against infra/ proves nothing:" >&2
-  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  printf '%s\n' "$control_hits" | sed "$INDENT_CAPTURED" >&2
   exit 1
 fi
 if ! printf '%s' "$control_hits" | grep -q 'versioned/adjacent.txt'; then
   echo "ASSERT FAIL [scan control (b)]: a forbidden id sitting next to an allow-listed fixture was NOT reported — H-2 has regressed inside the scan loop:" >&2
-  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  printf '%s\n' "$control_hits" | sed "$INDENT_CAPTURED" >&2
   exit 1
 fi
 if printf '%s' "$control_hits" | grep -q '.aws-sam'; then
   echo "ASSERT FAIL [scan control (c)]: the gitignored .aws-sam build tree was scanned — the gate would red on generated output rather than on versioned content (F-4b):" >&2
-  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  printf '%s\n' "$control_hits" | sed "$INDENT_CAPTURED" >&2
   exit 1
 fi
 
@@ -297,7 +315,7 @@ fi
 
 if [[ -n "$violations" ]]; then
   echo "ASSERT FAIL [no 12-digit run outside the fixture allow-list]: found:" >&2
-  echo "$violations" | sed 's/^/  | /' >&2
+  echo "$violations" | sed "$INDENT_CAPTURED" >&2
   exit 1
 fi
 
