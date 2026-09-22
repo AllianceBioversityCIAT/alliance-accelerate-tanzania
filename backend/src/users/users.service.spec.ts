@@ -350,68 +350,16 @@ describe('UsersService (mocked Cognito)', () => {
       expect(mailService.sendInvitation).not.toHaveBeenCalled();
     });
 
-    // ── FR-4 (all four clauses) + the task's disqualifier: a rejecting
-    // transport must be proven to (a) still create the user, (b) still
-    // return the temporary password, (c) never throw / never a 5xx, and
-    // (d) return `emailSent: false`. Asserting only (d) would NOT cover
-    // FR-4 (task disqualifier) — this test asserts all four.
-    //
-    // This is also Falsifier (2)'s pin: removing `dispatchInvitationEmail`'s
-    // own `try`/`catch` lets the rejection propagate into the outer `try`,
-    // which routes it through `mapCognitoError` — so `create()` would
-    // REJECT instead of resolving, and every assertion below would redden.
-    describe('a rejecting mail transport never fails the request', () => {
-      const getErrorSpy = spyOnLoggerError();
-
-      it('still returns the created user, the temporary password, and emailSent:false — and logs the failure without the password or the address', async () => {
-        stubCreateUserResolves('rejected@example.com', 'sub-reject-0002');
-        stubTransportRejection(mailService.sendInvitation);
-
-        // (c) never throws — this `await` alone falsifies (2) if the
-        // dispatch's own try/catch is removed.
-        const result = await service.create({
-          email: 'rejected@example.com',
-        } as never);
-
-        // (a) the user was created.
-        expect(result.user.id).toBe('rejected@example.com');
-        // (b) the temporary password is still returned.
-        expectPolicyValid(result.temporaryPassword);
-        // (d) the not-sent signal is returned.
-        expect(result.emailSent).toBe(false);
-
-        // NFR-1: the failure is logged, but NEVER the password or the address.
-        const errorSpy = getErrorSpy();
-        expect(errorSpy).toHaveBeenCalledTimes(1);
-        const [emittedLine] = errorSpy.mock.calls[0] as [string];
-        expect(emittedLine).toContain('TransportRejectedError');
-        expect(emittedLine).toContain('sub-reject-0002');
-        expect(emittedLine).not.toContain('rejected@example.com');
-        expect(emittedLine).not.toContain(result.temporaryPassword);
-        expect(emittedLine).not.toContain('@');
-      });
-
-      it(
-        'logs `reference=n/a` — never the email address — when the transport rejects AND `sub` ' +
-          'could not be resolved (Falsifier 3: a fallback to `dto.email` here must redden this test)',
-        async () => {
-          stubCreateUserResolves('nosub-reject@example.com'); // no Attributes
-          mailService.sendInvitation.mockRejectedValue(new Error('down'));
-
-          const result = await service.create({
-            email: 'nosub-reject@example.com',
-          } as never);
-
-          expect(result.emailSent).toBe(false);
-          const errorSpy = getErrorSpy();
-          expect(errorSpy).toHaveBeenCalledTimes(1);
-          const [emittedLine] = errorSpy.mock.calls[0] as [string];
-          expect(emittedLine).toContain('reference=n/a');
-          expect(emittedLine).not.toContain('nosub-reject@example.com');
-          expect(emittedLine).not.toContain('@');
-        },
-      );
-    });
+    // ── FR-4 (all four clauses) + NFR-1 (never the password, never the
+    // address) for THIS site's rejecting-transport behaviour is now covered
+    // by the parameterized `dispatchSites` block below (after the
+    // `resetPassword — admin-reset dispatch` describe), which binds the
+    // same invariant to both `dispatchInvitationEmail` and
+    // `dispatchAdminResetEmail` from one table instead of two hand-copied
+    // describes. See that block's own comment for the falsifiers it
+    // preserves (dispatch-swallows-and-never-throws, and the
+    // never-fall-back-to-the-address rule for both the resolved- and
+    // unresolved-`sub` cases).
   });
 
   // ── FR-2: get + error mapping (UserNotFound → 404) ──────────────────────
@@ -658,64 +606,167 @@ describe('UsersService (mocked Cognito)', () => {
       lookupErrorSpy.mockRestore();
     });
 
-    // ── Falsifier 3 — Permanent:false is pinned by the FR-7
-    // block's first test above (`toMatchObject({ Permanent: false })`);
-    // this block's own falsifiers are 1 and 2, exercised below.
-    describe('a rejecting mail transport never fails the request', () => {
-      const getErrorSpy = spyOnLoggerError();
+    // ── Falsifier 3 — Permanent:false is pinned by the FR-7 block's first
+    // test above (`toMatchObject({ Permanent: false })`); this site's own
+    // rejecting-transport falsifiers (1 and 2) now live in the
+    // parameterized `dispatchSites` block below, which binds the SAME
+    // NFR-1 invariant (never the password, never the address) to this site
+    // (`dispatchAdminResetEmail`) and to `create`'s
+    // (`dispatchInvitationEmail`) from one table.
+  });
 
-      // ── Falsifier 2: removing dispatchAdminResetEmail's own
-      // try/catch lets the rejection propagate into the outer try
-      // (mapCognitoError), so resetPassword would REJECT instead of
-      // resolving — every assertion below would redden.
-      it('still returns the temporary password and emailSent:false — and logs the failure without the password or the address', async () => {
+  // ── NFR-1 (both dispatch sites): a rejecting mail transport never fails
+  // the request, and its own failure log never carries the temporary
+  // password or the email address — parameterized over the two call sites
+  // instead of two hand-copied describes (`create`'s
+  // `dispatchInvitationEmail` above, `resetPassword`'s
+  // `dispatchAdminResetEmail` above). The invariant binds each site
+  // INDEPENDENTLY — see `dispatchSites` — so both rows must exercise a
+  // genuinely different subject: `create`'s `sendInvitation` mock/
+  // `stubCreateUserResolves` vs. `resetPassword`'s `sendAdminReset` mock/
+  // `stubGetUserSub`/`stubGetUserNoSub`. A table that accidentally pointed
+  // both rows at the same site would run one site's test twice and prove
+  // nothing about the other — the exact defect class this refactor must
+  // not introduce.
+  //
+  // Falsifiers this block preserves, unweakened, for EACH row:
+  //  - (create's former Falsifier 2 / reset's former Falsifier 2):
+  //    removing that site's `dispatch*Email` helper's own `try`/`catch`
+  //    lets the rejection propagate into the outer `try`
+  //    (`mapCognitoError`), so the public method would REJECT instead of
+  //    resolving — the bare `await` in "sub resolved" below alone
+  //    falsifies this.
+  //  - (create's former Falsifier 3 / reset's former Falsifier 1): a
+  //    fallback to the address/id in scope at that call site — instead of
+  //    `reference=n/a` — when `sub` cannot be resolved must redden the
+  //    "sub unresolved" test below.
+  //  - `not.toContain('@')` is asserted verbatim in both tests below: it
+  //    reddens for ANY address leak, not just the one literal address each
+  //    row happens to use.
+  interface DispatchSiteCase {
+    /** Names the site being exercised — shown in the describe.each title. */
+    siteName: string;
+    /** The `reference=` value the failure log must carry when `sub` resolves. */
+    resolvedSubReference: string;
+    /** The address in scope at this call site for the "sub resolved" case. */
+    resolvedSubAddress: string;
+    /** The address in scope at this call site for the "sub unresolved" case. */
+    unresolvedSubAddress: string;
+    /** Arranges Cognito + a rejecting transport with `sub` resolvable. */
+    arrangeResolvedSubRejection: () => void;
+    /** Invokes the public method for the "sub resolved" case. */
+    actResolvedSub: () => Promise<{
+      emailSent: boolean;
+      temporaryPassword: string;
+      user?: { id: string };
+    }>;
+    /** Site-specific assertions on top of the shared `emailSent`/password ones. */
+    assertResolvedSubResult: (result: {
+      emailSent: boolean;
+      temporaryPassword: string;
+      user?: { id: string };
+    }) => void;
+    /** Arranges Cognito + a rejecting transport with `sub` UNresolvable. */
+    arrangeUnresolvedSubRejection: () => void;
+    /** Invokes the public method for the "sub unresolved" case. */
+    actUnresolvedSub: () => Promise<{ emailSent: boolean }>;
+  }
+
+  const dispatchSites: DispatchSiteCase[] = [
+    {
+      siteName: 'create → dispatchInvitationEmail (sendInvitation)',
+      resolvedSubReference: 'sub-reject-0002',
+      resolvedSubAddress: 'rejected@example.com',
+      unresolvedSubAddress: 'nosub-reject@example.com',
+      arrangeResolvedSubRejection: () => {
+        stubCreateUserResolves('rejected@example.com', 'sub-reject-0002');
+        stubTransportRejection(mailService.sendInvitation);
+      },
+      actResolvedSub: () =>
+        service.create({ email: 'rejected@example.com' } as never),
+      assertResolvedSubResult: (result) => {
+        // (a) the user was still created despite the transport rejection.
+        expect(result.user?.id).toBe('rejected@example.com');
+      },
+      arrangeUnresolvedSubRejection: () => {
+        stubCreateUserResolves('nosub-reject@example.com'); // no Attributes
+        mailService.sendInvitation.mockRejectedValue(new Error('down'));
+      },
+      actUnresolvedSub: () =>
+        service.create({ email: 'nosub-reject@example.com' } as never),
+    },
+    {
+      siteName: 'resetPassword → dispatchAdminResetEmail (sendAdminReset)',
+      resolvedSubReference: 'sub-reset-0002',
+      resolvedSubAddress: 'rejected@example.com',
+      unresolvedSubAddress: 'nosub-reject@example.com',
+      arrangeResolvedSubRejection: () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
         stubGetUserSub('sub-reset-0002');
         stubTransportRejection(mailService.sendAdminReset);
+      },
+      actResolvedSub: () => service.resetPassword('rejected@example.com'),
+      assertResolvedSubResult: () => {
+        // `resetPassword` returns no `user` — nothing further to assert here.
+      },
+      arrangeUnresolvedSubRejection: () => {
+        cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+        stubGetUserNoSub('nosub-reject@example.com'); // no `sub`
+        mailService.sendAdminReset.mockRejectedValue(new Error('down'));
+      },
+      actUnresolvedSub: () =>
+        service.resetPassword('nosub-reject@example.com'),
+    },
+  ];
 
-        // Never throws — this `await` alone falsifies Falsifier 2 if the
-        // dispatch helper's own try/catch is removed.
-        const result = await service.resetPassword('rejected@example.com');
+  describe.each(dispatchSites)(
+    '$siteName — a rejecting mail transport never fails the request (NFR-1)',
+    (site) => {
+      const getErrorSpy = spyOnLoggerError();
 
+      it('still returns the temporary password and emailSent:false — and logs the failure without the password or the address (sub resolved)', async () => {
+        site.arrangeResolvedSubRejection();
+
+        // Never throws — this `await` alone falsifies "dispatch's own
+        // try/catch was removed" for this site.
+        const result = await site.actResolvedSub();
+
+        site.assertResolvedSubResult(result);
+        // the temporary password is still returned.
         expectPolicyValid(result.temporaryPassword);
+        // the not-sent signal is returned.
         expect(result.emailSent).toBe(false);
 
-        // NFR-1: the failure is logged, but NEVER the password or the
-        // address. Falsifier 1 (task text, "the single most important"):
-        // passing `id` instead of `sub` as the reference at the call site
-        // would flip `sub-reset-0002` below to the raw email, and the
-        // `not.toContain('@')` guard would redden.
+        // NFR-1: the failure is logged, but NEVER the password or the address.
         const errorSpy = getErrorSpy();
         expect(errorSpy).toHaveBeenCalledTimes(1);
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
         expect(emittedLine).toContain('TransportRejectedError');
-        expect(emittedLine).toContain('sub-reset-0002');
-        expect(emittedLine).not.toContain('rejected@example.com');
+        expect(emittedLine).toContain(site.resolvedSubReference);
+        expect(emittedLine).not.toContain(site.resolvedSubAddress);
         expect(emittedLine).not.toContain(result.temporaryPassword);
         expect(emittedLine).not.toContain('@');
       });
 
       it(
         'logs `reference=n/a` — never the email address — when the transport rejects AND `sub` ' +
-          'could not be resolved (Falsifier 1: a fallback to `id` here must redden this test)',
+          'could not be resolved (a fallback to the address/id in scope at this call site must redden this test)',
         async () => {
-          cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-          stubGetUserNoSub('nosub-reject@example.com'); // no `sub`
-          mailService.sendAdminReset.mockRejectedValue(new Error('down'));
+          site.arrangeUnresolvedSubRejection();
 
-          const result = await service.resetPassword('nosub-reject@example.com');
+          const result = await site.actUnresolvedSub();
 
           expect(result.emailSent).toBe(false);
           const errorSpy = getErrorSpy();
           expect(errorSpy).toHaveBeenCalledTimes(1);
           const [emittedLine] = errorSpy.mock.calls[0] as [string];
           expect(emittedLine).toContain('reference=n/a');
-          expect(emittedLine).not.toContain('nosub-reject@example.com');
+          expect(emittedLine).not.toContain(site.unresolvedSubAddress);
           expect(emittedLine).not.toContain('@');
         },
       );
-    });
-  });
+    },
+  );
 
   // ── FR-10: no-leak serializer ────────────────────────────────────────────
   describe('serialized output (FR-10 no-leak)', () => {
