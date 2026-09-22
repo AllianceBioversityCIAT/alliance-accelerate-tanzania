@@ -106,8 +106,8 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Also: update `docs/trd/trd.md` §4 for the new response shape — **moved here from T-9 during execution**, because the field must exist before a baseline document asserts it.
       Skills: `api-design-principles`, `nestjs-expert`
       Verify: `cd backend && npx jest src/users --silent && npm run build` · `cd frontend && npx tsc --noEmit`
-      Falsifier: drop `emailSent` from one of the two interfaces — `tsc --noEmit` must fail at the consuming call site. If it does not, the frontend is not actually typed against this contract and the gate is blind.
-      Disqualifier: a green `tsc` proves the types line up, **not** that the field carries a true value. That is T-4/T-5's job; do not read it as coverage of FR-3.
+      Falsifier: assert the field over the **wire**, in `users.e2e.spec.ts` — remove `emailSent` from the controller's returned object and that assertion must redden. *(Corrected during execution: this originally said dropping the field from one interface would fail `tsc --noEmit` at the consuming call site. **It cannot.** `frontend/lib/api/users.ts` **redeclares** `CreateUserResult`/`ResetPasswordResult` rather than importing them, so the two declarations are independent and no compiler links them — and nothing consumes `emailSent` on the frontend until T-7. A Leader-authored falsifier that could not fire; the same defect class this spec has paid for repeatedly.)*
+      Disqualifier: a green `tsc` proves neither that the field carries a true value (that is T-4/T-5's job) **nor** that the two declarations agree — they are separate types. **The backend↔frontend name/type correspondence is enforced by nothing in this repo**; record it as an explicit (B) structural gap with that reason rather than implying `tsc` covers it.
       Done when: both endpoints return the field, the frontend types match, and the docstring states that `emailSent` is not a delivery receipt and is `true` under `MAIL_TRANSPORT=no-op`.
 
 - [ ] **T-7** Surface the send status, and fix the copy this feature falsifies  (deps: T-6)

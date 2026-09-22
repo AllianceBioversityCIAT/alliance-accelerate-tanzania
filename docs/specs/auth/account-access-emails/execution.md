@@ -535,3 +535,19 @@ The axis that actually decides it: **what does the call buy?** `AdminAddUserToGr
 **🔶 A design amendment was made during this task** — `design.md` §5.2 gained the `AdminGetUser` failure-mode ruling it had never considered. Recorded as an **amendment, not a Pivot**: the design was not wrong or unviable, it was silent on one axis, and the change is strictly additive. Full reasoning in the Design Amendment block above, including the Reviewer's refutation of the Leader's stated reason and its substitution of the correct one (**what the call buys**, not blast radius).
 
 **⚠️ Leader defects in this task: two of the four.** The §5.2 gap was mine — I wrote that section after J-4 and weighed the extra round trip on latency and cost alone. And I then wrote a two-clause amendment while gating only one clause, which is the same species as T-4's tripwire: **a rule stated without a demonstration that anything enforces it.** That is precisely what `tasks.md` §2 has demanded of every Implementer for five tasks, and what I was not applying to my own briefs and amendments.
+
+---
+
+## Leader corrections to the spec (continued)
+
+### T-6's falsifier could not fire — corrected **before** briefing, not after a failed attempt
+
+T-6's Falsifier read: *"drop `emailSent` from one of the two interfaces — `tsc --noEmit` must fail at the consuming call site."*
+
+**It cannot.** Verified before writing the brief: `frontend/lib/api/users.ts` **redeclares** `CreateUserResult` and `ResetPasswordResult` (lines 87, 98) rather than importing them — there is no shared types package and no compile-time link between the two sides. Dropping the field from the backend interface fails nothing on the frontend, and nothing *consumes* `emailSent` on the frontend until T-7 builds the UI.
+
+**This is the fifth Leader-authored gate in this spec that could not fire** — the same species as T-1's impossible Disqualifier and T-5's ungated amendment clause. The difference is only that this one was caught by checking the state before writing the brief, which cost one grep instead of an Implementer attempt, a Reviewer attempt and a rework round.
+
+Replaced with a gate that can actually fail: assert `emailSent` over the **wire** in `users.e2e.spec.ts`, and redden it by removing the field from the controller's returned object. The disqualifier now also states plainly that **the backend↔frontend name/type correspondence is enforced by nothing in this repo**, to be recorded as an explicit `(B)` rather than implied to be covered by `tsc`.
+
+**Also verified before briefing, so the brief describes reality rather than `tasks.md`'s assumptions:** `CreateUserResult` and `ResetPasswordResult` **already carry `emailSent`** — T-4 and T-5 added them as part of their own scopes. T-6's remaining work is the controller docstrings, the frontend types and docstrings, and the TRD.
