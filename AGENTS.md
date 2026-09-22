@@ -50,6 +50,10 @@ Children of this file; they add to or narrow these rules and never override them
 
 - `backend/AGENTS.md` (mirrors `backend/CLAUDE.md`) — NestJS/Lambda specifics: two-entrypoint shared-bootstrap discipline, serverless-http body-parsing gotcha + handler-level test harness, migrations runbook, PII/audit rules, e2e conventions, template generator.
 - `frontend/AGENTS.md` (mirrors `frontend/CLAUDE.md`) — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, per-table table/card breakpoints and sticky-column conventions, generated assets.
+- `CLAUDE.md` (this directory) — the **root counterpart** of this file, read by Claude Code. It carries the same
+  constitution and must be updated in lockstep with this one. *(Indexed 2026-09-22. Neither root file listed the
+  other, which is why `bugfix/deploy-script-guardrails` scoped its diff to root `CLAUDE.md` alone and left this file
+  silent about a profile guard `CLAUDE.md` documented — KZ-015.)*
 
 ## Specs & taxonomy
 Feature specs live in `docs/specs/<domain>/<feature-slug>/` (e.g. `actors/`, `seed-map/`, `import-export/`), each with `requirements.md`, `design.md`, `tasks.md`, `execution.md`. Use `enhancement/`, `bugfix/`, or `epic/` prefixes for non-domain changes. Completed specs move to `docs/specs/archive/<YYYY-MM-DD>-<domain>--<slug>/`. Follow the `general-setup` templates.

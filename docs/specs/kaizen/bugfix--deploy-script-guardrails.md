@@ -134,10 +134,11 @@ function, so the next agent meeting the same warning does not re-derive it.
 - **A Reviewer issued FAIL then PASS on identical artefacts.** Recorded both; kept the HALT. The PASS resolved against itself — it said the adjacency finding *"should be confirmed by execution before anyone acts on it"*, which had already been done.
 - **The remediation round added a gate that could not fail.** The `is_allowed` precondition: mutating it away left the suite 50/50 green — in the round whose purpose is removing exactly that. Caught by running the mutation, not by reading. This is L-1's shape one turn later and is why L-1 is phrased as a procedure, not a warning.
 
-## Pending Items
+## Pending Items — **ALL APPLIED on `main`, 2026-09-22**
 
-Recorded, not written — this is a spec branch. All await the apply phase on
-`main`.
+Recorded on the spec branch, applied in the Kaizen apply phase on `main`
+(user-authorised, documentation only). The table below is kept as written;
+the disposition of each item follows it.
 
 | # | Kind | Target | Content | Severity |
 |---|---|---|---|---|
@@ -193,3 +194,30 @@ reverting the extractor reddens `[extraction control]`; dropping
 an archived, frozen record. This file is the living retrospective, so a
 post-archive change to the spec's code is recorded here — and L-3 above is
 the lesson it produced.
+
+
+### Apply-phase disposition (2026-09-22, on `main`)
+
+| # | Item | Outcome |
+|---|---|---|
+| 1 | root `AGENTS.md` indexed nowhere | **Applied** — and the fix went **both ways**: `CLAUDE.md` now lists `AGENTS.md` and `AGENTS.md` now lists `CLAUDE.md`. Writing only the first would have committed the very drift the entry documents, inside the commit documenting it |
+| 2 | KZ-002 recurrence | **Applied** — digest row compressed to **×9**, not appended to. **L-1 was folded in here rather than given its own row**: it is the third widening of "prove the gate discriminates", not a new root cause |
+| 3 | KZ-008 recurrence | **Applied** — **×8**, still the most recurrent lesson in the log |
+| 4 | KZ-004 recurrence | **Applied** — **×6** |
+| 5 | L-1 → `general-setup/task.md` | **Applied**, alongside **L-3** |
+| 6 | L-2 → `general-setup/requirements.md` | **Applied** as new lesson **KZ-015** |
+
+**Two new digest rows:** **KZ-014** (a linter rule is a claim the linter
+cannot evaluate — L-3) and **KZ-015** (a measure can forbid what its
+requirement permits — L-2). **L-1 got no row**, by the compress-don't-append
+rule.
+
+**Recurrence numbers were safe to allocate here** and were not on the spec
+branch: at apply time the pending backlog across all seven entry files was
+**empty except this one**, so no other spec held an unabsorbed claim on
+KZ-002/004/008. That check is the whole reason the numbers were deferred.
+
+**One defect caught during the apply itself.** The KZ-008 row initially
+carried a literal `|` inside a backticked `grep` example, which split the
+Markdown table into 8 columns. Caught by counting effective pipes per row
+rather than by reading — the same countermeasure KZ-008 itself prescribes.
