@@ -108,19 +108,37 @@ function stubCreateUserResolves(username: string, sub?: string): void {
   });
 }
 
-/** Stub `AdminGetUserCommand` with a resolvable `sub` attribute — the
- * `resetPassword` dispatch's happy-path reference lookup. */
-function stubGetUserSub(sub: string): void {
-  cognitoMock.on(AdminGetUserCommand).resolves({ UserAttributes: [{ Name: 'sub', Value: sub }] });
+/** Stub `AdminGetUserCommand` with a resolvable `sub` attribute and,
+ * optionally, a resolvable `email` attribute (the production-defect fix's
+ * recipient) — `resetPassword`'s dispatch happy-path lookup. Passing
+ * `email` lets a test prove the dispatch's recipient is THIS resolved
+ * value, not the route's `id`/UUID and not `sub`. */
+function stubGetUserSub(sub: string, email?: string): void {
+  cognitoMock.on(AdminGetUserCommand).resolves({
+    UserAttributes: [
+      { Name: 'sub', Value: sub },
+      ...(email ? [{ Name: 'email', Value: email }] : []),
+    ],
+  });
 }
 
-/** Stub `AdminGetUserCommand` with NO `sub` attribute — only an `email` one,
- * mirroring the real "unresolvable" response shape — the branch that must
- * degrade to `reference=n/a`, never fall back to the id/email in scope. */
-function stubGetUserNoSub(fallbackEmail: string): void {
+/** Stub `AdminGetUserCommand` with NO `sub` attribute — only a resolvable
+ * `email` one, mirroring the real "sub unresolvable, email resolvable"
+ * response shape — the branch that must degrade the log reference to
+ * `n/a` while STILL dispatching to the resolved email (never falling back
+ * to the id in scope, and never skipping the dispatch just because `sub`
+ * is missing — only a missing `email` skips it). */
+function stubGetUserNoSub(email: string): void {
   cognitoMock
     .on(AdminGetUserCommand)
-    .resolves({ UserAttributes: [{ Name: 'email', Value: fallbackEmail }] });
+    .resolves({ UserAttributes: [{ Name: 'email', Value: email }] });
+}
+
+/** Stub `AdminGetUserCommand` with NEITHER a `sub` NOR an `email`
+ * attribute — the "nothing resolvable" branch that must skip the dispatch
+ * entirely (no fallback recipient exists) and return `emailSent: false`. */
+function stubGetUserNoAttributes(): void {
+  cognitoMock.on(AdminGetUserCommand).resolves({ UserAttributes: [] });
 }
 
 /** Make a mocked `MailService` method reject the way a genuinely unreachable
@@ -476,6 +494,12 @@ describe('UsersService (mocked Cognito)', () => {
   describe('resetPassword (FR-7)', () => {
     it('sets a temp password via AdminSetUserPassword (Permanent:false) and returns { temporaryPassword }', async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      // A resolvable `email` attribute must be present for the dispatch to
+      // fire at all (the production-defect fix's hard requirement: no
+      // resolvable email means no dispatch). See the dedicated
+      // `resetPassword — admin-reset dispatch` block below for the
+      // recipient-identity assertions themselves.
+      stubGetUserSub('sub-for-some-sub', 'reset-dispatch-target@example.org');
 
       const result = await service.resetPassword('some-sub');
 
@@ -509,7 +533,7 @@ describe('UsersService (mocked Cognito)', () => {
 
     it('calls AdminGetUser only to resolve a sub for the dispatch — no status-based branching before the reset', async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-      stubGetUserSub('sub-uuid-123-resolved');
+      stubGetUserSub('sub-uuid-123-resolved', 'reset-dispatch-target-2@example.org');
 
       await service.resetPassword('sub-uuid-123');
 
@@ -533,47 +557,64 @@ describe('UsersService (mocked Cognito)', () => {
   // dispatch (T-5) — mirrors the `create — invitation dispatch` block above;
   // see design.md §5.2/§5.3 and this file's header docblock for what changed.
   describe('resetPassword — admin-reset dispatch (auth/account-access-emails)', () => {
-    it("resolves the Cognito `sub` from `AdminGetUser`'s `UserAttributes` and passes it — never `id` — as the reference", async () => {
-      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-      stubGetUserSub('sub-reset-0001');
+    // Production defect (2026-09-22): `id` here is the route param and, in
+    // THIS Cognito pool, a UUID — the exact shape of the live incident's
+    // `22a514c4-7051-7037-23fe-90af8cc4aeec`. Every fixture below therefore
+    // uses a UUID-shaped `id`, deliberately DIFFERENT from the resolved
+    // `email` fixture, so a regression to dispatching at `id` (or at `sub`)
+    // cannot pass by coincidence the way a same-string fixture would hide it.
+    const RESET_ROUTE_ID = '22a514c4-7051-7037-23fe-90af8cc4aeec';
 
-      const result = await service.resetPassword('user@example.com');
+    it("resolves the Cognito `sub` AND `email` from the SAME `AdminGetUser` call, and dispatches to the resolved `email` — never the route's `id`, and never `sub`", async () => {
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      stubGetUserSub('sub-reset-0001', 'admin-reset-recipient@example.org');
+
+      const result = await service.resetPassword(RESET_ROUTE_ID);
 
       expect(mailService.sendAdminReset).toHaveBeenCalledWith(
-        'user@example.com',
+        'admin-reset-recipient@example.org',
         result.temporaryPassword,
         'sub-reset-0001',
       );
+      const [to, , reference] = mailService.sendAdminReset.mock.calls[0];
+      expect(to).not.toBe(RESET_ROUTE_ID);
+      expect(to).not.toBe('sub-reset-0001');
+      expect(reference).not.toBe(RESET_ROUTE_ID);
       expect(result.emailSent).toBe(true);
     });
 
     it(
       'passes NO reference (never the `id` in scope at this call site) when `sub` cannot be ' +
-        'resolved — the fallback NFR-1 forbids (`id` IS the email address in this system)',
+        'resolved, but STILL dispatches to the resolved `email` (missing `sub` degrades only the log correlation, never the recipient)',
       async () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-        stubGetUserNoSub('nosub@example.com'); // no `sub` entry — the disqualifier's "unresolvable" branch
+        stubGetUserNoSub('admin-reset-recipient-2@example.org'); // no `sub` entry — the disqualifier's "unresolvable" branch
 
-        await service.resetPassword('nosub@example.com');
+        await service.resetPassword(RESET_ROUTE_ID);
 
         expect(mailService.sendAdminReset).toHaveBeenCalledWith(
-          'nosub@example.com',
+          'admin-reset-recipient-2@example.org',
           expect.any(String),
           undefined,
         );
-        const [, , reference] = mailService.sendAdminReset.mock.calls[0];
-        expect(reference).not.toBe('nosub@example.com');
+        const [to, , reference] = mailService.sendAdminReset.mock.calls[0];
+        expect(to).not.toBe(RESET_ROUTE_ID);
+        expect(reference).toBeUndefined();
       },
     );
 
-    // ── design.md §5.2 amendment (2026-09-21, T-5 rework attempt 2) — the
-    // `AdminGetUser` lookup itself buys only a log correlation id and must
+    // ── design.md §5.2 amendment (2026-09-21, T-5 rework attempt 2; amended
+    // again 2026-09-22 for the recipient fix) — the `AdminGetUser` lookup
+    // itself buys the recipient email AND a log correlation id, and must
     // not be able to fail a request whose password change already
-    // committed. Its falsifier is free: delete `resolveResetSub`'s own
+    // committed. When the lookup itself fails, NEITHER value is available,
+    // so — per the fix's hard requirement — there is no dispatch at all:
+    // `sendAdminReset` must never be called, and `emailSent` must be
+    // `false`. Its falsifier is free: delete `resolveResetRecipient`'s own
     // `catch` and the rejection propagates into the outer `try`, whose
     // `catch` runs `mapCognitoError` (typed `: never`) — `resetPassword`
     // would REJECT instead of resolving, and this test would redden.
-    it('when the AdminGetUser lookup itself rejects, resetPassword still resolves — sub degrades to undefined and the dispatch proceeds', async () => {
+    it('when the AdminGetUser lookup itself rejects, resetPassword still resolves — no email is resolvable, so the dispatch is skipped entirely (emailSent:false), never a 5xx', async () => {
       const lookupErrorSpy = jest
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
@@ -583,27 +624,57 @@ describe('UsersService (mocked Cognito)', () => {
         .on(AdminGetUserCommand)
         .rejects(cognitoError('InternalErrorException'));
 
-      const result = await service.resetPassword('lookup-fails@example.com');
+      const result = await service.resetPassword(RESET_ROUTE_ID);
 
       expectPolicyValid(result.temporaryPassword);
-      expect(result.emailSent).toBe(true);
-      expect(mailService.sendAdminReset).toHaveBeenCalledWith(
-        'lookup-fails@example.com',
-        result.temporaryPassword,
-        undefined,
-      );
+      expect(result.emailSent).toBe(false);
+      expect(mailService.sendAdminReset).not.toHaveBeenCalled();
 
-      // NFR-1: `resolveResetSub`'s own `catch` logs the lookup failure, but
-      // must NEVER log `id` (the email address) — an error-name
-      // discriminator only. The dispatch above succeeds, so this is the
-      // ONLY log line this test produces.
-      expect(lookupErrorSpy).toHaveBeenCalledTimes(1);
-      const [emittedLine] = lookupErrorSpy.mock.calls[0] as [string];
-      expect(emittedLine).toContain('InternalErrorException');
-      expect(emittedLine).not.toContain('@');
-      expect(emittedLine).not.toContain('lookup-fails@example.com');
+      // NFR-1: whatever log line(s) this produces must NEVER carry an
+      // email address, the temporary password, or the route's `id`.
+      const emittedLines = lookupErrorSpy.mock.calls.map(
+        ([line]) => line as string,
+      );
+      expect(emittedLines.length).toBeGreaterThanOrEqual(1);
+      expect(
+        emittedLines.some((line) => line.includes('InternalErrorException')),
+      ).toBe(true);
+      for (const line of emittedLines) {
+        expect(line).not.toContain('@');
+        expect(line).not.toContain(RESET_ROUTE_ID);
+        expect(line).not.toContain(result.temporaryPassword);
+      }
 
       lookupErrorSpy.mockRestore();
+    });
+
+    // ── The no-dispatch case, required alongside the fix: the lookup
+    // SUCCEEDS but carries no `email` attribute at all (e.g. an
+    // account-managed attribute the pool never populated) — the dispatch
+    // must be skipped just as when the lookup fails outright, and the
+    // skip's own log line must carry no address.
+    it('does not call sendAdminReset at all — and returns emailSent:false with the reset itself still succeeding — when AdminGetUser resolves but carries no email attribute', async () => {
+      const skipLogSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      stubGetUserNoAttributes();
+
+      const result = await service.resetPassword(RESET_ROUTE_ID);
+
+      expectPolicyValid(result.temporaryPassword);
+      expect(result.emailSent).toBe(false);
+      expect(mailService.sendAdminReset).not.toHaveBeenCalled();
+
+      expect(skipLogSpy).toHaveBeenCalledTimes(1);
+      const [emittedLine] = skipLogSpy.mock.calls[0] as [string];
+      expect(emittedLine).toContain('reference=n/a');
+      expect(emittedLine).not.toContain('@');
+      expect(emittedLine).not.toContain(RESET_ROUTE_ID);
+      expect(emittedLine).not.toContain(result.temporaryPassword);
+
+      skipLogSpy.mockRestore();
     });
 
     // ── Falsifier 3 — Permanent:false is pinned by the FR-7 block's first
@@ -698,24 +769,29 @@ describe('UsersService (mocked Cognito)', () => {
     {
       siteName: 'resetPassword → dispatchAdminResetEmail (sendAdminReset)',
       resolvedSubReference: 'sub-reset-0002',
-      resolvedSubAddress: 'rejected@example.com',
-      unresolvedSubAddress: 'nosub-reject@example.com',
+      // The route `id` is a UUID (production shape); the resolved `email`
+      // below is a DIFFERENT string on purpose — proves the failure log
+      // never leaks the resolved recipient, not merely the (no-longer-used)
+      // route id.
+      resolvedSubAddress: 'reset-reject-recipient@example.org',
+      unresolvedSubAddress: 'reset-reject-recipient-2@example.org',
       arrangeResolvedSubRejection: () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-        stubGetUserSub('sub-reset-0002');
+        stubGetUserSub('sub-reset-0002', 'reset-reject-recipient@example.org');
         stubTransportRejection(mailService.sendAdminReset);
       },
-      actResolvedSub: () => service.resetPassword('rejected@example.com'),
+      actResolvedSub: () =>
+        service.resetPassword('11111111-2222-3333-4444-555555555555'),
       assertResolvedSubResult: () => {
         // `resetPassword` returns no `user` — nothing further to assert here.
       },
       arrangeUnresolvedSubRejection: () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-        stubGetUserNoSub('nosub-reject@example.com'); // no `sub`
+        stubGetUserNoSub('reset-reject-recipient-2@example.org'); // no `sub`, but email resolvable
         mailService.sendAdminReset.mockRejectedValue(new Error('down'));
       },
       actUnresolvedSub: () =>
-        service.resetPassword('nosub-reject@example.com'),
+        service.resetPassword('66666666-7777-8888-9999-000000000000'),
     },
   ];
 

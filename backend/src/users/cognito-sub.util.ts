@@ -79,3 +79,27 @@ export function resolveCognitoSub(
   const attributes = source?.Attributes ?? source?.UserAttributes;
   return attributes?.find((attribute) => attribute.Name === 'sub')?.Value;
 }
+
+/**
+ * Extract the `email` attribute's value from a Cognito user/response
+ * object — the SAME response {@link resolveCognitoSub} reads. Added for a
+ * production defect fix (2026-09-22): `UsersService.resetPassword`
+ * dispatched its admin-reset email to the route's `id`, which in this pool
+ * IS the Cognito `Username`/`sub` (a UUID), not an address — Cognito's own
+ * `sub` attribute and the actual `email` attribute are two different
+ * entries in the same `AdminGetUser` response already being fetched to
+ * resolve the log-correlation `sub`. This lets that single call resolve
+ * both without a second round trip.
+ *
+ * Mirrors {@link resolveCognitoSub} exactly: same two-shape read
+ * (`Attributes` / `UserAttributes`), same `undefined`-on-absence contract,
+ * no substitute value — callers must NOT fall back to `Username`/`id` when
+ * this returns `undefined` (that fallback is exactly the defect this
+ * function exists to let callers avoid).
+ */
+export function resolveCognitoEmail(
+  source: CognitoAttributeSource | undefined,
+): string | undefined {
+  const attributes = source?.Attributes ?? source?.UserAttributes;
+  return attributes?.find((attribute) => attribute.Name === 'email')?.Value;
+}

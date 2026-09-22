@@ -66,7 +66,7 @@ import {
 } from './cognito-admin.client';
 import { mapCognitoError } from './cognito-error.mapper';
 import { generateTemporaryPassword } from './temp-password.util';
-import { resolveCognitoSub } from './cognito-sub.util';
+import { resolveCognitoEmail, resolveCognitoSub } from './cognito-sub.util';
 import { AdminUser, toAdminUser } from './users.serializer';
 import { ASSIGNABLE_ROLES, SettableRole } from './users.constants';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -462,26 +462,45 @@ export class UsersService {
    * `MailService` now dispatches an admin-reset email, layered on top of a
    * Cognito call that was always silent.
    *
+   * **Production defect fix (2026-09-22):** this method used to dispatch
+   * `dispatchAdminResetEmail` with `id` as the recipient. In THIS Cognito
+   * pool `Username` (the `id` route param) is a UUID, not an address — so
+   * every admin-reset email was addressed to a literal UUID string and
+   * silently rejected by the mail microservice's transport ("No valid
+   * emails found in TO or CC") while this endpoint reported `emailSent:
+   * true`. The recipient is now the `email` attribute resolved from the
+   * SAME `AdminGetUser` call already made to resolve the log-correlation
+   * `sub` — see {@link resolveResetRecipient}, which reads both via
+   * {@link resolveCognitoEmail} and {@link resolveCognitoSub} from one
+   * response, no second round trip. **There is no fallback recipient**:
+   * when `email` cannot be resolved, the dispatch is skipped entirely
+   * (`sendAdminReset` is never called) and `emailSent` is `false` — falling
+   * back to `id` (or any other non-address value) is exactly the defect
+   * being fixed, so it must be impossible, not merely unlikely.
+   *
    * The `sub` this method resolves for {@link dispatchAdminResetEmail}'s
-   * reference comes from an `AdminGetUser` call — the same command
+   * reference comes from that same `AdminGetUser` call — the same command
    * {@link get} already issues — run AFTER the password has already been
-   * set, through {@link resolveResetSub}, which absorbs any failure of that
-   * call so it never undoes or blocks the reset itself (design.md §5.2,
-   * amended 2026-09-21 during T-5 execution): when the `sub` cannot be
-   * resolved **or the lookup itself fails**, it only means the follow-on
-   * email dispatch (below) logs `reference=n/a` instead of a correlation
-   * id. It is **never** the `id` argument in scope at this call site: in
-   * this system `id` IS the email address (`create()`'s docstring above
-   * and `cognito-sub.util.ts` document the same trap for the same reason),
-   * and substituting it here would write a plaintext address to every
-   * failed-reset log line — the exact leak NFR-1 forbids.
+   * set, through {@link resolveResetRecipient}, which absorbs any failure of
+   * that call so it never undoes or blocks the reset itself (design.md
+   * §5.2, amended 2026-09-21 during T-5 execution, and again 2026-09-22 for
+   * this fix): when the `sub` cannot be resolved **or the lookup itself
+   * fails**, the follow-on email dispatch (when it happens at all) logs
+   * `reference=n/a` instead of a correlation id. It is **never** the `id`
+   * argument in scope at this call site: in this system `id` IS the
+   * Cognito Username, a UUID here, not the recipient address — and
+   * substituting it (for either `sub` or `email`) would either write a
+   * non-address to the recipient (the defect fixed here) or a plaintext
+   * address to a failed-reset log line — the exact leak NFR-1 forbids.
    *
    * Returns the temporary password (FR-2's fallback, extended to reset by
    * FR-5 — always populated, whether or not the email sends, never logged or
    * stored, and exits only through this Admin-guarded response body and the
    * admin-reset email body) and `emailSent` (FR-3, via FR-5's "same rules as
    * FR-1 through FR-4") — a boolean signal that the transport accepted the
-   * message, not a delivery receipt.
+   * message, not a delivery receipt. `emailSent` is `false` both when the
+   * transport rejects a genuinely-dispatched message AND when no dispatch
+   * was attempted at all because no email address could be resolved.
    */
   async resetPassword(id: string): Promise<ResetPasswordResult> {
     try {
@@ -499,13 +518,24 @@ export class UsersService {
         }),
       );
 
-      const sub = await this.resolveResetSub(id);
+      const { sub, email } = await this.resolveResetRecipient(id);
 
-      const emailSent = await this.dispatchAdminResetEmail(
-        id,
-        temporaryPassword,
-        sub,
-      );
+      let emailSent = false;
+      if (email) {
+        emailSent = await this.dispatchAdminResetEmail(
+          email,
+          temporaryPassword,
+          sub,
+        );
+      } else {
+        // No fallback recipient (see docstring above): NEVER dispatch to
+        // `id`. Log the skip without the address — there is none to leak,
+        // `id` here is a UUID, but the shape below still carries only the
+        // (possibly resolved) `sub` reference, never `id`/`email`.
+        this.logger.error(
+          `admin reset email skipped: no resolvable email address reference=${sub ?? 'n/a'}`,
+        );
+      }
 
       return { temporaryPassword, emailSent };
     } catch (err) {
@@ -552,22 +582,33 @@ export class UsersService {
   }
 
   /**
-   * Resolve the Cognito `sub` for {@link resetPassword}'s admin-reset
-   * dispatch reference via `AdminGetUser`, absorbing any failure of that
-   * call into `undefined` rather than letting it propagate (design.md
-   * §5.2, amended 2026-09-21 during T-5 execution). Mirrors
-   * `listGroupNames`/`removeFromGroupIfPresent`'s shape: each absorbs one
-   * specific Cognito outcome and nothing else.
+   * Resolve BOTH values {@link resetPassword}'s admin-reset dispatch needs
+   * from a SINGLE `AdminGetUser` call: the recipient `email` (the
+   * production-defect fix — the address the message must actually be sent
+   * to) and the `sub` used only as a log-correlation reference. Absorbs
+   * any failure of that call into `{ sub: undefined, email: undefined }`
+   * rather than letting it propagate (design.md §5.2, amended 2026-09-21
+   * during T-5 execution, and again 2026-09-22 for the recipient fix).
+   * Mirrors `listGroupNames`/`removeFromGroupIfPresent`'s shape: each
+   * absorbs one specific Cognito outcome and nothing else.
    *
-   * `AdminGetUser` here buys only a log correlation id — the design
-   * already rules "losing correlation is acceptable; logging an address
-   * is not" — so, unlike the `AdminSetUserPassword` call above (a
-   * required state change), a call whose entire value is optional must
-   * not be able to fail a request whose password change has already
-   * committed. On rejection this logs an error-name discriminator only,
-   * **never `id`** (NFR-1).
+   * Renamed from the former `resolveResetSub` (which resolved only `sub`,
+   * via `resolveCognitoSub` alone) — same `AdminGetUser` call, same
+   * failure-absorption discipline, now also reading `email` via
+   * {@link resolveCognitoEmail} from the identical response so no second
+   * round trip is needed.
+   *
+   * On rejection of the `AdminGetUser` call itself, this logs an
+   * error-name discriminator only, **never `id`** (NFR-1) — unchanged from
+   * before. When the call succeeds but carries no `email` attribute, this
+   * function does NOT log (that is `resetPassword`'s job, since only it
+   * knows whether a `sub` reference is available for that line); it only
+   * ever returns `undefined` for the missing piece, never a substitute
+   * such as `id`.
    */
-  private async resolveResetSub(id: string): Promise<string | undefined> {
+  private async resolveResetRecipient(
+    id: string,
+  ): Promise<{ sub: string | undefined; email: string | undefined }> {
     const client = getCognitoAdminClient();
     const UserPoolId = getUserPoolId();
 
@@ -575,13 +616,16 @@ export class UsersService {
       const detail = await client.send(
         new AdminGetUserCommand({ UserPoolId, Username: id }),
       );
-      return resolveCognitoSub(detail);
+      return {
+        sub: resolveCognitoSub(detail),
+        email: resolveCognitoEmail(detail),
+      };
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
-        `admin-reset sub resolution failed: errorType=${errorType}`,
+        `admin-reset recipient resolution failed: errorType=${errorType}`,
       );
-      return undefined;
+      return { sub: undefined, email: undefined };
     }
   }
 

@@ -688,15 +688,23 @@ describe('Account-access email dispatch survives the Lambda freeze class (T-8, N
       '(design.md §5.3) and this pins both, not only the one the falsifier below ' +
       'mutates.',
     async () => {
-      // design.md §5.2: the `id` IS the email address `resetPassword` mails
-      // to (`users.service.ts:504-508` → `:543`) — email-shaped so this
-      // fixture doesn't contradict that invariant.
-      const resetUserId = 'existing.user@example.org';
+      // Production-defect fix (2026-09-22): `id` (the route param / Cognito
+      // `Username`) is a UUID in this pool, NOT the email address —
+      // deliberately UUID-shaped and DIFFERENT from the resolved `email`
+      // attribute below, so this fixture cannot hide a regression to
+      // dispatching at `id` the way the former email-shaped `id` fixture
+      // did (that fixture made `to === id` true even under the bug,
+      // because both were the same string).
+      const resetUserId = '9c8f6b2e-1a34-4e77-9f0a-5c7d8e2b4a10';
+      const resolvedRecipientEmail = 'existing.user@example.org';
 
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
       cognitoMock.on(AdminGetUserCommand).resolves({
         Username: resetUserId,
-        UserAttributes: [{ Name: 'sub', Value: 'sub-reset-1' }],
+        UserAttributes: [
+          { Name: 'sub', Value: 'sub-reset-1' },
+          { Name: 'email', Value: resolvedRecipientEmail },
+        ],
       });
 
       const event = apiGatewayV2Event({
