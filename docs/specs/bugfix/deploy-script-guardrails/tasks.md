@@ -15,7 +15,7 @@
 - Status: **Done** · Depth: **Standard** · Type: **Bug** (Bug Mode) · validated 2026-09-21
 - Author / Date: AKILI (Leader) — 2026-09-18
 - Source: `requirements.md` FR-1…FR-7 · `design.md` §7 · `judgment.md` (2 rounds, ESCALATED)
-- Budget: ⚠️ **superseded — see `design.md` §11 re-baseline 2 (~4,300 LOC · ~20 rounds).** The figure originally here (~470 / 9) was breached at T-2 and again at T-5; actuals measured at validation are production +550, tests +3,236, 16 review rounds
+- Budget: ⚠️ **superseded — see `design.md` §11 re-baseline 2 (~4,300 LOC · ~20 rounds).** The figure originally here (~470 / 9) was breached at T-2 and again at T-5; final actuals, measured after T-8 round 4, are production **+369** net, tests **+3,224** net, **20** review rounds
 
 ## Conventions for this spec
 
@@ -107,7 +107,7 @@
       **⚠️ N-1, carried from `judgment.md`, blocks the `Smoke` claim:** on the bootstrap path (`DEPLOY_INFRA=true`), `Deploy Backend` writes `*` legitimately and `Lock CORS` repairs it. If `Smoke` runs **between** them, T-6's check reds the first bootstrap build. The stage order is not derivable from anything in this repository. **Ask the Jenkins administrator before writing any doc sentence about bootstrap smoke behaviour; if unanswered, record it as an open risk rather than asserting either way** (KZ-011).
       Skills: `cognitive-doc-design`, `aws-serverless`
 
-- [~] **T-8 Execute the Pivot: withdraw the account assertion, announce instead** (deps: T-3, T-4, T-5, T-7)
+- [x] **T-8 Execute the Pivot: withdraw the account assertion, announce instead** (deps: T-3, T-4, T-5, T-7)
       Scope: remove `assert_account` from `_guard.sh` and its five call sites; **delete `infra/aws-accounts.conf`**; add `announce_account`, called by the same five **writing** scripts, which prints the resolved account and effective profile to **stderr** and **never** changes the exit status. Retire or convert the eight `guard-account.*.case.sh` cases.
       Traces: **FR-3′** (all five clauses), DD-6 (its reasoning now governs FR-3′), `execution.md` → `## Pivot Record: FR-3`
       Files: `infra/scripts/_guard.sh`, the five writing scripts, `infra/aws-accounts.conf` (**deleted**), `infra/scripts/tests/cases/guard-account.*`
@@ -164,9 +164,9 @@ Every requirement's scenarios **and** every `BUT it must NOT` / `AND IT MUST` cl
 
 ## Estimated LOC and PR strategy — ⚠️ historical, superseded
 
-> Written before execution. The estimate below was wrong by roughly 8× on the test column and the tripwire fired twice. **Actuals: production +550, tests +3,236, 16 review rounds.** Kept as the record of what was estimated, not as guidance.
+> Written before execution. The estimate below was wrong by roughly 15× on the test column and the tripwire fired twice. **Final actuals, measured after T-8 round 4: production +369 net, tests +3,224 net, 20 review rounds.** Kept as the record of what was estimated, not as guidance.
 
-*Estimated at the time:* **~470 LOC**, of which ~210 the test harness. **Actual, measured 2026-09-21: production +550, tests +3,236 — a 5.8 : 1 split.** The tests outweighing the fix is the correct shape for a bugfix whose whole problem was that nothing could be verified; the estimate simply never priced per-clause case ownership.
+*Estimated at the time:* **~470 LOC**, of which ~210 the test harness. **Final, measured 2026-09-21 after T-8 round 4: production +369 net, tests +3,224 net — an 8.7 : 1 split.** The tests outweighing the fix is the correct shape for a bugfix whose whole problem was that nothing could be verified; the estimate simply never priced per-clause case ownership.
 
 **Recommend two PRs.** The 400-LOC threshold is exceeded and the two halves have different reviewers and different risk:
 

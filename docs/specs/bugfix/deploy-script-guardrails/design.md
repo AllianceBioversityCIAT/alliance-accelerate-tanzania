@@ -276,15 +276,19 @@ The tripwire fired at **T-2** (892 vs ~470) and again at **T-5** (3,395 vs ~2,50
 
 **Re-baseline 1 diagnosed:** production code tracks or beats its estimate; the entire overshoot is test cases, because §11 was computed before `tasks.md` required per-clause ownership. **Measured again at T-5, that diagnosis is confirmed and sharper:**
 
-| | Lines, as of T-5 | Re-measured 2026-09-21, **pre-Pivot** — ⚠️ pending re-measure after T-8 |
-|---|---|---|
-| Production — seven scripts + `_guard.sh` *(plus `aws-accounts.conf`, since deleted)* | 454 | 550 → pending |
-| Test cases | 2,941 | **3,236** |
-| Ratio | 6.5 : 1 | **5.8 : 1** |
+| | Net lines, measured 2026-09-21 after round 4 |
+|---|---|
+| Production — the seven scripts + `_guard.sh` | **+369** |
+| Tests | **+3,224** |
+| Advisory Jenkins patch (not applied) | +102 |
+| **Ratio tests : production** | **8.7 : 1** |
+| Cases | **48** |
+
+**Method, stated so the figures are reproducible:** `git diff --numstat f7fbe70~1..HEAD` per file, **added minus deleted**. Three different ratios appear in this spec's history (6.5, 5.8, 8.7) because earlier figures were *added-only* and were taken at different moments. `aws-accounts.conf` was created and deleted within the same spec, so its net is 0. The ratio **rose** after the Pivot because production shrank while the harness grew.
 
 ⚠️ The middle column is the **T-5** measurement. It was republished as final in `execution.md`'s Summary without its qualifier, which the independent validation auditor caught as a KZ-005 ×2 instance. The final column is the measured total; note the true ratio is **lower** — the T-5 figure overstated the split.
 
-Production for the *entire spec* fits in **550** lines against an original estimate of ~290 — **90% over, not 600%**. The estimate for the fix was roughly right. The estimate for the evidence was wrong by an order of magnitude.
+Production for the *entire spec* fits in **369** net lines against an original estimate of ~290 — **27% over, not 600%**. *(550 was the pre-Pivot figure; T-8's withdrawal of the account assertion removed net production.)* The estimate for the fix was roughly right. The estimate for the evidence was wrong by an order of magnitude.
 
 **What was actually wrong was the projection, not the diagnosis.** Re-baseline 1 projected ~1,650 for the five remaining tasks; four of them consumed ~2,470. The error was projecting **per task** while cases scale **per clause × per call site**:
 
