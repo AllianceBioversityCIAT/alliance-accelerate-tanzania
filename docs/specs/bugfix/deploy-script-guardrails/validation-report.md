@@ -293,15 +293,61 @@ FR-3′ clauses 2–5 each owned by a case that fails for the right reason: neve
 
 ## Carried follow-ups — unchanged, all confirmed still present
 
-| Priority | Item |
-|---|---|
-| 1 | **A-02 site 2** — `resolve_stack_value` still captures with `2>&1`; site 1 closed by the Pivot |
-| 2 | **A-01** — `${BASH_SOURCE[0]%/*}` breaks `cd infra/scripts && bash <script>` |
-| 3 | **`frontend/CLAUDE.md:65`** — *"the script warns; heed it"*; the script aborts. A live falsehood in a guide root `CLAUDE.md` says trains every agent |
-| 4 | Gate robustness: `${hit##*:}` extraction · `.aws-sam/` inside the scanned tree · the multiplicity control covers `DIGIT_RUN_RE` but not the gate's loop |
+| Priority | Item | Status |
+|---|---|---|
+| 1 | **A-02 site 2** — `resolve_stack_value` still captures with `2>&1`; site 1 closed by the Pivot | **CLOSED 2026-09-21** (F-1) |
+| 2 | **A-01** — `${BASH_SOURCE[0]%/*}` breaks `cd infra/scripts && bash <script>` | **CLOSED 2026-09-21** (F-2) — including the false `dirname` rationale in `design.md` §7.2, struck |
+| 3 | **`frontend/CLAUDE.md:65`** — *"the script warns; heed it"*; the script aborts. A live falsehood in a guide root `CLAUDE.md` says trains every agent | **CLOSED 2026-09-21** (F-3), via a dated **NFR-5 amendment** in `requirements.md` §4 — the measure was narrower than its own requirement. Sibling found by the closure sweep: root `AGENTS.md` was silent about the profile floor; synced |
+| 4 | Gate robustness: `${hit##*:}` extraction · `.aws-sam/` inside the scanned tree · the multiplicity control covers `DIGIT_RUN_RE` but not the gate's loop | **CLOSED 2026-09-21** (F-4a, F-4b, and 4c as a side effect) |
 
 ## Archive readiness
 
 **Ready with follow-ups.** Nothing outstanding requires touching a script to archive. `/akili-archive` may proceed.
 
 **One figure worth carrying to Kaizen, because it is now measured twice:** of the twenty-plus review rounds this spec consumed, **not one died on the mechanism being wrong.** They died on false claims and on gates that could not fire — and the only countermeasure with a success record is not care but **execution**: every instance caught before review in this spec was caught by running a command against a draft, never by re-reading it.
+
+
+---
+
+## Follow-up Closure — the four carried items (2026-09-21)
+
+All four carried follow-ups are closed, plus one sibling the closure sweep
+found. Full audit trail in `execution.md` → *Follow-up Round*.
+
+| Item | Closure | Falsifier proven |
+|---|---|---|
+| **A-02 site 2** (F-1) | `resolve_stack_value` captures the AWS CLI's stderr to a guarded temp file; the value comes from stdout alone, the two-token classification from the error text. `mktemp` failure **aborts** here — asymmetric with `announce_account` on purpose, which must never become a gate (FR-3′) | restore `2>&1` → 8 reds; classify from `$raw` → 4 reds |
+| **A-01** (F-2) | `_SELF_DIR` with a `.` fallback in all seven scripts and in `_guard.sh`. `design.md` §7.2's false `dirname` rationale **struck**, the real (narrower) ground recorded, `tasks.md` T-2 amended | revert `deploy.sh` → 1 red on the ENOTDIR assertion |
+| **`frontend/CLAUDE.md:65`** (F-3) | Corrected. Required amending **NFR-5**, whose measure (a path list excluding `frontend/**`) forbade what its requirement permits. Amended in writing, dated, scope-limited to documentation truth — the gate was changed *as a gate*, not stepped around | n/a (prose) |
+| **root `AGENTS.md`** (F-3b) | Silent about the profile floor while root `CLAUDE.md` documented it. **Found by F-3's closure sweep, not by any finding** | n/a (prose) |
+| **Gate robustness** (F-4a, F-4b) | `extract_digit_run` takes the digit run from the right; `ACCOUNT_SCAN_EXCLUDES` + `-I`; the scan became `scan_for_account_ids <root>` so its **loop** is exercised against a temp tree — which closed 4c as a side effect, disclosed rather than presented as free | revert the extractor → 1 red; drop `--exclude-dir` → 1 red; delete the caller precondition → 1 red |
+
+**F-4a was worse than this report recorded.** It was filed as robustness
+about a condition "no versioned file can create". It is a **silent
+clearance**, now measured against real `grep` output: a colon in any path
+component made the old extractor return `1999999999999` — thirteen digits —
+which the shape check *clears*. A forbidden account id under such a path was
+invisible to the gate.
+
+**The Reviewer round FAILed on five prose defects and zero mechanism
+defects**, and two of them were claims contradicted by *this document*: the
+F-2 case asserted an error string (`No such file or directory`) that the
+defect never emits, while §A-01's own transcript records the real one (`Not
+a directory`); and §A-01's finding that `design.md` §7.2's `dirname`
+rationale was false had been applied to the code and left standing in the
+design. The remediation then added a precondition that **no mutation could
+redden** — a gate that cannot fail, added in the round that exists to remove
+them — caught by running the mutation and closed with a caller-contract
+control.
+
+### Residual, unchanged
+
+- `teardown.sh`'s fail-vs-absent conflation — a write-path change to the most destructive script; deserves its own spec.
+- The `Jenkinsfile` — **not fixable from this repository**; it is not versioned here. `smoke.sh` Check 6 detects the consequence in the pipeline but cannot prevent it (smoke runs last, nothing rolls back). The standing recommendation, out of scope here, is to version the `Jenkinsfile`: three claims in this spec were unverifiable for exactly this reason.
+- `V-01` — if the pipeline's account differs, that is a design decision, not a config edit. Unaffected by the Pivot and by this round.
+- The pre-existing `resolve-*` cases have the same standalone-hermeticity exposure the F-1 case now guards against, and have **not** adopted the check.
+
+### Archive readiness — revised
+
+**Ready. No code follow-ups outstanding.** 50 cases, 50 passing, six
+mutations each reddening the named case on the named assertion.

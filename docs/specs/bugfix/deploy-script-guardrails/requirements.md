@@ -171,7 +171,61 @@ Revision 1 asserted that `set-cors.sh` carries the fail-closed classification an
 | **NFR-2** | Tests are **hermetic** — no AWS calls, no credentials, no live stack, **no outbound network of any kind**. | The suite passes with no AWS credentials and with networking disabled |
 | **NFR-3** | The change is **pipeline-compatible**. | A guard-unit test asserts exit `0` under the pipeline's exact env (`AWS_PROFILE=IBD-DEV`) |
 | **NFR-4** | Guard logic lives in **one place**. The `MailTransport` classification currently duplicated in `deploy.sh` and `set-cors.sh` collapses into the shared helper. | D-3's enumeration, plus zero remaining local copies of the classification block |
-| **NFR-5** | No behavioural change to the application, the API surface, or the PII boundary. | `git diff --stat` touches only `infra/**`, `docs/**`, and root `CLAUDE.md` — the last because it documents `validate.sh` as the infra verify command and describes `deploy-frontend.sh`'s profile behaviour, both of which this change alters |
+| **NFR-5** | No behavioural change to the application, the API surface, or the PII boundary. | `git diff --stat` touches only `infra/**`, `docs/**`, root `CLAUDE.md`, and — **amended 2026-09-21, see below** — the agent guides' prose about `infra/scripts/` behaviour this change alters (root `AGENTS.md`, `frontend/CLAUDE.md`, `frontend/AGENTS.md`, `backend/CLAUDE.md`, `backend/AGENTS.md`), documentation-truth corrections only |
+
+### NFR-5 amendment (2026-09-21) — the measure was narrower than its own intent
+
+**What changed.** The path allow-list gains the agent guides' prose about
+`infra/scripts/` behaviour — the module guides under `frontend/` and
+`backend/`, and root `AGENTS.md`. Nothing else about NFR-5 changes.
+
+Root `AGENTS.md` is in that list for a reason found by this correction's own
+closure sweep, not by the original finding: the original measure admitted
+root `CLAUDE.md` but not root `AGENTS.md`, which root `CLAUDE.md` itself
+names as the mirror other tools read. So T-7 updated the profile-floor
+description in one and left the other saying only that `--profile` is
+ignored — true, but silent about the floor. An agent entering through
+`AGENTS.md` learned the ATP-65 gap and not its fix. The defect is weaker
+than `frontend/CLAUDE.md`'s (incomplete rather than false) and the same
+class, and it is the fourth partial landing in this spec: a correction
+applied to the cited site and not to the sibling carrying the same
+premise.
+
+**Why.** NFR-5's *requirement* is "no behavioural change to the application,
+the API surface, or the PII boundary". Its *measure* was a path list, and
+the list excluded `frontend/**` entirely. Editing a Markdown guide changes
+no behaviour, no API surface and no PII boundary — so the measure forbade
+an edit the requirement it measures permits. The two were not equivalent,
+and the measure won by being the thing an agent can check.
+
+**What that cost.** `frontend/CLAUDE.md`'s Deploy line said a leaked
+non-`IBD-DEV` profile makes `deploy-frontend.sh` *warn* ("the script warns;
+heed it"). After T-6 wired the guard in, the script **refuses**. Root
+`CLAUDE.md` states module guides "train every future agent and no test
+covers them", so this was not a stale line in a frozen record — it was a
+live falsehood in an instruction file, pointing the **wrong way**: it told a
+future agent that catching a leaked profile was *their* job at the exact
+moment the guard started failing closed. Validation raised it; the scope
+decision left it; the Reviewer upheld the decision **on the condition it be
+recorded**, on the ground that the whole point of this spec is that a
+stated gate must bind even when the agent can see a good reason to step
+around it.
+
+**Why amend rather than step around.** That Reviewer position is correct
+and is not being overturned. The gate bound, and it kept binding until it
+was changed *as a gate* — in the document that states it, with a dated
+record, rather than by an agent deciding in the moment that its purpose
+permitted an exception. An agent that may quietly reinterpret a constraint
+it finds over-broad has no constraints; one that must amend the constraint
+in writing has a reviewable trail. This block is that trail.
+
+**Scope of the amendment — documentation truth only.** It authorises
+correcting a guide's *description of behaviour this change altered*. It
+does not authorise any edit to `frontend/**` or `backend/**` code,
+configuration, or tests, all of which remain outside this spec. The
+original measure's purpose — that no application behaviour move — is
+unchanged and still met: `git diff --stat` shows no `.ts`, `.tsx`, `.prisma`
+or `package.json` file touched in either package.
 
 ## 5. Data & Schema Impact
 

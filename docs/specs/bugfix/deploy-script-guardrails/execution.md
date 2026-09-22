@@ -798,3 +798,186 @@ The ratio **rose** from the T-5 measurement because the Pivot removed production
 | **Extraction robustness:** `sed -E 's/^[^:]*:[^:]*://'` strips to the second colon, so a colon anywhere in the checkout's absolute path would mis-strip every hit and the gate could not fail. `id="${hit##*:}"` is unambiguous since matches are pure digits. No versioned file can create the condition, but it is a KZ-002 shape in any checkout that has one |
 | **The control covers `DIGIT_RUN_RE`, not the gate's loop.** Dropping `-o`, or breaking the extraction, leaves the control green and the gate silent. Closing it needs the scan body parameterised on a root so a case can run it against a temp dir — beyond like-for-like |
 | **`.aws-sam/` is inside the scanned tree.** After any local deploy the gate greps the compiled backend bundle; a 12-digit constant there reds a clean tree. Loud, not silent. Since FR-3′ is about what is *versioned*, `git ls-files infra` or `--exclude-dir=.aws-sam` would scope it correctly. Pre-dates round 4 |
+
+---
+
+## Follow-up Round — the carried advisories, closed (2026-09-21)
+
+Requested by the product owner after reading the forwardable review document's
+"known defects" section and asking the right question: *"can none of this be
+fixed, or must it not be fixed?"* The honest answer was that four of the five
+were **fixable and small**, and had been carried only because they arrived
+labelled as validation *advisories* and stayed in that bucket — a reason of
+procedure, not of engineering. Scope agreed with the owner: **F-1, F-2, F-3,
+F-4a, F-4b**; **4c deferred**.
+
+| ID | Carried finding | Change |
+|---|---|---|
+| **F-1** | `resolve_stack_value` captured the AWS CLI with `2>&1`, folding CLI stderr into the value it returns on stdout | Stderr goes to a guarded temp file; the value comes from `$raw`, the two-token classification from `$err`. A `mktemp` failure **aborts** here — deliberately asymmetric with `announce_account`, which must never become a gate (FR-3′) |
+| **F-2** | `source "${BASH_SOURCE[0]%/*}/_guard.sh"` — `%/*` leaves a slash-less path **unchanged**, so `cd infra/scripts && bash deploy.sh` resolved `deploy.sh/_guard.sh` and died **before the profile floor ran** | Two-line `_SELF_DIR` resolution with a `.` fallback, in all seven scripts and in `_guard.sh`'s own `GUARD_DIR`. `dirname` rejected on purpose: the profile floor must not depend on `PATH`, the one thing a leaked environment is most likely to have tampered with |
+| **F-3** | `frontend/CLAUDE.md:65` — *"the script warns; heed it"*; it aborts | Corrected. Required **amending NFR-5** — see below |
+| **F-3b** | root `AGENTS.md` described `--profile` but was **silent about the profile floor** | Synced. **Found by F-3's closure sweep, not by the original finding** |
+| **F-4a** | the gate's extraction, `sed -E 's/^[^:]*:[^:]*://' \| tr -cd '0-9'` | `extract_digit_run` = `${1##*[^0-9]}` — takes the digit run from the **right** |
+| **F-4b** | `.aws-sam/` inside the scanned tree | `ACCOUNT_SCAN_EXCLUDES` (`.aws-sam`, `node_modules`, `.git`) plus `-I` |
+
+### F-4a was worse than the advisory recorded, and now it is measured
+
+The carried advisory called this a robustness concern about a condition "no
+versioned file can create". It is a **silent clearance**, and it was
+reproduced against real `grep` output rather than reasoned about:
+
+```
+hit=/var/folders/…/we:ird/f9.txt:1:999999999999
+  old(sed+tr) -> 1999999999999      # 13 digits → is_account_id_shaped REJECTS → cleared
+  new(${##})  -> 999999999999       # 12 digits → correctly flagged
+```
+
+A colon in any path component made the two `[^:]*` fields consume the wrong
+segments; `tr -cd '0-9'` then glued the path's own digits onto the match, and
+the over-long result was **cleared by the shape check**. A forbidden account
+id under such a path was invisible to the gate. The advisory's recommended
+fix, `${hit##*:}`, would in fact have worked; `${hit##*[^0-9]}` is taken
+instead because it depends on no separator character at all.
+
+### F-4b's fix closed most of 4c as a side effect — flagged, not hidden
+
+Making F-4a and F-4b **testable** required the scan to become a function,
+`scan_for_account_ids <root>` (in `tests/lib/account-id-scan.sh`), so a case
+can run **the gate's real loop** against a purpose-built temp tree. That is
+precisely what 4c asked for. 4c's remaining half — a control proving the
+multiplicity property *through* the loop — came along with it: the case now
+asserts that a forbidden id adjacent to an allow-listed one is reported, and
+that the same id under `.aws-sam/` is not. This widened the change beyond the
+agreed five items and is recorded here rather than presented as free.
+
+### The NFR-5 amendment — the gate was changed as a gate, not stepped around
+
+F-3 was blocked by NFR-5, whose *measure* was a path allow-list excluding
+`frontend/**` while its *requirement* was "no behavioural change to the
+application, the API surface, or the PII boundary". Editing a Markdown guide
+changes none of those: **the measure forbade what the requirement permits**,
+and the measure won by being the checkable one.
+
+The T-7 Reviewer had upheld obeying it, on the ground that *"the whole point
+of this spec is that a stated gate must bind even when the agent can see a
+good reason to step around it"* — and that position is **not overturned**. The
+gate bound, and it kept binding until it was amended **in the document that
+states it**, dated, with the reasoning and the scope limit written down
+(`requirements.md` §4). An agent that may quietly reinterpret a constraint it
+finds over-broad has no constraints; one that must amend it in writing leaves
+a trail. The amendment authorises documentation-truth corrections only — no
+`frontend/**` or `backend/**` code, config, or tests. Verified: `git diff
+--name-only f7fbe70~1` matches no `.ts`, `.tsx`, `.prisma`, or
+`package.json`.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| `bash infra/scripts/tests/run-tests.sh` | **50/50 — "All cases passed."** (48 → 50; two cases added) |
+| New cases | `resolve-stack-value.stderr-not-folded-into-value`, `wire.scripts-invocable-from-own-directory` |
+| `.gitignore` line 1 is `.aws-sam/` | confirmed |
+| exactly seven scripts source the guard | confirmed (`grep -l`, count 7) |
+| no fresh unlisted 12-digit literal planted under `infra/` | the gate's own verdict: clean |
+
+**Six mutations, each run through the harness, each reddening the right case.
+Re-run in full after the Reviewer round below changed four of the six files:**
+
+| Mutation | Reds | Assertion label |
+|---|---|---|
+| restore `2>&1` on the describe-stacks capture | 8 cases | `[value is the value alone]` + 7 pre-existing absent-stack labels |
+| classify the failure from `$raw` instead of `$err` | 4 cases | `[absent stack announced on stderr only…]` + 3 pre-existing |
+| revert `deploy.sh` to the bare `%/*` form | 1 | `[deploy.sh: sources the guard when invoked from inside its own directory]` |
+| revert the extractor to `sed`+`tr` | 1 | `[extraction control]` |
+| drop `--exclude-dir=.aws-sam` | 1 | `[scan control (c)]` |
+| delete the `is_allowed` precondition | 1 | `[scan_for_account_ids with no is_allowed() defined…]` |
+
+#### A falsifier run outside the harness is not a falsifier — caught mid-round
+
+The first pass of these five mutations was run by invoking each case directly
+(`bash <case>.case.sh`). Cases are only hermetic **under `run-tests.sh`**,
+which prepends the stub `PATH`; invoked directly, the F-1 case reached the
+**real `aws` CLI** and returned the live CloudFront URL, so it reddened on the
+wrong assertion for the wrong reason. Both F-1 mutations were re-run through
+the harness. M2's red was then confirmed to land on sub-case (b) —
+*"absent stack announced on stderr only"* — which is the claim the case's own
+header makes about it.
+
+This is KZ-002's shape one level up: the *falsifier* was unhermetic, so its
+red proved nothing. The two text-only mutations (F-4a, F-4b) and the F-2
+mutation were unaffected — they invoke no stubbed command — but all five were
+re-run regardless rather than reasoned about case by case.
+
+### Reviewer round — **FAIL**, then remediated
+
+Reviewer: `akili-reviewer` on **Fable 5.1**, T3, chosen because the Leader
+authored this diff and the registry's T3 entry for Claude Code (`opus`) is
+the Leader's own model — author ≠ auditor cannot be satisfied by it here.
+
+**Verdict: `STATUS: FAIL`, five issues. Every one was in the PROSE; the
+Reviewer cleared the mechanism by reading and said so explicitly.** That is
+this spec's recorded failure mode arriving for the twenty-somethingth time:
+not one round in this spec has died on the mechanism being wrong.
+
+All five were **confirmed by execution before being acted on**, not taken on
+the Reviewer's word:
+
+| # | Finding | Confirmed how |
+|---|---|---|
+| **I-1** | Two artefacts claimed `cd infra/scripts && bash deploy.sh` "is how an operator following `infra/README.md`'s own examples reaches it". **False.** | `grep -n 'cd infra/scripts' infra/README.md` → nothing; all seven examples are `./infra/scripts/<name>.sh` from the repo root |
+| **I-2** | The new F-2 case asserted `assert_not_contains "No such file or directory"`. The defect emits **ENOTDIR**, not ENOENT — so that assertion **could not fire for the condition it named** | `cd infra/scripts && bash -c 'source deploy.sh/_guard.sh'` → `bash: deploy.sh/_guard.sh: Not a directory` |
+| **I-3** | `design.md` §7.1/§7.2 and `tasks.md` T-2 still stated the resolution as bare `%/*` — **a partial landing**, in the same round whose own NFR-5 block calls partial landings this spec's fourth recurrence | `grep -n BASH_SOURCE` over the spec documents |
+| **I-4** | The F-4b comment put SAM's build tree at `infra/.aws-sam/` and attributed the account id to "packaged template S3 URIs". Wrong path **and** invented mechanism | the real path is `infra/20-backend/.aws-sam/build` (`deploy.sh:289`, `set-cors.sh:193`, `backend/CLAUDE.md:63`); `infra/.aws-sam` does not exist |
+| **I-5** | `scan_for_account_ids`'s contract said the allow-list is "read from the `ALLOWED_IDS` array in the caller's scope". The function never reads that array — it calls `is_allowed`, a **function** the caller must define | reading the function body |
+
+**I-2 is the worst of the five, and not because it was subtle.** The exact
+error text was already on record in this spec, in `validation-report.md`'s
+own A-01 transcript — `validate.sh: line 26: validate.sh/_guard.sh: Not a
+directory` — in a file that had been read in this same session. The needle
+was written from memory anyway. Same class as the four false universal
+negatives earlier in this spec: **an assertion about an artefact composed
+without re-resolving it against the artefact**, where the artefact was one
+keystroke away. The case still discriminated, but only on its *other*
+assertion; the one the header advertised was dead.
+
+**I-3 is the second-worst, and it compounds.** `validation-report.md:121`
+carried both the exact fix form *and* the finding that `design.md` §7.2's
+`dirname` rationale was false. The fix was applied to the code; the false
+rationale was left standing in the design document, so the spec now
+documented two different reasons for the same choice, one of them already
+adjudicated false. Struck, with the real and narrower ground recorded in its
+place — and the ground is narrower than the first draft claimed: the floor
+is builtins-only so nothing on `PATH` can change the profile decision, which
+is a containment property, **not** a response to any observed attack. The
+first draft asserted PATH tampering as the likely threat; the incidents
+behind this spec were `AWS_PROFILE` leaks. The asymmetry is also now
+recorded: `resolve_stack_value` calls `mktemp` from `PATH`, so the property
+is not absolute.
+
+### And the remediation introduced a gate that could not fail
+
+I-5's fix added a precondition — `declare -F is_allowed || return 2`.
+Mutating it away left the suite at **50/50 green**. A gate added in the
+round whose entire purpose is removing gates that cannot fail, which could
+not fail. Found by running the mutation, not by reading the diff.
+
+Closed with a caller-contract control: a nested `bash -c` sources the
+library **without** defining the predicate and asserts exit 2 plus the
+message naming it, so `is_allowed: command not found` can never be the
+symptom. Deleting the precondition now reddens exactly one case.
+
+### Advisories taken, not deferred
+
+| Advisory | Action |
+|---|---|
+| `scan_for_account_ids` captured grep with `2>&1` — **A-02's exact shape, inside the function created to close A-02's sibling** | Temp file, guarded. A folded warning has no `path:line:` prefix, so `extract_digit_run` would have read its trailing digits as a match |
+| `set +e` / `set -e` inside the function switched errexit **on** for any caller that had it off | Replaced with `if/else` — no caller option is mutated |
+| Neither the new F-1 case nor any pre-existing `resolve-*` case checks that `aws` resolves to the stub | Precondition added to the F-1 case, asserting `command -v aws` is the stub path. Verified by running the case standalone: it now refuses and names `/opt/homebrew/bin/aws` as what it would have used. **The pre-existing cases still have this exposure and have not adopted it** |
+| The PATH threat sentence asserted an unevidenced threat model | Softened to the containment claim that is true |
+
+Advisories left as-is, deliberately: `_SELF_DIR` remaining set in the seven
+scripts (they are executed, not sourced); symlink resolution (pre-existing
+under `dirname "$0"`, not a regression).
+
+**Final state: 50 cases, 50 passing, six mutations each reddening the named
+case on the named assertion.**

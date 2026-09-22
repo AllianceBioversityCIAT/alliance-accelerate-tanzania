@@ -97,11 +97,28 @@
 #      in one step, now made in two, with no boundary consumption
 #      anywhere.
 #
-# Both primitives live in tests/lib/account-id-scan.sh, sourced below,
-# rather than being defined inline here a second time: that file is also
-# sourced by the multiplicity control
+# All four primitives live in tests/lib/account-id-scan.sh, sourced below,
+# rather than being defined inline here: that file is also sourced by the
+# multiplicity control
 # (guard-account.no-account-id-literal-in-infra-reports-adjacent-matches.case.sh),
-# so the two can never drift apart.
+# so the two can never drift apart. Alongside DIGIT_RUN_RE and
+# is_account_id_shaped it holds extract_digit_run (F-4a — the hit's digit
+# run is taken from the RIGHT, so a colon or a digit inside a path segment
+# cannot leak into the extracted id) and the scan itself,
+# scan_for_account_ids, which carries ACCOUNT_SCAN_EXCLUDES (F-4b — the
+# gitignored .aws-sam/ build tree, node_modules/ and .git/ are generated or
+# vendored, never versioned content, and a `sam build` artefact embedding
+# the real account id in an S3 URI is not a committed secret).
+#
+# THE SCAN IS A FUNCTION, SO ITS LOOP IS TESTABLE. Every clearance this
+# case reports is preceded by controls that run the SAME loop against a
+# purpose-built temp tree outside infra/: a forbidden id in versioned
+# content must be reported, the same id adjacent to an allow-listed fixture
+# must be reported (H-2's shape, now exercised end-to-end and not only
+# through the matcher), and the same id under .aws-sam/ must NOT be. The
+# forbidden fixture is built at runtime from a repeated digit — writing a
+# fresh unlisted 12-digit literal into this file would itself violate the
+# rule this file enforces.
 #
 # POSIX ERE only, no \b (FP-7) — BSD grep -E (macOS) silently treats a
 # literal `\b` as a no-op instead of erroring, which is exactly how T-4
@@ -176,35 +193,106 @@ is_allowed() {
   return 1
 }
 
-# ── The real scan: every exactly-12-digit run anywhere under infra/ ────────
-set +e
-matches="$(grep -rnoE "$DIGIT_RUN_RE" "$INFRA_DIR" 2>&1)"
-grep_status=$?
-set -e
-
-# grep exit codes: 0 = matched something, 1 = no match at all (fine — no
-# violations to check), >1 = a real grep error (a failure regardless of
-# the allow-list).
-if [[ "$grep_status" -gt 1 ]]; then
-  echo "ASSERT FAIL [no 12-digit run outside the fixture allow-list]: grep error: $matches" >&2
+# ── Extraction controls (F-4a) — prove the extractor before trusting it ────
+# A colon inside a path segment is the case the retired prefix-stripping
+# form got wrong: it consumed the wrong two fields and `tr -cd` then glued
+# the path's own digits onto the match, producing an over-long string that
+# the shape check CLEARS. Both fixtures below use an allow-listed id so
+# this file plants no fresh 12-digit literal under infra/.
+if [[ "$(extract_digit_run "a/b.sh:42:111111111111")" != "111111111111" ]]; then
+  echo "ASSERT FAIL [extraction control]: plain hit mis-extracted" >&2
+  exit 1
+fi
+if [[ "$(extract_digit_run "we:ird/pa9th:7:111111111111")" != "111111111111" ]]; then
+  echo "ASSERT FAIL [extraction control]: a colon and digits in the PATH leak into the extracted id — this is exactly the defect F-4a closes" >&2
+  exit 1
+fi
+if [[ "$(extract_digit_run "trailing9digits9:12:111111111111")" != "111111111111" ]]; then
+  echo "ASSERT FAIL [extraction control]: digits immediately before the separator leak into the extracted id" >&2
   exit 1
 fi
 
-violations=""
-if [[ "$grep_status" -eq 0 ]]; then
-  while IFS= read -r hit; do
-    [[ -z "$hit" ]] && continue
-    # Strip the "path:line:" prefix grep -n adds, leaving exactly the
-    # digit run DIGIT_RUN_RE matched (it consumes no boundary character,
-    # so nothing but digits is left to strip here).
-    id="$(printf '%s' "$hit" | sed -E 's/^[^:]*:[^:]*://' | tr -cd '0-9')"
-    # A 13+-digit run is excluded here, not at the regex step — see
-    # header. Only an exactly-12-digit run not on the allow-list is a
-    # violation.
-    if is_account_id_shaped "$id" && ! is_allowed "$id"; then
-      violations+="$hit"$'\n'
-    fi
-  done <<< "$matches"
+# ── Scan controls (F-4a, F-4b) — end-to-end, through the real loop ────────
+# Built at runtime from a repeated digit, never written here as a literal:
+# a forbidden 12-digit literal in THIS file would be a violation of the
+# very rule this file enforces (the trap the header describes).
+forbidden="$(printf '9%.0s' {1..12})"
+if ! is_account_id_shaped "$forbidden"; then
+  echo "ASSERT FAIL [scan control]: the runtime-built forbidden fixture is not 12 digits" >&2
+  exit 1
+fi
+if is_allowed "$forbidden"; then
+  echo "ASSERT FAIL [scan control]: the forbidden fixture is on the allow-list — pick another" >&2
+  exit 1
+fi
+
+# ── Caller-contract control — the precondition must itself be able to fire ─
+# scan_for_account_ids requires the caller to define is_allowed(). That
+# precondition was added and, on its first run, NO mutation reddened any
+# case: deleting it left the suite at 50/50, which makes it a gate that
+# cannot fail (KZ-002) — added in the same round that exists to remove
+# gates like it. This control closes that. A nested `bash -c` sources the
+# library WITHOUT defining the predicate; it must refuse with exit 2 and
+# say why, rather than surfacing as `is_allowed: command not found`.
+LIB="$TESTS_DIR/lib/account-id-scan.sh"
+export LIB
+set +e
+contract_out="$(
+  bash -c 'set -euo pipefail; source "$LIB"; scan_for_account_ids /tmp' </dev/null 2>&1
+)"
+contract_status=$?
+set -e
+assert_status 2 "$contract_status" \
+  "scan_for_account_ids with no is_allowed() defined: refuses with 2, never scans"
+assert_contains "must define an is_allowed" "$contract_out" \
+  "the refusal names the missing predicate (not a bare 'command not found')"
+
+control_root="$(mktemp -d)"
+trap 'rm -rf "$control_root"' EXIT
+mkdir -p "$control_root/.aws-sam/build" "$control_root/versioned"
+
+# (a) A forbidden id in ordinary versioned content MUST be reported —
+#     otherwise every clearance below is vacuous.
+printf 'AccountId: %s\n' "$forbidden" > "$control_root/versioned/template.yaml"
+# (b) The SAME id adjacent to an allow-listed one, separated by a single
+#     non-digit: the H-2 shape, now exercised through the real scan loop
+#     rather than only through the matcher (this is what the multiplicity
+#     control could not reach).
+printf 'fixtures: 111111111111 %s end\n' "$forbidden" > "$control_root/versioned/adjacent.txt"
+# (c) The same id inside the gitignored SAM build tree MUST NOT be
+#     reported — it is generated output, not versioned content.
+printf 's3://bucket/%s/packaged.yaml\n' "$forbidden" > "$control_root/.aws-sam/build/packaged.yaml"
+
+control_hits="$(scan_for_account_ids "$control_root")"
+
+if ! printf '%s' "$control_hits" | grep -q 'versioned/template.yaml'; then
+  echo "ASSERT FAIL [scan control (a)]: a forbidden id in versioned content was NOT reported — the scan cannot discriminate, so its clean result against infra/ proves nothing:" >&2
+  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  exit 1
+fi
+if ! printf '%s' "$control_hits" | grep -q 'versioned/adjacent.txt'; then
+  echo "ASSERT FAIL [scan control (b)]: a forbidden id sitting next to an allow-listed fixture was NOT reported — H-2 has regressed inside the scan loop:" >&2
+  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  exit 1
+fi
+if printf '%s' "$control_hits" | grep -q '.aws-sam'; then
+  echo "ASSERT FAIL [scan control (c)]: the gitignored .aws-sam build tree was scanned — the gate would red on generated output rather than on versioned content (F-4b):" >&2
+  printf '%s\n' "$control_hits" | sed 's/^/  | /' >&2
+  exit 1
+fi
+
+rm -rf "$control_root"
+trap - EXIT
+
+# ── The real scan: every exactly-12-digit run versioned under infra/ ───────
+set +e
+violations="$(scan_for_account_ids "$INFRA_DIR")"
+scan_status=$?
+set -e
+
+if [[ "$scan_status" -ne 0 ]]; then
+  echo "ASSERT FAIL [no 12-digit run outside the fixture allow-list]: the scan itself errored (see stderr above)" >&2
+  exit 1
 fi
 
 if [[ -n "$violations" ]]; then

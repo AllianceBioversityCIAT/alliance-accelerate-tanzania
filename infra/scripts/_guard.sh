@@ -62,6 +62,38 @@
 #   itself isn't in this same directory. ${BASH_SOURCE[0]%/*} is this
 #   file's own path with its last path segment stripped, independent of
 #   $0, of the caller's cwd, and of how the caller was itself invoked.
+#
+#   THE SLASH-LESS CASE (F-2). `%/*` strips the shortest suffix matching
+#   `/*`; when the string contains NO slash at all there is nothing to
+#   strip and the expansion returns the string UNCHANGED — it does not
+#   return `.`. So a script invoked from inside its own directory
+#   (`cd infra/scripts && bash deploy.sh`) sees BASH_SOURCE[0] ==
+#   "deploy.sh" and resolves the guard to "deploy.sh/_guard.sh", which is
+#   a path under a regular file: bash reports "Not a directory" (ENOTDIR,
+#   not ENOENT) and the script dies BEFORE the floor below has run.
+#   Every caller therefore compares the stripped value against the
+#   original and substitutes "." when they are equal, and so does this
+#   file.
+#
+#   This is a REGRESSION THIS SPEC INTRODUCED, not a latent bug it found:
+#   the scripts previously resolved their own directory with
+#   `$(dirname "$0")`, which returns "." for a slash-less path and handled
+#   the case correctly. It was confirmed by execution during validation
+#   (A-01) — `cd infra/scripts && bash validate.sh` printing
+#   "validate.sh: line 26: validate.sh/_guard.sh: Not a directory".
+#   No example in infra/README.md invokes a script this way (they are all
+#   `./infra/scripts/<name>.sh` from the repo root); the ground for fixing
+#   it is that the form used to work, not that the README recommends it.
+#
+#   `dirname` would handle this in one call and was NOT rejected for the
+#   reason design.md §7.2 originally gave (that it would trip the
+#   enumeration regex — false; that regex is `(aws|sam|curl|npm|npx)`).
+#   It is avoided here because the floor below is builtins-only, and
+#   keeping it that way means the profile decision cannot be changed by
+#   anything on PATH. That is a containment property, not a response to
+#   any observed attack — the incidents behind this spec were AWS_PROFILE
+#   leaks, not PATH tampering. Note the asymmetry, since it is real:
+#   resolve_stack_value does call `mktemp` from PATH.
 #   GUARD_DIR is not exported. T-3's assert_account was its one reader,
 #   using it to locate infra/aws-accounts.conf one directory up from this
 #   file; withdrawn with assert_account by the Pivot (T-8) — no function in
@@ -71,7 +103,10 @@
 #   one caller.
 # ---------------------------------------------------------------------------
 
-GUARD_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+_GUARD_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_GUARD_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _GUARD_SELF_DIR="."; fi
+GUARD_DIR="$(cd "$_GUARD_SELF_DIR" && pwd)"
+unset _GUARD_SELF_DIR
 
 # ── 1. The profile floor (FR-1) ─────────────────────────────────────────
 # A FLOOR: IBD-DEV is what every script targets unless explicitly and
@@ -240,16 +275,42 @@ announce_account() {
 # accepted on that basis — this is NOT the same clause as "malformed",
 # which means CloudFormation itself rejected the name as ill-formed
 # (a real ValidationError with no absent-stack phrasing) and is caught.
+# STDERR IS CAPTURED SEPARATELY, NEVER FOLDED INTO THE VALUE (F-1) — an
+# earlier revision captured with `2>&1`, which put the AWS CLI's warning
+# text into the same string this function returns on stdout. A single
+# deprecation or credential-refresh warning on a SUCCESSFUL call would
+# then have been echoed back as the resolved value and passed to `sam
+# deploy --parameter-overrides` / `--origin` as if it were a URL. The
+# error text is still needed for the two-token classification below, so
+# it goes to a temp file instead of into the value.
+#
+# A mktemp FAILURE ABORTS HERE, unlike in announce_account — the two are
+# deliberately asymmetric. announce_account is informational (FR-3′) and
+# must never become a gate, so it degrades to a notice and returns 0.
+# This function IS a gate: every caller distinguishes "found" from
+# "confirmed absent", and returning anything other than an abort on an
+# unknown outcome is precisely the fail-open shape (`${VAR:-default}`)
+# this spec exists to remove.
 resolve_stack_value() {
   local stack="$1" query="$2" kind="$3"
-  local raw
+  local raw err_file err rc=0
 
-  if raw="$(
+  if ! err_file="$(mktemp 2>/dev/null)"; then
+    echo "ERROR: resolve_stack_value: could not create a temp file to capture the AWS CLI's" >&2
+    echo "       stderr for stack '$stack'. Refusing to guess at the stack's state." >&2
+    return 1
+  fi
+
+  raw="$(
     aws cloudformation describe-stacks \
       --profile "$PROFILE" --region "$REGION" \
       --stack-name "$stack" \
-      --query "$query" --output text 2>&1
-  )"; then
+      --query "$query" --output text 2>"$err_file"
+  )" || rc=$?
+  err="$(cat "$err_file" 2>/dev/null || true)"
+  rm -f "$err_file" 2>/dev/null || true
+
+  if [[ "$rc" -eq 0 ]]; then
     if [[ -z "$raw" || "$raw" == "None" ]]; then
       if [[ "$kind" == "output" ]]; then
         echo "ERROR: stack '$stack' exists but query \"$query\" resolved no value (None)." >&2
@@ -265,12 +326,14 @@ resolve_stack_value() {
 
   # Two-token classification, per the block comment above: ValidationError
   # ALONE is not enough — it also fires for a malformed stack
-  # name, which is a failure this function must abort on.
-  if [[ "$raw" == *ValidationError* && "$raw" == *"does not exist"* ]]; then
+  # name, which is a failure this function must abort on. Read from the
+  # separately-captured stderr ($err), not from the value ($raw), which on
+  # a failed call is empty.
+  if [[ "$err" == *ValidationError* && "$err" == *"does not exist"* ]]; then
     return 2
   fi
 
   echo "ERROR: resolve_stack_value: describe-stacks failed for stack '$stack' (query: $query):" >&2
-  echo "$raw" >&2
+  echo "$err" >&2
   return 1
 }

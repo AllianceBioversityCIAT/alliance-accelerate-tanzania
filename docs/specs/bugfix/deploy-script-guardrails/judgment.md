@@ -98,6 +98,8 @@ CORRECTION not run — blocked on rebase onto merged main
 | **C-5** | **`migrate-seed.sh` does not have `teardown.sh`'s `CONFIRM` coupling.** `CONFIRM` appears there once, in the profile guard, with no second authorisation to couple to. A factual falsehood inside §6.1 — the section that carries FR-2's "sharpest justification" | Claim deleted and the correction recorded in place |
 | **C-6** | D-3's "before its first external command" had no operational definition; every script header contains `aws cloudformation`, `sam build`, `npm run build` in prose | §7.2 defines it: strip comments and blanks, match the network-capable set, and resolve the library path with `${BASH_SOURCE[0]%/*}` so the guard line does not trip its own rule |
 
+> **Footnote added 2026-09-21 (F-2/I-3).** C-6's recorded clearance repeats `design.md` §7.2's rationale as it stood at design review. That rationale was **false** — the implemented enumeration regex is `(aws|sam|curl|npm|npx)` and never contained `dirname`, so `dirname` would not have tripped the rule. The ledger row is accurate as history and is left unaltered; the design document has been struck and corrected. Avoiding `dirname` on this non-reason is what cost the spec the F-2 slash-less regression.
+
 ### Single-judge, verified by the orchestrator, fixed anyway
 
 | ID | Finding | Fix applied |

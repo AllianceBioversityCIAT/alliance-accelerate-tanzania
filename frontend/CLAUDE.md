@@ -62,4 +62,4 @@ Two OSM tile surfaces now exist: the public discovery map (`LeafletMap`) and the
 
 ## Deploy
 
-`AWS_PROFILE=IBD-DEV ../infra/scripts/deploy-frontend.sh` — builds with the live `ApiBaseUrl` from stack outputs, syncs S3, invalidates CloudFront. Never deploy with a leaked non-IBD-DEV profile (the script warns; heed it).
+`AWS_PROFILE=IBD-DEV ../infra/scripts/deploy-frontend.sh` — builds with the live `ApiBaseUrl` from stack outputs, syncs S3, invalidates CloudFront. A leaked non-`IBD-DEV` profile is **refused, not warned about**: `infra/scripts/_guard.sh` aborts the script before any AWS call, naming both the profile it found and the one it expected. Catching the leak is not your job any more — but note the script still reads `AWS_PROFILE` and parses no flags, so passing `--profile` is silently ignored. Overriding the floor requires `ALLOW_NON_IBD_DEV_PROFILE` set to that exact profile value; there is no boolean flag and no prompt.

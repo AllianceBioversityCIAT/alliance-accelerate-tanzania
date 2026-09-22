@@ -58,3 +58,137 @@ DIGIT_RUN_RE='[0-9]{12,}'
 is_account_id_shaped() {
   [[ "$1" =~ ^[0-9]{12}$ ]]
 }
+
+# ---------------------------------------------------------------------------
+# EXTRACTION (F-4a) — the digit run is the TRAILING field of a `grep -rno`
+# hit, so take it from the right, not by stripping a "path:line:" prefix
+# from the left. The prefix-stripping form this replaces —
+# `sed -E 's/^[^:]*:[^:]*://' | tr -cd '0-9'` — assumed no path component
+# contains a colon. When one does, the two `[^:]*` fields consume the wrong
+# segments, `tr -cd '0-9'` then CONCATENATES the digits left over from the
+# path with the matched run, and the result is a longer string that
+# is_account_id_shaped rejects: a real forbidden id under such a path is
+# silently cleared. Taking the trailing run cannot do that — a non-digit
+# (the final colon grep itself emits) always separates the match from
+# whatever precedes it.
+#
+# `${hit##*[^0-9]}` strips the LONGEST prefix ending in a non-digit
+# character, leaving exactly the trailing digit run. Pure parameter
+# expansion: no subprocess, and nothing for a tampered PATH to intercept.
+#
+# extract_digit_run <grep -rno hit>
+#   Echoes the trailing run of digits from a `path:line:digits` hit.
+extract_digit_run() {
+  printf '%s' "${1##*[^0-9]}"
+}
+
+# ---------------------------------------------------------------------------
+# SCAN EXCLUSIONS (F-4b) — the tree being scanned is a WORKING directory,
+# not the git index, so it can legitimately contain build output that no
+# gate should judge. SAM's build trees live one per stack, at
+# `infra/<NN>-<stack>/.aws-sam/build` (deploy.sh and set-cors.sh both point
+# BACKEND_BUILD_DIR at `20-backend/.aws-sam/build`) — NOT at
+# `infra/.aws-sam/`, which does not exist. They are gitignored by root
+# .gitignore's line 1, `.aws-sam/`, which matches that basename at any
+# depth, exactly as `--exclude-dir=.aws-sam` does.
+#
+# What a built tree contains is a bundled Lambda — the backend's compiled
+# JavaScript and its production dependencies — which is generated output
+# and can carry any 12-digit constant, an account id among them. (An
+# earlier revision of this comment asserted a specific mechanism: that
+# `sam build` writes a packaged template whose S3 URIs embed the account
+# id. That is wrong twice over — `sam build` is offline and emits local
+# `CodeUri` paths, and these scripts run `sam deploy` straight from the
+# built template with no `--output-template-file`, so no packaged template
+# is written to disk at all. The exclusion is right; the reason given for
+# it was invented.)
+#
+# Without the exclusion the gate reds on any checkout where someone has
+# run a deploy — a finding about generated files the repository does not
+# version, reported as if an account id had been committed. The gate's
+# subject is what is VERSIONED under infra/; these three directories never
+# are.
+#
+# Exposed as an array, not inlined at the call site, so the real scan and
+# its controls cannot diverge on what they exclude.
+ACCOUNT_SCAN_EXCLUDES=(
+  --exclude-dir=.aws-sam
+  --exclude-dir=node_modules
+  --exclude-dir=.git
+)
+
+# scan_for_account_ids <root>
+#   Echoes one `path:line:digits` hit per exactly-12-digit run found under
+#   <root> that is NOT cleared by the caller, so the real scan and every
+#   control share one loop — the property H-2 proved cannot be left
+#   unpinned.
+#
+#   CALLER CONTRACT: the caller MUST define an `is_allowed <id>` function,
+#   returning 0 for an id the scan should clear. That function — not any
+#   array — is what this scan consults; an earlier revision of this comment
+#   said the allow-list was "read from the ALLOWED_IDS array in the
+#   caller's scope", which this function never touches. A caller that
+#   followed that comment and defined only the array would have hit
+#   `is_allowed: command not found` inside `! is_allowed`, clearing
+#   nothing and reporting every shaped hit — loud and fail-closed, but for
+#   an invented reason. The precondition below now names the real
+#   requirement instead of letting it surface as a 127.
+#
+#   Returns 0 whether or not violations were found (they are on stdout); 2
+#   on any failure to complete the scan — a missing predicate, no temp
+#   file, or a real grep error (grep status > 1) — with the reason on
+#   stderr. A caller distinguishes "clean" from "could not scan" by the
+#   exit status, never by empty stdout.
+scan_for_account_ids() {
+  local root="$1" matches grep_status=0 hit id err_file err
+
+  if ! declare -F is_allowed >/dev/null; then
+    echo "scan_for_account_ids: the caller must define an is_allowed() predicate (see CALLER CONTRACT)" >&2
+    return 2
+  fi
+
+  # grep's own stderr goes to a file, never folded into the hits with
+  # `2>&1` — the same defect F-1 removed from resolve_stack_value, which
+  # it would be absurd to reintroduce in the round that removed it. A
+  # folded warning line has no `path:line:` prefix, so extract_digit_run
+  # would read its trailing digits as if they were a match.
+  if ! err_file="$(mktemp 2>/dev/null)"; then
+    echo "scan_for_account_ids: could not create a temp file for grep's stderr" >&2
+    return 2
+  fi
+
+  # if/else rather than `set +e` … `set -e`: the previous form switched
+  # errexit ON for any caller that had it off, mutating the caller's shell
+  # options as a side effect of being called.
+  if matches="$(grep -rnoE -I "${ACCOUNT_SCAN_EXCLUDES[@]}" "$DIGIT_RUN_RE" "$root" 2>"$err_file")"; then
+    grep_status=0
+  else
+    grep_status=$?
+  fi
+  err="$(cat "$err_file" 2>/dev/null || true)"
+  rm -f "$err_file" 2>/dev/null || true
+
+  if [[ "$grep_status" -gt 1 ]]; then
+    echo "scan_for_account_ids: grep failed over '$root' (status $grep_status):" >&2
+    if [[ -n "$err" ]]; then
+      echo "$err" >&2
+    fi
+    return 2
+  fi
+
+  if [[ "$grep_status" -eq 1 ]]; then
+    return 0
+  fi
+
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    id="$(extract_digit_run "$hit")"
+    # A 13+-digit run is excluded here, not at the regex step — see the
+    # header. Only an exactly-12-digit run off the allow-list is a
+    # violation.
+    if is_account_id_shaped "$id" && ! is_allowed "$id"; then
+      printf '%s\n' "$hit"
+    fi
+  done <<< "$matches"
+  return 0
+}

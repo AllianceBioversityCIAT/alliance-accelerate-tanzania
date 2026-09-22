@@ -49,8 +49,14 @@
 
 set -euo pipefail
 
+# `${BASH_SOURCE[0]%/*}` leaves a SLASH-LESS path untouched, so
+# `cd infra/scripts && bash <this script>` would otherwise try to source
+# `<this script>/_guard.sh` and die before the guard ever ran. Fall back to
+# `.` in exactly that case — see _guard.sh's "OWN-PATH RESOLUTION" block.
+_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _SELF_DIR="."; fi
 # shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/_guard.sh"
+source "$_SELF_DIR/_guard.sh"
 announce_account
 
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"

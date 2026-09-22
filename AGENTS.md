@@ -18,7 +18,7 @@ Public, serverless web platform mapping Tanzania's seed system (sorghum, common 
 Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJS (TS) → Lambda + API Gateway · RDS **MySQL** via **Prisma** · **Leaflet** maps · **AWS Cognito** auth (`admin`/`staff` groups; anonymous = `Public`).
 
 ## Hard constraints
-1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored.
+1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored. An ambient non-`IBD-DEV` `AWS_PROFILE` no longer wins silently: all seven `infra/scripts/*.sh` source a shared profile floor (`infra/scripts/_guard.sh`) that **aborts** unless `ALLOW_NON_IBD_DEV_PROFILE` is set to that exact same profile (`bugfix/deploy-script-guardrails`).
 2. Consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public only on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path. `NEVER_PUBLIC_FIELDS` stays absolute on every public path regardless of consent. Enforce server-side.
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `docs/ux-ui/design.md §7`; no hardcoded colors/geometry.
@@ -31,7 +31,7 @@ Failure-only variants — a green run should cost one summary line.
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
 | `backend/` (e2e) | *no separate command* — the 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` above | — | — |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
-| `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) | — | — |
+| `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) — sources the profile floor above: still makes no STS call and creates nothing, but **aborts** on an ambient profile other than `IBD-DEV` | — | — |
 
 **Asymmetry rule:** suppress passing noise only — **failures print complete and verbatim**, because that output is the evidence a Reviewer audits. `backend`'s `npm run lint` runs `eslint --fix` and **mutates** files; use the `npx eslint … --quiet` form when verifying a diff.
 
