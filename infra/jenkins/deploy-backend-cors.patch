@@ -1,0 +1,41 @@
+--- a/Jenkinsfile
++++ b/Jenkinsfile
+@@ -- 'Deploy Backend' stage, ALLOWED_ORIGIN resolution --
+-ALLOWED_ORIGIN="$(
+-  aws cloudformation describe-stacks \
+-    --stack-name "${FRONTEND_STACK}" \
+-    --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+-    --output text --profile IBD-DEV --region "${AWS_DEFAULT_REGION}" 2>/dev/null || true
+-)"
+-if [ -z "${ALLOWED_ORIGIN}" ] || [ "${ALLOWED_ORIGIN}" = "None" ]; then
+-    echo "▸ Frontend stack has no CloudFrontUrl yet — bootstrapping CORS as '*'"
+-    ALLOWED_ORIGIN='*'
+-fi
++CFN_ERR="$(mktemp)"
++CFN_RC=0
++ALLOWED_ORIGIN="$(
++  aws cloudformation describe-stacks \
++    --stack-name "${FRONTEND_STACK}" \
++    --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
++    --output text --profile IBD-DEV --region "${AWS_DEFAULT_REGION}" 2>"${CFN_ERR}"
++)" || CFN_RC=$?
++CFN_STDERR="$(cat "${CFN_ERR}")"
++rm -f "${CFN_ERR}"
++
++if [ "${CFN_RC}" -eq 0 ] && [ -n "${ALLOWED_ORIGIN}" ] && [ "${ALLOWED_ORIGIN}" != "None" ]; then
++    echo "▸ AllowedOrigin resolved from live stack '${FRONTEND_STACK}': ${ALLOWED_ORIGIN}"
++elif printf '%s' "${CFN_STDERR}" | grep -q 'ValidationError' \
++     && printf '%s' "${CFN_STDERR}" | grep -q 'does not exist'; then
++    # Confirmed absent, not merely a failed call — the true first-deploy
++    # bootstrap, before any CloudFront distribution exists to point at.
++    ALLOWED_ORIGIN='*'
++    echo "▸ Frontend stack '${FRONTEND_STACK}' does not exist yet — bootstrapping CORS as '*'" >&2
++else
++    # Anything else (expired token, throttle, IAM denial, a malformed stack
++    # name, or any other ValidationError) is NOT a confirmed-absent stack.
++    # Refusing to guess — deploying '*' here would silently reopen CORS.
++    echo "ERROR: could not resolve AllowedOrigin from stack '${FRONTEND_STACK}' (exit ${CFN_RC})." >&2
++    echo "${CFN_STDERR}" >&2
++    echo "Refusing to guess — a failed lookup is not the same as an absent stack." >&2
++    exit 1
++fi

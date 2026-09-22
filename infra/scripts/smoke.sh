@@ -41,7 +41,13 @@
 #     4. Frontend (FR-5/6)  — CloudFront serves "/" and "/map" → 200.
 #     5. S3 privacy (DD-5)  — a DIRECT S3 object URL → 403 (private bucket; only
 #                             CloudFront via OAC may read).
-#     6. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
+#     6. CORS boundary (FR-6, bugfix/deploy-script-guardrails T-6) — a GENUINE
+#                             preflight from a disallowed origin against
+#                             /api/v1/actors must get a real rejection: FAILs on
+#                             a permissive `*`, an echoed-back origin, a refused
+#                             connection, or a non-2xx/5xx with no ACAO; PASSes
+#                             only on a clean 2xx/204 with no ACAO at all.
+#     7. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
 #
 #   NOTE — "renders LIVE data" is only partially machine-checkable here. The pages
 #   serve over HTTPS but the actor/metrics DATA is fetched client-side by JS, so
@@ -74,9 +80,15 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# `${BASH_SOURCE[0]%/*}` leaves a SLASH-LESS path untouched, so
+# `cd infra/scripts && bash <this script>` would otherwise try to source
+# `<this script>/_guard.sh` and die before the guard ever ran. Fall back to
+# `.` in exactly that case — see _guard.sh's "OWN-PATH RESOLUTION" block.
+_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _SELF_DIR="."; fi
+# shellcheck disable=SC1091
+source "$_SELF_DIR/_guard.sh"
+
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 
@@ -364,7 +376,84 @@ else
   fail "Direct S3 object → $s3_code (expected 403 — bucket may be public!)"
 fi
 
-# ── Check 6: Summary — print each result; non-zero exit if any failed ─────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Check 6: CORS boundary (FR-6) — a disallowed Origin must get a real
+# rejection, never a permissive answer. Sends a GENUINE preflight — Origin
+# PLUS Access-Control-Request-Method — because API Gateway's HTTP API
+# auto-answers CORS only for a real preflight; a bare OPTIONS matches no
+# route and would prove nothing. Read-only: no state is mutated.
+#
+# Five directions, every one summarised via pass()/fail() rather than
+# aborting the run (so this check reaches the pipeline with no Jenkinsfile
+# change — RUN_SMOKE=true already calls this script per the operator-supplied
+# Jenkinsfile, read 2026-09-18; requirements.md §7, DD-5):
+#   permissive ACAO: *                          -> FAIL
+#   echoed     ACAO: <the disallowed origin>     -> FAIL
+#   refused    the connection never completes    -> FAIL (proves nothing)
+#   5xx        no ACAO, but a server/transport
+#              failure                           -> FAIL (not a rejection)
+#   clean      2xx/204, no ACAO at all            -> PASS
+# The PASS direction is not optional: a check that unconditionally FAILs
+# would satisfy every row above and redden every pipeline build after
+# merge, since RUN_SMOKE=true fails closed.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> Check: CORS boundary (FR-6) ..."
+
+CORS_DISALLOWED_ORIGIN="https://cors-smoke-check.invalid"
+
+CORS_RAW=""
+CORS_TRANSPORT_OK=1
+if CORS_RAW="$(
+  curl -sS -D - -o /dev/null -w '\nHTTP_STATUS:%{http_code}\n' \
+    -X OPTIONS \
+    -H "Origin: $CORS_DISALLOWED_ORIGIN" \
+    -H "Access-Control-Request-Method: GET" \
+    "$API_BASE_URL/api/v1/actors" 2>&1
+)"; then
+  :
+else
+  CORS_TRANSPORT_OK=0
+fi
+
+# Normalise CRLF (real HTTP header dumps use them) before parsing.
+CORS_HEADERS="$(printf '%s' "$CORS_RAW" | tr -d '\r')"
+
+CORS_STATUS="$(printf '%s\n' "$CORS_HEADERS" | grep '^HTTP_STATUS:' | tail -n1 || true)"
+CORS_STATUS="${CORS_STATUS#HTTP_STATUS:}"
+
+# Header name matched case-insensitively (API Gateway's casing is not
+# contractual); the value is taken as everything after the FIRST colon via
+# bash's own `${var#*:}`, never a regex — safe even though the origin value
+# itself contains colons ("https://..."). `|| true` on both grep pipelines:
+# a rejection that carries no ACAO header (the PASS direction) or a
+# transport failure that carries no headers at all (refused/5xx) makes
+# grep's "no match" exit 1, which — unguarded, under this script's own
+# `set -euo pipefail` — would abort the whole run instead of reaching
+# pass()/fail() below. The absence itself is legitimate data, not an error.
+CORS_ACAO_LINE="$(printf '%s\n' "$CORS_HEADERS" | grep -i '^access-control-allow-origin:' | tail -n1 || true)"
+CORS_ACAO=""
+if [[ -n "$CORS_ACAO_LINE" ]]; then
+  CORS_ACAO="${CORS_ACAO_LINE#*:}"
+  CORS_ACAO="$(printf '%s' "$CORS_ACAO" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+fi
+
+if [[ "$CORS_TRANSPORT_OK" -ne 1 ]]; then
+  fail "CORS boundary: preflight to $API_BASE_URL failed (refused connection) — proves nothing, not a rejection"
+elif [[ -z "$CORS_STATUS" ]]; then
+  fail "CORS boundary: preflight returned no readable HTTP status"
+elif [[ "$CORS_ACAO" == "*" ]]; then
+  fail "CORS boundary: disallowed origin got a permissive 'Access-Control-Allow-Origin: *'"
+elif [[ "$CORS_ACAO" == "$CORS_DISALLOWED_ORIGIN" ]]; then
+  fail "CORS boundary: disallowed origin was ECHOED BACK in Access-Control-Allow-Origin — an echo is a permissive answer, not a rejection"
+elif [[ "$CORS_STATUS" != 2* ]]; then
+  fail "CORS boundary: preflight returned $CORS_STATUS (non-2xx) — a server/transport failure is not a rejection"
+elif [[ -n "$CORS_ACAO" ]]; then
+  fail "CORS boundary: disallowed origin unexpectedly got a non-empty Access-Control-Allow-Origin ('$CORS_ACAO')"
+else
+  pass "CORS boundary: disallowed origin got a clean $CORS_STATUS rejection (no Access-Control-Allow-Origin)"
+fi
+
+# ── Check 7: Summary — print each result; non-zero exit if any failed ─────────
 echo
 echo "==> Smoke summary:"
 for r in "${RESULTS[@]}"; do
@@ -377,6 +466,6 @@ if [[ "$FAILS" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> SMOKE PASSED — API healthy + PII-safe, frontend served, S3 private."
+echo "==> SMOKE PASSED — API healthy + PII-safe, CORS rejects disallowed origins, frontend served, S3 private."
 echo "    Final step: open $CLOUDFRONT_URL in a browser and confirm the metrics"
 echo "    band + map render LIVE seeded data (not the offline fallback) — FR-6."

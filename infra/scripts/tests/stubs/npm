@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# npm — network-capable stub (infra/scripts/tests/stubs, T-1)
+# ---------------------------------------------------------------------------
+# See stubs/aws for the shared contract.
+#
+# CONTRACT
+#   Configure with STUB_NPM_SCRIPT — an executable/bash script invoked with
+#   npm's exact arguments ("$@"); its stdout/stderr/exit status become this
+#   stub's, via exec.
+#
+#   Unconfigured => exit 127, loud stderr. Never a silent success.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [[ -n "${STUB_NPM_SCRIPT:-}" ]]; then
+  exec bash "${STUB_NPM_SCRIPT}" "$@"
+fi
+
+echo "STUB ERROR: npm invoked with no STUB_NPM_SCRIPT configured (args: $*)" >&2
+exit 127
