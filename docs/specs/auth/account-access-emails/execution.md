@@ -551,3 +551,69 @@ T-6's Falsifier read: *"drop `emailSent` from one of the two interfaces — `tsc
 Replaced with a gate that can actually fail: assert `emailSent` over the **wire** in `users.e2e.spec.ts`, and redden it by removing the field from the controller's returned object. The disqualifier now also states plainly that **the backend↔frontend name/type correspondence is enforced by nothing in this repo**, to be recorded as an explicit `(B)` rather than implied to be covered by `tsc`.
 
 **Also verified before briefing, so the brief describes reality rather than `tasks.md`'s assumptions:** `CreateUserResult` and `ResetPasswordResult` **already carry `emailSent`** — T-4 and T-5 added them as part of their own scopes. T-6's remaining work is the controller docstrings, the frontend types and docstrings, and the TRD.
+
+---
+
+## T-6 — Extend the response contract with `emailSent`
+
+**Status:** `[x]` · **Attempts:** 3 · **Reviewer:** PASS on attempt 3 · Implementer `sonnet` / Reviewer `opus` (author ≠ auditor held on all three)
+
+### What T-6 actually owned
+
+`emailSent` was **already on the wire** before this task began: T-4 and T-5 each added the field to `CreateUserResult`/`ResetPasswordResult` inside their own scopes, and `users.controller.ts` returns the service result unmodified with no narrowing DTO. T-6 therefore owned the **documented** contract, the frontend types, the TRD, and a wire-level gate — not the field's introduction. Verified before briefing; the brief said so explicitly, which is why no attempt wasted effort "implementing" an existing field.
+
+### Outcome
+
+- Five false statements corrected: `users.controller.ts` ×2 ("No email is sent"), `frontend/lib/api/users.ts` ×3 ("the backend no longer emails … it RETURNS"). The frontend three were false in the **exclusive** sense — it returns *and* emails.
+- Frontend `CreateUserResult`/`ResetPasswordResult` gained `emailSent`, with docstrings stating it is **not a delivery receipt** and is `true` under `MAIL_TRANSPORT=no-op`.
+- `docs/trd/trd.md` §4 row documents both response shapes; §12.1 gained a dated correction preserving the distinction that **Cognito still sends nothing** (`MessageAction: 'SUPPRESS'` on create; no `MessageAction` field on the reset command) while the *application* now dispatches via `MailService`. The Reviewer re-verified both against `users.service.ts:275` and `:493-500`.
+- `frontend/lib/api/users.test.ts` brought in line with the new shape (header docstring, `CREATE_RESULT`, three reset mocks, and the exact-equality `toEqual`).
+
+### The gate, shown to fail
+
+`users.e2e.spec.ts` now asserts `emailSent` over the wire on **both** routes. Stripping the field from the controller's returned object reddens both assertions:
+
+```
+✕ 201 for authenticated Admin with a { user, temporaryPassword, emailSent } body
+    Expected path: "emailSent" / Received path: []
+✕ 200 with { temporaryPassword, emailSent } for authenticated Admin
+    -   "emailSent": true,
+Tests: 2 failed, 15 passed, 17 total
+```
+Restored → 17/17. The Reviewer judged this exercises the intended gate, and marked its boundary honestly: the suite mocks `UsersService`, so it pins **controller pass-through**, not that the service computes a truthful value — correctly T-4/T-5's territory.
+
+### Why it took three attempts — all three FAILs were citation accuracy, none were logic
+
+**Attempt 1** passed on substance and failed on two documentation findings. **Attempt 2** closed both for the reset pair, the TRD row and the e2e comment — and left the structurally identical **create** pair bare twenty lines away in the same file. **Attempt 3** closed it.
+
+The create case was worse than the original defect, and the Reviewer proved why: `design.md §5.1` **resolved to nothing** (the string "5.1" appears nowhere in `admin/user-management`'s design), while the bare `FR-3` resolved *credibly to the wrong thing* — this spec's own FR-3 is "The administrator is told whether the email was sent", which is topically adjacent to the very docstring carrying it. The intended referent, `admin/user-management` FR-3, additionally **forbids** what the code does ("Response MUST NOT include any password").
+
+**The operating rule this produced, and it generalises past this spec:** a confidently wrong spec-qualification is worse than the bare number it replaces, because it is both unresolvable *and* credible. Attempt 3's brief therefore required every FR number, section number and archive path to come from a file opened **in that attempt**, and instructed the Implementer to write a citation that claims *less* rather than one that guesses.
+
+The real provenance turned out to be unguessable: `{ temporaryPassword }` came from `feature/admin-credential-handoff` (PR #45), which **has no spec folder at all** — its only citable record is §10 of a *different* spec's `archive-summary.md`.
+
+### Leader-authored defects in this task — two more, same species
+
+**#6 — a wrong path in the T-6 brief.** I named `backend/src/test/users.e2e.spec.ts`; the file is `backend/src/users/users.e2e.spec.ts`. The Implementer found the real one and said so. Asserting an artefact's location without opening it — the same defect as the previous five.
+
+**#7 — my scope adjudication was wrong, and the Reviewer overturned it.** I leaned toward sending `frontend/lib/api/users.test.ts` to T-7. The Reviewer showed it is T-6's: it is the only test of the only frontend file in scope, **T-7's Files list does not include it** (so nothing downstream would ever have reached it), and attempt 1 had already updated the *backend* e2e under the same `(+ tests)` clause — the same defect treated two ways inside one diff. Recorded because a Leader adjudication is exactly the kind of call that reaches implementation with no auditor of its own.
+
+**Caught before it cost anything — T-6's own falsifier could not fire.** Corrected pre-briefing; see the entry above. Checking the state first cost one grep instead of a rework round, which is the whole argument for doing it.
+
+### ADVISORY 1 applied by the Leader, using the Reviewer's verbatim text
+
+Attempt 3 introduced the phrase *"superseded **before shipping**"* at two sites — **refuted by the very section it cites**: `archive-summary.md` §10 opens *"**After deployment**, corporate `@cgiar.org` … deliverability + SES sandbox limits made email unreliable. The team pivoted…"*, corroborated by §4 ("Done — deployed & user-verified"), §5, and that spec's `execution.md:107` ("Supersession Note — After deploy"). The `{ action }` shape shipped and was replaced afterward.
+
+The Reviewer classed it ADVISORY on sound grounds — it misstates *history*, not a contract, and the reader's resulting action is correct either way. It was fixed anyway, because this task exists to remove false statements from these files and it was introduced by this task's own correction of a false statement. Applied inline as Leader using the **Reviewer's own prescribed wording** ("superseded after deployment by PR #45"), so no text here is author-and-auditor in one hand. Re-verified: `tsc --noEmit` clean, `lib/api/users.test.ts` 31/31.
+
+### (B) Structural gaps — unevaluable, carried forward
+
+1. **Backend and frontend redeclare `CreateUserResult`/`ResetPasswordResult` independently** — no shared package, no import, no codegen. Nothing mechanically enforces their agreement; a green `tsc --noEmit` proves only that the frontend file is self-consistent.
+2. **No frontend mock response is type-annotated against the interface it stands in for** — and that is *why* `tsc` stays green. `page.test.tsx:54/58` declare `const mockCreateUser = jest.fn();` bare, adapted through `(...args: unknown[]) => mockCreateUser(...args)`, so `mockResolvedValue({...})` is unconstrained.
+
+### Forward pointers to T-7 — these must be copied into T-7's brief, not merely filed here
+
+- **A live trap, not a footnote.** T-7 reads `emailSent` to drive `CredentialHandoff`'s two branches. Because of (B2), a mock returning `undefined` for `emailSent` is **falsy**, so any `emailSent ?` branch silently selects the *not-sent* path, the suite stays green, and **nothing reddens**. T-7 must add `emailSent` to its fixtures *before* trusting any assertion about which branch rendered.
+- **The four fixture sites T-7 owns**, deliberately left untouched here so T-7's own edits drive its branches: `frontend/app/(admin)/admin/users/page.test.tsx:266`, `:389`; `frontend/components/admin/CreateUserDialog.test.tsx:83`, `:107`.
+- **ADVISORY 2 — an asymmetry left open.** The create docstring flags that the shipped shape supersedes FR-3's original response; the reset docstring cites `admin/user-management` FR-7 **without** noting that FR-7's own text ("The admin never sees or sets a plaintext password through this endpoint") is likewise superseded by the temp-password handoff. A reader resolving FR-7 gets a contract statement the code contradicts. Cheap to fix whenever the reset docstring is next touched.
+- **Attempt 1 under-reported its own `Not Done`** — it named one file when four sites across three files were affected. T-7's brief should require a complete enumeration.

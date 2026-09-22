@@ -99,7 +99,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: if the `AdminGetUser` call is mocked to always return a `sub`, the absent-`sub` path is untested. Both branches must be exercised.
       Done when: `Permanent: false` is unchanged (the account still requires a change at next sign-in, pinned by a test); `sub` resolves through `AdminGetUser`; the absent-`sub` path passes no reference and never the `id`.
 
-- [ ] **T-6** Extend the response contract with `emailSent`  (deps: T-4, T-5)
+- [x] **T-6** Extend the response contract with `emailSent`  (deps: T-4, T-5)
       Scope: `CreateUserResult` / `ResetPasswordResult`, the controller responses on `@Post()` and **`@Post(':id/password')`** — the real route, not `/reset-password` (J-1) — and the frontend API types.
       Traces: FR-3; design.md §4
       Files: `backend/src/users/users.service.ts`, `backend/src/users/users.controller.ts`, `frontend/lib/api/users.ts`, `docs/trd/trd.md` (+ tests)

@@ -7,8 +7,8 @@
  *   - Bearer token is attached as Authorization: Bearer <token>
  *   - Correct JSON body is sent for POST/PATCH operations
  *   - deleteUser handles 204 (return void / undefined)
- *   - createUser returns the typed { user, temporaryPassword } body on 201
- *   - resetUserPassword returns the typed { temporaryPassword } body on 200
+ *   - createUser returns the typed { user, temporaryPassword, emailSent } body on 201
+ *   - resetUserPassword returns the typed { temporaryPassword, emailSent } body on 200
  *   - Any function throws AuthFailureError on a 401 response
  */
 
@@ -211,7 +211,7 @@ describe('getUser()', () => {
 // ---------------------------------------------------------------------------
 
 describe('createUser()', () => {
-  const CREATE_RESULT = { user: ADMIN_USER, temporaryPassword: 'Temp!Pass-01' };
+  const CREATE_RESULT = { user: ADMIN_USER, temporaryPassword: 'Temp!Pass-01', emailSent: true };
 
   it('hits POST /api/v1/users', async () => {
     global.fetch = makeFetchOk(CREATE_RESULT, 201);
@@ -249,7 +249,7 @@ describe('createUser()', () => {
     expect(headers['Content-Type']).toBe('application/json');
   });
 
-  it('resolves to { user, temporaryPassword } on a 201 body', async () => {
+  it('resolves to { user, temporaryPassword, emailSent } on a 201 body', async () => {
     global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     const result = await createUser({ email: 'alice@example.com' }, TOKEN);
@@ -382,12 +382,16 @@ describe('deleteUser()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resetUserPassword — 200 { temporaryPassword } (design.md §5.1, FR-6)
+// resetUserPassword — 200 { temporaryPassword, emailSent }
+// (originally `bugfix/admin-user-invite-and-reset` design.md §5.1, FR-6 —
+// typed-body shape; that section's `{ action }` shape was superseded after
+// deployment by PR #45, see archive-summary.md §10; `emailSent` added by
+// auth/account-access-emails T-5/T-6, design.md §4)
 // ---------------------------------------------------------------------------
 
 describe('resetUserPassword()', () => {
   it('hits POST /api/v1/users/:id/password', async () => {
-    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02', emailSent: true });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -396,7 +400,7 @@ describe('resetUserPassword()', () => {
   });
 
   it('attaches Authorization: Bearer <token>', async () => {
-    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02', emailSent: true });
 
     await resetUserPassword(USER_ID, TOKEN);
 
@@ -404,12 +408,12 @@ describe('resetUserPassword()', () => {
     expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
-  it('resolves to { temporaryPassword } on a 200 body', async () => {
-    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02' });
+  it('resolves to { temporaryPassword, emailSent } on a 200 body', async () => {
+    global.fetch = makeFetchOk({ temporaryPassword: 'Temp!Pass-02', emailSent: true });
 
     const result = await resetUserPassword(USER_ID, TOKEN);
 
-    expect(result).toEqual({ temporaryPassword: 'Temp!Pass-02' });
+    expect(result).toEqual({ temporaryPassword: 'Temp!Pass-02', emailSent: true });
   });
 
   it('throws AuthFailureError on 401', async () => {

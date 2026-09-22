@@ -79,25 +79,56 @@ export interface SetRoleInput {
 }
 
 /**
- * Response for POST /api/v1/users (design.md §5.1, FR-3).
- * The backend no longer emails the invitation — it RETURNS the temporary
- * password once so the admin can share it out-of-band. Mirrors the backend
- * union exactly: { user, temporaryPassword }.
+ * Response for POST /api/v1/users (endpoint is `admin/user-management` FR-3;
+ * this `{ user, temporaryPassword }` body shape — superseding FR-3's original
+ * no-password response — is `feature/admin-credential-handoff` (PR #45; that
+ * PR has no spec folder of its own, recorded in
+ * `bugfix/admin-user-invite-and-reset` archive-summary.md §10); `emailSent`
+ * added by auth/account-access-emails T-4/T-6, design.md §4).
+ * The backend RETURNS the temporary password once so the admin can share it
+ * out-of-band, AND dispatches an invitation email — it does both, not one
+ * instead of the other. Mirrors the backend `CreateUserResult` exactly:
+ * `{ user, temporaryPassword, emailSent }`.
+ *
+ * `emailSent` is `true` only when the invitation dispatch was accepted
+ * without throwing — it is **not** a delivery receipt (no channel here
+ * offers one) and is `true` under `MAIL_TRANSPORT=no-op` (local dev), same
+ * as every other flow in this codebase. `temporaryPassword` is always
+ * populated regardless of this flag — never read `emailSent: false` as
+ * "user not created".
  */
 export interface CreateUserResult {
   user: AdminUser;
   /** One-time temporary password — display once, never persist/log. */
   temporaryPassword: string;
+  /** See the docstring above — not a delivery receipt; `true` under `MAIL_TRANSPORT=no-op`. */
+  emailSent: boolean;
 }
 
 /**
- * Response for POST /api/v1/users/:id/password (design.md §5.1, FR-6).
- * The backend no longer emails the reset — it RETURNS a new temporary
- * password once so the admin can share it out-of-band.
+ * Response for POST /api/v1/users/:id/password (reset endpoint is
+ * `admin/user-management` FR-7; this typed-body shape — replacing the old
+ * `204 void` — was originally `bugfix/admin-user-invite-and-reset` design.md
+ * §5.1, FR-6, whose `{ action: 'RESET' | 'REINVITE' }` shape was superseded
+ * after deployment by PR #45 — see archive-summary.md §10; `emailSent` added by
+ * auth/account-access-emails T-5/T-6, design.md §4).
+ * The backend RETURNS a new temporary password once so the admin can share
+ * it out-of-band, AND dispatches an admin-reset email — it does both, not
+ * one instead of the other. Mirrors the backend `ResetPasswordResult`
+ * exactly: `{ temporaryPassword, emailSent }`.
+ *
+ * `emailSent` is `true` only when the admin-reset dispatch was accepted
+ * without throwing — it is **not** a delivery receipt (no channel here
+ * offers one) and is `true` under `MAIL_TRANSPORT=no-op` (local dev), same
+ * as every other flow in this codebase. `temporaryPassword` is always
+ * populated regardless of this flag — never read `emailSent: false` as
+ * "the password was not reset".
  */
 export interface ResetPasswordResult {
   /** One-time temporary password — display once, never persist/log. */
   temporaryPassword: string;
+  /** See the docstring above — not a delivery receipt; `true` under `MAIL_TRANSPORT=no-op`. */
+  emailSent: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -141,9 +172,11 @@ export async function getUser(id: string, token: string): Promise<AdminUser> {
 
 /**
  * POST /api/v1/users
- * Creates a new Cognito user and optionally assigns a role group (FR-3).
- * Returns 201 { user, temporaryPassword } — the temporary password is shown
- * once to the admin to share out-of-band (no invitation email is sent).
+ * Creates a new Cognito user and optionally assigns a role group (`admin/user-management` FR-3).
+ * Returns 201 { user, temporaryPassword, emailSent } — the temporary
+ * password is shown once to the admin to share out-of-band, AND an
+ * invitation email is dispatched (auth/account-access-emails T-4). See
+ * {@link CreateUserResult} for what `emailSent` does and does not mean.
  * Returns 409 if email already exists. Throws wrapped Error on 400/409;
  * AuthFailureError on 401.
  *
@@ -217,9 +250,12 @@ export async function deleteUser(id: string, token: string): Promise<void> {
 
 /**
  * POST /api/v1/users/:id/password
- * Resets the user's password (FR-7). Returns 200 { temporaryPassword } — a new
- * one-time temporary password the admin shares out-of-band. The user must set a
- * new password at first sign-in. No email is sent. Throws on 404 / 401.
+ * Resets the user's password (`admin/user-management` FR-7). Returns 200
+ * { temporaryPassword, emailSent } — a new one-time temporary password the
+ * admin shares out-of-band, AND an admin-reset email is dispatched
+ * (auth/account-access-emails T-5). See {@link ResetPasswordResult} for what
+ * `emailSent` does and does not mean. The user must set a new password at
+ * first sign-in. Throws on 404 / 401.
  *
  * @param id     Cognito Username (uuid == JWT sub).
  * @param token  Cognito access token from the caller's session.
