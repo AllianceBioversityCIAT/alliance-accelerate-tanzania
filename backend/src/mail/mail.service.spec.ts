@@ -49,14 +49,15 @@ interface FakeChannelModel extends EventEmitter {
   close: jest.Mock;
 }
 
-/** A `checkQueue`-ok, `publish`-ack channel — the happy path every test
- * below needs unless it is specifically exercising a rejection. */
-function createWorkingChannel(): FakeChannel {
-  const channel = new EventEmitter() as FakeChannel;
-  channel.checkQueue = jest
-    .fn()
-    .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
-  channel.publish = jest.fn(
+/** The `publish` stub shared by both channel builders below. Only the
+ * callback outcome differs between them — ack vs nack — so that is the one
+ * thing each caller supplies, and it stays visible at the call site. The
+ * surrounding confirm-channel signature is `amqplib`'s, not ours: it must
+ * match exactly or the cast in `FakeChannel` stops meaning anything. */
+function publishStub(
+  settle: (callback?: (err: unknown, ok: unknown) => void) => void,
+): FakeChannel['publish'] {
+  return jest.fn(
     (
       _exchange: string,
       _routingKey: string,
@@ -64,10 +65,20 @@ function createWorkingChannel(): FakeChannel {
       _options: amqp.Options.Publish | undefined,
       callback?: (err: unknown, ok: unknown) => void,
     ) => {
-      callback?.(null, {});
+      settle(callback);
       return true;
     },
   );
+}
+
+/** A `checkQueue`-ok, `publish`-ack channel — the happy path every test
+ * below needs unless it is specifically exercising a rejection. */
+function createWorkingChannel(): FakeChannel {
+  const channel = new EventEmitter() as FakeChannel;
+  channel.checkQueue = jest
+    .fn()
+    .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
+  channel.publish = publishStub((callback) => callback?.(null, {}));
   channel.close = jest.fn().mockResolvedValue(undefined);
   return channel;
 }
@@ -77,17 +88,8 @@ function createWorkingChannel(): FakeChannel {
  * (DD-4: the failure is at-or-after the publish). */
 function createRejectingChannel(): FakeChannel {
   const channel = createWorkingChannel();
-  channel.publish = jest.fn(
-    (
-      _exchange: string,
-      _routingKey: string,
-      _content: Buffer,
-      _options: amqp.Options.Publish | undefined,
-      callback?: (err: unknown, ok: unknown) => void,
-    ) => {
-      callback?.(new Error('NACK'), undefined);
-      return true;
-    },
+  channel.publish = publishStub((callback) =>
+    callback?.(new Error('NACK'), undefined),
   );
   return channel;
 }
