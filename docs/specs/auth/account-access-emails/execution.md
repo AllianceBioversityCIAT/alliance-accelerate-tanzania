@@ -776,6 +776,31 @@ Two standing decisions that this log had not previously stated in one place, tho
 
 **Who performs it:** the user, against DEV — not an agent, and not simulated here. This section is a placeholder for that record, not the record itself.
 
+---
+
+### ✅ D-6 RESULT — performed 2026-09-22, against DEV. **PASS**, after two production defects it found and that were fixed first.
+
+**Performed by:** Daniela Gómez, against the deployed DEV environment, following the steps above. Recorded here at her report.
+
+**Outcome: both flows work.** A real admin was created; the invitation email arrived; the recipient was forced to set a new password at first sign-in. The admin-initiated reset then also worked, and its email arrived.
+
+**This check earned its cost twice over. It found two production defects on two separate runs, and neither was reachable by any automated gate in this repository.**
+
+| # | Defect | Why no suite could catch it |
+|---|---|---|
+| 1 | The Lambda's IAM policy granted `cognito-idp:AdminResetUserPassword`; the code has called **`AdminSetUserPassword`** since PR #45. Every admin reset got `AccessDenied` → an unmapped error → a bare `500`. | Every users suite **mocks the Cognito client**, so IAM is never exercised — not even by the real-handler e2e. Broken in DEV for months; nobody had run the flow end to end. Fixed in `0f8c8f6`. |
+| 2 | `resetPassword` dispatched the mail to the route's `id` — a **UUID** in this pool, not an address. The broker accepted the publish, so the app logged `status=sent` and the UI told the admin it was sent; the microservice rejected it 800 ms later with *"No valid emails found in TO or CC"*. | The **mocked transport accepts any string** as a recipient. A validator had flagged the unrealistic `'existing-user-id'` fixture and the Leader classified it cosmetic — but fixing the fixture would **not** have caught it either. What was missing was an assertion that the recipient IS the resolved email. Fixed in `4c53944`, with that gate added and demonstrated red. |
+
+**1203 tests were green while both defects were live.** That is the entire argument for this check existing, and `requirements.md` §9 D-6 stated it in advance: *"A mock assertion proves dispatch, not delivery."* It was right.
+
+**A third finding, not fixed — recorded as a known limitation.** Defect 2 exposed that `emailSent: true` can be **false in effect**: it reports that the broker accepted the publish, never that the microservice delivered. The UI's *"An email with this password was sent to the user"* rests on that signal and can therefore mislead. The microservice does support an RPC reply (`microservice-mail.transport.ts`'s envelope docblock records that supplying an `id` makes it attempt one, which is why this system deliberately omits `id`), so consuming it is possible — but it would make the admin's request wait on the real SMTP send and would block on a microservice outage, which the current design exists to prevent. Two candidate fixes, neither taken here:
+1. **Cheap, no dependency:** weaken the UI copy to what is actually known — queued / handed to the mail service — so it stops asserting delivery.
+2. **Real, needs investigation first:** consume the RPC reply. Requires establishing what the microservice replies with and **when** — if it replies on acceptance rather than after the send, the round trip buys nothing but latency.
+
+**FR-7 remains authored but not deployed** — unchanged by this check. `10-data-auth` still ships only under `DEPLOY_INFRA=true`.
+
+**D-6 is CLOSED.** With it, every gate this spec declared is discharged.
+
 **Result:** *(not yet recorded — fill in after the check is performed)*
 - Date/time:
 - Environment:
