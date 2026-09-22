@@ -1,4 +1,4 @@
-# Design — Self-service password reset that reaches the user
+# Design — Self-service password reset (Option B: our own flow)
 
 ## 1. Document Control
 
@@ -7,179 +7,177 @@
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Depth | Full |
 | Status | Draft — awaiting approval |
-| Requirements | `requirements.md` (FR-1…FR-5, NFR-1…NFR-6) |
-| Budget | see §11 |
+| Requirements | `requirements.md` FR-1…FR-6, NFR-1…NFR-6 (NFR-4 struck) |
+| Supersedes | `design.superseded-option-a.md` — kept unedited as `judgment.md`'s audit target |
+| Budget | §10 |
+
+**Every AWS claim below carries a citation.** The previous design asserted three and cited none; two were wrong. Claims about this codebase name the file and line read.
 
 ---
 
 ## 2. Executive Summary
 
-Cognito keeps owning the reset **state machine** — code generation, expiry, single-use, attempt limits. All that changes is **who delivers the message**: a `CustomEmailSender` Lambda decrypts Cognito's code and publishes it to the OneCGIAR microservice instead of Cognito mailing it itself.
+The reset flow moves **out of Cognito and into our backend**, onto the code-issuing machinery already serving public registration. Cognito keeps only the final act — setting the password — through a call whose IAM grant was fixed on 2026-09-22.
 
-The design's three non-obvious decisions are **where that function lives** (§4, a genuine stack tension), **how it reports failure** (§6, which is what makes FR-4 possible at all), and **a pre-existing security gap this work must close rather than inherit** (§7).
+Three decisions carry this design: **whether the existing code table can be reused as-is** (§4 — it cannot, and the reason is a privilege-escalation path), **how FR-4's masking is actually achieved** (§5), and **how Cognito's own reset is closed** (§7, verified against AWS documentation).
 
 ---
 
 ## 3. Architecture Overview
 
 ```
-User → /forgot-password (existing screen, unchanged)
-          │
-          ▼
-     Cognito ForgotPassword          ← owns code generation, expiry, single-use
-          │  (encrypts code with the KMS key)
-          ▼
-  CustomEmailSender Lambda  ← NEW
-          │  1. decrypt code (AWS Encryption SDK + KMS)
-          │  2. build the message (link from PUBLIC_APP_BASE_URL)
-          │  3. publish to the microservice, AWAIT the reply
-          ▼
-  OneCGIAR notification microservice → SMTP → the user's mailbox
+REQUEST                                 CONFIRM
+POST /api/v1/auth/password-reset        POST /api/v1/auth/password-reset/confirm
+  { email }                               { email, code, newPassword }
+      │                                       │
+      ▼                                       ▼
+ issue a code, scoped to PURPOSE          verify code (purpose-scoped,
+ hash it, persist, mail it via             constant-time, attempt-limited)
+ MailService → microservice                     │
+      │                                       ▼
+      ▼                                 AdminSetUserPassword(Permanent: true)
+ ALWAYS the same masked response               │
+ padded to a response floor                    ▼
+                                         user signs in normally
 ```
 
-**What does not change:** the `/forgot-password` and confirm screens, the code-based shape (FR-3), and the backend API — this path never touches NestJS.
+Everything runs in `20-backend`, which already holds the broker credentials, `PUBLIC_APP_BASE_URL`, `MailService`, the Cognito admin client, and the OTP machinery. **None of the cross-stack problems that sank Option A exist here** (judgment C-8, C-11).
 
 ---
 
-## 4. Where the function lives — the decision this design turns on
+## 4. Data Model — the decision that is a security boundary
 
-### DD-1 — The function ships in `10-data-auth`, despite the iteration cost
+### DD-1 — Reset codes MUST be scoped by purpose. The existing table cannot be reused as-is.
+
+`EmailVerification` (`backend/prisma/schema.prisma:189`) carries `email`, `codeHash`, `attempts`, `expiresAt`, `consumedAt` — and **no purpose discriminator**. `EmailVerificationService.verifyCode` looks up by `{ email, consumedAt: null, expiresAt: { gt: now } }` (`:305`).
+
+**Reusing it unchanged creates a privilege-escalation path:** a code issued to verify an address during *public registration* would satisfy a *password reset* for that address. Registration codes are issued to anyone who can type an email; password resets change account credentials. The two must not be interchangeable.
 
 | Option | Verdict |
 |---|---|
-| **A. In `10-data-auth`, beside the pool and the key** | ✅ **Chosen.** No cross-stack cycle; the trigger, the key and the function version together. ❌ Cost: `10-data-auth` is `DEPLOY_INFRA`-gated, so every change to the function needs an operator-run build. |
-| **B. In `20-backend`, wired into the pool by ARN** | Rejected — **it creates a stack cycle.** `20-backend` already imports `UserPoolId` from `10-data-auth`; putting the function there and referencing it from the pool makes `10-data-auth` import from `20-backend`. CloudFormation refuses. Breakable only by passing the ARN as a parameter, which trades a compile-time error for a hand-maintained string. |
-| **C. A third stack** | Rejected — a whole stack for one function, and the cycle returns unless the pool takes a parameter anyway. |
+| **A. Add a `purpose` discriminator** to the existing model, defaulted for existing rows, and require it on every issue and verify | ✅ **Chosen.** One migration, one column, and the mixing becomes impossible rather than merely unlikely. The existing registration path keeps its behaviour by taking the default. |
+| **B. A separate table** | Rejected — duplicates the hashing, expiry, attempt and consumption logic, which is exactly the drift surface DD-2 of the previous design was written to avoid. |
+| **C. Reuse unchanged** | **Rejected as unsafe.** This is the finding, not an option. |
 
-**The accepted consequence, stated plainly:** iterating on this function is slow. Design for that — keep the function thin, and put anything likely to change (copy, link shape) where it can be changed without a `10-data-auth` deploy, or accept that it changes rarely.
+⚠️ **The falsifier for this is not "a test passes".** It is: issue a *registration* code, submit it to the *reset* endpoint, and require a rejection. That test must exist and must be shown to fail if the discriminator is dropped.
 
-### DD-2 — The function publishes directly; it does **not** import `MailService`
+### DD-2 — Every constant is re-justified for this risk profile, not inherited
 
-`MailService` is a NestJS provider inside the backend Lambda. This is a different deployable with a different lifecycle; importing the Nest DI graph into a trigger function would drag the whole application into a cold start Cognito waits on.
-
-**But the wire envelope must not be re-derived by hand.** `backend/src/mail/microservice-mail.transport.ts` already exports `buildMicroserviceEnvelope` and `MicroserviceMailEnvelope` as a pure function and type. Two hand-written copies of that shape **will** drift — and the shape is exactly where ATP-71's spec recorded three separate wire-format defects (`socketFile` naming, composite `from`, comma-joined `to`).
-
-**Decision:** share the envelope builder rather than re-implement it. How it is shared (a small shared module, a build-time copy with a drift gate) is a task-level choice; what is **not** acceptable is a second hand-maintained copy of the shape with nothing detecting divergence.
+`OTP_MAX_ATTEMPTS = 5`, `OTP_LIFETIME_MS`, the send limit and the throttle were tuned for **registration**, where a failure costs a spurious registration. Here a failure costs an account. The values may well be right; **inheriting them by proximity is what is forbidden.** Each is re-stated with its reason in the task that adopts it, or changed.
 
 ---
 
-## 5. Data Model
+## 5. How FR-4's masking is achieved
 
-No persistence. Cognito holds the code; this function is stateless. No Prisma change, no migration.
+FR-4 was re-written on the axis judgment finding C-3 exposed: an **address-dependent** failure correlates with account existence and must be masked; a **systemic** failure is identical for an address with no account and may be reported.
 
----
+### DD-3 — One response path, one floor, decided before the account is looked up
 
-## 6. How failure reaches the user — the mechanism behind FR-4
+The request endpoint returns **the same body and status** in all three masked cases — no account, account plus successful send, account plus address-specific send failure — and pads every one to a common floor.
 
-This is the part that makes FR-4 achievable here when it was not achievable for ATP-71's admin screens.
-
-**The chain is already synchronous.** Cognito invokes the trigger and waits for it. If the function **throws**, Cognito's `ForgotPassword` API call fails, and the frontend's existing error path shows the user a failure instead of "check your email".
-
-**So FR-4 needs no new plumbing — it needs the function to not lie.** Two verified facts make the outcome knowable:
-
-| Verified | Source |
+| Concern | Decision |
 |---|---|
-| The microservice's handler is `@MessagePattern('send')` — RPC-capable, and it `return`s the send result | its `mailer.controller.ts` |
-| `sendMail` **awaits the real SMTP send** before returning, and returns `'Email sent successfully'` / `'Error sending email'` accordingly; an invalid recipient **throws** `BadRequestException('No valid emails found in "TO" or "CC"')` **before** the send | its `mailer.service.ts` |
+| Copy | The existing enumeration-safe wording already in the product: *"If an account exists, a reset code has been sent."* (`ForgotPasswordForm.tsx:127`) |
+| Timing | `padToVerificationCodeResponseFloor` (`backend/src/mail/mail-timing.ts`). ⚠️ **Composed for this flow, not reused blindly** — that file's own history records a floor found insufficient because a term was omitted. This flow's floor must cover the Cognito lookup **and** the send, since both happen only for real accounts. |
+| Systemic failure | Reported honestly **only** where the same code path produces it for an address with no account. FR-4's last clause makes an error reachable only for real accounts an oracle by definition. |
+| Operator visibility | An address-specific failure is logged and alertable. The user is not told — FR-4 records this cost explicitly. |
 
-### DD-3 — The function awaits the microservice's reply and throws on failure
+### DD-4 — The existing frontend enumeration guard becomes dead code and is removed deliberately
 
-Publishing fire-and-forget would reproduce exactly the defect ATP-71's D-6 caught: `status=sent` logged while the microservice rejected the message 800 ms later.
+`frontend/lib/auth/auth-client.ts:251` maps `UserNotFoundException` to `{ status: 'code_sent' }` under the comment *"Do not reveal non-existence on the request path (NFR-4)"*.
 
-Three outcomes, three behaviours:
-
-| Microservice result | Function behaviour | What the user sees |
-|---|---|---|
-| Send succeeded | return normally | "check your email" — **true** |
-| Send failed, or invalid recipient | **throw** | an honest failure |
-| No reply within the budget | **throw** | an honest failure |
-
-⚠️ **NFR-2 is satisfied structurally by this, not incidentally.** Because the function awaits the reply before returning, there is no in-flight work at return time to be frozen. The same property ATP-71's T-8 had to prove with a held-open transport promise comes free here — *provided* the await is real. A task must still demonstrate it can fail.
-
-⚠️ **The honest limit, stated so it is not overclaimed later:** "the microservice accepted it and SMTP took it" is **not** "the mailbox received it". This is far stronger than broker acceptance, and still not delivery. No copy may promise delivery.
+**This is the branch the previous design twice asserted did not exist** (judgment C-2, my ninth defect of that species). Under Option B the frontend stops calling Amplify for this flow, so the branch stops executing. It must be **removed as part of the change, not left**: a dead enumeration guard is worse than none, because the next reader assumes it is protecting something.
 
 ---
 
-## 7. A pre-existing security gap this work must close
+## 6. Backend Module Design
 
-### DD-4 — `PreventUserExistenceErrors` MUST be set to `ENABLED`
+| Piece | Placement | Notes |
+|---|---|---|
+| Request + confirm endpoints | `backend/src/auth/` | Public, throttled. Existing `RegistrationsThrottleGuard` is the precedent; whether it is reused or a sibling is added is a task decision, but the limit must be **re-justified** per DD-2. |
+| Code issue/verify | Extend `EmailVerificationService` with the purpose scope (DD-1) | Keeps hashing, constant-time compare (`safeEqualHex`), expiry and consumption in one place. |
+| Mail | `MailService` + a new template, following `backend/src/mail/templates/`'s convention | Link derives from `PUBLIC_APP_BASE_URL` (NFR-3). |
+| Password set | `AdminSetUserPasswordCommand({ Permanent: true })` | ⚠️ `Permanent: true`, unlike the admin-reset flow's `false` — the user chose this password, so it must not force another change. |
 
-**Measured on the live pool:** the app client `accelerate-tz-dev-data-auth-spa-client` has `PreventUserExistenceErrors: null`.
-
-With it unset, Cognito's `ForgotPassword` returns a distinguishable error for an address that has no account. **The forgot-password form is therefore already a user-enumeration oracle today** — before this spec changes anything.
-
-FR-4 requires the failure message to be identical for an unknown address and a real one whose send failed. **That requirement cannot be met while this setting is off**, because Cognito answers differently before our function is ever invoked.
-
-This is in scope not as scope creep but because FR-4 is unsatisfiable without it — and because this spec is already performing the one dangerous pool update (FR-5) that can set it.
-
-> **Reversion challenge (Step 2.3).** This changes delivered behaviour. *What does enabling it break?* Error messages become less specific, so a legitimate user who mistypes their address gets a generic response instead of "no such user". That is the intended trade and the industry default. No code path depends on distinguishing the two — verified: the frontend's reset flow surfaces whatever error arrives and has no branch on user-not-found.
+**NFR-2 needs no new harness.** This flow runs in the same `lambda.ts` handler ATP-71's T-8 already gates with a held-open transport promise. That test extends; it is not rebuilt.
 
 ---
 
-## 8. Infrastructure Design
+## 7. Closing Cognito's own reset (FR-6)
 
-| Resource | Placement | Notes |
+### DD-5 — `AccountRecoverySetting` → `admin_only`
+
+Verified, with citation: `admin_only` is a valid `RecoveryOptionType.Name`, and AWS states — *"The `admin_only` option prevents self-service account recovery."*
+Source: [RecoveryOptionType](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_RecoveryOptionType.html)
+
+This satisfies FR-6's `AND IT MUST`: the path is closed **by configuration**, so it is unreachable to anyone holding the pool and client ids, not merely absent from the UI.
+
+---
+
+## 8. ⚠️ The pool-update hazard, with a concrete instance found while writing this
+
+FR-5 and judgment C-5 require the full live configuration be read and the update composed from it, because CloudFormation composes `UpdateUserPool` from the **template**, resetting anything the template omits.
+
+**This is not theoretical. Measured 2026-09-22:**
+
+| Setting | Live pool | `10-data-auth/template.yaml` |
 |---|---|---|
-| KMS symmetric key | `10-data-auth` | Customer-managed. NFR-4's three grants and no more. |
-| `CustomEmailSender` function | `10-data-auth` (DD-1) | Needs `@aws-crypto/client-node`. |
-| Pool `LambdaConfig` | `10-data-auth` | `CustomEmailSender` + `KMSKeyID`, `LambdaVersion: V1_0`. |
-| App client `PreventUserExistenceErrors` | `10-data-auth` | DD-4. |
+| `AccountRecoverySetting` | `verified_email` (1), `verified_phone_number` (2) | **absent** |
+| `EmailConfiguration` | `DEVELOPER` + SES identity | `COGNITO_DEFAULT` |
+| `LambdaConfig` | `{}` | absent |
+| `MfaConfiguration` | `OFF` | absent |
 
-### DD-5 — The `EmailConfiguration` side effect is made explicit, not discovered
+So the very deploy that sets `admin_only` would, without care, **also reset a recovery setting that is live today** — and it is the setting this spec is deliberately changing. The two must not be confused with each other.
 
-`10-data-auth`'s template already carries `EmailSendingAccount: COGNITO_DEFAULT` while the **live pool is on `DEVELOPER`/SES** — authored, never deployed (`proposal.md` §2.2).
+### DD-6 — A drift audit is a deliverable, not a precaution
 
-So the deploy that activates this trigger **also** flips the pool's mailer. With the trigger active that is harmless — Cognito stops sending mail itself entirely, so `EmailConfiguration` becomes inert for every path the function handles.
-
-**But ordering decides whether there is an outage window.** If FR-7's deploy (ATP-71) lands *before* this function exists, self-service reset falls back to Cognito's shared sender — the `@cgiar.org` deliverability problem this whole effort exists to escape.
-
-**Decision:** this spec's deploy activates the trigger **and** the `EmailConfiguration` change in the **same** `DEPLOY_INFRA=true` build. ATP-71's FR-7 template retirement rides that same build or waits for it. The sequencing is a task deliverable, not an operator's improvisation.
+Before the deploy: enumerate every live pool setting absent from the template, decide each one explicitly, and write the decided values **into** the template. After: diff the full configuration. `proposal.md` R-1's throwaway-pool rehearsal — **dropped without comment by the previous design** (judgment C-5) — is reinstated as part of this.
 
 ---
 
 ## 9. Frontend
 
-**No component changes.** The existing `/forgot-password` screens already surface whatever error the Cognito call returns (verified: the reset flow has no branch on user-not-found, which is also what makes DD-4 safe). FR-4 is satisfied server-side.
+Unlike Option A, this **does** change the frontend: `resetPassword` and `confirmResetPassword` (`auth-client.ts:241`, `:262`) stop calling Amplify and call our endpoints. The screens keep their shape; the enumeration-safe copy is already correct and stays.
 
-The only frontend question is whether the generic failure copy is good enough once DD-4 makes all failures generic. That is a copy review, recorded as a task, not a component rewrite.
-
----
-
-## 10. Observability & Rollback
-
-| Concern | Decision |
-|---|---|
-| Logging | The function logs `triggerSource` and outcome. **Never the code, never the address** (NFR-1) — the same `reference`-only shape the backend uses. |
-| Unknown trigger source | Logged with the source name, then **raised** (FR-2). |
-| Rollback | Remove `CustomEmailSender` from `LambdaConfig` via the same full-parameter update. Cognito resumes sending itself. **Rollback is a `DEPLOY_INFRA=true` build** — not instant, and that is the real cost of DD-1. |
-| Blast radius if the function is broken | **Total for pool email.** With the trigger set, Cognito sends nothing itself. A broken function means no reset emails at all — which FR-2's loud failure makes visible immediately rather than silently. |
+DD-4's dead branch is removed in the same change.
 
 ---
 
-## 11. Budget (Step 2.4 tripwire)
+## 10. Budget (Step 2.4 tripwire)
 
 | Metric | Estimate |
 |---|---|
-| Tasks | **7** |
-| LOC | **~420** (function ~120, its tests ~140, IaC ~100, shared-envelope plumbing ~60) |
-| Review rounds | **2 per task** |
+| Tasks | **8** |
+| LOC | **~520** (endpoints + service extension ~150, migration ~20, template ~60, tests ~180, frontend ~60, IaC ~50) |
+| Review rounds | **2 per task — 16 aggregate. Escalation fires on the 17th, and on any single task reaching a 3rd.** |
 
-Deliberately excluded from the LOC figure: the manual live check (§8 of `requirements.md`), which is time, not lines — and which ATP-71's evidence says is where the real defects will be found.
+⚠️ Judgment finding C-12 caught the previous budget being unreachable from its own text and its tripwire stated in an ambiguous unit. Both are fixed above: the threshold is now numeric and the unit explicit.
 
-`/akili-execute` escalates to the user on exceeding this rather than continuing. ⚠️ ATP-71 declared the same tripwire and **consumed 21 review rounds against a stated 2 with no escalation ever firing** — a documented gate that never ran. If this one is exceeded, it must actually stop.
+**This exceeds the parent spec's Phase 2 estimate (4 tasks, ~230 LOC).** Stated rather than hidden — the parent estimated a trigger function, and this is a full request/confirm flow with a migration and a frontend change.
 
 ---
 
-## 12. Design Decisions Index
+## 11. Design Decisions Index
 
 | ID | Decision | Requirement |
 |---|---|---|
-| DD-1 | Function ships in `10-data-auth`; slow iteration accepted to avoid a stack cycle | FR-1 |
-| DD-2 | Publish directly; share the envelope builder rather than re-implement it | FR-1 |
-| DD-3 | Await the microservice reply; throw on failure or timeout | FR-4, NFR-2 |
-| DD-4 | `PreventUserExistenceErrors: ENABLED` — FR-4 is unsatisfiable without it | FR-4 |
-| DD-5 | Trigger and `EmailConfiguration` flip land in the same build; FR-7 rides or waits | NFR-5 |
-| DD-6 | Unknown `triggerSource` raises, naming the source | FR-2 |
-| DD-7 | Latency budget lives in one place, per `mail/mail-timing.ts`'s existing discipline | NFR-6 |
+| DD-1 | Reset codes scoped by purpose — reuse-unchanged is a privilege-escalation path | FR-3, FR-6 |
+| DD-2 | Every inherited constant re-justified for this risk profile | FR-3 |
+| DD-3 | One masked response path, one composed floor, decided before the account lookup | FR-4 |
+| DD-4 | The now-dead frontend enumeration guard is removed, not left | FR-4 |
+| DD-5 | `AccountRecoverySetting: admin_only` closes Cognito's own reset | FR-6 |
+| DD-6 | A full-configuration drift audit, plus the reinstated rehearsal | FR-5 |
 
-**No ADR is allocated here.** Per root `CLAUDE.md`'s concurrency protocol, a shared monotonic id is allocated on the default branch after re-checking unmerged branches — never from a spec branch. `docs/trd/trd.md` §12.5 ends at `ADR-015` as of 2026-09-22; DD-1 and DD-3 both warrant an entry at merge time.
+**No ADR allocated here** — allocated on the default branch at merge, per root `CLAUDE.md`. `trd.md` §12.5 ends at `ADR-015`. DD-1 and DD-5 both warrant entries.
+
+---
+
+## 12. What this design owes that nothing automated can check
+
+Carried from `requirements.md` §8, unchanged in force:
+
+- **D-4 (IAM):** every suite mocks the AWS clients. `AdminSetUserPassword`'s grant was added on 2026-09-22 and has never been exercised by a test — only by the live D-6 check that found it missing.
+- **D-5 (pool update):** no test can see a reset setting. §8's drift audit is the only control.
+- **D-6 (delivery):** a mock proves dispatch, never that a human received an email.
+
+One mandatory manual check covers all three: request a real reset against DEV, receive the mail, use the code, sign in with the new password. **Record the result.** ATP-71's identical check found two production defects on two runs against 1203 green tests.
