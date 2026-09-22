@@ -83,6 +83,18 @@ Two methods added beside `sendApproval` / `sendRejection`, with the identical sh
 
 ⚠️ **Grounded in repo precedent, not an AWS citation (round 2 note).** That Cognito returns a `sub` entry *inside* the attribute array is corroborated by code already running here — `acting-admin.resolver.ts` filters `ListUsers` by `sub` and its fixtures show `sub` living in that same `Attributes` shape — but the SDK docstrings promise only "the user's attributes". Same class of claim as the three J-3 marked; recorded to the same standard. It is **safe either way**: if `sub` is absent the fallback below applies, and the fallback is the thing that protects NFR-1.
 
+⚠️ **Amended 2026-09-21 during T-5 execution — the `AdminGetUser` call must not be able to fail the request.**
+
+As originally written, this section weighed the extra round trip on **one axis only**: *"One extra Cognito round trip on a rare admin action is the price of not logging an address."* Latency and cost. **It never considered the failure mode**, and T-5's implementation — faithful to the text — placed the call inside `resetPassword`'s outer `try`, whose `catch` runs `mapCognitoError` (typed `: never`). A thrown `AdminGetUser` therefore **fails a request whose password change has already committed**, and the admin never receives the new credential. The user is locked out and nobody holds it.
+
+The ruling already existed in **§5.3**, written for `create()` and never applied here: *"that is precisely the state FR-4's boundary clause forbids, **reached through a different Cognito call than the one FR-4 was written about**."*
+
+**The decisive asymmetry is not blast radius — it is what the call buys.** `create()`'s `AdminAddUserToGroup` is a required state change, so failing the request is *honest*. `AdminGetUser` here buys **only a log correlation id**, and this very section already rules *"Losing correlation is acceptable; logging an address is not."* **A call whose entire value this design declares optional must not be able to fail the operation.**
+
+**Therefore:** the `AdminGetUser` send is wrapped so a throw degrades to `sub = undefined` and the flow continues to the dispatch, which then logs `reference=n/a`. That `catch` **must not log `id`** (NFR-1) — an error-name discriminator or nothing. The file already has two narrow absorb-one-outcome helpers (`listGroupNames`, `removeFromGroupIfPresent`) whose shape this matches, so it is idiom rather than invention.
+
+*(Found by T-5's Implementer, who surfaced it honestly and mislabelled it a KZ-013 `(B)`; adjudicated by T-5's Reviewer as **(c) a spec gap**, since no requirement text reaches it and failing a diff for faithfully implementing an approved design charges the wrong party. The gap is the Leader's — this section is Leader-authored.)*
+
 ⚠️ **Two traps, both typed:** `User` and `Attributes` are **optional** in `AdminCreateUserResponse`, and `AdminGetUser` exposes the attribute list as **`UserAttributes`, not `Attributes`** — a difference this codebase already documents in `users.service.ts`'s `get()`. When `sub` cannot be resolved, the dispatch passes **no reference at all** (logging `n/a`, as contact does) and **MUST NOT** fall back to `id`. Losing correlation is acceptable; logging an address is not.
 
 ### 5.3 `UsersService`

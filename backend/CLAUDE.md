@@ -34,12 +34,13 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 > shipped:** check `docs/specs/auth/account-access-emails/tasks.md` §5 for
 > current status — `users.service.ts`'s `create()` now dispatches
 > `MailService.sendInvitation` (T-4) and no longer matches the paragraph below;
-> `resetPassword()` is unchanged and still calls no `MailService` method. It
-> issues no suppression directive either — unlike `create()`'s
+> `resetPassword()` now also dispatches `MailService.sendAdminReset` (T-5)
+> and no longer matches it either, diverging from that paragraph the same
+> way `create()` already does. `resetPassword()` issues no suppression
+> directive either — unlike `create()`'s
 > `AdminCreateUserCommand`, its `AdminSetUserPasswordCommand` has no
 > `MessageAction` field at all, so there is nothing to `SUPPRESS`: Cognito
-> simply never emails for this action. It still only returns the password,
-> exactly as that paragraph describes, pending T-5's identical dispatch. The
+> simply never emails for this action. The
 > reasoning that follows was correct when written and remains the record of
 > *why* the no-email handoff exists; only the forward-looking instruction
 > never to email it has been withdrawn (next paragraph).
@@ -66,8 +67,9 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
   **never** be logged, stored, or audited — that rule is absolute and this spec
   does not touch it (NFR-1). Its **exits** change per-method, not both at once:
   `create()`'s temporary password now also travels in the invitation mail body
-  (FR-1, T-4, shipped); `resetPassword()`'s exit is still the Admin-guarded
-  response only, until T-5 adds the identical dispatch (FR-5).
+  (FR-1, T-4, shipped); `resetPassword()`'s exit is no longer the
+  Admin-guarded response alone — T-5 added the identical dispatch pattern
+  (FR-5, shipped).
 - The Cognito pool is **case-sensitive** (immutable `UsernameConfiguration`) — the
   write DTOs lowercase `email` (`@Transform`), and the frontend lowercases at
   sign-in/reset. Keep new email inputs normalized.

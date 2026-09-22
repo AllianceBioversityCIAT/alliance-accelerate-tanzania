@@ -23,8 +23,9 @@
  *  2. `AdminGetUserResponse` exposes the list as `UserAttributes`, not
  *     `Attributes` — the same difference `UsersService.get()` already
  *     documents in `users.service.ts` (its docblock: *"`AdminGetUserCommandOutput`
- *     exposes `UserAttributes` (not `Attributes`) and does not echo
- *     `Username`"*).
+ *     names its attribute list `UserAttributes`, not `Attributes` … —
+ *     `AdminGetUser` DOES echo `Username`, only the attribute list's field
+ *     name differs"*).
  *
  * **`Username` is accepted on the input type below and never read.** In
  * this system `Username` IS the email address: `UsersService.create()`

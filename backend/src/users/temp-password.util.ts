@@ -23,9 +23,9 @@
  * `backend/CLAUDE.md`'s "Users module — no-email credential handoff" dated
  * superseded-by note). `UsersService.create()` now also places it in the
  * invitation email body dispatched via `MailService` (FR-1, T-4, shipped).
- * `UsersService.resetPassword()`'s exit is unchanged — still the
- * Admin-guarded HTTP response body only — pending T-5 giving it the
- * identical mail dispatch (FR-5, design.md §5.2/§5.3, not yet built).
+ * `UsersService.resetPassword()`'s exit is no longer the Admin-guarded HTTP
+ * response body alone — T-5 gave it the identical mail-dispatch pattern
+ * (FR-5, design.md §5.2/§5.3, shipped).
  */
 
 import { randomInt } from 'node:crypto';

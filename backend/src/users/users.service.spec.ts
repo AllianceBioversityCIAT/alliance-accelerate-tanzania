@@ -1,5 +1,5 @@
 // @sdd-spec admin/user-management (T-5)
-// @sdd-spec auth/account-access-emails (T-4)
+// @sdd-spec auth/account-access-emails (T-4, T-5)
 /**
  * T-5 (A) — UsersService unit tests with a mocked Cognito client.
  *
@@ -15,7 +15,8 @@
  *    own mailer stays suppressed; `create()` now dispatches its own invitation
  *    via `MailService` instead, see below) + a generated TemporaryPassword +
  *    group add; `setRole` clears both groups then adds; `resetPassword`
- *    (`AdminSetUserPassword`, Permanent:false).
+ *    (`AdminSetUserPassword`, Permanent:false, plus — as of this task — an
+ *    `AdminGetUser` call to resolve a `sub` for its own admin-reset dispatch).
  *  - self-lockout (FR-8): demote/delete self → 409 with NO Cognito command;
  *    promoting self to `admin` is allowed.
  *  - no-leak (FR-10): serialized keys are EXACTLY the AdminUser allowlist.
@@ -26,19 +27,27 @@
  * FR-3, FR-4, NFR-1, NFR-2): `MailService` is now a constructor dependency
  * (mocked here, never the real implementation — `mailService` below), so
  * `service = new UsersService(...)` gains that argument in `beforeEach`.
- * `resetPassword`'s own tests below (`describe('resetPassword (FR-7)')`) are
- * otherwise UNCHANGED, but this diff adds two assertions to the first of
- * them — `expect(mailService.sendInvitation).not.toHaveBeenCalled()` AND
- * `expect(mailService.sendAdminReset).not.toHaveBeenCalled()` — as T-5's
- * tripwire (rework attempt 3: the first draft asserted only `sendInvitation`,
- * which `resetPassword` was never going to call, so it could never go red on
- * T-5's actual change; the mock is widened below to declare `sendAdminReset`
- * too so the assertion has something to catch). It passes today only because
- * `resetPassword` issues no `MailService` call of either kind, and it is
- * expected to go red the moment T-5 (design.md §5.2/§5.3, not yet built as of
- * this task) gives `resetPassword` its own `sendAdminReset` dispatch, at which
- * point the `sendAdminReset` line must be replaced with an assertion on the
- * new call rather than deleted silently.
+ *
+ * auth/account-access-emails T-5 additions (this diff) — see the
+ * `resetPassword — admin-reset dispatch` describe block below (design.md
+ * §5.2/§5.3, `requirements.md` FR-5, FR-3, FR-4, NFR-1, NFR-2):
+ * `resetPassword` now resolves a `sub` via `AdminGetUserCommand` (the same
+ * command `get()` already issues) and dispatches `MailService.sendAdminReset`
+ * through its own swallowing `try`/`catch`, mirroring `create()`'s
+ * `dispatchInvitationEmail` exactly. **The T-5 tripwire has been replaced,
+ * not deleted**, as its own comment required: the original
+ * `describe('resetPassword (FR-7)')` block's first test used to assert
+ * `expect(mailService.sendAdminReset).not.toHaveBeenCalled()` as a
+ * deliberately-red-when-T-5-lands tripwire (rework attempt 3: an earlier
+ * draft asserted only `sendInvitation`, which `resetPassword` was never
+ * going to call, so it could never go red). That line is gone from that
+ * test — replaced with a positive `toHaveBeenCalledTimes(1)` assertion — and
+ * the new `resetPassword — admin-reset dispatch` block below covers the
+ * substance the tripwire's comment demanded: reference resolution, the
+ * never-`id` rule, and the swallowing behaviour on a rejecting transport.
+ * The FR-7 block's second test (`AdminGetUser` call-count) is also updated:
+ * that call is no longer zero, because `sub` resolution now issues it — see
+ * that test's own comment for what is and is not preserved.
  */
 
 import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
@@ -95,12 +104,12 @@ describe('UsersService (mocked Cognito)', () => {
     resetCognitoAdminClient();
     mailService = {
       sendInvitation: jest.fn().mockResolvedValue(undefined),
-      // Widened in rework attempt 3 (see the file-header docblock): the
-      // T-5 tripwire below asserts THIS method uncalled, not
-      // `sendInvitation` — without this declaration, T-5's real
-      // `sendAdminReset` call would throw a `TypeError` on an undefined
-      // mock property inside `resetPassword`'s own swallowing `catch`,
-      // and the tripwire would stay green over a broken assertion.
+      // `resetPassword` genuinely dispatches `sendAdminReset` as of T-5
+      // (auth/account-access-emails) — declared here because the method
+      // is really called, not as a defensive stub against a tripwire.
+      // Its swallowing frame is `dispatchAdminResetEmail`'s own `catch`
+      // (mirrors `dispatchInvitationEmail`), which absorbs a rejection
+      // and reports `emailSent: false` rather than letting it propagate.
       sendAdminReset: jest.fn().mockResolvedValue(undefined),
     };
     service = new UsersService(mailService as unknown as MailService);
@@ -474,7 +483,11 @@ describe('UsersService (mocked Cognito)', () => {
     });
   });
 
-  // ── FR-7: resetPassword (no-email admin-mediated handoff) ─────────────────
+  // ── FR-7 (admin/user-management) / FR-5 (auth/account-access-emails):
+  // resetPassword — admin-mediated handoff, now with its own admin-reset
+  // dispatch (T-5). Cognito's OWN mailer still sends nothing for this
+  // action (AdminSetUserPasswordCommand has no MessageAction to suppress) —
+  // what changed is additive, our own MailService call layered on top.
   describe('resetPassword (FR-7)', () => {
     it('sets a temp password via AdminSetUserPassword (Permanent:false) and returns { temporaryPassword }', async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
@@ -493,16 +506,14 @@ describe('UsersService (mocked Cognito)', () => {
       // The password sent to Cognito is exactly the one handed back to the admin.
       expect(input.Password).toBe(result.temporaryPassword);
 
-      // T-5 tripwire (auth/account-access-emails): resetPassword does not yet
-      // dispatch ANY mail — this asserts BOTH methods uncalled. The line
-      // that actually guards T-5's future change is `sendAdminReset` (that
-      // is the method T-5 is designed to call, `mail.service.ts`'s
-      // `sendAdminReset`, design.md §5.2/§5.3) — `sendInvitation` never
-      // will be, so it stays a permanent property, not a tripwire. This
-      // must go red the day T-5 adds the `sendAdminReset` call without
-      // updating the `sendAdminReset` line below.
+      // T-5 (auth/account-access-emails): resetPassword now dispatches its
+      // own admin-reset email. This REPLACES the former T-5 tripwire, which
+      // asserted `sendAdminReset` uncalled — its own comment required
+      // replacement, not silent deletion, the day this dispatch landed.
+      // `sendInvitation` is a DIFFERENT method (create()'s invitation) and
+      // stays permanently uncalled from resetPassword.
       expect(mailService.sendInvitation).not.toHaveBeenCalled();
-      expect(mailService.sendAdminReset).not.toHaveBeenCalled();
+      expect(mailService.sendAdminReset).toHaveBeenCalledTimes(1);
 
       // The old email-based / re-invite paths are gone: neither is issued.
       expect(
@@ -511,18 +522,179 @@ describe('UsersService (mocked Cognito)', () => {
       expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
     });
 
-    it('works without reading user status first (no AdminGetUser precondition)', async () => {
+    it('calls AdminGetUser only to resolve a sub for the dispatch — no status-based branching before the reset', async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      cognitoMock.on(AdminGetUserCommand).resolves({
+        UserAttributes: [{ Name: 'sub', Value: 'sub-uuid-123-resolved' }],
+      });
 
       await service.resetPassword('sub-uuid-123');
 
-      // No status probe: the single set-password call covers both
-      // CONFIRMED and FORCE_CHANGE_PASSWORD users.
-      expect(cognitoMock.commandCalls(AdminGetUserCommand)).toHaveLength(0);
+      // T-5 (auth/account-access-emails) made this call count 1, not 0 —
+      // AdminGetUser is now issued to resolve a `sub` for the admin-reset
+      // dispatch's reference (see the block below). What this test still
+      // preserves is the ORIGINAL point: that call is not a status
+      // precondition that branches the reset — the single
+      // AdminSetUserPassword call below still unconditionally covers both
+      // CONFIRMED and FORCE_CHANGE_PASSWORD users, with no prior read
+      // deciding which path to take.
+      expect(cognitoMock.commandCalls(AdminGetUserCommand)).toHaveLength(1);
       const calls = cognitoMock.commandCalls(AdminSetUserPasswordCommand);
       expect(calls).toHaveLength(1);
       // Username MUST be the passed id (sub/UUID), never an email alias.
       expect(calls[0].args[0].input.Username).toBe('sub-uuid-123');
+    });
+  });
+
+  // ── FR-5 (auth/account-access-emails): resetPassword's own admin-reset
+  // dispatch (T-5) — mirrors the `create — invitation dispatch` block above;
+  // see design.md §5.2/§5.3 and this file's header docblock for what changed.
+  describe('resetPassword — admin-reset dispatch (auth/account-access-emails)', () => {
+    it("resolves the Cognito `sub` from `AdminGetUser`'s `UserAttributes` and passes it — never `id` — as the reference", async () => {
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      cognitoMock.on(AdminGetUserCommand).resolves({
+        UserAttributes: [{ Name: 'sub', Value: 'sub-reset-0001' }],
+      });
+
+      const result = await service.resetPassword('user@example.com');
+
+      expect(mailService.sendAdminReset).toHaveBeenCalledWith(
+        'user@example.com',
+        result.temporaryPassword,
+        'sub-reset-0001',
+      );
+      expect(result.emailSent).toBe(true);
+    });
+
+    it(
+      'passes NO reference (never the `id` in scope at this call site) when `sub` cannot be ' +
+        'resolved — the fallback NFR-1 forbids (`id` IS the email address in this system)',
+      async () => {
+        cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+        cognitoMock.on(AdminGetUserCommand).resolves({
+          UserAttributes: [{ Name: 'email', Value: 'nosub@example.com' }],
+        }); // no `sub` entry — the disqualifier's "unresolvable" branch
+
+        await service.resetPassword('nosub@example.com');
+
+        expect(mailService.sendAdminReset).toHaveBeenCalledWith(
+          'nosub@example.com',
+          expect.any(String),
+          undefined,
+        );
+        const [, , reference] = mailService.sendAdminReset.mock.calls[0];
+        expect(reference).not.toBe('nosub@example.com');
+      },
+    );
+
+    // ── design.md §5.2 amendment (2026-09-21, T-5 rework attempt 2) — the
+    // `AdminGetUser` lookup itself buys only a log correlation id and must
+    // not be able to fail a request whose password change already
+    // committed. Its falsifier is free: delete `resolveResetSub`'s own
+    // `catch` and the rejection propagates into the outer `try`, whose
+    // `catch` runs `mapCognitoError` (typed `: never`) — `resetPassword`
+    // would REJECT instead of resolving, and this test would redden.
+    it('when the AdminGetUser lookup itself rejects, resetPassword still resolves — sub degrades to undefined and the dispatch proceeds', async () => {
+      const lookupErrorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      cognitoMock
+        .on(AdminGetUserCommand)
+        .rejects(cognitoError('InternalErrorException'));
+
+      const result = await service.resetPassword('lookup-fails@example.com');
+
+      expectPolicyValid(result.temporaryPassword);
+      expect(result.emailSent).toBe(true);
+      expect(mailService.sendAdminReset).toHaveBeenCalledWith(
+        'lookup-fails@example.com',
+        result.temporaryPassword,
+        undefined,
+      );
+
+      // NFR-1: `resolveResetSub`'s own `catch` logs the lookup failure, but
+      // must NEVER log `id` (the email address) — an error-name
+      // discriminator only. The dispatch above succeeds, so this is the
+      // ONLY log line this test produces.
+      expect(lookupErrorSpy).toHaveBeenCalledTimes(1);
+      const [emittedLine] = lookupErrorSpy.mock.calls[0] as [string];
+      expect(emittedLine).toContain('InternalErrorException');
+      expect(emittedLine).not.toContain('@');
+      expect(emittedLine).not.toContain('lookup-fails@example.com');
+
+      lookupErrorSpy.mockRestore();
+    });
+
+    // ── Falsifier 3 — Permanent:false is pinned by the FR-7
+    // block's first test above (`toMatchObject({ Permanent: false })`);
+    // this block's own falsifiers are 1 and 2, exercised below.
+    describe('a rejecting mail transport never fails the request', () => {
+      let errorSpy: jest.SpyInstance;
+
+      beforeEach(() => {
+        errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        errorSpy.mockRestore();
+      });
+
+      // ── Falsifier 2: removing dispatchAdminResetEmail's own
+      // try/catch lets the rejection propagate into the outer try
+      // (mapCognitoError), so resetPassword would REJECT instead of
+      // resolving — every assertion below would redden.
+      it('still returns the temporary password and emailSent:false — and logs the failure without the password or the address', async () => {
+        cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+        cognitoMock.on(AdminGetUserCommand).resolves({
+          UserAttributes: [{ Name: 'sub', Value: 'sub-reset-0002' }],
+        });
+        const transportRejection = new Error('microservice unreachable');
+        transportRejection.name = 'TransportRejectedError';
+        mailService.sendAdminReset.mockRejectedValue(transportRejection);
+
+        // Never throws — this `await` alone falsifies Falsifier 2 if the
+        // dispatch helper's own try/catch is removed.
+        const result = await service.resetPassword('rejected@example.com');
+
+        expectPolicyValid(result.temporaryPassword);
+        expect(result.emailSent).toBe(false);
+
+        // NFR-1: the failure is logged, but NEVER the password or the
+        // address. Falsifier 1 (task text, "the single most important"):
+        // passing `id` instead of `sub` as the reference at the call site
+        // would flip `sub-reset-0002` below to the raw email, and the
+        // `not.toContain('@')` guard would redden.
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const [emittedLine] = errorSpy.mock.calls[0] as [string];
+        expect(emittedLine).toContain('TransportRejectedError');
+        expect(emittedLine).toContain('sub-reset-0002');
+        expect(emittedLine).not.toContain('rejected@example.com');
+        expect(emittedLine).not.toContain(result.temporaryPassword);
+        expect(emittedLine).not.toContain('@');
+      });
+
+      it(
+        'logs `reference=n/a` — never the email address — when the transport rejects AND `sub` ' +
+          'could not be resolved (Falsifier 1: a fallback to `id` here must redden this test)',
+        async () => {
+          cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+          cognitoMock.on(AdminGetUserCommand).resolves({
+            UserAttributes: [{ Name: 'email', Value: 'nosub-reject@example.com' }],
+          }); // no `sub`
+          mailService.sendAdminReset.mockRejectedValue(new Error('down'));
+
+          const result = await service.resetPassword('nosub-reject@example.com');
+
+          expect(result.emailSent).toBe(false);
+          expect(errorSpy).toHaveBeenCalledTimes(1);
+          const [emittedLine] = errorSpy.mock.calls[0] as [string];
+          expect(emittedLine).toContain('reference=n/a');
+          expect(emittedLine).not.toContain('nosub-reject@example.com');
+          expect(emittedLine).not.toContain('@');
+        },
+      );
     });
   });
 

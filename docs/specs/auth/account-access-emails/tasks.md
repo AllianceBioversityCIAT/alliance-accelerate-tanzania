@@ -89,7 +89,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: a rejecting-transport test that asserts only `emailSent === false` does **not** cover FR-4. It must also assert the user was created, the password returned, and the status is 2xx. Assert all four or the clause is uncovered.
       Done when: a rejecting transport yields a 2xx carrying the user, the password, and `emailSent: false`; the failure is logged; ordering is dispatch-last and a test pins it.
 
-- [ ] **T-5** Dispatch the reset from `UsersService.resetPassword()`  (deps: T-3)
+- [x] **T-5** Dispatch the reset from `UsersService.resetPassword()`  (deps: T-3)
       Scope: resolve `sub` via `AdminGetUser` (already imported by `get()`); dispatch under the same rules as T-4; return `emailSent`.
       Traces: FR-5 (all clauses incl. `AND IT MUST` require a password change at next sign-in), FR-3, FR-4, NFR-1, NFR-2; design.md §5.2, §5.3
       Files: `backend/src/users/users.service.ts` (+ `.spec.ts`)

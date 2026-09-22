@@ -432,3 +432,106 @@ It verified every advisory correction at source rather than accepting it: **no O
 - **The tripwire was my recommendation**, and I named it "T-5's tripwire" without checking which method T-5 dispatches. The Implementer followed it faithfully and inherited the error — the same shape as T-1, where it faithfully reproduced my wrong Disqualifier text.
 
 **The pattern, now with enough data to state plainly:** across five tasks this spec has produced **eleven FAILs, ten of them prose and one a coverage hole**. Zero were logic defects. Three of the eleven originated in Leader-authored text. The cause is structural, not incidental: this spec's deliverable is largely *normative text about a system that changes underneath it*, and the only gate that reads text is a Reviewer who chooses to look. `tasks.md` §2's rules and the brief-level future-tense rule both measurably reduce it — T-2 passed first time under them — but they do not eliminate it.
+
+---
+
+### T-5 — Dispatch the reset from `UsersService.resetPassword()`
+
+**Status:** in progress · **Attempts so far:** 1 (FAIL) · Date: 2026-09-21
+
+**Leader decisions.** Skills `nestjs-expert` **+ `tdd`** (override). Effort `xhigh`. Brief carried four pointers, two of which existed to prevent concrete requirement violations.
+
+**Verification:** 6 suites / **60 tests** (Leader re-ran); full suite 82 / 1200; eslint and build clean. **Three falsifiers run and reddened** — `id` substituted as the reference (log showed `reference=rejected@example.com`), the helper's `try`/`catch` removed, `Permanent: false` → `true`.
+
+**✅ The T-4 tripwire fired and was handled correctly — the first time in this spec that a guard planted by one task did its job on the next.** It went red, and the Implementer **replaced** it with `toHaveBeenCalledTimes(1)` plus a comment recording the history, rather than deleting it. `expect(sendInvitation).not.toHaveBeenCalled()` is now honestly labelled a permanently-true property instead of being re-sold as a guard. That closes T-4 attempt 2's Issue at the root.
+
+The Implementer also found a **third** premise site nobody named — a pre-existing test asserting *zero* `AdminGetUserCommand` calls, false as of this diff — and updated it while **preserving its real point** (no status-based branching before the reset) rather than just changing the number.
+
+---
+
+## 🔶 DESIGN AMENDMENT — `design.md` §5.2, the `AdminGetUser` failure mode
+
+**Not a Pivot.** The design is not wrong or unviable; it was **silent on one axis**, and the amendment is strictly additive. Recorded here because the Leader may not quietly rewrite an approved spec, and the user may overrule this.
+
+**What the Implementer found and surfaced honestly:** `AdminGetUser` runs *after* `AdminSetUserPassword`, inside the outer `try` whose `catch` is `mapCognitoError` (typed `: never`). A throw there **fails a request whose password change already committed** — the admin never sees the new credential, the user is locked out, and nobody holds it.
+
+It labelled this a KZ-013 **(B)**. The Reviewer rejected that label and was right to: *"a `(B)` is an unevaluable gap with a structural reason. This gap is trivially evaluable — stub `AdminGetUserCommand` to reject and assert `resetPassword` resolves. 'It falls outside FR-4's literal text' is a **scope** argument, not an **evaluability** argument, and dressing one as the other is exactly the mislabel T-3 lost a round on."*
+
+**⚠️ The Reviewer also refuted the Leader's reasoning while upholding the Leader's conclusion.** I argued `create()`'s `AdminAddUserToGroup` was not a valid precedent because its failure is "recoverable by retry". **Backwards:** a `create()` retry hits `UsernameExistsException` → 409, so the admin *cannot* simply retry — recovery needs a reset on the half-made user, and the first temp password is lost too. A `resetPassword` retry is idempotent and works on the first click. **On blast radius, `create()`'s accepted hazard is the worse of the two.**
+
+The axis that actually decides it: **what does the call buy?** `AdminAddUserToGroup` is a required state change, so failing the request is *honest*. `AdminGetUser` buys **only a log correlation id** — and §5.2 already rules *"Losing correlation is acceptable; logging an address is not."* **A call whose entire value the design declares optional must not be able to fail the operation.** My instinct was right; my reason was not.
+
+**Verdict: (c) a spec gap, and it is the Leader's.** §5.2 is Leader-authored and weighed the extra round trip on latency and cost alone. The ruling already existed in **§5.3**, written for `create()` and never applied to the reset half: *"reached through a different Cognito call than the one FR-4 was written about."*
+
+**Amendment applied to §5.2:** the `AdminGetUser` send is wrapped so a throw degrades to `sub = undefined` and the flow continues; that `catch` must not log `id` (NFR-1). The file already carries two narrow absorb-one-outcome helpers (`listGroupNames`, `removeFromGroupIfPresent`) whose shape this matches. Closed **inside T-5**, since the diff is in rework regardless.
+
+---
+
+#### Attempt 1 — Reviewer `FAIL` (3 issues)
+
+**What held.** NFR-1 traced on every path to a log line — three sources enumerated, guard complete, **both** branches of the disqualifier driven, and a third unresolvable case exercised incidentally. FR-4's swallowing frame correct: `dispatchAdminResetEmail` owns its `try`/`catch`, returns `boolean`, never rethrows, so `mapCognitoError` is unreachable from a mail failure. All three falsifier accounts reconcile **exactly** against source — the Reviewer matched Falsifier 1 to four specific line numbers and the quoted string to the fixture, and noted Falsifier 2's reported error *type* is *"the detail that could not come out right by accident."* Counts land on the nose: T-4 closed at 56/1196, this adds four `it` blocks → 60/1200. The NFR-2 `(B)` deferred to T-8 is **legitimate** — `tasks.md` §6 assigns it there and the freeze class is structurally unreproducible in a unit test.
+
+> **Issue 1 — the new `resetPassword()` docstring asserts the safety property the code does not have, and denies the very hazard the Implementer raised.** It says a failure to resolve the `sub` *"never … blocks the reset itself; **it only means** the dispatch logs `reference=n/a`."* **False for the throw path** — a thrown `AdminGetUser` reaches `mapCognitoError` and the request errors; the dispatch never runs. True only for the resolved-but-no-`sub`-attribute case, one of two ways resolution can fail.
+> *"The worst placement the claim could have — the one sentence a future reader consults about this call's failure behaviour, and it tells them the hazard does not exist."* The Implementer flagged the hazard in its report and wrote a docstring denying it: **the correction and the defect in the same diff**, KZ-008's shape for the eighth time here.
+
+> **Issue 2 — the mock comment states the inverse of both assertions it describes, and repeats the wrong-frame claim forward-pointed into this brief as an FR-4 hazard.** (a) It says the tripwire asserts `sendAdminReset` **uncalled**; the line asserts it **was called once**, and the `not.toHaveBeenCalled()` is on `sendInvitation`. The file's own header docblock records this correctly — **one file, two mutually exclusive accounts of the same two lines.** (b) It again attributes the swallow to *"`resetPassword`'s own swallowing `catch`"*, which always throws. That is verbatim the finding T-4's Reviewer filed as *"🔭 Carry into T-5's brief — this one can cause an FR-4 violation."* **The premise expired inside this very diff**, in T-5's own Files list: not an inheritance, a miss.
+
+> **Issue 3 — the premise sweep left two files asserting that `resetPassword` does not yet dispatch, and no remaining task owns either.** `backend/CLAUDE.md` (three "still/pending T-5" sentences) and `temp-password.util.ts`. T-6/T-7/T-8 touch neither; T-9 is closed. **T-4 adjudicated this exact situation twice and folded both in** on the principle that the task which falsified it fixes it — the Reviewer cites that precedent back at me. One of them is a constitutional baseline no test covers.
+
+**ADVISORY:** `users.controller.ts:109` (*"No email is sent"*) now false — **T-6's file**, and T-4's Reviewer predicted this line precisely; declare it rather than discover it. · *"identical admin-reset email"* reads as the emails being identical when T-2's distinguishable copy was a graded requirement — one word. · Two falsifier citations attribute to `tasks.md` what came from the brief. · *"never throws"* is absolute where the exemplar names its residual — **fix in both or neither**. · Positional anchors correct this time. · T-4's ADVISORY 2 (`admin-registrations.service.ts` calling `dispatchReceiptEmail` *"still-fire-and-forget"* while this spec cites it as the **awaited** exemplar) still open, still needs its own ticket, still not foldable.
+
+#### Attempt 2 — Reviewer `FAIL` (1 issue)
+
+**What held.** `resolveResetSub` genuinely isolates the failure — the Reviewer traced the only syntactic escape (`getCognitoAdminClient()`/`getUserPoolId()` sitting outside the `try`) and showed it is not live: both already executed earlier in the same invocation, the client is a memoized singleton, and the placement matches `removeFromGroupIfPresent` exactly. The new test's assertion set is complete **and pins the dispatch happened** via `toHaveBeenCalledWith(to, password, undefined)`, not merely that nothing threw. Both rewritten comments verified true against every failure mode. DD-7 annotate-not-rewrite holds in both extension files. No regressions. The falsifier red reconciles exactly against line 510.
+
+**On the open question** (*"Its exits change per-method, not both at once"*): **not false, but spent.** Grammatically it modifies *how* the exits changed — one method at a time, in separate tasks — which remains literally true, and the text two clauses later lists both as `shipped`, so no reader can be misled into a wrong action. What is gone is its purpose. **ADVISORY**, past-tense rewrite recommended next time the file is opened. The Reviewer explicitly endorsed the Implementer's restraint in flagging rather than editing.
+
+> **Issue — the design amendment has two clauses and only one is gated.** §5.2 as amended requires the wrapped send to degrade to `undefined` **and** that the `catch` **must not log `id`** (NFR-1). The first has a falsifier, run and reported. **The second has none.**
+> The only test that drives that `catch` installs **no `Logger` spy** — the `errorSpy` `beforeEach` lives in a sibling `describe`, and in both of its tests `AdminGetUserCommand` *resolves*, so the `catch` never runs under a spy. There is no `setupFiles` in the Jest config and no global logger guard. **Mutating the line to interpolate `id` leaves the suite 61/61 green** — a new log line carrying the email address, at exactly the spot `tasks.md` T-5 calls *"the single most important falsifier in the spec"*.
+> The code is correct today; **the guard on it does not exist.** Trivially evaluable, so it cannot be a `(B)`.
+> **Violated Rule:** `design.md` §5.2 as amended (final `**Therefore:**` paragraph); `tasks.md` §2 / **KZ-002**; NFR-1.
+
+> ⚠️ **Leader's share.** I wrote a two-clause amendment and did not add a falsifier for its second clause. The Implementer implemented both clauses correctly and then declared clause coverage without noticing one had no gate — but the amendment, and the falsifier list in the brief, are mine. **Fifth Leader-originated defect in this spec**, and the same species as the tripwire: *a rule stated without a demonstration that anything enforces it.*
+
+**ADVISORY (recorded, with two Leader decisions):**
+1. **`users.service.ts` `get()`'s docstring still asserts `AdminGetUserCommandOutput` "does not echo `Username`"** — the Reviewer verified it **false** against this checkout (`AdminGetUserResponse.Username` is a **required** member). T-5 did **not** act on the false belief (`resolveResetSub` reads attributes and never substitutes), so no defect follows — but the sentence is **in T-5's own file** and `cognito-sub.util.ts` **quotes it verbatim, propagating it**. Forward-pointed into this brief twice already. **Leader decision: fixed in attempt 3** — the file is open, it is one line, and leaving a verified-false claim that another file quotes is how this spec's defects reproduce.
+2. **The `"not yet built as of this task"` family** — `cognito-sub.util.ts`, `mail.service.ts`, `invitation.template.ts`, `admin-reset.template.ts` all carry self-timestamping parentheticals that T-4 and T-5 have now partly outrun. The Reviewer checked them, found the convention **consistent with the precedent T-4 set**, and explicitly declined to fail on it. **Leader decision: leave them.** The parenthetical is the convention's own disclaimer; sweeping five sites for a convention that already self-limits would be churn, not correctness. Recorded so the next reader knows it was considered and declined, not missed.
+3. `users.controller.ts:109` now false — T-6's file, declared not discovered.
+
+#### Attempt 3 — Reviewer `PASS` ✅
+
+**Fixes:** the missing gate on the amendment's second clause, plus the Leader-authorised correction of a verified-false SDK claim in the two files that carried it.
+
+**Falsifier observed red**, with the leak visible: interpolating `id` produced `"...user=lookup-fails@example.com"`, reddening `not.toContain('@')`.
+
+**Verification (Leader):** 6 suites / 61 tests · no mutation residue (`grep` for `user=${id}` empty) · `"does not echo"` gone from both source files.
+
+**Reviewer verdict: `STATUS: PASS`,** with three pieces of analysis worth keeping:
+
+- **The gate gates in the strong form, not just against the chosen mutation.** Because the guards are `not.toContain('@')` / `not.toContain(<address>)` over the *emitted string*, **any** interpolation of `id` reddens regardless of the label used — stronger than the mutation its author picked. `toHaveBeenCalledTimes(1)` additionally catches a second line, and a leak moved to `logger.warn` reddens too (count drops to 0).
+- **Both clauses of the amendment are now gated:** clause 1 (degrade to `undefined`, flow continues) by `toHaveBeenCalledWith(..., undefined)` + `expectPolicyValid`; clause 2 (the `catch` must not log `id`) by the new assertions.
+- **The collateral red was derived, not accepted.** The Implementer reported two tests failing instead of one. The Reviewer showed this is *mechanically entailed*: when the assertion fails, `mockRestore()` never runs, the spy stays installed, and `jest.spyOn` returns the **existing** mock rather than wrapping it — so the sibling block's `beforeEach` receives that same spy with its call already recorded, making its `toHaveBeenCalledTimes(1)` see 2. *"Not the sort of detail that comes out right by accident."*
+
+**Both docstring corrections verified against `models_0.d.ts` in this checkout:** `AdminGetUserResponse.Username` is a **required** member and `UserAttributes` optional; `AdminCreateUserResponse.User` is optional and `UserType.Attributes` optional. The false sentence now survives **only** in this log's historical record.
+
+**ADVISORY (recorded, none actioned — advisories never become tasks):**
+1. **Spy hygiene.** The spy is installed inside a single `it` with a manual restore and no `restoreMocks` in the Jest config, so a red at that assertion leaks it into the next test. The Reviewer judged it **adequate but not the file's best convention**, and established it **fails safe**: bounded to this file by Jest's per-file module registry, only after a test is already red, and it can only push counts **up** — extra reds, never a false green. It self-heals at the sibling block's `afterEach`. A `try`/`finally` or a nested `describe` would remove it.
+2. `users.service.ts`'s *"(the field name `AdminCreateUserCommandOutput` uses)"* elides one nesting level — `Attributes` lives on `UserType`, not on the output directly. Nothing acts on the loose reading; `cognito-sub.util.ts` states the nesting precisely.
+3. **⚠️ An honest boundary on what the NFR-1 guards prove.** All three log guards in this file assert over `mock.calls[i][0]` only, with fixtures whose `Error` message equals its `name`. Two shapes stay invisible: logging `${err}`/`err.message` rather than `err.name`, and passing `id` as a **second** `Logger#error` argument. Neither is reachable today and neither is what the amendment forbids — so not a gap in T-5's obligations — but **the guard proves "`id` is not interpolated into the message", not "nothing PII-bearing reaches the logger."** Asserting over `JSON.stringify(spy.mock.calls)` would close both, cheaply, in a later task.
+4. `cognito-sub.util.ts`'s *"today calls no `MailService` method"* sits inside the self-timestamping parenthetical the Leader explicitly decided to leave. **Considered and declined, not missed.**
+
+---
+
+### T-5 — FINAL: `[x]` PASS
+
+**Attempts:** 3 · **Date:** 2026-09-21
+
+**Requirements covered:** FR-5 (all clauses, incl. the `AND IT MUST` require-a-change-at-next-sign-in, pinned by the `Permanent: false` test and its falsifier), FR-3 (both scenarios), FR-4's four clauses for the mail-failure path, NFR-1. NFR-2 recorded as a **(B)** the Reviewer upheld as genuinely structural — `tasks.md` §6 assigns it to T-8 and the Lambda-freeze class is unreproducible in a unit test.
+
+**Final verification:** 6 suites / 61 tests · full backend suite 82 / 1200 · eslint and build clean. **Five mutations demonstrated to redden named tests:** `id` substituted as the dispatch reference, the dispatch helper's `try`/`catch` removed, `Permanent: false` → `true`, `resolveResetSub`'s `catch` removed, and `id` interpolated into `resolveResetSub`'s log line.
+
+**✅ The T-4 tripwire fired on this task and was handled correctly** — replaced with a positive assertion plus a history comment, not deleted. The first time in this spec that a guard planted by one task protected the next, and the mechanism the spec should keep using.
+
+**🔶 A design amendment was made during this task** — `design.md` §5.2 gained the `AdminGetUser` failure-mode ruling it had never considered. Recorded as an **amendment, not a Pivot**: the design was not wrong or unviable, it was silent on one axis, and the change is strictly additive. Full reasoning in the Design Amendment block above, including the Reviewer's refutation of the Leader's stated reason and its substitution of the correct one (**what the call buys**, not blast radius).
+
+**⚠️ Leader defects in this task: two of the four.** The §5.2 gap was mine — I wrote that section after J-4 and weighed the extra round trip on latency and cost alone. And I then wrote a two-clause amendment while gating only one clause, which is the same species as T-4's tripwire: **a rule stated without a demonstration that anything enforces it.** That is precisely what `tasks.md` §2 has demanded of every Implementer for five tasks, and what I was not applying to my own briefs and amendments.
