@@ -89,6 +89,71 @@ function expectPolicyValid(pw: unknown): void {
   expect(password).toMatch(/[!@#$%*?\-_]/);
 }
 
+// ---------------------------------------------------------------------------
+// Arrange-only helpers (no assertions live here — every expect() stays in
+// its own test body, per the account-access-emails T-6 dispatch/T-7 brief).
+// ---------------------------------------------------------------------------
+
+/**
+ * Stub `AdminCreateUserCommand`'s success response. `sub` is optional and
+ * maps to the exact `Attributes` shape `resolveCognitoSub` reads — omit it
+ * to reproduce the "no sub attribute at all" response Cognito can genuinely
+ * return, which is the branch several tests below need.
+ */
+function stubCreateUserResolves(username: string, sub?: string): void {
+  cognitoMock.on(AdminCreateUserCommand).resolves({
+    User: sub
+      ? { Username: username, Attributes: [{ Name: 'sub', Value: sub }] }
+      : { Username: username },
+  });
+}
+
+/** Stub `AdminGetUserCommand` with a resolvable `sub` attribute — the
+ * `resetPassword` dispatch's happy-path reference lookup. */
+function stubGetUserSub(sub: string): void {
+  cognitoMock.on(AdminGetUserCommand).resolves({ UserAttributes: [{ Name: 'sub', Value: sub }] });
+}
+
+/** Stub `AdminGetUserCommand` with NO `sub` attribute — only an `email` one,
+ * mirroring the real "unresolvable" response shape — the branch that must
+ * degrade to `reference=n/a`, never fall back to the id/email in scope. */
+function stubGetUserNoSub(fallbackEmail: string): void {
+  cognitoMock
+    .on(AdminGetUserCommand)
+    .resolves({ UserAttributes: [{ Name: 'email', Value: fallbackEmail }] });
+}
+
+/** Make a mocked `MailService` method reject the way a genuinely unreachable
+ * microservice transport would — same error shape both dispatch call sites
+ * (`create`'s `sendInvitation`, `resetPassword`'s `sendAdminReset`) need to
+ * prove they swallow without failing the request. */
+function stubTransportRejection(mock: jest.Mock): void {
+  const transportRejection = new Error('microservice unreachable');
+  transportRejection.name = 'TransportRejectedError';
+  mock.mockRejectedValue(transportRejection);
+}
+
+/**
+ * Spies on `Logger.prototype.error` for a describe block's lifetime,
+ * restoring it after each test — shared by the two "a rejecting mail
+ * transport never fails the request" blocks below, which were otherwise
+ * identical `let`/`beforeEach`/`afterEach` boilerplate. Returns a GETTER,
+ * not the spy itself: the real `jest.SpyInstance` is created fresh inside
+ * `beforeEach`, which runs after this function has already returned, so
+ * callers must read `getErrorSpy()` inside each `it`, not capture a value
+ * at describe-registration time.
+ */
+function spyOnLoggerError(): () => jest.SpyInstance {
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    spy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    spy.mockRestore();
+  });
+  return () => spy;
+}
+
 describe('UsersService (mocked Cognito)', () => {
   let service: UsersService;
   let mailService: { sendInvitation: jest.Mock; sendAdminReset: jest.Mock };
@@ -150,9 +215,7 @@ describe('UsersService (mocked Cognito)', () => {
   // ── FR-3: create (Cognito mail suppressed; invitation dispatched by `UsersService`) ──
   describe('create (FR-3)', () => {
     it('sends AdminCreateUser with MessageAction "SUPPRESS" (Cognito\'s own mailer) + a temp password and adds to group when role given', async () => {
-      cognitoMock
-        .on(AdminCreateUserCommand)
-        .resolves({ User: { Username: 'new@example.com' } });
+      stubCreateUserResolves('new@example.com');
       cognitoMock.on(AdminAddUserToGroupCommand).resolves({});
 
       const result = await service.create({
@@ -200,9 +263,7 @@ describe('UsersService (mocked Cognito)', () => {
     });
 
     it('does NOT add to any group when no role is supplied', async () => {
-      cognitoMock
-        .on(AdminCreateUserCommand)
-        .resolves({ User: { Username: 'plain@example.com' } });
+      stubCreateUserResolves('plain@example.com');
 
       const result = await service.create({
         email: 'plain@example.com',
@@ -239,12 +300,7 @@ describe('UsersService (mocked Cognito)', () => {
   // ── auth/account-access-emails FR-1, FR-3, FR-4, NFR-1, NFR-2 ───────────
   describe('create — invitation dispatch (auth/account-access-emails)', () => {
     it('resolves the Cognito `sub` from `AdminCreateUserResponse.User.Attributes` and passes it — never `Username`/`id` — as the reference', async () => {
-      cognitoMock.on(AdminCreateUserCommand).resolves({
-        User: {
-          Username: 'invitee@example.com',
-          Attributes: [{ Name: 'sub', Value: 'sub-real-0001' }],
-        },
-      });
+      stubCreateUserResolves('invitee@example.com', 'sub-real-0001');
 
       const result = await service.create({
         email: 'invitee@example.com',
@@ -263,9 +319,7 @@ describe('UsersService (mocked Cognito)', () => {
         'serialized `id`) when `sub` cannot be resolved — the fallback NFR-1 forbids ' +
         '(J-4: `id`/`Username` IS the email address in this system)',
       async () => {
-        cognitoMock
-          .on(AdminCreateUserCommand)
-          .resolves({ User: { Username: 'nosub@example.com' } }); // no Attributes at all
+        stubCreateUserResolves('nosub@example.com'); // no Attributes at all
 
         await service.create({ email: 'nosub@example.com' } as never);
 
@@ -284,9 +338,7 @@ describe('UsersService (mocked Cognito)', () => {
     // the dispatch earlier makes this test redden, because the invitation
     // would already have been sent by the time the group-add rejects.
     it('does NOT dispatch the invitation when the optional AdminAddUserToGroup call fails — proves the dispatch runs LAST', async () => {
-      cognitoMock
-        .on(AdminCreateUserCommand)
-        .resolves({ User: { Username: 'blocked@example.com' } });
+      stubCreateUserResolves('blocked@example.com');
       cognitoMock
         .on(AdminAddUserToGroupCommand)
         .rejects(cognitoError('UserNotFoundException'));
@@ -309,26 +361,11 @@ describe('UsersService (mocked Cognito)', () => {
     // which routes it through `mapCognitoError` — so `create()` would
     // REJECT instead of resolving, and every assertion below would redden.
     describe('a rejecting mail transport never fails the request', () => {
-      let errorSpy: jest.SpyInstance;
-
-      beforeEach(() => {
-        errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      });
-
-      afterEach(() => {
-        errorSpy.mockRestore();
-      });
+      const getErrorSpy = spyOnLoggerError();
 
       it('still returns the created user, the temporary password, and emailSent:false — and logs the failure without the password or the address', async () => {
-        cognitoMock.on(AdminCreateUserCommand).resolves({
-          User: {
-            Username: 'rejected@example.com',
-            Attributes: [{ Name: 'sub', Value: 'sub-reject-0002' }],
-          },
-        });
-        const transportRejection = new Error('microservice unreachable');
-        transportRejection.name = 'TransportRejectedError';
-        mailService.sendInvitation.mockRejectedValue(transportRejection);
+        stubCreateUserResolves('rejected@example.com', 'sub-reject-0002');
+        stubTransportRejection(mailService.sendInvitation);
 
         // (c) never throws — this `await` alone falsifies (2) if the
         // dispatch's own try/catch is removed.
@@ -344,6 +381,7 @@ describe('UsersService (mocked Cognito)', () => {
         expect(result.emailSent).toBe(false);
 
         // NFR-1: the failure is logged, but NEVER the password or the address.
+        const errorSpy = getErrorSpy();
         expect(errorSpy).toHaveBeenCalledTimes(1);
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
         expect(emittedLine).toContain('TransportRejectedError');
@@ -357,9 +395,7 @@ describe('UsersService (mocked Cognito)', () => {
         'logs `reference=n/a` — never the email address — when the transport rejects AND `sub` ' +
           'could not be resolved (Falsifier 3: a fallback to `dto.email` here must redden this test)',
         async () => {
-          cognitoMock
-            .on(AdminCreateUserCommand)
-            .resolves({ User: { Username: 'nosub-reject@example.com' } }); // no Attributes
+          stubCreateUserResolves('nosub-reject@example.com'); // no Attributes
           mailService.sendInvitation.mockRejectedValue(new Error('down'));
 
           const result = await service.create({
@@ -367,6 +403,7 @@ describe('UsersService (mocked Cognito)', () => {
           } as never);
 
           expect(result.emailSent).toBe(false);
+          const errorSpy = getErrorSpy();
           expect(errorSpy).toHaveBeenCalledTimes(1);
           const [emittedLine] = errorSpy.mock.calls[0] as [string];
           expect(emittedLine).toContain('reference=n/a');
@@ -524,9 +561,7 @@ describe('UsersService (mocked Cognito)', () => {
 
     it('calls AdminGetUser only to resolve a sub for the dispatch — no status-based branching before the reset', async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-      cognitoMock.on(AdminGetUserCommand).resolves({
-        UserAttributes: [{ Name: 'sub', Value: 'sub-uuid-123-resolved' }],
-      });
+      stubGetUserSub('sub-uuid-123-resolved');
 
       await service.resetPassword('sub-uuid-123');
 
@@ -552,9 +587,7 @@ describe('UsersService (mocked Cognito)', () => {
   describe('resetPassword — admin-reset dispatch (auth/account-access-emails)', () => {
     it("resolves the Cognito `sub` from `AdminGetUser`'s `UserAttributes` and passes it — never `id` — as the reference", async () => {
       cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-      cognitoMock.on(AdminGetUserCommand).resolves({
-        UserAttributes: [{ Name: 'sub', Value: 'sub-reset-0001' }],
-      });
+      stubGetUserSub('sub-reset-0001');
 
       const result = await service.resetPassword('user@example.com');
 
@@ -571,9 +604,7 @@ describe('UsersService (mocked Cognito)', () => {
         'resolved — the fallback NFR-1 forbids (`id` IS the email address in this system)',
       async () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-        cognitoMock.on(AdminGetUserCommand).resolves({
-          UserAttributes: [{ Name: 'email', Value: 'nosub@example.com' }],
-        }); // no `sub` entry — the disqualifier's "unresolvable" branch
+        stubGetUserNoSub('nosub@example.com'); // no `sub` entry — the disqualifier's "unresolvable" branch
 
         await service.resetPassword('nosub@example.com');
 
@@ -631,15 +662,7 @@ describe('UsersService (mocked Cognito)', () => {
     // block's first test above (`toMatchObject({ Permanent: false })`);
     // this block's own falsifiers are 1 and 2, exercised below.
     describe('a rejecting mail transport never fails the request', () => {
-      let errorSpy: jest.SpyInstance;
-
-      beforeEach(() => {
-        errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      });
-
-      afterEach(() => {
-        errorSpy.mockRestore();
-      });
+      const getErrorSpy = spyOnLoggerError();
 
       // ── Falsifier 2: removing dispatchAdminResetEmail's own
       // try/catch lets the rejection propagate into the outer try
@@ -647,12 +670,8 @@ describe('UsersService (mocked Cognito)', () => {
       // resolving — every assertion below would redden.
       it('still returns the temporary password and emailSent:false — and logs the failure without the password or the address', async () => {
         cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-        cognitoMock.on(AdminGetUserCommand).resolves({
-          UserAttributes: [{ Name: 'sub', Value: 'sub-reset-0002' }],
-        });
-        const transportRejection = new Error('microservice unreachable');
-        transportRejection.name = 'TransportRejectedError';
-        mailService.sendAdminReset.mockRejectedValue(transportRejection);
+        stubGetUserSub('sub-reset-0002');
+        stubTransportRejection(mailService.sendAdminReset);
 
         // Never throws — this `await` alone falsifies Falsifier 2 if the
         // dispatch helper's own try/catch is removed.
@@ -666,6 +685,7 @@ describe('UsersService (mocked Cognito)', () => {
         // passing `id` instead of `sub` as the reference at the call site
         // would flip `sub-reset-0002` below to the raw email, and the
         // `not.toContain('@')` guard would redden.
+        const errorSpy = getErrorSpy();
         expect(errorSpy).toHaveBeenCalledTimes(1);
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
         expect(emittedLine).toContain('TransportRejectedError');
@@ -680,14 +700,13 @@ describe('UsersService (mocked Cognito)', () => {
           'could not be resolved (Falsifier 1: a fallback to `id` here must redden this test)',
         async () => {
           cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
-          cognitoMock.on(AdminGetUserCommand).resolves({
-            UserAttributes: [{ Name: 'email', Value: 'nosub-reject@example.com' }],
-          }); // no `sub`
+          stubGetUserNoSub('nosub-reject@example.com'); // no `sub`
           mailService.sendAdminReset.mockRejectedValue(new Error('down'));
 
           const result = await service.resetPassword('nosub-reject@example.com');
 
           expect(result.emailSent).toBe(false);
+          const errorSpy = getErrorSpy();
           expect(errorSpy).toHaveBeenCalledTimes(1);
           const [emittedLine] = errorSpy.mock.calls[0] as [string];
           expect(emittedLine).toContain('reference=n/a');

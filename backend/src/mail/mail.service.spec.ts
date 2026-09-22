@@ -114,6 +114,27 @@ function setMicroserviceEnv(): void {
   process.env.PUBLIC_APP_BASE_URL = 'https://app.example.org';
 }
 
+/** Arrange-only: select `MAIL_TRANSPORT` and re-init the module-level
+ * transport singleton. Every assertion in the tests below stays inline —
+ * this only removes the identical two-line env-switch that preceded each
+ * one. */
+function setTransport(mode: 'no-op' | 'microservice'): void {
+  process.env.MAIL_TRANSPORT = mode;
+  resetMailTransport();
+}
+
+/** Arrange-only: switch to the microservice transport wired to `channel`.
+ * Used by the logging-behaviour describe below, whose `beforeEach` starts
+ * every test on `no-op` — reaching a real (mocked) broker for a specific
+ * rejection/kind assertion needs this full re-init, not just `setTransport`. */
+function useMicroserviceTransport(channel: FakeChannel): void {
+  process.env.MAIL_TRANSPORT = 'microservice';
+  setMicroserviceEnv();
+  resetMailTransport();
+  resetMicroserviceMailTransportState();
+  mockConnect(channel);
+}
+
 describe('MailService — transport selection (NFR-10, the Disqualifying clause)', () => {
   let channel: FakeChannel;
 
@@ -132,8 +153,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
     async () => {
       // Selecting the no-op transport: the call must resolve, and the send
       // must NOT distinguishably reach the network layer at all.
-      process.env.MAIL_TRANSPORT = 'no-op';
-      resetMailTransport();
+      setTransport('no-op');
       const noOpService = new MailService();
       await expect(
         noOpService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
@@ -144,8 +164,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       // it DOES reach the broker. This is the sent-vs-not-sent distinction
       // the Disqualifying clause requires — a test that could not fail this
       // way is not evidence.
-      process.env.MAIL_TRANSPORT = 'microservice';
-      resetMailTransport();
+      setTransport('microservice');
       const microserviceService = new MailService();
       await expect(
         microserviceService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
@@ -155,13 +174,11 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
   );
 
   it('the same distinction holds for sendVerificationCode', async () => {
-    process.env.MAIL_TRANSPORT = 'no-op';
-    resetMailTransport();
+    setTransport('no-op');
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
     expect(channel.publish).toHaveBeenCalledTimes(0);
 
-    process.env.MAIL_TRANSPORT = 'microservice';
-    resetMailTransport();
+    setTransport('microservice');
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
     expect(channel.publish).toHaveBeenCalledTimes(1);
   });
@@ -169,8 +186,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
   it(
     'auth/account-access-emails T-3 — the same distinction holds for sendInvitation and sendAdminReset',
     async () => {
-      process.env.MAIL_TRANSPORT = 'no-op';
-      resetMailTransport();
+      setTransport('no-op');
       await new MailService().sendInvitation(
         'new-user@example.org',
         'Tmp-Passw0rd!',
@@ -178,8 +194,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       );
       expect(channel.publish).toHaveBeenCalledTimes(0);
 
-      process.env.MAIL_TRANSPORT = 'microservice';
-      resetMailTransport();
+      setTransport('microservice');
       await new MailService().sendInvitation(
         'new-user@example.org',
         'Tmp-Passw0rd!',
@@ -187,8 +202,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       );
       expect(channel.publish).toHaveBeenCalledTimes(1);
 
-      process.env.MAIL_TRANSPORT = 'no-op';
-      resetMailTransport();
+      setTransport('no-op');
       await new MailService().sendAdminReset(
         'existing-user@example.org',
         'Tmp-Passw0rd!',
@@ -196,8 +210,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       );
       expect(channel.publish).toHaveBeenCalledTimes(1);
 
-      process.env.MAIL_TRANSPORT = 'microservice';
-      resetMailTransport();
+      setTransport('microservice');
       await new MailService().sendAdminReset(
         'existing-user@example.org',
         'Tmp-Passw0rd!',
@@ -321,11 +334,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   );
 
   it('logs a failed outcome (still without PII) when the transport rejects', async () => {
-    process.env.MAIL_TRANSPORT = 'microservice';
-    setMicroserviceEnv();
-    resetMailTransport();
-    resetMicroserviceMailTransportState();
-    mockConnect(createRejectingChannel());
+    useMicroserviceTransport(createRejectingChannel());
 
     const service = new MailService();
     const email = 'applicant-secret@example.org';
@@ -346,11 +355,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     'sendContactMessage (contact/contact-channels T-1) logs kind=contact with ' +
       'reference=n/a and never the recipient address',
     async () => {
-      process.env.MAIL_TRANSPORT = 'microservice';
-      setMicroserviceEnv();
-      resetMailTransport();
-      resetMicroserviceMailTransportState();
-      mockConnect(createWorkingChannel());
+      useMicroserviceTransport(createWorkingChannel());
 
       const service = new MailService();
       const adminEmail = 'admin-secret@example.org';
@@ -466,11 +471,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   );
 
   it('sendContactMessage rethrows a transport failure unchanged', async () => {
-    process.env.MAIL_TRANSPORT = 'microservice';
-    setMicroserviceEnv();
-    resetMailTransport();
-    resetMicroserviceMailTransportState();
-    mockConnect(createRejectingChannel());
+    useMicroserviceTransport(createRejectingChannel());
 
     const service = new MailService();
 
@@ -487,11 +488,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     'auth/account-access-emails T-3, Reviewer Issue 1 — sendInvitation rethrows a transport ' +
       'failure unchanged, and the failure-path log leaks neither the address nor the password',
     async () => {
-      process.env.MAIL_TRANSPORT = 'microservice';
-      setMicroserviceEnv();
-      resetMailTransport();
-      resetMicroserviceMailTransportState();
-      mockConnect(createRejectingChannel());
+      useMicroserviceTransport(createRejectingChannel());
 
       const service = new MailService();
       const email = 'invitee-secret@example.org';
@@ -517,11 +514,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     'auth/account-access-emails T-3, Reviewer Issue 1 — sendAdminReset rethrows a transport ' +
       'failure unchanged, and the failure-path log leaks neither the address nor the password',
     async () => {
-      process.env.MAIL_TRANSPORT = 'microservice';
-      setMicroserviceEnv();
-      resetMailTransport();
-      resetMicroserviceMailTransportState();
-      mockConnect(createRejectingChannel());
+      useMicroserviceTransport(createRejectingChannel());
 
       const service = new MailService();
       const email = 'reset-target-secret@example.org';

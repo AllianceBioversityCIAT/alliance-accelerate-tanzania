@@ -75,22 +75,41 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Arrange helpers (no assertions live here — every expect() stays in its
+// own test body below).
+// ---------------------------------------------------------------------------
+
+/**
+ * Stubs `createUser`'s resolved value. `emailSent` has NO default and is
+ * REQUIRED (a plain positional argument, not an options object with a
+ * fallback) — a fixture that silently defaulted it could render the
+ * not-sent branch while a test's name and assertions say "sent", and the
+ * suite would stay green. The branch each test drives must stay visible
+ * at its call site, e.g. `mockCreateUserResolves('Tmp!Handoff-3', false)`.
+ */
+function mockCreateUserResolves(temporaryPassword: string, emailSent: boolean): void {
+  mockCreateUser.mockResolvedValue({ user: NEW_USER, temporaryPassword, emailSent });
+}
+
+/** Types the email into the form and submits it — the identical arrange
+ * sequence every test below drives before its own distinctive assertions. */
+function fillEmailAndSubmit(email: string): void {
+  fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
+    target: { value: email },
+  });
+  fireEvent.click(screen.getByRole('button', { name: /^create user$/i }));
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('CreateUserDialog — temp-password handoff', () => {
   it('calls createUser and then shows the one-time temporary password (email sent branch)', async () => {
-    mockCreateUser.mockResolvedValue({
-      user: NEW_USER,
-      temporaryPassword: 'Tmp!Handoff-1',
-      emailSent: true,
-    });
+    mockCreateUserResolves('Tmp!Handoff-1', true);
     const { onSuccess } = setup();
 
-    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
-      target: { value: 'new@example.com' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /^create user$/i }));
+    fillEmailAndSubmit('new@example.com');
 
     await waitFor(() =>
       expect(mockCreateUser).toHaveBeenCalledWith(
@@ -110,17 +129,10 @@ describe('CreateUserDialog — temp-password handoff', () => {
   });
 
   it('fires onSuccess when Done is clicked in the handoff view (email sent branch)', async () => {
-    mockCreateUser.mockResolvedValue({
-      user: NEW_USER,
-      temporaryPassword: 'Tmp!Handoff-2',
-      emailSent: true,
-    });
+    mockCreateUserResolves('Tmp!Handoff-2', true);
     const { onSuccess } = setup();
 
-    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
-      target: { value: 'new@example.com' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /^create user$/i }));
+    fillEmailAndSubmit('new@example.com');
 
     await waitFor(() =>
       expect(screen.getByText('Tmp!Handoff-2')).toBeInTheDocument(),
@@ -132,17 +144,10 @@ describe('CreateUserDialog — temp-password handoff', () => {
   });
 
   it('still shows the temporary password when the invite email failed to send (email NOT sent branch)', async () => {
-    mockCreateUser.mockResolvedValue({
-      user: NEW_USER,
-      temporaryPassword: 'Tmp!Handoff-3',
-      emailSent: false,
-    });
+    mockCreateUserResolves('Tmp!Handoff-3', false);
     const { onSuccess } = setup();
 
-    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
-      target: { value: 'new@example.com' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /^create user$/i }));
+    fillEmailAndSubmit('new@example.com');
 
     await waitFor(() =>
       expect(mockCreateUser).toHaveBeenCalledWith(

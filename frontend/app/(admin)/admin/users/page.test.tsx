@@ -133,6 +133,48 @@ function renderPage() {
   return render(<UsersPage />);
 }
 
+/** Arrange-only: authenticate + stub the populated user list + render — the
+ * identical setup several tests below need before their own distinctive
+ * action (delete, reset, create). Every `waitFor`/`expect` that follows a
+ * call to this helper stays inline in its own test. */
+function renderAuthedWithUsers(): void {
+  mockGetSession.mockResolvedValue(FAKE_SESSION);
+  mockListUsers.mockResolvedValue(LIST_WITH_USERS);
+  renderPage();
+}
+
+/**
+ * Stubs `resetUserPassword`'s resolved value. `emailSent` has NO default
+ * and is REQUIRED — see the identical rationale on `CreateUserDialog.test.tsx`'s
+ * `mockCreateUserResolves`: a silently-defaulted `emailSent` could render the
+ * not-sent branch while a test's name and assertions say "sent".
+ */
+function mockResetPasswordResolves(temporaryPassword: string, emailSent: boolean): void {
+  mockResetPwd.mockResolvedValue({ temporaryPassword, emailSent });
+}
+
+/** Clicks the first (desktop-table) "Delete alice@example.com" button — the
+ * row action renders twice (desktop + mobile cards). */
+function openDeleteConfirmForAlice(): void {
+  fireEvent.click(
+    screen.getAllByRole('button', { name: /delete alice@example\.com/i })[0],
+  );
+}
+
+/** Clicks the ConfirmDialog's "Delete user" button. */
+function confirmDeleteUser(): void {
+  fireEvent.click(screen.getByRole('button', { name: /^delete user$/i }));
+}
+
+/** Opens the reset-password confirm dialog for alice and confirms it —
+ * shared arrange for all three reset-password-flow tests below. */
+function openAndConfirmResetPasswordForAlice(): void {
+  fireEvent.click(
+    screen.getAllByRole('button', { name: /reset password for alice@example\.com/i })[0],
+  );
+  fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
+}
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -162,10 +204,7 @@ describe('UsersPage — list renders rows for returned users', () => {
   });
 
   it('renders a row for each user after loading completes', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-
-    renderPage();
+    renderAuthedWithUsers();
 
     // UsersTable renders desktop table + mobile cards; email appears twice
     await waitFor(() =>
@@ -175,10 +214,7 @@ describe('UsersPage — list renders rows for returned users', () => {
   });
 
   it('hides the loading skeleton after data loads', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-
-    renderPage();
+    renderAuthedWithUsers();
 
     await waitFor(() =>
       expect(screen.queryByRole('status', { name: /loading users/i })).not.toBeInTheDocument(),
@@ -239,10 +275,7 @@ describe('UsersPage — error banner on rejected list', () => {
 
 describe('UsersPage — create user flow', () => {
   it('opens CreateUserDialog when "+ Create user" is clicked', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-
-    renderPage();
+    renderAuthedWithUsers();
 
     // Wait for the page to be in populated state (button enabled)
     await waitFor(() =>
@@ -314,10 +347,7 @@ describe('UsersPage — create user flow', () => {
 
 describe('UsersPage — delete flow', () => {
   it('opens ConfirmDialog when a Delete button is clicked', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-
-    renderPage();
+    renderAuthedWithUsers();
 
     // UsersTable renders desktop + mobile; wait for any occurrence
     await waitFor(() =>
@@ -325,8 +355,7 @@ describe('UsersPage — delete flow', () => {
     );
 
     // There are two Delete buttons for alice (desktop + mobile), click the first
-    const deleteBtns = screen.getAllByRole('button', { name: /delete alice@example\.com/i });
-    fireEvent.click(deleteBtns[0]);
+    openDeleteConfirmForAlice();
 
     // ConfirmDialog appears
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -347,12 +376,10 @@ describe('UsersPage — delete flow', () => {
     );
 
     // Open delete confirm dialog for alice (first button = desktop table)
-    const deleteBtns = screen.getAllByRole('button', { name: /delete alice@example\.com/i });
-    fireEvent.click(deleteBtns[0]);
+    openDeleteConfirmForAlice();
 
     // Confirm the deletion (button label is "Delete user")
-    const confirmBtn = screen.getByRole('button', { name: /^delete user$/i });
-    fireEvent.click(confirmBtn);
+    confirmDeleteUser();
 
     await waitFor(() =>
       expect(mockDeleteUser).toHaveBeenCalledWith(USER_A.id, TOKEN),
@@ -372,9 +399,8 @@ describe('UsersPage — delete flow', () => {
       expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
     );
 
-    const deleteBtns = screen.getAllByRole('button', { name: /delete alice@example\.com/i });
-    fireEvent.click(deleteBtns[0]);
-    fireEvent.click(screen.getByRole('button', { name: /^delete user$/i }));
+    openDeleteConfirmForAlice();
+    confirmDeleteUser();
 
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(/user deleted/i),
@@ -388,22 +414,16 @@ describe('UsersPage — delete flow', () => {
 
 describe('UsersPage — reset password flow', () => {
   it('shows the temp-password handoff after resetUserPassword resolves (email sent branch)', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-7', emailSent: true });
-
-    renderPage();
+    mockResetPasswordResolves('Tmp!Reset-7', true);
+    renderAuthedWithUsers();
 
     await waitFor(() =>
       expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
     );
 
-    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
-    fireEvent.click(resetBtns[0]);
+    openAndConfirmResetPasswordForAlice();
 
     // Confirm → API called with the user id + token
-    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
-
     await waitFor(() =>
       expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN),
     );
@@ -425,19 +445,14 @@ describe('UsersPage — reset password flow', () => {
   });
 
   it('still shows the new temporary password when the reset email failed to send (email NOT sent branch)', async () => {
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-8', emailSent: false });
-
-    renderPage();
+    mockResetPasswordResolves('Tmp!Reset-8', false);
+    renderAuthedWithUsers();
 
     await waitFor(() =>
       expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
     );
 
-    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
-    fireEvent.click(resetBtns[0]);
-    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
+    openAndConfirmResetPasswordForAlice();
 
     await waitFor(() =>
       expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN),
@@ -462,19 +477,14 @@ describe('UsersPage — reset password flow', () => {
   it('renders the ApiError message in the dialog (not a generic error) on a 409 rejection', async () => {
     const CONFLICT_MSG =
       'This user is not in a state where that action is allowed. Try again once the account is confirmed.';
-    mockGetSession.mockResolvedValue(FAKE_SESSION);
-    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
     mockResetPwd.mockRejectedValue(Object.assign(new Error(CONFLICT_MSG), { status: 409 }));
-
-    renderPage();
+    renderAuthedWithUsers();
 
     await waitFor(() =>
       expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
     );
 
-    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
-    fireEvent.click(resetBtns[0]);
-    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
+    openAndConfirmResetPasswordForAlice();
 
     await waitFor(() =>
       expect(screen.getByText(CONFLICT_MSG)).toBeInTheDocument(),
