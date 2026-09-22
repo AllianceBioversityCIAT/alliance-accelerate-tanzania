@@ -111,10 +111,17 @@ function VisualPanel({ panelRef, countRef }: VisualPanelProps) {
           className="object-cover object-[50%_30%]"
         />
         {/* Bottom scrim for depth + overlay legibility — token-based (fg), no raw
-            hex; tracks --color-fg so the LiveRegistryCard always reads clearly. */}
+            hex; tracks --color-fg so the LiveRegistryCard always reads clearly.
+            `from-fg` + `opacity-70`, NOT `from-fg/70` — a `/NN` modifier on a
+            semantic token emits no rule at all (every colour in
+            tailwind.config.ts is a bare `var(--color-x)` Tailwind cannot compose
+            an alpha into), so this scrim was rendering FULLY TRANSPARENT: it did
+            not exist. Same correction, same reason, as the scrim documented in
+            `ClosingCTA.tsx`. The div is aria-hidden with no children, so opacity
+            on the element is exactly a 70% stop on the gradient's `from` end. */}
         <div
           aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-fg/70 to-transparent"
+          className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-fg to-transparent opacity-70"
         />
       </div>
 
