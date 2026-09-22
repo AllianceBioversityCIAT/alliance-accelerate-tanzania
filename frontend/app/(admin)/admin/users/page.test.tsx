@@ -256,14 +256,18 @@ describe('UsersPage — create user flow', () => {
     expect(screen.getByRole('heading', { name: /create user/i })).toBeInTheDocument();
   });
 
-  it('calls createUser then shows the temp password handoff; Done refetches', async () => {
+  it('calls createUser then shows the temp password handoff (email sent branch); Done refetches', async () => {
     const NEW_USER: AdminUser = { ...USER_A, id: 'u-new', email: 'new@example.com' };
     mockGetSession.mockResolvedValue(FAKE_SESSION);
     // first call: initial load; second call after Done: refetch
     mockListUsers
       .mockResolvedValueOnce(LIST_WITH_USERS)
       .mockResolvedValueOnce({ users: [USER_A, USER_B, NEW_USER] });
-    mockCreateUser.mockResolvedValue({ user: NEW_USER, temporaryPassword: 'Tmp!Create-9' });
+    mockCreateUser.mockResolvedValue({
+      user: NEW_USER,
+      temporaryPassword: 'Tmp!Create-9',
+      emailSent: true,
+    });
 
     renderPage();
 
@@ -383,10 +387,10 @@ describe('UsersPage — delete flow', () => {
 // ---------------------------------------------------------------------------
 
 describe('UsersPage — reset password flow', () => {
-  it('shows the temp-password handoff after resetUserPassword resolves', async () => {
+  it('shows the temp-password handoff after resetUserPassword resolves (email sent branch)', async () => {
     mockGetSession.mockResolvedValue(FAKE_SESSION);
     mockListUsers.mockResolvedValue(LIST_WITH_USERS);
-    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-7' });
+    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-7', emailSent: true });
 
     renderPage();
 
@@ -404,11 +408,13 @@ describe('UsersPage — reset password flow', () => {
       expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN),
     );
 
-    // Handoff dialog shows the new temporary password + the once-only warning
+    // Handoff dialog shows the new temporary password + the once-only note
     await waitFor(() =>
       expect(screen.getByText('Tmp!Reset-7')).toBeInTheDocument(),
     );
     expect(screen.getByText(/shown only once/i)).toBeInTheDocument();
+    // FR-3 sent scenario: states the reset email was sent.
+    expect(screen.getByText(/was sent to the user/i)).toBeInTheDocument();
 
     // Done → subtle confirmation banner
     fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
@@ -416,6 +422,41 @@ describe('UsersPage — reset password flow', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(/password reset\./i),
     );
+  });
+
+  it('still shows the new temporary password when the reset email failed to send (email NOT sent branch)', async () => {
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockListUsers.mockResolvedValue(LIST_WITH_USERS);
+    mockResetPwd.mockResolvedValue({ temporaryPassword: 'Tmp!Reset-8', emailSent: false });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0),
+    );
+
+    const resetBtns = screen.getAllByRole('button', { name: /reset password for alice@example\.com/i });
+    fireEvent.click(resetBtns[0]);
+    fireEvent.click(screen.getByRole('button', { name: /^reset password$/i }));
+
+    await waitFor(() =>
+      expect(mockResetPwd).toHaveBeenCalledWith(USER_A.id, TOKEN),
+    );
+
+    // FR-2: the password is shown even though the email was not sent.
+    await waitFor(() =>
+      expect(screen.getByText('Tmp!Reset-8')).toBeInTheDocument(),
+    );
+    // FR-3 not-sent scenario: states the failure and the direct-share instruction.
+    expect(screen.getByText(/could not be sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/share this password with the user directly/i)).toBeInTheDocument();
+    // FR-3's negative clause: must not read as a failure to reset the password.
+    expect(screen.queryByText(/failed to reset/i)).not.toBeInTheDocument();
+    // This is the RESET path — no invitation email is ever attempted here,
+    // so the failure line must never name "invitation" (that noun belongs
+    // only to the create path). Falsifier: restoring the word "invitation"
+    // to the not-sent copy must redden this assertion.
+    expect(screen.queryByText(/invitation/i)).not.toBeInTheDocument();
   });
 
   it('renders the ApiError message in the dialog (not a generic error) on a 409 rejection', async () => {

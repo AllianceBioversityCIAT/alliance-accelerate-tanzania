@@ -139,7 +139,7 @@ export default function UsersPage() {
   const [deleteUser_,     setDeleteUser]      = useState<AdminUser | null>(null);
   const [resetUser,       setResetUser]       = useState<AdminUser | null>(null);
   // Post-reset handoff: the new temp password is shown once before dismiss.
-  const [resetHandoff,    setResetHandoff]    = useState<{ email: string; temporaryPassword: string } | null>(null);
+  const [resetHandoff,    setResetHandoff]    = useState<{ email: string; temporaryPassword: string; emailSent: boolean } | null>(null);
 
   // Confirm dialog in-flight / error (for delete + reset)
   const [confirmLoading,  setConfirmLoading]  = useState(false);
@@ -276,10 +276,10 @@ export default function UsersPage() {
     setConfirmError(undefined);
     setConfirmLoading(true);
     try {
-      const { temporaryPassword } = await resetUserPassword(resetUser.id, token);
+      const { temporaryPassword, emailSent } = await resetUserPassword(resetUser.id, token);
       const email = resetUser.email;
       setResetUser(null);
-      setResetHandoff({ email, temporaryPassword });
+      setResetHandoff({ email, temporaryPassword, emailSent });
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
         handleAuthFailure();
@@ -497,6 +497,7 @@ export default function UsersPage() {
             <CredentialHandoff
               email={resetHandoff.email}
               temporaryPassword={resetHandoff.temporaryPassword}
+              emailSent={resetHandoff.emailSent}
               title="Password reset — share the new credentials"
               onDone={handleResetHandoffDone}
             />

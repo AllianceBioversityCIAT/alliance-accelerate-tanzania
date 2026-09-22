@@ -79,8 +79,12 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('CreateUserDialog — temp-password handoff', () => {
-  it('calls createUser and then shows the one-time temporary password', async () => {
-    mockCreateUser.mockResolvedValue({ user: NEW_USER, temporaryPassword: 'Tmp!Handoff-1' });
+  it('calls createUser and then shows the one-time temporary password (email sent branch)', async () => {
+    mockCreateUser.mockResolvedValue({
+      user: NEW_USER,
+      temporaryPassword: 'Tmp!Handoff-1',
+      emailSent: true,
+    });
     const { onSuccess } = setup();
 
     fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
@@ -95,16 +99,22 @@ describe('CreateUserDialog — temp-password handoff', () => {
       ),
     );
 
-    // Handoff view shows the temp password + warning; onSuccess not called yet.
+    // Handoff view shows the temp password + the persistent note; onSuccess not called yet.
     await waitFor(() =>
       expect(screen.getByText('Tmp!Handoff-1')).toBeInTheDocument(),
     );
     expect(screen.getByText(/shown only once/i)).toBeInTheDocument();
+    // FR-3 sent scenario: states the invitation was emailed.
+    expect(screen.getByText(/was sent to the user/i)).toBeInTheDocument();
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it('fires onSuccess when Done is clicked in the handoff view', async () => {
-    mockCreateUser.mockResolvedValue({ user: NEW_USER, temporaryPassword: 'Tmp!Handoff-2' });
+  it('fires onSuccess when Done is clicked in the handoff view (email sent branch)', async () => {
+    mockCreateUser.mockResolvedValue({
+      user: NEW_USER,
+      temporaryPassword: 'Tmp!Handoff-2',
+      emailSent: true,
+    });
     const { onSuccess } = setup();
 
     fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
@@ -119,5 +129,37 @@ describe('CreateUserDialog — temp-password handoff', () => {
     fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
 
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('still shows the temporary password when the invite email failed to send (email NOT sent branch)', async () => {
+    mockCreateUser.mockResolvedValue({
+      user: NEW_USER,
+      temporaryPassword: 'Tmp!Handoff-3',
+      emailSent: false,
+    });
+    const { onSuccess } = setup();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), {
+      target: { value: 'new@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^create user$/i }));
+
+    await waitFor(() =>
+      expect(mockCreateUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new@example.com' }),
+        TOKEN,
+      ),
+    );
+
+    // FR-2: the password is shown even though the email was not sent.
+    await waitFor(() =>
+      expect(screen.getByText('Tmp!Handoff-3')).toBeInTheDocument(),
+    );
+    // FR-3 not-sent scenario: states the failure and the direct-share instruction.
+    expect(screen.getByText(/could not be sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/share this password with the user directly/i)).toBeInTheDocument();
+    // FR-3's negative clause: must not read as a failure to create the user.
+    expect(screen.queryByText(/failed to create/i)).not.toBeInTheDocument();
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 });

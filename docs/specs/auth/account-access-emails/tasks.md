@@ -110,7 +110,7 @@ Phase 2 opens with the DD-6 verification spike and becomes its own spec. **The c
       Disqualifier: a green `tsc` proves neither that the field carries a true value (that is T-4/T-5's job) **nor** that the two declarations agree — they are separate types. **The backend↔frontend name/type correspondence is enforced by nothing in this repo**; record it as an explicit (B) structural gap with that reason rather than implying `tsc` covers it.
       Done when: both endpoints return the field, the frontend types match, and the docstring states that `emailSent` is not a delivery receipt and is `true` under `MAIL_TRANSPORT=no-op`.
 
-- [ ] **T-7** Surface the send status, and fix the copy this feature falsifies  (deps: T-6)
+- [x] **T-7** Surface the send status, and fix the copy this feature falsifies  (deps: T-6)
       Scope: render the sent / not-sent line in `CredentialHandoff`; **revise the existing string `"This password is shown only once. Share it securely (not by email)."`** (J/B-7) — this feature makes it false, and it would otherwise sit beside a line saying the invitation *was* emailed.
       Traces: FR-2 (incl. `AND IT MUST` be shown whether or not the email was sent), FR-3 (both scenarios, incl. the `BUT it must NOT` present it as a creation failure); design.md §6
       Files: `frontend/components/admin/CredentialHandoff.tsx`, `frontend/components/admin/CreateUserDialog.tsx`, **`frontend/app/(admin)/admin/users/page.tsx`** (+ tests)

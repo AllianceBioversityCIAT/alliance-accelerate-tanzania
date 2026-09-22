@@ -641,3 +641,55 @@ Measured rather than asserted, with a control:
 The control matters: it rules out a probe artefact and isolates the cause to the token *declaration form*. Every colour in `tailwind.config.ts` is a bare `var(--color-*)` (e.g. `warning: 'var(--color-warning)'`, with `--color-warning: #8F5E10`), and **no token anywhere uses the `<alpha-value>` form** Tailwind needs to apply an opacity modifier.
 
 T-7 fixes the two instances in the paragraph it rewrites. It does **not** fix the rest: the same inert pattern appears at **32 sites repo-wide**, which is a separate finding and a separate change.
+
+---
+
+## T-7 — Surface the send status, and fix the copy this feature falsifies
+
+**Status:** `[x]` · **Attempts:** 2 · **Reviewer:** PASS on attempt 2 · Implementer `sonnet` / Reviewer `opus`
+
+### Corrected before briefing (see the entry above)
+
+Two defects in T-7's own task text, both found by checking the tree instead of trusting `tasks.md`: a **missing call site** (`page.tsx:497` renders `CredentialHandoff` for the reset flow; the Files list named only `CreateUserDialog.tsx`), and a **measured pre-existing violation of T-7's own Disqualifier** inside the very paragraph T-7 had to rewrite (`border-warning/40` and `bg-warning/10`, both emitting no CSS).
+
+### Outcome
+
+- `CredentialHandoff` gained a required `emailSent` prop, rendered as a sent line and a not-sent line, with the temporary password **ungated** in both branches (FR-2's `AND IT MUST`).
+- Both call sites updated; `page.tsx` now captures `emailSent` out of `resetUserPassword()`'s result into `resetHandoff` state — the value previously never reached the component.
+- The falsified string `"Share it securely (not by email)"` is gone from source; the surviving grep hits are gitignored build output under `frontend/out/` and spec prose quoting the retired text.
+- The two inert `/NN` classes were replaced with solid tokens. `CredentialHandoff.tsx` now contains **zero** `/NN` modifiers.
+- New `CredentialHandoff.test.tsx` (7 tests) carries FR-2 and FR-3 directly; all four pre-existing fixtures now set `emailSent` explicitly, discharging the trap T-6 forwarded.
+
+### The blocking defect, and why it is this spec's signature failure again
+
+Attempt 1's not-sent branch read *"**The invitation** email could not be sent…"* — **false on the reset path**, where the component's own heading two lines above says "Password reset". T-5 dispatches `sendAdminReset` there; no invitation is ever attempted. The Reviewer proved it rather than argued it: `requirements.md` §4 Glossary defines **Invitation** and **Admin-initiated reset** as two distinct terms, so the noun provably excludes the reset path.
+
+The sharpest detail: **the *sent* branch was correctly generic** ("An email with this password was sent to the user"). The constraint was understood and applied in one branch and not the other — an inconsistency internal to a single diff. The Implementer's own `Not Done` declared the copy "deliberately generic"; only the second half of the sentence was.
+
+### Two advisories promoted to blocking, and why
+
+**The FR-3 negative-clause test was a phrase blacklist** — four enumerated regexes. It could not catch wrong copy nobody anticipated, and "invitation" was not on the list, so it passed green while the screen lied. **That is the proximate cause of the defect shipping**, which is why it was promoted rather than recorded. Reworked into exact-equality over the status note's rendered `textContent`.
+
+**Two consequences this diff caused in `frontend/lib/contrast.test.ts`**, the contrast-gate registry: a `file:line` citation pointing at a site this diff **deleted** (KZ-009's exact defect), and a new `text-success` on `bg-surface` pair that the registry did not gate, against that file's own PROMOTION RULE. Both promoted because a gate registry that stops describing reality stops being a gate. `success × surface` is now **asserted**, at a hand-recomputed **6.2376:1**.
+
+### The Leader's reservation, and the Reviewer's ruling against it
+
+I asked whether exact-equality on `textContent` **encodes FR-3's negative clause or merely locks the copy string** — and explicitly offered the Reviewer both verdicts so it would not defer to the party that ordered the fix.
+
+It ruled the clause **genuinely gated**, with an argument I had not made: exact equality admits one string, a strict subset of the compliant set, therefore **zero false negatives** — no violating rewrite can pass. It then went looking for the semantic alternative I was implying and showed why none exists: a broad blame pattern such as `/account[^.]*not/i` **matches the known-good copy itself** ("this did not affect the account"). That is precisely why the blacklist existed. Exact equality is the strongest instrument actually available here.
+
+It also corrected my guess about the weakness. The risk is not brittleness against reformatting — JSX collapses whitespace, so re-wrapping or reindenting leaves `textContent` identical. The risk is **silent evaporation**: an author reddens the test, pastes the new string, and the clause coverage disappears because nothing states what the replacement must satisfy.
+
+**Recorded because the mechanism worked:** the Leader ordered a fix, doubted it, and the auditor neither rubber-stamped it nor agreed with the doubt. Author ≠ auditor earned its cost on a judgment call, not on a diff.
+
+### ADVISORY — carried, not actioned (per the rule that advisories never trigger rework)
+
+1. **Complement the copy-lock with an invariant that survives a legitimate reword** (`CredentialHandoff.test.tsx:73-75`). Assert over the note's own `textContent` that it both scopes the failure to *delivery* and carries the account-unaffected reassurance, plus one comment stating the acceptance criterion for any replacement string. ⚠️ **Trap for whoever implements it:** a broad negative blame pattern is unusable — `/account[^.]*not/i` matches the known-good copy.
+2. `const [statusNote] = screen.getAllByRole('note')` is position-dependent; `expect(notes).toHaveLength(2)` first would turn a confusing string-diff into an obvious "a note was added" signal.
+3. **Reset-path reassurance is marginally ambiguous.** "this did not affect the account" is true (its antecedent is the send failure), but on the reset path `ConfirmDialog` has just told the admin the current password "stops working immediately". "the password was still reset" would be unambiguous on both paths.
+4. **Two citation inaccuracies in `contrast.test.ts`**, in a file whose entire method is citation precision: `:273` says line 106 "is now inside the Copy button's class array" when the array is `:101-105` and `:106` is the closing `>`; and `CredentialHandoff.test.tsx:9,42` still describe the sent branch as "the invitation was emailed", which generalises wrongly for a component this same diff made path-neutral.
+5. **Pre-existing modeling gap, out of scope.** `GROUNDS` models `warning/10` and `highlight/20` as alpha composites, but those classes emit no CSS — the real ground is `surface`/`bg`. The direction is **conservative** (the composite is darker, so the harness asserts a stricter number than reality), so nothing is under-gated. Belongs with the 32-site sweep.
+
+### Repo-wide finding surfaced by this task, deliberately NOT fixed here
+
+**32 sites use `/NN` opacity modifiers on semantic tokens, and every one emits no CSS.** Measured with a control: `bg-warning` and `border-warning` emit normally; `bg-warning/10` and `border-warning/40` emit nothing; a control token declared `rgb(var(--x) / <alpha-value>)` emits correctly. Cause: every colour in `tailwind.config.ts` is a bare `var(--color-*)` and no token uses the `<alpha-value>` form. Backgrounds and borders silently do not render, including seven on the public `about` page, and **no test catches it** because the class *is* present in the DOM. The fix is to change the token declaration form and the CSS variables to channel values — small, but it touches every token at once. Out of ATP-71's scope; raised separately.
