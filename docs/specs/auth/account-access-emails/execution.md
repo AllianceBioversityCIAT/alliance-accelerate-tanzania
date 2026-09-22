@@ -617,3 +617,27 @@ The Reviewer classed it ADVISORY on sound grounds — it misstates *history*, no
 - **The four fixture sites T-7 owns**, deliberately left untouched here so T-7's own edits drive its branches: `frontend/app/(admin)/admin/users/page.test.tsx:266`, `:389`; `frontend/components/admin/CreateUserDialog.test.tsx:83`, `:107`.
 - **ADVISORY 2 — an asymmetry left open.** The create docstring flags that the shipped shape supersedes FR-3's original response; the reset docstring cites `admin/user-management` FR-7 **without** noting that FR-7's own text ("The admin never sees or sets a plaintext password through this endpoint") is likewise superseded by the temp-password handoff. A reader resolving FR-7 gets a contract statement the code contradicts. Cheap to fix whenever the reset docstring is next touched.
 - **Attempt 1 under-reported its own `Not Done`** — it named one file when four sites across three files were affected. T-7's brief should require a complete enumeration.
+
+---
+
+### T-7's task text corrected before briefing — a missing call site and a measured pre-existing defect
+
+Two corrections, both found by checking the working tree instead of trusting `tasks.md`. This is the third time the pre-brief check has paid for itself (T-6's unfirable falsifier, T-6's already-present `emailSent`, and now these).
+
+**1 — `CredentialHandoff` has two call sites; the Files list named one.** `CreateUserDialog.tsx:192` renders it for the create flow, and **`app/(admin)/admin/users/page.tsx:497` renders it for the reset flow** — the flow T-5 made email, and the one FR-5 covers. Making `emailSent` a required prop fails `tsc --noEmit` at `page.tsx` unless that call site passes it, and `page.tsx` must first capture the field out of `resetUserPassword()`'s result into its `resetHandoff` state. Neither the call site nor the state appeared in T-7's Files list. Added.
+
+**2 — the element T-7 must rewrite already violates T-7's own Disqualifier.** `CredentialHandoff.tsx:106`'s warning paragraph carries `border-warning/40` and `bg-warning/10`. Both emit **no CSS**, so that box renders today with no background tint and a default-coloured border.
+
+Measured rather than asserted, with a control:
+
+| class | emitted CSS |
+|---|---|
+| `bg-warning` | `background-color: var(--color-warning)` |
+| `border-warning` | `border-color: var(--color-warning)` |
+| `bg-warning/10` | *(nothing)* |
+| `border-warning/40` | *(nothing)* |
+| `bg-ok/25` — control token declared `rgb(var(--color-ok) / <alpha-value>)` | `rgb(var(--color-ok) / 0.25)` |
+
+The control matters: it rules out a probe artefact and isolates the cause to the token *declaration form*. Every colour in `tailwind.config.ts` is a bare `var(--color-*)` (e.g. `warning: 'var(--color-warning)'`, with `--color-warning: #8F5E10`), and **no token anywhere uses the `<alpha-value>` form** Tailwind needs to apply an opacity modifier.
+
+T-7 fixes the two instances in the paragraph it rewrites. It does **not** fix the rest: the same inert pattern appears at **32 sites repo-wide**, which is a separate finding and a separate change.
