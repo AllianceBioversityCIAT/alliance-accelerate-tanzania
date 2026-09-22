@@ -23,7 +23,7 @@ instead of silently deploying an open CORS policy.
 
 **Verified true as of 2026-09-18**, against the operator-supplied
 `Jenkinsfile` copy read that day (quoted verbatim in
-`docs/specs/bugfix/deploy-script-guardrails/design.md` §7.4). The
+`docs/specs/archive/2026-09-21-bugfix--deploy-script-guardrails/design.md` §7.4). The
 `Jenkinsfile` is not versioned here and can change on the server with no
 signal to this repository — treat the patch as stale the moment it no longer
 applies cleanly, and re-derive it from a fresh read rather than forcing it.
@@ -36,7 +36,7 @@ independent defect: it never passes `MailTransport`, so SAM resubmits
 longer accept the live stack's current value. **This patch does not touch
 that.** It was raised separately with the Jenkins administrator by the
 product owner, and is documented, not patched, in
-`docs/specs/bugfix/deploy-script-guardrails/design.md` §7.4 and
+`docs/specs/archive/2026-09-21-bugfix--deploy-script-guardrails/design.md` §7.4 and
 `proposal.md` §4.6. Bundling the two would hand the administrator a diff
 mixing a defect they have already actioned with one they have not.
 

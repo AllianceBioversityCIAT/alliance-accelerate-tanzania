@@ -71,7 +71,7 @@ Three of its behaviours change what a merge means, and none of them are visible 
 
 The backend (`20-backend`) and the web assets (`Deploy Web` → `deploy-frontend.sh`) **do** deploy on every merge to `main`.
 
-**CORS is safe only when the origin lookup succeeds — the steady-state stage fails open, not closed.** *(Corrected 2026-09-19 — see `bugfix/deploy-script-guardrails`.)* The steady-state `Deploy Backend` stage (`when DEPLOY_INFRA == 'false'`, the path every ordinary merge takes) resolves `AllowedOrigin` like this, transcribed from the operator-supplied `Jenkinsfile` on **2026-09-18** (quoted verbatim in `docs/specs/bugfix/deploy-script-guardrails/design.md` §7.4):
+**CORS is safe only when the origin lookup succeeds — the steady-state stage fails open, not closed.** *(Corrected 2026-09-19 — see `bugfix/deploy-script-guardrails`.)* The steady-state `Deploy Backend` stage (`when DEPLOY_INFRA == 'false'`, the path every ordinary merge takes) resolves `AllowedOrigin` like this, transcribed from the operator-supplied `Jenkinsfile` on **2026-09-18** (quoted verbatim in `docs/specs/archive/2026-09-21-bugfix--deploy-script-guardrails/design.md` §7.4):
 
 ```bash
 ALLOWED_ORIGIN="$(
