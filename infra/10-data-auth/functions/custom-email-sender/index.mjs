@@ -49,28 +49,20 @@ const { decrypt } = buildClient(CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT);
 // design.md §5's table, exactly. Each entry maps a handled `triggerSource`
 // to the messages.mjs builder that renders its email. Anything not a key
 // of this object is, by construction, the "everything else" row — FR-2
-// raises on it in `handler` below.
-//
-// `CustomEmailSender_AdminCreateUser` is mapped to
-// `buildAttributeVerificationMessage` — the closest of the two builders
-// T-2 produced, not a dedicated third body. design.md's task split assigns
-// message CONTENT to T-2 (DD-1a/DD-1b) and the handler/wiring to T-4; T-2's
-// budget closed at exactly two builders (design.md §9), and adding a third
-// here would be scope creep into a file this task does not own. The
-// accepted mismatch: this builder's copy says "An administrator updated
-// the email address on your account", which is inaccurate for a newly
-// CREATED account (AWS: "You create a new user in your user pool and
-// Amazon Cognito sends them a temporary password" — not an update). This
-// path is unreachable today — `users.service.ts`'s `create()` passes
-// `MessageAction: 'SUPPRESS'` — so the mismatch has zero live impact; it
-// exists so that IF suppression is ever removed, the invitation is
-// delivered (with slightly wrong copy) rather than vanishing silently
-// (design.md §5's "handle defensively"). Recorded in this task's
-// completion report; not silently patched around.
+// raises on it in `handler` below, including `CustomEmailSender_
+// AdminCreateUser` (DD-5a): `users.service.ts::create()` passes
+// `MessageAction: 'SUPPRESS'` and dispatches `MailService.sendInvitation`
+// itself, so Cognito's own invitation mail for this source is a DUPLICATE
+// of one this system already sends by hand, not a mail that would
+// otherwise vanish. Handling it would mean that if suppression is ever
+// removed, the user receives two invitations — ours and Cognito's, the
+// second carrying whatever copy this function happened to pass it. Raising
+// means someone learns, on the day the setting changes, that a decision
+// was reversed — the same reasoning DD-2 already applies to the rest of
+// the unreachable set. The handled set is exactly two.
 const MESSAGE_BUILDERS = {
   CustomEmailSender_ForgotPassword: buildPasswordResetMessage,
   CustomEmailSender_VerifyUserAttribute: buildAttributeVerificationMessage,
-  CustomEmailSender_AdminCreateUser: buildAttributeVerificationMessage,
 };
 
 // Deliberately simple — same spirit as config.mjs's BASE_URL_PATTERN:

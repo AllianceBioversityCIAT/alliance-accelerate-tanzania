@@ -203,6 +203,24 @@ The cost is a TLS+AMQP handshake per reset. For a flow that runs a handful of ti
 
 **T-4 adds a parameter for the backend stack name** (default `accelerate-tz-dev-backend`, matching `deploy.sh`'s own default), composes the secret name from it, and reads the secret at invocation time. Same shape as DD-2b's pool-id parameter and for the same reason: a cross-stack value that must not be guessed or hardcoded.
 
+### DD-5b — The invoke permission's `SourceArn` is conditional, for the same reason DD-2b exists
+
+**Raised by T-4's Reviewer, decided 2026-09-23 before it blocks T-6.**
+
+`CustomEmailSenderInvokePermission` scoping its `SourceArn` with `!Sub ".../userpool/${UserPool}"` creates the edge `Permission → UserPool`, so CloudFormation always builds the **pool first**. But Cognito validates invoke permission **when `LambdaConfig.CustomEmailSender` is set**, and the standard remedy — `UserPool DependsOn CustomEmailSenderInvokePermission` — would be a **cycle**.
+
+⚠️ **And the failing order is the likely one.** `DEPLOY_INFRA` defaults to `false`, so the first real deploy plausibly carries T-4 and T-6 **together**.
+
+| Option | Verdict |
+|---|---|
+| Omit `SourceArn` | Works, but widens the grant to any Cognito pool in the account. Rejected — a narrower grant is available. |
+| `!Ref CustomEmailSenderUserPoolId` (DD-2b's parameter) | ✅ **Chosen** — the same trick, for the same reason, on the same graph problem. |
+| `DependsOn` | **Impossible** — it is the cycle. |
+
+⚠️ **With a `Condition`, because the parameter defaults to empty.** An empty value composes a malformed ARN (`…:userpool/`), so `SourceArn` is set **only when the parameter is non-empty** (`!If [HasCustomEmailSenderUserPoolId, <arn>, !Ref "AWS::NoValue"]`).
+
+That makes the pre-T-6 state an unscoped-but-inert permission on a function no pool invokes yet, and the post-T-6 state correctly scoped — **provided T-6 wires the parameter**, which DD-2c already obliges it to do for two other reasons. T-6 now has three.
+
 ## 5. Which emails the function handles — resolving round-1 C-6
 
 The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email to this function.

@@ -163,6 +163,7 @@ describe('FALSIFIER 2 — an unhandled triggerSource raises, names the source, a
     'CustomEmailSender_ResendCode',
     'CustomEmailSender_AccountTakeOverNotification',
     'CustomEmailSender_UpdateUserAttribute',
+    'CustomEmailSender_AdminCreateUser',
     'SomeFutureTriggerSourceNobodyHasSeenYet',
   ])('raises and names "%s"', async (triggerSource) => {
     const event = forgotPasswordEvent({ triggerSource });
@@ -188,7 +189,6 @@ describe('FALSIFIER 3 — a handled source with no email attribute refuses to pu
   it.each([
     'CustomEmailSender_ForgotPassword',
     'CustomEmailSender_VerifyUserAttribute',
-    'CustomEmailSender_AdminCreateUser',
   ])('refuses to publish "%s" when userAttributes carries no email at all', async (triggerSource) => {
     const event = forgotPasswordEvent({
       triggerSource,
@@ -361,10 +361,12 @@ describe('routing — design.md §5\'s table', () => {
     await expect(handler(event)).rejects.toThrow(/PUBLIC_APP_BASE_URL/);
   });
 
-  it('handles CustomEmailSender_AdminCreateUser defensively (design.md §5 — suppressed today, must not vanish silently)', async () => {
+  it('raises on CustomEmailSender_AdminCreateUser and names the source (DD-5a — its Cognito mail is a duplicate of the invitation users.service.ts already sends by hand)', async () => {
     const event = forgotPasswordEvent({ triggerSource: 'CustomEmailSender_AdminCreateUser' });
-    await handler(event);
-    expect(publishMock).toHaveBeenCalledTimes(1);
+    await expect(handler(event)).rejects.toThrow(
+      /unhandled triggerSource "CustomEmailSender_AdminCreateUser"/,
+    );
+    expect(publishMock).not.toHaveBeenCalled();
   });
 
   it('returns the event unmodified on success (Cognito expects no additional return information)', async () => {
