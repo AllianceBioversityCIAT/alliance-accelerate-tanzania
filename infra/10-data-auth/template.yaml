@@ -28,9 +28,11 @@ Description: >-
 #   T-4 - AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
 #   forgot-password-delivery T-3 - AWS::KMS::Key + its KeyPolicy  (CustomEmailSenderKey section, after Cognito)
 # Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
-#   CustomEmailSenderKmsGrantPrincipalArn (forgot-password-delivery T-3, design.md §4/DD-2a).
+#   CustomEmailSenderKmsGrantPrincipalArn, CustomEmailSenderUserPoolId
+#   (forgot-password-delivery T-3, design.md §4/DD-2a, condition parameter added by DD-2b).
 # Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
-#   ·  UserPoolId, UserPoolClientId  (T-4).
+#   ·  UserPoolId, UserPoolClientId  (T-4)  ·  CustomEmailSenderKeyId, non-exported,
+#   for T-7's manual `aws kms list-grants` check only (forgot-password-delivery T-3).
 
 Parameters:
   # ── T-2 parameters ────────────────────────────────────────────────────────
@@ -76,10 +78,16 @@ Parameters:
       that Amazon Cognito uses to encrypt the code. Grant this principal
       CreateGrant permissions for your KMS key." Cognito itself holds no
       static encrypt permission - without this grant-creation right, the
-      deploying principal cannot hand Cognito a grant, and the first live
-      password reset after the trigger activates fails with nothing in
-      this repo's test suite able to catch it (every suite here mocks the
-      AWS clients; T-7 is the only real check).
+      deploying principal cannot hand Cognito a grant. EITHER T-6's
+      activating deploy fails outright (if Cognito attempts the grant
+      during UpdateUserPool itself), OR it succeeds and the first live
+      password reset fails instead - undecidable from documentation
+      alone, and T-7 establishes which. Nothing in this repo's test suite
+      can catch either branch (every suite here mocks the AWS clients;
+      T-7 is the only real check). Corrected after T-3 review ADVISORY 2
+      found this fix had landed at the KEY GRANT comment below and not
+      here - the same claim, stated as fact at one site and qualified at
+      the other.
       This is a PARAMETER, not a hardcoded ARN, because the identity that
       deploys this stack is not fixed: today an interactive operator
       deploys with IBD-DEV credentials as the IAM user below (measured
@@ -88,6 +96,31 @@ Parameters:
       stop granting the right principal, and thus silently break every
       password reset, the day a pipeline deploys it instead of a person.
     Default: "arn:aws:iam::569113802249:user/cognito_csicap"
+
+  # ── forgot-password-delivery T-3 parameter (design.md §4/DD-2a, AMENDED by
+  #    DD-2b) ─────────────────────────────────────────────────────────────
+  CustomEmailSenderUserPoolId:
+    Type: String
+    Description: >-
+      Cognito User Pool id, passed as a PARAMETER rather than obtained via
+      `!Ref UserPool` in the key policy's encryption-context condition
+      below. DD-2b: a same-template `!Ref UserPool` there would create a
+      CloudFormation dependency edge Key -> UserPool, and this spec later
+      mandates two return edges (T-6's `LambdaConfig.KMSKeyID`, and
+      independently T-6's `LambdaArn` plus T-4's `kms:Decrypt` scoped to
+      this key's ARN) - either one alone would deadlock the stack in a
+      cycle. Taking the id as a parameter breaks the edge while leaving the
+      condition's semantics unchanged. `infra/scripts/deploy.sh` resolves
+      this from THIS stack's own `UserPoolId` output via the
+      `resolve_stack_value` helper it already uses for `MailTransport` (T-6
+      wiring, DD-2c) - so the value cannot drift from the real pool id even
+      though it is no longer a `Ref`. Until T-6 wires that resolution, this
+      parameter is inert like `CustomEmailSenderKmsGrantPrincipalArn` above
+      (see this task's Not Done). The encryption-context key itself stays
+      spelled `userpool-id`, verbatim - do not "tidy" that spelling, and do
+      not assume Cognito's grant actually carries this constraint; both are
+      open assumptions for T-7 (DD-2b).
+    Default: ""
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -378,6 +411,12 @@ Resources:
   #     from below.
   #   - LambdaConfig on UserPool above (T-6) - setting it here would
   #     activate the trigger before T-4's function exists.
+  #   - Wiring either parameter's real value into `infra/scripts/deploy.sh`
+  #     (DD-2c) - both `CustomEmailSenderKmsGrantPrincipalArn` and
+  #     `CustomEmailSenderUserPoolId` are declared with defaults that make
+  #     them deployable today, but T-6 owns adding both to step 1's
+  #     `--parameter-overrides`. Until then the defaults are inert (see
+  #     this task's Not Done).
   # NFR-4 is therefore NOT closed by this resource alone; see this task's
   # completion report for the two policies T-4 still owes.
   #
@@ -398,10 +437,12 @@ Resources:
   # LambdaConfig) is what triggers Cognito to create that one-time grant
   # against this key - and Cognito can only do so on behalf of a deploying
   # principal who already holds kms:CreateGrant here. Miss this statement
-  # and T-6's deploy still succeeds; the first live password reset after
-  # the trigger activates then fails, invisibly to every suite in this
-  # repo (all mock the AWS clients) - the exact shape of ATP-71's missing
-  # grant. T-7 is the only real check (design.md §12, tasks.md T-7).
+  # and either T-6's activating deploy fails outright (if Cognito attempts
+  # the grant during UpdateUserPool itself) or it succeeds and the first
+  # live password reset fails instead, invisibly to every suite in this
+  # repo (all mock the AWS clients) - neither of us can settle which from
+  # documentation alone; T-7 is the only real check (design.md §12,
+  # tasks.md T-7) and establishes which.
   #
   # KEY POLICY SHAPE - read from AWS's own example on that page, not
   # reconstructed from memory:
@@ -416,21 +457,37 @@ Resources:
   #   }
   # Two adaptations, both deliberate:
   #   - AWS's example targets an EXISTING key by its literal ARN. A KMS key
-  #     policy is a resource-based policy already scoped to the one key
-  #     it is attached to (there is no separate "which key" question the
-  #     way there is for an IAM policy on a role) - so `Resource: "*"`
-  #     below means "this key", not "every key in the account". This
-  #     matches how a resource-based statement is written everywhere else
-  #     in this stack (e.g. MailMicroserviceSecret's own policy in
-  #     20-backend scopes by being attached to that one secret).
+  #     policy is a resource-based policy evaluated ONLY against the one
+  #     key it is attached to - there is no separate "which key" question
+  #     the way there is for an IAM policy on a role - so `Resource: "*"`
+  #     below means "this key", not "every key in the account". This is
+  #     the same form AWS's own default key policy uses (the
+  #     EnableIAMUserPermissions statement immediately below is that
+  #     default, `Resource: "*"` included). (Checked, not assumed to match:
+  #     this REPO's only OTHER resource-based policy is
+  #     FrontendBucketPolicy in infra/30-frontend/template.yaml, which
+  #     scopes with an EXPLICIT `Resource: !Sub "${FrontendBucket.Arn}/*"`
+  #     - the opposite pattern, and irrelevant here for the same reason:
+  #     an S3 bucket policy is not restricted to its own bucket the way a
+  #     KMS key policy is restricted to its own key, so it still needs an
+  #     explicit ARN. MailMicroserviceSecret in 20-backend has no
+  #     resource-based policy at all - a bare `AWS::SecretsManager::Secret`
+  #     - so it is not a precedent either way.)
   #   - AWS's example hardcodes the pool id as a literal condition value
   #     because their key already existed independently of the pool. Here
-  #     the pool (UserPool, above) is a resource in this SAME template, so
-  #     the condition references it directly (!Ref UserPool, which returns
-  #     the pool id) instead of a literal - it can never drift from the
-  #     real pool id, and there is no circular dependency: UserPool does
-  #     not depend on this key (LambdaConfig is T-6's separate, later
-  #     change).
+  #     the pool (UserPool, above) IS a resource in this same template, so
+  #     the tempting shortcut is `!Ref UserPool` in the condition below -
+  #     DO NOT do that. DD-2b (design.md §4): a same-template `!Ref` makes
+  #     CloudFormation add the graph edge Key -> UserPool, and this spec
+  #     mandates two return edges later (T-6's `LambdaConfig.KMSKeyID`, and
+  #     independently T-6's `LambdaArn` plus T-4's `kms:Decrypt` scoped to
+  #     this key's ARN) - either one alone deadlocks the stack in a cycle.
+  #     The condition instead references the `CustomEmailSenderUserPoolId`
+  #     PARAMETER (declared above), which keeps the condition's exact
+  #     semantics while removing the edge; `infra/scripts/deploy.sh` (T-6)
+  #     resolves that parameter from this same stack's own `UserPoolId`
+  #     output, so it still cannot drift from the real pool id despite
+  #     being a parameter rather than a `Ref`.
   # ════════════════════════════════════════════════════════════════════════════
   CustomEmailSenderKey:
     Type: AWS::KMS::Key
@@ -475,7 +532,23 @@ Resources:
             Resource: "*"
             Condition:
               StringEquals:
-                kms:EncryptionContext:userpool-id: !Ref UserPool
+                # Parameter, not `!Ref UserPool` - DD-2b; see the "KEY
+                # POLICY SHAPE" comment above for why. Key spelled
+                # `userpool-id`, verbatim (DD-2b, T-7 assumption).
+                kms:EncryptionContext:userpool-id: !Ref CustomEmailSenderUserPoolId
+      # DD-2d: rotation stays off (near-worthless for codes that live
+      # minutes; reasoned in design.md §4/DD-2d, not re-opened at T-6).
+      # PendingWindowInDays shortened from KMS's 30-day default to match
+      # this stack's easy-teardown posture (DeletionProtection: false
+      # elsewhere in this stack) - 30 days would leave a billed key behind
+      # after a stack delete.
+      # Written out rather than left to the default, for the same reason
+      # KeySpec is (above): a reader should never have to know an AWS
+      # default to understand this resource. DD-2d: off deliberately -
+      # near-worthless for codes that live minutes, against a cost-aware
+      # dev stack; safe either way (KMS retains old backing material).
+      EnableKeyRotation: false
+      PendingWindowInDays: 7
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-custom-email-sender-key"
@@ -529,3 +602,15 @@ Outputs:
     Value: !Ref UserPoolClient
     Export:
       Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  # ── forgot-password-delivery T-3 output (Reviewer ADVISORY 3). Deliberately
+  #    NOT Export'd: same-stack resources (T-4/T-6) already reach the key via
+  #    !Ref/!GetAtt without needing an Export. This Output exists for the
+  #    human at T-7, who has no in-template way to get the key id to run
+  #    `aws kms list-grants --key-id <id> --profile IBD-DEV` and confirm the
+  #    grant chain actually took effect. ──
+  CustomEmailSenderKeyId:
+    Description: >-
+      KMS key id for CustomEmailSenderKey. For manual verification only
+      (T-7): `aws kms list-grants --key-id <this value> --profile IBD-DEV`.
+    Value: !Ref CustomEmailSenderKey

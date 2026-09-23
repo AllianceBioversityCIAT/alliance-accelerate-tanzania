@@ -134,3 +134,64 @@ Solved by inversion: the shared `describe.each` keeps only what holds for both b
 **The attribute-verification code has no screen anywhere in `frontend/`** — grep-verified independently twice. So a user whose email an admin changes would receive a well-formed message carrying a code they **cannot enter anywhere**. The gap pre-exists; this spec would make it *more* visible by making that mail arrive reliably.
 
 **A cleaner exit exists than handling it:** have `users.service.ts::update()` set `email_verified` in the same `AdminUpdateUserAttributes` call, so Cognito emits no verification mail at all. Small backend change, outside this spec. **Raised with the user, awaiting a decision.**
+
+---
+
+## T-3 — The KMS key and its grant statement
+
+**Status:** `[x]` · **Attempts:** 2 · **Reviewer:** PASS on attempt 2 · Implementer `sonnet` / Reviewer `opus`
+
+### Scope, narrowed before briefing
+
+`tasks.md` listed three policies. Two name **the function's execution role, which does not exist until T-4** — so DD-2a split them: T-3 owns the key and `kms:CreateGrant`; T-4 owns `kms:Decrypt` and the Cognito invoke permission. **T-3 therefore cannot close NFR-4, and was required to say so** rather than report it satisfied. It did, in three places a reader actually reaches.
+
+### The finding that would have blocked T-6
+
+Attempt 1 wrote the grant condition as `!Ref UserPool`. I suspected a circular dependency and asked the Reviewer to check it **as a suspicion, not a verdict**. It confirmed it and found **a second, independent cycle I had not seen**:
+
+| Edge | Owner |
+|---|---|
+| `Key → UserPool` — the `!Ref` in the condition | T-3, shipped |
+| `UserPool → Key` — T-6's `LambdaConfig.KMSKeyID` | T-6 |
+| `UserPool → Function → Key` — T-6's `LambdaArn` + T-4's `kms:Decrypt` scoped to the key ARN | T-6 + T-4 |
+
+**Both are blocked by the `!Ref` alone**, so a T-6 that cleverly avoided `KMSKeyID`'s reference would still have deadlocked through the function's decrypt policy.
+
+⚠️ **And the template asserted the opposite as fact** — *"there is no circular dependency: UserPool does not depend on this key"* — true of the graph that day, false of the graph this spec mandates four tasks later, **inside the comment block written to brief T-6's implementer**, who would have read it while staring at the error.
+
+`validate.sh` was green throughout: only one edge of the cycle existed yet.
+
+Resolved by **DD-2b** — a pool-id parameter, with four alternatives rejected for checkable reasons, two of them outright impossible (CloudFormation has no `AWS::KMS::KeyPolicy` type; the pool id carries a service-generated suffix nothing derives).
+
+### A fabricated citation — the third in this spec's history
+
+Attempt 1 justified `Resource: "*"` by citing a precedent in this repository that **does not exist**: `MailMicroserviceSecret` has no policy at all. The only resource-based policy here is `FrontendBucketPolicy`, which uses the **opposite** pattern.
+
+**The decision was right; the reason was invented.** That distinction matters: a plausible-sounding false reason survives every review that does not go and look.
+
+The correction is the right shape — it states the true reason (a KMS key policy is evaluated only against its own key), **and records which files it opened**, so the correction is itself falsifiable. The Reviewer verified both citations and swept the repo for any other resource-based policy to confirm the comment's claim to have checked the full set.
+
+> Two rounds of judgment-day died over this defect class, both times in text I wrote. Here it appeared in an Implementer's work despite a brief that demanded source verification. It is not an intent problem — it is what happens when a reason is written from plausibility rather than from a file.
+
+### A finding T-3's own report missed
+
+The Reviewer found that `CustomEmailSenderKmsGrantPrincipalArn` **is never passed by any deploy path** — `deploy.sh` step 1 passes only `VpcId` and `DevCidr`, so the Default ships on every deploy including a pipeline's, while the parameter's own description argues against hardcoding. **As wired, it behaved exactly like the hardcode it warned about.** Recorded as DD-2c; T-6 owns the wiring.
+
+### Applied on top (Reviewer advisories)
+
+- **`Default: ""` ruled correct** — fail-closed, and the only value satisfying DD-2b (keep the condition) and DD-2c (deployable today) at once. An `AllowedPattern` would break the working deploy path to guard a statement nothing calls until T-6; it becomes right *then*, and is carried to T-6.
+- **ADVISORY 2 had landed at one site and not the other.** The key comment carried the corrected disjunction; the parameter description still asserted one branch as fact — and under the other branch that claim is **wrong**, not merely unqualified. Swept both. *(The same "fix the phrase, not the premise" failure this repo's KZ-004 records.)*
+- **ADVISORY 1** — *"this stack's only other resource-based policy"* → *"this repo's"*; the sentence contradicted itself, since `10-data-auth` has none.
+- **ADVISORY 6** — `EnableKeyRotation: false` written out rather than left to the default, matching the file's own stated principle that a reader should never need to know an AWS default.
+
+### ⚠️ Carried forward
+
+- **T-4 owes** `kms:Decrypt` on its function's `Policies:` block and `lambda:InvokeFunction` for `cognito-idp.amazonaws.com` on the function's resource policy. **NFR-4 is not closed until both land.**
+- **T-6 owes** the `deploy.sh` wiring for **both** parameters (DD-2c), and should add an `AllowedPattern` once the override exists — converting the fail-closed default from "first reset fails at T-7" into "deploy refuses at changeset time". ⚠️ The `--role-arn` trap is recorded in DD-2c: the wiring only holds while `sam deploy` runs without one.
+- **T-7 carries four open questions nothing in this repo can answer:** whether the context key is spelled `userpool-id`; whether Cognito's grant carries an encryption-context constraint at all (if not, `StringEquals` matches nothing and `CreateGrant` is denied); whether KMS accepts an empty-string condition value; and whether the `cognito_csicap` principal still resolves (KMS rejects a policy naming a non-existent one).
+
+### The falsifier, restated because it is the point
+
+**There is none, and there cannot be one here.** `validate.sh` makes no AWS call; every suite in this repository mocks the AWS clients, so IAM is never exercised. The Reviewer added that a green validate would not even establish that KMS *accepts* this key policy.
+
+Two days before this task, that exact blindness shipped a live defect: a policy granting `cognito-idp:AdminResetUserPassword` while the code called `AdminSetUserPassword` — every admin password reset returning a bare 500, for months, behind 1203 green tests. **T-7 is the only gate.**
