@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cognito CustomEmailSender trigger for ACCELERATE Tanzania (docs/specs/auth/forgot-password-delivery). T-2 (this package): the two message bodies — plain JavaScript ESM, no build step (design.md DD-1b). T-4 adds index.mjs, the runtime AWS SDK / KMS decrypt dependencies, and the SAM resource; see the CustomEmailSender build convention comment above Resources: in ../../template.yaml for the CodeUri/BuildMethod contract this package is staged under.",
+  "description": "Cognito CustomEmailSender trigger for ACCELERATE Tanzania (docs/specs/auth/forgot-password-delivery). T-2: the two message bodies — plain JavaScript ESM, no build step (design.md DD-1b). T-4 (this change): index.mjs — decrypt (AWS Encryption SDK against the CustomEmailSenderKey), route by triggerSource, validate the recipient before publishing, build via messages.mjs, publish over AMQP to the OneCGIAR notification microservice (design.md §3, §5, DD-3a/DD-3b), and the SAM resource in ../../template.yaml. `sam build`'s built-in nodejs npm installer (BuildMethod: nodejs24.x, see the CustomEmailSender build convention comment above Resources: in ../../template.yaml) installs the dependencies below into the deployed artifact — none of the three is bundled in the Lambda Node.js runtime.",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/.bin/jest --silent"
+  },
+  "dependencies": {
+    "@aws-crypto/client-node": "^5.0.2",
+    "@aws-sdk/client-secrets-manager": "^3.1077.0",
+    "amqplib": "^2.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0"

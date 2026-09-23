@@ -213,8 +213,25 @@ The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email t
 |---|---|
 | `CustomEmailSender_ForgotPassword` | **Handle** — the purpose of this spec. |
 | `CustomEmailSender_VerifyUserAttribute` | **Handle.** Same shape, its own message. Reachable today via the admin user-edit path; raising here would break it. |
-| `CustomEmailSender_AdminCreateUser` | **Handle defensively.** `create()` passes `MessageAction: 'SUPPRESS'`, so it should never arrive — but if suppression is ever removed, the invitation must not vanish silently. |
+| `CustomEmailSender_AdminCreateUser` | ⚠️ **RAISE — corrected 2026-09-23, see below.** *(This row previously said "handle defensively … the invitation must not vanish silently." That premise is false.)* |
 | Everything else (`SignUp`, `Authentication`, `ResendCode`, `AccountTakeOverNotification`) | **Raise, naming the source.** Not reachable in this pool today (no self-signup, MFA off). |
+
+### DD-5a — `AdminCreateUser` raises. The premise for handling it was wrong, and it was mine.
+
+**Corrected during T-4, after the Implementer flagged that handling it meant sending attribute-verification copy for an invitation.** The copy mismatch was the symptom; the decision was the defect.
+
+§5 originally said to handle it *"so the invitation must not vanish silently."* **The invitation does not vanish.** Verified: `users.service.ts::create()` passes `MessageAction: 'SUPPRESS'` **and dispatches `MailService.sendInvitation` itself** (ATP-71 T-4, shipped). Cognito's `AdminCreateUser` mail is a **duplicate** of one this system already sends by its own hand.
+
+So the two behaviours trade like this:
+
+| | |
+|---|---|
+| **Handle it** | If suppression is ever removed, the user receives **two invitations** — ours and Cognito's — and the second carries whatever copy the function happens to pass it. Silent, confusing, and discovered by a user. |
+| **Raise** | Someone learns, on the day the setting changes, that a decision was reversed. |
+
+**Raise.** It is the same reasoning DD-2 already applies to the unreachable set, and the original row was the one place it was not applied — because I wrote it from "don't lose mail" rather than from what `create()` actually does.
+
+⚠️ **Consequence for T-4:** the `AdminCreateUser` branch and its use of `buildAttributeVerificationMessage` are **deleted**, not re-copied. The handled set is exactly two: `ForgotPassword` and `VerifyUserAttribute`. Everything else raises, naming the source.
 
 ### DD-2 — Raising is the right behaviour for the unreachable set, and this is why
 

@@ -15,11 +15,16 @@ Transform: AWS::Serverless-2016-10-31
 Description: >-
   ACCELERATE Tanzania (dev) - data + auth stack: RDS MySQL + Secrets Manager
   (T-2) and Cognito user pool/client/groups (T-4). Now a SAM stack (T-1,
-  design.md §8) to host forgot-password-delivery's CustomEmailSender (T-4).
-  forgot-password-delivery T-3 adds the customer-managed symmetric KMS key
-  that trigger needs (design.md §4, DD-2a) - the key and its own two policy
-  statements only; the function's kms:Decrypt and the Lambda invoke
-  permission are T-4's, once its execution role exists.
+  design.md §8) hosting forgot-password-delivery's CustomEmailSender
+  function (forgot-password-delivery T-4): decrypt, route by triggerSource,
+  validate the recipient before publishing, build, publish over AMQP,
+  return (design.md §3, §5). Nothing invokes it yet - LambdaConfig on the
+  pool below is forgot-password-delivery T-6's, deliberately not set here.
+  forgot-password-delivery T-3 adds the KMS key the trigger needs (design.md
+  §4, DD-2a) - the key and its own two policy statements only;
+  forgot-password-delivery T-4 (this change) adds the function's own
+  kms:Decrypt grant and the Lambda invoke permission, now that the
+  function's execution role exists.
   Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
@@ -27,9 +32,13 @@ Description: >-
 #   T-2 - AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
 #   T-4 - AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
 #   forgot-password-delivery T-3 - AWS::KMS::Key + its KeyPolicy  (CustomEmailSenderKey section, after Cognito)
+#   forgot-password-delivery T-4 - AWS::Serverless::Function (CustomEmailSenderFunction) +
+#     AWS::Lambda::Permission (CustomEmailSenderInvokePermission)  (section after CustomEmailSenderKey)
 # Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
 #   CustomEmailSenderKmsGrantPrincipalArn, CustomEmailSenderUserPoolId
 #   (forgot-password-delivery T-3, design.md §4/DD-2a, condition parameter added by DD-2b).
+#   CustomEmailSenderBackendStackName, CustomEmailSenderPublicAppBaseUrl
+#   (forgot-password-delivery T-4, design.md DD-3b/§3 step 4).
 # Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
 #   ·  UserPoolId, UserPoolClientId  (T-4)  ·  CustomEmailSenderKeyId, non-exported,
 #   for T-7's manual `aws kms list-grants` check only (forgot-password-delivery T-3).
@@ -122,6 +131,39 @@ Parameters:
       open assumptions for T-7 (DD-2b).
     Default: ""
 
+  # ── forgot-password-delivery T-4 parameters (design.md DD-3b, §3 step 4) ──
+  CustomEmailSenderBackendStackName:
+    Type: String
+    Description: >-
+      Name of the `20-backend` stack, whose `MailMicroserviceSecret` this
+      function reads AT INVOCATION TIME (design.md DD-3b) - never at deploy
+      time, and never via Fn::ImportValue, because `20-backend` deploys
+      AFTER this stack (DD-1: "the dependency is on the secret EXISTING when
+      someone resets a password... not on deploy ordering"). That secret is
+      named "<that stack's own AWS::StackName>-mail-microservice-secret" on
+      THAT stack (infra/20-backend/template.yaml:172) - this parameter
+      supplies the stack-name half so this function can compose the same
+      name and call GetSecretValue on it directly. Same shape as
+      `CustomEmailSenderUserPoolId` above and for the same reason: a
+      cross-stack value that must not be guessed or hardcoded. Default
+      matches `infra/scripts/deploy.sh`'s own default backend stack name.
+    Default: accelerate-tz-dev-backend
+  CustomEmailSenderPublicAppBaseUrl:
+    Type: String
+    Description: >-
+      PUBLIC_APP_BASE_URL for this function's messages (design.md §3 step 4,
+      NFR-3) - mirrors `config.mjs`'s `getPublicAppBaseUrl()`, which throws
+      rather than emitting a link built from an unset/`*`/non-http(s) value.
+      Unlike `20-backend`'s PublicAppBaseUrl, THIS stack has no
+      AllowedOrigin to fall back to (it knows nothing about the frontend's
+      CORS origin), so it is left EMPTY by default rather than defaulting to
+      anything guessable. Left empty, `CustomEmailSender_VerifyUserAttribute`
+      (the only handled trigger source whose message calls
+      `getPublicAppBaseUrl()`) throws when that source is actually invoked;
+      `CustomEmailSender_ForgotPassword`'s message never calls it at all
+      (DD-1c) and is unaffected either way. No trailing slash.
+    Default: ""
+
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
   # T-1 (design.md §8) — CustomEmailSender build convention for T-4.
@@ -131,10 +173,12 @@ Resources:
   # here, rather than improvised per-task:
   #
   #   CodeUri: ./functions/custom-email-sender
-  #     (i.e. infra/10-data-auth/functions/custom-email-sender/ - a NEW
-  #     directory T-4 creates, sibling to this template, mirroring
-  #     20-backend's CodeUri: ../../backend convention of pointing at a
-  #     real source directory rather than inlining code in the template.)
+  #     (i.e. infra/10-data-auth/functions/custom-email-sender/ - created by
+  #     T-2, sibling to this template, mirroring 20-backend's
+  #     CodeUri: ../../backend convention of pointing at a real source
+  #     directory rather than inlining code in the template. T-4 (this
+  #     change) adds index.mjs and the AWS::Serverless::Function resource
+  #     itself into that already-existing package.)
   #   Handler: index.handler  (T-4's choice of entry file/export)
   #   Runtime: nodejs24.x  (matches 20-backend's ApiFunction, same account)
   #   Metadata:
@@ -151,12 +195,16 @@ Resources:
   # review, which read aws_lambda_builders' nodejs_npm workflow rather than
   # recalling it — do not rely on committing a lockfile for deterministic
   # installs without also setting that flag.
-  # That package.json is THE dependency-install path - it does not exist
-  # yet (T-4 creates it) and MUST declare `@aws-crypto/client-node` (tasks.md T-4): Cognito's custom-sender payload arrives KMS-
-  # encrypted and only the AWS Encryption SDK can decrypt it (design.md §3
-  # step 1 names the package; §4 covers the KMS policies) - it is NOT
-  # part of the Lambda Node.js runtime's bundled AWS SDK, so without this
-  # install path the function would deploy but fail at first invocation.
+  # That package.json is THE dependency-install path - T-2 created it (with
+  # `jest` as its only devDependency at that point); T-4 (this change) added
+  # its runtime `dependencies`: `@aws-crypto/client-node` (Cognito's custom-
+  # sender payload arrives KMS-encrypted and only the AWS Encryption SDK can
+  # decrypt it - design.md §3 step 1 names the package; §4 covers the KMS
+  # policies), `amqplib` (DD-3a's publish path), and
+  # `@aws-sdk/client-secrets-manager` (DD-3b's runtime secret read). None of
+  # the three is part of the Lambda Node.js runtime's bundled AWS SDK, so
+  # without this install path the function would deploy but fail at first
+  # invocation.
   #
   # Do not add Globals: Function: Metadata here to pre-set BuildMethod -
   # Metadata is a resource-level template field outside `Properties`, and
@@ -552,6 +600,112 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-custom-email-sender-key"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-4 (design.md §3, §5, DD-1, DD-2a, DD-3a, DD-3b)
+  # - the function itself, and the two policies T-3 could not write (its
+  # completion report/DD-2a Not Done named both):
+  #   - kms:Decrypt, scoped to CustomEmailSenderKey, on the FUNCTION's own
+  #     Policies: block (SAM's auto-created role - the same convention
+  #     20-backend's ApiFunction uses: no explicit Role:).
+  #   - lambda:InvokeFunction for cognito-idp.amazonaws.com - a LAMBDA
+  #     RESOURCE POLICY (CustomEmailSenderInvokePermission below), NOT a KMS
+  #     grant and NOT added to CustomEmailSenderKey's KeyPolicy. This is the
+  #     split round-1 finding C-9 exists to fix (design.md §4's "three
+  #     policies, three resources" table).
+  # NFR-4 is closed by these two plus T-3's two KeyPolicy statements above -
+  # all four now exist, each on its own correct resource.
+  #
+  # Handler order (design.md §3, mirrored from AWS's own CustomEmailSender
+  # reference example - decrypt IF a code is present, unconditionally,
+  # before looking at triggerSource; see index.mjs's file docblock for why
+  # that is safe and correct even for a triggerSource this function will go
+  # on to reject): decrypt -> route -> validate the recipient BEFORE
+  # publishing -> build -> publish -> return. No reply awaited
+  # (`proposal.md` §12.1).
+  # ════════════════════════════════════════════════════════════════════════════
+  CustomEmailSenderFunction:
+    Type: AWS::Serverless::Function
+    # BuildMethod: nodejs24.x - T-1's contract (see the comment above
+    # Resources: at the top of this file). Runtime MUST match exactly.
+    Metadata:
+      BuildMethod: nodejs24.x
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-custom-email-sender"
+      CodeUri: ./functions/custom-email-sender
+      Handler: index.handler
+      Runtime: nodejs24.x
+      # Small function, short work (one KMS decrypt, one Secrets Manager
+      # read, one AMQP connect+publish+close - DD-3a). 256/15s is generous
+      # for that shape without being the 512/15 20-backend needs for a full
+      # NestJS cold start.
+      MemorySize: 256
+      Timeout: 15
+      # NO VpcConfig - same reasoning as 20-backend's ApiFunction (DD-2
+      # there): reaches KMS/Secrets Manager/the broker over the public
+      # internet, no NAT/VPC endpoints needed.
+      Environment:
+        Variables:
+          # design.md §3 step 1 / DD-2a - this function's OWN kms:Decrypt
+          # grant (below) is scoped to exactly this key's ARN.
+          CUSTOM_EMAIL_SENDER_KEY_ARN: !GetAtt CustomEmailSenderKey.Arn
+          # DD-3b - composes MailMicroserviceSecret's name; read by the SDK
+          # at invocation time, never imported (that stack does not exist
+          # at THIS stack's deploy time).
+          BACKEND_STACK_NAME: !Ref CustomEmailSenderBackendStackName
+          # design.md §3 step 4, NFR-3 - config.mjs's getPublicAppBaseUrl()
+          # reads this; DD-1c means only the verification message ever
+          # needs it to be set.
+          PUBLIC_APP_BASE_URL: !Ref CustomEmailSenderPublicAppBaseUrl
+          # The same literal sender identity every other mail path in this
+          # system uses (infra/20-backend/template.yaml's ApiFunction
+          # Environment; backend/src/mail/mail.config.ts's
+          # getMicroserviceMailConfig) - duplicated as a literal, not
+          # imported (DD-1a: this package cannot depend on backend/).
+          # EMAIL_SENDER is public by construction (the From header of
+          # every message this system sends) - hiding it protects nothing.
+          EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
+          EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
+      Policies:
+        # SAM adds the default CloudWatch Logs policy automatically (same
+        # note as 20-backend's ApiFunction).
+        - Statement:
+            # T-4's half of NFR-4 (DD-2a) - kms:Decrypt, scoped to exactly
+            # this key, never `*`.
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt CustomEmailSenderKey.Arn
+            # DD-3b - GetSecretValue on MailMicroserviceSecret, scoped by
+            # its PREDICTABLE name (composed from the parameter above, not
+            # imported - that stack doesn't exist at this stack's deploy
+            # time). Secrets Manager appends a random 6-character suffix to
+            # every secret's ARN, so the resource pattern below uses six
+            # `?` wildcards (each matches exactly one character) rather
+            # than a trailing `*` (which would also match any LONGER name
+            # sharing this prefix) - the standard AWS-documented pattern
+            # for scoping to a secret known only by name.
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub
+                - "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-??????"
+                - SecretName: !Sub "${CustomEmailSenderBackendStackName}-mail-microservice-secret"
+
+  # T-4's other half of NFR-4/design.md §4 - the LAMBDA RESOURCE POLICY that
+  # lets Cognito invoke this function at all (distinct from, and never
+  # confused with, a KMS grant - round-1 C-9's fix). `!Ref UserPool` is safe
+  # here (unlike the KEY POLICY's condition, DD-2b): nothing else in this
+  # template references CustomEmailSenderInvokePermission, so adding this
+  # one outbound edge (Permission -> UserPool) cannot close a cycle -
+  # DD-2b's problem was specifically the KEY's policy gaining a RETURN edge
+  # once T-6 wires LambdaConfig, and this resource has no return edge onto
+  # it from anywhere.
+  CustomEmailSenderInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CustomEmailSenderFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPool}"
 
 Outputs:
   # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack
