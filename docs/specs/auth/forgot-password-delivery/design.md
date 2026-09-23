@@ -181,6 +181,28 @@ T-3's Reviewer found that `CustomEmailSenderKmsGrantPrincipalArn` **is never pas
 
 Recorded here rather than left in a completion report, so T-6 does not re-open it. Rotation is safe (KMS retains old backing material; grants and encryption context are unaffected) but near-worthless for codes that live minutes, against a dev stack with an explicitly cost-aware posture. **Set `PendingWindowInDays: 7`** to match this stack's easy-teardown stance (`DeletionProtection: false`) — the 30-day default leaves a billed key behind after a stack delete.
 
+### DD-3a — The function publishes over **AMQP**, connecting per invocation and caching nothing
+
+**Decided 2026-09-23, before T-4, by reading the microservice rather than assuming.** §3 step 5 said "publish" without saying how, and the obvious worry — that a Lambda would need the backend's 786-line transport — turns out not to follow.
+
+**Why not HTTP**, which looked simpler: the microservice does expose `POST api/email/send` (verified in its `app.module.ts`, guarded by a `JwtMiddleware` that validates an `x-api-key` against CLARISA). But its **URL is not in `MailMicroserviceSecret`** — that secret carries `rabbitmqUrl`, `apiKey` and `queueName` only — and the endpoint takes `multipart/form-data` with the HTML as a file part, which a bare Lambda would have to construct by hand or take a dependency for.
+
+**AMQP needs no configuration we do not already hold.**
+
+⚠️ **Connect per invocation. Cache nothing.** The backend's transport is large because it keeps a long-lived connection: a mutex, a liveness probe, a detached teardown, and a sanitized-error hierarchy built because *"amqplib errors routinely carry the full connection string"*. **A function that opens a connection, publishes under a confirm, and closes needs none of that** — and caching across invocations would import the exact freeze hazard this repo already shipped a production fix for (`fix/otp-mail-lambda-freeze`).
+
+The cost is a TLS+AMQP handshake per reset. For a flow that runs a handful of times a month, against a function whose alternative is a connection that can be frozen mid-publish, that is the right trade — and it is what makes **NFR-2 structural here**: nothing is in flight at return because nothing outlives the invocation.
+
+⚠️ **The envelope shape is a contract we do not own.** `buildMicroserviceEnvelope` in `backend/src/mail/microservice-mail.transport.ts` is its only statement in this repo, and DD-1a already ruled the function cannot import from `backend/`. Three wire-format defects are recorded against that shape in `enhancement/email-notification-microservice` — `socketFile`'s name, a composite `from`, a comma-joined `to`. **T-4 must read that builder and mirror it exactly**, and its tests must pin the shape, because nothing else will catch drift.
+
+⚠️ **`id` and `reply_to` must be absent.** That spec's FR-2 records it as deliberate: an `id` without a `reply_to` makes the microservice attempt an RPC reply nothing consumes. `proposal.md` §12.1 dropped the awaited reply, so this stays absent.
+
+### DD-3b — The secret is reached by a **parameterised** name
+
+`MailMicroserviceSecret` is named `!Sub "${AWS::StackName}-mail-microservice-secret"` — and that `AWS::StackName` is **`20-backend`'s**, not this stack's. So the function cannot construct the name from its own context.
+
+**T-4 adds a parameter for the backend stack name** (default `accelerate-tz-dev-backend`, matching `deploy.sh`'s own default), composes the secret name from it, and reads the secret at invocation time. Same shape as DD-2b's pool-id parameter and for the same reason: a cross-stack value that must not be guessed or hardcoded.
+
 ## 5. Which emails the function handles — resolving round-1 C-6
 
 The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email to this function.
