@@ -270,3 +270,75 @@ The Implementer argued, and the Reviewer confirmed, that **§10's disposition of
 - **T-6 owes three things now**, not two: `deploy.sh` wiring for the principal **and** the pool-id parameters (DD-2c), plus the `AllowedPattern` T-3's review suggested once the override exists. ⚠️ The pool-id wiring is now load-bearing for **DD-5b's `SourceArn`** as well.
 - **T-7 owes the three questions above**, plus the four from T-3 that nothing in this repository can answer.
 - Reviewer ADVISORY 2 (a docblock displaced from the function it documents) and 3 (a near-vacuous assertion) — **not applied**, recorded; neither changes behaviour.
+
+---
+
+## T-5 — Pool drift audit: artefacts, not a procedure
+
+**Status:** `[~]` **— PASS on the audit, but the task does NOT close.** · **Date:** 2026-09-23 · **Attempts:** 3 Implementer + 1 Leader-applied fix · **Reviewer:** FAIL, FAIL, FAIL, PASS · Implementer `sonnet` / Reviewer `opus`
+
+> **Why `[~]` and not `[x]`.** T-5's Done-when has four clauses. Three are met and verified. The fourth — *"the throwaway-pool rehearsal is recorded"* — is **not**, and it is blocked on an IAM boundary, not on effort. A task with outstanding scope does not reach `[x]` even on a Reviewer PASS.
+
+### What was produced
+
+| Artefact | State |
+|---|---|
+| `pool-before.json` | **Committed.** Full `describe-user-pool` of `eu-west-1_eKINGUN3I`, unedited, 24 top-level keys. Reviewer confirmed it complete, untruncated, no user records, no credentials. |
+| `design.md` §6 | Four-row table **withdrawn and replaced** by an exhaustive one over all 24 keys, each row carrying a checkable warrant. |
+| `infra/10-data-auth/template.yaml` | A classification comment block above `UserPool`. **No property value changed** — of 139 changed lines, every one is a comment. |
+
+### The finding that mattered: the enumeration was not two-way, it was three-way
+
+`tasks.md`'s Disqualifier names two classes — AWS default, or real drift. The live pool needed a **third**, and the Implementer found it rather than forcing the data into the given taxonomy:
+
+- **(a) AWS default** — omission already means this value.
+- **(b) Real drift** — a value that diverged and the template should now carry. **Found zero times.**
+- **(c) Deliberately removed by an earlier, shipped spec** — visible live only because no `DEPLOY_INFRA=true` deploy has landed the removal. `EmailConfiguration` (`email-notification-microservice` §7.1 Phase B) and `AdminCreateUserConfig.InviteMessageTemplate` (`account-access-emails` DD-5/T-9). **Writing either back into the template would have silently reverted an approved decision.** Both quotes verified at source by the Reviewer.
+
+So T-5's "write the decided values into the template" correctly resolved to **no property written** — (a) and (c) both mean "leave it", for opposite reasons. The Reviewer held this conclusion to a deliberately higher bar (it is the conclusion that requires least work) and confirmed it supported, twice.
+
+### ⚠️ A finding against already-merged code, out of T-5's scope — **T-6 owns it**
+
+`aws cognito-idp update-user-pool help` states that `VerificationMessageTemplate`'s `EmailMessage`/`EmailSubject` *"can be set only if the value of `EmailSendingAccount` is `DEVELOPER`."* **The Leader verified this independently against the CLI's own output.** `UserPool` sets `EmailSendingAccount: COGNITO_DEFAULT` **and** a branded `VerificationMessageTemplate.EmailMessage`/`EmailSubject`. That combination predates this spec, has never been deployed, and **T-6's deploy is the first call that would ever exercise it** — against the pool holding 3 live accounts. It may be rejected outright.
+
+⚠️ It could not be confirmed empirically **because the rehearsal that would have tested it is the step that did not run.** The blocked gate and the defect it would have caught are the same gap.
+
+> **Provenance correction carried to T-6:** both files attribute the branded template to "T-4's content". *This spec's* T-4 is the function and touched no pool property; the branded HTML predates this spec (already live 2026-07-17). Reviewer advisory, left unapplied under the same-sentence rule — **T-6 must not inherit the wrong owner.**
+
+### Attempt history
+
+| # | Reviewer | Findings |
+|---|---|---|
+| 1 | **FAIL** | Four false claims in a diff that is nothing but claims: "23 keys, machine-counted" (the artefact has **24** — and that number was the exhaustiveness warrant for the whole table); "four" CFN tags (three); a `DeletionProtection` justification citing a property **a KMS key cannot have**, contradicted by a comment three lines below it; the SUPERSEDED marker describing its own replacement. Substance sound — enumeration exhaustive, both (c) quotes verbatim, scope clean, `Properties:` untouched. |
+| 2 | **FAIL** | All four fixed correctly, each verified at source — **and the fix introduced a new false claim.** The `VERBATIM`/`INFERRED` taxonomy declared "most rows are VERBATIM": of 15, five quoted, four marked, **six quoted nothing and carried no mark**. Three of those six cited `design.md` §6, which said "Unchanged", pointing back at the table `design.md` declares **withdrawn** — a citation chain terminating in an anulled source. |
+| 3 | **FAIL** | Deletion applied (see below). The round-2 defect closed cleanly and 14 of 15 warrants survived. **One did not:** the `LambdaConfig` warrant landed in `template.yaml` and **not** in its `design.md` mirror — and `template.yaml` points the reader at `design.md` "for the full table", i.e. from the complete version at the incomplete one. |
+| 4 | **PASS** | Leader-applied one-clause fix. Quote verified against `tasks.md:86`; row now justifies its label instead of explaining why not to write the property; both files agree; table structurally intact and every other cell byte-identical. |
+
+### Decisions
+
+- **DD-5c — the taxonomy was deleted, not repaired.** Round 2's defect originated in **the Leader's own brief**, which imposed a binary partition on a set with three kinds of member (quoted / reasoned / not-a-parameter-at-all). The Reviewer's remediation would have added a third label and more prose — the direction that had just failed. Escalated to the user at the budget's 3rd-round tripwire; the user chose deletion, on KZ-008's rule: *where a correction can be made by deleting the false text rather than replacing it, delete — deletion cannot introduce the next instance.* **Nothing was lost:** each row already carried its own warrant, and a reader can see which rows quote AWS. The taxonomy added no information — it added a false claim *about* the information.
+- **The 3-attempt ceiling was reached and `git restore .` was NOT run.** The HALT protocol's rollback exists so a user is not left with broken code. Nothing here was broken — `validate.sh` green, zero config values altered — and rollback would have destroyed a twice-verified audit plus an irreproducible artefact over a one-clause omission. The options, including that rollback is what the rule literally says, were put to the user, who authorised Leader-applies-then-Reviewer-verifies. **Author ≠ auditor held:** the Leader wrote one clause, the Reviewer audited it at an Implementer's bar.
+- **Two sound Reviewer advisories left unapplied deliberately** — dropping `or from the task brief` (`design.md:264`) and striking *"Every row below except the two in (c) is this class."* (`template.yaml:342`). Both correct, both deletion-compatible. Declined because the loop was exhausted and the user authorised **one** clause; widening a Leader-applied edit past its authorisation is wrong even when each addition defends itself. **Recorded here as open advisories.**
+
+### The gap — declared, not implied
+
+**The throwaway-pool rehearsal (design.md DD-3 step 4, `proposal.md` R-1) did not run.** The identity available (`cognito_csicap` — the same principal `CustomEmailSenderKmsGrantPrincipalArn` names) got `AccessDenied` on **both** `cloudformation:CreateChangeSet` and `cloudformation:CreateStack`, for every stack name tried. A hard IAM boundary, not a judgment call. **No stack was created** (`describe-stacks` → `ValidationError: … does not exist`, both names); nothing leaked, nothing to delete.
+
+The weaker CLI-only rehearsal was **deliberately not substituted**: the risk being measured is CloudFormation composing `UpdateUserPool` from the template, and a hand-composed CLI call does not exercise that mechanism. A fallback would have produced a green result that measured nothing.
+
+**A scoped IAM grant has been requested** (CloudFormation create/update/delete on `accelerate-tz-dev-rehearsal-*` only — cannot reach the three real stacks). T-5 reopens to run the rehearsal when it lands.
+
+### Requirements
+
+| Clause | State |
+|---|---|
+| FR-5 — full config read, update composed from it | ✅ `pool-before.json` + the exhaustive classification |
+| FR-5 `AND IT MUST` — before/after comparison | ⏳ before captured; after is T-6's |
+| FR-5 `BUT it must NOT` — not by hand | ✅ nothing applied by hand; the live pool was read-only throughout |
+| D-5 (`requirements.md` §8) — `UpdateUserPool` silently resets an omitted setting | ⚠️ **Enumerated, not rehearsed.** The artefact says what omission *would* reset; only the rehearsal could have shown what it *does*. |
+
+### Final verification
+
+- `./infra/scripts/validate.sh` → `PASS 10-data-auth` · `PASS 20-backend` · `PASS 30-frontend`. **Run by the Leader**, closing the Reviewer's standing note that the earlier PASSes were the Implementer's account.
+- `grep -n "VERBATIM\|INFERRED"` over both files → **empty, exit 1.** No orphan label survives.
+- `UserPool`'s `Properties:` → **untouched**, confirmed two ways: the Leader filtered the diff for non-comment changes (zero hits), and the Reviewer re-read the block as byte-identical.

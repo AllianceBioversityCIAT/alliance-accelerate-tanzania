@@ -76,7 +76,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Disqualifier: ⚠️ **Mocking the decrypt proves the call shape, never that key, grant and ciphertext agree.** A green suite here is compatible with a function that cannot decrypt a single real code. Say so in the report; T-7 is the only thing that closes it.
       Done when: the three falsifiers redden and restore, nothing the function logs contains the address or the code, and a `Not Done` names any `triggerSource` left unhandled.
 
-- [ ] **T-5** Pool drift audit — artefacts, not a procedure  (deps: none; must complete before T-6)
+- [~] **T-5** Pool drift audit — artefacts, not a procedure  (deps: none; must complete before T-6)
       Scope: capture the live pool configuration, decide every setting present there and absent from the template, write the decided values **into** the template, and rehearse the change against a **throwaway pool** first.
       Traces: FR-5 (all clauses, incl. `AND IT MUST` verify by comparing the complete before/after); design.md §6, DD-3
       Files: `infra/10-data-auth/template.yaml`, `docs/specs/auth/forgot-password-delivery/pool-before.json`

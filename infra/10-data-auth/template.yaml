@@ -321,6 +321,145 @@ Resources:
 
   # Email-based sign-in, self-managed by admins (no public self-signup - these
   # are internal staff/admin identities). Strong password policy per §6.
+  #
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-5 (design.md §6, DD-3) - pool drift audit.
+  # FR-5: UpdateUserPool composes its call FROM THIS TEMPLATE and resets any
+  # live setting the template omits. Before touching this resource again
+  # (T-6 sets LambdaConfig next), every property `aws cognito-idp
+  # describe-user-pool --user-pool-id eu-west-1_eKINGUN3I --profile IBD-DEV
+  # --region eu-west-1` returned live and this resource's Properties: does
+  # NOT set was enumerated from the committed artefact
+  # (docs/specs/auth/forgot-password-delivery/pool-before.json, 24 top-level
+  # UserPool keys, machine-counted) and decided below - never from memory or
+  # from a partial table (KZ-008). Full table + citations: design.md §6
+  # (amended 2026-09-23) and this task's completion report.
+  #
+  # THREE-WAY CLASSIFICATION (not two - the task's own Disqualifier names
+  # only "default" vs "drift"; a third class is real here):
+  #   (a) AWS DEFAULT - omission already means this value. Restoring it
+  #       would be a no-op at best, a lie about what the template does at
+  #       worst. Every row below except the two in (c) is this class. Each
+  #       bullet states its own warrant - a direct quote of `aws cognito-idp
+  #       update-user-pool help`'s parameter documentation where one exists,
+  #       or the reasoning behind the value where it does not:
+  #         - Policies.PasswordPolicy.TemporaryPasswordValidityDays=7 -
+  #           CLI help, verbatim: "Defaults to 7."
+  #         - Policies.SignInPolicy.AllowedFirstAuthFactors=[PASSWORD] -
+  #           no live pool feature (WEB_AUTHN/EMAIL_OTP/SMS_OTP) is used;
+  #           consistent with a password-only pool's baseline. Not stated
+  #           as a literal default in the CLI help - reasoned, not quoted.
+  #           The rehearsal that would have confirmed it empirically did
+  #           not run (T-5's completion report, "Not Done"); no empirical
+  #           step for this row ran at all.
+  #         - DeletionProtection=INACTIVE - AWS's universal opt-in
+  #           convention for deletion protection, not a CLI-help-quoted
+  #           default. Matches this stack's existing explicit
+  #           `DeletionProtection: false` posture on `Db`
+  #           (line ~297 above). `CustomEmailSenderKey` (a KMS key) has no
+  #           `DeletionProtection` property at all - it uses
+  #           `PendingWindowInDays` instead, and its own comment
+  #           attributes the stack's easy-teardown posture to elsewhere in
+  #           this stack, i.e. to `Db`, not to itself.
+  #         - LambdaConfig={} - tasks.md T-5's Disqualifier: "`MfaConfiguration:
+  #           OFF` and `LambdaConfig: {}` are what an omitted property
+  #           already means" (T-6 sets this next; setting it here would
+  #           activate the trigger early).
+  #         - SchemaAttributes (the full standard OIDC set: profile,
+  #           address, birthdate, ... nickname) - NOT a parameter of
+  #           UpdateUserPool AT ALL (absent from the CLI help's parameter
+  #           list above) and immutable after pool creation. Omitting
+  #           `Schema` from this resource cannot reset it because nothing
+  #           UpdateUserPool sends can touch it either way.
+  #         - UsernameAttributes=[email] - matches this template already;
+  #           also not an UpdateUserPool parameter (set once, at creation).
+  #         - EmailVerificationMessage / EmailVerificationSubject (the
+  #           legacy top-level duplicates of VerificationMessageTemplate) -
+  #           CLI help, verbatim, both: "This parameter is no longer used."
+  #           Inert. VerificationMessageTemplate (which this resource DOES
+  #           set, matching live exactly) is the live field.
+  #         - UserAttributeUpdateSettings.AttributesRequireVerificationBeforeUpdate=[]
+  #           - Cognito's default (no attribute requires reverification
+  #           before update), not a CLI-help-quoted default.
+  #         - MfaConfiguration=OFF - tasks.md T-5's Disqualifier:
+  #           "`MfaConfiguration: OFF` and `LambdaConfig: {}` are what an
+  #           omitted property already means."
+  #         - AccountRecoverySetting (verified_email(1)/verified_phone_number(2))
+  #           - tasks.md T-5's Disqualifier: "`AccountRecoverySetting`'s
+  #           live value is also AWS's default."
+  #         - UserPoolTier=ESSENTIALS - CLI help, verbatim: "Defaults to
+  #           ESSENTIALS."
+  #         - KeyConfiguration.KeyType=AWS_OWNED_KEY - CLI help, verbatim:
+  #           "If not specified, Amazon Web Services managed keys are
+  #           used" (= AWS_OWNED_KEY).
+  #         - IssuerConfiguration.Type=ORIGINAL - paraphrased from the CLI
+  #           help's description of ORIGINAL as the baseline, single-region
+  #           issuer shape (UPDATED is the opt-in for multi-region
+  #           replication, which this pool does not use) - not a quoted
+  #           default statement.
+  #         - UserPoolTags ("Project": "ACCELERATE-Tanzania" plus three
+  #           aws:cloudformation:* tags - four tags total) - this
+  #           resource's Properties: below does not set UserPoolTags (a
+  #           real property of AWS::Cognito::UserPool). The Project tag is
+  #           CloudFormation's stack-level `tags` from
+  #           infra/samconfig.toml, propagated to every taggable resource
+  #           in ALL THREE stacks; the aws:cloudformation:* tags are
+  #           CFN-injected automatically. Neither is affected by anything
+  #           this resource's Properties: block does or omits.
+  #         - AdminCreateUserConfig.UnusedAccountValidityDays=7 - CLI help,
+  #           verbatim: "This parameter is no longer in use... The default
+  #           value for this parameter is 7", and superseded once
+  #           Policies.PasswordPolicy.TemporaryPasswordValidityDays is in
+  #           effect (which it is, at its own default - CLI help again:
+  #           "When you set TemporaryPasswordValidityDays for a user pool,
+  #           you can no longer set a value for the legacy
+  #           UnusedAccountValidityDays parameter").
+  #       Id, Arn, CreationDate, LastModifiedDate, EstimatedNumberOfUsers
+  #       are read-only pool metadata - not settable via Create/UpdateUserPool
+  #       at all, so "present live, absent from the template" does not even
+  #       apply to them.
+  #
+  #   (c) DELIBERATELY REMOVED BY AN EARLIER, SHIPPED SPEC - the live pool
+  #       still shows it only because no DEPLOY_INFRA=true deploy has landed
+  #       that spec's decision. Restoring either into this template would
+  #       silently REVERT an approved decision this repo already made:
+  #         - EmailConfiguration (live: EmailSendingAccount=DEVELOPER,
+  #           SourceArn=<SES identity>, From=<branded>) vs this resource's
+  #           EmailConfiguration.EmailSendingAccount=COGNITO_DEFAULT below -
+  #           `enhancement/email-notification-microservice` design.md §7.1
+  #           Phase B: "the EmailConfiguration !If -> unconditional
+  #           COGNITO_DEFAULT" (verified at that file). This resource
+  #           ALREADY carries the decided value; DO NOT restore SES.
+  #         - AdminCreateUserConfig.InviteMessageTemplate (live: the
+  #           branded admin-invite HTML, CTA hardcoded to
+  #           https://d3idqvvg0xa1r7.cloudfront.net/login) - this
+  #           resource's AdminCreateUserConfig below already omits it -
+  #           `auth/account-access-emails` design.md DD-5 ("Retire the
+  #           Cognito InviteMessageTemplate and PortalUrl", its T-9,
+  #           verified at that file). DO NOT restore it.
+  #       Net effect: (b) real drift, requiring a NEW value written into
+  #       this resource, was found ZERO times. Every present-live/
+  #       absent-from-template setting is either (a) or (c); both classes
+  #       are "leave the template as it is," for opposite reasons - (a)
+  #       because omission already means the live value, (c) because
+  #       omission is the decided target. Restoring EITHER would be wrong:
+  #       restoring (a) values is a no-op that adds noise; restoring (c)
+  #       values reverts a decision another shipped spec already made.
+  #
+  #   ⚠️ ONE FINDING BEYOND THIS ENUMERATION, discovered by this audit and
+  #   OUT OF T-5's SCOPE TO FIX: `aws cognito-idp update-user-pool help`
+  #   states EmailMessage/EmailSubject on VerificationMessageTemplate (and
+  #   on InviteMessageTemplate) are "allowed only if the value of
+  #   EmailSendingAccount is DEVELOPER." This resource sets BOTH
+  #   EmailConfiguration.EmailSendingAccount=COGNITO_DEFAULT AND a branded
+  #   VerificationMessageTemplate.EmailMessage/EmailSubject (T-4's
+  #   content, already reviewed and merged) - a combination that may be
+  #   REJECTED outright by UpdateUserPool once T-6's deploy actually runs.
+  #   Not decided or fixed here - it predates T-5 and is not this task's
+  #   scope. Flagged in design.md §6 and this task's completion report for
+  #   the Leader to route (most likely to T-6, whose deploy is the first
+  #   one that would ever hit it).
+  # ════════════════════════════════════════════════════════════════════════════
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
