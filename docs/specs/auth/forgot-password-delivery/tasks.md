@@ -33,7 +33,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
 
 ## 4. Tasks
 
-- [ ] **T-1** `10-data-auth` gains a SAM toolchain  (deps: none)
+- [x] **T-1** `10-data-auth` gains a SAM toolchain  (deps: none)
       Scope: add `Transform: AWS::Serverless-2016-10-31`, a build method, and a dependency-install path to `infra/10-data-auth/template.yaml`; update `infra/scripts/deploy.sh` so that stack is built before deploy, as `20-backend` already is.
       Traces: design.md §8 (round-1 C-11)
       Files: `infra/10-data-auth/template.yaml`, `infra/scripts/deploy.sh`, `infra/scripts/validate.sh`

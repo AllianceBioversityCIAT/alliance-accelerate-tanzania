@@ -1,7 +1,22 @@
 AWSTemplateFormatVersion: "2010-09-09"
+# T-1 (design.md §8, round-1 C-11) — SAM toolchain added to a stack that was
+# plain CloudFormation until now. 20-backend already carries this Transform;
+# 30-frontend deliberately does not ("No SAM Transform - these are plain
+# CloudFormation resources", per that template's own Description) because it
+# hosts no AWS::Serverless::Function. This stack now WILL host one
+# (forgot-password-delivery's CustomEmailSender, T-4) - and that function
+# needs `@aws-crypto/client-node` (AWS Encryption SDK) to decrypt Cognito's
+# custom-sender payload, a real npm dependency NOT bundled in the Lambda
+# Node.js runtime - so this stack needs the same build+package toolchain
+# 20-backend already has, unlike 30-frontend. See the CustomEmailSender build
+# convention comment above the Resources section below for the CodeUri/
+# BuildMethod/dependency-install path T-4 must use.
+Transform: AWS::Serverless-2016-10-31
 Description: >-
   ACCELERATE Tanzania (dev) - data + auth stack: RDS MySQL + Secrets Manager
-  (T-2) and Cognito user pool/client/groups (T-4). Stack: accelerate-tz-dev-data-auth.
+  (T-2) and Cognito user pool/client/groups (T-4). Now a SAM stack (T-1,
+  design.md §8) to host forgot-password-delivery's CustomEmailSender (T-4).
+  Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
 # Authored by:
@@ -44,6 +59,48 @@ Parameters:
     MaxValue: 100
 
 Resources:
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-1 (design.md §8) — CustomEmailSender build convention for T-4.
+  # No AWS::Serverless::Function is declared by T-1 itself (out of scope -
+  # T-4 owns the function). This comment is the toolchain contract T-4 must
+  # follow so the build method and dependency-install path are decided ONCE,
+  # here, rather than improvised per-task:
+  #
+  #   CodeUri: ./functions/custom-email-sender
+  #     (i.e. infra/10-data-auth/functions/custom-email-sender/ - a NEW
+  #     directory T-4 creates, sibling to this template, mirroring
+  #     20-backend's CodeUri: ../../backend convention of pointing at a
+  #     real source directory rather than inlining code in the template.)
+  #   Handler: index.handler  (T-4's choice of entry file/export)
+  #   Runtime: nodejs24.x  (matches 20-backend's ApiFunction, same account)
+  #   Metadata:
+  #     BuildMethod: nodejs24.x   # <- must match Runtime exactly
+  #
+  # BuildMethod: nodejs24.x is SAM's BUILT-IN Node.js builder (unlike
+  # 20-backend's Metadata: BuildMethod: makefile) - not a Makefile, because
+  # this function is small and has no compiled dist/ or Prisma engine to
+  # stage. Given a `package.json` inside CodeUri, `sam build` runs the
+  # dependency-install step itself — `npm install -q --no-audit --no-save
+  # --omit=dev` — and stages node_modules/ alongside the handler.
+  # ⚠️ NOT `npm ci`: a lockfile alone does not select it. `npm ci` additionally
+  # requires `Metadata: BuildProperties: UseNpmCi: true`. Corrected after T-1's
+  # review, which read aws_lambda_builders' nodejs_npm workflow rather than
+  # recalling it — do not rely on committing a lockfile for deterministic
+  # installs without also setting that flag.
+  # That package.json is THE dependency-install path - it does not exist
+  # yet (T-4 creates it) and MUST declare `@aws-crypto/client-node` (tasks.md T-4): Cognito's custom-sender payload arrives KMS-
+  # encrypted and only the AWS Encryption SDK can decrypt it (design.md §3
+  # step 1 names the package; §4 covers the KMS policies) - it is NOT
+  # part of the Lambda Node.js runtime's bundled AWS SDK, so without this
+  # install path the function would deploy but fail at first invocation.
+  #
+  # Do not add Globals: Function: Metadata here to pre-set BuildMethod -
+  # Metadata is a resource-level template field outside `Properties`, and
+  # SAM's Globals section only injects into a function's `Properties`, so
+  # it cannot carry Metadata regardless of stack. There is nothing to
+  # centralize until the resource itself exists.
+  # ════════════════════════════════════════════════════════════════════════════
+
   # ════════════════════════════════════════════════════════════════════════════
   # T-2 - RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
   # ════════════════════════════════════════════════════════════════════════════

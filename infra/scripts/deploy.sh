@@ -7,7 +7,11 @@
 #   the IBD-DEV profile / eu-west-1 (FR-1, FR-8, NFR-1, NFR-7), per the deploy
 #   order in design.md §1 / DD-6:
 #
-#     1. deploy 10-data-auth      (params: VpcId, DevCidr)   → RDS/secret/Cognito
+#     1. sam build + deploy 10-data-auth (params: VpcId, DevCidr) → RDS/secret/Cognito
+#        (T-1, design.md §8: this stack now carries a SAM Transform + build
+#        method, same reason as step 3, so a function landing here — e.g.
+#        forgot-password-delivery's CustomEmailSender — gets its npm
+#        dependencies installed before deploy, not skipped.)
 #     2. [OPERATOR] run migrate-seed.sh                       → migrate + seed RDS
 #     3. sam build + deploy 20-backend  (AllowedOrigin, DataAuthStackName) → API
 #     4. deploy 30-frontend                                   → CloudFront URL
@@ -25,6 +29,10 @@
 # PREREQUISITES
 #   - AWS SAM CLI + AWS CLI v2 installed; valid IBD-DEV credentials.
 #   - A default VPC in eu-west-1 (auto-detected below, or pass VPC_ID).
+#   - For step 1: `sam build` is a no-op until 10-data-auth carries an
+#     AWS::Serverless::Function (T-4's CustomEmailSender); once it does,
+#     that function's CodeUri directory needs its own package.json for
+#     `sam build` to npm-install (Metadata: BuildMethod: nodejs24.x).
 #   - For step 3: the backend builds (`cd backend && npm run build`) and
 #     `sam build` can package dist/ + the Prisma engine (Metadata: makefile).
 #
@@ -250,9 +258,26 @@ echo "    DevCidr = $DEV_CIDR"
 echo
 
 # ── Step 1: 10-data-auth (RDS + Secrets Manager + Cognito) ───────────────────
+# T-1 (design.md §8) — this stack gained a SAM Transform + a build method
+# (Metadata: BuildMethod: nodejs24.x, once T-4 adds CustomEmailSender) so it
+# can host a function with a real npm dependency (@aws-crypto/client-node)
+# NOT bundled in the Lambda runtime. Build BEFORE deploy, the same reason
+# and the same pattern as step 3's backend build below: deploying the
+# SOURCE template here would skip the dependency-install step entirely
+# (there is no node_modules/ to zip without `sam build` running it), and
+# once T-4 lands, the function would deploy but fail at first invocation.
+# Harmless before T-4 lands too — `sam build` with no
+# AWS::Serverless::Function resource yet is a no-op build.
+DATA_AUTH_BUILD_DIR="$INFRA_DIR/10-data-auth/.aws-sam/build"
+echo "==> [1/4] Building $DATA_AUTH_STACK (sam build → $DATA_AUTH_BUILD_DIR) ..."
+sam build \
+  --template "$INFRA_DIR/10-data-auth/template.yaml" \
+  --build-dir "$DATA_AUTH_BUILD_DIR" \
+  --profile "$PROFILE" --region "$REGION"
+
 echo "==> [1/4] Deploying $DATA_AUTH_STACK (RDS + Secrets Manager + Cognito) ..."
 sam deploy \
-  --template "$INFRA_DIR/10-data-auth/template.yaml" \
+  --template "$DATA_AUTH_BUILD_DIR/template.yaml" \
   --stack-name "$DATA_AUTH_STACK" \
   --parameter-overrides VpcId="$VPC_ID" DevCidr="$DEV_CIDR" \
   "${SAM_DEPLOY_FLAGS[@]}"
