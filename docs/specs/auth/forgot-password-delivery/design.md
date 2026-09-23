@@ -326,7 +326,8 @@ Hosting a function with native dependencies therefore requires: the SAM transfor
 
 | # | Disposition |
 |---|---|
-| C-1, C-4, C-7 | **Dissolved** — no reply is awaited (`proposal.md` §12.1). |
+| C-1, C-4 | **Dissolved** — no reply is awaited (`proposal.md` §12.1). Remove the reply and neither finding has a subject left. |
+| **C-7** | ⚠️ **HALF-dissolved — corrected 2026-09-23, this row previously claimed the same full dissolution.** C-7 had three components. Only one is closed. |
 | C-2 | **Moot** — the frontend does not change. |
 | C-3 | **Out of scope** — a login-path finding; recorded, not fixed here. |
 | C-5 | **§6 / DD-3** — artefact-producing audit; DD-4 states the rollback limitation honestly. |
@@ -338,6 +339,26 @@ Hosting a function with native dependencies therefore requires: the SAM transfor
 | C-12 | **§9** — tasks enumerated. |
 | C-13 | **§9** — literal NFR-5 text. |
 | C-14 | **DD-1** — the Option B cycle is real; the honest reason is colocation, not impossibility. |
+
+### C-7, honestly — the correction T-4's review forced
+
+I disposed of C-7 alongside C-1 and C-4 with one line: *"Dissolved — no reply is awaited."* For those two that is complete. **For C-7 it is not**, and T-4's Implementer spotted it before its Reviewer confirmed it.
+
+C-7 had **three** components:
+
+| Component | Status |
+|---|---|
+| The awaited round trip must fit a budget | ✅ **Dissolved** — nothing downstream is awaited. |
+| **Cognito enforces a non-configurable ceiling on the trigger invocation itself** | ❌ **OPEN.** Not a property of the reply. Removing the reply removed the largest *consumer* of the budget; it did not remove the limit, nor establish that this function fits under it. |
+| **Cognito retries a timed-out invocation → duplicate codes** | ❌ **OPEN.** `publishEnvelope` correctly forecloses the function's *own* retry; Cognito's is outside the function and is exactly what C-7 described. |
+
+⚠️ **The function's own `Timeout: 15` is irrelevant to this.** A Cognito ceiling below it means Cognito abandons the invocation while the Lambda is still running — and DD-3a's deliberate *"connect per invocation, cache nothing"* makes the cold path longer on purpose: KMS decrypt, then a Secrets Manager round trip, then a fresh TLS/AMQP handshake, then an **awaited** close, all serial.
+
+That is the right trade for NFR-2 and it stands. But it means the open half of C-7 is **the** thing to watch.
+
+**Nothing in this repository can close it** — every AWS client is mocked. It goes to **T-7**, whose instructions now carry one more question: watch for a **timed-out trigger** and for a **duplicate** reset email, not only for a delivered one.
+
+*(NFR-6's latency budget, C-7's third strand, is separately and correctly disposed of in `tasks.md` §5 as a declared `(B)` — not applicable once no reply is awaited.)*
 
 ---
 

@@ -159,12 +159,65 @@ class CustomEmailSenderPublishError extends Error {
  * missing, malformed, or the composed name is wrong — never a silent
  * partial config.
  */
+/**
+ * T-4 attempt 3, Fix B. Both defects below share one fix: never let this
+ * function's own docblock rule ("NEVER log `secret` or any field of it —
+ * the broker URL embeds a credential") be the thing that breaks it. The
+ * class carries a FIXED message only — never the field's value, never the
+ * triggering error's own `.message` — mirroring
+ * `CustomEmailSenderPublishError` above in spirit, and `mail.config.ts`'s
+ * `required()` in effect (name the key, never the value).
+ */
+class CustomEmailSenderSecretError extends Error {
+  constructor(reason) {
+    super(`custom-email-sender: mail microservice secret is invalid: ${reason}.`);
+    this.name = 'CustomEmailSenderSecretError';
+  }
+}
+
+/** Same contract as `backend/src/mail/mail.config.ts`'s `required()`, for
+ * the same three fields `getMicroserviceMailConfig` requires there — a
+ * secret missing one of them must throw, naming ONLY the field's key,
+ * never any value (this secret's values are as sensitive as the decrypted
+ * code for logging purposes, NFR-1's spirit extended). Without this check,
+ * a secret missing e.g. `apiKey` would silently produce an envelope
+ * `JSON.stringify` drops that key from — the broker acks, `handler` logs
+ * "dispatched", and the microservice discards the message: the exact
+ * silent no-op class DD-2 exists to forbid. */
+function requiredSecretField(secret, key) {
+  const value = secret?.[key];
+  if (!value) {
+    throw new CustomEmailSenderSecretError(`missing required field "${key}"`);
+  }
+  return value;
+}
+
 async function readMicroserviceMailSecret() {
   const backendStackName = requiredEnv('BACKEND_STACK_NAME');
   const secretId = `${backendStackName}-mail-microservice-secret`;
   const client = new SecretsManagerClient({});
   const response = await client.send(new GetSecretValueCommand({ SecretId: secretId }));
-  const secret = JSON.parse(response.SecretString);
+
+  let secret;
+  try {
+    secret = JSON.parse(response.SecretString);
+  } catch {
+    // Guarded deliberately. On nodejs24.x a JSON.parse SyntaxError of the
+    // UNEXPECTED-TOKEN class embeds a window of the offending input in its
+    // own `.message` (`Unexpected token '}', "{...}" is not valid JSON`).
+    // ⚠️ Not every parse failure does — a TRUNCATED input yields
+    // `Unexpected end of JSON input`, which carries none. Narrowed after
+    // T-4's review found this comment over-definite and the test fixture
+    // truncated, i.e. the one shape that would NOT have leaked. The guard
+    // is right either way; the claim was not. — and because
+    // `handler` ends in `throw err`, the Lambda runtime writes that
+    // message verbatim to CloudWatch. If the secret is ever not
+    // well-formed JSON, that fragment is the broker connection string,
+    // which embeds `user:password`. A FIXED message only — never the
+    // parse error's own `.message`, never `response.SecretString` itself.
+    throw new CustomEmailSenderSecretError('SecretString is not valid JSON');
+  }
+
   // rabbitmqUrl / apiKey / queueName — the three keys DD-3a records this
   // secret holding (backend/src/mail/mail.config.ts's
   // `getMicroserviceMailConfig` reads the identical three, plus
@@ -174,9 +227,9 @@ async function readMicroserviceMailSecret() {
   // the decrypted code for logging purposes even though NFR-1 names only
   // the code/address explicitly).
   return {
-    rabbitmqUrl: secret.rabbitmqUrl,
-    apiKey: secret.apiKey,
-    queueName: secret.queueName,
+    rabbitmqUrl: requiredSecretField(secret, 'rabbitmqUrl'),
+    apiKey: requiredSecretField(secret, 'apiKey'),
+    queueName: requiredSecretField(secret, 'queueName'),
   };
 }
 
@@ -231,10 +284,27 @@ function buildEnvelope(message, config) {
  * code/invitation email, which FR-1/FR-4 do not ask for and which nothing
  * in this design budgets for) and NEVER left open past this call.
  *
- * Any failure — connect, channel creation, or a broker nack — surfaces as
+ * Any failure — connect, channel creation, a broker nack, or the message
+ * coming back unroutable (see `mandatory`, below) — surfaces as
  * {@link CustomEmailSenderPublishError}, never the raw `amqplib`/network
  * error (NFR-1: those routinely carry the broker URL, which embeds a
  * credential).
+ *
+ * T-4 attempt 3, ADVISORY 3 (Reviewer): `mandatory: true` plus a
+ * `'return'` listener, mirroring `backend/src/mail/
+ * microservice-mail.transport.ts`'s DD-3 exactly (`confirmPublish`) and
+ * for the identical reason stated there — "a publisher confirm attests
+ * persistence, not routing." Without `mandatory`, a wrong `queueName`
+ * (e.g. a typo in `MailMicroserviceSecret`, or a queue the microservice
+ * later renames) still acks on the confirm channel: this function logs
+ * "dispatched" and returns success, and the reset code is gone with no
+ * signal anywhere. That is exactly the silent-no-op class DD-2 elsewhere
+ * in this design exists to forbid, so the same fix applies here. The
+ * listener is attached BEFORE `publish` is called and consulted inside the
+ * ack callback — RabbitMQ delivers a `'return'` for an unroutable
+ * mandatory message before, or at worst interleaved with, its confirm ack,
+ * so a return is never missed regardless of ordering (identical reasoning
+ * to `confirmPublish`'s own docblock).
  */
 async function publishEnvelope(envelope, brokerConfig) {
   let connection;
@@ -242,6 +312,11 @@ async function publishEnvelope(envelope, brokerConfig) {
     connection = await amqp.connect(brokerConfig.rabbitmqUrl);
     const channel = await connection.createConfirmChannel();
     const content = Buffer.from(JSON.stringify(envelope), 'utf8');
+    let wasReturned = false;
+    const onReturn = () => {
+      wasReturned = true;
+    };
+    channel.once('return', onReturn);
     await new Promise((resolve, reject) => {
       channel.publish(
         '',
@@ -249,9 +324,25 @@ async function publishEnvelope(envelope, brokerConfig) {
         content,
         {
           persistent: true, // delivery_mode = 2, matching the backend transport
+          mandatory: true, // ADVISORY 3 — see docblock above
           contentType: 'application/json',
         },
-        (err) => (err ? reject(err) : resolve()),
+        (err) => {
+          channel.removeListener('return', onReturn);
+          // Both branches below are caught by this function's own `catch`
+          // and rethrown as the same sanitized CustomEmailSenderPublishError
+          // — deliberately not distinguished, so neither this raw error nor
+          // amqplib's own ever escapes (NFR-1).
+          if (wasReturned) {
+            reject(new Error('custom-email-sender: message was returned as unroutable.'));
+            return;
+          }
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        },
       );
     });
   } catch {

@@ -164,6 +164,15 @@ Parameters:
       (DD-1c) and is unaffected either way. No trailing slash.
     Default: ""
 
+Conditions:
+  # T-4 attempt 3, Fix C (design.md DD-5b). `CustomEmailSenderUserPoolId`
+  # (declared above, DD-2b) defaults to "" until T-6 wires it from this
+  # stack's own `UserPoolId` output (DD-2c) - and an empty value would
+  # compose a malformed ARN ("...:userpool/") if used unconditionally
+  # below. This condition gates `CustomEmailSenderInvokePermission`'s
+  # `SourceArn` so it is set ONLY once the parameter is non-empty.
+  HasCustomEmailSenderUserPoolId: !Not [!Equals [!Ref CustomEmailSenderUserPoolId, ""]]
+
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
   # T-1 (design.md §8) — CustomEmailSender build convention for T-4.
@@ -692,20 +701,44 @@ Resources:
 
   # T-4's other half of NFR-4/design.md §4 - the LAMBDA RESOURCE POLICY that
   # lets Cognito invoke this function at all (distinct from, and never
-  # confused with, a KMS grant - round-1 C-9's fix). `!Ref UserPool` is safe
-  # here (unlike the KEY POLICY's condition, DD-2b): nothing else in this
-  # template references CustomEmailSenderInvokePermission, so adding this
-  # one outbound edge (Permission -> UserPool) cannot close a cycle -
-  # DD-2b's problem was specifically the KEY's policy gaining a RETURN edge
-  # once T-6 wires LambdaConfig, and this resource has no return edge onto
-  # it from anywhere.
+  # confused with, a KMS grant - round-1 C-9's fix).
+  #
+  # T-4 attempt 3, Fix C (design.md DD-5b, raised by this task's own
+  # Reviewer): a same-template `!Sub ".../userpool/${UserPool}"` here
+  # creates the edge Permission -> UserPool, so CloudFormation always
+  # builds the POOL FIRST - but Cognito validates invoke permission WHEN
+  # `LambdaConfig.CustomEmailSender` is set (T-6), and the standard fix for
+  # a wrong build order, `UserPool DependsOn
+  # CustomEmailSenderInvokePermission`, would be a CYCLE (Permission needs
+  # the function; the function needs nothing from UserPool; UserPool would
+  # need Permission - but Permission's SourceArn already needs UserPool).
+  # `DEPLOY_INFRA` defaults to `false`, so the first real deploy plausibly
+  # carries T-4 and T-6 together - the failing order.
+  #
+  # Same trick as DD-2b's KEY POLICY condition, same graph problem:
+  # `SourceArn` references the `CustomEmailSenderUserPoolId` PARAMETER
+  # (declared above), never `!Ref UserPool`, so no edge is created here at
+  # all. Omitting `SourceArn` entirely was considered and rejected - it
+  # works, but widens the grant to any Cognito pool in the account, and the
+  # narrower parameter-scoped form costs nothing extra.
+  #
+  # Conditional (`HasCustomEmailSenderUserPoolId`, above) because that
+  # parameter defaults to "" until T-6 wires it (DD-2c) - an unconditional
+  # `!Sub` would compose a malformed ARN ("...:userpool/") from the empty
+  # default. Pre-T-6: `SourceArn` is omitted (`!Ref "AWS::NoValue"`) -
+  # unscoped but inert, since no pool invokes this function yet. Post-T-6
+  # (once `deploy.sh` resolves the parameter from this stack's own
+  # `UserPoolId` output, DD-2c): correctly scoped to that pool.
   CustomEmailSenderInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
       FunctionName: !Ref CustomEmailSenderFunction
       Principal: cognito-idp.amazonaws.com
-      SourceArn: !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPool}"
+      SourceArn: !If
+        - HasCustomEmailSenderUserPoolId
+        - !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CustomEmailSenderUserPoolId}"
+        - !Ref "AWS::NoValue"
 
 Outputs:
   # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack

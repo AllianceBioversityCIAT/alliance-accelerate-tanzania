@@ -63,7 +63,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Disqualifier: ⚠️ **Do not restate NFR-4's list and call it done.** Round-1 C-9 found the previous enumeration listed `lambda:InvokeFunction` among three *KMS* grants, leaving a closed set in which **nobody could encrypt** — which Cognito must. State each policy against its own resource and cite AWS for the grant mechanism.
       Done when: the key is symmetric, the three policies sit on their correct resources, and the Cognito-cannot-encrypt-without-a-grant mechanism is written down where the next reader will find it.
 
-- [ ] **T-4** The function  (deps: T-2, T-3)
+- [x] **T-4** The function  (deps: T-2, T-3)
       Scope: decrypt the code · route by `triggerSource` per design.md §5 · **validate the recipient before publishing** · build · publish · return. No reply awaited.
       Traces: FR-1 (both scenarios, incl. `BUT it must NOT` substitute another identifier), FR-2 (all clauses), FR-4 (both scenarios), NFR-1, NFR-2; design.md §3, §5, DD-1, DD-2
       Files: the function module (+ specs)
@@ -102,6 +102,10 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Files: `docs/trd/trd.md`, `docs/specs/auth/forgot-password-delivery/execution.md`
       Skills: `software-architect`, `cognitive-doc-design`
       Verify: the manual check of §3, performed against DEV and **recorded**
+      ⚠️ **Three additional questions, added during execution, that only this task can answer:**
+        · Does the trigger ever **time out**? Cognito enforces a ceiling independent of the function's own `Timeout` (design.md §10's C-7 correction), and DD-3a's connect-per-invocation makes the cold path deliberately longer.
+        · Did the user receive **more than one** code? Cognito retries a timed-out invocation — the function forecloses its own retry, not Cognito's.
+        · Read the message **as someone on a different device** from the one that made the request (DD-1c's accepted residual: a reader who closed the requesting tab gets no recovery instruction).
       Falsifier: ⚠️ **there is no automated one, and that is the point.** This task exists because three defect classes in this spec — the KMS grant chain, real decryption, and delivery — are invisible to every suite here.
       Disqualifier: **a green test suite is not evidence a human received an email.** If the check cannot be performed, record it as an **unperformed gate**, explicitly — silence is indistinguishable from performed-and-passed, and ATP-71's D-6 entry exists because that distinction was nearly lost.
       Done when: the result is recorded with what arrived, whether it went to spam, and whether the link and code worked; and `trd.md:288` is true.

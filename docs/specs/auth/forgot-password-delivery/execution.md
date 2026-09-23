@@ -195,3 +195,78 @@ The Reviewer found that `CustomEmailSenderKmsGrantPrincipalArn` **is never passe
 **There is none, and there cannot be one here.** `validate.sh` makes no AWS call; every suite in this repository mocks the AWS clients, so IAM is never exercised. The Reviewer added that a green validate would not even establish that KMS *accepts* this key policy.
 
 Two days before this task, that exact blindness shipped a live defect: a policy granting `cognito-idp:AdminResetUserPassword` while the code called `AdminSetUserPassword` — every admin password reset returning a bare 500, for months, behind 1203 green tests. **T-7 is the only gate.**
+
+---
+
+## T-4 — The function
+
+**Status:** `[x]` · **Attempts:** 3 · **Reviewer:** PASS on attempt 3 · Implementer `sonnet` / Reviewer `opus`
+
+The spec's largest task: decrypt · route · validate the recipient · build · publish. **56 tests.**
+
+### Two decisions taken before briefing, both by reading rather than assuming
+
+**DD-3a — AMQP, connecting per invocation, caching nothing.** HTTP looked simpler and is not: the microservice's endpoint URL is **not** in `MailMicroserviceSecret`, and it takes `multipart/form-data`. AMQP needs no configuration we do not already hold. And the backend's 786-line transport is large *because it keeps a connection alive*; a function that opens, publishes under a confirm and closes needs none of it — and caching would import the freeze hazard this repo already shipped a production fix for. **That is what makes NFR-2 structural here**: nothing outlives the invocation.
+
+**DD-3b — the secret's name embeds `20-backend`'s stack name**, not this one's, so it cannot be composed from the function's own context. A parameter, same shape and reason as DD-2b.
+
+### The design defect the Implementer found
+
+It reported that handling `CustomEmailSender_AdminCreateUser` meant sending **attribute-verification copy for an invitation**, and **declared it instead of writing replacement copy**. That decision is what exposed the defect.
+
+§5 said to handle it *"so the invitation must not vanish silently."* **The premise was false and checkable**: `create()` passes `MessageAction: 'SUPPRESS'` **and dispatches `MailService.sendInvitation` itself**. Cognito's mail is a **duplicate**. So handling it risked **two** invitations; raising means someone learns the day a setting changes. Recorded as **DD-5a**; the branch was deleted rather than re-copied.
+
+> My twelfth defect of the session, same species: written from *"don't lose mail"* rather than from what `create()` does. Caught by an Implementer I had asked to verify.
+
+### The finding that mattered most — a gate that did not exist
+
+Attempt 2 passed every structural check. The Reviewer then found that **nothing asserted the *decrypted* code reaches the body**: `decryptMock`'s return was consumed only by negative log assertions, and the envelope pin matched with `expect.any(String)`.
+
+It proved it by mutation: swapping to `event.request.code` — **mailing the user the base64 ciphertext** — left **all 48 tests green**.
+
+The implementation was correct throughout. **The gate for FR-1's central clause was missing** — and it is the one decryption property a mocked suite can actually prove. Now pinned positively in both parts, with the ciphertext asserted absent from the whole serialized body, and demonstrated red with that exact swap.
+
+### A credential path the file's own docblock forbade
+
+`readMicroserviceMailSecret` validated nothing and parsed unguarded. Two defects, one fix:
+
+- **No validation** — a secret missing `apiKey` publishes an envelope from which `JSON.stringify` silently drops it: the broker acks, the function logs `dispatched`, the microservice discards. A silent no-op, the class DD-2 exists to forbid. It also **diverged from the source it mirrors** — `mail.config.ts` wraps all three in `required()`.
+- **Unguarded `JSON.parse`** — a `SyntaxError` can embed a window of the offending input, and because `handler` ends in `throw err`, the runtime writes it verbatim to CloudWatch. That fragment would be the broker URL, which embeds `user:password`.
+
+⚠️ **The function's own docblock said "NEVER log `secret` or any field of it — the broker URL embeds a credential."** The rule sat above the code that broke it.
+
+Fixed with a `catch` that **binds nothing** (so the parse error is unreferenceable) and a `requiredSecretField` naming **the key only**. The Reviewer confirmed the test's read-set — message plus stack, with `cause` structurally absent — **is** the entire CloudWatch surface for that path.
+
+### A cycle that would have blocked T-6, found before it could
+
+`SourceArn: !Sub` on `UserPool` creates `Permission → UserPool`, forcing CloudFormation to build the pool first — while Cognito validates invoke permission **when `LambdaConfig` is set**. The standard remedy (`DependsOn`) is a **cycle**. And `DEPLOY_INFRA` defaults to `false`, so the first real deploy plausibly carries T-4 and T-6 **together** — the failing order.
+
+**DD-5b**: the parameter, conditionally (`AWS::NoValue` while empty). The Reviewer verified the graph is **acyclic under T-6's two future edges**.
+
+*(Second cycle this spec has caught at design time. Both would have surfaced only at the deploy that touches live accounts.)*
+
+### `mandatory: true` — the Implementer's call, and it was right
+
+A publisher confirm attests **persistence, not routing**. Without `mandatory`, a wrong `queueName` acks, logs `dispatched`, and drops the email with zero signal — the same silent-no-op class, from a new angle. Mirrors `confirmPublish` field for field. The Reviewer checked the listener-removal question specifically and found the backend's known gap does **not** apply here, structurally: one channel per invocation, closed in `finally`, so no later publish can see a lingering listener.
+
+### ⚠️ A finding against `design.md`, not against this diff
+
+The Implementer argued, and the Reviewer confirmed, that **§10's disposition of round-1 C-7 as "Dissolved" closes only one of its three components.**
+
+| C-7's component | Reality |
+|---|---|
+| The awaited round trip must fit a budget | ✅ Dissolved |
+| **Cognito's non-configurable ceiling on the trigger invocation** | ❌ **OPEN** — not a property of the reply |
+| **Cognito retries a timed-out invocation → duplicate codes** | ❌ **OPEN** — outside the function |
+
+`§10` is corrected and **T-7 now carries three explicit questions**: does the trigger time out; did the user receive more than one code; and does the message read sensibly on a different device (DD-1c's residual).
+
+### Applied on top
+
+- **ADVISORY 1** — the comment claimed *every* `JSON.parse` failure leaks the input. True of the unexpected-token class, **not** of truncation — and the test fixture was truncated, i.e. the one shape that would **not** have leaked. Narrowed. *(The guard was right either way; the claim was not — the over-definite-prose pattern again.)*
+
+### Carried forward
+
+- **T-6 owes three things now**, not two: `deploy.sh` wiring for the principal **and** the pool-id parameters (DD-2c), plus the `AllowedPattern` T-3's review suggested once the override exists. ⚠️ The pool-id wiring is now load-bearing for **DD-5b's `SourceArn`** as well.
+- **T-7 owes the three questions above**, plus the four from T-3 that nothing in this repository can answer.
+- Reviewer ADVISORY 2 (a docblock displaced from the function it documents) and 3 (a near-vacuous assertion) — **not applied**, recorded; neither changes behaviour.
