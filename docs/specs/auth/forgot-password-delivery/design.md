@@ -61,6 +61,18 @@ Round-1 **C-8** held that `10-data-auth` cannot reach the broker credentials bec
 
 ---
 
+### DD-1a — The function carries its own minimal renderer; the convention is mirrored, not the code
+
+**A gap this design left, decided 2026-09-23 before T-2 hit it.** §3 step 4 says the bodies follow `backend/src/mail/templates/`'s convention — but the function is a **standalone Lambda in `10-data-auth`**, not part of the NestJS app, so it cannot import `renderEmailHtml`.
+
+| Option | Verdict |
+|---|---|
+| **Duplicate a minimal renderer in the function** | ✅ **Chosen.** Two stable message bodies do not justify a shared package spanning a Nest app and a bare Lambda. |
+| A shared package | Rejected — build tooling, versioning and a publish step for ~50 lines, across two stacks that deploy on different cadences. |
+| Import from `backend/` | Rejected — different deployable, different `package.json`, and it would drag the Nest dependency tree into a trigger Cognito waits on. |
+
+⚠️ **The accepted cost, named so it is not discovered as a surprise:** the two systems' email styling can drift. Bounded deliberately — these two bodies are the *only* mail this function ever sends, and they are not expected to change. **If a third message is ever added here, revisit this decision rather than duplicating again.**
+
 ## 4. The KMS key — resolving round-1 C-9 rather than repeating it
 
 **The previous enumeration was wrong in a way that would have failed at runtime.** It listed three "grants", one of which (`lambda:InvokeFunction`) is not a KMS permission at all, leaving a closed set in which **nobody could encrypt** — yet Cognito must encrypt the code before invoking us.
