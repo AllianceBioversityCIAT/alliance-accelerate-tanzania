@@ -43,13 +43,13 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Disqualifier: a green `validate.sh` says the template is **well-formed**, never that a function would build or run. It makes no AWS call and creates nothing.
       Done when: the stack accepts a function, `validate.sh` is green across all three stacks, and `deploy.sh` builds `10-data-auth` before deploying it.
 
-- [ ] **T-2** The two message bodies  (deps: none)
+- [x] **T-2** The two message bodies  (deps: none)
       Scope: a reset-code message and an attribute-verification message, following the layout convention in `backend/src/mail/templates/`. Both derive any link from configuration.
       Traces: FR-1 (`AND IT MUST` derive the link from `PUBLIC_APP_BASE_URL`; `BUT it must NOT` contain a password), NFR-3; design.md §3 step 4, §5
       Files: `infra/10-data-auth/functions/custom-email-sender/` — **T-2 creates this package** (`package.json`, a test runner, the message module, its specs). Plain JavaScript ESM, per design.md DD-1b. T-4 adds the handler and the SAM resource.
       Skills: `cognitive-doc-design`
       Verify: `npx jest <the new specs> --silent`
-      Falsifier: set the base URL to `*` and to unset — the builder must **refuse**, not emit a link containing them. Sweep every URL the message can emit; a test that checks only the first one passes while a second is hardcoded.
+      Falsifier: set the base URL to `*` and to unset — the builder must **refuse**, not emit a link containing them. ⚠️ *(Now true of the **verification** builder only. DD-1c removed the reset message's link entirely after a Reviewer FAIL — the reset builder does not call `getPublicAppBaseUrl()` at all, so its equivalent guarantee is stronger and asserted differently: it renders identically under unset / `*` / configured, and emits zero URLs.)* Sweep every URL the message can emit; a test that checks only the first one passes while a second is hardcoded.
       Disqualifier: asserting the string `https://` appears proves a link is present, **not** that it is the configured one. Assert the **derived host**, and assert that no other host appears anywhere in either part.
       Done when: both bodies render, neither can emit a hardcoded host, and neither ever contains a password.
 

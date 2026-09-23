@@ -91,6 +91,25 @@ T-2 creates `infra/10-data-auth/functions/custom-email-sender/` with its `packag
 
 The split is natural: **T-2 owns "the package exists and can render a message"; T-4 owns "the handler wires it to Cognito and the broker."** ⚠️ Reviewer ADVISORY 2 on T-1 flagged that there is no jest root there and that leaving it unassigned would get it re-decided twice — this is that assignment.
 
+### DD-1c — The reset message carries **no link**. Only the verification message does.
+
+**Decided during T-2, after a Reviewer FAIL, and recorded here because it changes what a later implementer should expect.**
+
+T-2 originally linked the reset message to `/forgot-password`. That destination is a **two-step in-memory wizard**: it opens at step 1 on every fresh load — an email field and a "Send reset code" button, no code field, no query-param entry to step 2. A reader who clicked the link **could not enter the code they held**, and their only forward action would re-issue a code and invalidate it. The body also *instructed* them to "enter it on the password reset page", so the instruction was false against the address it gave.
+
+| Option | Verdict |
+|---|---|
+| **Remove the link; direct the reader back to the tab that made the request** | ✅ **Chosen.** That tab is already on step 2 with the email pre-filled — verified against `ForgotPasswordForm.tsx`: no `useEffect`, no timer, no remount, no blur handler resets it. The code is six digits, read on one device and typed on another, which is how code-based resets ordinarily work. |
+| Make `/forgot-password` accept a query param and open on step 2 | Rejected here — a frontend change **§7 forecloses**. Viable, but it needs a design amendment, not an in-task fix. |
+| Link to `/login` instead | Rejected — the same defect at a different address. The reader is not trying to sign in. |
+
+**`buildAttributeVerificationMessage` keeps its `/login` link**, which is correct: no attribute-verification screen exists anywhere in `frontend/` (grep-verified, twice, independently).
+
+⚠️ **Consequences a later task must not trip over:**
+- **`tasks.md` T-2's falsifier — *"set the base URL to `*` and to unset — the builder must refuse"* — is now true of one builder of two.** The reset builder does not call `getPublicAppBaseUrl()` at all, so it cannot refuse; its equivalent guarantee is stronger and asserted differently: it renders **identically** under unset / `*` / configured, and emits **zero** URLs.
+- **T-4 must not add a reset link back.** If the closed-tab case is ever addressed, it is addressed in frontend copy under a design amendment, not by re-pointing this message.
+- **Residual, accepted:** a reader who closed the requesting tab gets no recovery instruction. Strictly smaller than the defect it replaces — that instruction was impossible in *every* case; this one is correct in the ordinary case and silent in the exceptional one. **Carried to T-7's manual check** (design.md §12): read the real message as someone on a different device and confirm it reads sensibly.
+
 ## 4. The KMS key — resolving round-1 C-9 rather than repeating it
 
 **The previous enumeration was wrong in a way that would have failed at runtime.** It listed three "grants", one of which (`lambda:InvokeFunction`) is not a KMS permission at all, leaving a closed set in which **nobody could encrypt** — yet Cognito must encrypt the code before invoking us.

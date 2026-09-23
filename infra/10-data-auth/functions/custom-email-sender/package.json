@@ -1,0 +1,13 @@
+{
+  "name": "custom-email-sender",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cognito CustomEmailSender trigger for ACCELERATE Tanzania (docs/specs/auth/forgot-password-delivery). T-2 (this package): the two message bodies — plain JavaScript ESM, no build step (design.md DD-1b). T-4 adds index.mjs, the runtime AWS SDK / KMS decrypt dependencies, and the SAM resource; see the CustomEmailSender build convention comment above Resources: in ../../template.yaml for the CodeUri/BuildMethod contract this package is staged under.",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --silent"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
