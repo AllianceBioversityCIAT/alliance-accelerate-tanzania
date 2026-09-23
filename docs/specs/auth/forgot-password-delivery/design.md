@@ -145,6 +145,42 @@ The split follows the repo's existing convention rather than inventing one: `20-
 
 ⚠️ **T-3 therefore cannot fully satisfy NFR-4 alone, and must say so** rather than reporting the requirement closed. Its `Not Done` must name the two policies T-4 owes.
 
+### DD-2b — The grant condition takes the pool id as a **parameter**, not `!Ref UserPool`
+
+**AMENDMENT to DD-2a, 2026-09-23, after T-3's Reviewer found a circular dependency DD-2a's own wording created.** DD-2a said "conditioned on `kms:EncryptionContext:userpool-id`" without saying *how the id is obtained*, and the obvious reading — `!Ref UserPool` — is unimplementable.
+
+**Why it cannot stand.** CloudFormation builds its dependency graph from every `Ref`/`GetAtt` anywhere in a resource body, policy documents included. `!Ref UserPool` in the key policy makes `Key → UserPool`. This spec then mandates two return edges:
+
+| Edge | Owner |
+|---|---|
+| `UserPool → Key` — T-6's `LambdaConfig.KMSKeyID` | T-6 |
+| `UserPool → Function → Key` — T-6's `LambdaArn` plus T-4's `kms:Decrypt` scoped to the key ARN | T-6 + T-4 |
+
+The first is a two-cycle; the second is **independent**, so a T-6 that cleverly avoided `KMSKeyID`'s `Ref` would still deadlock through the function's decrypt policy. **Both are blocked by the `!Ref` alone**, and `KMSKeyID` is not optional to Cognito once `CustomEmailSender` is set.
+
+**Resolutions considered and rejected**, each for a checkable reason:
+
+| | |
+|---|---|
+| Split the policy into its own resource | **Impossible** — CloudFormation has no `AWS::KMS::KeyPolicy` type; a KMS key policy is settable only inline. |
+| Derive the id without a `Ref` | **Impossible** — the pool id carries a service-generated suffix. |
+| An alias, so `KMSKeyID` needs no `Ref` | Breaks one edge, leaves the other; `DependsOn` for fresh-stack ordering reinstates it. |
+| Drop the condition | Works, and costs less than it appears (the granted principal already holds `kms:*` via the root delegation) — but it weakens defence-in-depth against a future scoped-down CI role, and DD-2a names the condition. |
+
+**Chosen: a `CustomEmailSenderUserPoolId` parameter**, referenced by the condition. It keeps the condition and its exact semantics, and removes the graph edge. ⚠️ **`infra/scripts/deploy.sh` resolves it from this stack's own `UserPoolId` output** using the `resolve_stack_value` helper it already uses for `MailTransport`, so the value cannot drift from the pool it names. That resolution is **T-6's**, alongside the same wiring for the deploying-principal parameter (below).
+
+⚠️ **The context key stays spelled `userpool-id`, verbatim.** Two inherited assumptions remain open for T-7 and must not be quietly "tidied": that spelling, and whether Cognito's grant carries an encryption-context constraint at all — `StringEquals` on a context key matches nothing if it does not, and `CreateGrant` would then be denied.
+
+### DD-2c — Both parameters are wired at deploy time, and until then the defaults are inert
+
+T-3's Reviewer found that `CustomEmailSenderKmsGrantPrincipalArn` **is never passed by any deploy path** — `deploy.sh` step 1 passes only `VpcId` and `DevCidr` — so its Default ships on every deploy including a pipeline's. The parameter's own description argues against hardcoding while, as wired, behaving exactly like a hardcode.
+
+**T-6 adds both to `deploy.sh` step 1's `--parameter-overrides`:** the principal from `aws sts get-caller-identity --query Arn`, and the pool id from the stack's `UserPoolId` output. ⚠️ **Trap to record where someone might add one:** this only holds while `sam deploy` runs **without** `--role-arn`. A CloudFormation service role changes the principal Cognito sees. `deploy.sh` passes none today.
+
+### DD-2d — `EnableKeyRotation` stays off, as a decision
+
+Recorded here rather than left in a completion report, so T-6 does not re-open it. Rotation is safe (KMS retains old backing material; grants and encryption context are unaffected) but near-worthless for codes that live minutes, against a dev stack with an explicitly cost-aware posture. **Set `PendingWindowInDays: 7`** to match this stack's easy-teardown stance (`DeletionProtection: false`) — the 30-day default leaves a billed key behind after a stack delete.
+
 ## 5. Which emails the function handles — resolving round-1 C-6
 
 The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email to this function.

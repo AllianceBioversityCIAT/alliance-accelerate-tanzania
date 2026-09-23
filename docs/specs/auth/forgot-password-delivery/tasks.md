@@ -54,7 +54,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Done when: both bodies render, neither can emit a hardcoded host, and neither ever contains a password.
 
 - [ ] **T-3** The KMS key and its three policies  (deps: T-1)
-      Scope: a customer-managed **symmetric** key in `10-data-auth`; `kms:CreateGrant` for the deploying principal; `kms:Decrypt` for the function's role; `lambda:InvokeFunction` for `cognito-idp.amazonaws.com` **as a Lambda resource policy, not a KMS grant**.
+      Scope: a customer-managed **symmetric** key in `10-data-auth`, plus `kms:CreateGrant` for the deploying principal on the **key policy**. ⚠️ *(Narrowed by design.md **DD-2a**: `kms:Decrypt` and `lambda:InvokeFunction` name the function's execution role, which does not exist until T-4, so **T-4 owns both** and **T-3 cannot close NFR-4**. The grant condition takes the pool id as a **parameter**, not `!Ref UserPool` — see **DD-2b**, which exists because the `!Ref` created a circular dependency that would have blocked T-6.)*
       Traces: NFR-4 (incl. round-1 **C-9**); design.md §4
       Files: `infra/10-data-auth/template.yaml`
       Skills: `aws-serverless`

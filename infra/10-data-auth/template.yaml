@@ -16,13 +16,19 @@ Description: >-
   ACCELERATE Tanzania (dev) - data + auth stack: RDS MySQL + Secrets Manager
   (T-2) and Cognito user pool/client/groups (T-4). Now a SAM stack (T-1,
   design.md §8) to host forgot-password-delivery's CustomEmailSender (T-4).
+  forgot-password-delivery T-3 adds the customer-managed symmetric KMS key
+  that trigger needs (design.md §4, DD-2a) - the key and its own two policy
+  statements only; the function's kms:Decrypt and the Lambda invoke
+  permission are T-4's, once its execution role exists.
   Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
 # Authored by:
 #   T-2 - AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
 #   T-4 - AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
+#   forgot-password-delivery T-3 - AWS::KMS::Key + its KeyPolicy  (CustomEmailSenderKey section, after Cognito)
 # Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
+#   CustomEmailSenderKmsGrantPrincipalArn (forgot-password-delivery T-3, design.md §4/DD-2a).
 # Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
 #   ·  UserPoolId, UserPoolClientId  (T-4).
 
@@ -57,6 +63,31 @@ Parameters:
     Default: 20
     MinValue: 20
     MaxValue: 100
+
+  # ── forgot-password-delivery T-3 parameter (design.md §4, DD-2a) ──────────
+  CustomEmailSenderKmsGrantPrincipalArn:
+    Type: String
+    Description: >-
+      IAM principal (user or role ARN) that runs `sam deploy` against THIS
+      stack - i.e. the identity that calls Cognito's UpdateUserPool when
+      T-6 activates the CustomEmailSender trigger. Per AWS ("Activating
+      custom sender Lambda triggers"): "The IAM principal that creates or
+      updates your user pool creates a one-time grant against the KMS key
+      that Amazon Cognito uses to encrypt the code. Grant this principal
+      CreateGrant permissions for your KMS key." Cognito itself holds no
+      static encrypt permission - without this grant-creation right, the
+      deploying principal cannot hand Cognito a grant, and the first live
+      password reset after the trigger activates fails with nothing in
+      this repo's test suite able to catch it (every suite here mocks the
+      AWS clients; T-7 is the only real check).
+      This is a PARAMETER, not a hardcoded ARN, because the identity that
+      deploys this stack is not fixed: today an interactive operator
+      deploys with IBD-DEV credentials as the IAM user below (measured
+      2026-09-23), but a CI/pipeline run may instead assume an IAM ROLE -
+      a template that hardcodes today's developer user ARN would silently
+      stop granting the right principal, and thus silently break every
+      password reset, the day a pipeline deploys it instead of a person.
+    Default: "arn:aws:iam::569113802249:user/cognito_csicap"
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -326,6 +357,128 @@ Resources:
       UserPoolId: !Ref UserPool
       Description: Staff - operational access below admin.
       Precedence: 10
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-3 (design.md §4, DD-2a) - the KMS key
+  # CustomEmailSender needs, and ONLY the two policy statements below.
+  #
+  # SCOPE FENCE (DD-2a): design.md §4 lists THREE policies; T-3 owns the two
+  # on the KEY POLICY below. It does NOT add:
+  #   - kms:Decrypt for the function's execution role - that role does not
+  #     exist until T-4 creates the function (its `Policies:` block, per
+  #     this repo's existing convention: ApiFunction in 20-backend/
+  #     template.yaml takes SAM's auto-created role via `Policies:` rather
+  #     than an explicit `Role:` - T-4 mirrors that here).
+  #   - lambda:InvokeFunction for cognito-idp.amazonaws.com - a LAMBDA
+  #     RESOURCE POLICY (SAM Function's own resource policy, e.g. an Events:
+  #     block or explicit AWS::Lambda::Permission), NOT a KMS grant and NOT
+  #     added to this key. This split (never lumping invoke-permission in
+  #     with KMS grants) is exactly what round-1 finding C-9 exists to fix -
+  #     see the "three policies, three resources" table this comment quotes
+  #     from below.
+  #   - LambdaConfig on UserPool above (T-6) - setting it here would
+  #     activate the trigger before T-4's function exists.
+  # NFR-4 is therefore NOT closed by this resource alone; see this task's
+  # completion report for the two policies T-4 still owes.
+  #
+  # WHY SYMMETRIC. AWS ("Custom sender Lambda triggers" -> "Encryption
+  # concepts"): "A symmetric KMS key is a 256-bit encryption key that
+  # doesn't exit AWS KMS unencrypted ... Amazon Cognito uses symmetric
+  # keys." KeySpec is stated explicitly below (SYMMETRIC_DEFAULT) rather
+  # than left to AWS::KMS::Key's own matching default, so a reader never
+  # has to know that default to see the requirement is met.
+  #
+  # THE GRANT MECHANISM - the fact C-9 exists to fix. Cognito holds NO
+  # static permission to encrypt the code it hands this trigger. AWS
+  # ("Activating custom sender Lambda triggers", step 2): "The IAM
+  # principal that creates or updates your user pool creates a one-time
+  # grant against the KMS key that Amazon Cognito uses to encrypt the
+  # code. Grant this principal CreateGrant permissions for your KMS key."
+  # Concretely: T-6's `sam deploy` (the UpdateUserPool call that sets
+  # LambdaConfig) is what triggers Cognito to create that one-time grant
+  # against this key - and Cognito can only do so on behalf of a deploying
+  # principal who already holds kms:CreateGrant here. Miss this statement
+  # and T-6's deploy still succeeds; the first live password reset after
+  # the trigger activates then fails, invisibly to every suite in this
+  # repo (all mock the AWS clients) - the exact shape of ATP-71's missing
+  # grant. T-7 is the only real check (design.md §12, tasks.md T-7).
+  #
+  # KEY POLICY SHAPE - read from AWS's own example on that page, not
+  # reconstructed from memory:
+  #   {
+  #     "Effect": "Allow",
+  #     "Principal": {"AWS": "arn:aws:iam::{{account}}:role/{{admin-role}}"},
+  #     "Action": "kms:CreateGrant",
+  #     "Resource": "arn:aws:kms:...:key/{{key-id}}",
+  #     "Condition": {"StringEquals": {
+  #       "kms:EncryptionContext:userpool-id": "{{us-west-2_EXAMPLE}}"
+  #     }}
+  #   }
+  # Two adaptations, both deliberate:
+  #   - AWS's example targets an EXISTING key by its literal ARN. A KMS key
+  #     policy is a resource-based policy already scoped to the one key
+  #     it is attached to (there is no separate "which key" question the
+  #     way there is for an IAM policy on a role) - so `Resource: "*"`
+  #     below means "this key", not "every key in the account". This
+  #     matches how a resource-based statement is written everywhere else
+  #     in this stack (e.g. MailMicroserviceSecret's own policy in
+  #     20-backend scopes by being attached to that one secret).
+  #   - AWS's example hardcodes the pool id as a literal condition value
+  #     because their key already existed independently of the pool. Here
+  #     the pool (UserPool, above) is a resource in this SAME template, so
+  #     the condition references it directly (!Ref UserPool, which returns
+  #     the pool id) instead of a literal - it can never drift from the
+  #     real pool id, and there is no circular dependency: UserPool does
+  #     not depend on this key (LambdaConfig is T-6's separate, later
+  #     change).
+  # ════════════════════════════════════════════════════════════════════════════
+  CustomEmailSenderKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: >-
+        Customer-managed symmetric key. Cognito uses it (via the AWS
+        Encryption SDK) to encrypt the reset/verification code before
+        invoking forgot-password-delivery's CustomEmailSender trigger
+        (T-4); that function later decrypts with kms:Decrypt granted on
+        ITS OWN role (T-4, not this key's policy). See the resource
+        comment above for the two policy statements T-3 owns here and the
+        one policy (this key's Decrypt grant) plus the Lambda invoke
+        permission T-4 owes on its own resources.
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # Standard account-root IAM-enable statement (AWS's own default
+          # for a console-created key; DD-2a names this explicitly as
+          # T-3's second statement). Without it, no IAM policy anywhere in
+          # the account could ever grant a principal access to this key -
+          # a KMS key policy is the ONLY policy type that governs access
+          # to the key by itself, so root must be able to delegate via IAM
+          # before any IAM policy (e.g. T-4's future kms:Decrypt grant on
+          # its function's role) can take effect at all.
+          - Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          # THE load-bearing statement (design.md §4; round-1 C-9's fix).
+          # Principal is the DEPLOYING PRINCIPAL, never Cognito itself -
+          # Cognito holds no static encrypt permission on any key. See the
+          # "GRANT MECHANISM" comment above this resource.
+          - Sid: AllowDeployingPrincipalToCreateGrantForCognito
+            Effect: Allow
+            Principal:
+              AWS: !Ref CustomEmailSenderKmsGrantPrincipalArn
+            Action: kms:CreateGrant
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:userpool-id: !Ref UserPool
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-custom-email-sender-key"
 
 Outputs:
   # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack
