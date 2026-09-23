@@ -128,6 +128,23 @@ The key MUST be **symmetric** (AWS: *"Amazon Cognito uses symmetric keys"*).
 
 ---
 
+### DD-2a — T-3 owns the key and the grant-creation statement; T-4 owns the function's own permissions
+
+**A sequencing gap decided 2026-09-23, before T-3 hits it.** §4 lists three policies, but two of them name **the function's execution role**, which does not exist until T-4. T-3 cannot write them.
+
+The split follows the repo's existing convention rather than inventing one: `20-backend`'s `ApiFunction` takes **SAM's auto-created role with a `Policies:` block** — no explicit `Role:`. Mirroring that keeps IAM where the resource is.
+
+| Owner | Policy | Resource |
+|---|---|---|
+| **T-3** | `kms:CreateGrant` for the deploying principal, conditioned on `kms:EncryptionContext:userpool-id` | the **key policy** |
+| **T-3** | the standard account-root IAM-enable statement | the **key policy** |
+| **T-4** | `kms:Decrypt`, via the function's `Policies:` block | the **function's role** |
+| **T-4** | `lambda:InvokeFunction` for `cognito-idp.amazonaws.com` | the **function's resource policy** |
+
+**The deploying principal is a parameter, not a hardcode.** Today it is `arn:aws:iam::569113802249:user/cognito_csicap` (measured), but a pipeline run may assume a role instead. A template that hardcodes a developer's user ARN silently fails the day CI deploys it.
+
+⚠️ **T-3 therefore cannot fully satisfy NFR-4 alone, and must say so** rather than reporting the requirement closed. Its `Not Done` must name the two policies T-4 owes.
+
 ## 5. Which emails the function handles — resolving round-1 C-6
 
 The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email to this function.
