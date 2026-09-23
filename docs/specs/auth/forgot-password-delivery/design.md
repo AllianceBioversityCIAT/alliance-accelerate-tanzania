@@ -73,6 +73,24 @@ Round-1 **C-8** held that `10-data-auth` cannot reach the broker credentials bec
 
 ⚠️ **The accepted cost, named so it is not discovered as a surprise:** the two systems' email styling can drift. Bounded deliberately — these two bodies are the *only* mail this function ever sends, and they are not expected to change. **If a third message is ever added here, revisit this decision rather than duplicating again.**
 
+### DD-1b — The function is plain JavaScript (ESM), and T-2 creates its package
+
+**Two gaps decided 2026-09-23, before T-2 hits them.** T-1 established the build contract but deliberately created no files; `tasks.md` assigned the directory to T-4, while T-2 needs it first to have anywhere to put a message module or a test.
+
+**Language: plain JavaScript (ESM, `.mjs`), not TypeScript.**
+
+| | |
+|---|---|
+| ✅ | T-1 chose `BuildMethod: nodejs24.x` — SAM's **built-in npm builder**, which installs dependencies and stages them. **It does not transpile.** TypeScript would need an added esbuild or `tsc` step, re-opening the build-method decision T-1 made for good reasons. |
+| ✅ | It matches AWS's own `CustomEmailSender` example, which is the reference an implementer will check. |
+| ⚠️ | **The cost, named:** this is the only JavaScript in a TypeScript repository. Accepted because the alternative is a transpile step for ~110 lines, and because the function's contract with the outside world is two fixed shapes (Cognito's event, the microservice envelope) rather than a type surface that earns checking. |
+
+**Scaffold ownership: T-2 creates the package; T-4 adds the handler and the SAM resource.**
+
+T-2 creates `infra/10-data-auth/functions/custom-email-sender/` with its `package.json` and a test runner, plus the message module and its specs. T-4 then adds `index.mjs`, the runtime dependencies it needs, and the `AWS::Serverless::Function` resource.
+
+The split is natural: **T-2 owns "the package exists and can render a message"; T-4 owns "the handler wires it to Cognito and the broker."** ⚠️ Reviewer ADVISORY 2 on T-1 flagged that there is no jest root there and that leaving it unassigned would get it re-decided twice — this is that assignment.
+
 ## 4. The KMS key — resolving round-1 C-9 rather than repeating it
 
 **The previous enumeration was wrong in a way that would have failed at runtime.** It listed three "grants", one of which (`lambda:InvokeFunction`) is not a KMS permission at all, leaving a closed set in which **nobody could encrypt** — yet Cognito must encrypt the code before invoking us.

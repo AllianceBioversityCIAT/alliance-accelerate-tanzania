@@ -46,7 +46,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
 - [ ] **T-2** The two message bodies  (deps: none)
       Scope: a reset-code message and an attribute-verification message, following the layout convention in `backend/src/mail/templates/`. Both derive any link from configuration.
       Traces: FR-1 (`AND IT MUST` derive the link from `PUBLIC_APP_BASE_URL`; `BUT it must NOT` contain a password), NFR-3; design.md §3 step 4, §5
-      Files: the function's template module (+ specs)
+      Files: `infra/10-data-auth/functions/custom-email-sender/` — **T-2 creates this package** (`package.json`, a test runner, the message module, its specs). Plain JavaScript ESM, per design.md DD-1b. T-4 adds the handler and the SAM resource.
       Skills: `cognitive-doc-design`
       Verify: `npx jest <the new specs> --silent`
       Falsifier: set the base URL to `*` and to unset — the builder must **refuse**, not emit a link containing them. Sweep every URL the message can emit; a test that checks only the first one passes while a second is hardcoded.
