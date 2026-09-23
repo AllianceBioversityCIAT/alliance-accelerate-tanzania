@@ -107,45 +107,27 @@ The flow SHALL continue to issue a one-time **code** that the user exchanges for
 - **THEN** the password is changed and they can sign in
 - **BUT it must NOT** be possible for a reset request alone — without possession of the code — to invalidate the user's existing password
 
-### FR-4: The user is told the truth, without the form becoming an account oracle
+### FR-4: Delivery is best-effort, and nothing claims otherwise
 
-**⚠️ Revised 2026-09-22.** The original FR-4 paired *"the user MUST see an honest failure"* with *"the failure message MUST be identical for an unknown address and a real one whose send failed."* Judgment finding **C-3**, confirmed by both judges, showed those clauses are **in direct contradiction**: any response that distinguishes a failed send necessarily reveals that the address has an account. The requirement is re-stated below on the axis that actually resolves it.
+**⚠️ Rewritten 2026-09-23, and this is a REMOVAL.** Earlier versions of FR-4 required the user to be told when a send failed. That requirement was **invented for this flow alone** — no other mail path in this product does it — and it is what dragged in the awaited microservice reply, the timeout budget, and the duplicate-code failure mode that round-1 findings C-1, C-4 and C-7 all describe. `proposal.md` §12.1 drops it.
 
-**The resolving distinction: what the failure depends on.**
+The flow SHALL behave like every other mail path in this system: publish, and return.
 
-| Failure class | Correlates with account existence? | Response |
-|---|---|---|
-| **Address-dependent** — no such account, or the recipient is unusable | **Yes** | MUST be **masked** — indistinguishable from success |
-| **Systemic** — transport unreachable, broker down, service failing for everyone | **No** — identical for an address with no account | MAY be, and SHOULD be, reported honestly |
+#### Scenario: A reset is requested
+- **GIVEN** a user requests a password reset
+- **WHEN** the message is published to the transport successfully
+- **THEN** the flow completes normally and Cognito's existing response reaches the user unchanged
+- **BUT it must NOT** claim delivery — no copy anywhere may assert that a message *arrived*, only that one was sent
 
-A systemic failure leaks nothing precisely because an attacker probing a nonexistent address sees the same thing.
+#### Scenario: The transport rejects the publish
+- **GIVEN** the transport is unreachable or refuses the message
+- **WHEN** the function attempts to publish
+- **THEN** it MUST fail visibly, so the failure is in logs and alertable
+- **AND IT MUST** carry no address and no code in anything it logs (NFR-1)
 
-#### Scenario: Address has no account
-- **GIVEN** a submitted address with no corresponding user
-- **WHEN** the form is submitted
-- **THEN** the response MUST be indistinguishable from the success case, in copy, in status, and in the step the UI advances to
-- **AND IT MUST** be padded to the same response floor as the success path, so elapsed time does not distinguish them either
-- **BUT it must NOT** perform less work in a way an observer can time — this is the channel judgment finding C-3 identified, and the repository's `padToVerificationCodeResponseFloor` exists because of it
-
-#### Scenario: The account exists and the code is sent
-- **GIVEN** a real account and a successful send
-- **WHEN** the form is submitted
-- **THEN** the user is told a code has been sent **if an account exists** — wording that is true in both this case and the one above
-
-#### Scenario: The send fails for a reason tied to this address
-- **GIVEN** a real account whose send fails in a way specific to it
-- **WHEN** the form is submitted
-- **THEN** the response MUST be identical to the two scenarios above
-- **AND IT MUST** be recorded server-side so the failure is visible to operators
-- **BUT it must NOT** tell the user their send failed — doing so is exactly the disclosure the first scenario masks
-
-#### Scenario: The transport is failing for everyone
-- **GIVEN** the mail transport is unreachable or rejecting every message
-- **WHEN** any user submits the form
-- **THEN** an honest failure MAY be shown, with an action the user can take
-- **AND IT MUST** be a response the same code path produces for an address with no account — if the honest error is reachable only for real accounts, it is an oracle and MUST be masked instead
-
-> **What this costs, stated plainly.** A user whose send fails for an address-specific reason is told a code is coming and receives nothing. That is a real harm, accepted deliberately: the alternative discloses account existence to anyone who can submit a form. The mitigation is operational — the failure is logged and alertable — not user-facing.
+> **What this costs, stated plainly.** A user whose send fails sees Cognito's ordinary "code sent" response and receives nothing; their recourse is to retry, or to ask an administrator — which works (ATP-71). This is the same exposure every other mail path in this product already carries, accepted here for consistency rather than solved for this flow alone.
+>
+> **Not reopened by stealth:** if delivery confirmation is ever wanted, it is wanted *system-wide*, and that is a separate change against the transport — not a special case bolted onto password reset.
 
 ### FR-5: The pool configuration change is deliberate and reversible
 
@@ -159,15 +141,9 @@ Activating the trigger requires `UpdateUserPool`, which **silently resets any pa
 - **BUT it must NOT** be applied by hand against the console or an ad-hoc CLI call — it goes through `10-data-auth`
 - **AND IT MUST** be reversible: removing the trigger must restore the prior behaviour without data loss
 
-### FR-6: Cognito's own reset path is closed off
+### ~~FR-6: Cognito's own reset path is closed off~~ — **STRUCK 2026-09-23**
 
-With the flow moved into our backend, Cognito's `ForgotPassword` remains reachable unless it is explicitly disabled. Two live reset mechanisms — one delivering through the microservice, one through whatever mailer the pool happens to carry — is a worse state than either alone.
-
-#### Scenario: The retired path is unreachable
-- **GIVEN** the new flow is live
-- **WHEN** a client attempts Cognito's own `ForgotPassword`
-- **THEN** it MUST NOT deliver a working reset
-- **AND IT MUST** be closed by configuration, not merely by the frontend no longer calling it — a path reachable by anyone with the pool id and a client id is not closed by removing a button
+It existed only for Path 2, which replaced Cognito's flow. **Path 1 keeps that flow and changes only who delivers the message**, so there is nothing to close off. Struck rather than deleted so `judgment.md`'s references still resolve.
 
 ---
 
@@ -178,7 +154,7 @@ With the flow moved into our backend, Cognito's `ForgotPassword` remains reachab
 | **NFR-1** | **The decrypted code and the recipient address MUST NEVER be logged**, stored, or emitted in any error payload — by the function, the backend, or CloudWatch. This is the same absolute rule as ATP-71's NFR-1 and is not weakened by the fact that a code expires. |
 | **NFR-2** | The request handler MUST complete its dispatch **before it returns**. A publish still in flight when a Lambda returns can be frozen and lost — this repository has already shipped a production fix for that class (`fix/otp-mail-lambda-freeze`), and ATP-71's T-8 built the harness that proves it against the real `lambda.ts` handler. Under Option B this flow runs in that same handler, so that harness applies directly rather than needing a new one. |
 | **NFR-3** | Any link in the message MUST derive from configuration, never a baked-in host (ATP-67's mechanism). |
-| ~~**NFR-4**~~ | ~~KMS key and grants~~ — **STRUCK 2026-09-22.** It existed only for Option A's `CustomEmailSender` trigger. Option B introduces no KMS key. Left visible rather than deleted so the judgment ledger's finding C-9 (the grant set granted nobody encrypt rights) still resolves against something. |
+| **NFR-4** | **REINSTATED 2026-09-23** (Path 1 needs the key again). The KMS key MUST be a customer-managed **symmetric** key. ⚠️ Round-1 finding **C-9** must be resolved here rather than repeated: the previous enumeration listed `lambda:InvokeFunction` as one of three *KMS* grants — it is a **Lambda resource policy**, not a KMS permission — leaving the closed set with **no principal able to encrypt**, which Cognito must do. The design MUST state the key policy and the Lambda resource policy **separately**, and cite AWS for each. |
 | **NFR-5** | **Documentation and task text MUST state, in those words, that `DEPLOY_INFRA` defaults to `false`** and that `10-data-auth` therefore does not ship on an ordinary merge — judgment finding C-13 recorded that the previous design said "`DEPLOY_INFRA`-gated" instead, which tells a reader what to run rather than what NFR-5 requires stated. It MUST also state that the same deploy **flips this pool's `EmailConfiguration` from its live SES setting to `COGNITO_DEFAULT`**, a side effect that lands whether or not this spec is ready. ⚠️ **This became MORE important under Option B, not less**: closing off Cognito's own `ForgotPassword` (FR-6) is now the only reason this spec touches `10-data-auth` at all. |
 | **NFR-6** | The user-visible latency of a reset request SHOULD stay within the budget recorded in `design.md`, since FR-4 makes the request wait on the real send. The budget belongs in one place only, per `mail/mail-timing.ts`'s existing discipline. |
 
@@ -214,12 +190,12 @@ With the flow moved into our backend, Cognito's `ForgotPassword` remains reachab
 | FR-1 | Reset code delivered through the microservice | D-1, D-3, D-6 |
 | FR-2 | Unrecognised trigger source fails loudly | D-1, D-7 |
 | FR-3 | The reset remains code-based | — |
-| FR-4 | Truth to the user without an account oracle | D-6 |
+| FR-4 | Delivery is best-effort; nothing claims otherwise | D-6 |
 | FR-5 | Pool change is deliberate and reversible | D-5 |
-| **FR-6** | **Cognito's own reset path is closed off** | **D-7** |
+| ~~FR-6~~ | ~~Cognito's own reset path closed off~~ — struck; Path 1 keeps that flow | — |
 | NFR-1 | Code and address never logged | D-2 |
 | NFR-2 | Work completes before the function returns | D-6 |
 | NFR-3 | Links derive from configuration | — |
-| ~~NFR-4~~ | ~~KMS key and grants~~ — struck; Option B introduces no KMS key | — |
+| NFR-4 | KMS key symmetric; key policy and invoke policy stated separately | D-4 |
 | NFR-5 | Deploy dependency and its coupled side effect stated | D-8 |
 | NFR-6 | Latency budget recorded in one place | — |

@@ -6,7 +6,7 @@
 |---|---|
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Type | Change |
-| Status | **Route re-opened** — 2026-09-22, after `judgment.md` escalated the Option A design (§12) |
+| Status | **Decided 2026-09-23 — Path 1 (`CustomEmailSender`), simplified. See §12.1, which reverses §12.** |
 | Approval Mode | gated |
 | Author | Leader (Claude Opus 5), with Daniela Gómez |
 | Created | 2026-09-22 |
@@ -204,6 +204,38 @@ Build the reset flow in `20-backend`, on the `EmailVerificationService` machiner
 4. **The enumeration surface moves to our endpoints.** The response floor exists, but it must be composed for *this* flow, not reused blindly — `mail-timing.ts`'s own history records a floor that was found insufficient because a term was omitted.
 
 ⚠️ **Still a recommendation, still the user's to overrule.** Option A remains implementable if the team prefers Cognito to own the state machine — but it now carries fourteen documented findings, of which six are severe, and the three structural ones would have to be designed around rather than written around.
+
+## 12.1 DECISION — 2026-09-23: **Path 1 (`CustomEmailSender`), simplified.** This reverses §12.
+
+The user chose **Path 1** after both routes were costed in plain terms, and ruled **SES out of every path, permanently** — it is not to be proposed again at any layer.
+
+**The reasoning that decided it, in the user's framing:** Path 1 replaces only the *sending*. Everything delicate — generating the code, expiring it, checking it, limiting attempts, stopping one person from locking out another — stays AWS's problem. Path 2 moves all of that onto us, and round 2 showed we would have got parts of it wrong.
+
+### The simplification that makes this affordable — and it removes a requirement I invented
+
+Round 1's three hardest findings (**C-1** the envelope cannot carry a reply id, **C-4** the microservice resolves rather than throws on SMTP failure, **C-7** Cognito's trigger ceiling plus retries) all existed to serve **one requirement: FR-4's "the user is not told a message was sent unless it was."**
+
+**No other flow in this system does that.** Receipts, approvals, rejections, the registration OTP — every one publishes and returns. FR-4 was added by me, for this flow alone, and it is what dragged in the RPC round trip, the timeout budget, and the duplicate-code failure mode.
+
+**Dropped.** The function decrypts, publishes, and returns. Consistent with the rest of the system.
+
+| What this costs | What it dissolves |
+|---|---|
+| If the send fails, the user sees "check your email" and must retry — the same behaviour every other mail path in this product already has | **C-1, C-4, C-7** entirely; the reply queue, correlation, consumer lifecycle and timeout budget stop existing |
+
+### Round-1 findings, dispositions under this decision
+
+| # | Disposition |
+|---|---|
+| C-1, C-4, C-7 | **Dissolved** by dropping the awaited reply (above) |
+| **C-8** | **Resolved, and the objection was narrower than it read.** The blocker was that `10-data-auth` cannot `Fn::ImportValue` the broker credentials. It does not need to: `MailMicroserviceSecret` has a **predictable name** (`${AWS::StackName}-mail-microservice-secret`, `20-backend/template.yaml:172`), so the function reads it **at runtime by name** via the SDK. A runtime dependency, not a deploy-time one — and the trigger only fires long after both stacks exist. `PUBLIC_APP_BASE_URL` becomes a `10-data-auth` parameter. |
+| C-2 | **Moot** — under Path 1 the frontend does not change at all, so the dead-branch question never arises. |
+| C-3 | **Out of scope.** `PreventUserExistenceErrors` is a real finding about the *login* path and survives as its own concern; it is not this spec's to fix, and Cognito's existing reset behaviour is unchanged by us. |
+| C-5, C-6, C-9, C-10, C-11, C-12, C-13, C-14 | **Still live. Each must be resolved in the design, by name.** |
+
+### Bug `bugfix/otp-cross-caller-lockout` — deferred, and no longer a prerequisite
+
+It was a prerequisite for Path 2, which reused that machinery. **Path 1 does not touch it** — Cognito keeps generating and validating codes. The bug stays open at its own priority: it lets someone grief a targeted public registration, which is real but not urgent for this product's threat model.
 
 ## 13. Risks, dependencies and open questions
 
