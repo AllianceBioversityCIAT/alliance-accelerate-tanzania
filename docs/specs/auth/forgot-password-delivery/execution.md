@@ -342,3 +342,90 @@ The weaker CLI-only rehearsal was **deliberately not substituted**: the risk bei
 - `./infra/scripts/validate.sh` → `PASS 10-data-auth` · `PASS 20-backend` · `PASS 30-frontend`. **Run by the Leader**, closing the Reviewer's standing note that the earlier PASSes were the Implementer's account.
 - `grep -n "VERBATIM\|INFERRED"` over both files → **empty, exit 1.** No orphan label survives.
 - `UserPool`'s `Properties:` → **untouched**, confirmed two ways: the Leader filtered the diff for non-comment changes (zero hits), and the Reviewer re-read the block as byte-identical.
+
+### T-5 continuation — DD-3 step 4 rehearsal attempt (2026-09-24)
+
+**Status remains `[~]`; T-5 is not ready for Reviewer.** The user-authorized rehearsal was attempted against exactly one disposable stack, then cleaned up. CloudFormation accepted `CreateStack`, but the caller could not create the disposable Lambda execution role or KMS key required for Cognito to accept `LambdaConfig.CustomEmailSender`. The rehearsal therefore never reached an `UPDATE_IN_PROGRESS` or a valid before/after pool comparison. No CLI-only substitute was run.
+
+**Identity and scope.** The command was run with `--profile IBD-DEV --region eu-west-1`. The identity output was:
+
+```text
+{
+    "UserId": "AIDAYJAOTOYERBEE4IPMR",
+    "Account": "569113802249",
+    "Arn": "arn:aws:iam::569113802249:user/cognito_csicap"
+}
+```
+
+Exact stack name: `accelerate-tz-dev-rehearsal-20260924-pool-drift`.
+
+The preflight checks for that exact name returned, verbatim:
+
+```text
+aws: [ERROR]: An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id accelerate-tz-dev-rehearsal-20260924-pool-drift does not exist
+aws: [ERROR]: An error occurred (ValidationError) when calling the DescribeStackEvents operation: Stack [accelerate-tz-dev-rehearsal-20260924-pool-drift] does not exist
+```
+
+**Smallest faithful template attempted.** The baseline template contained only the pool's relevant template settings plus the dependencies Cognito requires for a custom sender: `AWS::Cognito::UserPool`, a minimal `AWS::Lambda::Function`, its `AWS::IAM::Role`, an `AWS::Lambda::Permission` for `cognito-idp.amazonaws.com`, and an `AWS::KMS::Key`. The update template was identical except for the intended pool addition:
+
+```yaml
+LambdaConfig:
+  CustomEmailSender:
+    LambdaArn: !GetAtt RehearsalFunction.Arn
+    LambdaVersion: V1_0
+  KMSKeyID: !GetAtt RehearsalKey.Arn
+```
+
+The pool baseline preserved `UsernameAttributes: [email]`, `AutoVerifiedAttributes: [email]`, `EmailConfiguration.EmailSendingAccount: COGNITO_DEFAULT`, admin-only creation, the live password policy, and the verification-code template. The Lambda, permission, and KMS key were disposable prerequisites, not application resources; no RDS, Secrets Manager resource, user, real pool, or real stack was used.
+
+**CreateStack evidence.** The exact `create-stack` command used the baseline file, `CAPABILITY_NAMED_IAM`, only the rehearsal stack name, and the required profile/region. Its complete output was:
+
+```json
+{
+    "StackId": "arn:aws:cloudformation:eu-west-1:569113802249:stack/accelerate-tz-dev-rehearsal-20260924-pool-drift/533d60c0-b84d-11f1-b839-0a23129ac41d",
+    "OperationId": "533e9940-b84d-11f1-b839-0a23129ac41d"
+}
+```
+
+CloudFormation then rolled back. The complete failure evidence from `describe-stack-resources` was:
+
+```json
+{
+    "LogicalResourceId": "RehearsalFunctionRole",
+    "PhysicalResourceId": "accelerate-tz-dev-rehearsal-2-RehearsalFunctionRole-DrHAKe4smZNN",
+    "ResourceType": "AWS::IAM::Role",
+    "ResourceStatus": "DELETE_COMPLETE"
+}
+{
+    "LogicalResourceId": "RehearsalKey",
+    "ResourceType": "AWS::KMS::Key",
+    "ResourceStatus": "CREATE_FAILED",
+    "ResourceStatusReason": "Resource handler returned message: \"Encountered a permissions error performing a tagging operation, please add required tag permissions. See https://repost.aws/knowledge-center/cloudformation-tagging-permission-error for how to resolve. Resource handler returned message: \"Unauthorized tagging operation\"\" (RequestToken: 5cabfb40-bef9-a8c6-2521-7b152c080b70, HandlerErrorCode: UnauthorizedTaggingOperation)"
+}
+{
+    "LogicalResourceId": "RehearsalPool",
+    "PhysicalResourceId": "eu-west-1_LjHHEshf0",
+    "ResourceType": "AWS::Cognito::UserPool",
+    "ResourceStatus": "DELETE_COMPLETE"
+}
+```
+
+The exact denied IAM action appeared in the stack event for the role:
+
+```text
+User: arn:aws:iam::569113802249:user/cognito_csicap is not authorized to perform: iam:CreateRole on resource: arn:aws:iam::569113802249:role/accelerate-tz-dev-rehearsal-2-RehearsalFunctionRole-DrHAKe4smZNN because no identity-based policy allows the iam:CreateRole action (Service: Iam, Status Code: 403, Request ID: 4711b3aa-a6d1-497d-b604-b24eddee631) (SDK Attempt Count: 1)
+```
+
+The KMS failure was an `UnauthorizedTaggingOperation`; CloudFormation did not return a more specific underlying tag action. The stack-level `Project=ACCELERATE-Tanzania` tag was the only explicit stack tag. The pool was created far enough to receive physical id `eu-west-1_LjHHEshf0`, but its event was `CREATE_FAILED` with `Resource creation cancelled`, followed by `DELETE_COMPLETE` during rollback. `RehearsalFunction` and `RehearsalInvokePermission` were never created.
+
+**Before/after evidence.** No complete live `describe-user-pool` before artefact exists for this attempt: the pool was in a failed stack create and rolled back before a read could be captured. No update ran, so there is no after pool evidence, no `pool-after.json`, and no intended/unintended diff to claim. The only pool evidence is CloudFormation's complete `ResourceProperties` for the failed baseline event, which confirms the baseline template was submitted; it is not a substitute for a live before read. Intended difference: not exercised. Unintended differences: not measurable because `UpdateStack` did not run.
+
+**Cleanup proof.** The exact stack was deleted after `stack-rollback-complete`. The following post-cleanup checks returned verbatim:
+
+```text
+aws: [ERROR]: An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id accelerate-tz-dev-rehearsal-20260924-pool-drift does not exist
+aws: [ERROR]: An error occurred (ResourceNotFoundException) when calling the DescribeUserPool operation: User pool eu-west-1_LjHHEshf0 does not exist.
+aws: [ERROR]: An error occurred (NoSuchEntity) when calling the GetRole operation: The role with name accelerate-tz-dev-rehearsal-2-RehearsalFunctionRole-DrHAKe4smZNN cannot be found.
+```
+
+No resource from this attempt remains. The KMS resource had no physical id and failed before creation; the pool and role are confirmed absent. Files changed by this continuation: `docs/specs/auth/forgot-password-delivery/execution.md` only. The temporary rehearsal templates were removed. `tasks.md` was intentionally not changed and T-5 remains `[~]`. A scoped IAM grant for the disposable Lambda/KMS prerequisites, or operator credentials with those permissions, is required before T-5 can become Reviewer-ready.
