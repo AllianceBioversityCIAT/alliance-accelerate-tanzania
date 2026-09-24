@@ -86,7 +86,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Disqualifier: ⚠️ **Do not list AWS defaults as drift.** `MfaConfiguration: OFF` and `LambdaConfig: {}` are what an omitted property already means; `AccountRecoverySetting`'s live value is also AWS's default. Round 2 rejected a table that presented four rows of which only one was a real divergence. Mark each row **default** or **divergent**, and justify the label.
       Done when: `pool-before.json` is committed, every divergent setting is decided in writing, the template carries the decided values, and the throwaway-pool rehearsal is recorded.
 
-- [ ] **T-6** Activate the trigger  (deps: T-4, T-5)
+- [~] **T-6** Activate the trigger  (deps: T-4, T-5)
       Scope: set `LambdaConfig` (`CustomEmailSender` + `KMSKeyID`, `LambdaVersion: V1_0`) on the pool via `10-data-auth`.
       Traces: FR-5; design.md §6, DD-4
       Files: `infra/10-data-auth/template.yaml`, `docs/specs/auth/forgot-password-delivery/pool-after.json`

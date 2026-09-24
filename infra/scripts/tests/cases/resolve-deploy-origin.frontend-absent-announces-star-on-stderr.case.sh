@@ -9,6 +9,15 @@
 # "attempt 1" — a merged 2>&1 capture would still pass if the `>&2` were
 # deleted from deploy.sh entirely): the announcement is asserted present
 # on the STDERR-only stream and absent from the STDOUT-only stream.
+#
+# T-6 attempt 2 (Finding 5): this run also reaches T-6's own
+# CustomEmailSenderKmsGrantPrincipalArn resolution, which now applies a
+# shape guard requiring a well-formed IAM user/role ARN — a flat account
+# id (the STS_ACCOUNT value below) no longer satisfies it regardless of
+# `--query`. The sts get-caller-identity branch below now answers
+# differently for `--query Arn` vs `--query Account`, matching what the
+# real CLI actually returns per query, rather than ignoring `--query`
+# entirely as it did before.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -33,7 +42,14 @@ cat > "$AWS_RECIPE" <<EOF2
 args="\$*"
 case "\$1 \$2" in
   "sts get-caller-identity")
-    echo "$STS_ACCOUNT"
+    case "\$args" in
+      *Arn*)
+        echo "arn:aws:iam::000000000001:user/test-deployer"
+        ;;
+      *)
+        echo "$STS_ACCOUNT"
+        ;;
+    esac
     exit 0
     ;;
   "cloudformation describe-stacks")

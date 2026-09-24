@@ -534,3 +534,84 @@ No command against the live pool or the real stack was anything but `describe-*`
 All four Done-when clauses met: `pool-before.json` committed · every divergent setting decided in writing · the template carries the decided values (there were none to carry, and that conclusion survived a deliberately hostile re-read) · the throwaway-pool rehearsal performed and recorded. **T-5 → `[x]`.**
 
 **T-6 inherits:** the two (c)-class resets will land on the live pool on its deploy, measured not guessed; the `No updates are to be performed` behaviour means its `LambdaConfig` addition is the change that fires them; the `COGNITO_DEFAULT` concern is refuted and must not be re-raised; `pool-after.json` is its artefact; and the branded `VerificationMessageTemplate` is **not** this spec's T-4.
+
+---
+
+## T-6 — Activate the trigger
+
+**Status:** `[~]` — **the repository change is complete and passed review; the deploy has not happened.** · **Date:** 2026-09-24 · **Attempts:** 3 · **Reviewers:** two in parallel (template / `deploy.sh`), by artefact · Implementer `sonnet` / Reviewers `opus`
+
+> **Why `[~]`.** T-6's Done-when has three clauses. Two are met. The third — *"the diff is clean"* — means the live pool's before/after diff, which needs a deploy that **T-6's own Disqualifier says will not happen** (`DEPLOY_INFRA` defaults to `false`). ⚠️ **The task text contradicts itself**, and the Leader adjudicated it template-only rather than passing the contradiction into the loop. `pool-after.json` and the diff belong to the deploy, now scheduled.
+
+### What changed
+
+| | |
+|---|---|
+| `LambdaConfig` on `UserPool` | `CustomEmailSender` (`LambdaArn`, `LambdaVersion: V1_0`) + `KMSKeyID`. The property that activates the trigger. |
+| **`DependsOn: CustomEmailSenderInvokePermission`** | The deploy-blocking fix — see below. |
+| `deploy.sh` step 1 | Now passes **three** parameters that nothing had ever passed, each resolved or overridable, none hardcoded. |
+| `AllowedPattern` on the pool id | A malformed value now fails the changeset instead of failing silently at T-7. |
+| A new test case + two stub repairs | The change had **no gate at all** before this. |
+
+### ⚠️ The deploy-blocking defect, and why nothing automated caught it
+
+`UserPool` and `CustomEmailSenderInvokePermission` had **no dependency edge in either direction** — unordered siblings. Cognito validates the invoke permission *at the moment `LambdaConfig` is set*, i.e. while `UserPool` is being built. If CloudFormation picked that order, `UpdateUserPool` is rejected and **the whole stack rolls back — including the RDS instance.**
+
+**It was non-deterministic**: it might have succeeded by luck, which is worse than a clean failure. And it lands on *this* deploy specifically — `Key`, `Function` and `Permission` are all new resources (the stack was last updated 2026-08-05, before T-3/T-4 merged), so T-4 and T-6 arrive in one changeset: the exact failing scenario.
+
+**Fix:** `DependsOn: CustomEmailSenderInvokePermission` on `UserPool`. Provably acyclic — `Key → Function → Permission → UserPool` — **and legal only because DD-5b had already removed `Permission → UserPool`. That is what the parameter substitution bought, and the task had not spent it.**
+
+> **The falsifier reasoned from a graph that no longer exists.** Attempt 1 concluded that adding this `DependsOn` would create a cycle — reading the template's own T-4 comment, which says it *"would be a CYCLE (**but Permission's SourceArn already needs UserPool**)"*. DD-5b deleted that parenthetical premise. So **the one configuration the falsifier declined to test was the required fix, declined on a ground that had already been withdrawn** — and the comment was arguing against its own remedy. KZ-008's exact mechanism: reasoning from a remembered artefact instead of the present one.
+>
+> **The corrected falsifier then reddened**, restoring `!Ref UserPool` in the *Key's* condition: `E3004 … Circular Dependencies for resource UserPool`. So the true statement is sharper than "the gate is blind": **`validate.sh` catches the DD-2b graph cycle and is blind to the DD-5b API-ordering hazard** — a Cognito runtime-ordering requirement CloudFormation's static graph cannot express. That blindness is now written **into the template**, because a green `validate.sh` is exactly what would reassure someone deleting the `DependsOn` as redundant.
+>
+> **An unclaimed gain the Reviewer found:** with the `DependsOn` in place, the regression a maintainer is most likely to reach (re-pointing `SourceArn` at `!Ref UserPool`) becomes a two-node cycle that lint **will** catch. Previously silent, now caught.
+
+### The second blocking defect — a silent-failure path in `deploy.sh`
+
+The principal ARN was resolved with no shape validation. Under an assumed role or SSO, `sts get-caller-identity` returns a **session** ARN; KMS accepts it, but it is scoped to one expiring session — **the deploy succeeds and every later password reset dies with no deploy-time signal.** The block's comment claimed it was wired "the same way" as `ALLOWED_ORIGIN`/`MAIL_TRANSPORT`, which carry post-resolution guards; audited against the artefact, it was not.
+
+⚠️ **Leader-measured: the identity here is `arn:aws:iam::569113802249:user/cognito_csicap`, an IAM user, not a session** — so this never bit. The guard was added anyway; the latent path and the false claim were both real.
+
+### The all-or-nothing consequence, found by review and escalated to the user
+
+The trigger is **per-pool, all-or-nothing**: activating it routes *every* pool email through the function. `CustomEmailSenderPublicAppBaseUrl` was **passed by nothing** (Leader-verified: zero occurrences), and `config.mjs`'s `getPublicAppBaseUrl()` **throws** on empty — which `CustomEmailSender_VerifyUserAttribute` needs. **Activating the trigger would have broken the admin email-edit path.**
+
+`CustomEmailSender_ForgotPassword` was never at risk — DD-1c removed the reset message's link, so the reset builder never calls it.
+
+DD-2c names only two parameters because it predates this interaction. **Put to the user, who approved widening T-6**: T-6 is the task that makes the trigger live, and shipping a trigger that throws on a reachable path would choose the letter over the outcome. Now resolved from `$ALLOWED_ORIGIN` (measured: `https://d3idqvvg0xa1r7.cloudfront.net`), mirroring `20-backend`'s own shipped fallback. **Residual, declared in the template:** on a bootstrap with no frontend stack, `$ALLOWED_ORIGIN` is `'*'` and the throw persists — accepted, no worse than the empty default, self-heals on the next run.
+
+### ⚠️ The change had no gate at all, and the green suite proved nothing
+
+The Reviewer established that the repo's 49/50 script-test run **carried no information about this diff**: the stub `aws` answered `sts get-caller-identity` ignoring `--query`, so the harness resolved nonsense, passed it to a stubbed `sam`, and went green. **Deleting the entire new block would not have changed a single test's colour.** `validate.sh` never reads `deploy.sh` at all.
+
+Fixed as `tasks.md` §2 compliance, not as an advisory: a new case asserts the three resolved values are literally what reach `--parameter-overrides`. The Reviewer verified it **genuinely discriminates** under four destruction tests — and noted the detail that saves it: the announcements print `Key = value` (spaces) while the assertions needle `Key=value` (none), so they can only match the real call, never the echo.
+
+The new guard also reddened two **pre-existing** cases whose stubs were imprecise; the Implementer repaired the stubs. ⚠️ A stub edited by the author of the code it stubs is the shape to distrust, so the Reviewer was asked to adjudicate specifically: **faithful repair** — the fixtures move *toward* the real CLI, nothing was removed, and **the assertion blocks are byte-identical to the previous attempt.**
+
+### Attempt history
+
+| # | Verdict | Findings |
+|---|---|---|
+| 1 | **FAIL / FAIL** | Missing `DependsOn` (deploy-blocking, non-deterministic stack rollback) · the falsifier's conclusion wrong, reasoned from the pre-DD-5b graph · comment conflating cycle with ordering · lint-blindness unrecorded · principal resolved with no shape guard (deploy-blocking) · plus the all-or-nothing escalation |
+| 2 | **FAIL (docs) / PASS** | All seven addressed; `deploy.sh` and the tests passed. Template FAIL on documentation only — the new parameter's `Description` still described the pre-change world, i.e. told the operator the verification path was broken at the moment this change fixed it |
+| 3 | **PASS** | `Description` corrected, header inventory completed, bootstrap residual moved into the artefact, a stale tense re-tensed, a garbled attribution fixed |
+
+### Verification
+
+- `./infra/scripts/validate.sh` → green across all three stacks. **Run by the Leader** at rounds 2 and 3.
+- Corrected cycle falsifier: red (`E3004`) → restore → green.
+- New test-case falsifier: red → restore → green.
+- `./infra/scripts/tests/run-tests.sh` → 51 cases, 50 pass; the one failure is the **pre-existing** `guard-account.no-account-id-literal-in-infra` (T-3's account-id Default), confirmed unchanged by `git stash`. Reported, not fixed — out of scope.
+- **Round 3 moved no property value**: the Leader filtered the cumulative diff for changed lines that are neither blank nor comments; only earlier attempts' structural lines appear.
+- `shellcheck` unavailable — declared UNVERIFIABLE, not silently skipped. The Reviewer judged the gap low-consequence here and said why.
+
+### What none of this establishes
+
+That the trigger works. **No test in this repository exercises IAM, KMS, or delivery** — every suite mocks the AWS clients. Two premises this deploy tests for the first time, both declared open since T-3: whether Cognito's grant carries an encryption-context constraint at all (if not, the `StringEquals` on `kms:EncryptionContext:userpool-id` matches nothing and `CreateGrant` is denied), and whether `userpool-id` is the right spelling. **T-7 is the only gate.**
+
+### For the operator — expected shape, so "right" is recognisable
+
+The deploy is scheduled (user's decision). Adding `LambdaConfig` is a no-interruption property update and `DependsOn` affects ordering only, so the changeset must show `UserPool` as **`Modify` with `Replacement: False`**. ⚠️ **`Replacement: True` means stop** — that would destroy the pool and its 3 accounts, and nothing in this task should produce it.
+
+It will also reset the two (c)-class settings T-5 measured: `EmailConfiguration` → `COGNITO_DEFAULT`, and `AdminCreateUserConfig.InviteMessageTemplate` removed. Both intended. **No rollback restores current behaviour** (DD-4).
