@@ -275,9 +275,9 @@ The Implementer argued, and the Reviewer confirmed, that **§10's disposition of
 
 ## T-5 — Pool drift audit: artefacts, not a procedure
 
-**Status:** `[~]` **— PASS on the audit, but the task does NOT close.** · **Date:** 2026-09-23 · **Attempts:** 3 Implementer + 1 Leader-applied fix · **Reviewer:** FAIL, FAIL, FAIL, PASS · Implementer `sonnet` / Reviewer `opus`
+**Status:** `[x]` — closed 2026-09-24. *(Read as `[~]` "does NOT close" until then; the rehearsal that was blocked has since run — see "T-5 (continued)" at the end of this entry, which supersedes every status statement above it.)* · **Date:** 2026-09-23 · **Attempts:** 3 Implementer + 1 Leader-applied fix · **Reviewer:** FAIL, FAIL, FAIL, PASS · Implementer `sonnet` / Reviewer `opus`
 
-> **Why `[~]` and not `[x]`.** T-5's Done-when has four clauses. Three are met and verified. The fourth — *"the throwaway-pool rehearsal is recorded"* — is **not**, and it is blocked on an IAM boundary, not on effort. A task with outstanding scope does not reach `[x]` even on a Reviewer PASS.
+> **Why `[~]` and not `[x]` — as at 2026-09-23. ⚠️ SUPERSEDED: clause 4 was met on 2026-09-24.** T-5's Done-when has four clauses. Three are met and verified. The fourth — *"the throwaway-pool rehearsal is recorded"* — is **not**, and it is blocked on an IAM boundary, not on effort. A task with outstanding scope does not reach `[x]` even on a Reviewer PASS.
 
 ### What was produced
 
@@ -297,7 +297,9 @@ The Implementer argued, and the Reviewer confirmed, that **§10's disposition of
 
 So T-5's "write the decided values into the template" correctly resolved to **no property written** — (a) and (c) both mean "leave it", for opposite reasons. The Reviewer held this conclusion to a deliberately higher bar (it is the conclusion that requires least work) and confirmed it supported, twice.
 
-### ⚠️ A finding against already-merged code, out of T-5's scope — **T-6 owns it**
+### ⚠️ A finding against already-merged code — **RAISED HERE, REFUTED 2026-09-24. T-6 does NOT own it.**
+
+> ⚠️ **SUPERSEDED 2026-09-24 — see "T-5 (continued)" at the end of this entry.** The concern below was raised from AWS documentation and **measurement refuted it**: the combination is accepted on `UpdateUserPool`. Do not carry it to T-6 as a risk. The paragraph is kept because the *refutation* is the lesson — the CLI help is a claim about AWS, not a measurement of it.
 
 `aws cognito-idp update-user-pool help` states that `VerificationMessageTemplate`'s `EmailMessage`/`EmailSubject` *"can be set only if the value of `EmailSendingAccount` is `DEVELOPER`."* **The Leader verified this independently against the CLI's own output.** `UserPool` sets `EmailSendingAccount: COGNITO_DEFAULT` **and** a branded `VerificationMessageTemplate.EmailMessage`/`EmailSubject`. That combination predates this spec, has never been deployed, and **T-6's deploy is the first call that would ever exercise it** — against the pool holding 3 live accounts. It may be rejected outright.
 
@@ -320,7 +322,7 @@ So T-5's "write the decided values into the template" correctly resolved to **no
 - **The 3-attempt ceiling was reached and `git restore .` was NOT run.** The HALT protocol's rollback exists so a user is not left with broken code. Nothing here was broken — `validate.sh` green, zero config values altered — and rollback would have destroyed a twice-verified audit plus an irreproducible artefact over a one-clause omission. The options, including that rollback is what the rule literally says, were put to the user, who authorised Leader-applies-then-Reviewer-verifies. **Author ≠ auditor held:** the Leader wrote one clause, the Reviewer audited it at an Implementer's bar.
 - **Two sound Reviewer advisories left unapplied deliberately** — dropping `or from the task brief` (`design.md:264`) and striking *"Every row below except the two in (c) is this class."* (`template.yaml:342`). Both correct, both deletion-compatible. Declined because the loop was exhausted and the user authorised **one** clause; widening a Leader-applied edit past its authorisation is wrong even when each addition defends itself. **Recorded here as open advisories.**
 
-### The gap — declared, not implied
+### The gap — declared, not implied *(⚠️ CLOSED 2026-09-24 — the rehearsal ran; see "T-5 (continued)")*
 
 **The throwaway-pool rehearsal (design.md DD-3 step 4, `proposal.md` R-1) did not run.** The identity available (`cognito_csicap` — the same principal `CustomEmailSenderKmsGrantPrincipalArn` names) got `AccessDenied` on **both** `cloudformation:CreateChangeSet` and `cloudformation:CreateStack`, for every stack name tried. A hard IAM boundary, not a judgment call. **No stack was created** (`describe-stacks` → `ValidationError: … does not exist`, both names); nothing leaked, nothing to delete.
 
@@ -335,7 +337,7 @@ The weaker CLI-only rehearsal was **deliberately not substituted**: the risk bei
 | FR-5 — full config read, update composed from it | ✅ `pool-before.json` + the exhaustive classification |
 | FR-5 `AND IT MUST` — before/after comparison | ⏳ before captured; after is T-6's |
 | FR-5 `BUT it must NOT` — not by hand | ✅ nothing applied by hand; the live pool was read-only throughout |
-| D-5 (`requirements.md` §8) — `UpdateUserPool` silently resets an omitted setting | ⚠️ **Enumerated, not rehearsed.** The artefact says what omission *would* reset; only the rehearsal could have shown what it *does*. |
+| D-5 (`requirements.md` §8) — `UpdateUserPool` silently resets an omitted setting | ⚠️ **Enumerated, not rehearsed** *(as at 2026-09-23)*. **Updated 2026-09-24:** the rehearsal demonstrated the **mechanism** twice — an omitted non-default setting IS reset — on the two (c) rows. The (a) classification itself is still reasoned, not measured. |
 
 ### Final verification
 
@@ -343,7 +345,13 @@ The weaker CLI-only rehearsal was **deliberately not substituted**: the risk bei
 - `grep -n "VERBATIM\|INFERRED"` over both files → **empty, exit 1.** No orphan label survives.
 - `UserPool`'s `Properties:` → **untouched**, confirmed two ways: the Leader filtered the diff for non-comment changes (zero hits), and the Reviewer re-read the block as byte-identical.
 
-### T-5 continuation — DD-3 step 4 rehearsal attempt (2026-09-24)
+### T-5 continuation — DD-3 step 4 rehearsal attempt (2026-09-24) — ⚠️ WRITTEN BY A CONCURRENT SESSION
+
+> ⚠️ **Provenance, and it is a finding in its own right (KZ-010, 4th recurrence).** This section arrived via commit `78017b7` from a **different AKILI session working in the same checkout**, in parallel with and unknown to the session that wrote everything else in this entry. Neither saw the other; it was found by accident while inspecting the file for an unrelated reason. Root `CLAUDE.md` § Concurrency protocol forbids exactly this ("one AKILI session per checkout"), and the kaizen log already records it three times with the note that no diff review catches it. **Kept, not deleted** — it is a real attempt and its finding is valuable.
+>
+> **What it attempted, and why it is NOT redundant with the rehearsal that succeeded:** it went after the *harder* target — rehearsing **T-6's actual change** (`LambdaConfig.CustomEmailSender`), which needs a disposable Lambda, IAM role and KMS key. It failed on `UnauthorizedTaggingOperation` for KMS. That is precisely the residual the successful rehearsal declared for itself, so the two are complementary, not duplicates.
+>
+> **Its status line below ("Status remains `[~]`; T-5 is not ready for Reviewer") is superseded** — see "T-5 (continued)".
 
 **Status remains `[~]`; T-5 is not ready for Reviewer.** The user-authorized rehearsal was attempted against exactly one disposable stack, then cleaned up. CloudFormation accepted `CreateStack`, but the caller could not create the disposable Lambda execution role or KMS key required for Cognito to accept `LambdaConfig.CustomEmailSender`. The rehearsal therefore never reached an `UPDATE_IN_PROGRESS` or a valid before/after pool comparison. No CLI-only substitute was run.
 
@@ -429,3 +437,100 @@ aws: [ERROR]: An error occurred (NoSuchEntity) when calling the GetRole operatio
 ```
 
 No resource from this attempt remains. The KMS resource had no physical id and failed before creation; the pool and role are confirmed absent. Files changed by this continuation: `docs/specs/auth/forgot-password-delivery/execution.md` only. The temporary rehearsal templates were removed. `tasks.md` was intentionally not changed and T-5 remains `[~]`. A scoped IAM grant for the disposable Lambda/KMS prerequisites, or operator credentials with those permissions, is required before T-5 can become Reviewer-ready.
+
+### T-5 (continued) — the rehearsal ran, 2026-09-24. Clause 4 closes.
+
+**Status change: `[~]` → `[x]`.** The blocker was permissions, not design. A scoped IAM grant (CloudFormation on `accelerate-tz-dev-rehearsal-*` only) was requested, granted, and verified by the Leader with a throwaway probe stack before any real work. All four Done-when clauses are now met.
+
+> ⚠️ **The grant request itself produced a finding worth keeping.** The first attempt was rejected by IAM's **2048-non-whitespace-character limit, shared across *all* inline policies on a user** — the budget was already nearly spent. The fix is a **customer-managed policy** (6144 chars, separate budget), not a shorter inline one. The policy was also compacted to **297 non-whitespace characters** (measured) by collapsing eleven scoped CloudFormation actions into `cloudformation:*` **on the same scoped resource ARN** — no widening, since the resource constraint is what bounds it.
+
+#### What was rehearsed, and why this shape
+
+Stack `accelerate-tz-dev-rehearsal-t5` — a **Cognito-pool-only** template, carrying the real `EmailConfiguration` + branded `VerificationMessageTemplate`. No RDS, secrets, KMS, Lambda or IAM: none is needed for the question, and the grant deliberately does not cover them.
+
+1. Deploy the pool → `CREATE_COMPLETE`.
+2. **Apply the live drift out-of-band**, via direct `update-user-pool` outside CloudFormation — the step that makes it a rehearsal rather than a fresh-pool test.
+3. **Verify the drift actually landed** before proceeding: the rehearsal pool's `EmailConfiguration` and `AdminCreateUserConfig` were confirmed **byte-identical to the committed `pool-before.json`**. ⚠️ This check is load-bearing — *a rehearsal whose drift silently failed to apply reports a reassuring no-op and proves nothing* (KZ-002). It was required in the brief for that reason.
+4. Redeploy the template over the same stack → `UPDATE_COMPLETE`.
+5. Full key-by-key before/after diff.
+6. Delete the stack.
+
+#### Result — §6's enumeration moves from reasoned to measured
+
+CloudFormation's `UpdateUserPool` reset **exactly the two (c)-class settings and nothing else**:
+
+| Key | Before (drifted) | After | Predicted? |
+|---|---|---|---|
+| `EmailConfiguration` | `DEVELOPER` + SES `SourceArn` + branded `From` | `COGNITO_DEFAULT` | ✅ §6 (c) |
+| `AdminCreateUserConfig.InviteMessageTemplate` | branded invite HTML | **gone** | ✅ §6 (c) |
+
+Every (a)-class row also survived untouched — `Policies`, `AutoVerifiedAttributes`, `SchemaAttributes`, `MfaConfiguration`, `AccountRecoverySetting`, `VerificationMessageTemplate`, `UserPoolTier`, `KeyConfiguration`, `IssuerConfiguration`, `UserAttributeUpdateSettings`, `UserPoolTags`, `UsernameAttributes`, `LambdaConfig`.
+
+> ⚠️ **What that does and does not establish — this paragraph originally overstated it and the Reviewer was right to reject the claim.** The rehearsal pool was created **from this same template**, so every omitted property already sat at the AWS default *by construction*, and only the two (c) settings were ever drifted. The (a) rows therefore **could not have done anything but survive** — the observation is identical under the hypothesis that any (a) label is wrong about the real pool, so it discriminates nothing. **The two (c) resets are measured. The (a) enumeration remains reasoned.** What would measure it: drift an (a) property away from its default (e.g. `MfaConfiguration: ON`) and see whether the template-composed update resets it — not done. `DeletionProtection` is deliberately absent from the list above: it was the **forcing change**, explicitly set in the update template, so it is evidence about nothing. D-5's **mechanism** is now demonstrated (twice); D-5's classification is not.
+
+#### ⚠️ The headline: the T-6 blocker does not exist
+
+The `COGNITO_DEFAULT` + `VerificationMessageTemplate.EmailMessage` combination — which the previous entry flagged as a probable hard failure on T-6's deploy — **is accepted.** Confirmed two independent ways:
+
+- **Through CloudFormation** (the Implementer): both `create-stack` and `update-stack` carried both settings and reached `CREATE_COMPLETE` / `UPDATE_COMPLETE`, template intact, no silent stripping.
+- **Through the raw API** (the Leader, independently): `cognito-idp create-user-pool` with `EmailSendingAccount: COGNITO_DEFAULT` and a custom `EmailMessage`/`EmailSubject` returned a pool whose template survived **verbatim**. Pool deleted immediately.
+
+`aws cognito-idp update-user-pool help` says *"You can set an `EmailMessage` template only if the value of `EmailSendingAccount` is `DEVELOPER`."* **On `UpdateUserPool` — the API the quote governs, reached the way T-6 reaches it — the constraint is not enforced.** design.md §6 is corrected accordingly; T-6 is not blocked on this.
+
+> **Two limits on that retraction, since the person who raised the alarm also wrote the retraction.** (i) The Leader's independent check used `create-user-pool`, a **different API** — it guards against operator error, it is not a second test of the same rule; the CloudFormation `update-stack` is the one that actually refutes it. (ii) The quoted constraint also covered `InviteMessageTemplate`, and **that half was never exercised in the violating direction** — in the rehearsal it was set while `EmailSendingAccount` was `DEVELOPER`, which satisfies the constraint rather than testing it.
+
+> **The transferable lesson, worth more than the answer.** The concern was raised from documentation and refuted by measurement — and **this spec cites that same CLI help as the authority for seven of §6's rows** — while three others explicitly record that it does *not* support them. *(The first draft of this sentence said "fifteen", which is the count of (a)-class bullets in `template.yaml`, not the count resting on the help. The Reviewer caught it; both counts were then re-run independently and disagreed at first — 6 vs 7 — because one row cites `aws cognito-idp update-user-pool help` without using the words "CLI help". Seven is right. A false number inside the sentence warning against unverified vendor claims is the whole lesson in miniature.)* The CLI help is a claim about AWS, not a measurement of it. Candidate for the kaizen log at archive: *vendor documentation is a third-party claim under KZ-011, not a primary source.*
+
+#### ⚠️ A second finding nobody predicted — and it is T-6's
+
+Redeploying the **unchanged** template returned:
+
+```
+An error occurred (ValidationError) when calling the UpdateStack operation: No updates are to be performed.
+```
+
+**CloudFormation diffs template *text*, not live resource state.** Since T-5 wrote zero new properties, a redeploy of the T-5 template would never invoke `UpdateUserPool` at all — the reset is **dormant until a template property changes**. The change that fires it is **T-6's `LambdaConfig` addition**. So the two (c)-class resets above are not a hypothetical: they land on the live pool, with 3 real accounts, on T-6's deploy, and that deploy is the first that will.
+
+To reach step 4 at all the Implementer substituted a one-property forcing change (`DeletionProtection: INACTIVE`, already the default, so inert) — declared, and the correct call: it exercises the same recomposition mechanism without needing the Lambda/KMS permissions the grant excludes. **It is not a byte-for-byte rehearsal of T-6's specific change**, and that residual is recorded rather than glossed.
+
+#### A stated residual that turned out false — reported rather than quietly kept
+
+The brief predicted the live SES `EmailConfiguration` could not be reproduced, since the identity (`j.cadavid@cgiar.org`) was torn down. **It reproduced exactly** — `update-user-pool` accepted the dead identity's ARN, so Cognito does not validate SES-identity existence at config-write time. The Implementer flagged the false premise instead of banking an unearned residual. What genuinely remains untested is whether Cognito could *send* through a dead identity — a delivery question, and **T-7's**, not T-5's.
+
+#### Safety — verified by the Leader after the fact, not taken on report
+
+| Check | Result |
+|---|---|
+| Live pool `eu-west-1_eKINGUN3I` | **3 users, `LastModifiedDate` 2026-07-17** — identical to the pre-rehearsal baseline |
+| Stack `accelerate-tz-dev-data-auth` | `UPDATE_COMPLETE`, last updated **2026-08-05** — pre-dates this session |
+| Rehearsal stacks remaining | **none** (`Stacks[?contains(StackName,'rehearsal')]` → `[]`) |
+| Probe/api-check pools | deleted; `ResourceNotFoundException` on lookup |
+| Working tree after the rehearsal | clean — the Implementer changed no files |
+
+No command against the live pool or the real stack was anything but `describe-*`.
+
+#### Carried to T-6 — three things, not two
+
+1. **The deploy WILL reset `EmailConfiguration` → `COGNITO_DEFAULT` and drop `InviteMessageTemplate`.** Measured, not predicted. Both are intended (each is another spec's decision landing at last), but the operator must not be surprised.
+2. **`pool-after.json` is T-6's artefact**, deliberately not written here — committing a throwaway pool's capture under that name would collide with the live before/after T-6 owes. (`tasks.md` lists it under T-6's Files, correctly.)
+3. **The provenance correction stands:** the branded `VerificationMessageTemplate` is *not* this spec's T-4. It predates this spec and was live on 2026-07-17.
+
+#### Two decisions taken at closure, both the user's
+
+**1. The harder rehearsal will NOT be pursued — T-7 covers it better.** A concurrent session (see the KZ-010 note above) attempted to rehearse **T-6's actual change** — setting `LambdaConfig.CustomEmailSender` — and failed on `UnauthorizedTaggingOperation` for KMS. Running it would need IAM-role, KMS and Lambda permissions beyond the CloudFormation grant. Put to the user, who declined, and the reasoning is worth keeping: the remaining unknown is whether *adding the trigger* breaks something, and **T-7 tests that far more strongly than any rehearsal can** — with a real reset, a real inbox and a real code. A rehearsal would prove the deploy succeeds; T-7 proves a human got the email. Recorded as an accepted residual, not as coverage.
+
+> ⚠️ **A correction the Leader owes the record.** Asked whether the extra IAM/KMS/Lambda permissions were necessary, the Leader answered **no**, having verified the Cognito-only rehearsal needed none. That was true of *that* rehearsal and **false as a general claim** — those permissions are exactly what rehearsing T-6's change requires, which is why the concurrent session asked for them. The answer was right about the experiment it had in mind and wrong about the question as asked. Had the concurrency been visible, the two designs would have been reconciled instead of one silently answering for both.
+
+**2. Concurrency: the other sessions are being closed.** Two further AKILI sessions were open on this checkout. The user is closing them so a single session owns the spec, per root `CLAUDE.md` § Concurrency protocol.
+
+#### For `/akili-archive` — kaizen candidates from this task
+
+- **KZ-010, 4th recurrence.** Two sessions executed T-5 in one checkout, in parallel, neither aware of the other; found by accident, not by any gate. Previous recurrences each ended "still unenforced". ⚠️ **New in this instance: the collision produced a *wrong answer to the user*, not just a messy ledger** — the Leader told the user a permission set was unnecessary while the other session was blocked for want of exactly it. A concurrency defect crossed into advice.
+- **A new lesson, candidate: vendor documentation is a third-party claim under KZ-011, not a primary source.** The CLI help was cited as authority for seven classification rows and raised a false T-6 blocker; a two-minute measurement refuted it. Distinct from KZ-008 (that is about *this repo's* artefacts) — this is about trusting an *external* authority's description of its own behaviour.
+- **KZ-005/KZ-011 again, and at the worst possible site:** the false count ("fifteen" for seven) landed *inside* the sentence warning against unverified claims, in the Leader's ledger — the surface KZ-011 says nothing audits. It took a fifth Reviewer round to catch. Of this task's ten total findings, **nine were in Leader- or prose-authored text and one was in the audit's substance.**
+
+#### Closure
+
+All four Done-when clauses met: `pool-before.json` committed · every divergent setting decided in writing · the template carries the decided values (there were none to carry, and that conclusion survived a deliberately hostile re-read) · the throwaway-pool rehearsal performed and recorded. **T-5 → `[x]`.**
+
+**T-6 inherits:** the two (c)-class resets will land on the live pool on its deploy, measured not guessed; the `No updates are to be performed` behaviour means its `LambdaConfig` addition is the change that fires them; the `COGNITO_DEFAULT` concern is refuted and must not be re-raised; `pool-after.json` is its artefact; and the branded `VerificationMessageTemplate` is **not** this spec's T-4.
