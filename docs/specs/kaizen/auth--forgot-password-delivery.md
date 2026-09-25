@@ -61,7 +61,7 @@
 | Target | `docs/specs/general-setup/task.md` |
 | Edit | Under Testing & Verification: **"`git stash` cannot show a failure is pre-existing on a branch with commits — it shelves only the working tree. Check out the default branch and re-run; that is the only answer that distinguishes 'not from my diff' from 'not from this branch'."** |
 | Severity | High |
-| Status | **applied (2026-09-25)** — both documented commands were run before documenting them: `run-tests.sh` 51/51, `custom-email-sender` 59/59. |
+| Status | pending |
 
 ### P2
 
@@ -122,4 +122,4 @@
 | Target | root `CLAUDE.md` + `AGENTS.md`, § Verification commands |
 | Edit | The `infra/` row names only `validate.sh` and is now materially incomplete — **two further gates exist in `infra/` and an agent following the table runs neither**: `./infra/scripts/tests/run-tests.sh` (51 cases, the account-id and profile guards) and `cd infra/10-data-auth/functions/custom-email-sender && npm test` (59 tests). Add both rows. |
 | Severity | **High** — the verification table is the one thing agents execute verbatim, and one of the omitted gates is what caught this spec's own shipped violation of another spec's requirement. |
-| Status | pending |
+| Status | **applied (2026-09-25)** — ⚠️ applied on the spec branch at the product owner's explicit instruction, overriding the archive's branch gate (see P6). **Both documented commands were run before being documented**: `run-tests.sh` 51/51, `custom-email-sender` 59/59 — documenting a command without running it is the defect this row exists to fix. |
