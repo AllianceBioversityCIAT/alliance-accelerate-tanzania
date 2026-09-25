@@ -90,7 +90,21 @@ function resetEnv() {
   }
 }
 
-const KEY_ARN = 'arn:aws:kms:eu-west-1:111111111111:key/00000000-0000-0000-0000-000000000000';
+// Account id (`111111111111`) and the UUID's trailing group are both
+// deliberately allow-listed 12-digit fixtures (validation-report.md B-1) —
+// `infra/scripts/tests/lib/account-id-scan.sh` scans every exactly-12-digit
+// run under `infra/`, ARN structure or not, so a UUID's trailing group is as
+// visible to it as an account id would be. This used to end the UUID with
+// a run of twelve zeroes — one digit off the allow-listed
+// `000000000001` and not itself allow-listed, which is why the gate was
+// red (⚠️ deliberately not spelled out as a literal here: doing so would
+// plant a fresh unlisted 12-digit run in this very file, the exact trap
+// that guard's own header warns about). RENUMBERED to `000000000001` (an
+// existing allow-listed id) rather than adding a new entry to that file's
+// allow-list: `infra/scripts/` is out of scope for this fix, and this
+// fixture's exact digits carry no meaning to assert on — any allow-listed
+// 12-digit run does equally well.
+const KEY_ARN = 'arn:aws:kms:eu-west-1:111111111111:key/00000000-0000-0000-0000-000000000001';
 const SECRET = {
   rabbitmqUrl: 'amqp://broker-user:broker-pass@broker.example.com:5672',
   apiKey: 'test-microservice-api-key',

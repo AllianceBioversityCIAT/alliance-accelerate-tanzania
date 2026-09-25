@@ -132,12 +132,12 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
 | FR-5 — full config read, composed from it | T-5 |
 | FR-5 `AND IT MUST` — before/after comparison | T-5 + T-6 (the two artefacts) |
 | FR-5 `BUT it must NOT` — not by hand | T-6 (goes through `10-data-auth`) |
-| FR-5 — reversible | ⚠️ **(B) NOT SATISFIABLE.** design.md DD-4: with SES excluded permanently, no rollback restores current behaviour. Recorded as an accepted limitation, not as coverage. |
+| FR-5 — reversible, `AND IT MUST` (⚠️ **split 2026-09-25, validation-report.md B-3** — this row previously marked the whole clause `(B) NOT SATISFIABLE`, over-declaring the half that is met) | **Two halves, opposite verdicts — not (A) or (B), a plain split.** *"…without data loss"* — ✅ **Met.** Removing the trigger loses no data, and the `EmailConfiguration` flip is `enhancement/email-notification-microservice` Phase B's decision landing regardless of this spec (T-5 established this; `pool-after.json` already shows `COGNITO_DEFAULT`), so the loss is not attributable to this spec alone. *"…restore the prior behaviour"* — ⚠️ **(B) NOT SATISFIABLE.** design.md DD-4: with SES excluded permanently, no rollback restores current behaviour. Recorded as an accepted limitation, not as coverage; `judgment.md` R2-6 named this gap and is now disposed at `design.md` §10. |
 | NFR-1 — code and address never logged | T-4 |
 | NFR-2 — work completes before return | T-4 (no reply awaited; nothing in flight at return) |
 | NFR-3 — links from configuration | T-2 |
 | NFR-4 — KMS key and the three policies | T-3 |
 | NFR-5 — `DEPLOY_INFRA` defaults to `false`, stated | §1 and T-6's disqualifier, in those words |
-| NFR-6 — latency budget | ⚠️ **(B) Not applicable under this design.** The budget existed to bound an awaited reply, which `proposal.md` §12.1 removed. The function publishes and returns; no user-visible wait is introduced. Recorded rather than silently dropped. |
+| NFR-6 — latency budget | ⚠️ **Applicable — corrected 2026-09-25 (validation-report.md B-2).** This row previously read *"(B) Not applicable … no user-visible wait is introduced,"* which `design.md` §10's own C-7 disposition refutes four lines away: dropping the awaited reply removed the largest *consumer* of the wait, not the function from the request path — `ForgotPassword` still blocks on this invocation. Budget recorded at `design.md` DD-3a (T-7's measured ≈2.55 s cold-path latency, against Cognito's trigger ceiling — a ceiling of unknown size, never against this function's own `Timeout: 15`). T-7 (owner). |
 
 **(A)** = closed by unchanged existing behaviour · **(B)** = declared gap, not coverage.

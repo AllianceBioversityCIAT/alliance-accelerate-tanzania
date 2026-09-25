@@ -7,7 +7,7 @@
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Depth | **Full** — auth surface, a customer-managed KMS key, a pool-wide configuration change against live accounts, and a new deployable unit |
 | Type | Change |
-| Status | Draft — awaiting approval |
+| Status | ⚠️ **Corrected 2026-09-25 (validation-report.md W-7).** Was `Draft — awaiting approval`, stale since `execution.md` records five user approvals and a completed deploy. **Approved 2026-09-23** (`proposal.md` §12.1 — the user chose Path 1, simplified) — **deployed to DEV 2026-09-25**, all 7 tasks in `tasks.md` §4 marked `[x]`. |
 | Approval Mode | gated |
 | Branch | `feat/forgot-password-delivery` |
 | Parent | `auth/account-access-emails` (ATP-71) Phase 2 — FR-6, NFR-5 |
@@ -139,7 +139,7 @@ Activating the trigger requires `UpdateUserPool`, which **silently resets any pa
 - **THEN** the full configuration MUST be read first and the update composed from it
 - **AND IT MUST** be verified afterwards by comparing the complete before/after configuration
 - **BUT it must NOT** be applied by hand against the console or an ad-hoc CLI call — it goes through `10-data-auth`
-- **AND IT MUST** be reversible: removing the trigger must restore the prior behaviour without data loss
+- ~~**AND IT MUST** be reversible: removing the trigger must restore the prior behaviour without data loss~~ — ⚠️ **ANNOTATED 2026-09-25 (validation-report.md B-3).** Struck rather than deleted, per this document's own FR-6 convention, so `judgment.md` R2-6's citation still resolves. `design.md` DD-4 states plainly that *"there is no rollback that restores current behaviour"* — with SES excluded permanently, removing the trigger lands on Cognito's `COGNITO_DEFAULT`, not on today's SES. **The clause has two halves, and only one is unmet:** *"without data loss"* **is met** — removing the trigger loses no data, and the `EmailConfiguration` flip to `COGNITO_DEFAULT` is `enhancement/email-notification-microservice` Phase B's decision landing, not this spec's — it happens with or without this spec, so the loss it causes is not attributable here. *"Restore the prior behaviour"* **is not met**, and `design.md` DD-4 calls it impossible under the standing decision to exclude SES permanently, not merely undone. `tasks.md` §5 records this split; `judgment.md` R2-6 (round 2, raised against the design this spec later replaced) named the same gap and had gone undisposed until `design.md` §10's R2-6 addendum, added alongside this correction.
 
 ### ~~FR-6: Cognito's own reset path is closed off~~ — **STRUCK 2026-09-23**
 
@@ -191,7 +191,7 @@ It existed only for Path 2, which replaced Cognito's flow. **Path 1 keeps that f
 | FR-2 | Unrecognised trigger source fails loudly | D-1, D-7 |
 | FR-3 | The reset remains code-based | — |
 | FR-4 | Delivery is best-effort; nothing claims otherwise | D-6 |
-| FR-5 | Pool change is deliberate and reversible | D-5 |
+| FR-5 | Pool change is deliberate; reversible **without data loss only** — restoring prior behaviour is not satisfiable (⚠️ **corrected 2026-09-25, validation-report.md B-3**; see §6 FR-5's struck clause and DD-4) | D-5 |
 | ~~FR-6~~ | ~~Cognito's own reset path closed off~~ — struck; Path 1 keeps that flow | — |
 | NFR-1 | Code and address never logged | D-2 |
 | NFR-2 | Work completes before the function returns | D-6 |

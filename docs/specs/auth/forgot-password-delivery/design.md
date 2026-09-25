@@ -6,7 +6,7 @@
 |---|---|
 | Spec path | `docs/specs/auth/forgot-password-delivery` |
 | Depth | Full |
-| Status | Draft — awaiting approval |
+| Status | ⚠️ **Corrected 2026-09-25 (validation-report.md W-7).** Was `Draft — awaiting approval`, unchanged since this document's creation despite five recorded user approvals in `execution.md` (Path 1 chosen, `proposal.md` §12.1, 2026-09-23; the all-or-nothing `PublicAppBaseUrl` widening; the round-3 HALT-protocol authorization; the round-3 clause-deletion choice; declining the harder rehearsal) and a completed deploy. **Approved 2026-09-23** (`proposal.md` §12.1 — the user chose Path 1, simplified) — **deployed to DEV 2026-09-25**, all 7 tasks in `tasks.md` §4 marked `[x]`. |
 | Decision | `proposal.md` §12.1 — Path 1, simplified. SES is excluded from every layer, permanently. |
 | Requirements | `requirements.md` FR-1…FR-5 (FR-6 struck), NFR-1…NFR-6 |
 | Supersedes | `design.superseded-option-a.md` (round 1) and the Option B design it replaced |
@@ -141,7 +141,7 @@ The split follows the repo's existing convention rather than inventing one: `20-
 | **T-4** | `kms:Decrypt`, via the function's `Policies:` block | the **function's role** |
 | **T-4** | `lambda:InvokeFunction` for `cognito-idp.amazonaws.com` | the **function's resource policy** |
 
-**The deploying principal is a parameter, not a hardcode.** Today it is `arn:aws:iam::569113802249:user/cognito_csicap` (measured), but a pipeline run may assume a role instead. A template that hardcodes a developer's user ARN silently fails the day CI deploys it.
+**The deploying principal is a parameter, not a hardcode.** ⚠️ **Re-tensed 2026-09-25 (validation-report.md B-1):** this sentence read *"Today it is `…/cognito_csicap` (measured)"* — present tense, undated, with `(measured)` strengthening rather than qualifying it. **It measured a different user each of the two times anyone looked**: `…/cognito_csicap` at T-3 (2026-09-23) and `…/cristian.gamboa` on T-6's real deploy (2026-09-25, `execution.md` T-6). That is not drift — **it is the parameter doing its job**, and it is the whole argument for DD-6 removing the `Default`. A pipeline run may assume a role instead again. A template that hardcodes a developer's user ARN silently fails the day CI deploys it.
 
 ⚠️ **T-3 therefore cannot fully satisfy NFR-4 alone, and must say so** rather than reporting the requirement closed. Its `Not Done` must name the two policies T-4 owes.
 
@@ -197,6 +197,17 @@ The cost is a TLS+AMQP handshake per reset. For a flow that runs a handful of ti
 
 ⚠️ **`id` and `reply_to` must be absent.** That spec's FR-2 records it as deliberate: an `id` without a `reply_to` makes the microservice attempt an RPC reply nothing consumes. `proposal.md` §12.1 dropped the awaited reply, so this stays absent.
 
+#### NFR-6's latency budget lives here, beside the decision that spends it (validation-report.md B-2)
+
+**Corrected 2026-09-25.** `tasks.md` §5 had booked NFR-6 as *"(B) Not applicable … the function publishes and returns; no user-visible wait is introduced."* **That is refuted by this section, four lines up, in this same document:** dropping the awaited microservice reply removed the largest *consumer* of the wait; it did not remove the function from the request path. `ForgotPassword` still blocks on this invocation, which is *why* the two items below are `OPEN` in §10's C-7 disposition rather than dissolved with it:
+
+- **Cognito enforces a non-configurable ceiling on the trigger invocation itself.** Its value is **not documented by AWS as far as this spec has established** — no cited source states a number, and none is measured (T-7's manual check confirmed the invocation completed and was not retried, which bounds it from below by the observed duration and says nothing about where the ceiling actually sits). Say what is known and stop there, rather than inventing a figure: **unknown, but real** — Cognito's own retry-on-timeout behaviour (§10, C-7) is the evidence it exists at all.
+- **The function's own `Timeout: 15` is irrelevant to this budget**, stated in bold at §10 C-7 for exactly this reason: a Cognito ceiling below 15 s means Cognito can abandon the invocation while the Lambda keeps running, so dividing a measured latency by `Timeout: 15` (`execution.md`'s corrected T-7 entry) computes a percentage of the wrong ceiling.
+
+**The one datum this spec has, per `mail/mail-timing.ts`'s discipline that a timing budget belongs in one place — this is that place — **the canonical home**. `tasks.md` §5's NFR-6 row and `execution.md`'s corrected T-7 entry both cite the figure and both point here; neither is authoritative and neither is updated if it changes. *(This clause previously claimed the number appeared nowhere else in the spec. It appears in both of those files and three times in `validation-report.md` — a self-referential uniqueness claim published without the grep that would have checked it, the sixth of that exact class here. Deferral is the true and stronger discipline; uniqueness was neither.)*:** T-7's CloudWatch measurement against the real deploy, `Duration: 1953.61 ms | Init: 598.71 ms`, **≈2.55 s of cold-path latency this spec introduces against Cognito's trigger ceiling** — a ceiling of unknown size, not against this function's own 15 s.
+
+**What DD-3a buys and costs, stated plainly:** connect-per-invocation buys freeze-safety — nothing outlives the invocation, so nothing can be frozen mid-publish by a re-used, half-open connection (the `fix/otp-mail-lambda-freeze` hazard). It costs **~0.6 s of cold `Init`** (the AWS Encryption SDK and `amqplib` loading fresh every time) **plus a fresh TLS+AMQP handshake, both incurred inside the user's request** rather than amortised across invocations. For a flow that runs a handful of times a month, against an unknown-but-nonzero Cognito ceiling, that trade is accepted — but accepted **with the number written down**, not with the applicability of the requirement itself denied.
+
 ### DD-3b — The secret is reached by a **parameterised** name
 
 `MailMicroserviceSecret` is named `!Sub "${AWS::StackName}-mail-microservice-secret"` — and that `AWS::StackName` is **`20-backend`'s**, not this stack's. So the function cannot construct the name from its own context.
@@ -220,6 +231,25 @@ The cost is a TLS+AMQP handshake per reset. For a flow that runs a handful of ti
 ⚠️ **With a `Condition`, because the parameter defaults to empty.** An empty value composes a malformed ARN (`…:userpool/`), so `SourceArn` is set **only when the parameter is non-empty** (`!If [HasCustomEmailSenderUserPoolId, <arn>, !Ref "AWS::NoValue"]`).
 
 That makes the pre-T-6 state an unscoped-but-inert permission on a function no pool invokes yet, and the post-T-6 state correctly scoped — **provided T-6 wires the parameter**, which DD-2c already obliges it to do for two other reasons. T-6 now has three.
+
+### DD-6 — `CustomEmailSenderKmsGrantPrincipalArn` gets NO `Default` at all, not `Default: ""` (validation-report.md B-1)
+
+**Written 2026-09-25, remediating a red gate this spec shipped and its own `execution.md` misdiagnosed as pre-existing** (see that ledger's corrected entry). T-3's `Default` hardcoded both the real AWS account id and the ARN of whichever developer happened to run `sam deploy` that day — `arn:aws:iam::569113802249:user/cognito_csicap` — five lines beneath a `Description` arguing, in the parameter's own words, against exactly that shape (*"a template that hardcodes today's developer user ARN would silently stop granting the right principal"*). It tripped `guard-account.no-account-id-literal-in-infra`, the gate `requirements.md` FR-3′ of a different, already-shipped spec exists to enforce (*"no account id be versioned under `infra/`"*).
+
+**Two options, weighed against where this parameter is used** — the KMS key's `KeyPolicy`, `AllowDeployingPrincipalToCreateGrantForCognito` (§4 above), which references it **unconditionally**, unlike `CustomEmailSenderUserPoolId`'s `SourceArn` use in DD-5b:
+
+| Option | Verdict |
+|---|---|
+| `Default: ""` + a `Condition` omitting the `AllowDeployingPrincipalToCreateGrantForCognito` statement when empty (mirroring DD-5b's `HasCustomEmailSenderUserPoolId` pattern) | ❌ **Rejected.** DD-5b's pattern is safe there because an inert `SourceArn` costs nothing — no pool invokes the function yet. **This statement is the only thing that lets ANY principal call `kms:CreateGrant` on this key beyond the account root.** Omitting it silently removes Cognito's *only* path to a grant: no changeset error, no deploy failure — the stack updates cleanly, and the **first live password reset fails instead**, invisibly to every suite here (all mock the AWS clients). That is exactly the silent-failure class DD-2 (§5) already rejects for the unhandled-`triggerSource` set, on the same reasoning: a gap that fails quietly is worse than one that fails loud. Argued hard against, per the finding's own instruction, and rejected on that basis. |
+| **No `Default` at all** (Type: String, nothing else) | ✅ **Chosen.** CloudFormation then requires a value for this parameter on any changeset that would otherwise omit it. Fail-closed, matches the parameter's own stated intent, and removes the literal entirely rather than replacing it with a different placeholder. |
+
+**The consequence check the finding demanded, not assumed:**
+
+- **`infra/scripts/deploy.sh` is unaffected.** It resolves this parameter (`sts get-caller-identity`, or an operator override) and passes it in `--parameter-overrides` **unconditionally**, every run (script §"Resolve CustomEmailSenderKmsGrantPrincipalArn…", `--parameter-overrides` block) — it never relied on the template's `Default` in the first place, Default present or not.
+- **A bare `sam deploy` (no `--parameter-overrides`) against the ALREADY-EXISTING live stack `accelerate-tz-dev-data-auth` is also unaffected — checked in SAM CLI's own source, not assumed.** Installed locally: `aws-sam-cli` 1.166.2. `samcli/commands/deploy/deploy_context.py::merge_parameters` (lines 376–403) builds, for **every** template parameter, `{"ParameterKey": key, "UsePreviousValue": True}` whenever that key is absent from `--parameter-overrides` — **regardless of whether the template declares a `Default`**; `Default` never enters this function at all. `samcli/lib/deploy/deployer.py::create_changeset` (lines 217–232) then, for an **UPDATE** (`self.has_stack(stack_name)` true), keeps that `UsePreviousValue: True` entry as long as the `ParameterKey` is already among the stack's `get_template_summary` parameters — which it is, since the *parameter itself* (not its `Default`) has existed since T-3. **So the changeset carries `UsePreviousValue: True` for this parameter and CloudFormation reuses whatever value the stack already has.** Confirmed against the live stack (read-only `describe-stacks --profile IBD-DEV`, permitted under this task's constraints): the current value is `arn:aws:iam::569113802249:user/cristian.gamboa` — a **real** principal that `deploy.sh` set on the last deploy, not the removed `Default`'s `cognito_csicap` — independent proof the `Default` was already dead weight in practice, exactly as the finding argued.
+- **Only a genuinely first deploy of this stack — no prior `CREATE_COMPLETE`, and no explicit override — is newly refused.** `deployer.py` lines 217–222: for a **CREATE** changeset, every `UsePreviousValue: True` entry is filtered out before the call (*"When creating a new stack, UsePreviousValue=True is invalid"*), so the parameter is omitted from what CloudFormation receives, and CloudFormation's own parameter validation then rejects the changeset for want of a required value with no `Default` — loud, at changeset-creation time, before anything is provisioned. That is the fail-closed behaviour DD-6 chose, and it is **strictly safer** than what shipped: the removed `Default` would have let that same bootstrap deploy succeed silently while granting the wrong principal.
+
+**Why not the same `Default: ""` shape `CustomEmailSenderUserPoolId` and `CustomEmailSenderPublicAppBaseUrl` use:** both of those are read by the **function at invocation time** and degrade explicitly on empty — one is inert-by-design pre-T-6 (DD-2c), the other throws inside `getPublicAppBaseUrl()` rather than emitting a malformed link (validation-report.md B-4's addendum). This parameter is consumed by the **key policy at deploy time**, with no equivalent runtime fallback available to it — the KeyPolicy option above shows why manufacturing one here costs more than it buys.
 
 ## 5. Which emails the function handles — resolving round-1 C-6
 
@@ -392,7 +422,15 @@ That is the right trade for NFR-2 and it stands. But it means the open half of C
 
 **Nothing in this repository can close it** — every AWS client is mocked. It goes to **T-7**, whose instructions now carry one more question: watch for a **timed-out trigger** and for a **duplicate** reset email, not only for a delivered one.
 
-*(NFR-6's latency budget, C-7's third strand, is separately and correctly disposed of in `tasks.md` §5 as a declared `(B)` — not applicable once no reply is awaited.)*
+*(⚠️ **Corrected 2026-09-25 (validation-report.md B-2) — the sentence this replaces was itself wrong.** It read: "NFR-6's latency budget, C-7's third strand, is separately and correctly disposed of in `tasks.md` §5 as a declared `(B)` — not applicable once no reply is awaited." **Not applicable is false, and this very table shows it four rows up**: the two `OPEN` rows above exist only because `ForgotPassword` blocks on this invocation. Dropping the awaited reply removed C-7's first strand; it did not remove the function from the request path, so it cannot have dissolved the third along with it. NFR-6 is applicable — its budget is recorded at DD-3a, above §4, beside the decision that spends it.)*
+
+### R2-6 — never disposed, added here 2026-09-25 (validation-report.md B-3)
+
+**This table disposes of round 1's fourteen findings only.** `judgment.md` round 2, run against the Option B design this spec later abandoned, confirmed one more that survived the route change back to Path 1 and was never added to any disposition table since — not here, not in `tasks.md`. Per root `CLAUDE.md`'s Correction Closure convention and this file's own B-4 precedent: append below, do not renumber or edit `judgment.md`'s findings.
+
+| # | Finding (verbatim, `judgment.md:104`) | Disposition |
+|---|---|---|
+| **R2-6** | *"C-5's rollback half is silently gone. The superseded design had an Observability & Rollback section; this one has no rollback text at all, while FR-5 still requires reversibility — and the `EmailConfiguration` divergence the design itself documents means rollback still lands on `COGNITO_DEFAULT`, worse than the pre-spec state. The ledger now reads as resolved."* | **Still open, and it is exactly DD-4 above (§6).** DD-4 states the rollback limitation in this Path 1 design — *"there is no rollback that restores current behaviour"* — so the round-2 design's *silence* is fixed here, but the underlying gap R2-6 named is not: rollback genuinely does not restore current behaviour, under either design. `requirements.md` FR-5's `AND IT MUST be reversible` clause carried this unstruck and unannotated through both designs; corrected 2026-09-25 alongside this entry (validation-report.md B-3) — see that document's FR-5 annotation and `tasks.md` §5's split coverage row. |
 
 ---
 

@@ -107,12 +107,26 @@ Parameters:
       the other.
       This is a PARAMETER, not a hardcoded ARN, because the identity that
       deploys this stack is not fixed: today an interactive operator
-      deploys with IBD-DEV credentials as the IAM user below (measured
-      2026-09-23), but a CI/pipeline run may instead assume an IAM ROLE -
-      a template that hardcodes today's developer user ARN would silently
-      stop granting the right principal, and thus silently break every
-      password reset, the day a pipeline deploys it instead of a person.
-    Default: "arn:aws:iam::569113802249:user/cognito_csicap"
+      deploys with IBD-DEV credentials as some IAM user (a different one
+      each time someone else runs the deploy - measured twice, 2026-09-23
+      and again 2026-09-25, two different users), but a CI/pipeline run
+      may instead assume an IAM ROLE - a template that hardcodes any one
+      developer's user ARN would silently stop granting the right
+      principal, and thus silently break every password reset, the day
+      anyone else - a pipeline or a different operator - deploys it.
+      NO DEFAULT (validation-report.md B-1, DD-6): an earlier revision of
+      this parameter DID hardcode the account id and the first-measured
+      user's ARN as a `Default`, directly beneath the five lines above
+      arguing against exactly that shape - it was dead weight from the day
+      DD-2c's deploy.sh wiring landed (that Default is never read by any
+      deploy path in this repo), it tripped
+      `guard-account.no-account-id-literal-in-infra`, and had it ever been
+      read it would have named the wrong principal. See DD-6 for the
+      choice of NO DEFAULT over a `Default: ""` + `Condition` (design.md's
+      §4 KMS grant statement is unconditional, so that path was rejected
+      as an availability regression, not adopted quietly) and for what
+      this makes CloudFormation do on the next deploy of an
+      already-existing stack versus a genuinely first deploy.
 
   # ── forgot-password-delivery T-3 parameter (design.md §4/DD-2a, AMENDED by
   #    DD-2b) ─────────────────────────────────────────────────────────────
@@ -620,9 +634,19 @@ Resources:
       # resolves the CustomEmailSenderUserPoolId parameter from THIS
       # stack's own UserPoolId output, so the Key's condition and the
       # invoke permission's SourceArn are correctly scoped once this same
-      # deploy has run once before (or, on a genuinely first deploy, both
-      # parameters fall back to their inert defaults and are re-wired
-      # correctly on the NEXT run - see deploy.sh).
+      # deploy has run once before (or, on a genuinely first deploy,
+      # CustomEmailSenderUserPoolId falls back to its inert empty default
+      # and is re-wired correctly on the NEXT run - see deploy.sh).
+      # ⚠️ CORRECTED 2026-09-25 (validation-report.md B-1, design.md DD-6):
+      # this used to say "both parameters fall back to their inert
+      # defaults" - CustomEmailSenderKmsGrantPrincipalArn never actually
+      # did, even before DD-6 removed its Default: deploy.sh resolves it
+      # via `sts get-caller-identity` unconditionally, on a first deploy
+      # or any other, so it was never inert. DD-6 removed that Default
+      # anyway (it hardcoded the account id and, unlike UserPoolId's, was
+      # dead weight no deploy path ever read) - a genuinely first deploy
+      # WITHOUT deploy.sh now fails closed on that parameter instead of
+      # silently naming the wrong principal.
       #
       # TWO DIFFERENT HAZARDS, TWO DIFFERENT FIXES - attempt 1 conflated
       # them into one "neither creates a CYCLE" claim; that claim is true
@@ -752,11 +776,21 @@ Resources:
   #   - LambdaConfig on UserPool above (T-6) - setting it here would
   #     activate the trigger before T-4's function exists.
   #   - Wiring either parameter's real value into `infra/scripts/deploy.sh`
-  #     (DD-2c) - both `CustomEmailSenderKmsGrantPrincipalArn` and
-  #     `CustomEmailSenderUserPoolId` are declared with defaults that make
-  #     them deployable today, but T-6 owns adding both to step 1's
+  #     (DD-2c) - AS AT T-3, both `CustomEmailSenderKmsGrantPrincipalArn`
+  #     and `CustomEmailSenderUserPoolId` were declared with defaults that
+  #     made them deployable today, but T-6 owns adding both to step 1's
   #     `--parameter-overrides`. Until then the defaults are inert (see
-  #     this task's Not Done).
+  #     this task's Not Done). ⚠️ CORRECTED 2026-09-25 (validation-report.md
+  #     B-1, design.md DD-6): `CustomEmailSenderKmsGrantPrincipalArn`'s
+  #     `Default` hardcoded the real account id, tripped
+  #     `guard-account.no-account-id-literal-in-infra`, and was removed -
+  #     it is now a REQUIRED parameter with no default at all, not an inert
+  #     one. `deploy.sh` already passed a real value unconditionally by the
+  #     time this changed (T-6, DD-2c), so nothing deployable regresses;
+  #     only a genuinely first deploy with no override now fails closed
+  #     instead of silently naming the wrong principal. See DD-6 for the
+  #     consequence check. `CustomEmailSenderUserPoolId` is unaffected -
+  #     its own empty default stays, for the different reason DD-6 states.
   # NFR-4 is therefore NOT closed by this resource alone; see this task's
   # completion report for the two policies T-4 still owes.
   #
@@ -864,6 +898,14 @@ Resources:
           # Principal is the DEPLOYING PRINCIPAL, never Cognito itself -
           # Cognito holds no static encrypt permission on any key. See the
           # "GRANT MECHANISM" comment above this resource.
+          # ⚠️ Referenced UNCONDITIONALLY here (design.md DD-6) - this
+          # statement is why `CustomEmailSenderKmsGrantPrincipalArn` has NO
+          # `Default` and is therefore a REQUIRED parameter: a `Default: ""`
+          # here would compose `Principal: {"AWS": ""}`, which either fails
+          # the changeset or, worse, silently omits Cognito's grant path -
+          # DD-6 rejected that shape. See DD-6 for the deploy-time
+          # consequence check (an existing stack's next `sam deploy`, with
+          # or without `deploy.sh`, is unaffected).
           - Sid: AllowDeployingPrincipalToCreateGrantForCognito
             Effect: Allow
             Principal:
