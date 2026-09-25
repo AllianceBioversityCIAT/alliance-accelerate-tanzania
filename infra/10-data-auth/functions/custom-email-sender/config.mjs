@@ -46,5 +46,7 @@ export function getPublicAppBaseUrl() {
     );
   }
 
-  return value.replace(/\/+$/, '');
+  let trimmed = value;
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+  return trimmed;
 }

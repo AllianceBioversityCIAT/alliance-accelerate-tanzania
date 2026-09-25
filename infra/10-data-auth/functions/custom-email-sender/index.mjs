@@ -100,7 +100,7 @@ export const MESSAGE_BUILDERS = {
 // Cognito Username/UUID, in particular — FR-1 s2's `BUT it must NOT`,
 // ATP-71's D-6 production defect approached from the other side). A UUID
 // contains no "@", so it can never match this pattern.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@.]+$/;
 
 function isEmailShaped(value) {
   return typeof value === 'string' && EMAIL_PATTERN.test(value);
