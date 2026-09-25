@@ -60,6 +60,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminResetUserPasswordCommand,
   AdminSetUserPasswordCommand,
+  AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -390,6 +391,38 @@ describe('UsersService (mocked Cognito)', () => {
       await expect(service.get('missing-sub')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  // ── FR-4: update ─────────────────────────────────────────────────────────
+  describe('update (FR-4) — admin email edits stay verified', () => {
+    function stubGetAfterUpdate(): void {
+      cognitoMock.on(AdminGetUserCommand).resolves({
+        UserAttributes: [{ Name: 'email', Value: 'new@example.com' }],
+        UserStatus: 'CONFIRMED',
+        Enabled: true,
+      });
+      cognitoMock
+        .on(AdminListGroupsForUserCommand)
+        .resolves({ Groups: [] });
+    }
+
+    it('sends email AND email_verified:"true" in the SAME AdminUpdateUserAttributes call', async () => {
+      cognitoMock.on(AdminUpdateUserAttributesCommand).resolves({});
+      stubGetAfterUpdate();
+
+      await service.update('target-sub', { email: 'new@example.com' } as never);
+
+      const calls = cognitoMock.commandCalls(AdminUpdateUserAttributesCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args[0].input).toMatchObject({
+        UserPoolId: 'us-east-1_TESTPOOL',
+        Username: 'target-sub',
+        UserAttributes: [
+          { Name: 'email', Value: 'new@example.com' },
+          { Name: 'email_verified', Value: 'true' },
+        ],
+      });
     });
   });
 
