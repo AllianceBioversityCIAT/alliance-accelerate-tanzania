@@ -79,10 +79,10 @@ import type { LegalDocument } from './types';
 export const PRIVACY_POLICY: LegalDocument = {
   title: 'ACCELERATE Tanzania Registry Privacy Policy',
   version: 'v1.0',
-  effectiveDate: 'Insert Date',
+  effectiveDate: '30 September 2026',
   lede: [
-    'The ACCELERATE Tanzania Registry ("Registry") is an online platform operated by Insert ' +
-      'CIAT Legal Entity ("CIAT", "we", "our", or "us") to increase the visibility of actors ' +
+    'The ACCELERATE Tanzania Registry ("Registry") is an online platform operated by ' +
+      'the International Center for Tropical Agriculture (CIAT), through its Tanzania office ("CIAT", "we", "our", or "us") to increase the visibility of actors ' +
       'involved in seed systems and agricultural value chains, facilitate business and ' +
       'professional connections, and support access to market opportunities and services.',
     'This Privacy Policy explains how we collect, use, store, publish, and protect ' +
@@ -518,10 +518,10 @@ export const PRIVACY_POLICY: LegalDocument = {
         {
           kind: 'contact',
           entries: [
-            { label: 'Contact', value: '' },
-            { label: 'Email', value: '' },
-            { label: 'Address', value: '' },
-            { label: 'Telephone', value: '' },
+            { label: 'Contact person', value: 'Sylvia Kalemera' },
+            { label: 'Email', value: 'S.Kalemera@cgiar.org' },
+            { label: 'Address', value: 'Tanzania Agricultural Research Institute (TARI), Selian Centre, Dodoma Road, Arusha, Tanzania' },
+            { label: 'Telephone', value: '+255 768 508 976' },
           ],
         },
       ],

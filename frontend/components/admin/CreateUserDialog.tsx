@@ -71,7 +71,7 @@ export function CreateUserDialog({
   const [submitError,  setSubmitError]  = useState<string | undefined>();
   const [loading,      setLoading]      = useState(false);
   // Post-create handoff: the temp password is shown once before onSuccess fires.
-  const [created,      setCreated]      = useState<{ email: string; temporaryPassword: string } | null>(null);
+  const [created,      setCreated]      = useState<{ email: string; temporaryPassword: string; emailSent: boolean } | null>(null);
 
   // Reset form state on open/close.
   useEffect(() => {
@@ -130,7 +130,11 @@ export function CreateUserDialog({
         );
         // Switch to the handoff view — do NOT close yet; the temp password is
         // shown once. onSuccess() fires only when the admin clicks Done.
-        setCreated({ email: createdEmail, temporaryPassword: result.temporaryPassword });
+        setCreated({
+          email: createdEmail,
+          temporaryPassword: result.temporaryPassword,
+          emailSent: result.emailSent,
+        });
       } catch (caught: unknown) {
         if (caught instanceof AuthFailureError) {
           router.push('/login');
@@ -192,6 +196,7 @@ export function CreateUserDialog({
           <CredentialHandoff
             email={created.email}
             temporaryPassword={created.temporaryPassword}
+            emailSent={created.emailSent}
             title={HANDOFF_TITLE}
             onDone={handleDone}
           />

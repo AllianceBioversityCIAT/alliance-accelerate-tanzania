@@ -21,14 +21,36 @@ import { getActors, type ActorsQuery, type PublicActor } from '@/lib/api/actors'
 
 /**
  * Number of actors requested per API call.
- * MUST NOT exceed the backend's MAX_PAGE_SIZE (100) — the list endpoint's
- * `pageSize` is validated with `@Max(100)` and returns HTTP 400 above it
+ * MUST NOT exceed the backend's MAX_PAGE_SIZE — the list endpoint's
+ * `pageSize` is validated with `@Max(...)` and returns HTTP 400 above it
  * (see backend `actors/dto/list-query.dto.ts`). The hook accumulates across
  * pages, so the per-call cap doesn't limit total coverage.
+ *
+ * Raised 100 → 500 on 2026-09-21 (ATP-68), in step with the backend. Pages are
+ * fetched STRICTLY IN SEQUENCE below — page N+1 is not requested until page N
+ * resolves — so the page size sets the round-trip count, and round trips, not
+ * bytes, are what the map pays for. Measured at 5 000 actors with 150 ms of
+ * added latency: 100/page took 50 requests and 15.1 s to a complete map;
+ * 500/page took 10 requests and 5.2 s.
  */
-export const DASH_PAGE_SIZE = 100;
+export const DASH_PAGE_SIZE = 500;
 
-/** Maximum number of pages fetched; total cap = DASH_PAGE_SIZE × DASH_MAX_PAGES = 1 000. */
+/**
+ * Maximum number of pages fetched; total ceiling = DASH_PAGE_SIZE × DASH_MAX_PAGES.
+ *
+ * 500 × 10 = **5 000 actors**, against the PRD's 1 000+ target. The ceiling is
+ * real and the UI now says so: when the server's `total` exceeds what we
+ * accumulate, `truncated` goes true and `DiscoverRail` states the shortfall
+ * instead of captioning a partial map with the full count. Before ATP-68 the
+ * ceiling was 1 000, `truncated` was computed and then dropped by every
+ * consumer, and a 1 200-actor registry rendered 1 000 markers under the words
+ * "1200 actors shown".
+ *
+ * 5 000 was measured, not guessed (2026-09-21): a complete map in 5.2 s at
+ * 150 ms latency, 10 requests, ~190 KB gzipped. Raising it further has not
+ * been measured — the rail renders one node per actor, so re-measure the
+ * render, not just the fetch, before moving this.
+ */
 export const DASH_MAX_PAGES = 10;
 
 // ── Return shape ──────────────────────────────────────────────────────────────

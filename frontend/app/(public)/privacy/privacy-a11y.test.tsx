@@ -76,7 +76,7 @@ describe('/privacy page — the lede is Legal\'s two source paragraphs, not one 
   it('renders the operator-identity paragraph and the "what this policy explains" paragraph separately', () => {
     renderPrivacyPage();
 
-    const operatorIdentity = screen.getByText(/is an online platform operated by insert ciat legal entity/i);
+    const operatorIdentity = screen.getByText(/is an online platform operated by the international center for tropical agriculture/i);
     const explains = screen.getByText(/this privacy policy explains how we collect/i);
 
     expect(operatorIdentity.tagName).toBe('P');
@@ -99,7 +99,7 @@ describe('/privacy page — approved-copy status (T-8)', () => {
     renderPrivacyPage();
 
     expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/effective insert date/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective date: 30 september 2026/i)).toBeInTheDocument();
   });
 
   // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): the previous page's
@@ -193,18 +193,24 @@ describe('/privacy page — labelled sub-blocks (T-8, "How We Collect Informatio
 });
 
 describe('/privacy page — the closing Contact Us block (T-8, contact description list)', () => {
-  it('renders Contact/Email/Address/Telephone as a description list, blank values reproduced as-is', () => {
+  it('renders Contact person/Email/Address/Telephone as a description list with CIAT\'s supplied values', () => {
     renderPrivacyPage();
 
     const region = screen.getByRole('region', { name: 'Contact Us' });
     const dl = region.querySelector('dl')!;
     expect(dl).toBeInTheDocument();
     const dts = Array.from(dl.querySelectorAll('dt')).map((el) => el.textContent);
-    expect(dts).toEqual(['Contact:', 'Email:', 'Address:', 'Telephone:']);
-    // Legal's source left every value on this block blank — reproduced,
-    // not invented.
+    expect(dts).toEqual(['Contact person:', 'Email:', 'Address:', 'Telephone:']);
+    // CIAT supplied these on 2026-09-25. The two fields still outstanding on
+    // this document are in the "Who is Responsible for the Registry?" prose,
+    // not here — see privacy.test.ts's inventory.
     const dds = Array.from(dl.querySelectorAll('dd')).map((el) => el.textContent);
-    expect(dds).toEqual(['', '', '', '']);
+    expect(dds).toEqual([
+      'Sylvia Kalemera',
+      'S.Kalemera@cgiar.org',
+      'Tanzania Agricultural Research Institute (TARI), Selian Centre, Dodoma Road, Arusha, Tanzania',
+      '+255 768 508 976',
+    ]);
   });
 });
 

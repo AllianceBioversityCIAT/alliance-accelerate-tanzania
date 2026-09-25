@@ -5,6 +5,7 @@ import { createValidationPipe } from './common/validation-pipe';
 import { configureBodyParser } from './common/body-parser.config';
 import { configurePayloadCap } from './common/payload-cap.config';
 import { configureSecurityHeaders } from './common/security-headers.config';
+import { configureCompression } from './common/compression.config';
 
 /**
  * Local entrypoint — `npm run start`. In Lambda the app is bootstrapped by
@@ -22,6 +23,11 @@ async function bootstrap(): Promise<void> {
   // 413, a ValidationPipe 400, any exception-filter body), not only on
   // successful output. See security-headers.config.ts's header.
   configureSecurityHeaders(app);
+
+  // ATP-68 — gzip/deflate above 1 KB. After the security headers (which must
+  // stay first) and before the body parsers. API Gateway HTTP APIs do not
+  // compress for us, so this is the only place it can happen.
+  configureCompression(app);
 
   // Local-dev only — `lambda.ts` deliberately sets no CORS header and this
   // file is never imported there. The deployed API is same-origin: CloudFront

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# curl — network-capable stub (infra/scripts/tests/stubs, T-1)
+# ---------------------------------------------------------------------------
+# See stubs/aws for the shared contract. This is the device design.md §7.2
+# uses instead of a fixture HTTP server (none is possible under NFR-1 — no
+# coreutils tool here listens on a socket): a script that shells out to
+# `curl` gets this stub instead, which can reproduce a permissive ACAO, an
+# echoed origin, a clean rejection, a 5xx, or a refused connection (FR-6's
+# five CORS directions) with no listener at all.
+#
+# CONTRACT
+#   Configure with STUB_CURL_SCRIPT — an executable/bash script invoked
+#   with curl's exact arguments ("$@"); its stdout/stderr/exit status become
+#   this stub's, via exec.
+#
+#   Unconfigured => exit 127, loud stderr. Never a silent success.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [[ -n "${STUB_CURL_SCRIPT:-}" ]]; then
+  exec bash "${STUB_CURL_SCRIPT}" "$@"
+fi
+
+echo "STUB ERROR: curl invoked with no STUB_CURL_SCRIPT configured (args: $*)" >&2
+exit 127

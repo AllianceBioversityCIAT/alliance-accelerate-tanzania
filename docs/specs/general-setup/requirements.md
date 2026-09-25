@@ -39,6 +39,15 @@ One paragraph: what this feature is and which PRD goal/user story it advances.
     never from reasoning. One such list went 1 → 3 → 10 across two corrections; every correction came from measuring,
     none from re-reading.
 
+- **A requirement's MEASURE can forbid what its own REQUIREMENT permits, and the measure wins (KZ-015,
+  `bugfix/deploy-script-guardrails`).** A statement and its measure are **two claims**, and the narrower one binds —
+  because the measure is the half an agent can check. One NFR read "no behavioural change to the application, the API
+  surface, or the PII boundary" and measured it as a path allow-list that excluded a whole package; editing a Markdown
+  guide there changes none of those, so the measure banned an edit the requirement allowed, and a guide went on
+  telling every future agent something the code had stopped doing. **Where statement and measure diverge, amend the
+  measure in writing, with a date and a scope limit — never reinterpret it in the moment.** An agent that may quietly
+  reinterpret a constraint it finds over-broad has no constraints. A design-review finding naming a measure-vs-intent
+  gap is resolved **before** execution, not carried as a warning.
 - **A universal negative requires a search that could have failed (`admin/registration-review-queue`).** Before writing *"X exists nowhere"*, run a case-insensitive, multi-pattern search over the whole tree. A single case-sensitive grep is evidence for a positive claim, never for an absence.
 
 - **Cite stable anchors, not line numbers (KZ-009).** `file:line` decays on its own — every edit above the

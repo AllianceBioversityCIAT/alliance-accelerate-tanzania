@@ -31,10 +31,23 @@
 #                             NEVER_PUBLIC_FIELDS/CONTACT_BLOCK_FIELDS split, as
 #                             asserted over HTTP by
 #                             backend/src/test/pii-boundary.spec.ts.
+#     3b. Large page + gzip (ATP-68) — GET /actors?pageSize=500 → 200 (a 400
+#                             means the deployed backend still caps at 100 and the
+#                             map renders BLANK — the version-skew guard); the
+#                             response carries Content-Encoding: gzip and
+#                             decompresses to valid JSON (the Lambda/API Gateway
+#                             base64 path, unreachable from supertest); and the
+#                             PII boundary is re-asserted at that page size.
 #     4. Frontend (FR-5/6)  — CloudFront serves "/" and "/map" → 200.
 #     5. S3 privacy (DD-5)  — a DIRECT S3 object URL → 403 (private bucket; only
 #                             CloudFront via OAC may read).
-#     6. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
+#     6. CORS boundary (FR-6, bugfix/deploy-script-guardrails T-6) — a GENUINE
+#                             preflight from a disallowed origin against
+#                             /api/v1/actors must get a real rejection: FAILs on
+#                             a permissive `*`, an echoed-back origin, a refused
+#                             connection, or a non-2xx/5xx with no ACAO; PASSes
+#                             only on a clean 2xx/204 with no ACAO at all.
+#     7. Summary            — PASS/FAIL per check; non-zero exit if any FAIL.
 #
 #   NOTE — "renders LIVE data" is only partially machine-checkable here. The pages
 #   serve over HTTPS but the actor/metrics DATA is fetched client-side by JS, so
@@ -67,9 +80,15 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# `${BASH_SOURCE[0]%/*}` leaves a SLASH-LESS path untouched, so
+# `cd infra/scripts && bash <this script>` would otherwise try to source
+# `<this script>/_guard.sh` and die before the guard ever ran. Fall back to
+# `.` in exactly that case — see _guard.sh's "OWN-PATH RESOLUTION" block.
+_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _SELF_DIR="."; fi
+# shellcheck disable=SC1091
+source "$_SELF_DIR/_guard.sh"
+
 BACKEND_STACK="${BACKEND_STACK:-accelerate-tz-dev-backend}"
 FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 
@@ -251,6 +270,80 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Check 3b: ATP-68 — the two properties local tests CANNOT reach.
+#
+# Both are deploy-path properties, and both fail CLOSED here because both have
+# a total-failure mode rather than a degradation:
+#
+#   (a) pageSize=500 must return 200. The map requests 500 per page
+#       (frontend DASH_PAGE_SIZE). Against a backend still capped at 100 the
+#       DTO answers 400, getActors() returns null, and the map renders its
+#       error state — a BLANK MAP, not a slow one. This is the version-skew
+#       guard: if the web assets ship ahead of the Lambda, this check is what
+#       catches it.
+#
+#   (b) gzip must survive the Lambda → API Gateway path. Nothing compressed
+#       before ATP-68; an HttpApi (v2) has no MinimumCompressionSize, so
+#       compression happens inside the Lambda and the gzip bytes must reach
+#       API Gateway base64-encoded (serverless-http classifies by
+#       content-encoding). Returned as a UTF-8 string they arrive CORRUPT and
+#       every consumer breaks. supertest decompresses transparently and would
+#       never show it; only a live probe can.
+#
+# (c) is the PII boundary re-asserted at the NEW page size. The contact block
+# is absent from the list projection structurally, not per-request, so this
+# should be free — which is exactly why it is worth pinning after a page-size
+# change touched this endpoint.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> Check: large-page + compression on /actors (ATP-68) ..."
+
+BIG_PAGE_URL="$API_BASE_URL/api/v1/actors?page=1&pageSize=500"
+
+big_code="$(curl -s -o /dev/null -w "%{http_code}" "$BIG_PAGE_URL" || true)"
+if [[ "$big_code" == "200" ]]; then
+  pass "GET /actors?pageSize=500 → 200 (backend cap is 500, not a stale 100)"
+else
+  fail "GET /actors?pageSize=500 → $big_code (expected 200; a 400 means the deployed backend still caps at 100 — the map will render BLANK)"
+fi
+
+# Ask for gzip explicitly and read the response header, without decompressing.
+# How big is this response UNCOMPRESSED? The middleware only compresses above
+# COMPRESSION_THRESHOLD_BYTES (1 KB), so on a registry small enough to fall
+# under it, NOT compressing is correct behaviour. Asserting gzip
+# unconditionally would red the build on a perfectly good deploy the day
+# someone trims the seed — a false alarm in a fail-closed gate is worse than
+# no gate, because it teaches people to ignore the gate.
+big_plain_bytes="$(curl -s -o /dev/null -w '%{size_download}' "$BIG_PAGE_URL" || echo 0)"
+
+big_enc="$(
+  curl -s -D - -o /dev/null -H 'Accept-Encoding: gzip' "$BIG_PAGE_URL"     | tr -d '\r'     | awk -F': ' 'tolower($1) == "content-encoding" { print tolower($2) }'     | tail -n 1 || true
+)"
+if [[ "${big_plain_bytes:-0}" -lt 1024 ]]; then
+  pass "compression not asserted — /actors?pageSize=500 is only ${big_plain_bytes} B, under the 1 KB threshold (registry too small to compress; not a failure)"
+elif [[ "$big_enc" == *gzip* ]]; then
+  pass "GET /actors?pageSize=500 (${big_plain_bytes} B plain) with Accept-Encoding: gzip → Content-Encoding: gzip"
+else
+  fail "GET /actors?pageSize=500 is ${big_plain_bytes} B plain (over the 1 KB threshold) but came back Content-Encoding '${big_enc:-<none>}' — compression is not reaching the wire"
+fi
+
+# Integrity: --compressed makes curl decompress, so valid JSON out the far side
+# proves the bytes survived the Lambda/API Gateway encoding round trip intact.
+BIG_BODY=""
+if BIG_BODY="$(curl -fsS --compressed "$BIG_PAGE_URL")" \
+  && jq -e '(.data | type == "array") and (.pageSize == 500)' >/dev/null 2>&1 <<<"$BIG_BODY"; then
+  pass "gzipped /actors body decompresses to valid JSON with pageSize=500 (not corrupt)"
+else
+  fail "gzipped /actors body did NOT decompress to the expected JSON — suspect base64/binary handling on the Lambda path"
+  BIG_BODY=""
+fi
+
+if [[ -n "$BIG_BODY" ]]; then
+  assert_no_pii "actors pageSize=500" "$BIG_BODY" "${NEVER_PUBLIC_FIELDS[@]}" "${CONTACT_BLOCK_FIELDS[@]}"
+else
+  fail "PII boundary (actors pageSize=500): no body to scan (large-page check failed)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Check 4: Frontend reachability (FR-5/FR-6) — CloudFront serves / and /map.
 # The trailingSlash static export + the viewer-request rewrite (T-5) resolve
 # /map to /map/index.html. curl follows redirects (-L) since CloudFront sends
@@ -283,7 +376,84 @@ else
   fail "Direct S3 object → $s3_code (expected 403 — bucket may be public!)"
 fi
 
-# ── Check 6: Summary — print each result; non-zero exit if any failed ─────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Check 6: CORS boundary (FR-6) — a disallowed Origin must get a real
+# rejection, never a permissive answer. Sends a GENUINE preflight — Origin
+# PLUS Access-Control-Request-Method — because API Gateway's HTTP API
+# auto-answers CORS only for a real preflight; a bare OPTIONS matches no
+# route and would prove nothing. Read-only: no state is mutated.
+#
+# Five directions, every one summarised via pass()/fail() rather than
+# aborting the run (so this check reaches the pipeline with no Jenkinsfile
+# change — RUN_SMOKE=true already calls this script per the operator-supplied
+# Jenkinsfile, read 2026-09-18; requirements.md §7, DD-5):
+#   permissive ACAO: *                          -> FAIL
+#   echoed     ACAO: <the disallowed origin>     -> FAIL
+#   refused    the connection never completes    -> FAIL (proves nothing)
+#   5xx        no ACAO, but a server/transport
+#              failure                           -> FAIL (not a rejection)
+#   clean      2xx/204, no ACAO at all            -> PASS
+# The PASS direction is not optional: a check that unconditionally FAILs
+# would satisfy every row above and redden every pipeline build after
+# merge, since RUN_SMOKE=true fails closed.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "==> Check: CORS boundary (FR-6) ..."
+
+CORS_DISALLOWED_ORIGIN="https://cors-smoke-check.invalid"
+
+CORS_RAW=""
+CORS_TRANSPORT_OK=1
+if CORS_RAW="$(
+  curl -sS -D - -o /dev/null -w '\nHTTP_STATUS:%{http_code}\n' \
+    -X OPTIONS \
+    -H "Origin: $CORS_DISALLOWED_ORIGIN" \
+    -H "Access-Control-Request-Method: GET" \
+    "$API_BASE_URL/api/v1/actors" 2>&1
+)"; then
+  :
+else
+  CORS_TRANSPORT_OK=0
+fi
+
+# Normalise CRLF (real HTTP header dumps use them) before parsing.
+CORS_HEADERS="$(printf '%s' "$CORS_RAW" | tr -d '\r')"
+
+CORS_STATUS="$(printf '%s\n' "$CORS_HEADERS" | grep '^HTTP_STATUS:' | tail -n1 || true)"
+CORS_STATUS="${CORS_STATUS#HTTP_STATUS:}"
+
+# Header name matched case-insensitively (API Gateway's casing is not
+# contractual); the value is taken as everything after the FIRST colon via
+# bash's own `${var#*:}`, never a regex — safe even though the origin value
+# itself contains colons ("https://..."). `|| true` on both grep pipelines:
+# a rejection that carries no ACAO header (the PASS direction) or a
+# transport failure that carries no headers at all (refused/5xx) makes
+# grep's "no match" exit 1, which — unguarded, under this script's own
+# `set -euo pipefail` — would abort the whole run instead of reaching
+# pass()/fail() below. The absence itself is legitimate data, not an error.
+CORS_ACAO_LINE="$(printf '%s\n' "$CORS_HEADERS" | grep -i '^access-control-allow-origin:' | tail -n1 || true)"
+CORS_ACAO=""
+if [[ -n "$CORS_ACAO_LINE" ]]; then
+  CORS_ACAO="${CORS_ACAO_LINE#*:}"
+  CORS_ACAO="$(printf '%s' "$CORS_ACAO" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+fi
+
+if [[ "$CORS_TRANSPORT_OK" -ne 1 ]]; then
+  fail "CORS boundary: preflight to $API_BASE_URL failed (refused connection) — proves nothing, not a rejection"
+elif [[ -z "$CORS_STATUS" ]]; then
+  fail "CORS boundary: preflight returned no readable HTTP status"
+elif [[ "$CORS_ACAO" == "*" ]]; then
+  fail "CORS boundary: disallowed origin got a permissive 'Access-Control-Allow-Origin: *'"
+elif [[ "$CORS_ACAO" == "$CORS_DISALLOWED_ORIGIN" ]]; then
+  fail "CORS boundary: disallowed origin was ECHOED BACK in Access-Control-Allow-Origin — an echo is a permissive answer, not a rejection"
+elif [[ "$CORS_STATUS" != 2* ]]; then
+  fail "CORS boundary: preflight returned $CORS_STATUS (non-2xx) — a server/transport failure is not a rejection"
+elif [[ -n "$CORS_ACAO" ]]; then
+  fail "CORS boundary: disallowed origin unexpectedly got a non-empty Access-Control-Allow-Origin ('$CORS_ACAO')"
+else
+  pass "CORS boundary: disallowed origin got a clean $CORS_STATUS rejection (no Access-Control-Allow-Origin)"
+fi
+
+# ── Check 7: Summary — print each result; non-zero exit if any failed ─────────
 echo
 echo "==> Smoke summary:"
 for r in "${RESULTS[@]}"; do
@@ -296,6 +466,6 @@ if [[ "$FAILS" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> SMOKE PASSED — API healthy + PII-safe, frontend served, S3 private."
+echo "==> SMOKE PASSED — API healthy + PII-safe, CORS rejects disallowed origins, frontend served, S3 private."
 echo "    Final step: open $CLOUDFRONT_URL in a browser and confirm the metrics"
 echo "    band + map render LIVE seeded data (not the offline fallback) — FR-6."

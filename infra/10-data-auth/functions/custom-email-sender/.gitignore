@@ -1,0 +1,5 @@
+# dependencies — mirrors backend/.gitignore and frontend/.gitignore's
+# convention. sam build's npm install step (see the CustomEmailSender build
+# convention comment above Resources: in ../../template.yaml) regenerates
+# this at build time; it is never committed.
+node_modules/

@@ -20,14 +20,61 @@
  * Cognito JWT verification and Prisma are mocked at the module level (the real
  * handler bootstraps AppModule itself, so providers cannot be overridden via the
  * testing module).
+ *
+ * auth/account-access-emails T-8 (NFR-2, requirements.md §9 D-4) adds a second
+ * class of regression to this same file, for the same structural reason:
+ * only the REAL `lambda.ts` handler exercises `UsersService.create()` /
+ * `resetPassword()` dispatching an account-access email **awaited inside
+ * their own `try`/`catch`** (design.md §5.3), and supertest never reaches
+ * it. The property under test is ordering: the send must complete before
+ * the handler's returned promise resolves, because a fire-and-forget
+ * dispatch is not merely slow — it can be silently lost the instant the
+ * execution environment freezes. `mockContext.callbackWaitsForEmptyEventLoop`
+ * plays NO role in this: it is inert under Jest, and in production
+ * `lambda.ts:108` overwrites it to `true` unconditionally as the handler's
+ * first statement, before a single line of request handling runs — so
+ * whatever value this file sets on `mockContext` has zero effect either way.
+ * The actual proof mechanism is described below, at the mock and at the
+ * tests themselves: the transport's `send()` returns a promise the test
+ * holds open, and the test asserts the handler's own invocation has NOT
+ * settled while that promise is outstanding — an ordering proved by
+ * blocking, not by counting event-loop turns. Two more module-level seams
+ * support this:
+ *
+ *  - `@aws-sdk/client-cognito-identity-provider` is NOT `jest.mock`'d whole —
+ *    `aws-sdk-client-mock`'s `mockClient(CognitoIdentityProviderClient)`
+ *    patches the SDK client's prototype `send()` directly, which is the same
+ *    mechanism `users.service.spec.ts`'s unit tests already use. It composes
+ *    with this file's "no DI overrides" constraint for a different reason
+ *    than the two mocks above: it never goes through Nest's DI container at
+ *    all — `UsersService`/`users.service.ts` reach Cognito via
+ *    `getCognitoAdminClient()`, a lazily-constructed module-level singleton,
+ *    not a constructor-injected provider — so there is nothing to override
+ *    and nothing to route around.
+ *  - `../mail/mail-transport.factory` IS `jest.mock`'d (below), because it is
+ *    the one seam whose `send()` the test can hold open indefinitely and
+ *    release on command. `MailService` itself is left real and unmocked, so
+ *    its NFR-1 log-shape discipline still runs; only the transport
+ *    `MailService.dispatch()` sends through is swapped. See that mock's own
+ *    comment for the held-promise mechanism.
  */
+
+import { gunzipSync } from 'node:zlib';
 
 import type { Context } from 'aws-lambda';
 import * as ExcelJS from 'exceljs';
+import { mockClient } from 'aws-sdk-client-mock';
+import {
+  AdminCreateUserCommand,
+  AdminGetUserCommand,
+  AdminSetUserPasswordCommand,
+  CognitoIdentityProviderClient,
+} from '@aws-sdk/client-cognito-identity-provider';
 
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
 import { REGISTRATIONS_PAYLOAD_CAP_BYTES } from '../common/payload-cap.config';
 import { REGISTRATIONS_THROTTLE_LIMIT } from '../registrations/registrations-throttle.guard';
+import { resetCognitoAdminClient } from '../users/cognito-admin.client';
 
 // --- module mocks (hoisted before lambda.ts / AppModule import) -------------
 
@@ -56,8 +103,70 @@ jest.mock('../prisma/prisma.service', () => ({
   },
 }));
 
- 
+/**
+ * auth/account-access-emails T-8 — a mail transport whose `send()` returns a
+ * promise the TEST controls: it does not resolve on its own, at all, until
+ * the test explicitly releases it via `releasePendingSend()` (in the T-8
+ * describe block below). This is the entire falsifier-detection mechanism
+ * (NFR-2, D-4), and it is a structural guarantee rather than a timing one:
+ *
+ * With the dispatch correctly awaited all the way up through
+ * `UsersService.create()`/`resetPassword()` and the handler itself, the
+ * handler's own returned promise is chained to this held promise and
+ * THEREFORE CANNOT settle until the test calls `releasePendingSend()` — not
+ * "is unlikely to settle first", cannot, by ordinary promise semantics. No
+ * amount of draining the event loop can make it settle early, because
+ * nothing has resolved the inner promise yet.
+ *
+ * With the `await` dropped, nothing upstream is chained to this promise at
+ * all, so the handler's returned promise settles on its own, independent of
+ * whether `releasePendingSend()` is ever called. Each test asserts "the
+ * invocation has NOT settled while the send is outstanding" BEFORE
+ * releasing; that assertion is false the instant the `await` is dropped,
+ * regardless of how the rest of the response pipeline happens to be
+ * scheduled.
+ *
+ * This replaces an earlier version of this mock that instead deferred
+ * resolution across a `setImmediate` and relied on empirically-observed
+ * event-loop timing to make the two cases diverge — a real hedge, since a
+ * response crossing the compression threshold, an async interceptor doing
+ * I/O, or a `serverless-http` upgrade could each have silently closed the
+ * gap the timing depended on. Holding the promise open removes the hedge
+ * entirely: the negative case (dropped `await`) is now caught by the SAME
+ * mechanism as the positive case, not by a fortunate scheduling accident.
+ *
+ * State lives INSIDE the mock factory (never captured from an outer
+ * variable) so it works regardless of how/when Jest hoists `jest.mock`
+ * calls, and is exposed via `__mailTestState` so the suite below can read,
+ * reset, and release it directly.
+ */
+jest.mock('../mail/mail-transport.factory', () => {
+  const state: {
+    sendCompleted: boolean;
+    sendCount: number;
+    pendingSends: Array<() => void>;
+  } = { sendCompleted: false, sendCount: 0, pendingSends: [] };
+  return {
+    __mailTestState: state,
+    getMailTransport: () => ({
+      send: (_message: unknown) =>
+        new Promise<void>((resolve) => {
+          // Held open until the test calls releasePendingSend() — see the
+          // docblock above for why this is what makes the ordering
+          // assertion structural rather than timing-dependent.
+          state.pendingSends.push(() => {
+            state.sendCompleted = true;
+            state.sendCount += 1;
+            resolve();
+          });
+        }),
+    }),
+    resetMailTransport: jest.fn(),
+  };
+});
+
 import { handler } from '../lambda';
+import * as mailTransportFactory from '../mail/mail-transport.factory';
 
 // --- helpers ----------------------------------------------------------------
 
@@ -173,6 +282,78 @@ describe('Lambda handler (serverless-http) body-parsing', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.statusCode).not.toBe(500);
+  });
+});
+
+// --- ATP-68: response compression through the REAL handler -----------------
+
+/**
+ * `configureCompression` (ATP-68) makes the API emit `Content-Encoding: gzip`.
+ * That is only safe in Lambda if the gzip BYTES reach API Gateway base64-encoded
+ * with `isBase64Encoded: true`; returned as a UTF-8 string they arrive corrupt.
+ *
+ * `serverless-http@3.2.0` classifies a response binary by `content-encoding`
+ * before it looks at content-type, so it does this unprompted — but that is a
+ * property of a dependency's internals, exactly the kind of thing a major
+ * upgrade changes silently. Asserted here, through the real handler, because
+ * supertest decompresses transparently and would show nothing.
+ *
+ * The import preview is used as the large-body route because this suite's
+ * Prisma mock already supports it; the compression middleware is global, so
+ * the route is incidental.
+ */
+describe('Response compression through the real handler (ATP-68)', () => {
+  /** Enough rows that the JSON report clears COMPRESSION_THRESHOLD_BYTES. */
+  const ROWS = 120;
+
+  /**
+   * Drive the real handler with a large import-preview body under a given
+   * Accept-Encoding, and hand back the raw Lambda result — unparsed, because
+   * how the body is encoded is the thing under test.
+   */
+  async function invokeLargeBody(acceptEncoding: string, idPrefix: string) {
+    const fileBase64 = await buildWorkbook(
+      Array.from({ length: ROWS }, (_, i) => validRow({ traderId: `${idPrefix}-${i}` })),
+    );
+    const event = apiGatewayV2Event({
+      method: 'POST',
+      path: IMPORT_PATH,
+      body: JSON.stringify({ fileName: 'actors.xlsx', fileBase64, mode: 'preview' }),
+      headers: { 'accept-encoding': acceptEncoding },
+    });
+
+    return (await handler(event, mockContext, () => {})) as {
+      statusCode: number;
+      body: string;
+      isBase64Encoded?: boolean;
+      headers?: Record<string, string>;
+    };
+  }
+
+  it('returns gzip BASE64-ENCODED, and the bytes decode back to the real JSON', async () => {
+    const res = await invokeLargeBody('gzip', 'TZ-GZ');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.['content-encoding']).toBe('gzip');
+
+    // The half that actually breaks in production if serverless-http changes:
+    // gzip bytes handed back as a plain string are unrecoverable.
+    expect(res.isBase64Encoded).toBe(true);
+
+    const decoded = JSON.parse(
+      gunzipSync(Buffer.from(res.body, 'base64')).toString('utf8'),
+    );
+    expect(decoded.mode).toBe('preview');
+    expect(decoded.totals.rows).toBe(ROWS);
+  });
+
+  it('returns plain, non-base64 JSON when the client does not accept gzip', async () => {
+    const res = await invokeLargeBody('identity', 'TZ-PLAIN');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.['content-encoding']).toBeUndefined();
+    expect(res.isBase64Encoded).toBeFalsy();
+    expect(JSON.parse(res.body).totals.rows).toBe(ROWS);
   });
 });
 
@@ -354,6 +535,204 @@ describe('T5-A1 — RegistrationsThrottleGuard 429, proven through the REAL hand
       });
       const otherCallerRes = await invoke(otherCallerEvent);
       expect(otherCallerRes.statusCode).toBe(200);
+    },
+  );
+});
+
+// --- T-8: account-access email dispatch survives the Lambda freeze class ---
+
+/**
+ * auth/account-access-emails T-8 (NFR-2, requirements.md §9 D-4, design.md
+ * §5.3) — this is the **only** harness in the repo that can prove this
+ * property, per this file's own docblock: supertest never exercises
+ * `serverless-http`, so a fire-and-forget dispatch that would be lost the
+ * instant a real Lambda execution environment freezes is invisible to any
+ * supertest-based e2e suite, however green.
+ *
+ * The ordering property is proved by BLOCKING, not by `mockContext`: each
+ * test starts `invoke()` WITHOUT awaiting it, drains the event loop
+ * generously while the mocked mail transport's `send()` is held open (see
+ * `../mail/mail-transport.factory`'s mock, above), and asserts the
+ * invocation has NOT settled — then releases the held send and awaits the
+ * result. `mockContext.callbackWaitsForEmptyEventLoop` is inert here and in
+ * production alike (`lambda.ts:108` overwrites it to `true` unconditionally
+ * before any request handling runs); it plays no role in either direction
+ * of this assertion.
+ */
+describe('Account-access email dispatch survives the Lambda freeze class (T-8, NFR-2, D-4)', () => {
+  const cognitoMock = mockClient(CognitoIdentityProviderClient);
+  const mailTestState = (
+    mailTransportFactory as unknown as {
+      __mailTestState: {
+        sendCompleted: boolean;
+        sendCount: number;
+        pendingSends: Array<() => void>;
+      };
+    }
+  ).__mailTestState;
+
+  /** Release the oldest send the mocked mail transport is holding open. */
+  function releasePendingSend(): void {
+    const resolveSend = mailTestState.pendingSends.shift();
+    if (!resolveSend) {
+      throw new Error('releasePendingSend(): no pending mail send to release');
+    }
+    resolveSend();
+  }
+
+  /**
+   * Drain the event loop generously (macrotask ticks) while nothing has
+   * released a held send. Proves the block genuinely holds — "hasn't
+   * settled after many turns" — rather than merely "hasn't had a turn yet".
+   */
+  async function drainEventLoop(ticks = 20): Promise<void> {
+    for (let i = 0; i < ticks; i++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  const USERS_PATH = '/api/v1/users';
+
+  beforeAll(() => {
+    // Cognito Admin client config (`getCognitoAdminClient`/`getUserPoolId`,
+    // `users/cognito-admin.client.ts`) — read lazily, so only THIS describe
+    // block, which actually drives a Cognito-calling route, needs them set.
+    process.env.COGNITO_USER_POOL_ID = 'us-east-1_TESTPOOL';
+    process.env.COGNITO_CLIENT_ID = 'test-client-id';
+    process.env.AWS_REGION = 'us-east-1';
+    // The invitation/admin-reset templates resolve their sign-in link from
+    // this at CALL time (never at module load — ATP-67), so it must be set
+    // before either route is exercised.
+    process.env.PUBLIC_APP_BASE_URL = 'https://accelerate.example.org';
+  });
+
+  afterAll(() => {
+    delete process.env.COGNITO_USER_POOL_ID;
+    delete process.env.COGNITO_CLIENT_ID;
+    delete process.env.AWS_REGION;
+    delete process.env.PUBLIC_APP_BASE_URL;
+    resetCognitoAdminClient();
+  });
+
+  beforeEach(() => {
+    cognitoMock.reset();
+    resetCognitoAdminClient();
+    mailTestState.sendCompleted = false;
+    mailTestState.sendCount = 0;
+    mailTestState.pendingSends.length = 0;
+  });
+
+  it(
+    'create(): POST /api/v1/users — the handler\'s own invocation cannot ' +
+      'settle while the invitation send is held open, and only settles once ' +
+      'it is released (NFR-2). Falsifier: dropping the `await` in ' +
+      "`dispatchInvitationEmail` (users.service.ts ~L340) must redden this — see the " +
+      'report for the verbatim red/green run.',
+    async () => {
+      cognitoMock.on(AdminCreateUserCommand).resolves({
+        User: {
+          Username: 'new.invitee@example.org',
+          Attributes: [
+            { Name: 'sub', Value: 'sub-invite-1' },
+            { Name: 'email', Value: 'new.invitee@example.org' },
+            { Name: 'email_verified', Value: 'true' },
+          ],
+        },
+      });
+
+      const event = apiGatewayV2Event({
+        method: 'POST',
+        path: USERS_PATH,
+        body: JSON.stringify({ email: 'new.invitee@example.org' }),
+      });
+
+      let settled = false;
+      const invokePromise = invoke(event).finally(() => {
+        settled = true;
+      });
+
+      // Generous drain while the mock's send() is still held open — proves
+      // the block genuinely holds, not merely "hasn't had a turn yet".
+      await drainEventLoop();
+
+      // The structural assertion (NFR-2): with the dispatch correctly
+      // awaited all the way up through `UsersService.create()` and the
+      // handler itself, the handler's OWN returned promise is chained to
+      // the mail transport's still-open `send()` promise and therefore
+      // CANNOT have settled yet — not "is unlikely to", cannot, by ordinary
+      // promise semantics. No amount of event-loop draining changes this;
+      // only releasing the held send does.
+      expect(settled).toBe(false);
+      expect(mailTestState.sendCompleted).toBe(false);
+
+      releasePendingSend();
+      const res = await invokePromise;
+
+      expect(mailTestState.sendCompleted).toBe(true);
+      // this is the assertion that prevents a leaked send from the previous
+      // test masking a broken dispatch here — do not remove
+      expect(mailTestState.sendCount).toBe(1);
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.emailSent).toBe(true);
+    },
+  );
+
+  it(
+    "resetPassword(): POST /api/v1/users/:id/password — the handler's own " +
+      "invocation cannot settle while the admin-reset send is held open, and " +
+      'only settles once it is released (NFR-2, FR-5\'s "same rules as FR-1 ' +
+      'through FR-4"). Same mechanism as the create() test above, exercised through ' +
+      "`dispatchAdminResetEmail` instead of `dispatchInvitationEmail` — both dispatch " +
+      'sites were written to the identical awaited-inside-its-own-try pattern ' +
+      '(design.md §5.3) and this pins both, not only the one the falsifier below ' +
+      'mutates.',
+    async () => {
+      // Production-defect fix (2026-09-22): `id` (the route param / Cognito
+      // `Username`) is a UUID in this pool, NOT the email address —
+      // deliberately UUID-shaped and DIFFERENT from the resolved `email`
+      // attribute below, so this fixture cannot hide a regression to
+      // dispatching at `id` the way the former email-shaped `id` fixture
+      // did (that fixture made `to === id` true even under the bug,
+      // because both were the same string).
+      const resetUserId = '9c8f6b2e-1a34-4e77-9f0a-5c7d8e2b4a10';
+      const resolvedRecipientEmail = 'existing.user@example.org';
+
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      cognitoMock.on(AdminGetUserCommand).resolves({
+        Username: resetUserId,
+        UserAttributes: [
+          { Name: 'sub', Value: 'sub-reset-1' },
+          { Name: 'email', Value: resolvedRecipientEmail },
+        ],
+      });
+
+      const event = apiGatewayV2Event({
+        method: 'POST',
+        path: `${USERS_PATH}/${resetUserId}/password`,
+        body: '',
+      });
+
+      let settled = false;
+      const invokePromise = invoke(event).finally(() => {
+        settled = true;
+      });
+
+      await drainEventLoop();
+
+      expect(settled).toBe(false);
+      expect(mailTestState.sendCompleted).toBe(false);
+
+      releasePendingSend();
+      const res = await invokePromise;
+
+      expect(mailTestState.sendCompleted).toBe(true);
+      // this is the assertion that prevents a leaked send from the previous
+      // test masking a broken dispatch here — do not remove
+      expect(mailTestState.sendCount).toBe(1);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.emailSent).toBe(true);
     },
   );
 });

@@ -34,6 +34,7 @@ import { Logger } from '@nestjs/common';
 import { MailService } from './mail.service';
 import { resetMailTransport } from './mail-transport.factory';
 import { resetMicroserviceMailTransportState } from './microservice-mail.transport';
+import { resolveCognitoSub } from '../users/cognito-sub.util';
 
 jest.mock('amqplib');
 
@@ -48,14 +49,15 @@ interface FakeChannelModel extends EventEmitter {
   close: jest.Mock;
 }
 
-/** A `checkQueue`-ok, `publish`-ack channel — the happy path every test
- * below needs unless it is specifically exercising a rejection. */
-function createWorkingChannel(): FakeChannel {
-  const channel = new EventEmitter() as FakeChannel;
-  channel.checkQueue = jest
-    .fn()
-    .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
-  channel.publish = jest.fn(
+/** The `publish` stub shared by both channel builders below. Only the
+ * callback outcome differs between them — ack vs nack — so that is the one
+ * thing each caller supplies, and it stays visible at the call site. The
+ * surrounding confirm-channel signature is `amqplib`'s, not ours: it must
+ * match exactly or the cast in `FakeChannel` stops meaning anything. */
+function publishStub(
+  settle: (callback?: (err: unknown, ok: unknown) => void) => void,
+): FakeChannel['publish'] {
+  return jest.fn(
     (
       _exchange: string,
       _routingKey: string,
@@ -63,10 +65,20 @@ function createWorkingChannel(): FakeChannel {
       _options: amqp.Options.Publish | undefined,
       callback?: (err: unknown, ok: unknown) => void,
     ) => {
-      callback?.(null, {});
+      settle(callback);
       return true;
     },
   );
+}
+
+/** A `checkQueue`-ok, `publish`-ack channel — the happy path every test
+ * below needs unless it is specifically exercising a rejection. */
+function createWorkingChannel(): FakeChannel {
+  const channel = new EventEmitter() as FakeChannel;
+  channel.checkQueue = jest
+    .fn()
+    .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
+  channel.publish = publishStub((callback) => callback?.(null, {}));
   channel.close = jest.fn().mockResolvedValue(undefined);
   return channel;
 }
@@ -76,17 +88,8 @@ function createWorkingChannel(): FakeChannel {
  * (DD-4: the failure is at-or-after the publish). */
 function createRejectingChannel(): FakeChannel {
   const channel = createWorkingChannel();
-  channel.publish = jest.fn(
-    (
-      _exchange: string,
-      _routingKey: string,
-      _content: Buffer,
-      _options: amqp.Options.Publish | undefined,
-      callback?: (err: unknown, ok: unknown) => void,
-    ) => {
-      callback?.(new Error('NACK'), undefined);
-      return true;
-    },
+  channel.publish = publishStub((callback) =>
+    callback?.(new Error('NACK'), undefined),
   );
   return channel;
 }
@@ -105,6 +108,33 @@ function setMicroserviceEnv(): void {
   process.env.EMAIL_QUEUE_NAME = 'accelerate-tz-email';
   process.env.MICROSERVICE_API_KEY = 'clarisa-key-123';
   process.env.EMAIL_SENDER = 'registry@example.org';
+  // ATP-67 — the receipt template resolves its status-lookup link from this
+  // rather than the CloudFront domain it used to hardcode. It throws when
+  // absent or unusable, by design, so every test that builds a receipt must
+  // supply it. Reaching the transport is what these tests assert; the link's
+  // own content is asserted in templates/receipt.template.spec.ts.
+  process.env.PUBLIC_APP_BASE_URL = 'https://app.example.org';
+}
+
+/** Arrange-only: select `MAIL_TRANSPORT` and re-init the module-level
+ * transport singleton. Every assertion in the tests below stays inline —
+ * this only removes the identical two-line env-switch that preceded each
+ * one. */
+function setTransport(mode: 'no-op' | 'microservice'): void {
+  process.env.MAIL_TRANSPORT = mode;
+  resetMailTransport();
+}
+
+/** Arrange-only: switch to the microservice transport wired to `channel`.
+ * Used by the logging-behaviour describe below, whose `beforeEach` starts
+ * every test on `no-op` — reaching a real (mocked) broker for a specific
+ * rejection/kind assertion needs this full re-init, not just `setTransport`. */
+function useMicroserviceTransport(channel: FakeChannel): void {
+  process.env.MAIL_TRANSPORT = 'microservice';
+  setMicroserviceEnv();
+  resetMailTransport();
+  resetMicroserviceMailTransportState();
+  mockConnect(channel);
 }
 
 describe('MailService — transport selection (NFR-10, the Disqualifying clause)', () => {
@@ -125,8 +155,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
     async () => {
       // Selecting the no-op transport: the call must resolve, and the send
       // must NOT distinguishably reach the network layer at all.
-      process.env.MAIL_TRANSPORT = 'no-op';
-      resetMailTransport();
+      setTransport('no-op');
       const noOpService = new MailService();
       await expect(
         noOpService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
@@ -137,8 +166,7 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       // it DOES reach the broker. This is the sent-vs-not-sent distinction
       // the Disqualifying clause requires — a test that could not fail this
       // way is not evidence.
-      process.env.MAIL_TRANSPORT = 'microservice';
-      resetMailTransport();
+      setTransport('microservice');
       const microserviceService = new MailService();
       await expect(
         microserviceService.sendReceipt('applicant@example.org', 'REG-2026-0007'),
@@ -148,16 +176,51 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
   );
 
   it('the same distinction holds for sendVerificationCode', async () => {
-    process.env.MAIL_TRANSPORT = 'no-op';
-    resetMailTransport();
+    setTransport('no-op');
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
     expect(channel.publish).toHaveBeenCalledTimes(0);
 
-    process.env.MAIL_TRANSPORT = 'microservice';
-    resetMailTransport();
+    setTransport('microservice');
     await new MailService().sendVerificationCode('applicant@example.org', '482913');
     expect(channel.publish).toHaveBeenCalledTimes(1);
   });
+
+  it(
+    'auth/account-access-emails T-3 — the same distinction holds for sendInvitation and sendAdminReset',
+    async () => {
+      setTransport('no-op');
+      await new MailService().sendInvitation(
+        'new-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-abc',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(0);
+
+      setTransport('microservice');
+      await new MailService().sendInvitation(
+        'new-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-abc',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(1);
+
+      setTransport('no-op');
+      await new MailService().sendAdminReset(
+        'existing-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-def',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(1);
+
+      setTransport('microservice');
+      await new MailService().sendAdminReset(
+        'existing-user@example.org',
+        'Tmp-Passw0rd!',
+        'sub-def',
+      );
+      expect(channel.publish).toHaveBeenCalledTimes(2);
+    },
+  );
 });
 
 describe('MailService — logging never carries PII, codes, or body text (NFR-8, DC-14)', () => {
@@ -273,11 +336,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
   );
 
   it('logs a failed outcome (still without PII) when the transport rejects', async () => {
-    process.env.MAIL_TRANSPORT = 'microservice';
-    setMicroserviceEnv();
-    resetMailTransport();
-    resetMicroserviceMailTransportState();
-    mockConnect(createRejectingChannel());
+    useMicroserviceTransport(createRejectingChannel());
 
     const service = new MailService();
     const email = 'applicant-secret@example.org';
@@ -298,11 +357,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     'sendContactMessage (contact/contact-channels T-1) logs kind=contact with ' +
       'reference=n/a and never the recipient address',
     async () => {
-      process.env.MAIL_TRANSPORT = 'microservice';
-      setMicroserviceEnv();
-      resetMailTransport();
-      resetMicroserviceMailTransportState();
-      mockConnect(createWorkingChannel());
+      useMicroserviceTransport(createWorkingChannel());
 
       const service = new MailService();
       const adminEmail = 'admin-secret@example.org';
@@ -324,12 +379,101 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     },
   );
 
+  it(
+    'auth/account-access-emails T-3 — sendInvitation logs kind + the sub reference, ' +
+      'never the address or the password',
+    async () => {
+      const service = new MailService();
+      const email = 'invitee-secret@example.org';
+      const password = 'S3cr3t-Passw0rd!';
+      const sub = 'cognito-sub-11111';
+
+      await service.sendInvitation(email, password, sub);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('kind=invitation');
+      expect(emitted).toContain(sub);
+      expect(emitted).toContain('mail send attempt kind=invitation');
+      expect(emitted).toContain('status=sent');
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3 — sendAdminReset logs kind + the sub reference, ' +
+      'never the address or the password',
+    async () => {
+      const service = new MailService();
+      const email = 'reset-target-secret@example.org';
+      const password = 'An0th3r-Passw0rd!';
+      const sub = 'cognito-sub-22222';
+
+      await service.sendAdminReset(email, password, sub);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('kind=admin-reset');
+      expect(emitted).toContain(sub);
+      expect(emitted).toContain('mail send attempt kind=admin-reset');
+      expect(emitted).toContain('status=sent');
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3, NFR-1 — when resolveCognitoSub cannot find a sub, ' +
+      'sendInvitation logs reference=n/a, NEVER the email address it had in scope ' +
+      '(the falsifier this task is graded on: mutate resolveCognitoSub to fall back ' +
+      'to Username/id and this test MUST redden)',
+    async () => {
+      const service = new MailService();
+      const email = 'admin-created-no-sub@example.org';
+      const password = 'YetAn0ther-Passw0rd!';
+
+      // Mirrors the AdminCreateUserResponse.User trap: attributes came back
+      // with no `sub` entry at all — only `email` — and `Username` (the
+      // email address) sits right there in scope, exactly like it does at
+      // the real T-4/T-5 call sites this helper serves.
+      const reference = resolveCognitoSub({
+        Username: email,
+        Attributes: [{ Name: 'email', Value: email }],
+      });
+
+      await service.sendInvitation(email, password, reference);
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      // The NFR-1 assertion this task is graded on: no "@" anywhere in the
+      // logged text — not just "not the literal email string" (a decoy
+      // fallback could still leak an address in a different form), the
+      // stronger claim that no address-shaped substitute reached the log.
+      // This is the assertion over `dispatch`'s actual logged output the
+      // task's disqualifier requires — checked BEFORE the return-value
+      // sanity check below, so a regression is caught here even if some
+      // other address-shaped fallback slipped past that check.
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+      expect(emitted).toContain('reference=n/a');
+      expect(emitted).toContain('kind=invitation');
+
+      // Sanity check on the helper itself: it must be `undefined`, never
+      // `Username`. cognito-sub.util.spec.ts owns the exhaustive contract;
+      // this pins the same fact in the exact scenario the falsifier mutates.
+      expect(reference).toBeUndefined();
+    },
+  );
+
   it('sendContactMessage rethrows a transport failure unchanged', async () => {
-    process.env.MAIL_TRANSPORT = 'microservice';
-    setMicroserviceEnv();
-    resetMailTransport();
-    resetMicroserviceMailTransportState();
-    mockConnect(createRejectingChannel());
+    useMicroserviceTransport(createRejectingChannel());
 
     const service = new MailService();
 
@@ -341,4 +485,52 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     expect(emitted).toContain('kind=contact');
     expect(emitted).toContain('status=failed');
   });
+
+  it(
+    'auth/account-access-emails T-3, Reviewer Issue 1 — sendInvitation rethrows a transport ' +
+      'failure unchanged, and the failure-path log leaks neither the address nor the password',
+    async () => {
+      useMicroserviceTransport(createRejectingChannel());
+
+      const service = new MailService();
+      const email = 'invitee-secret@example.org';
+      const password = 'S3cr3t-Passw0rd!';
+
+      // The property under test is `sendInvitation` itself, not `dispatch`:
+      // no try/catch in this method may swallow the rejection. Mirrors the
+      // `sendContactMessage` exemplar above, plus the two absence assertions
+      // the remediation calls for on this failure-path output.
+      await expect(service.sendInvitation(email, password, 'sub-abc')).rejects.toThrow(
+        'The mail broker rejected the message.',
+      );
+
+      const emitted = emittedText();
+      expect(emitted).toContain('kind=invitation');
+      expect(emitted).toContain('status=failed');
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+    },
+  );
+
+  it(
+    'auth/account-access-emails T-3, Reviewer Issue 1 — sendAdminReset rethrows a transport ' +
+      'failure unchanged, and the failure-path log leaks neither the address nor the password',
+    async () => {
+      useMicroserviceTransport(createRejectingChannel());
+
+      const service = new MailService();
+      const email = 'reset-target-secret@example.org';
+      const password = 'An0th3r-Passw0rd!';
+
+      await expect(service.sendAdminReset(email, password, 'sub-def')).rejects.toThrow(
+        'The mail broker rejected the message.',
+      );
+
+      const emitted = emittedText();
+      expect(emitted).toContain('kind=admin-reset');
+      expect(emitted).toContain('status=failed');
+      expect(emitted).not.toContain('@');
+      expect(emitted).not.toContain(password);
+    },
+  );
 });

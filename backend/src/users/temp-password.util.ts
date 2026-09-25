@@ -15,9 +15,17 @@
  * ambiguity-free alphabet is used for legibility when the admin reads it aloud or
  * copies it (no `0/O`, `1/l/I`, etc.).
  *
- * SECURITY: the value this returns is a secret. Callers MUST return it ONLY in the
- * Admin-guarded HTTP response body — never log it, store it, or place it in an
- * error message.
+ * SECURITY: the value this returns is a secret — never log it, store it, or
+ * place it in an error message. That is absolute and unchanged.
+ *
+ * Its permitted EXIT is no longer "Admin-guarded HTTP response body only" for
+ * every caller (`auth/account-access-emails`, DD-7 — see
+ * `backend/CLAUDE.md`'s "Users module — no-email credential handoff" dated
+ * superseded-by note). `UsersService.create()` now also places it in the
+ * invitation email body dispatched via `MailService` (FR-1, T-4, shipped).
+ * `UsersService.resetPassword()`'s exit is no longer the Admin-guarded HTTP
+ * response body alone — T-5 gave it the identical mail-dispatch pattern
+ * (FR-5, design.md §5.2/§5.3, shipped).
  */
 
 import { randomInt } from 'node:crypto';

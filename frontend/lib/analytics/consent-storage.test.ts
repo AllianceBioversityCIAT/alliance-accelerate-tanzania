@@ -23,25 +23,77 @@ import {
   CONSENT_POLICY_VERSION,
 } from './consent-storage';
 
-/** Restores whatever `window.localStorage` accessor existed before a test
- *  that replaces it, so throwing tests cannot leak into later tests. */
+/**
+ * The pristine `window.localStorage` descriptor, captured ONCE at module load
+ * — before any test has patched anything.
+ *
+ * Captured here rather than inside the helper because the helper's own
+ * capture is what broke: it read the descriptor at patch time and restored
+ * only `if (original)`. On the Jenkins agent that capture came back empty for
+ * the second patch, the restore was skipped, and the `{ getItem, setItem,
+ * removeItem }` stub — which has no `clear` — leaked into the `beforeEach`
+ * below. Every later test in the file then died on
+ * `window.localStorage.clear is not a function`, three of them, while the
+ * production code under test was perfectly fine.
+ *
+ * If this is ever empty the suite refuses to run, rather than degrading: an
+ * earlier revision of this fix fell back to `delete window.localStorage`, and
+ *measurement showed that is strictly worse here — jsdom exposes `localStorage` as an OWN
+ * accessor with nothing behind it on the prototype, so deleting it leaves
+ * `undefined` and every test in the file dies instead of three.
+ */
+const capturedLocalStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
+
+if (!capturedLocalStorage) {
+  throw new Error(
+    'consent-storage.test.ts cannot guarantee test isolation: window.localStorage ' +
+      'is not an own property of window in this jsdom, so the patched stub could ' +
+      'not be reliably put back. Failing loudly at load beats three confusing ' +
+      '"clear is not a function" errors several tests later.',
+  );
+}
+
+const PRISTINE_LOCAL_STORAGE: PropertyDescriptor = capturedLocalStorage;
+
+/** Put `window.localStorage` back exactly as the module found it. Unconditional. */
+function restorePristineLocalStorage(): void {
+  Object.defineProperty(window, 'localStorage', PRISTINE_LOCAL_STORAGE);
+}
+
+/** Replaces `window.localStorage` for one test, then always puts it back. */
 function withPatchedLocalStorage(
   descriptor: PropertyDescriptor,
   run: () => void,
 ): void {
-  const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
   Object.defineProperty(window, 'localStorage', { ...descriptor, configurable: true });
   try {
     run();
   } finally {
-    if (original) {
-      Object.defineProperty(window, 'localStorage', original);
-    }
+    restorePristineLocalStorage();
   }
 }
 
+// Three restore points, none of them load-bearing alone. Measured, not
+// assumed — each covers a case the others do not:
+//   · beforeEach — starts every test from a known storage object, so one
+//     escaped stub cannot cascade through the rest of the file (the observed
+//     Jenkins failure: three tests down from a single leak).
+//   · the helper's own `finally` — puts it back immediately, so a test that
+//     inspects storage after `withPatchedLocalStorage` returns sees reality.
+//   · afterEach — covers the LAST test in the file, where there is no next
+//     `beforeEach` to clean up. Disabling the `finally` and running under
+//     Node 20 showed this exact gap: a throwing getter left installed past
+//     the final test takes down the jsdom teardown with "Test suite failed
+//     to run", not a normal assertion failure.
 beforeEach(() => {
+  // Restore FIRST, then clear — clearing whatever the previous test left is
+  // precisely what threw "clear is not a function".
+  restorePristineLocalStorage();
   window.localStorage.clear();
+});
+
+afterEach(() => {
+  restorePristineLocalStorage();
 });
 
 describe('consent-storage — round trip (FR-3 scenario 1)', () => {

@@ -88,7 +88,6 @@ Stack names, region, and shared parameters referenced by every script/template.
 |---|---|---|
 | `DevCidr` | 10-data-auth (T-2) | Operator public IP as a `/32` CIDR — the admin/migration ingress rule on `3306`. Auto-detected at deploy time (OQ-6), override via `DEV_CIDR`. |
 | `AllowedOrigin` | 20-backend (T-3, T-8) | CORS allow-origin for the HTTP API. Default `*` for the dev bootstrap; locked to the CloudFront URL in step 5 (FR-6, DD-6). |
-| `PortalUrl` | 10-data-auth, `bugfix/admin-user-invite-and-reset` §7.1 | Admin portal base URL used in the invitation email CTA (`/login` is appended). Default is the current dev CloudFront URL. |
 
 ### Cross-stack wiring (outputs → params)
 
@@ -141,8 +140,10 @@ CloudFront origin.
   (your public IP/32); override via `VPC_ID` / `DEV_CIDR`.
 - **[2/4]** **pauses** for you to run `migrate-seed.sh` (step 2 below) in another
   shell; on a non-TTY it instructs-and-continues (or set `SKIP_MIGRATE_PAUSE=yes`).
-- **[3/4]** `sam build` + deploy `20-backend` (CORS `AllowedOrigin` defaults to
-  `*` for the dev bootstrap).
+- **[3/4]** `sam build` + deploy `20-backend`, passing `AllowedOrigin`
+  resolved from the live `30-frontend` `CloudFrontUrl`; on a true first-time
+  bootstrap the frontend stack does not exist yet and `*` is passed and
+  announced on stderr, then locked in step 5.
 - **[4/4]** deploy `30-frontend`.
 
 After each stack it prints that stack's CloudFormation **outputs** to stdout. The
@@ -167,8 +168,11 @@ sample** (no real PII) from `backend/`.
 RDS security group (the `DevCidr` ingress rule); `jq`, AWS CLI v2, Node 20, and
 backend deps installed (`cd backend && npm ci`). Defaults to `--profile IBD-DEV` /
 `eu-west-1` / stack `accelerate-tz-dev-data-auth` (override via `AWS_PROFILE` /
-`AWS_REGION` / `DATA_AUTH_STACK`). A non-`IBD-DEV` profile triggers a confirmation
-guard (interactive `yes` or `CONFIRM=yes`).
+`AWS_REGION` / `DATA_AUTH_STACK`). A non-`IBD-DEV` profile now **aborts** rather
+than proceeding — `CONFIRM` no longer authorises it. The only way to run against
+another profile is `AWS_PROFILE=<profile> ALLOW_NON_IBD_DEV_PROFILE=<profile>`,
+naming the same profile in both, which announces the override on stderr
+(`infra/scripts/_guard.sh`, `bugfix/deploy-script-guardrails`).
 
 ### Step 4 (cont.) — build + deploy the frontend
 
@@ -213,6 +217,7 @@ and exits non-zero if **any** check fails:
 | 3 | **PII boundary (NFR-5)** | Neither body contains any `NEVER_PUBLIC_FIELDS` key (`traderId`, `gpsAltitude`, `gpsAccuracy`, `registrationSource`, `consentMethod`, `consentObtainedAt`, `consentReference`, `technicalSupport`; case-insensitive, any depth) — **fail-closed**; **both** the `/actors` list body **and** `/metrics` additionally contain none of `CONTACT_BLOCK_FIELDS` (`contactPerson`, `position`, `phone`, `email`, `marketLocation`), which are required present only on the single-actor **detail** read for a `GRANTED` actor (FR-1) and so are excluded from that one assertion — not from `/metrics`; the script has no detail check today; and `/actors` is the PII-safe list contract (`{ data:[], page, pageSize, total }`). Mirrors `backend/src/common/pii-consent.policy.ts`'s `NEVER_PUBLIC_FIELDS`/`CONTACT_BLOCK_FIELDS` split, as asserted over HTTP by `backend/src/test/pii-boundary.spec.ts`. |
 | 4 | **Frontend reachability (FR-5/6)** | CloudFront serves `/` and `/map` → 200 (the export's trailingSlash + the T-5 viewer-request rewrite resolve `/map`). |
 | 5 | **S3 privacy (FR-5/DD-5)** | A direct S3 object URL (`https://<bucket>.s3.<region>.amazonaws.com/index.html`) → **403** — the bucket is private; only CloudFront via OAC may read it. A 200 here is a leak and FAILs. |
+| 6 | **CORS boundary (FR-6)** | A genuine preflight (`OPTIONS` + `Origin` + `Access-Control-Request-Method`) from a disallowed origin against `/api/v1/actors` must get a real rejection: FAILs on a permissive `Access-Control-Allow-Origin: *`, on the disallowed origin being echoed back, on a refused connection, or on a non-2xx/5xx response with no ACAO header; PASSes only on a clean 2xx/204 rejection with no ACAO at all. Added by `bugfix/deploy-script-guardrails` (T-6) — this is the check that catches the fail-open CORS gap documented in `docs/infrastructure.md` §3. |
 
 > ⚠️ **"Renders live data" is a final manual browser check.** The pages serve over
 > HTTPS, but the actor/metrics DATA is fetched client-side by JS — curl sees the
@@ -682,8 +687,11 @@ the CloudFront distribution (FR-8, NFR-6). It guards and orders the destruction:
 
 - **Confirmation guard:** requires `CONFIRM=yes` or typing `yes`/`destroy` at an
   interactive prompt; it **refuses to run unattended** (non-TTY with no `CONFIRM`).
-  A non-`IBD-DEV` profile triggers the same IBD-DEV warning/confirm as the other
-  scripts.
+  This guard is destruction-confirmation only. A non-`IBD-DEV` profile is a
+  **separate**, earlier check that now **aborts** the run rather than prompting —
+  `CONFIRM` does not authorise it. The only way to target another profile is
+  `AWS_PROFILE=<profile> ALLOW_NON_IBD_DEV_PROFILE=<profile>`, naming the same
+  profile in both (`infra/scripts/_guard.sh`, `bugfix/deploy-script-guardrails`).
 - **Empties the frontend bucket first** — CloudFormation cannot delete a non-empty
   S3 bucket, so it resolves `FrontendBucketName` from the 30-frontend outputs and
   `aws s3 rm --recursive` before deleting that stack.

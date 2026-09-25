@@ -284,7 +284,7 @@ export default function LegalDocumentView({ document, slot }: Readonly<LegalDocu
           then optional lede, then sections) and format across all three
           documents, per FR-7's structural-uniformity scenario. */}
       <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted">
-        Version {document.version} &middot; Effective {document.effectiveDate}
+        Version {document.version} &middot; Effective date: {document.effectiveDate}
       </p>
 
       {document.lede

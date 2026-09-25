@@ -133,6 +133,21 @@ describe('ListQueryDto', () => {
     expect(await invalidProps(dto)).toContain('pageSize');
   });
 
+  // ATP-68 raised the public list's cap 100 → 500 so the map reaches the
+  // PRD's 1 000+ target in 10 sequential round trips instead of 50. Both
+  // sides of the boundary are pinned: a silent drift back to 100 would
+  // quadruple the map's request count without failing anything else.
+  it('accepts a pageSize of exactly 500, the max (ATP-68)', async () => {
+    const dto = plainToInstance(ListQueryDto, { pageSize: '500' });
+    expect(await invalidProps(dto)).not.toContain('pageSize');
+    expect(dto.pageSize).toBe(500);
+  });
+
+  it('rejects a pageSize of 501, one over the max (ATP-68)', async () => {
+    const dto = plainToInstance(ListQueryDto, { pageSize: '501' });
+    expect(await invalidProps(dto)).toContain('pageSize');
+  });
+
   it('rejects a non-taxonomy role', async () => {
     const dto = plainToInstance(ListQueryDto, { role: 'wholesaler' });
     expect(await invalidProps(dto)).toContain('role');

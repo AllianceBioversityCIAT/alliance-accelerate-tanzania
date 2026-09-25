@@ -10,7 +10,7 @@
 //
 // Design: icon-led institutional card with a faint decorative ordinal (NFR-1).
 // Icon tile: bg-primary/10 text-primary — matches eyebrow pill token pattern.
-// Ordinal: absolute top-right, text-primary/10 — purely decorative, aria-hidden.
+// Ordinal: absolute top-right, text-primary + opacity-10 — purely decorative, aria-hidden.
 //
 // Usage (server):
 //   <PillarCards />
@@ -107,10 +107,16 @@ export default function PillarCards() {
             key={pillar.title}
             className="relative bg-surface border border-border rounded-lg shadow-sm p-6 flex flex-col gap-4"
           >
-            {/* Decorative ordinal — top-right corner, faint primary tint, aria-hidden. */}
+            {/* Decorative ordinal — top-right corner, faint primary tint, aria-hidden.
+                `text-primary` + `opacity-10`, NOT `text-primary/10` — the modifier
+                emits no rule on a semantic token, so this was rendering at FULL
+                primary instead of a 10% watermark: a bold 4xl numeral at full
+                strength where a ghost was intended. Inverted failure from the
+                Hero/ClosingCTA scrims (too loud, not absent) but the identical
+                cause. The span holds only the numeral, so element opacity is exact. */}
             <span
               aria-hidden="true"
-              className="absolute top-5 right-6 text-4xl font-bold text-primary/10 leading-none select-none"
+              className="absolute top-5 right-6 text-4xl font-bold text-primary opacity-10 leading-none select-none"
             >
               {index + 1}
             </span>

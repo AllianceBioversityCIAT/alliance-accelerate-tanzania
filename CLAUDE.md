@@ -29,7 +29,7 @@ These form the **constitutional baseline** for all AKILI-SPECS work. Module/feat
 - **Maps:** **Leaflet**. **Auth/RBAC:** **AWS Cognito** (groups `admin`, `staff`; anonymous = `Public`).
 
 ## Hard constraints
-- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); passing it `--profile` is silently ignored and an ambient profile wins.
+- **AWS profile:** every AWS CLI command, deploy script, and IaC/Serverless definition **MUST** use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); passing it `--profile` is silently ignored. An ambient non-`IBD-DEV` `AWS_PROFILE` no longer wins silently either: all seven `infra/scripts/*.sh` (including `deploy-frontend.sh`) now source a shared profile floor (`infra/scripts/_guard.sh`) that **aborts** unless `ALLOW_NON_IBD_DEV_PROFILE` is set to that exact same profile — `bugfix/deploy-script-guardrails`, closing the ATP-65 gap this line used to describe.
 - **PII protection:** consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public **only** on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path (`GET /api/v1/actors`, the map, the dashboard, the CSV export) — that split is structural (the list projection never names those fields), not a per-request check. `NEVER_PUBLIC_FIELDS` (operational metadata plus `technicalSupport`) stays absolute on every public path regardless of consent. Enforce server-side in the role-aware serializer (defense in depth), not just in the client.
 - **Static export:** no Next.js SSR/ISR/route handlers — all server logic lives in the NestJS API.
 - **Design tokens:** use tokens from `docs/ux-ui/design.md §7` — no hardcoded colors/geometry.
@@ -41,7 +41,9 @@ Agents run these on every task, so the canonical form is the **failure-only** va
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
-| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) — **green across all three stacks again as of 2026-09-09** (ATP-60 bumped the Lambda runtime to `nodejs24.x`). A red result is now evidence about the change under test. | — | — |
+| `infra/` | `./infra/scripts/validate.sh` (SAM validate, `--profile IBD-DEV`) — **green across all three stacks again as of 2026-09-09** (ATP-60 bumped the Lambda runtime to `nodejs24.x`). A red result is now evidence about the change under test. As of `bugfix/deploy-script-guardrails`, this script also sources the shared profile floor (`infra/scripts/_guard.sh`): it still makes no STS call and creates no resources (safe for the agent loop), but it now **aborts** if the ambient `AWS_PROFILE` diverges from `IBD-DEV` without a matching `ALLOW_NON_IBD_DEV_PROFILE`. | — | — |
+| `infra/` (scripts) | `./infra/scripts/tests/run-tests.sh` — 51 hermetic, stub-backed cases over `infra/scripts/*.sh`: the profile floor, and the **account-id scan** that enforces *no account id versioned under `infra/`*. ⚠️ **`validate.sh` does not cover `infra/scripts/` at all** — it validates templates and never reads a script. Omitting this row is how `auth/forgot-password-delivery` shipped a red account-id gate and recorded it as pre-existing. | — | — |
+| `infra/10-data-auth/functions/custom-email-sender/` | `cd infra/10-data-auth/functions/custom-email-sender && npm test` — 59 tests. ⚠️ **`npm test`, never a bare `npx jest`**: the package is ESM and needs `node --experimental-vm-modules`; a bare invocation fails with a misleading `SyntaxError: Cannot use import statement outside a module`. | — | — |
 
 The 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` — there is no separate e2e command. There used to be a `test:e2e` script; it pointed at a `test/jest-e2e.json` that does not exist, so it could not execute at all, and this table listed it as a gate anyway. **A gate that cannot run cannot fail** (KZ-002). Removed, script and row together, during `admin/registration-review-queue`'s validation.
 
@@ -63,13 +65,25 @@ Do not guess start commands — the `## Local Environment` contract in `docs/inf
 Children of this file. A module gets a child guide only when its conventions genuinely diverge from the root; children **add to or narrow** these rules and never override them. A child guide missing from this index is drift.
 
 - `backend/CLAUDE.md` — NestJS/Lambda specifics: two-entrypoint shared-bootstrap discipline, serverless-http body-parsing gotcha + the handler-level test harness, Prisma migrations runbook, PII/audit rules, e2e naming/harness conventions, import-template generator.
+- `infra/10-data-auth/functions/custom-email-sender/` — the Cognito `CustomEmailSender` trigger (`auth/forgot-password-delivery`). **Plain JavaScript (ESM) — the only JS in a TypeScript repo** (that spec's design.md DD-1b): SAM's `nodejs24.x` builder installs but does not transpile. Its own `package.json` and jest runner; see the verification table for the test command.
 - `frontend/CLAUDE.md` — static-export rules, query-param routing pattern, token discipline, API client/type-fidelity conventions, admin shell mobile patterns, per-table table/card breakpoints and sticky-column conventions, generated assets.
+
+- `AGENTS.md` (this directory) — the **root mirror** other tools read. It carries the same constitution as this file and
+  must be updated in lockstep with it. *(Indexed 2026-09-22. Its absence from this list was real drift: it is why
+  `bugfix/deploy-script-guardrails` scoped its diff to root `CLAUDE.md` alone and synced one mirror and not the other,
+  leaving `AGENTS.md` silent about a profile guard `CLAUDE.md` documented — KZ-015.)*
 
 Mirrored for other tools by `backend/AGENTS.md` / `frontend/AGENTS.md`.
 
+## Validation dispatch
+
+**Sequential per-task Reviewers cannot see a cross-task claim.** Each audits a diff against its own task, which is the right scope and the reason they miss anything that is *not* a defect in a diff — a stale baseline, a closure claim that does not close, a ledger describing a different run than the one it recorded. One spec shipped seven Reviewer PASSes and still carried four blocking findings of that kind (`legal/legal-notices-and-consent-copy`).
+
+Before archiving, run **validators scoped by dimension, in parallel, each explicitly told not to defer to the Leader's framing.** Three dimensions that earned their keep: clause-level coverage closure across the whole spec · mutual consistency of the spec's decisions · every factual claim in the spec documents checked against the code. This is KZ-012's countermeasure, and it works because it is **structural** — an author cannot audit their own closure claim, however carefully they read.
+
 ## Spec taxonomy under `docs/specs/`
 - `general-setup/` — methodology templates (this baseline).
-- `<domain>/<feature-slug>/` — feature specs (e.g. `actors/`, `seed-map/`, `import-export/`).
+- `<domain>/<feature-slug>/` — feature specs (e.g. `actors/`, `seed-map/`, `import-export/`, `legal/`).
 - Use `enhancement/`, `bugfix/`, or `epic/` prefixes when a change is not a new domain feature.
 - `archive/<YYYY-MM-DD>-<domain>--<slug>/` — completed, archived specs (frozen records).
 

@@ -15,6 +15,16 @@ Parameters:
       (step 3); locked to the CloudFront URL on the set-cors redeploy (step 5,
       FR-6, DD-6).
     Default: "*"
+  PublicAppBaseUrl:
+    Type: String
+    Description: >-
+      Public base URL of the web application, used to build the applicant-facing
+      links in mail templates (ATP-67 — the registration receipt's status-lookup
+      link). Leave EMPTY to inherit AllowedOrigin, which the pipeline already
+      resolves to the live CloudFront URL on every steady-state deploy; set it
+      explicitly once the app moves to its own domain, or whenever the CORS
+      origin and the public URL stop being the same value. No trailing slash.
+    Default: ""
   DataAuthStackName:
     Type: String
     Description: >-
@@ -43,6 +53,15 @@ Parameters:
     AllowedValues:
       - microservice
     Default: microservice
+
+Conditions:
+  # ATP-67 — when PublicAppBaseUrl is left empty, fall back to AllowedOrigin.
+  # The pipeline's steady-state Deploy Backend stage resolves the live
+  # CloudFrontUrl into AllowedOrigin already, so this wires the receipt
+  # email's link correctly with NO pipeline change. On the bootstrap path
+  # AllowedOrigin is "*", which is not a usable link — mail.config.ts rejects
+  # it rather than mailing "*/register/status/" to an applicant.
+  HasExplicitPublicAppBaseUrl: !Not [!Equals [!Ref PublicAppBaseUrl, ""]]
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -236,6 +255,16 @@ Resources:
             Fn::Sub: "${DataAuthStackName}-UserPoolId"
           COGNITO_CLIENT_ID: !ImportValue
             Fn::Sub: "${DataAuthStackName}-UserPoolClientId"
+          # ATP-67 — public base URL for applicant-facing links in mail
+          # templates (the registration receipt's status lookup). Was a
+          # hardcoded CloudFront domain inside receipt.template.ts; a domain
+          # move would have left the email pointing at the old address with
+          # nothing failing. Defaults to AllowedOrigin, which the pipeline
+          # already sets to the live CloudFront URL.
+          PUBLIC_APP_BASE_URL: !If
+            - HasExplicitPublicAppBaseUrl
+            - !Ref PublicAppBaseUrl
+            - !Ref AllowedOrigin
           # T3-A1 - mail transport + OTP HMAC key (design.md §4.3). AWS_REGION
           # is deliberately NOT set here - it is reserved by the Lambda runtime.
           # MAIL_TRANSPORT is the MailTransport PARAMETER (T-8); Phase B (T-10)
@@ -270,12 +299,19 @@ Resources:
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
           # group resolves empty or the directory call fails
-          # (AdminRecipientResolver.getFallback()). email-notification-microservice
-          # (FR-6) removed SES, so the constraint that originally selected this
-          # address — it had to be an SES-verified identity — no longer exists.
-          # The notification microservice has no such restriction; this address
-          # is now an open product choice, not a technical necessity.
-          CONTACT_FALLBACK_RECIPIENT: j.cadavid@cgiar.org
+          # (AdminRecipientResolver.getFallback()). Reached rarely by design -
+          # every normal submission goes to the live `admin` group - so a
+          # message landing here is one nobody is expecting.
+          #
+          # CHOSEN BY THE PRODUCT OWNER, 2026-09-18. The previous value
+          # (j.cadavid@cgiar.org) was never specified by anyone: it was
+          # INFERRED under the SES sandbox, where only an SES-verified
+          # identity could receive mail and that was the one identity this
+          # template verified (contact/contact-channels execution.md records
+          # the inference and asked the owner to override it). FR-6 removed
+          # SES and with it the constraint, leaving an address chosen by a
+          # dead technical reason. This value replaces it by decision.
+          CONTACT_FALLBACK_RECIPIENT: Justus.Ochieng@cgiar.org
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
@@ -302,7 +338,30 @@ Resources:
                 - cognito-idp:AdminAddUserToGroup
                 - cognito-idp:AdminRemoveUserFromGroup
                 - cognito-idp:AdminListGroupsForUser
-                - cognito-idp:AdminResetUserPassword
+                # ⚠️ `AdminSetUserPassword`, NOT `AdminResetUserPassword`.
+                # These are two different Cognito actions and the code has
+                # called the former since `feature/admin-credential-handoff`
+                # (PR #45, commit 5fb371b) replaced Cognito's own
+                # code-based reset with the returned-temporary-password
+                # handoff — `users.service.ts::resetPassword` issues
+                # `AdminSetUserPasswordCommand({ Permanent: false })`.
+                # This policy was written before that change and was never
+                # updated, so every admin password reset got AccessDenied
+                # from Cognito, which `cognito-error.mapper.ts` does not map
+                # and therefore surfaced as a bare 500 — with NO log line,
+                # since Nest does not log deliberately-thrown HttpExceptions.
+                # Found by `auth/account-access-emails` D-6, the manual
+                # end-to-end delivery check, on 2026-09-22: the invitation
+                # flow worked (AdminCreateUser IS granted) and the reset
+                # flow 500'd. Nothing automated could have caught it — the
+                # unit suites mock the Cognito client, so IAM is never
+                # exercised.
+                - cognito-idp:AdminSetUserPassword
+                # Same reset call, second half: the temporary password is
+                # pointless while an existing refresh token keeps renewing.
+                # Same defect as the block above, same file, second time:
+                # the call shipped in aee94f8 and this grant did not.
+                - cognito-idp:AdminUserGlobalSignOut
                 # contact/contact-channels (T-11, FR-3): the contact form's
                 # AdminRecipientResolver lists the `admin` group's current
                 # members to resolve live recipients. Missing grants fail at

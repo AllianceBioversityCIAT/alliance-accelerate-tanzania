@@ -1,7 +1,9 @@
 # Proposal — Deploy scripts silently honour an ambient `AWS_PROFILE`
 
 > ⚠️ **SUPERSEDED 2026-09-18 — do not execute this proposal.**
-> Absorbed into **`docs/specs/bugfix/deploy-script-guardrails/`**, which specifies this
+> **Superseded and delivered.** Absorbed into
+> **`docs/specs/archive/2026-09-21-bugfix--deploy-script-guardrails/`** (archived
+> 2026-09-21, PR #82), which specifies this
 > bug (ATP-65) together with ATP-64: both are the same root cause — `${VAR:-default}`
 > making a safety value a fallback rather than a floor — in the same header block of
 > `infra/scripts/deploy.sh`.

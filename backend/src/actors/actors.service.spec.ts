@@ -286,8 +286,8 @@ describe('ActorsService (mocked Prisma)', () => {
 
       const res = await service.findPublic({ pageSize: 9999 } as ListQueryDto);
 
-      expect(prisma.actor.findMany.mock.calls[0][0].take).toBe(100);
-      expect(res.pageSize).toBe(100);
+      expect(prisma.actor.findMany.mock.calls[0][0].take).toBe(500);
+      expect(res.pageSize).toBe(500);
     });
 
     it('PII-strips every returned item even when source rows carry PII (NFR-1)', async () => {

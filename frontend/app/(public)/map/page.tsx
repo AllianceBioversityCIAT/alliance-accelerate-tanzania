@@ -38,7 +38,11 @@ export default function MapPage() {
   // useDashboardActors accumulates ALL matching actors across pages (pageSize=100,
   // up to 10 pages = 1 000 actors) so the map always plots the full result set
   // rather than a single 20-actor page (bug: map/page T-1).
-  const { actors, total, loading, error } = useDashboardActors(filters);
+  // `truncated` is load-bearing, not decorative: the hook stops at
+  // DASH_PAGE_SIZE × DASH_MAX_PAGES actors while `total` keeps reporting the
+  // server's full count. Dropping it here is what let the rail caption a
+  // 1 000-marker map "1200 actors shown" (ATP-68).
+  const { actors, total, truncated, loading, error } = useDashboardActors(filters);
 
   // Build the PublicActorList shape expected by <ActorMap data=…>.
   const data: PublicActorList = {
@@ -80,6 +84,7 @@ export default function MapPage() {
       <DiscoverRail
         actors={actors}
         total={total}
+        truncated={truncated}
         loading={loading}
         error={error}
         filters={filters}

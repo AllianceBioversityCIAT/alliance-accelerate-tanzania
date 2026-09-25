@@ -195,6 +195,12 @@ Same judgment, different workers. The operational contract (suite partitioning, 
 
 Before holding a task at `[~]` because a visual or behavioral check "needs the live stack, a login, or seeded data", **test that assumption**: if the component takes plain props (its token or session is used only for mutations), a throwaway harness page renders it with no stack, no database, and no auth. Presentational surfaces are almost never actually blocked — and a check deferred on a false blocker is a check that finds real defects late.
 
+## A `[~]` is a re-entry point, not only a record (KZ-011, `legal/legal-notices-and-consent-copy`)
+
+Flipping a task to `[x]` early does not merely lose evidence — it removes the signal that makes a later pass look again, and everything that task still owed becomes **invisible** rather than unproven. Measured: a `[~]` flipped against its own `execution.md` entry left a constitutional baseline swept *before* the work it described had landed; the ledger then read closed, nothing re-examined it, and four false statements reached the merge candidate. It took three independent validators to find them.
+
+**Never flip a status box in the same write as another task's, and re-read that task's own entry first.**
+
 ## Applying a correction — both directions (KZ-004)
 
 **Never work the site list a finding hands you.** Grep the superseded value across every spec document before declaring an amendment applied, and in the same change mark as resolved every document that *quotes* the corrected figure — correcting a sibling falsifies anything citing it.

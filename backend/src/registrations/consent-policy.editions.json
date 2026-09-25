@@ -28,7 +28,7 @@
       "sections": [
         {
           "heading": "Consent for Publication of Information",
-          "body": "The ACCELERATE Tanzania Registry is an online platform operated by the International Center for Tropical Agriculture (CIAT) to increase the visibility of actors involved in seed systems and agricultural value chains, facilitate business and professional connections, and support access to market opportunities and services.\n\nFor purposes of the ACCELERATE Tanzania Registry, CIAT acts as the organization responsible for the collection, storage, use, and publication of information submitted through the Registry.\n\nBefore submitting this registration, please read this Consent carefully."
+          "body": "The ACCELERATE Tanzania Registry is an online platform operated by the International Center for Tropical Agriculture (CIAT), through its Tanzania office, to increase the visibility of actors involved in seed systems and agricultural value chains, facilitate business and professional connections, and support access to market opportunities and services.\n\nFor purposes of the ACCELERATE Tanzania Registry, CIAT acts as the organization responsible for the collection, storage, use, and publication of information submitted through the Registry.\n\nBefore submitting this registration, please read this Consent carefully."
         },
         {
           "heading": "Purpose of the Registry",
@@ -56,7 +56,22 @@
         },
         {
           "heading": "Rights of Data Subjects",
-          "body": "You have the right, at any time, to:\n- Request access to the information associated with your profile.\n- Request correction of inaccurate, incomplete, or outdated information.\n- Request updates to your profile.\n- Request the removal of your profile and associated information from the Registry.\n- Withdraw your consent to the publication and use of your information.\n- Request information regarding how your data is being used, stored, or disclosed through the Registry.\n- Submit a complaint to the competent data protection authority or other competent authority in accordance with applicable law.\n\nWithdrawal of consent will not affect any processing already carried out before the withdrawal request is received.\n\nTo exercise any of these rights, or if you have any questions regarding this Consent or the use of your information, please contact:\n(Contact person) Email: Address:\n\nRequests will be reviewed and addressed within a reasonable period of time and in accordance with applicable legal and data protection requirements.\n\nI understand that requests to update, correct, or remove information published through the Registry may be submitted to the Registry administrators. I further understand that:\n- Withdrawal of consent will not affect processing carried out before the withdrawal request is received and processed by CIAT.\n- Information previously accessed, copied, downloaded, shared, or indexed by third parties may remain available outside the control of CIAT even after removal from the Registry."
+          "body": "You have the right, at any time, to:\n- Request access to the information associated with your profile.\n- Request correction of inaccurate, incomplete, or outdated information.\n- Request updates to your profile.\n- Request the removal of your profile and associated information from the Registry.\n- Withdraw your consent to the publication and use of your information.\n- Request information regarding how your data is being used, stored, or disclosed through the Registry.\n- Submit a complaint to the competent data protection authority or other competent authority in accordance with applicable law.\n\nWithdrawal of consent will not affect any processing already carried out before the withdrawal request is received.\n\nTo exercise any of these rights, or if you have any questions regarding this Consent or the use of your information, please contact:",
+          "contact": [
+            {
+              "label": "Contact person",
+              "value": "Sylvia Kalemera"
+            },
+            {
+              "label": "Email",
+              "value": "S.Kalemera@cgiar.org"
+            },
+            {
+              "label": "Address",
+              "value": "Tanzania Agricultural Research Institute (TARI), Selian Centre, Dodoma Road, Arusha, Tanzania"
+            }
+          ],
+          "bodyAfter": "Requests will be reviewed and addressed within a reasonable period of time and in accordance with applicable legal and data protection requirements.\n\nI understand that requests to update, correct, or remove information published through the Registry may be submitted to the Registry administrators. I further understand that:\n- Withdrawal of consent will not affect processing carried out before the withdrawal request is received and processed by CIAT.\n- Information previously accessed, copied, downloaded, shared, or indexed by third parties may remain available outside the control of CIAT even after removal from the Registry."
         },
         {
           "heading": "Consent",
