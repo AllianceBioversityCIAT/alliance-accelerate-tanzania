@@ -73,10 +73,10 @@ import type { LegalDocument } from './types';
 export const TERMS_OF_USE: LegalDocument = {
   title: 'ACCELERATE Tanzania Registry - Terms of Use',
   version: 'v1.0',
-  effectiveDate: 'Insert Date',
+  effectiveDate: '30 September 2026',
   lede: [
     'Welcome to the ACCELERATE Tanzania Registry (the "Registry").',
-    'The Registry is operated by CIAT ("CIAT", "we", "our", or "us").',
+    'The Registry is operated by the International Center for Tropical Agriculture (CIAT), through its Tanzania office ("CIAT", "we", "our", or "us").',
     'By accessing or using the Registry, you agree to comply with these Terms of Use. If you ' +
       'do not agree with these Terms, you should not access or use the Registry.',
   ],
@@ -400,10 +400,10 @@ export const TERMS_OF_USE: LegalDocument = {
         {
           kind: 'contact',
           entries: [
-            { label: 'Contact person', value: '' },
-            { label: 'Email', value: 'Insert Email' },
-            { label: 'Address', value: 'Insert Address' },
-            { label: 'Telephone', value: 'Insert Telephone Number' },
+            { label: 'Contact person', value: 'Sylvia Kalemera' },
+            { label: 'Email', value: 'S.Kalemera@cgiar.org' },
+            { label: 'Address', value: 'Tanzania Agricultural Research Institute (TARI), Selian Centre, Dodoma Road, Arusha, Tanzania' },
+            { label: 'Telephone', value: '+255 768 508 976' },
           ],
         },
       ],

@@ -99,7 +99,7 @@ describe('/privacy page — approved-copy status (T-8)', () => {
     renderPrivacyPage();
 
     expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/effective insert date/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective date: insert date/i)).toBeInTheDocument();
   });
 
   // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): the previous page's
