@@ -123,14 +123,14 @@ The spec had the right convention and did not apply it here: FR-6 was *"struck r
 | D-1 | `design.md` DD-3: *"the **twenty-two** (a) rows remain reasoned"* | §6 has **22 rows total**; **15** keys are `(a)`. ⚠️ **The same defect this document congratulates itself for catching** — the parallel sentence in §6 was corrected, this one inverted it |
 | D-2 | `design.md` §11 + `tasks.md` T-7 quote `trd.md:288` as *"self-service password-reset mail (COGNITO_DEFAULT)"* | That text is **not in the file**. Either T-7 edited the diagram and `execution.md` never says so, or the quote was never accurate and propagated through three documents |
 | D-3 | `design.md` §11: *"It is **task 6**"* | The TRD correction is **T-7**. `design.md` §9's enumeration — written *"so the count is reachable"* — disagrees with `tasks.md` in **6 of 7 positions**; totals coincide only because a split and a merge cancel |
-| D-4 | `execution.md`: *"**Every** (a)-class row also survived untouched — [13 keys]"* | Covers **12 of 15** `(a)` keys and includes **2 non-`(a)`** rows |
+| D-4 | `execution.md`: *"**Every** (a)-class row also survived untouched — [13 keys]"* | Covers **11 of 15** `(a)` keys *(this report first said 12; both validators independently derived 11, and the remediation carries the derivation)* and includes **2 non-`(a)`** rows |
 | D-5 | `requirements.md` **NFR-2** cites ATP-71's `lambda.ts` harness: *"Under **Option B** this flow runs in that same handler"* | Option B was abandoned. This is a standalone `.mjs` Lambda; that harness does not apply |
 | D-6 | `requirements.md` **NFR-5**: *"closing off Cognito's own ForgotPassword (**FR-6**) is now the **only reason** this spec touches `10-data-auth`"* | **FR-6 is struck.** Both halves false. This is the live dependency on a struck requirement |
 | D-7 | `requirements.md` **NFR-6**: *"since **FR-4 makes the request wait on the real send**"* | FR-4 was rewritten 45 lines above, in the same document, to remove exactly that |
 | D-8 | `proposal.md` §15: *"Confirm the revised §12 recommendation (**Option B**), then re-run `/akili-specify`"* | Route reversed to Path 1. §12 carries a reversal banner; **§15 does not** — and §15 is the section later documents quoted D-5/D-6 from |
 | D-9 | `proposal.md` §13.1 **Q-3**, a recorded *user ruling* | Silently reversed by §12.1 + FR-4's rewrite. The section whose purpose is recording user decisions carries one a later decision overturned |
 | D-10 | `execution.md`: *"the parameter wiring **proved itself** on first contact"* | ⚠️ **Leader's own.** The deploy was a **targeted `sam deploy` that bypassed `deploy.sh`** — where that wiring lives. What resolved the parameter was the Leader's runbook duplicating the logic. **T-6's actual deliverable has never been exercised against AWS** |
-| D-11 | `design.md`/`execution.md`: *"the backend's **786-line** transport"* | **785** lines. Trivial, but stated as a measurement and load-bearing for DD-3a |
+| D-11 ⚠️ | **Was not assigned to any batch** — a Leader error in splitting the work; closed in the final single-owner pass. | `design.md`/`execution.md`: *"the backend's **786-line** transport"* | **785** lines. Trivial, but stated as a measurement and load-bearing for DD-3a |
 
 ### D-12 · The budget was breached on three axes and no document records it
 
@@ -195,7 +195,9 @@ Of 23 rows: one rests on a false premise (NFR-6), one contradicts the design ame
 
 ## 8. Remediation
 
-**Blocking (4):** **B-4** (the only behavioural one — fix written, redeploy pending) · B-1 · B-2 · B-3.
+**All four blocking are CLOSED.** B-4 fixed, deployed and verified live; B-1, B-2 and B-3 amended and Reviewer-PASSed.
+
+⚠️ **This section's earlier remediation list read `WARN (12): W-2…W-13` — it silently omitted W-14, which this report had itself added minutes before.** That omission is why no batch owned W-14, and why it survived a four-batch sweep. It is now closed. D-11 was dropped the same way: named in §4 and assigned to nobody.
 **Cheapest high-value (1):** W-1 — minutes, and it is the only live path with zero live evidence.
 **Documentation truth (13):** D-1…D-13 — all text-only.
 **WARN (12):** W-2…W-13.
@@ -208,7 +210,18 @@ Suggested order: **B-1** (a red gate and a violated shipped constraint) → **W-
 
 ## 9. Archive Readiness
 
-⛔ **Not ready.**
+✅ **Ready, with named and accepted debt.**
+
+**All four blocking findings are closed**, the ~20 documentation findings are remediated, and the set survived two independent validation passes plus a single-owner cleanup. Gates: infra **51/51** · `validate.sh` ×3 · function **59/59** · backend **1205/1205**.
+
+⚠️ **What the record should show about how it got here**, because it is the more useful half:
+
+- **The per-task Reviewers caught none of the four blocking findings.** Seven PASSes, and each was right within its scope — a diff against its own task. Every blocking finding was a cross-task claim, which is precisely what `CLAUDE.md` § Validation dispatch says they structurally cannot see.
+- **The only behavioural defect (B-4) needed a real AWS call to find.** Three documentary validators, a full rehearsal and 1205 tests did not surface it; one three-command probe did.
+- **The corrections were themselves the second-largest defect source.** Two validation rounds on the remediation found a miscount inside the correction of a miscount, a corroboration that did not corroborate, and three sites the parallel batches could not see because each owned one file. **Parallelism caused those three**; the single-owner pass was the fix.
+- **One validator finding was wrong** — it read today's tree and concluded B-4's claim had always been false, when git shows the code it cites changed 79 minutes after the measurement. The temporal error this spec has catalogued all day, committed by the auditor hunting it.
+
+**Accepted debt, named rather than closed:** the account-id literal survives in prose and in both `pool-*.json` (W-14 — the guard scans `infra/` only); NFR-6 remains a `SHOULD` against a ceiling AWS does not document; `deploy.sh`'s parameter wiring has still never run against AWS (D-10), because every deploy so far was a targeted `sam deploy`.
 
 Four blocking findings. **B-4** is a measured live regression in a shipped feature and is the one the per-task Reviewers could never have seen — it needed a real AWS call. Of the rest, **B-1** ships a violation of another spec's shipped requirement with a red gate and a false record of why. The documentation set is about to be **frozen as the permanent account of this work**, and it currently contains a requirement the design calls impossible, a closure resting on a premise the design refutes, three requirements reasoning from an abandoned route, and a quoted line that is not in the file it cites.
 

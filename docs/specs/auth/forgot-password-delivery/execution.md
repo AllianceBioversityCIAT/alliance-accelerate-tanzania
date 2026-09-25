@@ -133,7 +133,7 @@ Solved by inversion: the shared `describe.each` keeps only what holds for both b
 
 **The attribute-verification code has no screen anywhere in `frontend/`** — grep-verified independently twice. So a user whose email an admin changes would receive a well-formed message carrying a code they **cannot enter anywhere**. The gap pre-exists; this spec would make it *more* visible by making that mail arrive reliably.
 
-**A cleaner exit exists than handling it:** have `users.service.ts::update()` set `email_verified` in the same `AdminUpdateUserAttributes` call, so Cognito emits no verification mail at all. Small backend change, outside this spec. **Raised with the user, awaiting a decision.**
+**A cleaner exit exists than handling it:** have `users.service.ts::update()` set `email_verified` in the same `AdminUpdateUserAttributes` call, so Cognito emits no verification mail at all. Small backend change, outside this spec. **Raised with the user; decided two days later and landed 2026-09-25 in `2960d74`** — `update()` now sets `email_verified: 'true'` in the same call, exactly as suggested here.
 
 ---
 
@@ -188,7 +188,7 @@ The Reviewer found that `CustomEmailSenderKmsGrantPrincipalArn` **is never passe
 
 - **T-4 owes** `kms:Decrypt` on its function's `Policies:` block and `lambda:InvokeFunction` for `cognito-idp.amazonaws.com` on the function's resource policy. **NFR-4 is not closed until both land.**
 - **T-6 owes** the `deploy.sh` wiring for **both** parameters (DD-2c), and should add an `AllowedPattern` once the override exists — converting the fail-closed default from "first reset fails at T-7" into "deploy refuses at changeset time". ⚠️ The `--role-arn` trap is recorded in DD-2c: the wiring only holds while `sam deploy` runs without one.
-- **T-7 carries four open questions nothing in this repo can answer:** whether the context key is spelled `userpool-id`; whether Cognito's grant carries an encryption-context constraint at all (if not, `StringEquals` matches nothing and `CreateGrant` is denied); whether KMS accepts an empty-string condition value; and whether the `cognito_csicap` principal still resolves (KMS rejects a policy naming a non-existent one).
+- **T-7 carries four open questions nothing in this repo can answer:** whether the context key is spelled `userpool-id`; whether Cognito's grant carries an encryption-context constraint at all (if not, `StringEquals` matches nothing and `CreateGrant` is denied); whether KMS accepts an empty-string condition value; and whether the `cognito_csicap` principal still resolves (KMS rejects a policy naming a non-existent one). ⚠️ **Dispositioned by `tasks.md` T-7, corrected 2026-09-25:** the first two settle implicitly (a successful grant implies both); the empty-string question was never exercised and stays OPEN; the fourth is moot because T-6's deploy resolved a real principal (`cristian.gamboa`), not because of `design.md` DD-6, which came later.
 
 ### The falsifier, restated because it is the point
 
@@ -206,7 +206,7 @@ The spec's largest task: decrypt · route · validate the recipient · build · 
 
 ### Two decisions taken before briefing, both by reading rather than assuming
 
-**DD-3a — AMQP, connecting per invocation, caching nothing.** HTTP looked simpler and is not: the microservice's endpoint URL is **not** in `MailMicroserviceSecret`, and it takes `multipart/form-data`. AMQP needs no configuration we do not already hold. And the backend's 786-line transport is large *because it keeps a connection alive*; a function that opens, publishes under a confirm and closes needs none of it — and caching would import the freeze hazard this repo already shipped a production fix for. **That is what makes NFR-2 structural here**: nothing outlives the invocation.
+**DD-3a — AMQP, connecting per invocation, caching nothing.** HTTP looked simpler and is not: the microservice's endpoint URL is **not** in `MailMicroserviceSecret`, and it takes `multipart/form-data`. AMQP needs no configuration we do not already hold. And the backend's 785-line transport is large *because it keeps a connection alive*; a function that opens, publishes under a confirm and closes needs none of it — and caching would import the freeze hazard this repo already shipped a production fix for. **That is what makes NFR-2 structural here**: nothing outlives the invocation.
 
 **DD-3b — the secret's name embeds `20-backend`'s stack name**, not this one's, so it cannot be composed from the function's own context. A parameter, same shape and reason as DD-2b.
 
@@ -268,7 +268,7 @@ The Implementer argued, and the Reviewer confirmed, that **§10's disposition of
 ### Carried forward
 
 - **T-6 owes three things now**, not two: `deploy.sh` wiring for the principal **and** the pool-id parameters (DD-2c), plus the `AllowedPattern` T-3's review suggested once the override exists. ⚠️ The pool-id wiring is now load-bearing for **DD-5b's `SourceArn`** as well.
-- **T-7 owes the three questions above**, plus the four from T-3 that nothing in this repository can answer.
+- **T-7 owes the three questions above**, plus the four from T-3 that nothing in this repository can answer. ⚠️ See `tasks.md` T-7's disposition (corrected 2026-09-25): two of the four settle implicitly, one (the empty-string condition value) stays OPEN, and the fourth is moot for T-6's deploy-time resolution, not for `design.md` DD-6.
 - Reviewer ADVISORY 2 (a docblock displaced from the function it documents) and 3 (a near-vacuous assertion) — **not applied**, recorded; neither changes behaviour.
 
 ---
@@ -442,7 +442,9 @@ No resource from this attempt remains. The KMS resource had no physical id and f
 
 **Status change: `[~]` → `[x]`.** The blocker was permissions, not design. A scoped IAM grant (CloudFormation on `accelerate-tz-dev-rehearsal-*` only) was requested, granted, and verified by the Leader with a throwaway probe stack before any real work. All four Done-when clauses are now met.
 
-> ⚠️ **The grant request itself produced a finding worth keeping.** The first attempt was rejected by IAM's **2048-non-whitespace-character limit, shared across *all* inline policies on a user** — the budget was already nearly spent. The fix is a **customer-managed policy** (6144 chars, separate budget), not a shorter inline one. The policy was also compacted to **297 non-whitespace characters** (measured) by collapsing eleven scoped CloudFormation actions into `cloudformation:*` **on the same scoped resource ARN** — no widening, since the resource constraint is what bounds it.
+> ⚠️ **The grant request itself produced a finding worth keeping.** The first attempt was rejected by IAM's **2048-non-whitespace-character limit, shared across *all* inline policies on a user** — the budget was already nearly spent. The fix is a **customer-managed policy** (6144 chars, separate budget), not a shorter inline one. The policy was also compacted by collapsing multiple scoped CloudFormation actions into `cloudformation:*` **on the same scoped resource ARN** — no widening, since the resource constraint is what bounds it. ⚠️ **The exact count ("eleven") is dropped for the same reason W-12 drops the compacted policy's character count below:** this policy is committed nowhere under `infra/policies/`, so neither figure is auditable by anyone reading this ledger — the same provenance problem, applied consistently.
+>
+> ⚠️ **Corrected 2026-09-25 (validation-report.md W-12).** The prior sentence here quoted the compacted policy at "297 non-whitespace characters (measured)". That policy is committed nowhere under `infra/policies/`, so the figure was unauditable by anyone reading this ledger. Dropped rather than re-committed: this session has no captured copy of the exact granted-policy JSON to commit faithfully, and writing a reconstructed policy under that claim would trade one unauditable figure for a fabricated one.
 
 #### What was rehearsed, and why this shape
 
@@ -465,6 +467,8 @@ CloudFormation's `UpdateUserPool` reset **exactly the two (c)-class settings and
 | `AdminCreateUserConfig.InviteMessageTemplate` | branded invite HTML | **gone** | ✅ §6 (c) |
 
 Every (a)-class row also survived untouched — `Policies`, `AutoVerifiedAttributes`, `SchemaAttributes`, `MfaConfiguration`, `AccountRecoverySetting`, `VerificationMessageTemplate`, `UserPoolTier`, `KeyConfiguration`, `IssuerConfiguration`, `UserAttributeUpdateSettings`, `UserPoolTags`, `UsernameAttributes`, `LambdaConfig`.
+
+> ⚠️ **Corrected 2026-09-25 (validation-report.md D-4).** "Every (a)-class row" is false as written: `AutoVerifiedAttributes`, `VerificationMessageTemplate` and `UsernameAttributes` are §6 "matches"/"not drift" rows, not `(a)`, and three genuine `(a)` keys are missing — `EmailVerificationMessage`, `EmailVerificationSubject`, `AdminCreateUserConfig.UnusedAccountValidityDays`. Recounted directly against §6 as it now stands (14 `(a)` rows / 15 keys, per `design.md` DD-3's own corrected count): this list covers **11** of the 15, not 12 — the 13-token list above, minus the 3 tokens that are not `(a)`-class (`AutoVerifiedAttributes`, `VerificationMessageTemplate`, `UsernameAttributes`), leaves 10 tokens; but `Policies` names **2** keys, not 1, so the true count is 10 − 1 + 2 = 11. The 4 uncovered `(a)` keys confirm it: `DeletionProtection` (excluded deliberately, see below) plus the 3 named just above — 15 − 4 = 11. `DeletionProtection`'s exclusion is correct and unaffected by this correction.
 
 > ⚠️ **What that does and does not establish — this paragraph originally overstated it and the Reviewer was right to reject the claim.** The rehearsal pool was created **from this same template**, so every omitted property already sat at the AWS default *by construction*, and only the two (c) settings were ever drifted. The (a) rows therefore **could not have done anything but survive** — the observation is identical under the hypothesis that any (a) label is wrong about the real pool, so it discriminates nothing. **The two (c) resets are measured. The (a) enumeration remains reasoned.** What would measure it: drift an (a) property away from its default (e.g. `MfaConfiguration: ON`) and see whether the template-composed update resets it — not done. `DeletionProtection` is deliberately absent from the list above: it was the **forcing change**, explicitly set in the update template, so it is evidence about nothing. D-5's **mechanism** is now demonstrated (twice); D-5's classification is not.
 
@@ -527,7 +531,7 @@ No command against the live pool or the real stack was anything but `describe-*`
 
 - **KZ-010, 4th recurrence.** Two sessions executed T-5 in one checkout, in parallel, neither aware of the other; found by accident, not by any gate. Previous recurrences each ended "still unenforced". ⚠️ **New in this instance: the collision produced a *wrong answer to the user*, not just a messy ledger** — the Leader told the user a permission set was unnecessary while the other session was blocked for want of exactly it. A concurrency defect crossed into advice.
 - **A new lesson, candidate: vendor documentation is a third-party claim under KZ-011, not a primary source.** The CLI help was cited as authority for seven classification rows and raised a false T-6 blocker; a two-minute measurement refuted it. Distinct from KZ-008 (that is about *this repo's* artefacts) — this is about trusting an *external* authority's description of its own behaviour.
-- **KZ-005/KZ-011 again, and at the worst possible site:** the false count ("fifteen" for seven) landed *inside* the sentence warning against unverified claims, in the Leader's ledger — the surface KZ-011 says nothing audits. It took a fifth Reviewer round to catch. Of this task's ten total findings, **nine were in Leader- or prose-authored text and one was in the audit's substance.**
+- **KZ-005/KZ-011 again, and at the worst possible site:** the false count ("fifteen" for seven) landed *inside* the sentence warning against unverified claims, in the Leader's ledger — the surface KZ-011 says nothing audits. ⚠️ *(Corrected 2026-09-25: this read "a fifth Reviewer round" — this task's own attempt table, above, documents four (FAIL/FAIL/FAIL/PASS), not five.)* It took a fourth Reviewer round to catch. ⚠️ **Corrected 2026-09-25 (validation-report.md W-13) — the next sentence is deleted, not fixed.** It read *"Of this task's ten total findings, nine were in Leader- or prose-authored text and one was in the audit's substance."* The entry's own attempt table accounts for only 6 findings; the other four this sentence counted are not identifiable anywhere in the document. Per KZ-008, deleted rather than replaced with another unverifiable number.
 
 #### Closure
 
@@ -579,6 +583,8 @@ The trigger is **per-pool, all-or-nothing**: activating it routes *every* pool e
 
 > ⚠️ **Corrected 2026-09-25 (validation-report.md B-4).** This paragraph named `CustomEmailSender_VerifyUserAttribute` as the source the admin email-edit path emits. **It emits `CustomEmailSender_UpdateUserAttribute`** — measured against DEV after the deploy, by the probe W-1 recommended. The escalation's *reasoning* was sound and its fix was necessary; the source name was inherited from `proposal.md` §2.3, where it sat in a table headed *"Measured on the live pool"* as an inference, since `describe-user-pool` cannot report which trigger source fires. So T-6 widened scope to protect a path that is **not** the one at risk, and the one that was at risk **raised** — breaking the admin email-edit feature in DEV until B-4's fix. The widening was still right: `UpdateUserAttribute` shares that message, so it is now the first live path depending on that parameter.
 
+> ⚠️ **Further correction, hours later, same day: `2960d74`.** After the paragraph above was measured and fixed, `update()` was changed again — an unrelated, owner-requested fix, not this spec's — to set `email_verified: 'true'` in the same `AdminUpdateUserAttributesCommand`. Cognito now has nothing to verify on an admin email edit and emits no trigger for it at all. The widening this paragraph describes was still necessary at the moment it shipped — the break was real, measured live in DEV — it simply stopped mattering to the running application within the same day. `CustomEmailSenderPublicAppBaseUrl` remains correctly wired regardless, since `VerifyUserAttribute` still uses it and stays handled.
+
 `CustomEmailSender_ForgotPassword` was never at risk — DD-1c removed the reset message's link, so the reset builder never calls it.
 
 DD-2c names only two parameters because it predates this interaction. **Put to the user, who approved widening T-6**: T-6 is the task that makes the trigger live, and shipping a trigger that throws on a reachable path would choose the letter over the outcome. Now resolved from `$ALLOWED_ORIGIN` (measured: `https://d3idqvvg0xa1r7.cloudfront.net`), mirroring `20-backend`'s own shipped fallback. **Residual, declared in the template:** on a bootstrap with no frontend stack, `$ALLOWED_ORIGIN` is `'*'` and the throw persists — accepted, no worse than the empty default, self-heals on the next run.
@@ -604,7 +610,7 @@ The new guard also reddened two **pre-existing** cases whose stubs were imprecis
 - `./infra/scripts/validate.sh` → green across all three stacks. **Run by the Leader** at rounds 2 and 3.
 - Corrected cycle falsifier: red (`E3004`) → restore → green.
 - New test-case falsifier: red → restore → green.
-- `./infra/scripts/tests/run-tests.sh` → 51 cases, 50 pass; the one failure is the **pre-existing** `guard-account.no-account-id-literal-in-infra` (T-3's account-id Default), confirmed unchanged by `git stash`. Reported, not fixed — out of scope.
+- `./infra/scripts/tests/run-tests.sh` → 51 cases, 50 pass; the one failure is the ~~pre-existing~~ `guard-account.no-account-id-literal-in-infra` (T-3's account-id Default), ~~confirmed unchanged by `git stash`~~. Reported, not fixed — out of scope. *(Both struck claims are false — see the correction directly below.)*
 
   > ⚠️ **Corrected 2026-09-25 (validation-report.md B-1) — "pre-existing" is false, and the method above could not have shown otherwise.** T-3's account-id `Default` (`infra/10-data-auth/template.yaml:115`) is a literal **this spec introduced** — the Leader confirmed the case passes on `main`, where that line does not exist. **The mechanism, recorded because it is the transferable part:** `git stash` shelves only the *working tree* — uncommitted changes at the moment the command runs. T-3's literal had already been committed three tasks earlier (this same session, this same branch), so stashing at T-6 had nothing of T-3's to shelve; the guard read the identical committed line before and after the stash, and that identity was reported as "unchanged by `git stash`." The claim that method actually supports is narrower than the one written down: *"not introduced by T-6's own uncommitted diff."* It was read as *"not introduced by this branch"* — a different, unproven claim — by an Implementer who asserted it and a Reviewer who corroborated it by reading the same false premise rather than checking out `main`. The falsifier this needed was a **cross-branch** one (`git log --oneline --all -- infra/10-data-auth/template.yaml`, or diffing against `main`), never a working-tree one. Fixed in `infra/10-data-auth/template.yaml` (DD-6) and `infra/10-data-auth/functions/custom-email-sender/index.spec.mjs` (the T-4 fixture, one digit off the allow-list) — see `validation-report.md` B-1 and `design.md` DD-6.
 - **Round 3 moved no property value**: the Leader filtered the cumulative diff for changed lines that are neither blank nor comments; only earlier attempts' structural lines appear.
@@ -635,9 +641,11 @@ The user asked whether a specific deploy was possible instead of flipping Jenkin
 | `DEV_CIDR` is empty, so `deploy.sh` **auto-detects the Jenkins agent's IP and overwrites the RDS ingress rule**, evicting developers | **Untouched** — SAM sends `UsePreviousValue` for omitted parameters, so `DevCidr` stayed `181.234.40.157/32` |
 | Must remember to flip the flag back | Nothing to revert |
 
-#### The parameter wiring proved itself on first contact
+#### ~~The parameter wiring proved itself on first contact~~ *(false — see the correction below, D-10)*
 
 `CustomEmailSenderKmsGrantPrincipalArn` resolved to **`arn:aws:iam::569113802249:user/cristian.gamboa`** — the operator who actually ran it, **not** the `cognito_csicap` ARN hardcoded as the template `Default`. That is precisely the defect DD-2c existed to prevent, and without T-6's wiring the KMS key policy would have named the wrong principal on this very deploy. The other two resolved correctly as well (`eu-west-1_eKINGUN3I`, `https://d3idqvvg0xa1r7.cloudfront.net`).
+
+> ⚠️ **Corrected 2026-09-25 (validation-report.md D-10).** "Proved itself on first contact" is false: this deploy was a **targeted `sam deploy`, not through `deploy.sh`** (see "Why targeted" above) — the ARN above was resolved by the Leader's runbook duplicating `deploy.sh`'s parameter logic, not by `deploy.sh` itself. The B-4 redeploy below was also a targeted `sam deploy` (with `--config-file` this time), still not through `deploy.sh`. **T-6's actual deliverable — the `--parameter-overrides` wiring, the session-ARN shape guard, and the new test case — has still never run against AWS.** Open gap, not a closed claim.
 
 #### The before/after diff — T-6's falsifier, satisfied
 
@@ -695,7 +703,7 @@ INFO   custom-email-sender: dispatched triggerSource=CustomEmailSender_ForgotPas
 REPORT Duration: 1953.61 ms | Init: 598.71 ms | Max Memory: 119/256 MB
 ```
 
-**2.55 s against a 15 s timeout — 17 % of budget.** DD-3a's deliberate connect-per-invocation, flagged as making the cold path "longer on purpose", costs two seconds. And the entire log is one line naming only `triggerSource`: **no recipient address, no code. NFR-1 held in production**, not merely in the tests written to assert it.
+**2.55 s ~~against a 15 s timeout — 17 % of budget~~** *(struck — see the correction below, B-2: the wrong denominator)*. DD-3a's deliberate connect-per-invocation, flagged as making the cold path "longer on purpose", costs two seconds. And the entire log is one line naming only `triggerSource`: **no recipient address, no code. NFR-1 held in production**, not merely in the tests written to assert it.
 
 > ⚠️ **Corrected 2026-09-25 (validation-report.md B-2) — the line above divides by the denominator `design.md` disqualifies, in bold, at §10's C-7 disposition.** `Timeout: 15` is this function's *own* Lambda timeout; the ceiling that matters is Cognito's non-configurable limit on the trigger invocation, which is a **different, unrelated** number — one this spec has not established (no AWS documentation cites it, and this measurement bounds it only from below: the invocation completed and Cognito did not retry, so the real ceiling is *at least* ≈2.55 s and could be anywhere above that). "17 % of budget" computes a percentage against a ceiling the design explicitly says is irrelevant to this question, and should not have been written down as if it answered NFR-6. The measurement itself stands: **`Duration: 1953.61 ms | Init: 598.71 ms` ≈ 2.55 s of cold-path latency this spec introduces.** That datum, restated against the correct (unknown-sized) ceiling rather than `Timeout: 15`, now lives at `design.md` DD-3a — this paragraph is not the canonical home for the number and is not restated if that figure ever changes.
 
@@ -705,9 +713,9 @@ REPORT Duration: 1953.61 ms | Init: 598.71 ms | Max Memory: 119/256 MB
 
 | | |
 |---|---|
-| **D-3** decryption fails at runtime | ✅ the function reached `dispatched`, so it decrypted a real code against the real key |
-| **D-4** the IAM/KMS grant is missing or wrong | ✅ the grant chain worked. ⚠️ **This is the exact class that shipped ATP-71's missing grant, live and invisible for months** |
-| **D-6** dispatches but never arrives | ✅ a human received it |
+| `requirements.md` §8's **D-3** — decryption fails at runtime | ✅ the function reached `dispatched`, so it decrypted a real code against the real key |
+| `requirements.md` §8's **D-4** — the IAM/KMS grant is missing or wrong | ✅ the grant chain worked. ⚠️ **This is the exact class that shipped ATP-71's missing grant, live and invisible for months** |
+| `requirements.md` §8's **D-6** — dispatches but never arrives | ✅ a human received it |
 
 `kms:ListGrants` was attempted from this session and denied by IAM, so the grant's existence was never confirmed by inspection — only by the message arriving. That is the point of the manual check.
 
@@ -740,7 +748,7 @@ The Reviewer checked, unasked, that `Arn` and `CreationDate` are **byte-identica
 ### Carried to `/akili-archive` — two items, neither widened into a Leader-applied edit
 
 1. **An ADR is warranted** and deliberately **not allocated here.** Root `CLAUDE.md` reserves monotonic ids for apply time on the default branch, after checking unmerged branches — ADR-011 collided exactly this way. Both the Implementer and the Reviewer independently judged one warranted: this changes how a system-boundary email leaves the system and adds a new deployable unit, sitting naturally beside ADR-006 (Cognito) and ADR-015 (mail transport).
-2. **§12.2's Container view has no box for the `CustomEmailSender` Lambda**, which the legend's own *"separately deployable/runnable unit"* definition makes a container: its own runtime, execution role, KMS dependency and AMQP egress. Out of T-7's scope (`tasks.md` scopes it to the `:288` arrow), so routed rather than fixed.
+2. **§12.2's Container view has no box for the `CustomEmailSender` Lambda**, which the legend's own *"separately deployable/runnable unit"* definition makes a container: its own runtime, execution role, KMS dependency and AMQP egress. Out of T-7's scope (`tasks.md` scopes it to §12.1's C4 Level-1 arrow to the AWS Cognito box, not §12.2's container view — named by the diagram element, not a line number, per KZ-009: `tasks.md`'s own `:288` citation was replaced the same way), so routed rather than fixed.
 
 ---
 
@@ -755,6 +763,18 @@ The Reviewer checked, unasked, that `Arn` and `CreationDate` are **byte-identica
 | T-5 pool drift audit | 3 + rehearsal | Zero real drift; the two apparent divergences were other specs' shipped decisions |
 | T-6 activate the trigger | 3 | A deploy-blocking ordering defect no tool could see |
 | T-7 prove it | 1 | **The only gate that proved anything works** |
+
+### Budget outturn — measured (validation-report.md D-12)
+
+`design.md` §9 set the budget at **7 tasks · ~400 LOC · 2 review rounds per task, escalating at a 3rd.** Measured against the record rather than assumed:
+
+| Axis | Budget | Actual |
+|---|---|---|
+| Tasks | 7 | 7 — met |
+| Review rounds | 2/task, escalate at 3rd | T-4 = 3 · T-5 = 3 + a Leader-applied fix · T-6 = 3, **× two parallel Reviewers.** All three crossed the tripwire; only T-5's crossing was recorded as an escalation to the user (DD-5c, above) |
+| LOC | ~400 | **1,771 raw lines** (`wc -l`; 1,619 non-blank) across the 8 `.mjs` files in `infra/10-data-auth/functions/custom-email-sender/` alone (`config.mjs`, `config.spec.mjs`, `email-layout.mjs`, `index.mjs`, `index.spec.mjs`, `jest.config.mjs`, `messages.mjs`, `messages.spec.mjs` — excludes `node_modules/` and `package-lock.json`), **before** `template.yaml`, `deploy.sh`, the new script-test case, and the TRD update |
+
+The budget was breached on all three axes named in the design, and until this correction no document recorded the breach. KZ-005's harm applies verbatim: an unmeasured breach disarms the budget tripwire retroactively. Two earlier designs of this spec were killed for budget unreachability; this, the third, fixed the enumeration and then the outturn against it went unmeasured until validation.
 
 ### What the spec delivers
 
@@ -790,8 +810,20 @@ Two of them would have reached production: the missing `DependsOn` (a non-determ
 
 **This closes the attribute-verification path end to end — the one nothing had ever exercised.** It is a different message template from T-7's reset mail, it is the **only** builder that reads `PUBLIC_APP_BASE_URL` (the parameter T-6 widened scope to wire), and it was raising an error one hour earlier.
 
+> ⚠️ **This closure was itself superseded hours later by `2960d74`** — an unrelated, owner-requested change: `update()` now sets `email_verified` in the same call as `email`, so Cognito has nothing left to verify and this path fires no trigger at all any more. The verification above is kept as the record that the fix worked while it was still live behaviour, not as a description of what `update()` does today.
+
 > **A Leader imprecision, corrected.** The probe was specified as "confirm `email_verified` flips". It does **not** flip on dispatch — it flips when the user enters the code. After the fix it still reads `false`, and that is correct. The real change is not the flag, it is what the flag means: **before, `false` with no mail was a dead end; now, `false` with a mail sent is a pending step.** They look identical in a `describe-user-user` dump and are not remotely the same thing.
 
 **First probe attempt used a `+`-addressed variant of the owner's corporate address**, on the unverified assumption that CGIAR's tenant has subaddressing enabled — Microsoft 365 ships it **off** by default. The assumption was never checked, and the owner caught it. Re-run against a personal Gmail, where the convention is known to work. *Recorded because it is the same defect class this spec has been cataloguing all day, committed by the Leader while verifying a fix for it.*
 
 Live pool: 3 users, trigger intact, all probe users deleted.
+
+---
+
+## Post-validation remediation — D-4, D-10, D-12, W-10, W-11, W-12, W-13 (2026-09-25)
+
+Corrections for D-4, D-10, D-12 and W-13 are recorded inline at their cited sites above (D-4 after the T-5-continued "(a)-class row" sentence; D-10 after "The parameter wiring proved itself on first contact"; D-12 as a new "Budget outturn" subsection under Summary; W-13 inline in T-5's kaizen-candidates list). W-12 is recorded inline at T-5's grant-request paragraph. This entry closes out the remainder:
+
+- **W-10 — already fixed, no code change needed.** `git log -p -- infra/10-data-auth/functions/custom-email-sender/messages.mjs` shows commit `75eebe9` ("docs(spec): validation report") carried a one-line fix alongside the report itself: `buildPasswordResetMessage`'s HTML `note` block's `'your password will not change'` → `'Your password will not change'`. Current file (`messages.mjs:104-105`) reads `'...ignore this message. ' + 'Your password will not change...'` — correct. The plain-text part (`messages.mjs:82-83`) uses an em-dash, not a period — `'...ignore this message — your password will not change...'` — lowercase after an em-dash is correct as written; it was never affected, confirming the report's claim. `custom-email-sender`'s `npm test` run below still passes 59/59.
+- **W-11 — deleted.** `git log --oneline --all -- docs/specs/bugfix/otp-cross-caller-lockout/proposal.md` shows exactly one commit, `7087d10`, authored for that spec, not this one. `forgot-password-delivery/proposal.md:236` names `bugfix/otp-cross-caller-lockout` in prose ("deferred, and no longer a prerequisite") but does not read from or depend on its file. Confirmed unrelated; deleted `docs/specs/bugfix/otp-cross-caller-lockout/proposal.md` (and the now-empty `docs/specs/bugfix/otp-cross-caller-lockout/` directory).
+- **W-12 — argued and decided: drop the figure, do not commit a policy.** The compacted grant JSON was never captured into any artefact in this spec, and this session has no route to retrieve the real one from AWS (out of scope for this task, and the brief says do not deploy). Committing a policy now would mean writing one from memory/inference and presenting it as the audited grant — replacing one unauditable figure with a fabricated one, the worse of the two options KZ-008 warns against. The "297 non-whitespace characters (measured)" claim is dropped from T-5's entry; the qualitative fact (compacted via `cloudformation:*` on the same scoped resource ARN, no widening) is kept, since that much does not depend on the exact policy text.

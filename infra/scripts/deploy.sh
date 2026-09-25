@@ -294,8 +294,8 @@ else
   if [[ -z "$CUSTOM_EMAIL_SENDER_KMS_GRANT_PRINCIPAL_ARN" || "$CUSTOM_EMAIL_SENDER_KMS_GRANT_PRINCIPAL_ARN" == "None" ]]; then
     echo "ERROR: could not resolve the deploying principal's ARN via sts get-caller-identity." >&2
     echo "This principal needs kms:CreateGrant on CustomEmailSenderKey (design.md §4/DD-2a)" >&2
-    echo "for the activating deploy to work — refusing to fall back to the template's" >&2
-    echo "stale Default rather than silently granting the wrong principal." >&2
+    echo "for the activating deploy to work — refusing to deploy with no value" >&2
+    echo "(the parameter has no Default) rather than silently granting the wrong principal." >&2
     exit 1
   fi
   echo "    CustomEmailSenderKmsGrantPrincipalArn = $CUSTOM_EMAIL_SENDER_KMS_GRANT_PRINCIPAL_ARN (resolved via sts get-caller-identity)" >&2

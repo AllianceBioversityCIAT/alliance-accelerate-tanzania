@@ -93,11 +93,11 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Skills: `aws-serverless`
       Verify: `./infra/scripts/validate.sh` · after the deploy, capture `pool-after.json` and commit the diff against `pool-before.json`
       Falsifier: the before/after diff **is** the falsifier — it must show the `LambdaConfig` addition **and nothing else unintended**. A diff showing an unexpected setting change is a FAIL, not a note.
-      Disqualifier: ⚠️ **This task changes the repository, not the deployed pool**, until a `DEPLOY_INFRA=true` build runs — and `DEPLOY_INFRA` **defaults to `false`**. A green `validate.sh` says the template is well-formed, **never** that the trigger is live. ⚠️ Record also that **rollback does not restore current behaviour**: with SES excluded permanently, removing the trigger lands on `COGNITO_DEFAULT`, not on today's SES (design.md DD-4).
+      Disqualifier: ⚠️ **This task changes the repository, not the deployed pool**, until a `DEPLOY_INFRA=true` build runs — and `DEPLOY_INFRA` **defaults to `false`**. A green `validate.sh` says the template is well-formed, **never** that the trigger is live. ⚠️ Record also that **rollback does not restore current behaviour**: with SES excluded permanently, removing the trigger lands on `COGNITO_DEFAULT`, not on the **pre-spec** SES behaviour (design.md DD-4). *(Re-tensed 2026-09-25, validation-report.md W-8 — this read "today's SES"; the pool has been on `COGNITO_DEFAULT`, not SES, since this spec's 2026-09-25 deploy, so "today" no longer names an SES state.)*
       Done when: the template carries the trigger, the diff is clean, and the not-yet-live status is written in `execution.md` rather than implied by an `[x]`.
 
 - [x] **T-7** Prove it against DEV, and correct the record  (deps: T-6 deployed)
-      Scope: the §3 manual check, **plus** correcting `docs/trd/trd.md:288`, whose C4 arrow reads *"self-service password-reset mail (COGNITO_DEFAULT)"* — false today and false differently after this change.
+      Scope: the §3 manual check, **plus** correcting `docs/trd/trd.md` §12.1's C4 Level-1 arrow from this system to the AWS Cognito box, which read *"self-service password-reset mail (COGNITO_DEFAULT)"* before this task — false then, and false differently once this spec shipped. ⚠️ *(Corrected 2026-09-25, validation-report.md D-2 — past-tensed, and the bare `trd.md:288` line-number citation replaced with the diagram element it names, per KZ-009: line numbers drift, and this one already had — the arrow sits at line 286 now, moved by this task's own commit, `d96f08b`, which rewrote the text to "authenticates; generates, expires & verifies reset codes.")*
       Traces: FR-1, FR-3, FR-4; `proposal.md` §14.4 criterion 4
       Files: `docs/trd/trd.md`, `docs/specs/auth/forgot-password-delivery/execution.md`
       Skills: `software-architect`, `cognitive-doc-design`
@@ -106,9 +106,10 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
         · Does the trigger ever **time out**? Cognito enforces a ceiling independent of the function's own `Timeout` (design.md §10's C-7 correction), and DD-3a's connect-per-invocation makes the cold path deliberately longer.
         · Did the user receive **more than one** code? Cognito retries a timed-out invocation — the function forecloses its own retry, not Cognito's.
         · Read the message **as someone on a different device** from the one that made the request (DD-1c's accepted residual: a reader who closed the requesting tab gets no recovery instruction).
+      ⚠️ **Four more questions, carried from T-3, that this task's own record answers only by silence** *(added 2026-09-25, validation-report.md W-3 — silence is indistinguishable from performed-and-passed, the exact distinction this task's Disqualifier below exists to protect)*: the `userpool-id` context-key spelling; whether Cognito's grant carries an encryption-context constraint at all; whether KMS accepts an empty-string condition value; and whether the `cognito_csicap` principal still resolves. **Two are implicitly settled, not silently closed:** had `CreateGrant` been denied over either the `userpool-id` spelling or the absence of an encryption-context constraint, decryption would have failed and this task would have received no working code to test with — it did, so both hold. **A third — whether KMS accepts an empty-string condition value — was never exercised, and stays OPEN:** T-6's deploy resolved a real pool id (`eu-west-1_eKINGUN3I`), so the empty-string branch was never the value actually submitted; `template.yaml` still permits it for the bootstrap case (`Default: ""`, `AllowedPattern: ^$|…`). **The fourth is moot, but not for the reason first recorded here:** it is **T-6's deploy-time resolution to `cristian.gamboa`** that retired the `cognito_csicap` question — a real principal replaced it on the live key policy before `design.md` DD-6 (removing the parameter's `Default`) was even written. DD-6 is committed to this branch but has not itself been deployed against the live stack, so it cannot be the operative cause of something T-6's earlier, already-deployed resolution had already made moot.
       Falsifier: ⚠️ **there is no automated one, and that is the point.** This task exists because three defect classes in this spec — the KMS grant chain, real decryption, and delivery — are invisible to every suite here.
       Disqualifier: **a green test suite is not evidence a human received an email.** If the check cannot be performed, record it as an **unperformed gate**, explicitly — silence is indistinguishable from performed-and-passed, and ATP-71's D-6 entry exists because that distinction was nearly lost.
-      Done when: the result is recorded with what arrived, whether it went to spam, and whether the link and code worked; and `trd.md:288` is true.
+      Done when: the result is recorded with what arrived, whether it went to spam, and whether the link and code worked; and the §12.1 C4 arrow to the AWS Cognito box is true. ⚠️ *(Corrected 2026-09-25, validation-report.md D-2 — same fix as this task's Scope line above: the bare `trd.md:288` citation replaced with the diagram element it names, since line numbers drift and this one already had.)*
 
 ---
 
@@ -117,26 +118,27 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
 | Requirement · clause | Owner |
 |---|---|
 | FR-1 — delivered through the microservice | T-4 |
+| FR-1 — the body carries the **decrypted** code | T-4 ⚠️ *(added 2026-09-25, D-13: no row existed for this clause; its gate is T-4's third-attempt mutation test, which caught a ciphertext swap that 48 other tests missed.)* |
 | FR-1 `AND IT MUST` — link from `PUBLIC_APP_BASE_URL` | T-2 |
-| FR-1 `BUT it must NOT` — no password in the body | T-2 |
+| FR-1 `BUT it must NOT` — no password in the body | T-2 ⚠️ *(W-4: the gate is a keyword blocklist, `/new password is\|temporary password/`; the real guarantee is structural — no password parameter exists to fail it.)* |
 | FR-1 s2 — recipient undeterminable → fail loudly | T-4 (falsifier 3) |
 | FR-1 s2 `BUT it must NOT` — never substitute another identifier | T-4 (falsifier 1) |
 | FR-2 — unrecognised source raises | T-4 (falsifier 2) |
 | FR-2 `AND IT MUST` — names the source | T-4 (falsifier 2) |
 | FR-2 `BUT it must NOT` — never swallow | T-4 (falsifier 2) |
 | FR-3 — reset stays code-based | **(A) Satisfied by not changing it.** Cognito keeps the whole state machine; this spec touches only delivery. Verified by T-7's end-to-end check, which exercises the real code path. |
-| FR-3 `BUT it must NOT` — a request alone cannot invalidate the password | **(A) Same.** Cognito's behaviour, unmodified. |
+| FR-3 `BUT it must NOT` — a request alone cannot invalidate the password | **(A) Closed by construction**, not by T-7 ⚠️ *(corrected 2026-09-25, D-13/W-2: T-7's reset changed the password, so it can't discriminate this clause; the function touches no reset state. Behavioural check — request, don't submit a code, sign in with the old password — not performed.)* |
 | FR-4 — publish and return | T-4 |
-| FR-4 `BUT it must NOT` — no copy claims delivery | T-2 |
+| FR-4 `BUT it must NOT` — no copy claims delivery | T-2 ⚠️ *(W-4: the gate is a keyword blocklist, `/\b(arrived\|delivered\|received)\b/` — compliant, but not proof against a differently-worded claim. W-6: "anywhere" reaches the frontend, unscoped here; `ForgotPasswordForm.tsx` says "sent" and passes, by luck.)* |
 | FR-4 s2 — transport rejection fails visibly | T-4 |
 | FR-5 — full config read, composed from it | T-5 |
 | FR-5 `AND IT MUST` — before/after comparison | T-5 + T-6 (the two artefacts) |
 | FR-5 `BUT it must NOT` — not by hand | T-6 (goes through `10-data-auth`) |
 | FR-5 — reversible, `AND IT MUST` (⚠️ **split 2026-09-25, validation-report.md B-3** — this row previously marked the whole clause `(B) NOT SATISFIABLE`, over-declaring the half that is met) | **Two halves, opposite verdicts — not (A) or (B), a plain split.** *"…without data loss"* — ✅ **Met.** Removing the trigger loses no data, and the `EmailConfiguration` flip is `enhancement/email-notification-microservice` Phase B's decision landing regardless of this spec (T-5 established this; `pool-after.json` already shows `COGNITO_DEFAULT`), so the loss is not attributable to this spec alone. *"…restore the prior behaviour"* — ⚠️ **(B) NOT SATISFIABLE.** design.md DD-4: with SES excluded permanently, no rollback restores current behaviour. Recorded as an accepted limitation, not as coverage; `judgment.md` R2-6 named this gap and is now disposed at `design.md` §10. |
 | NFR-1 — code and address never logged | T-4 |
-| NFR-2 — work completes before return | T-4 (no reply awaited; nothing in flight at return) |
+| NFR-2 — work completes before return | T-4 (no reply awaited; nothing in flight at return). ⚠️ **Added 2026-09-25 (validation-report.md W-5).** The suite asserts `connectionCloseMock` was **called**, not that it was awaited — delete the `await` before `connection.close()` and the suite stays green. The property holds: verified by reading, every step in the publish path is awaited, nothing detached, nothing module-cached. But that is a **structural argument**, not a gate that would change colour if the property broke — declared here rather than left implied by the suite's colour. |
 | NFR-3 — links from configuration | T-2 |
-| NFR-4 — KMS key and the three policies | T-3 |
+| NFR-4 — KMS key and the three policies | **T-3 + T-4.** ⚠️ **Corrected 2026-09-25 (validation-report.md D-13).** This row was booked to T-3 alone; `design.md` DD-2a says the opposite in terms — *"T-3 therefore cannot close NFR-4"* — because `kms:Decrypt` and `lambda:InvokeFunction` name the function's execution role, which does not exist until T-4, so T-4 owed both. Both landed (T-4 is `[x]`), so the requirement is **met**; only the table's ownership was wrong, and was never amended after DD-2a. |
 | NFR-5 — `DEPLOY_INFRA` defaults to `false`, stated | §1 and T-6's disqualifier, in those words |
 | NFR-6 — latency budget | ⚠️ **Applicable — corrected 2026-09-25 (validation-report.md B-2).** This row previously read *"(B) Not applicable … no user-visible wait is introduced,"* which `design.md` §10's own C-7 disposition refutes four lines away: dropping the awaited reply removed the largest *consumer* of the wait, not the function from the request path — `ForgotPassword` still blocks on this invocation. Budget recorded at `design.md` DD-3a (T-7's measured ≈2.55 s cold-path latency, against Cognito's trigger ceiling — a ceiling of unknown size, never against this function's own `Timeout: 15`). T-7 (owner). |
 

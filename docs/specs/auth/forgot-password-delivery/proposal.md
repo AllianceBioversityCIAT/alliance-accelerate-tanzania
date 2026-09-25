@@ -61,7 +61,7 @@ The all-or-nothing rule sounds expensive until the pool is read. Measured on the
 | `MfaConfiguration` | `OFF` | no `CustomEmailSender_Authentication` events |
 | `AdminCreateUserConfig.AllowAdminCreateUserOnly` | `true` | no public self-signup ⇒ no `CustomEmailSender_SignUp` |
 | `create()` in `users.service.ts` | `MessageAction: 'SUPPRESS'` | no `CustomEmailSender_AdminCreateUser` mail |
-| `AutoVerifiedAttributes` / `VerificationMessageTemplate` | `["email"]` / `CONFIRM_WITH_CODE` | ⚠️ an email-attribute change **can** emit a `CustomEmailSender_*` trigger — the one live edge besides ForgotPassword. *(⚠️ Corrected post-deploy, validation-report.md B-4: this row named the source `CustomEmailSender_VerifyUserAttribute`, asserted here without a measurement — the trigger's reachability was right, this name was not. Measured live in DEV: the source is `CustomEmailSender_UpdateUserAttribute`.)* |
+| `AutoVerifiedAttributes` / `VerificationMessageTemplate` | `["email"]` / `CONFIRM_WITH_CODE` | ⚠️ an email-attribute change **can** emit a `CustomEmailSender_*` trigger — the one live edge besides ForgotPassword. *(⚠️ Corrected post-deploy, validation-report.md B-4: this row named the source `CustomEmailSender_VerifyUserAttribute`, asserted here without a measurement — the trigger's reachability was right, this name was not. Measured live in DEV: the source is `CustomEmailSender_UpdateUserAttribute`. ⚠️ Stale the same day: `2960d74` — an unrelated, owner-requested change — made `update()` set `email_verified` in the same call, so this edge no longer fires at all. Kept as the historical record of a real, measured trigger, not as a description of current behaviour.)* |
 
 **Forgot-password is effectively the only email this pool emits.** C-1's breadth is a standing liability, not an immediate cost — but the function must still handle every `triggerSource` safely rather than assuming one.
 
@@ -264,6 +264,8 @@ The user asked whether this spec should also address the fact that a send can be
 - **In scope here.** The self-service screen tells the user *"check your email"*. If the send failed, that sentence strands a user who by definition has no admin to fall back on — the exact scenario Q-1 was decided on. And §13's R-4 established, from the microservice's own source, that it replies **after** the real SMTP send (`mailer.service.ts::sendMail` awaits `transporter.sendMail` before returning; the handler is `@MessagePattern('send')`, which is RPC-capable). So an honest outcome is obtainable here. The latency objection that blocks this for admin operations is weakest in this flow: **the user is already waiting for that email.**
 - **Out of scope for ATP-71's `CredentialHandoff`.** Different screen, different module, a spec already closed and merged. If this spec builds reply-consumption into the transport, adopting it there becomes a small separate change — which is the right shape for it.
 
+⚠️ **REVERSED 2026-09-25 (validation-report.md D-9).** This ruling is argued entirely on the microservice replying **after** the real SMTP send, making an honest outcome obtainable by awaiting that reply. §12.1 (2026-09-23) drops the awaited reply — *"the function decrypts, publishes, and returns"* — and `requirements.md` FR-4 was rewritten to forbid claiming delivery either way. The premise this ruling stands on is gone, so its "in scope for THIS flow" conclusion does not survive §12.1 unchanged. Retained above, unedited, as the record of what the user decided and why on 2026-09-22 — not as this spec's current disposition.
+
 ## 14. Success criteria
 
 1. A user who requests a password reset **receives the email** and completes the reset — confirmed by a manual end-to-end check against DEV, **recorded** rather than inferred (R-3).
@@ -272,6 +274,8 @@ The user asked whether this spec should also address the fact that a send can be
 4. `docs/trd/trd.md` §12.1's account of the pool's mailer is corrected to match reality (§2.2).
 
 ## 15. Next step
+
+⚠️ **SUPERSEDED 2026-09-25 (validation-report.md D-8).** This section still names Option B as the next step. §12.1 (2026-09-23) reverses that recommendation to **Path 1**, and rules SES out permanently — §12 carries that reversal banner; this section, written under the same §12 it now contradicts, did not. Retained below as the historical record of what the pre-reversal recommendation asked for. Do not act on it, and — as `requirements.md` NFR-2/NFR-5 learned (validation-report.md D-5, D-6) — do not quote it without checking §12.1 first.
 
 **Confirm the revised §12 recommendation (Option B), then re-run `/akili-specify auth/forgot-password-delivery`.**
 
