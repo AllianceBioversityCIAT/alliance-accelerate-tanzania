@@ -64,6 +64,7 @@ export interface ConsentPolicySection {
   heading: string;
   body: string;
   contact?: ConsentPolicyContactEntry[];
+  bodyAfter?: string;
 }
 
 export interface ConsentPolicy {

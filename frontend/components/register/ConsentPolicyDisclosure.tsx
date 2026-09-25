@@ -247,6 +247,9 @@ export default function ConsentPolicyDisclosure({
                 ))}
               </dl>
             )}
+            {section.bodyAfter && (
+              <p className="mt-2 whitespace-pre-line text-sm text-muted">{section.bodyAfter}</p>
+            )}
           </section>
         ))}
       </div>
