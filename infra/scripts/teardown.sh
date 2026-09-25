@@ -39,14 +39,24 @@
 # USAGE
 #   ./infra/scripts/teardown.sh                 # interactive — prompts to type 'yes'
 #   CONFIRM=yes ./infra/scripts/teardown.sh     # non-interactive confirmation
-#   CONFIRM=yes AWS_PROFILE=other ./infra/scripts/teardown.sh   # also clears IBD-DEV guard
+#   AWS_PROFILE=other ALLOW_NON_IBD_DEV_PROFILE=other CONFIRM=yes ./infra/scripts/teardown.sh
+#                                                # targets another profile — CONFIRM alone
+#                                                # no longer does; it aborts naming both
+#                                                # profiles unless ALLOW_NON_IBD_DEV_PROFILE
+#                                                # matches AWS_PROFILE exactly (_guard.sh)
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# `${BASH_SOURCE[0]%/*}` leaves a SLASH-LESS path untouched, so
+# `cd infra/scripts && bash <this script>` would otherwise try to source
+# `<this script>/_guard.sh` and die before the guard ever ran. Fall back to
+# `.` in exactly that case — see _guard.sh's "OWN-PATH RESOLUTION" block.
+_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _SELF_DIR="."; fi
+# shellcheck disable=SC1091
+source "$_SELF_DIR/_guard.sh"
+announce_account
 
 # Stack names — single source of truth is infra/README.md conventions.
 DATA_AUTH_STACK="${DATA_AUTH_STACK:-accelerate-tz-dev-data-auth}"
@@ -59,25 +69,6 @@ echo "        1. $FRONTEND_STACK   (S3 + CloudFront)   [bucket emptied first]"
 echo "        2. $BACKEND_STACK   (Lambda + HTTP API)"
 echo "        3. $DATA_AUTH_STACK   (RDS + Secrets Manager + Cognito)"
 echo
-
-# ── IBD-DEV guard (hard constraint: every AWS action uses IBD-DEV — NFR-1) ───
-# If a non-IBD-DEV profile is in play, warn and require explicit confirmation
-# before going any further (CONFIRM=yes env, or an interactive 'yes' on a TTY).
-if [[ "$PROFILE" != "IBD-DEV" ]]; then
-  echo "WARNING: AWS profile is '$PROFILE', not 'IBD-DEV' (the mandated profile)." >&2
-  if [[ "${CONFIRM:-}" == "yes" ]]; then
-    echo "         CONFIRM=yes set — proceeding against '$PROFILE'." >&2
-  elif [[ -t 0 ]]; then
-    read -r -p "         Continue against '$PROFILE'? Type 'yes' to proceed: " reply
-    if [[ "$reply" != "yes" ]]; then
-      echo "Aborted: profile is not IBD-DEV and confirmation was not given." >&2
-      exit 1
-    fi
-  else
-    echo "Aborted: profile is not IBD-DEV. Re-run with CONFIRM=yes to override." >&2
-    exit 1
-  fi
-fi
 
 # ── Strong destruction confirmation guard ────────────────────────────────────
 # Teardown is irreversible, so require an explicit, unambiguous confirmation:

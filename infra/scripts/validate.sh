@@ -22,9 +22,14 @@
 
 set -euo pipefail
 
-# ── Config (overridable via env; IBD-DEV / eu-west-1 defaults — NFR-1) ───────
-PROFILE="${AWS_PROFILE:-IBD-DEV}"
-REGION="${AWS_REGION:-eu-west-1}"
+# `${BASH_SOURCE[0]%/*}` leaves a SLASH-LESS path untouched, so
+# `cd infra/scripts && bash <this script>` would otherwise try to source
+# `<this script>/_guard.sh` and die before the guard ever ran. Fall back to
+# `.` in exactly that case — see _guard.sh's "OWN-PATH RESOLUTION" block.
+_SELF_DIR="${BASH_SOURCE[0]%/*}"
+if [[ "$_SELF_DIR" == "${BASH_SOURCE[0]}" ]]; then _SELF_DIR="."; fi
+# shellcheck disable=SC1091
+source "$_SELF_DIR/_guard.sh"
 
 # Resolve infra/ root relative to this script so it runs from any CWD.
 INFRA_DIR="$(cd "$(dirname "$0")/.." && pwd)"

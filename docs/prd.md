@@ -27,7 +27,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 |---|---|---|
 | **Public visitor** (donor, researcher, partner, general public) | `Public` (unauthenticated) | Browse and search the actor directory; see the map and aggregate metrics — none of which ever carries an actor's contact data; view a consenting actor's full profile, including contact details, one actor at a time. |
 | **Field/Data-entry staff** (program officers, enumerators) | `Staff` | Add and edit actor records, including PII; import field-collected CSVs; cannot manage users or delete in bulk. |
-| **Administrator** (program lead, data manager) | `Admin` | Full CRUD on all records and fields; user/role management; bulk import/export including PII; data governance. |
+| **Administrator** (program lead, data manager) | `Admin` | Full CRUD on all records and fields; user/role management; bulk import including PII; data governance. *(Bulk **export** was part of this row until 2026-09-21 — see §5 Out of Scope.)* |
 
 ## 4. Goals & Success Metrics
 
@@ -48,7 +48,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 3. **Geospatial Visualization (Seed Maps)** — interactive Leaflet map of actor locations with Crop / Region / Capacity / Trader-type filters.
 4. **Data Management & Admin Backend** — protected Next.js Admin UI + secured NestJS routes for CRUD on Actor Profiles, with form validation.
 5. **Access Control & Data Protection** — RBAC (`Public` / `Staff` / `Admin`) with PII field-level protection.
-6. **Data Import/Export** — CSV bulk import service for initial seeding; filtered CSV export that enforces data-protection rules.
+6. **Data Import** — CSV bulk import service for initial seeding and ongoing partner-profile onboarding. *(Read "Data Import/Export", and promised "filtered CSV export that enforces data-protection rules", until 2026-09-21. The export half is now Out of Scope below; ATP-53 is closed as cancelled.)*
 7. **Public Self-Registration** — an anonymous applicant submits an organisation's own details through a public form, verifies their email address, and accepts a versioned consent policy; the submission is stored with no public read path for any field until an Admin approves or rejects it. Runs alongside the team-managed intake in item 4, not in place of it.
 
 ### Out of Scope (v1)
@@ -57,6 +57,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - Mobile native apps (responsive web only).
 - Advanced analytics dashboards / BI beyond the landing-page metrics and map filters.
 - Real-time collaboration or record-level audit history UI (basic timestamps only in v1).
+- **Server-side, role-aware administrative data export** (a filtered CSV/spreadsheet download of actor records, scoped by the requester's role and able to carry PII under explicit authorisation). Cut from the MVP on 2026-09-21; ATP-53 closed as cancelled. **This does not remove the `/dashboard` "Download view" button**, which is a different thing and stays: public audience, generated in the browser from the same list projection the directory and map use, and therefore structurally unable to include an actor's contact block. If an administrative export is ever revived it is new scope, and it carries its own PII decision — it must not be built by widening the public one.
 
 ## 6. User Stories
 

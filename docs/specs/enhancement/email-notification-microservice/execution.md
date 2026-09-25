@@ -1425,3 +1425,101 @@ The Reviewer noted that ADR-015 rested **entirely on the Leader's account of an 
 | 6 | **PASS**, with one required correction: the quotation marks |
 
 **Every round had at least one finding introduced by the previous round's fix.** The generalisable lesson is the one the sweeps kept proving: when a number changes, the reflex is to reach for every sentence containing it — **including sentences that are evidence rather than description**. Grep the withdrawn *premise*, not the superseded *value*; and never edit a record to keep a document consistent.
+
+## T-9 — Observe real delivery on the deployed dev stack (2026-09-18)
+
+**The last task, and the only one no command could substitute for.** Closed on evidence from the deployed stack, not on the product owner's report alone — six criteria fully established, one partially, one corrected.
+
+### Getting there: the deploy failed first, and the cause was not what I said
+
+The product owner reported the deploy failing and guessed `ses` was being passed somewhere. She was right about the value and I was wrong about the place.
+
+**My first diagnosis was wrong.** I found `deploy.sh` resolving `MailTransport` from the live stack — which genuinely returns `ses`, because the flip had only ever been applied **by hand to the Lambda**, never through CloudFormation — and told her to add `MAIL_TRANSPORT=microservice` to the Jenkins stage that calls it. **That stage does not run.** `DEPLOY_INFRA = 'false'` on an app-code build, so `Deploy Infra (10 + 30)` is skipped and `Deploy Backend` runs instead, with its own inline `sam deploy`.
+
+The real cause was there:
+
+```
+  --parameter-overrides \
+      AllowedOrigin="${ALLOWED_ORIGIN}" \
+      DataAuthStackName="${DATA_AUTH_STACK}" \
+```
+
+**`MailTransport` is absent**, and SAM sends `UsePreviousValue` for any parameter it is not given — so CloudFormation reused the stack's `ses` against a template whose `AllowedValues` now accepts only `microservice`.
+
+`deploy.sh`'s own comment had predicted this exact failure, in these words:
+
+> *"MUST be passed explicitly on every backend deploy: SAM sends UsePreviousValue for any parameter absent from `--parameter-overrides`, so omitting the parameter override entirely would let an unrelated operator run silently revert the transport."*
+
+**The hazard was documented in the script, and the pipeline deploys by a path that never reads it.** Fixed by adding `MailTransport=microservice` to the inline overrides — permanently, not as a transition step: the defect is not the stack's old value, it is that SAM reuses whatever is there.
+
+### The check that mattered more than the failure
+
+The abort was safe — it stopped before any AWS mutation. The unsafe path was the next one: **a successful deploy rewrites the Lambda's environment from the template**, and the working credentials had been set by hand. If `MailMicroserviceSecret` still held placeholders, the deploy would have succeeded and every send would have failed, silently.
+
+**No profile on the machine can read that secret** — all four are denied `GetSecretValue`, `DescribeSecret` and `ListSecrets`. Rather than guess, the values were verified one level down: the Lambda's environment **is** what the secret resolved to at the last deploy (its `LastModified` is 9 s after the stack's `LastUpdatedTime`, so CloudFormation wrote it), and a `grep -c REPLACE` over each key returns **0** while printing no value. Real values, all three.
+
+*An inference was available and was not good enough; the check that replaced it costs one command and prints a count.*
+
+### The eight criteria
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | ✅ | Five kinds delivered to a never-verified address — locally 2026-09-16, **re-confirmed on the deployed stack** 2026-09-18 |
+| 2 | ✅ | HTML correct per kind, confirmed on the deployed stack |
+| 3 | ✅ *with a named gap* | `INIT_START` 10:42:08 → first send 10:42:53 at **964 ms** (cold) → four sends at **~209 ms** (warm) → further `INIT_START` at 10:54. **Not observed: a resume after idle.** |
+| 4 | ✅ | **The criterion that found the bug.** Receipt `REG-2026-0007` logged `attempt` **and** `outcome … status=sent`, and arrived. Before D-I's fix the same pair read attempt with **no outcome of either status** |
+| 5 | 🟡 | cold **964 ms** (one sample, `verification-code`), warm **~209 ms** (four kinds). Per-kind cold and the pre-send p99 **moved to OQ-11** |
+| 6 | ✅ | Zero `overran` lines over the window |
+| 7 | ✅ | **73.0 MB** on the live function, against NFR-5's 250 MB |
+| 8 | ✅ | Every secret-sourced variable resolves to a real value — and the criterion said *"both"*, where there are **three** since 2026-09-16. Corrected in place |
+
+### The number the whole spec was waiting for
+
+| | Laptop (2026-09-16) | **Lambda, `eu-west-1`** |
+|---|---|---|
+| Cold | 1132–1366 ms | **964 ms** |
+| Warm | never measurable | **~209 ms** |
+
+**The Lambda is ~5× faster than the machine every current bound was derived from.** `MAIL_SEND_TIMEOUT_MS` was set at ~2.2× the slowest laptop send; against in-region reality it is far above the worst case, and the 4 000 ms floor it composes is correspondingly generous.
+
+**OQ-11 stays deferred, and the reason changed.** It was blocked on *access to the numbers*; it is now blocked on *sample size*. The cold figure is **one sample on one kind**, and locally `contact` — the largest payload — was slowest on all three of its runs, so the kind that matters most for a cold bound is the one never measured cold. Retuning on one sample would repeat the original error in the opposite direction: `1200 ms` was reasoned rather than measured, and measurement falsified it.
+
+### On closing a gate that was already overridden
+
+⛔ *"Phase B may not start until this task is `[x]`"* — Phase B ran ahead of it on an explicit product-owner override, recorded as an override in every Phase-B commit rather than quietly satisfied. **The gate is now met in fact as well as waived in process.** Both halves stay in the record; a spec that tidies the sequence afterwards teaches the wrong thing about what happened.
+
+**T-9 → `[x]`. Every task in this spec is now closed.**
+
+## Follow-up — `CONTACT_FALLBACK_RECIPIENT`, the open choice, closed (2026-09-18)
+
+T-13 left this explicitly open, in these words: *"the address is now a free choice nobody has made. T-13 corrects the rationale; whether to change the address is a product-owner call, not a teardown edit."* This closes it.
+
+**`j.cadavid@cgiar.org` → `Justus.Ochieng@cgiar.org`** (product owner, 2026-09-18).
+
+### Why the old value was never really a decision
+
+`contact/contact-channels`'s own execution log is blunt about it: *"`CONTACT_FALLBACK_RECIPIENT`'s value was **inferred, not specified**. No spec document states it."* It was chosen because the SES sandbox allowed mail only to a verified identity, and that was the one identity the template verified — *"a fallback recipient that cannot receive mail is not a fallback."* Sound inference, and that log explicitly asked the owner to override it later.
+
+FR-6 removed SES and with it the constraint. What remained was an address selected by a reason that had died — the shape KZ-004 names, surviving because the **value** stayed correct while its **justification** went hollow.
+
+### Blast radius — measured before proposing, not after
+
+| | |
+|---|---|
+| `infra/20-backend/template.yaml` | the one live site — a **literal**, not a secret, so no Secrets Manager step and nothing to request from the platform team |
+| Tests | none depend on it: `admin-recipient.resolver.spec.ts` uses `fallback@example.com` |
+| Code | reads the variable, never the address |
+
+A repo-wide grep for the old address returns 16 lines, which looks alarming and is not: **one** is this variable. The rest are SES history in frozen archived specs, or unrelated fixtures (case-normalisation, password-reset) using it as sample data. *A grep count is not a blast radius.*
+
+### The comment changed too, and had to
+
+The line above it said this address *"is now an open product choice, not a technical necessity"* — written yesterday when it was true. Ship the new value and leave that sentence and the file starts lying again, one day after the sweep that fixed the previous lie. It now records **who chose it and when**, plus the inference it replaces, so the next reader finds a decision instead of a residue.
+
+### What this does not establish
+
+**Whether anyone reads that mailbox.** The fallback fires only when Cognito fails or the `admin` group resolves empty — rare by construction, which means a message landing there may sit unnoticed for a long time. `logDegradation()` leaves a trail when it happens, so the event is observable; whether the mail is *read* is not a property this repo can hold.
+
+Also unestablished: whether the address is a person or a team alias. A personal mailbox reopens this same question the day that person changes role — the property that would close it permanently is a shared alias, and that is a product decision, not an inference to make here.
+
+**Verification:** `./infra/scripts/validate.sh` — PASS on all three stacks. No code touched; no test depends on the value.

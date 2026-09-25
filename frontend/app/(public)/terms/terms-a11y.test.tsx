@@ -57,7 +57,7 @@ describe('/terms page — content (FR-4)', () => {
     renderTermsPage();
 
     expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/effective insert date/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective date: 30 september 2026/i)).toBeInTheDocument();
   });
 
   it('carries no placeholder marker — the approved text has landed (T-8)', () => {
@@ -81,7 +81,7 @@ describe('/terms page — the lede is Legal\'s three source paragraphs, not one 
     renderTermsPage();
 
     const welcome = screen.getByText(/welcome to the accelerate tanzania registry/i);
-    const operator = screen.getByText(/the registry is operated by ciat/i);
+    const operator = screen.getByText(/the registry is operated by the international center for tropical agriculture/i);
     const assent = screen.getByText(/by accessing or using the registry, you agree to comply/i);
 
     expect(welcome.tagName).toBe('P');

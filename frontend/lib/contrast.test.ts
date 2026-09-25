@@ -268,6 +268,14 @@ function findKnownFailure(ink: string, ground: string): KnownFailure | undefined
  * introduce an unreachable pair this grep sweep would not catch.
  */
 const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
+  // `warning/10` x `fg` citation re-pointed 2026-09-21 (attempt 2,
+  // auth/account-access-emails T-7): the previous citation,
+  // admin/CredentialHandoff.tsx:106, was the not-sent send-status paragraph
+  // this task's copy fix deleted — line 106 is now inside the Copy
+  // button's class array and the file contains no `bg-warning/10`. The
+  // pair itself is not lost; it survives legitimately at
+  // admin/RejectDialog.tsx:206 ("bg-warning/10 ... text-fg"), so this is a
+  // citation re-point, not a coverage loss.
   fg: {
     grounds: ['bg', 'surface', 'surface-alt', 'restricted', 'warning/10'],
     citedAt:
@@ -276,7 +284,7 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
       'shell/Header.tsx:159 (text-fg, hover:bg-surface-alt) · ' +
       'profile/ProfileContact.tsx:59,63 (text-fg value cell inside bg-surface-alt) · ' +
       'ui/Button.tsx:49,51 (secondary: text-fg, hover:bg-restricted) · ' +
-      'admin/CredentialHandoff.tsx:106 ("bg-warning/10 ... text-fg")',
+      'admin/RejectDialog.tsx:206 ("bg-warning/10 ... text-fg")',
   },
   // `restricted` dropped 2026-09-07 (T-15, actors/public-profile-disclosure):
   // its only citation was profile/RestrictedContactPanel.tsx, deleted by
@@ -307,12 +315,18 @@ const REACHABLE: Record<string, { grounds: string[]; citedAt: string }> = {
   },
   success: {
     // T-3 scope line names highlight-tint, highlight/20, restricted as the
-    // minimum. `restricted` has no current render site — every text-success
-    // site found pairs with a highlight tint — kept gated defensively.
-    grounds: ['highlight-tint', 'highlight/20', 'restricted'],
+    // minimum. `restricted` has no current render site — kept gated
+    // defensively. `surface` added 2026-09-21 (attempt 2,
+    // auth/account-access-emails T-7, Fix C2): admin/CredentialHandoff.tsx's
+    // sent-branch status line (`text-success`, no `bg-*` of its own) inherits
+    // `bg-surface` from both call sites' dialog panels (CreateUserDialog.tsx,
+    // page.tsx's reset handoff) — this is the first `text-success` site that
+    // does not pair with a highlight tint, per the PROMOTION RULE below.
+    grounds: ['highlight-tint', 'highlight/20', 'restricted', 'surface'],
     citedAt:
       'admin/ActorsTable.tsx:204, admin/ActorHistoryPanel.tsx:80, admin/ImportPreviewTable.tsx:71 (bg-highlight-tint text-success, representative of 8 sites) · ' +
       'admin/UsersTable.tsx:282,377 (bg-highlight/20 text-success — the FR-2 remediation site) · ' +
+      'admin/CredentialHandoff.tsx:121 (text-success with no bg-* of its own, inheriting bg-surface from the dialog panel at CreateUserDialog.tsx:192 / page.tsx:494) · ' +
       'restricted: T-3 minimum, no current render site found',
   },
   warning: {

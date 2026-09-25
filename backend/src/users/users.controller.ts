@@ -58,9 +58,12 @@ export class UsersController {
   }
 
   /**
-   * `POST /api/v1/users` — create a user (FR-3). No email is sent; the response
-   * body carries the created user plus the one-time temporary password for the
-   * admin to share out-of-band (`CreateUserResult`). Admin-only route.
+   * `POST /api/v1/users` — create a user (FR-3). Dispatches an invitation
+   * email via `MailService` (auth/account-access-emails T-4) in addition to
+   * returning the temporary password — the response body is
+   * `CreateUserResult`: `{ user, temporaryPassword, emailSent }`. See
+   * {@link CreateUserResult} for what `emailSent` does and does not mean.
+   * Admin-only route.
    */
   @Post()
   @HttpCode(201)
@@ -106,11 +109,16 @@ export class UsersController {
   }
 
   /**
-   * `POST /api/v1/users/:id/password` — reset a user's password (FR-7). No email
-   * is sent; returns HTTP 200 with `{ temporaryPassword }` — a one-time secret
-   * for the admin to share out-of-band. The user is moved to
-   * `FORCE_CHANGE_PASSWORD` and must change it at next sign-in. `@HttpCode(200)`
-   * is explicit — a bare `@Post` would default to 201. Admin-only route.
+   * `POST /api/v1/users/:id/password` — reset a user's password (FR-7).
+   * Dispatches an admin-reset email via `MailService`
+   * (auth/account-access-emails T-5) in addition to returning the temporary
+   * password — returns HTTP 200 with `ResetPasswordResult`:
+   * `{ temporaryPassword, emailSent }`, a one-time secret plus dispatch
+   * outcome for the admin. See {@link ResetPasswordResult} for what
+   * `emailSent` does and does not mean. The user is moved to
+   * `FORCE_CHANGE_PASSWORD` and must change it at next sign-in.
+   * `@HttpCode(200)` is explicit — a bare `@Post` would default to 201.
+   * Admin-only route.
    */
   @Post(':id/password')
   @HttpCode(200)

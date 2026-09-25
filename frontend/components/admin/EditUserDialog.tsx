@@ -11,6 +11,11 @@
  * On submit → updateUser(id, input, token). On success → onSuccess() so the
  * parent page can refetch and display a success affordance.
  *
+ * Changing the email specifically goes through an extra confirmation step
+ * (large, unmissable) before saving — the mitigation for a typo, since the
+ * pool uses email as the username and a typo would otherwise lock the
+ * person out silently. No confirmation step when the email is unchanged.
+ *
  * Accessibility (WCAG 2.1 AA / §10):
  *   - role="dialog" + aria-modal + aria-labelledby
  *   - Focus trap: first focusable element on open; Escape closes.
@@ -61,13 +66,17 @@ export function EditUserDialog({
 }: EditUserDialogProps) {
   const router    = useRouter();
   const titleId   = 'edit-user-dialog-title';
+  const confirmTitleId = 'edit-user-confirm-title';
   const emailRef  = useRef<HTMLInputElement>(null);
 
-  const [email,       setEmail]       = useState('');
-  const [enabled,     setEnabled]     = useState(true);
-  const [emailError,  setEmailError]  = useState<string | undefined>();
-  const [submitError, setSubmitError] = useState<string | undefined>();
-  const [loading,     setLoading]     = useState(false);
+  const [email,        setEmail]        = useState('');
+  const [enabled,      setEnabled]      = useState(true);
+  const [emailError,   setEmailError]   = useState<string | undefined>();
+  const [submitError,  setSubmitError]  = useState<string | undefined>();
+  const [loading,      setLoading]      = useState(false);
+  // Non-null while awaiting confirmation of an email change (holds the
+  // trimmed new address); null shows the ordinary form.
+  const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
 
   // Sync form with the user being edited when dialog opens or user changes.
   useEffect(() => {
@@ -77,6 +86,7 @@ export function EditUserDialog({
       setEmailError(undefined);
       setSubmitError(undefined);
       setLoading(false);
+      setConfirmEmail(null);
       const id = requestAnimationFrame(() => emailRef.current?.focus());
       return () => cancelAnimationFrame(id);
     }
@@ -86,29 +96,25 @@ export function EditUserDialog({
 
   const { dialogRef, onKeyDown: handleKeyDown } = useDialogFocusTrap<HTMLDivElement>(onCancel);
 
+  // Move focus into the confirmation step when it appears.
+  useEffect(() => {
+    if (!confirmEmail) return;
+    const id = requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button')?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [confirmEmail, dialogRef]);
+
   // ── Submit ────────────────────────────────────────────────────────────────
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
+  const doUpdate = useCallback(
+    async (nextEmail: string) => {
       if (!user) return;
-
-      const err = validateEmail(email);
-      setEmailError(err);
-      if (err) return;
-
       setSubmitError(undefined);
       setLoading(true);
 
       try {
-        await updateUser(
-          user.id,
-          {
-            email: email.trim(),
-            enabled,
-          },
-          token
-        );
+        await updateUser(user.id, { email: nextEmail, enabled }, token);
         onSuccess();
       } catch (caught: unknown) {
         if (caught instanceof AuthFailureError) {
@@ -122,8 +128,33 @@ export function EditUserDialog({
         setLoading(false);
       }
     },
-    [email, enabled, user, token, onSuccess, router]
+    [enabled, user, token, onSuccess, router]
   );
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!user) return;
+
+      const trimmed = email.trim();
+      const err = validateEmail(trimmed);
+      setEmailError(err);
+      if (err) return;
+
+      // Only an email CHANGE gets the confirmation step.
+      if (trimmed !== user.email) {
+        setConfirmEmail(trimmed);
+        return;
+      }
+      void doUpdate(trimmed);
+    },
+    [email, user, doUpdate]
+  );
+
+  const handleConfirm = useCallback(() => {
+    if (!confirmEmail) return;
+    void doUpdate(confirmEmail);
+  }, [confirmEmail, doUpdate]);
 
   if (!open || !user) return null;
 
@@ -141,13 +172,71 @@ export function EditUserDialog({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        aria-labelledby={confirmEmail ? confirmTitleId : titleId}
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
           'rounded-md bg-surface p-6 shadow-lg border border-border',
         ].join(' ')}
       >
+        {confirmEmail ? (
+          <div className="flex flex-col gap-4">
+            <h2 id={confirmTitleId} className="text-base font-semibold text-fg">
+              Confirm new email address
+            </h2>
+
+            <p className="text-sm text-muted">
+              This account will sign in with the address below. Check it
+              carefully before saving.
+            </p>
+
+            <p className="rounded-md border border-border bg-surface-alt px-3 py-2 text-2xl font-semibold text-fg break-all">
+              {confirmEmail}
+            </p>
+
+            {submitError && (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger"
+              >
+                {submitError}
+              </p>
+            )}
+
+            <div className="mt-1 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmEmail(null)}
+                disabled={loading}
+                className={[
+                  'rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-fg',
+                  'transition-colors hover:bg-surface-alt',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                ].join(' ')}
+              >
+                Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={loading}
+                aria-busy={loading}
+                className={[
+                  'rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-fg',
+                  'transition-colors hover:bg-primary-hover',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                ].join(' ')}
+              >
+                {loading ? 'Saving…' : 'Confirm and save'}
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         <h2
           id={titleId}
           className="text-base font-semibold text-fg"
@@ -261,6 +350,8 @@ export function EditUserDialog({
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </>
   );

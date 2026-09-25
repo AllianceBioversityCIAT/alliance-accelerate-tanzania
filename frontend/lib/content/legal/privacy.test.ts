@@ -37,19 +37,13 @@ import { collectUnfilledFieldTokens } from './unfilled-fields';
 describe('privacy.ts — unfilled-field inventory (PART 2, not yet publishable)', () => {
   it('the set of unfilled Legal tokens equals the expected list', () => {
     expect(collectUnfilledFieldTokens(PRIVACY_POLICY)).toEqual([
+      // The only two still outstanding, both in the "Who is Responsible for
+      // the Registry?" prose line ("CIAT Address: Email:"), which CIAT has
+      // not yet filled. The Contact Us block and the effective date were
+      // supplied on 2026-09-25. /privacy stays NOT publishable until this
+      // list is empty.
       'Address: (blank, in prose)',
-      'Address: (blank)',
-      // Legal's "Who is Responsible for the Registry?" section renders as
-      // "CIAT Address: Email:" — two labels with nothing after them, in prose
-      // rather than a structured contact block. Tracked because an inventory
-      // that could reach an EMPTY list while the page still shows a blank
-      // would report a publishability it does not have.
-      'Contact: (blank)',
       'Email: (blank, in prose)',
-      'Email: (blank)',
-      'Insert CIAT Legal Entity',
-      'Insert Date',
-      'Telephone: (blank)',
     ]);
   });
 });

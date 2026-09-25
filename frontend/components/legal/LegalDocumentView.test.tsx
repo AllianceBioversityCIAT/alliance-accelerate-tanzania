@@ -80,7 +80,7 @@ describe('LegalDocumentView', () => {
   it('renders the version and effective date together, immediately after the h1', () => {
     render(<LegalDocumentView document={twoSectionDocument} />);
     expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/effective 15 september 2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective date: 15 september 2026/i)).toBeInTheDocument();
   });
 
   it('renders the optional lede when supplied', () => {

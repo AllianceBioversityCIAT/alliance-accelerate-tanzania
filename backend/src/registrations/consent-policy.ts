@@ -32,9 +32,18 @@
 
 import APPROVED_TEXT from './consent-policy.editions.json';
 
+export interface ConsentPolicyContactEntry {
+  label: string;
+  value: string;
+}
+
 export interface ConsentPolicySection {
   heading: string;
   body: string;
+  /** Label/value lines rendered as a definition list, not inside `body`. */
+  contact?: readonly ConsentPolicyContactEntry[];
+  /** Prose that follows `contact`. Legal places the contact block mid-section. */
+  bodyAfter?: string;
 }
 
 /**

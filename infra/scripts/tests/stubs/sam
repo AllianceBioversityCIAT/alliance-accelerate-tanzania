@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#
+# sam — network-capable stub (infra/scripts/tests/stubs, T-1)
+# ---------------------------------------------------------------------------
+# See stubs/aws for the shared contract. `sam` matters as its own stub
+# (rather than relying on the `aws` stub) because the real SAM CLI uses
+# boto3 in-process and never shells out to the `aws` binary at all — an
+# `aws` stub alone would not intercept it (design.md §7.2).
+#
+# CONTRACT
+#   Configure with STUB_SAM_SCRIPT — an executable/bash script invoked with
+#   sam's exact arguments ("$@"); its stdout/stderr/exit status become this
+#   stub's, via exec.
+#
+#   Unconfigured => exit 127, loud stderr. Never a silent success.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [[ -n "${STUB_SAM_SCRIPT:-}" ]]; then
+  exec bash "${STUB_SAM_SCRIPT}" "$@"
+fi
+
+echo "STUB ERROR: sam invoked with no STUB_SAM_SCRIPT configured (args: $*)" >&2
+exit 127

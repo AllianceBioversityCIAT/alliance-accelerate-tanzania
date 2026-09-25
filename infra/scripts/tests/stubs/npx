@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# npx — network-capable stub (infra/scripts/tests/stubs, T-1)
+# ---------------------------------------------------------------------------
+# See stubs/aws for the shared contract. Stubbed separately from `npm`
+# because `npx prisma ...` is a distinct call site (design.md §7.2) even
+# though both ship in the same npm install.
+#
+# CONTRACT
+#   Configure with STUB_NPX_SCRIPT — an executable/bash script invoked with
+#   npx's exact arguments ("$@"); its stdout/stderr/exit status become this
+#   stub's, via exec.
+#
+#   Unconfigured => exit 127, loud stderr. Never a silent success.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [[ -n "${STUB_NPX_SCRIPT:-}" ]]; then
+  exec bash "${STUB_NPX_SCRIPT}" "$@"
+fi
+
+echo "STUB ERROR: npx invoked with no STUB_NPX_SCRIPT configured (args: $*)" >&2
+exit 127

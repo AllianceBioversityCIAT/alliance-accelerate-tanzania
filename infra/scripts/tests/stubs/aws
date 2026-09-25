@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# aws — network-capable stub (infra/scripts/tests/stubs, T-1)
+# ---------------------------------------------------------------------------
+# One of the five stub executables (aws, curl, sam, npm, npx — design.md
+# §7.2, the network-capable set NFR-2 requires be intercepted). Placed on
+# PATH ahead of the real `aws` CLI by run-tests.sh for the duration of one
+# case, so no case can reach the network or a live credential regardless of
+# what infra/scripts/*.sh does internally.
+#
+# CONTRACT
+#   A test case configures behaviour by exporting STUB_AWS_SCRIPT to the
+#   path of a recipe: an executable (or plain) bash script. This stub execs
+#   it with the exact arguments `aws` was invoked with ("$@"), so the recipe
+#   can pattern-match on them (e.g. distinguish `sts get-caller-identity`
+#   from `cloudformation describe-stacks --query ...`) and print output that
+#   reproduces the real CLI's shape — the fidelity this task exists to
+#   provide. The recipe's stdout, stderr, and exit status become this
+#   stub's stdout, stderr, and exit status verbatim (`exec`, not a
+#   subshell — no status is lost).
+#
+#   No STUB_AWS_SCRIPT configured is itself a failure: exit 127 with a loud
+#   stderr message, never a silent 0 or empty stdout. An unconfigured stub
+#   answering permissively would be indistinguishable from a real permissive
+#   answer, and this repository's whole defect class is a permissive
+#   default standing in for a real check (requirements.md §1).
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+if [[ -n "${STUB_AWS_SCRIPT:-}" ]]; then
+  exec bash "${STUB_AWS_SCRIPT}" "$@"
+fi
+
+echo "STUB ERROR: aws invoked with no STUB_AWS_SCRIPT configured (args: $*)" >&2
+exit 127
