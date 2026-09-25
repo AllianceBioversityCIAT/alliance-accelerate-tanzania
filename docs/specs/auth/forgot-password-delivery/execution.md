@@ -615,3 +615,51 @@ That the trigger works. **No test in this repository exercises IAM, KMS, or deli
 The deploy is scheduled (user's decision). Adding `LambdaConfig` is a no-interruption property update and `DependsOn` affects ordering only, so the changeset must show `UserPool` as **`Modify` with `Replacement: False`**. ⚠️ **`Replacement: True` means stop** — that would destroy the pool and its 3 accounts, and nothing in this task should produce it.
 
 It will also reset the two (c)-class settings T-5 measured: `EmailConfiguration` → `COGNITO_DEFAULT`, and `AdminCreateUserConfig.InviteMessageTemplate` removed. Both intended. **No rollback restores current behaviour** (DD-4).
+
+### T-6 (continued) — deployed to DEV 2026-09-25. The diff is clean. Clause 3 closes.
+
+**Status: `[~]` → `[x]`.** Deployed by an operator (`cristian.gamboa`) via a **targeted** `sam deploy` of `10-data-auth` alone, not through Jenkins and not through `deploy.sh`'s full four-step run.
+
+#### Why targeted, and what it bought
+
+The user asked whether a specific deploy was possible instead of flipping Jenkins' `DEPLOY_INFRA`. It was, and it was strictly better. ⚠️ **This only became answerable once the user supplied the `Jenkinsfile`, which is not versioned in this repository** — every prior plan in this spec reasoned about the deploy path from files that do not describe it.
+
+| Jenkins route | Targeted route |
+|---|---|
+| Requires editing the `Jenkinsfile` on the server (`DEPLOY_INFRA` is a hardcoded env var at line 104, **not** a build parameter — correcting an earlier Leader statement) | No Jenkins change |
+| Redeploys all three stacks | Only the stack that changed |
+| `DEV_CIDR` is empty, so `deploy.sh` **auto-detects the Jenkins agent's IP and overwrites the RDS ingress rule**, evicting developers | **Untouched** — SAM sends `UsePreviousValue` for omitted parameters, so `DevCidr` stayed `181.234.40.157/32` |
+| Must remember to flip the flag back | Nothing to revert |
+
+#### The parameter wiring proved itself on first contact
+
+`CustomEmailSenderKmsGrantPrincipalArn` resolved to **`arn:aws:iam::569113802249:user/cristian.gamboa`** — the operator who actually ran it, **not** the `cognito_csicap` ARN hardcoded as the template `Default`. That is precisely the defect DD-2c existed to prevent, and without T-6's wiring the KMS key policy would have named the wrong principal on this very deploy. The other two resolved correctly as well (`eu-west-1_eKINGUN3I`, `https://d3idqvvg0xa1r7.cloudfront.net`).
+
+#### The before/after diff — T-6's falsifier, satisfied
+
+`pool-after.json` committed. **24 keys before, 24 after; 4 changed, 20 untouched.**
+
+| Key | Before → After | Predicted? |
+|---|---|---|
+| `LambdaConfig` | `{}` → `CustomEmailSender` (`LambdaArn`, `V1_0`) + `KMSKeyID` | ✅ **the point of T-6** |
+| `EmailConfiguration` | `DEVELOPER` + SES → `COGNITO_DEFAULT` | ✅ §6 (c) |
+| `AdminCreateUserConfig.InviteMessageTemplate` | branded HTML → **gone** | ✅ §6 (c) |
+| `LastModifiedDate` | — | ✅ mechanical |
+
+**Every (a)-class row survived untouched**, against the real pool this time rather than a rehearsal built from the same template. T-5's classification held completely.
+
+#### ⚠️ An unpredicted change on the first attempt — caused by the Leader's runbook
+
+The **first** deploy also removed `UserPoolTags`' `Project: ACCELERATE-Tanzania`. Stack tags went to `[]` — across **every taggable resource in the stack**, not just the pool: RDS, the secret, the KMS key, the function.
+
+**Cause: the Leader's runbook omitted `--config-file ../samconfig.toml`**, where the tag lives (`tags = "Project=\"ACCELERATE-Tanzania\""`, annotated in that file as a *DevOps cost-allocation requirement*). Without it CloudFormation read the stack as untagged and removed what was there. `accelerate-tz-dev-backend` retaining the tag was the control that made it unambiguous.
+
+**T-6's falsifier calls this a FAIL, not a note** — *"a diff showing an unexpected setting change is a FAIL"* — so T-6 was held open and a second, tags-only deploy restored it. That run deliberately passed **no** `--parameter-overrides`, so `UsePreviousValue` preserved all three resolved parameters and the KMS principal did not churn to whoever ran the fix. Verified: tags `[{"Key":"Project","Value":"ACCELERATE-Tanzania"}]`, parameters unchanged.
+
+> **The lesson, and it is a new one.** T-5's audit classified `UserPoolTags` correctly — *"not this resource's property; `Project` comes from `infra/samconfig.toml`'s stack-level `tags`, propagated by CloudFormation"* — and concluded the template needed no change. Both true. **But the whole audit asked *"what sets this value?"* and never asked *"what could remove it?"*** A property governed from outside the template is not thereby safe; it is safe only while every deploy path supplies it. The enumeration had no column for that, and neither the rehearsal nor two Reviewers caught it, because all three reasoned about the template rather than about the *invocation*.
+>
+> **Kaizen candidate for archive:** *a drift audit must enumerate the deploy paths, not only the configuration.* Sibling to the entry already filed this run about vendor documentation — both are cases of the spec being internally consistent and externally incomplete (KZ-011).
+
+#### What is now live, and what is still unproven
+
+Live: the trigger routes Cognito's password-reset mail to our function. **Unproven: that a human receives an email.** The KMS grant chain, real decryption, and delivery remain invisible to every suite here (`requirements.md` §8, D-3/D-4/D-6). `kms:ListGrants` was attempted from this session and denied by IAM, so even the grant's existence is unconfirmed. **T-7 is the only gate, and it is now unblocked.**
