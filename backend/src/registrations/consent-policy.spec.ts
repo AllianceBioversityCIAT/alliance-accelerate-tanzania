@@ -76,7 +76,7 @@ import { createHash } from 'crypto';
  * follow-up, so the digest never sits stale against prose it no longer covers.
  */
 const APPROVED_BODY_DIGEST =
-  '2ddc8d47d63b6e5a6649e67a5503d3c81b019bea5ed4714f07d9fe8c4f04561f';
+  'e4d965d4a5523e1f560240a85c1c1bab0eb2289619b0c241539e627a7adf7232';
 
 /** Every heading, both editions, in order — seed edition first. */
 const ALL_HEADINGS = [
