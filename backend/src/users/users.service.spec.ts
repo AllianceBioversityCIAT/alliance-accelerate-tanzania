@@ -60,6 +60,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminResetUserPasswordCommand,
   AdminSetUserPasswordCommand,
+  AdminUserGlobalSignOutCommand,
   AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
@@ -562,6 +563,20 @@ describe('UsersService (mocked Cognito)', () => {
         cognitoMock.commandCalls(AdminResetUserPasswordCommand),
       ).toHaveLength(0);
       expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
+    });
+
+    it('revokes every session, so someone already signed in cannot keep working past the reset', async () => {
+      cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+      cognitoMock.on(AdminUserGlobalSignOutCommand).resolves({});
+
+      await service.resetPassword('some-sub');
+
+      const calls = cognitoMock.commandCalls(AdminUserGlobalSignOutCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args[0].input).toMatchObject({
+        UserPoolId: 'us-east-1_TESTPOOL',
+        Username: 'some-sub',
+      });
     });
 
     it('calls AdminGetUser only to resolve a sub for the dispatch — no status-based branching before the reset', async () => {

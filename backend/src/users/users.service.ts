@@ -55,6 +55,7 @@ import {
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
+  AdminUserGlobalSignOutCommand,
   AdminUpdateUserAttributesCommand,
   ListUsersCommand,
   type UserType,
@@ -527,6 +528,16 @@ export class UsersService {
           Password: temporaryPassword,
           Permanent: false,
         }),
+      );
+
+      // Revoke every refresh token. Without this the reset changes nothing for
+      // anyone already signed in: the SPA client's refresh token lives 30 days,
+      // so an open session keeps renewing for up to a month and never meets the
+      // temporary password. That is harmless when the reset is "they forgot it"
+      // and wrong in the case an admin actually reaches for this button —
+      // a compromised account, or someone who has left.
+      await client.send(
+        new AdminUserGlobalSignOutCommand({ UserPoolId, Username: id }),
       );
 
       const { sub, email } = await this.resolveResetRecipient(id);
