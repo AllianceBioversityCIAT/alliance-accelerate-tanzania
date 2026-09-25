@@ -1,0 +1,303 @@
+{
+    "UserPool": {
+        "Id": "eu-west-1_eKINGUN3I",
+        "Name": "accelerate-tz-dev-data-auth-users",
+        "Policies": {
+            "PasswordPolicy": {
+                "MinimumLength": 12,
+                "RequireUppercase": true,
+                "RequireLowercase": true,
+                "RequireNumbers": true,
+                "RequireSymbols": true,
+                "TemporaryPasswordValidityDays": 7
+            },
+            "SignInPolicy": {
+                "AllowedFirstAuthFactors": [
+                    "PASSWORD"
+                ]
+            }
+        },
+        "DeletionProtection": "INACTIVE",
+        "LambdaConfig": {},
+        "LastModifiedDate": "2026-07-17T15:54:55.745000-05:00",
+        "CreationDate": "2026-06-24T09:50:45.722000-05:00",
+        "SchemaAttributes": [
+            {
+                "Name": "profile",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "address",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "birthdate",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "10",
+                    "MaxLength": "10"
+                }
+            },
+            {
+                "Name": "gender",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "preferred_username",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "updated_at",
+                "AttributeDataType": "Number",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "NumberAttributeConstraints": {
+                    "MinValue": "0"
+                }
+            },
+            {
+                "Name": "website",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "picture",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "identities",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {}
+            },
+            {
+                "Name": "sub",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": false,
+                "Required": true,
+                "StringAttributeConstraints": {
+                    "MinLength": "1",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "email_verified",
+                "AttributeDataType": "Boolean",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false
+            },
+            {
+                "Name": "phone_number_verified",
+                "AttributeDataType": "Boolean",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false
+            },
+            {
+                "Name": "phone_number",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "zoneinfo",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "locale",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "email",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "given_name",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "family_name",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "middle_name",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "name",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            },
+            {
+                "Name": "nickname",
+                "AttributeDataType": "String",
+                "DeveloperOnlyAttribute": false,
+                "Mutable": true,
+                "Required": false,
+                "StringAttributeConstraints": {
+                    "MinLength": "0",
+                    "MaxLength": "2048"
+                }
+            }
+        ],
+        "AutoVerifiedAttributes": [
+            "email"
+        ],
+        "UsernameAttributes": [
+            "email"
+        ],
+        "EmailVerificationMessage": "<!DOCTYPE html>\n<html lang=\"en\">\n  <body style=\"margin:0;padding:0;background-color:#F7F7F7;\">\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#F7F7F7;\">\n      <tr>\n        <td align=\"center\" style=\"padding:24px 12px;\">\n          <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;\">\n            <tr>\n              <td style=\"background-color:#1F4E8C;padding:20px 32px;\">\n                <span style=\"color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;\">ACCELERATE Seed Registry</span>\n              </td>\n            </tr>\n            <tr>\n              <td style=\"padding:32px;color:#333333;font-size:15px;line-height:1.6;\">\n                <p style=\"margin:0 0 16px;\">We received a request to reset your password for the ACCELERATE Seed Registry admin portal.</p>\n                <p style=\"margin:0 0 8px;\">Enter this verification code to set a new password:</p>\n                <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;\">\n                  <tr>\n                    <td align=\"center\" style=\"padding:20px;color:#1F4E8C;font-size:28px;font-weight:bold;letter-spacing:4px;\">{####}</td>\n                  </tr>\n                </table>\n                <p style=\"margin:0;color:#666666;font-size:13px;line-height:1.6;\">This code expires shortly. If you did not request a password reset, you can safely ignore this email.</p>\n              </td>\n            </tr>\n          </table>\n        </td>\n      </tr>\n    </table>\n  </body>\n</html>\n",
+        "EmailVerificationSubject": "Your ACCELERATE Seed Registry verification code",
+        "VerificationMessageTemplate": {
+            "EmailMessage": "<!DOCTYPE html>\n<html lang=\"en\">\n  <body style=\"margin:0;padding:0;background-color:#F7F7F7;\">\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#F7F7F7;\">\n      <tr>\n        <td align=\"center\" style=\"padding:24px 12px;\">\n          <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;\">\n            <tr>\n              <td style=\"background-color:#1F4E8C;padding:20px 32px;\">\n                <span style=\"color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;\">ACCELERATE Seed Registry</span>\n              </td>\n            </tr>\n            <tr>\n              <td style=\"padding:32px;color:#333333;font-size:15px;line-height:1.6;\">\n                <p style=\"margin:0 0 16px;\">We received a request to reset your password for the ACCELERATE Seed Registry admin portal.</p>\n                <p style=\"margin:0 0 8px;\">Enter this verification code to set a new password:</p>\n                <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;\">\n                  <tr>\n                    <td align=\"center\" style=\"padding:20px;color:#1F4E8C;font-size:28px;font-weight:bold;letter-spacing:4px;\">{####}</td>\n                  </tr>\n                </table>\n                <p style=\"margin:0;color:#666666;font-size:13px;line-height:1.6;\">This code expires shortly. If you did not request a password reset, you can safely ignore this email.</p>\n              </td>\n            </tr>\n          </table>\n        </td>\n      </tr>\n    </table>\n  </body>\n</html>\n",
+            "EmailSubject": "Your ACCELERATE Seed Registry verification code",
+            "DefaultEmailOption": "CONFIRM_WITH_CODE"
+        },
+        "UserAttributeUpdateSettings": {
+            "AttributesRequireVerificationBeforeUpdate": []
+        },
+        "MfaConfiguration": "OFF",
+        "EstimatedNumberOfUsers": 3,
+        "EmailConfiguration": {
+            "SourceArn": "arn:aws:ses:eu-west-1:569113802249:identity/j.cadavid@cgiar.org",
+            "EmailSendingAccount": "DEVELOPER",
+            "From": "ACCELERATE Seed Registry <j.cadavid@cgiar.org>"
+        },
+        "UserPoolTags": {
+            "Project": "ACCELERATE-Tanzania",
+            "aws:cloudformation:logical-id": "UserPool",
+            "aws:cloudformation:stack-id": "arn:aws:cloudformation:eu-west-1:569113802249:stack/accelerate-tz-dev-data-auth/0ebc5d70-6fdc-11f1-a1eb-022a64a71da9",
+            "aws:cloudformation:stack-name": "accelerate-tz-dev-data-auth"
+        },
+        "AdminCreateUserConfig": {
+            "AllowAdminCreateUserOnly": true,
+            "UnusedAccountValidityDays": 7,
+            "InviteMessageTemplate": {
+                "EmailMessage": "<!DOCTYPE html>\n<html lang=\"en\">\n  <body style=\"margin:0;padding:0;background-color:#F7F7F7;\">\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#F7F7F7;\">\n      <tr>\n        <td align=\"center\" style=\"padding:24px 12px;\">\n          <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background-color:#ffffff;border:1px solid #E2E2E2;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;\">\n            <tr>\n              <td style=\"background-color:#1F4E8C;padding:20px 32px;\">\n                <span style=\"color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;\">ACCELERATE Seed Registry</span>\n              </td>\n            </tr>\n            <tr>\n              <td style=\"padding:32px;color:#333333;font-size:15px;line-height:1.6;\">\n                <p style=\"margin:0 0 16px;\">Welcome! An administrator has created an account for you on the ACCELERATE Seed Registry admin portal.</p>\n                <p style=\"margin:0 0 8px;\">Use these credentials to sign in for the first time:</p>\n                <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"margin:0 0 24px;background-color:#F7F7F7;border:1px solid #E2E2E2;border-radius:6px;\">\n                  <tr>\n                    <td style=\"padding:16px 20px;color:#333333;font-size:15px;line-height:1.8;\">\n                      <div><span style=\"color:#666666;\">Username:</span> <strong>{username}</strong></div>\n                      <div><span style=\"color:#666666;\">Temporary password:</span> <strong>{####}</strong></div>\n                    </td>\n                  </tr>\n                </table>\n                <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\">\n                  <tr>\n                    <td style=\"border-radius:6px;background-color:#1F4E8C;\">\n                      <a href=\"https://d3idqvvg0xa1r7.cloudfront.net/login\" style=\"display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;\">Sign in to the portal</a>\n                    </td>\n                  </tr>\n                </table>\n                <p style=\"margin:24px 0 4px;color:#666666;font-size:13px;line-height:1.6;\">Or open this link: https://d3idqvvg0xa1r7.cloudfront.net/login</p>\n                <p style=\"margin:16px 0 0;color:#666666;font-size:13px;line-height:1.6;\">You will be asked to set a new password when you first sign in. If you did not expect this email, you can safely ignore it.</p>\n              </td>\n            </tr>\n          </table>\n        </td>\n      </tr>\n    </table>\n  </body>\n</html>\n",
+                "EmailSubject": "Your ACCELERATE Seed Registry admin account"
+            }
+        },
+        "Arn": "arn:aws:cognito-idp:eu-west-1:569113802249:userpool/eu-west-1_eKINGUN3I",
+        "AccountRecoverySetting": {
+            "RecoveryMechanisms": [
+                {
+                    "Priority": 1,
+                    "Name": "verified_email"
+                },
+                {
+                    "Priority": 2,
+                    "Name": "verified_phone_number"
+                }
+            ]
+        },
+        "UserPoolTier": "ESSENTIALS",
+        "KeyConfiguration": {
+            "KeyType": "AWS_OWNED_KEY"
+        },
+        "IssuerConfiguration": {
+            "Type": "ORIGINAL"
+        }
+    }
+}

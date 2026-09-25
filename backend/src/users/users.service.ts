@@ -352,6 +352,14 @@ export class UsersService {
    * FR-4 — update mutable attributes. Sets the email attribute when supplied;
    * enables/disables the account when `enabled` is provided. Returns the fresh
    * canonical view via {@link get}.
+   *
+   * `email_verified: 'true'` rides in the SAME command as `email` — an admin
+   * changing another user's address is already trusted to reset that user's
+   * password out-of-band, so asserting the new address grants no capability
+   * they lack; and since the pool uses email as the username, a mistyped
+   * address locks that person out immediately (loud) rather than leaving a
+   * silently-unverified account. This also means Cognito has nothing to
+   * verify, so it sends no verification code.
    */
   async update(id: string, dto: UpdateUserDto): Promise<AdminUser> {
     try {
@@ -363,7 +371,10 @@ export class UsersService {
           new AdminUpdateUserAttributesCommand({
             UserPoolId,
             Username: id,
-            UserAttributes: [{ Name: 'email', Value: dto.email }],
+            UserAttributes: [
+              { Name: 'email', Value: dto.email },
+              { Name: 'email_verified', Value: 'true' },
+            ],
           }),
         );
       }

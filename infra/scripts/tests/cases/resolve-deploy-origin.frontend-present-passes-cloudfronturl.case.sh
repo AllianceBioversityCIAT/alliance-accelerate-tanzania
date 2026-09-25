@@ -13,6 +13,15 @@
 # MAIL_TRANSPORT and VPC_ID/DEV_CIDR are preset via env so deploy.sh takes
 # their explicit-override branches and never calls aws/curl for THOSE
 # values — this case is scoped to the ALLOWED_ORIGIN resolution only.
+#
+# T-6 attempt 2 (Finding 5): this run also reaches T-6's own
+# CustomEmailSenderKmsGrantPrincipalArn resolution, which now applies a
+# shape guard requiring a well-formed IAM user/role ARN — a flat account
+# id (the STS_ACCOUNT value below) no longer satisfies it regardless of
+# `--query`. The sts get-caller-identity branch below now answers
+# differently for `--query Arn` vs `--query Account`, matching what the
+# real CLI actually returns per query, rather than ignoring `--query`
+# entirely as it did before.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -36,7 +45,14 @@ cat > "$AWS_RECIPE" <<EOF2
 args="\$*"
 case "\$1 \$2" in
   "sts get-caller-identity")
-    echo "$STS_ACCOUNT"
+    case "\$args" in
+      *Arn*)
+        echo "arn:aws:iam::000000000001:user/test-deployer"
+        ;;
+      *)
+        echo "$STS_ACCOUNT"
+        ;;
+    esac
     exit 0
     ;;
   "cloudformation describe-stacks")

@@ -1,15 +1,55 @@
 AWSTemplateFormatVersion: "2010-09-09"
+# T-1 (design.md §8, round-1 C-11) — SAM toolchain added to a stack that was
+# plain CloudFormation until now. 20-backend already carries this Transform;
+# 30-frontend deliberately does not ("No SAM Transform - these are plain
+# CloudFormation resources", per that template's own Description) because it
+# hosts no AWS::Serverless::Function. This stack now WILL host one
+# (forgot-password-delivery's CustomEmailSender, T-4) - and that function
+# needs `@aws-crypto/client-node` (AWS Encryption SDK) to decrypt Cognito's
+# custom-sender payload, a real npm dependency NOT bundled in the Lambda
+# Node.js runtime - so this stack needs the same build+package toolchain
+# 20-backend already has, unlike 30-frontend. See the CustomEmailSender build
+# convention comment above the Resources section below for the CodeUri/
+# BuildMethod/dependency-install path T-4 must use.
+Transform: AWS::Serverless-2016-10-31
 Description: >-
   ACCELERATE Tanzania (dev) - data + auth stack: RDS MySQL + Secrets Manager
-  (T-2) and Cognito user pool/client/groups (T-4). Stack: accelerate-tz-dev-data-auth.
+  (T-2) and Cognito user pool/client/groups (T-4). Now a SAM stack (T-1,
+  design.md §8) hosting forgot-password-delivery's CustomEmailSender
+  function (forgot-password-delivery T-4): decrypt, route by triggerSource,
+  validate the recipient before publishing, build, publish over AMQP,
+  return (design.md §3, §5). forgot-password-delivery T-3 adds the KMS key
+  the trigger needs (design.md §4, DD-2a); T-4 adds the function's own
+  kms:Decrypt grant and the Lambda invoke permission; T-6 (this change)
+  sets LambdaConfig on the pool below, activating the trigger IN THIS
+  TEMPLATE ONLY - not yet live until a DEPLOY_INFRA=true build runs
+  (NFR-5).
+  Stack: accelerate-tz-dev-data-auth.
   Deploy with: sam deploy --profile IBD-DEV --region eu-west-1.
 
 # Authored by:
 #   T-2 - AWS::RDS::DBInstance, AWS::EC2::SecurityGroup, AWS::SecretsManager::Secret  (RDS section)
 #   T-4 - AWS::Cognito::UserPool, AWS::Cognito::UserPoolClient, two AWS::Cognito::UserPoolGroup  (Cognito section)
+#   forgot-password-delivery T-3 - AWS::KMS::Key + its KeyPolicy  (CustomEmailSenderKey section, after Cognito)
+#   forgot-password-delivery T-4 - AWS::Serverless::Function (CustomEmailSenderFunction) +
+#     AWS::Lambda::Permission (CustomEmailSenderInvokePermission)  (section after CustomEmailSenderKey)
+#   forgot-password-delivery T-6 - UserPool.LambdaConfig (activates the trigger, design.md §6/DD-5b)
 # Shared params (see infra/README.md): DevCidr (T-2). Cognito needs no parameters (FR-4: pool/client/groups only).
+#   CustomEmailSenderKmsGrantPrincipalArn, CustomEmailSenderUserPoolId
+#   (forgot-password-delivery T-3, design.md §4/DD-2a, condition parameter added by DD-2b;
+#   both wired into infra/scripts/deploy.sh's step 1 --parameter-overrides by T-6,
+#   design.md DD-2c; CustomEmailSenderUserPoolId also gains an AllowedPattern at T-6,
+#   per T-3's Reviewer, now that the override actually exists).
+#   CustomEmailSenderBackendStackName, CustomEmailSenderPublicAppBaseUrl
+#   (forgot-password-delivery T-4, design.md DD-3b/§3 step 4).
+#   CustomEmailSenderPublicAppBaseUrl is ALSO wired into infra/scripts/
+#   deploy.sh's step 1 --parameter-overrides, by T-6 (resolved from
+#   $ALLOWED_ORIGIN, widened past DD-2c with the user's approval after a
+#   Reviewer escalation) - CustomEmailSenderBackendStackName is not; it
+#   still relies on its own template Default.
 # Outputs: RdsEndpoint, RdsPort, DbSecretArn, DbSecurityGroupId, DbName, DbMasterUsername  (T-2)
-#   ·  UserPoolId, UserPoolClientId  (T-4).
+#   ·  UserPoolId, UserPoolClientId  (T-4)  ·  CustomEmailSenderKeyId, non-exported,
+#   for T-7's manual `aws kms list-grants` check only (forgot-password-delivery T-3).
 
 Parameters:
   # ── T-2 parameters ────────────────────────────────────────────────────────
@@ -43,7 +83,196 @@ Parameters:
     MinValue: 20
     MaxValue: 100
 
+  # ── forgot-password-delivery T-3 parameter (design.md §4, DD-2a) ──────────
+  CustomEmailSenderKmsGrantPrincipalArn:
+    Type: String
+    Description: >-
+      IAM principal (user or role ARN) that runs `sam deploy` against THIS
+      stack - i.e. the identity that calls Cognito's UpdateUserPool when
+      T-6 activates the CustomEmailSender trigger. Per AWS ("Activating
+      custom sender Lambda triggers"): "The IAM principal that creates or
+      updates your user pool creates a one-time grant against the KMS key
+      that Amazon Cognito uses to encrypt the code. Grant this principal
+      CreateGrant permissions for your KMS key." Cognito itself holds no
+      static encrypt permission - without this grant-creation right, the
+      deploying principal cannot hand Cognito a grant. EITHER T-6's
+      activating deploy fails outright (if Cognito attempts the grant
+      during UpdateUserPool itself), OR it succeeds and the first live
+      password reset fails instead - undecidable from documentation
+      alone, and T-7 establishes which. Nothing in this repo's test suite
+      can catch either branch (every suite here mocks the AWS clients;
+      T-7 is the only real check). Corrected after T-3 review ADVISORY 2
+      found this fix had landed at the KEY GRANT comment below and not
+      here - the same claim, stated as fact at one site and qualified at
+      the other.
+      This is a PARAMETER, not a hardcoded ARN, because the identity that
+      deploys this stack is not fixed: today an interactive operator
+      deploys with IBD-DEV credentials as some IAM user (a different one
+      each time someone else runs the deploy - measured twice, 2026-09-23
+      and again 2026-09-25, two different users), but a CI/pipeline run
+      may instead assume an IAM ROLE - a template that hardcodes any one
+      developer's user ARN would silently stop granting the right
+      principal, and thus silently break every password reset, the day
+      anyone else - a pipeline or a different operator - deploys it.
+      NO DEFAULT (validation-report.md B-1, DD-6): an earlier revision of
+      this parameter DID hardcode the account id and the first-measured
+      user's ARN as a `Default`, directly beneath the five lines above
+      arguing against exactly that shape - it was dead weight from the day
+      DD-2c's deploy.sh wiring landed (that Default is never read by any
+      deploy path in this repo), it tripped
+      `guard-account.no-account-id-literal-in-infra`, and had it ever been
+      read it would have named the wrong principal. See DD-6 for the
+      choice of NO DEFAULT over a `Default: ""` + `Condition` (design.md's
+      §4 KMS grant statement is unconditional, so that path was rejected
+      as an availability regression, not adopted quietly) and for what
+      this makes CloudFormation do on the next deploy of an
+      already-existing stack versus a genuinely first deploy.
+
+  # ── forgot-password-delivery T-3 parameter (design.md §4/DD-2a, AMENDED by
+  #    DD-2b) ─────────────────────────────────────────────────────────────
+  CustomEmailSenderUserPoolId:
+    Type: String
+    Description: >-
+      Cognito User Pool id, passed as a PARAMETER rather than obtained via
+      `!Ref UserPool` in the key policy's encryption-context condition
+      below. DD-2b: a same-template `!Ref UserPool` there would create a
+      CloudFormation dependency edge Key -> UserPool, and this spec later
+      mandates two return edges (T-6's `LambdaConfig.KMSKeyID`, and
+      independently T-6's `LambdaArn` plus T-4's `kms:Decrypt` scoped to
+      this key's ARN) - either one alone would deadlock the stack in a
+      cycle. Taking the id as a parameter breaks the edge while leaving the
+      condition's semantics unchanged. `infra/scripts/deploy.sh` resolves
+      this from THIS stack's own `UserPoolId` output via the
+      `resolve_stack_value` helper it already uses for `MailTransport` (T-6
+      wiring, DD-2c) - so the value cannot drift from the real pool id even
+      though it is no longer a `Ref`. On a genuinely first deploy (this
+      stack does not exist yet) that resolution falls back to this empty
+      Default, same shape as `MailTransport`'s own bootstrap fallback - see
+      deploy.sh for that branch. The encryption-context key itself stays
+      spelled `userpool-id`, verbatim - do not "tidy" that spelling, and do
+      not assume Cognito's grant actually carries this constraint; both are
+      open assumptions for T-7 (DD-2b).
+      AllowedPattern (added T-6, per T-3's Reviewer, now that deploy.sh
+      actually passes an override instead of leaving the Default inert):
+      empty (the inert/bootstrap value) OR a Cognito pool-id shape
+      (`<region>_<alphanumeric suffix>`). This converts a malformed value
+      from "the key policy condition and the invoke permission's SourceArn
+      quietly compose against the wrong id, and the first real password
+      reset fails at T-7" into "the changeset itself refuses."
+    Default: ""
+    AllowedPattern: ^$|^[\w-]+_[0-9a-zA-Z]+$
+    ConstraintDescription: >-
+      Must be empty (inert default / bootstrap fallback) or a Cognito user
+      pool id, e.g. eu-west-1_AbCdEfGhI.
+
+  # ── forgot-password-delivery T-4 parameters (design.md DD-3b, §3 step 4) ──
+  CustomEmailSenderBackendStackName:
+    Type: String
+    Description: >-
+      Name of the `20-backend` stack, whose `MailMicroserviceSecret` this
+      function reads AT INVOCATION TIME (design.md DD-3b) - never at deploy
+      time, and never via Fn::ImportValue, because `20-backend` deploys
+      AFTER this stack (DD-1: "the dependency is on the secret EXISTING when
+      someone resets a password... not on deploy ordering"). That secret is
+      named "<that stack's own AWS::StackName>-mail-microservice-secret" on
+      THAT stack (infra/20-backend/template.yaml:172) - this parameter
+      supplies the stack-name half so this function can compose the same
+      name and call GetSecretValue on it directly. Same shape as
+      `CustomEmailSenderUserPoolId` above and for the same reason: a
+      cross-stack value that must not be guessed or hardcoded. Default
+      matches `infra/scripts/deploy.sh`'s own default backend stack name.
+    Default: accelerate-tz-dev-backend
+  CustomEmailSenderPublicAppBaseUrl:
+    Type: String
+    Description: >-
+      PUBLIC_APP_BASE_URL for this function's messages (design.md §3 step 4,
+      NFR-3) - mirrors `config.mjs`'s `getPublicAppBaseUrl()`, which throws
+      rather than emitting a link built from an unset/`*`/non-http(s) value.
+      This template's own `Default` still stays EMPTY (THIS stack has no
+      AllowedOrigin of its own to fall back to) - but `infra/scripts/
+      deploy.sh` (T-6, widened past DD-2c with the user's approval after a
+      Reviewer escalation) now resolves this parameter from
+      `$ALLOWED_ORIGIN`, the same value it already computed for the
+      frontend stack's live `CloudFrontUrl` output, so a normal deploy no
+      longer leaves it empty. Left empty (e.g. a direct `sam deploy` that
+      bypasses `deploy.sh`), the attribute-verification message throws
+      when invoked. ⚠️ CORRECTED post-deploy (validation-report.md B-4):
+      that message is shared by TWO handled sources -
+      `CustomEmailSender_UpdateUserAttribute`, which an admin email edit
+      measurably emits and which is therefore the first LIVE path
+      depending on this parameter being well-formed, and
+      `CustomEmailSender_VerifyUserAttribute`, which nothing reaches
+      today. This line previously named only the latter and called it
+      "the only handled trigger source" that calls
+      `getPublicAppBaseUrl()`;
+      `CustomEmailSender_ForgotPassword`'s message never calls it at all
+      (DD-1c) and is unaffected either way. Residual: on a genuine
+      bootstrap deploy the frontend stack does not exist yet, so
+      `deploy.sh` resolves `$ALLOWED_ORIGIN` to `'*'` and this parameter
+      inherits that `'*'` - `VerifyUserAttribute` still throws in that one
+      case. Accepted: no worse than the empty default it replaces, and it
+      self-heals on the next deploy.sh run once the frontend stack exists.
+      No trailing slash.
+    Default: ""
+
+Conditions:
+  # T-4 attempt 3, Fix C (design.md DD-5b). `CustomEmailSenderUserPoolId`
+  # (declared above, DD-2b) defaults to "" until T-6 wires it from this
+  # stack's own `UserPoolId` output (DD-2c) - and an empty value would
+  # compose a malformed ARN ("...:userpool/") if used unconditionally
+  # below. This condition gates `CustomEmailSenderInvokePermission`'s
+  # `SourceArn` so it is set ONLY once the parameter is non-empty.
+  HasCustomEmailSenderUserPoolId: !Not [!Equals [!Ref CustomEmailSenderUserPoolId, ""]]
+
 Resources:
+  # ════════════════════════════════════════════════════════════════════════════
+  # T-1 (design.md §8) — CustomEmailSender build convention for T-4.
+  # No AWS::Serverless::Function is declared by T-1 itself (out of scope -
+  # T-4 owns the function). This comment is the toolchain contract T-4 must
+  # follow so the build method and dependency-install path are decided ONCE,
+  # here, rather than improvised per-task:
+  #
+  #   CodeUri: ./functions/custom-email-sender
+  #     (i.e. infra/10-data-auth/functions/custom-email-sender/ - created by
+  #     T-2, sibling to this template, mirroring 20-backend's
+  #     CodeUri: ../../backend convention of pointing at a real source
+  #     directory rather than inlining code in the template. T-4 (this
+  #     change) adds index.mjs and the AWS::Serverless::Function resource
+  #     itself into that already-existing package.)
+  #   Handler: index.handler  (T-4's choice of entry file/export)
+  #   Runtime: nodejs24.x  (matches 20-backend's ApiFunction, same account)
+  #   Metadata:
+  #     BuildMethod: nodejs24.x   # <- must match Runtime exactly
+  #
+  # BuildMethod: nodejs24.x is SAM's BUILT-IN Node.js builder (unlike
+  # 20-backend's Metadata: BuildMethod: makefile) - not a Makefile, because
+  # this function is small and has no compiled dist/ or Prisma engine to
+  # stage. Given a `package.json` inside CodeUri, `sam build` runs the
+  # dependency-install step itself — `npm install -q --no-audit --no-save
+  # --omit=dev` — and stages node_modules/ alongside the handler.
+  # ⚠️ NOT `npm ci`: a lockfile alone does not select it. `npm ci` additionally
+  # requires `Metadata: BuildProperties: UseNpmCi: true`. Corrected after T-1's
+  # review, which read aws_lambda_builders' nodejs_npm workflow rather than
+  # recalling it — do not rely on committing a lockfile for deterministic
+  # installs without also setting that flag.
+  # That package.json is THE dependency-install path - T-2 created it (with
+  # `jest` as its only devDependency at that point); T-4 (this change) added
+  # its runtime `dependencies`: `@aws-crypto/client-node` (Cognito's custom-
+  # sender payload arrives KMS-encrypted and only the AWS Encryption SDK can
+  # decrypt it - design.md §3 step 1 names the package; §4 covers the KMS
+  # policies), `amqplib` (DD-3a's publish path), and
+  # `@aws-sdk/client-secrets-manager` (DD-3b's runtime secret read). None of
+  # the three is part of the Lambda Node.js runtime's bundled AWS SDK, so
+  # without this install path the function would deploy but fail at first
+  # invocation.
+  #
+  # Do not add Globals: Function: Metadata here to pre-set BuildMethod -
+  # Metadata is a resource-level template field outside `Properties`, and
+  # SAM's Globals section only injects into a function's `Properties`, so
+  # it cannot carry Metadata regardless of stack. There is nothing to
+  # centralize until the resource itself exists.
+  # ════════════════════════════════════════════════════════════════════════════
+
   # ════════════════════════════════════════════════════════════════════════════
   # T-2 - RDS MySQL + Secrets Manager + security group  (FR-2, FR-7, NFR-2/4/6)
   # ════════════════════════════════════════════════════════════════════════════
@@ -143,8 +372,167 @@ Resources:
 
   # Email-based sign-in, self-managed by admins (no public self-signup - these
   # are internal staff/admin identities). Strong password policy per §6.
+  #
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-5 (design.md §6, DD-3) - pool drift audit.
+  # FR-5: UpdateUserPool composes its call FROM THIS TEMPLATE and resets any
+  # live setting the template omits. Before touching this resource again
+  # (T-6 sets LambdaConfig next), every property `aws cognito-idp
+  # describe-user-pool --user-pool-id eu-west-1_eKINGUN3I --profile IBD-DEV
+  # --region eu-west-1` returned live and this resource's Properties: does
+  # NOT set was enumerated from the committed artefact
+  # (docs/specs/auth/forgot-password-delivery/pool-before.json, 24 top-level
+  # UserPool keys, machine-counted) and decided below - never from memory or
+  # from a partial table (KZ-008). Full table + citations: design.md §6
+  # (amended 2026-09-23) and this task's completion report.
+  #
+  # THREE-WAY CLASSIFICATION (not two - the task's own Disqualifier names
+  # only "default" vs "drift"; a third class is real here):
+  #   (a) AWS DEFAULT - omission already means this value. Restoring it
+  #       would be a no-op at best, a lie about what the template does at
+  #       worst. Every row below except the two in (c) is this class. Each
+  #       bullet states its own warrant - a direct quote of `aws cognito-idp
+  #       update-user-pool help`'s parameter documentation where one exists,
+  #       or the reasoning behind the value where it does not:
+  #         - Policies.PasswordPolicy.TemporaryPasswordValidityDays=7 -
+  #           CLI help, verbatim: "Defaults to 7."
+  #         - Policies.SignInPolicy.AllowedFirstAuthFactors=[PASSWORD] -
+  #           no live pool feature (WEB_AUTHN/EMAIL_OTP/SMS_OTP) is used;
+  #           consistent with a password-only pool's baseline. Not stated
+  #           as a literal default in the CLI help - reasoned, not quoted.
+  #           The rehearsal that would have confirmed it empirically did
+  #           not run (T-5's completion report, "Not Done"); no empirical
+  #           step for this row ran at all.
+  #         - DeletionProtection=INACTIVE - AWS's universal opt-in
+  #           convention for deletion protection, not a CLI-help-quoted
+  #           default. Matches this stack's existing explicit
+  #           `DeletionProtection: false` posture on `Db`
+  #           (line ~297 above). `CustomEmailSenderKey` (a KMS key) has no
+  #           `DeletionProtection` property at all - it uses
+  #           `PendingWindowInDays` instead, and its own comment
+  #           attributes the stack's easy-teardown posture to elsewhere in
+  #           this stack, i.e. to `Db`, not to itself.
+  #         - LambdaConfig={} - tasks.md T-5's Disqualifier: "`MfaConfiguration:
+  #           OFF` and `LambdaConfig: {}` are what an omitted property
+  #           already means" (T-6 sets this next; setting it here would
+  #           activate the trigger early).
+  #         - SchemaAttributes (the full standard OIDC set: profile,
+  #           address, birthdate, ... nickname) - NOT a parameter of
+  #           UpdateUserPool AT ALL (absent from the CLI help's parameter
+  #           list above) and immutable after pool creation. Omitting
+  #           `Schema` from this resource cannot reset it because nothing
+  #           UpdateUserPool sends can touch it either way.
+  #         - UsernameAttributes=[email] - matches this template already;
+  #           also not an UpdateUserPool parameter (set once, at creation).
+  #         - EmailVerificationMessage / EmailVerificationSubject (the
+  #           legacy top-level duplicates of VerificationMessageTemplate) -
+  #           CLI help, verbatim, both: "This parameter is no longer used."
+  #           Inert. VerificationMessageTemplate (which this resource DOES
+  #           set, matching live exactly) is the live field.
+  #         - UserAttributeUpdateSettings.AttributesRequireVerificationBeforeUpdate=[]
+  #           - Cognito's default (no attribute requires reverification
+  #           before update), not a CLI-help-quoted default.
+  #         - MfaConfiguration=OFF - tasks.md T-5's Disqualifier:
+  #           "`MfaConfiguration: OFF` and `LambdaConfig: {}` are what an
+  #           omitted property already means."
+  #         - AccountRecoverySetting (verified_email(1)/verified_phone_number(2))
+  #           - tasks.md T-5's Disqualifier: "`AccountRecoverySetting`'s
+  #           live value is also AWS's default."
+  #         - UserPoolTier=ESSENTIALS - CLI help, verbatim: "Defaults to
+  #           ESSENTIALS."
+  #         - KeyConfiguration.KeyType=AWS_OWNED_KEY - CLI help, verbatim:
+  #           "If not specified, Amazon Web Services managed keys are
+  #           used" (= AWS_OWNED_KEY).
+  #         - IssuerConfiguration.Type=ORIGINAL - paraphrased from the CLI
+  #           help's description of ORIGINAL as the baseline, single-region
+  #           issuer shape (UPDATED is the opt-in for multi-region
+  #           replication, which this pool does not use) - not a quoted
+  #           default statement.
+  #         - UserPoolTags ("Project": "ACCELERATE-Tanzania" plus three
+  #           aws:cloudformation:* tags - four tags total) - this
+  #           resource's Properties: below does not set UserPoolTags (a
+  #           real property of AWS::Cognito::UserPool). The Project tag is
+  #           CloudFormation's stack-level `tags` from
+  #           infra/samconfig.toml, propagated to every taggable resource
+  #           in ALL THREE stacks; the aws:cloudformation:* tags are
+  #           CFN-injected automatically. Neither is affected by anything
+  #           this resource's Properties: block does or omits.
+  #         - AdminCreateUserConfig.UnusedAccountValidityDays=7 - CLI help,
+  #           verbatim: "This parameter is no longer in use... The default
+  #           value for this parameter is 7", and superseded once
+  #           Policies.PasswordPolicy.TemporaryPasswordValidityDays is in
+  #           effect (which it is, at its own default - CLI help again:
+  #           "When you set TemporaryPasswordValidityDays for a user pool,
+  #           you can no longer set a value for the legacy
+  #           UnusedAccountValidityDays parameter").
+  #       Id, Arn, CreationDate, LastModifiedDate, EstimatedNumberOfUsers
+  #       are read-only pool metadata - not settable via Create/UpdateUserPool
+  #       at all, so "present live, absent from the template" does not even
+  #       apply to them.
+  #
+  #   (c) DELIBERATELY REMOVED BY AN EARLIER, SHIPPED SPEC - the live pool
+  #       still shows it only because no DEPLOY_INFRA=true deploy has landed
+  #       that spec's decision. Restoring either into this template would
+  #       silently REVERT an approved decision this repo already made:
+  #         - EmailConfiguration (live: EmailSendingAccount=DEVELOPER,
+  #           SourceArn=<SES identity>, From=<branded>) vs this resource's
+  #           EmailConfiguration.EmailSendingAccount=COGNITO_DEFAULT below -
+  #           `enhancement/email-notification-microservice` design.md §7.1
+  #           Phase B: "the EmailConfiguration !If -> unconditional
+  #           COGNITO_DEFAULT" (verified at that file). This resource
+  #           ALREADY carries the decided value; DO NOT restore SES.
+  #         - AdminCreateUserConfig.InviteMessageTemplate (live: the
+  #           branded admin-invite HTML, CTA hardcoded to
+  #           https://d3idqvvg0xa1r7.cloudfront.net/login) - this
+  #           resource's AdminCreateUserConfig below already omits it -
+  #           `auth/account-access-emails` design.md DD-5 ("Retire the
+  #           Cognito InviteMessageTemplate and PortalUrl", its T-9,
+  #           verified at that file). DO NOT restore it.
+  #       Net effect: (b) real drift, requiring a NEW value written into
+  #       this resource, was found ZERO times. Every present-live/
+  #       absent-from-template setting is either (a) or (c); both classes
+  #       are "leave the template as it is," for opposite reasons - (a)
+  #       because omission already means the live value, (c) because
+  #       omission is the decided target. Restoring EITHER would be wrong:
+  #       restoring (a) values is a no-op that adds noise; restoring (c)
+  #       values reverts a decision another shipped spec already made.
+  #
+  #   ⚠️ ONE FINDING BEYOND THIS ENUMERATION, discovered by this audit and
+  #   OUT OF T-5's SCOPE TO FIX: `aws cognito-idp update-user-pool help`
+  #   states EmailMessage/EmailSubject on VerificationMessageTemplate (and
+  #   on InviteMessageTemplate) are "allowed only if the value of
+  #   EmailSendingAccount is DEVELOPER." This resource sets BOTH
+  #   EmailConfiguration.EmailSendingAccount=COGNITO_DEFAULT AND a branded
+  #   VerificationMessageTemplate.EmailMessage/EmailSubject (T-4's
+  #   content, already reviewed and merged) - a combination that may be
+  #   REJECTED outright by UpdateUserPool once T-6's deploy actually runs.
+  #   Not decided or fixed here - it predates T-5 and is not this task's
+  #   scope. Flagged in design.md §6 and this task's completion report for
+  #   the Leader to route (most likely to T-6, whose deploy is the first
+  #   one that would ever hit it).
+  # ════════════════════════════════════════════════════════════════════════════
   UserPool:
     Type: AWS::Cognito::UserPool
+    # T-6 attempt 2, Finding 1 (Reviewer, both rounds) — LOAD-BEARING ordering
+    # edge, corrected from attempt 1's false belief that this would be a
+    # CYCLE (see the "TWO DIFFERENT HAZARDS" comment above LambdaConfig,
+    # below, and the corrected comment on CustomEmailSenderInvokePermission
+    # near the bottom of this file). CustomEmailSenderInvokePermission and
+    # CustomEmailSenderKey both reference the CustomEmailSenderUserPoolId
+    # PARAMETER, never `!Ref UserPool` (DD-2b, DD-5b) — so NEITHER of those
+    # two resources carries a return edge back to this one, and this
+    # DependsOn is provably acyclic against the present graph:
+    #   Key -> Function -> Permission -> UserPool  (a total order)
+    # Without it, CloudFormation is free to build UserPool BEFORE
+    # CustomEmailSenderInvokePermission exists — and Cognito validates the
+    # invoke permission WHEN LambdaConfig.CustomEmailSender is set (i.e.
+    # during THIS resource's own UpdateUserPool/CreateUserPool call), so
+    # that ordering fails the changeset outright, non-deterministically
+    # (it may happen to succeed if CloudFormation's own topological sort
+    # picks the safe order by chance). `DEPLOY_INFRA` defaults to `false`,
+    # so the first real deploy plausibly carries T-4 and T-6 in the same
+    # changeset — exactly the scenario that bites.
+    DependsOn: CustomEmailSenderInvokePermission
     Properties:
       UserPoolName: !Sub "${AWS::StackName}-users"
       # Sign in with email (email is the username); auto-verify it so admin-created
@@ -228,6 +616,103 @@ Resources:
               </table>
             </body>
           </html>
+      # ══════════════════════════════════════════════════════════════════════
+      # forgot-password-delivery T-6 (design.md §6, DD-4, DD-5b) - activates
+      # the CustomEmailSender trigger by setting LambdaConfig. THIS is the
+      # property that fires CloudFormation's UpdateUserPool composition
+      # (§6): a redeploy of an otherwise-unchanged template is a no-op
+      # ("No updates are to be performed" - measured, T-5), so nothing
+      # about EmailConfiguration/AdminCreateUserConfig above takes effect
+      # against the LIVE pool until THIS change actually deploys. Both of
+      # those are already-decided, already-shipped settings from OTHER
+      # specs (§6's two (c) rows) landing at last - not new drift T-6
+      # introduces.
+      #
+      # LambdaArn + KMSKeyID are the two forward graph edges DD-2b
+      # predicted this task would add: UserPool -> Function and
+      # UserPool -> Key. `infra/scripts/deploy.sh` (this task, DD-2c) now
+      # resolves the CustomEmailSenderUserPoolId parameter from THIS
+      # stack's own UserPoolId output, so the Key's condition and the
+      # invoke permission's SourceArn are correctly scoped once this same
+      # deploy has run once before (or, on a genuinely first deploy,
+      # CustomEmailSenderUserPoolId falls back to its inert empty default
+      # and is re-wired correctly on the NEXT run - see deploy.sh).
+      # ⚠️ CORRECTED 2026-09-25 (validation-report.md B-1, design.md DD-6):
+      # this used to say "both parameters fall back to their inert
+      # defaults" - CustomEmailSenderKmsGrantPrincipalArn never actually
+      # did, even before DD-6 removed its Default: deploy.sh resolves it
+      # via `sts get-caller-identity` unconditionally, on a first deploy
+      # or any other, so it was never inert. DD-6 removed that Default
+      # anyway (it hardcoded the account id and, unlike UserPoolId's, was
+      # dead weight no deploy path ever read) - a genuinely first deploy
+      # WITHOUT deploy.sh now fails closed on that parameter instead of
+      # silently naming the wrong principal.
+      #
+      # TWO DIFFERENT HAZARDS, TWO DIFFERENT FIXES - attempt 1 conflated
+      # them into one "neither creates a CYCLE" claim; that claim is true
+      # of only one of the two, and reasoning from it left the other
+      # unfixed (T-6 attempt 2, Findings 1-3):
+      #   - CustomEmailSenderKey's KeyPolicy condition (DD-2b): a
+      #     same-template `!Ref UserPool` there WOULD close a graph CYCLE
+      #     against this resource's own KMSKeyID edge (UserPool -> Key).
+      #     The fix is the CustomEmailSenderUserPoolId PARAMETER, which
+      #     removes the edge entirely - there is nothing more to add on
+      #     this resource for that hazard.
+      #   - CustomEmailSenderInvokePermission's SourceArn (DD-5b): a
+      #     same-template reference there did NOT close a cycle BEFORE the
+      #     `DependsOn` below existed (Permission had no path back to
+      #     UserPool otherwise). With that `DependsOn` now in place, such a
+      #     reference would close a direct two-node cycle (Permission ->
+      #     UserPool via SourceArn, UserPool -> Permission via DependsOn) -
+      #     and lint WILL catch it. That cycle risk is on top of, not
+      #     instead of, the forced BUILD-ORDER hazard a same-template
+      #     reference would ALSO create: Cognito validates the invoke
+      #     permission the moment LambdaConfig (right here) is set, so
+      #     without an explicit edge CloudFormation may legally build
+      #     UserPool before Permission exists, and that ordering fails
+      #     Cognito's own validation. The SAME parameter substitution that
+      #     fixes the Key's cycle does NOT fix this - a parameter removes
+      #     an edge, it does not add the right one back. The
+      #     `DependsOn: CustomEmailSenderInvokePermission` on this
+      #     resource's own `Type:` line (above) is what supplies the
+      #     correct order; it is safe to add only BECAUSE the parameter
+      #     substitution already broke the return edge that would
+      #     otherwise have made it a cycle. See
+      #     CustomEmailSenderInvokePermission's own comment, below, for the
+      #     same correction from its side.
+      #
+      # ⚠️ THIS BLINDNESS LIVES ONLY IN THIS COMMENT, NOT IN ANY GATE. Every
+      # `validate.sh`/`sam validate --lint` run in this repo is a static
+      # template-shape/lint check; it has no mechanism to reason about
+      # Cognito's runtime validation order at all, so it stays GREEN
+      # whether or not the DependsOn above is present - deleting it as
+      # "redundant" would look exactly as safe as keeping it. T-7 (the
+      # live DEV deploy) is the only thing that would ever surface that
+      # breakage.
+      #
+      # LambdaVersion: V1_0 is Cognito's own required literal for this
+      # trigger version - not a version of OUR function.
+      #
+      # ⚠️ ROLLBACK (DD-4): there is no rollback that restores today's
+      # behaviour. Removing this property later resumes Cognito's OWN
+      # sending, on COGNITO_DEFAULT (EmailConfiguration above) - worse
+      # than the SES-backed pool this repo is deploying FROM, and SES is
+      # excluded permanently (§6). Rollback means degrading to Cognito's
+      # shared sender until the trigger is restored, never a return to
+      # what is live today.
+      #
+      # ⚠️ NOT LIVE MERELY BY BEING IN THIS TEMPLATE. `DEPLOY_INFRA`
+      # defaults to `false` (NFR-5) - this property (and the two (c)
+      # resets it fires) take effect only once an operator deliberately
+      # runs a `DEPLOY_INFRA=true` build that reaches this stack's
+      # UpdateUserPool call. T-7, not T-6, is the task that observes any
+      # of this live.
+      # ══════════════════════════════════════════════════════════════════════
+      LambdaConfig:
+        CustomEmailSender:
+          LambdaArn: !GetAtt CustomEmailSenderFunction.Arn
+          LambdaVersion: V1_0
+        KMSKeyID: !GetAtt CustomEmailSenderKey.Arn
 
   # Public SPA client: NO generated secret (a static SPA can't keep one - NFR-2).
   # SRP + refresh-token flows are the SPA-appropriate set without a Hosted UI; we
@@ -269,6 +754,329 @@ Resources:
       UserPoolId: !Ref UserPool
       Description: Staff - operational access below admin.
       Precedence: 10
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-3 (design.md §4, DD-2a) - the KMS key
+  # CustomEmailSender needs, and ONLY the two policy statements below.
+  #
+  # SCOPE FENCE (DD-2a): design.md §4 lists THREE policies; T-3 owns the two
+  # on the KEY POLICY below. It does NOT add:
+  #   - kms:Decrypt for the function's execution role - that role does not
+  #     exist until T-4 creates the function (its `Policies:` block, per
+  #     this repo's existing convention: ApiFunction in 20-backend/
+  #     template.yaml takes SAM's auto-created role via `Policies:` rather
+  #     than an explicit `Role:` - T-4 mirrors that here).
+  #   - lambda:InvokeFunction for cognito-idp.amazonaws.com - a LAMBDA
+  #     RESOURCE POLICY (SAM Function's own resource policy, e.g. an Events:
+  #     block or explicit AWS::Lambda::Permission), NOT a KMS grant and NOT
+  #     added to this key. This split (never lumping invoke-permission in
+  #     with KMS grants) is exactly what round-1 finding C-9 exists to fix -
+  #     see the "three policies, three resources" table this comment quotes
+  #     from below.
+  #   - LambdaConfig on UserPool above (T-6) - setting it here would
+  #     activate the trigger before T-4's function exists.
+  #   - Wiring either parameter's real value into `infra/scripts/deploy.sh`
+  #     (DD-2c) - AS AT T-3, both `CustomEmailSenderKmsGrantPrincipalArn`
+  #     and `CustomEmailSenderUserPoolId` were declared with defaults that
+  #     made them deployable today, but T-6 owns adding both to step 1's
+  #     `--parameter-overrides`. Until then the defaults are inert (see
+  #     this task's Not Done). ⚠️ CORRECTED 2026-09-25 (validation-report.md
+  #     B-1, design.md DD-6): `CustomEmailSenderKmsGrantPrincipalArn`'s
+  #     `Default` hardcoded the real account id, tripped
+  #     `guard-account.no-account-id-literal-in-infra`, and was removed -
+  #     it is now a REQUIRED parameter with no default at all, not an inert
+  #     one. `deploy.sh` already passed a real value unconditionally by the
+  #     time this changed (T-6, DD-2c), so nothing deployable regresses;
+  #     only a genuinely first deploy with no override now fails closed
+  #     instead of silently naming the wrong principal. See DD-6 for the
+  #     consequence check. `CustomEmailSenderUserPoolId` is unaffected -
+  #     its own empty default stays, for the different reason DD-6 states.
+  # NFR-4 is therefore NOT closed by this resource alone; see this task's
+  # completion report for the two policies T-4 still owes.
+  #
+  # WHY SYMMETRIC. AWS ("Custom sender Lambda triggers" -> "Encryption
+  # concepts"): "A symmetric KMS key is a 256-bit encryption key that
+  # doesn't exit AWS KMS unencrypted ... Amazon Cognito uses symmetric
+  # keys." KeySpec is stated explicitly below (SYMMETRIC_DEFAULT) rather
+  # than left to AWS::KMS::Key's own matching default, so a reader never
+  # has to know that default to see the requirement is met.
+  #
+  # THE GRANT MECHANISM - the fact C-9 exists to fix. Cognito holds NO
+  # static permission to encrypt the code it hands this trigger. AWS
+  # ("Activating custom sender Lambda triggers", step 2): "The IAM
+  # principal that creates or updates your user pool creates a one-time
+  # grant against the KMS key that Amazon Cognito uses to encrypt the
+  # code. Grant this principal CreateGrant permissions for your KMS key."
+  # Concretely: T-6's `sam deploy` (the UpdateUserPool call that sets
+  # LambdaConfig) is what triggers Cognito to create that one-time grant
+  # against this key - and Cognito can only do so on behalf of a deploying
+  # principal who already holds kms:CreateGrant here. Miss this statement
+  # and either T-6's activating deploy fails outright (if Cognito attempts
+  # the grant during UpdateUserPool itself) or it succeeds and the first
+  # live password reset fails instead, invisibly to every suite in this
+  # repo (all mock the AWS clients) - neither of us can settle which from
+  # documentation alone; T-7 is the only real check (design.md §12,
+  # tasks.md T-7) and establishes which.
+  #
+  # KEY POLICY SHAPE - read from AWS's own example on that page, not
+  # reconstructed from memory:
+  #   {
+  #     "Effect": "Allow",
+  #     "Principal": {"AWS": "arn:aws:iam::{{account}}:role/{{admin-role}}"},
+  #     "Action": "kms:CreateGrant",
+  #     "Resource": "arn:aws:kms:...:key/{{key-id}}",
+  #     "Condition": {"StringEquals": {
+  #       "kms:EncryptionContext:userpool-id": "{{us-west-2_EXAMPLE}}"
+  #     }}
+  #   }
+  # Two adaptations, both deliberate:
+  #   - AWS's example targets an EXISTING key by its literal ARN. A KMS key
+  #     policy is a resource-based policy evaluated ONLY against the one
+  #     key it is attached to - there is no separate "which key" question
+  #     the way there is for an IAM policy on a role - so `Resource: "*"`
+  #     below means "this key", not "every key in the account". This is
+  #     the same form AWS's own default key policy uses (the
+  #     EnableIAMUserPermissions statement immediately below is that
+  #     default, `Resource: "*"` included). (Checked, not assumed to match:
+  #     this REPO's only OTHER resource-based policy is
+  #     FrontendBucketPolicy in infra/30-frontend/template.yaml, which
+  #     scopes with an EXPLICIT `Resource: !Sub "${FrontendBucket.Arn}/*"`
+  #     - the opposite pattern, and irrelevant here for the same reason:
+  #     an S3 bucket policy is not restricted to its own bucket the way a
+  #     KMS key policy is restricted to its own key, so it still needs an
+  #     explicit ARN. MailMicroserviceSecret in 20-backend has no
+  #     resource-based policy at all - a bare `AWS::SecretsManager::Secret`
+  #     - so it is not a precedent either way.)
+  #   - AWS's example hardcodes the pool id as a literal condition value
+  #     because their key already existed independently of the pool. Here
+  #     the pool (UserPool, above) IS a resource in this same template, so
+  #     the tempting shortcut is `!Ref UserPool` in the condition below -
+  #     DO NOT do that. DD-2b (design.md §4): a same-template `!Ref` makes
+  #     CloudFormation add the graph edge Key -> UserPool, and this spec
+  #     mandates two return edges later (T-6's `LambdaConfig.KMSKeyID`, and
+  #     independently T-6's `LambdaArn` plus T-4's `kms:Decrypt` scoped to
+  #     this key's ARN) - either one alone deadlocks the stack in a cycle.
+  #     The condition instead references the `CustomEmailSenderUserPoolId`
+  #     PARAMETER (declared above), which keeps the condition's exact
+  #     semantics while removing the edge; `infra/scripts/deploy.sh` (T-6)
+  #     resolves that parameter from this same stack's own `UserPoolId`
+  #     output, so it still cannot drift from the real pool id despite
+  #     being a parameter rather than a `Ref`.
+  # ════════════════════════════════════════════════════════════════════════════
+  CustomEmailSenderKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: >-
+        Customer-managed symmetric key. Cognito uses it (via the AWS
+        Encryption SDK) to encrypt the reset/verification code before
+        invoking forgot-password-delivery's CustomEmailSender trigger
+        (T-4); that function later decrypts with kms:Decrypt granted on
+        ITS OWN role (T-4, not this key's policy). See the resource
+        comment above for the two policy statements T-3 owns here and the
+        one policy (this key's Decrypt grant) plus the Lambda invoke
+        permission T-4 owes on its own resources.
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # Standard account-root IAM-enable statement (AWS's own default
+          # for a console-created key; DD-2a names this explicitly as
+          # T-3's second statement). Without it, no IAM policy anywhere in
+          # the account could ever grant a principal access to this key -
+          # a KMS key policy is the ONLY policy type that governs access
+          # to the key by itself, so root must be able to delegate via IAM
+          # before any IAM policy (e.g. T-4's future kms:Decrypt grant on
+          # its function's role) can take effect at all.
+          - Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          # THE load-bearing statement (design.md §4; round-1 C-9's fix).
+          # Principal is the DEPLOYING PRINCIPAL, never Cognito itself -
+          # Cognito holds no static encrypt permission on any key. See the
+          # "GRANT MECHANISM" comment above this resource.
+          # ⚠️ Referenced UNCONDITIONALLY here (design.md DD-6) - this
+          # statement is why `CustomEmailSenderKmsGrantPrincipalArn` has NO
+          # `Default` and is therefore a REQUIRED parameter: a `Default: ""`
+          # here would compose `Principal: {"AWS": ""}`, which either fails
+          # the changeset or, worse, silently omits Cognito's grant path -
+          # DD-6 rejected that shape. See DD-6 for the deploy-time
+          # consequence check (an existing stack's next `sam deploy`, with
+          # or without `deploy.sh`, is unaffected).
+          - Sid: AllowDeployingPrincipalToCreateGrantForCognito
+            Effect: Allow
+            Principal:
+              AWS: !Ref CustomEmailSenderKmsGrantPrincipalArn
+            Action: kms:CreateGrant
+            Resource: "*"
+            Condition:
+              StringEquals:
+                # Parameter, not `!Ref UserPool` - DD-2b; see the "KEY
+                # POLICY SHAPE" comment above for why. Key spelled
+                # `userpool-id`, verbatim (DD-2b, T-7 assumption).
+                kms:EncryptionContext:userpool-id: !Ref CustomEmailSenderUserPoolId
+      # DD-2d: rotation stays off (near-worthless for codes that live
+      # minutes; reasoned in design.md §4/DD-2d, not re-opened at T-6).
+      # PendingWindowInDays shortened from KMS's 30-day default to match
+      # this stack's easy-teardown posture (DeletionProtection: false
+      # elsewhere in this stack) - 30 days would leave a billed key behind
+      # after a stack delete.
+      # Written out rather than left to the default, for the same reason
+      # KeySpec is (above): a reader should never have to know an AWS
+      # default to understand this resource. DD-2d: off deliberately -
+      # near-worthless for codes that live minutes, against a cost-aware
+      # dev stack; safe either way (KMS retains old backing material).
+      EnableKeyRotation: false
+      PendingWindowInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-custom-email-sender-key"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # forgot-password-delivery T-4 (design.md §3, §5, DD-1, DD-2a, DD-3a, DD-3b)
+  # - the function itself, and the two policies T-3 could not write (its
+  # completion report/DD-2a Not Done named both):
+  #   - kms:Decrypt, scoped to CustomEmailSenderKey, on the FUNCTION's own
+  #     Policies: block (SAM's auto-created role - the same convention
+  #     20-backend's ApiFunction uses: no explicit Role:).
+  #   - lambda:InvokeFunction for cognito-idp.amazonaws.com - a LAMBDA
+  #     RESOURCE POLICY (CustomEmailSenderInvokePermission below), NOT a KMS
+  #     grant and NOT added to CustomEmailSenderKey's KeyPolicy. This is the
+  #     split round-1 finding C-9 exists to fix (design.md §4's "three
+  #     policies, three resources" table).
+  # NFR-4 is closed by these two plus T-3's two KeyPolicy statements above -
+  # all four now exist, each on its own correct resource.
+  #
+  # Handler order (design.md §3, mirrored from AWS's own CustomEmailSender
+  # reference example - decrypt IF a code is present, unconditionally,
+  # before looking at triggerSource; see index.mjs's file docblock for why
+  # that is safe and correct even for a triggerSource this function will go
+  # on to reject): decrypt -> route -> validate the recipient BEFORE
+  # publishing -> build -> publish -> return. No reply awaited
+  # (`proposal.md` §12.1).
+  # ════════════════════════════════════════════════════════════════════════════
+  CustomEmailSenderFunction:
+    Type: AWS::Serverless::Function
+    # BuildMethod: nodejs24.x - T-1's contract (see the comment above
+    # Resources: at the top of this file). Runtime MUST match exactly.
+    Metadata:
+      BuildMethod: nodejs24.x
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-custom-email-sender"
+      CodeUri: ./functions/custom-email-sender
+      Handler: index.handler
+      Runtime: nodejs24.x
+      # Small function, short work (one KMS decrypt, one Secrets Manager
+      # read, one AMQP connect+publish+close - DD-3a). 256/15s is generous
+      # for that shape without being the 512/15 20-backend needs for a full
+      # NestJS cold start.
+      MemorySize: 256
+      Timeout: 15
+      # NO VpcConfig - same reasoning as 20-backend's ApiFunction (DD-2
+      # there): reaches KMS/Secrets Manager/the broker over the public
+      # internet, no NAT/VPC endpoints needed.
+      Environment:
+        Variables:
+          # design.md §3 step 1 / DD-2a - this function's OWN kms:Decrypt
+          # grant (below) is scoped to exactly this key's ARN.
+          CUSTOM_EMAIL_SENDER_KEY_ARN: !GetAtt CustomEmailSenderKey.Arn
+          # DD-3b - composes MailMicroserviceSecret's name; read by the SDK
+          # at invocation time, never imported (that stack does not exist
+          # at THIS stack's deploy time).
+          BACKEND_STACK_NAME: !Ref CustomEmailSenderBackendStackName
+          # design.md §3 step 4, NFR-3 - config.mjs's getPublicAppBaseUrl()
+          # reads this; DD-1c means only the verification message ever
+          # needs it to be set.
+          PUBLIC_APP_BASE_URL: !Ref CustomEmailSenderPublicAppBaseUrl
+          # The same literal sender identity every other mail path in this
+          # system uses (infra/20-backend/template.yaml's ApiFunction
+          # Environment; backend/src/mail/mail.config.ts's
+          # getMicroserviceMailConfig) - duplicated as a literal, not
+          # imported (DD-1a: this package cannot depend on backend/).
+          # EMAIL_SENDER is public by construction (the From header of
+          # every message this system sends) - hiding it protects nothing.
+          EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
+          EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
+      Policies:
+        # SAM adds the default CloudWatch Logs policy automatically (same
+        # note as 20-backend's ApiFunction).
+        - Statement:
+            # T-4's half of NFR-4 (DD-2a) - kms:Decrypt, scoped to exactly
+            # this key, never `*`.
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt CustomEmailSenderKey.Arn
+            # DD-3b - GetSecretValue on MailMicroserviceSecret, scoped by
+            # its PREDICTABLE name (composed from the parameter above, not
+            # imported - that stack doesn't exist at this stack's deploy
+            # time). Secrets Manager appends a random 6-character suffix to
+            # every secret's ARN, so the resource pattern below uses six
+            # `?` wildcards (each matches exactly one character) rather
+            # than a trailing `*` (which would also match any LONGER name
+            # sharing this prefix) - the standard AWS-documented pattern
+            # for scoping to a secret known only by name.
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub
+                - "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-??????"
+                - SecretName: !Sub "${CustomEmailSenderBackendStackName}-mail-microservice-secret"
+
+  # T-4's other half of NFR-4/design.md §4 - the LAMBDA RESOURCE POLICY that
+  # lets Cognito invoke this function at all (distinct from, and never
+  # confused with, a KMS grant - round-1 C-9's fix).
+  #
+  # T-4 attempt 3, Fix C (design.md DD-5b, raised by this task's own
+  # Reviewer): a same-template `!Sub ".../userpool/${UserPool}"` here
+  # would create the edge Permission -> UserPool, so CloudFormation always
+  # builds the POOL FIRST - but Cognito validates invoke permission WHEN
+  # `LambdaConfig.CustomEmailSender` is set (T-6). `SourceArn` instead
+  # references the `CustomEmailSenderUserPoolId` PARAMETER (declared
+  # above), never `!Ref UserPool`, so THIS resource creates no edge to
+  # UserPool at all - the same trick DD-2b's KEY POLICY condition uses.
+  # Omitting `SourceArn` entirely was considered and rejected - it works,
+  # but widens the grant to any Cognito pool in the account, and the
+  # narrower parameter-scoped form costs nothing extra.
+  #
+  # ⚠️ CORRECTED, T-6 attempt 2 (Findings 1-3): attempt 1's comment here
+  # called `UserPool DependsOn CustomEmailSenderInvokePermission` "a
+  # CYCLE", reasoning that "Permission's SourceArn already needs UserPool".
+  # That premise is false in THIS template: SourceArn needs the
+  # CustomEmailSenderUserPoolId PARAMETER, immediately above, never
+  # `!Ref UserPool` - so this resource has NO edge back to UserPool, and
+  # `UserPool DependsOn CustomEmailSenderInvokePermission` is not a cycle
+  # at all. It is, in fact, REQUIRED: without it, CloudFormation may
+  # legally build UserPool before this resource exists, and Cognito's own
+  # LambdaConfig validation then rejects the missing invoke permission -
+  # the exact "wrong build order" hazard this comment's first paragraph
+  # names. UserPool now carries that DependsOn (see its own `Type:` line,
+  # above in this file). The graph-cycle hazard (DD-2b's PARAMETER fix, on
+  # CustomEmailSenderKey) and the API-ordering hazard (UserPool's
+  # DependsOn fix, not this resource's - the DependsOn sits on UserPool,
+  # above) are two different problems with two different fixes; see the
+  # "TWO DIFFERENT HAZARDS" comment above UserPool's LambdaConfig for the full
+  # correction, including why no lint/validate.sh run can ever see this
+  # one.
+  #
+  # Conditional (`HasCustomEmailSenderUserPoolId`, above) because that
+  # parameter defaults to "" until T-6 wires it (DD-2c) - an unconditional
+  # `!Sub` would compose a malformed ARN ("...:userpool/") from the empty
+  # default. Pre-T-6: `SourceArn` is omitted (`!Ref "AWS::NoValue"`) -
+  # unscoped but inert, since no pool invokes this function yet. Post-T-6
+  # (once `deploy.sh` resolves the parameter from this stack's own
+  # `UserPoolId` output, DD-2c): correctly scoped to that pool.
+  CustomEmailSenderInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CustomEmailSenderFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !If
+        - HasCustomEmailSenderUserPoolId
+        - !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CustomEmailSenderUserPoolId}"
+        - !Ref "AWS::NoValue"
 
 Outputs:
   # ── T-2 outputs (FR-7). Exported so T-3 can Fn::ImportValue the cross-stack
@@ -319,3 +1127,15 @@ Outputs:
     Value: !Ref UserPoolClient
     Export:
       Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  # ── forgot-password-delivery T-3 output (Reviewer ADVISORY 3). Deliberately
+  #    NOT Export'd: same-stack resources (T-4/T-6) already reach the key via
+  #    !Ref/!GetAtt without needing an Export. This Output exists for the
+  #    human at T-7, who has no in-template way to get the key id to run
+  #    `aws kms list-grants --key-id <id> --profile IBD-DEV` and confirm the
+  #    grant chain actually took effect. ──
+  CustomEmailSenderKeyId:
+    Description: >-
+      KMS key id for CustomEmailSenderKey. For manual verification only
+      (T-7): `aws kms list-grants --key-id <this value> --profile IBD-DEV`.
+    Value: !Ref CustomEmailSenderKey
