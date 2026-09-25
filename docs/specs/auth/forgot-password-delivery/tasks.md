@@ -96,7 +96,7 @@ Three defect classes in this spec have **no automated gate whatsoever** — the 
       Disqualifier: ⚠️ **This task changes the repository, not the deployed pool**, until a `DEPLOY_INFRA=true` build runs — and `DEPLOY_INFRA` **defaults to `false`**. A green `validate.sh` says the template is well-formed, **never** that the trigger is live. ⚠️ Record also that **rollback does not restore current behaviour**: with SES excluded permanently, removing the trigger lands on `COGNITO_DEFAULT`, not on today's SES (design.md DD-4).
       Done when: the template carries the trigger, the diff is clean, and the not-yet-live status is written in `execution.md` rather than implied by an `[x]`.
 
-- [ ] **T-7** Prove it against DEV, and correct the record  (deps: T-6 deployed)
+- [x] **T-7** Prove it against DEV, and correct the record  (deps: T-6 deployed)
       Scope: the §3 manual check, **plus** correcting `docs/trd/trd.md:288`, whose C4 arrow reads *"self-service password-reset mail (COGNITO_DEFAULT)"* — false today and false differently after this change.
       Traces: FR-1, FR-3, FR-4; `proposal.md` §14.4 criterion 4
       Files: `docs/trd/trd.md`, `docs/specs/auth/forgot-password-delivery/execution.md`

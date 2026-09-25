@@ -663,3 +663,105 @@ The **first** deploy also removed `UserPoolTags`' `Project: ACCELERATE-Tanzania`
 #### What is now live, and what is still unproven
 
 Live: the trigger routes Cognito's password-reset mail to our function. **Unproven: that a human receives an email.** The KMS grant chain, real decryption, and delivery remain invisible to every suite here (`requirements.md` §8, D-3/D-4/D-6). `kms:ListGrants` was attempted from this session and denied by IAM, so even the grant's existence is unconfirmed. **T-7 is the only gate, and it is now unblocked.**
+
+---
+
+## T-7 — Prove it against DEV, and correct the record
+
+**Status:** `[x]` · **Date:** 2026-09-25 · **Attempts:** 1 (docs) + 1 Leader-applied fix · **Reviewer:** FAIL → PASS · Implementer `sonnet` / Reviewer `opus`
+
+### The manual check — performed, and it passed
+
+A real self-service reset against `accelerate-tz-dev`, by the product owner from her own mailbox. **This is the gate the whole spec was built around**, and `tasks.md` §3's every question is answered:
+
+| Question | Answer |
+|---|---|
+| Does the email arrive? | ✅ ~10 s |
+| Spam? | ✅ **No** — normal inbox |
+| Does the code work? | ✅ |
+| Can you sign in with the new password? | ✅ |
+| **More than one code?** (Cognito retries a timed-out invocation) | ✅ **No** — exactly one |
+| **Does the trigger time out?** (a Cognito ceiling independent of the function's own) | ✅ **No** — see below |
+| **Read on a different device** (DD-1c's residual) | ✅ read on phone |
+
+**Leader-verified from CloudWatch, independently of the user's report.** The log group did not exist before the test — log groups are created on first invocation — so that baseline makes the single invocation unambiguously hers:
+
+```
+INFO   custom-email-sender: dispatched triggerSource=CustomEmailSender_ForgotPassword
+REPORT Duration: 1953.61 ms | Init: 598.71 ms | Max Memory: 119/256 MB
+```
+
+**2.55 s against a 15 s timeout — 17 % of budget.** DD-3a's deliberate connect-per-invocation, flagged as making the cold path "longer on purpose", costs two seconds. And the entire log is one line naming only `triggerSource`: **no recipient address, no code. NFR-1 held in production**, not merely in the tests written to assert it.
+
+### What this closes — the three classes nothing automated could see
+
+`requirements.md` §8 records three defect classes with **no automated gate**, because every suite here mocks the AWS clients. One test closed all three:
+
+| | |
+|---|---|
+| **D-3** decryption fails at runtime | ✅ the function reached `dispatched`, so it decrypted a real code against the real key |
+| **D-4** the IAM/KMS grant is missing or wrong | ✅ the grant chain worked. ⚠️ **This is the exact class that shipped ATP-71's missing grant, live and invisible for months** |
+| **D-6** dispatches but never arrives | ✅ a human received it |
+
+`kms:ListGrants` was attempted from this session and denied by IAM, so the grant's existence was never confirmed by inspection — only by the message arriving. That is the point of the manual check.
+
+### DD-1c's accepted residual did not materialise
+
+Removing the reset message's link was accepted with a declared cost: *a reader who closed the requesting tab gets no recovery instruction.* Asked directly, reading it cold on a phone, the user found it **clear**. **A declared risk, measured, that did not occur** — recorded because that is as worth knowing as one that does, and because nobody normally goes back to check.
+
+### The record corrected — and the irony is the lesson
+
+`docs/trd/trd.md`'s C4 arrow claimed Cognito sends this mail. Now: Cognito authenticates and owns the reset-code lifecycle (FR-3); **delivery** moved. A dated paragraph was appended to the file's existing correction chain rather than rewriting history in place — the Reviewer agreed that is this file's convention.
+
+> ⚠️ **The Reviewer's FAIL was a provenance error inside the paragraph correcting a provenance error.** The new text blamed *"**this spec's** Phase B"* for the template edit — but this spec has no phases, and the header binds "this spec" to `forgot-password-delivery`. Two lines later the same phrase is used correctly. **One paragraph, one term, two referents, one wrong** — in the one document whose stated purpose is to train every future agent, and whose subject at that very sentence was misattribution. Corrected to `enhancement/email-notification-microservice`'s Phase B.
+
+Two advisories were folded in: the key-change count separated the 3 predicted keys from `LastModifiedDate` (mechanical, never predicted — *"exactly the 4 predicted"* was an overclaim), and the `kms:Decrypt` sentence regained its resource constraint, which is the security-relevant half.
+
+### ⚠️ `pool-after.json` retroactively closes a Reviewer finding left open on T-5
+
+The Reviewer had rejected T-5's claim that the rehearsal moved §6's `(a)` enumeration "from reasoned to measured": the rehearsal pool was built from the same template, so those properties sat at defaults *by construction* and could not have done anything but survive. The real pool is different — **these are the actual production values the labels were claims about**, three months old and modified out-of-band at least once (`LastModifiedDate` was 2026-07-17). Had a console edit drifted any `(a)` property, this update would have flipped it back and the diff would show it. It shows nothing.
+
+**Stated precisely, in the Reviewer's own terms rather than the Leader's looser first draft:**
+
+> T-5's `(a)` enumeration is now measured on the production pool in the operationally meaningful sense — a real template-composed `UpdateUserPool` altered no `(a)` value, and `AdminCreateUserConfig` demonstrates the reset-on-omission mechanism is real. It does not discriminate "left alone" from "reset to an identical default", which has no operational consequence. The Reviewer's T-5 finding is closed on that basis.
+
+The `AdminCreateUserConfig` evidence is the sharpest thing in the artefact after the `Arn` check: the template sets **only** `AllowAdminCreateUserOnly`, and after the update `InviteMessageTemplate` is gone while `UnusedAccountValidityDays` is present at `7`. **A demonstrated reset-to-default-on-omission against the live pool** — so the mechanism §6 exists to guard against is real, not hypothetical.
+
+### A standing item for any future pool- or database-touching runbook
+
+The Reviewer checked, unasked, that `Arn` and `CreationDate` are **byte-identical** before and after. That is direct evidence the pool was **modified, not replaced** — the one irreversible outcome T-6's runbook told the operator to watch for. **It is the cheapest possible test for the worst possible outcome, and it costs two lines of a diff anyone already has open.** It should be a standing runbook item, not something a Reviewer happens to think of.
+
+### Carried to `/akili-archive` — two items, neither widened into a Leader-applied edit
+
+1. **An ADR is warranted** and deliberately **not allocated here.** Root `CLAUDE.md` reserves monotonic ids for apply time on the default branch, after checking unmerged branches — ADR-011 collided exactly this way. Both the Implementer and the Reviewer independently judged one warranted: this changes how a system-boundary email leaves the system and adds a new deployable unit, sitting naturally beside ADR-006 (Cognito) and ADR-015 (mail transport).
+2. **§12.2's Container view has no box for the `CustomEmailSender` Lambda**, which the legend's own *"separately deployable/runnable unit"* definition makes a container: its own runtime, execution role, KMS dependency and AMQP egress. Out of T-7's scope (`tasks.md` scopes it to the `:288` arrow), so routed rather than fixed.
+
+---
+
+## Summary — the spec is complete, 7/7
+
+| Task | Attempts | Note |
+|---|---|---|
+| T-1 SAM toolchain | 1 | |
+| T-2 message bodies | 2 | DD-1c removed the reset link after a Reviewer FAIL |
+| T-3 KMS key + policies | 2 | |
+| T-4 the function | 3 | Found a gate that did not exist: nothing asserted the *decrypted* code reached the body |
+| T-5 pool drift audit | 3 + rehearsal | Zero real drift; the two apparent divergences were other specs' shipped decisions |
+| T-6 activate the trigger | 3 | A deploy-blocking ordering defect no tool could see |
+| T-7 prove it | 1 | **The only gate that proved anything works** |
+
+### What the spec delivers
+
+A staff or admin user who forgets their password now receives a working reset code through the OneCGIAR notification microservice. **Verified end to end against DEV by a real person receiving a real email**, not inferred from a green suite.
+
+### The number worth keeping
+
+Across the three tasks this session executed, **the overwhelming majority of defects found were in prose — task text, design documents, code comments, and the Leader's own ledger — not in code.** T-4's was the exception. Every other blocking finding was either a false statement about an artefact, or a gate that could not fail.
+
+Two of them would have reached production: the missing `DependsOn` (a non-deterministic rollback of a stack holding RDS) and the unscoped invoke permission. **Neither was visible to `validate.sh`, to the test suite, or to the rehearsal.** Both were found by reading.
+
+### Three lessons for the kaizen log at archive
+
+1. **Vendor documentation is a third-party claim under KZ-011, not a primary source.** The AWS CLI help raised a false T-6 blocker and was cited as authority for seven of §6's rows; a two-minute measurement refuted it.
+2. **A drift audit must enumerate the deploy paths, not only the configuration.** T-5 correctly identified what *sets* `UserPoolTags` and never asked what could *remove* it — so the first deploy silently dropped a cost-allocation tag from every resource in the stack. The audit, the rehearsal and two Reviewers all reasoned about the template rather than the invocation.
+3. **KZ-010, 4th recurrence, with a new consequence.** Two sessions executed T-5 in one checkout, unseen. This time the collision did not merely muddle the ledger — **it produced a wrong answer to the user**, who was told a permission set was unnecessary while the other session was blocked for want of exactly it.
