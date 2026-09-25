@@ -76,7 +76,7 @@ import { createHash } from 'crypto';
  * follow-up, so the digest never sits stale against prose it no longer covers.
  */
 const APPROVED_BODY_DIGEST =
-  '40b8c5c2d53711888fae9af870ac2e22b6263c7b53b785cc7597390467a487cb';
+  '2a854fd5d3d2d9923286af5e95d52fa747e56a6a7533edfb15ac6c1c21368007';
 
 /** Every heading, both editions, in order — seed edition first. */
 const ALL_HEADINGS = [
@@ -101,7 +101,7 @@ const ALL_HEADINGS = [
  */
 function bodyDigest(): string {
   const parts = CONSENT_POLICY_EDITIONS.flatMap((e) =>
-    e.sections.map((s) => [s.body, s.contact ?? []]),
+    e.sections.map((s) => [s.body, s.contact ?? [], s.bodyAfter ?? '']),
   );
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }

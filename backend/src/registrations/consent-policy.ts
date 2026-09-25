@@ -42,6 +42,8 @@ export interface ConsentPolicySection {
   body: string;
   /** Label/value lines rendered as a definition list, not inside `body`. */
   contact?: readonly ConsentPolicyContactEntry[];
+  /** Prose that follows `contact`. Legal places the contact block mid-section. */
+  bodyAfter?: string;
 }
 
 /**

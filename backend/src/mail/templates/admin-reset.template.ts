@@ -22,8 +22,16 @@ import { renderEmailHtml } from './email-layout';
  * confirmed in `users.service.ts`'s `resetPassword()`), so — same as the
  * invitation — the credential this carries is single-use.
  */
-/** Path the sign-in link points at, under the public app base URL. */
-const SIGN_IN_PATH = '/login';
+/**
+ * Path the sign-in link points at, under the public app base URL.
+ *
+ * NOT `/login`: that page redirects a visitor who already has a session
+ * straight into the app (`LoginForm.tsx`'s already-authenticated guard), so
+ * a recipient with an open session never saw the sign-in form and kept
+ * working on the password this email just invalidated.
+ * `/reset-password` clears the session first, then shows the same form.
+ */
+const SIGN_IN_PATH = '/reset-password';
 
 /**
  * Resolved per call, from `PUBLIC_APP_BASE_URL`, never at module load —
@@ -91,7 +99,7 @@ export function buildAdminResetMessage(
             'Single-use — your previous password no longer works. You will be ' +
             'asked to set a new one when you sign in.',
         },
-        { kind: 'link', label: 'Sign in', href: SIGN_IN_URL },
+        { kind: 'link', label: 'Sign in and set a new password', href: SIGN_IN_URL },
         {
           kind: 'note',
           text: 'If you did not expect this, contact your administrator.',
