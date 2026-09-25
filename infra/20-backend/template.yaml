@@ -357,6 +357,11 @@ Resources:
                 # unit suites mock the Cognito client, so IAM is never
                 # exercised.
                 - cognito-idp:AdminSetUserPassword
+                # Same reset call, second half: the temporary password is
+                # pointless while an existing refresh token keeps renewing.
+                # Same defect as the block above, same file, second time:
+                # the call shipped in aee94f8 and this grant did not.
+                - cognito-idp:AdminUserGlobalSignOut
                 # contact/contact-channels (T-11, FR-3): the contact form's
                 # AdminRecipientResolver lists the `admin` group's current
                 # members to resolve live recipients. Missing grants fail at
