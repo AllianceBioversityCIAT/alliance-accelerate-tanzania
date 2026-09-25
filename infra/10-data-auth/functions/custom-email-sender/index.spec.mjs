@@ -65,9 +65,10 @@ jest.unstable_mockModule('@aws-sdk/client-secrets-manager', () => ({
 }));
 
 let handler;
+let MESSAGE_BUILDERS;
 
 beforeAll(async () => {
-  ({ handler } = await import('./index.mjs'));
+  ({ handler, MESSAGE_BUILDERS } = await import('./index.mjs'));
 });
 
 const ENV_KEYS = [
@@ -188,7 +189,6 @@ describe('FALSIFIER 2 — an unhandled triggerSource raises, names the source, a
     'CustomEmailSender_Authentication',
     'CustomEmailSender_ResendCode',
     'CustomEmailSender_AccountTakeOverNotification',
-    'CustomEmailSender_UpdateUserAttribute',
     'CustomEmailSender_AdminCreateUser',
     'SomeFutureTriggerSourceNobodyHasSeenYet',
   ])('raises and names "%s"', async (triggerSource) => {
@@ -215,6 +215,7 @@ describe('FALSIFIER 3 — a handled source with no email attribute refuses to pu
   it.each([
     'CustomEmailSender_ForgotPassword',
     'CustomEmailSender_VerifyUserAttribute',
+    'CustomEmailSender_UpdateUserAttribute',
   ])('refuses to publish "%s" when userAttributes carries no email at all', async (triggerSource) => {
     const event = forgotPasswordEvent({
       triggerSource,
@@ -427,6 +428,28 @@ describe('routing — design.md §5\'s table', () => {
     await expect(handler(event)).rejects.toThrow(/PUBLIC_APP_BASE_URL/);
   });
 
+  // THE FALSIFIER (validation-report.md B-4): a probe against the live DEV
+  // pool measured that an admin editing a user's email via
+  // `users.service.ts::update()` emits `CustomEmailSender_
+  // UpdateUserAttribute` — not `VerifyUserAttribute`, which design.md §5
+  // (pre-correction) wrongly named as the admin-edit source. Before this
+  // fix, this exact triggerSource fell into FALSIFIER 2's unhandled set and
+  // raised, silently losing the verification email. Make the fix vanish
+  // (comment out this triggerSource's entry in index.mjs's MESSAGE_BUILDERS)
+  // and this test must redden with "unhandled triggerSource" — see this
+  // task's completion report for the red/restore/green transcript.
+  it('handles CustomEmailSender_UpdateUserAttribute and dispatches (B-4 — the actual admin-edit source, corrected from VerifyUserAttribute)', async () => {
+    const event = forgotPasswordEvent({ triggerSource: 'CustomEmailSender_UpdateUserAttribute' });
+    await handler(event);
+    expect(publishMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('CustomEmailSender_UpdateUserAttribute propagates getPublicAppBaseUrl()\'s refusal when PUBLIC_APP_BASE_URL is unset (same builder as VerifyUserAttribute)', async () => {
+    delete process.env.PUBLIC_APP_BASE_URL;
+    const event = forgotPasswordEvent({ triggerSource: 'CustomEmailSender_UpdateUserAttribute' });
+    await expect(handler(event)).rejects.toThrow(/PUBLIC_APP_BASE_URL/);
+  });
+
   it('raises on CustomEmailSender_AdminCreateUser and names the source (DD-5a — its Cognito mail is a duplicate of the invitation users.service.ts already sends by hand)', async () => {
     const event = forgotPasswordEvent({ triggerSource: 'CustomEmailSender_AdminCreateUser' });
     await expect(handler(event)).rejects.toThrow(
@@ -438,6 +461,46 @@ describe('routing — design.md §5\'s table', () => {
   it('returns the event unmodified on success (Cognito expects no additional return information)', async () => {
     const event = forgotPasswordEvent();
     await expect(handler(event)).resolves.toBe(event);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Guard against the CLASS, not just the instance (validation-report.md
+// B-4). The defect this test suite failed to catch was never "one string
+// is missing" — it was "the handled set silently drifted from what the
+// pool actually emits." Naming one more triggerSource in the tests above
+// only guards the instance just fixed. This asserts the COMPLETE handled
+// set against an explicit expected list, so any future gain or loss of a
+// source — an addition nobody wrote a routing test for, a typo, an
+// accidental deletion during a refactor — is a failing diff here, not a
+// silent behaviour change discovered only by measuring production again.
+//
+// ⚠️ WHAT THIS CANNOT PROVE, stated because the comment above could be
+// read as more than it is (tasks.md §2: "say what it cannot prove and
+// name what would"). This asserts the handled set against a DECLARED
+// EXPECTATION written in this same file — NOT against what Cognito
+// actually emits. Applied at T-4, when the set was {ForgotPassword,
+// VerifyUserAttribute}, the expected list would have said exactly that
+// and this test would have been GREEN while the pool emitted
+// UpdateUserAttribute. It would NOT have caught B-4. Its real value is
+// narrower and still worth having: it forces any intentional change to
+// the set to appear as a visible line in a diff, and it catches typos,
+// refactor deletions and additions nobody wrote a routing test for.
+// THE ONLY THING THAT VERIFIES CORRESPONDENCE WITH WHAT THE POOL EMITS
+// is the live probe — one admin email-edit against DEV plus a CloudWatch
+// check — which belongs in the same standing-manual-check register as
+// tasks.md §3's real-password-reset check, and must be re-run whenever a
+// pool setting that could emit a new source changes.
+// ---------------------------------------------------------------------------
+describe('the handled set matches design.md §5 exactly (guards the class, not just this instance)', () => {
+  it('is exactly {ForgotPassword, VerifyUserAttribute, UpdateUserAttribute} — no more, no fewer', () => {
+    expect(Object.keys(MESSAGE_BUILDERS).sort()).toEqual(
+      [
+        'CustomEmailSender_ForgotPassword',
+        'CustomEmailSender_UpdateUserAttribute',
+        'CustomEmailSender_VerifyUserAttribute',
+      ].sort(),
+    );
   });
 });
 

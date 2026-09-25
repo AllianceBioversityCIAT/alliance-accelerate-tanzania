@@ -110,10 +110,31 @@ export function buildPasswordResetMessage(to, code) {
 }
 
 /**
- * `CustomEmailSender_VerifyUserAttribute` (design.md §5) — an administrator
- * changed a user's email address (`users.service.ts`'s
- * `AdminUpdateUserAttributesCommand`) and Cognito needs the new address
- * verified. Carries the decrypted code, never a password.
+ * Shared by two `triggerSource`s (design.md §5, corrected post-deploy —
+ * validation-report.md B-4):
+ *
+ *   - `CustomEmailSender_UpdateUserAttribute` — an administrator changed a
+ *     user's email address (`users.service.ts`'s
+ *     `AdminUpdateUserAttributesCommand`) against this auto-verified pool.
+ *     **Measured live in DEV**, not merely reachability-analyzed: this is
+ *     the only source that fires today, and it is the one the `text`/
+ *     `html` copy below was actually written for — "An administrator
+ *     updated the email address on your account" is correct for this
+ *     reader.
+ *   - `CustomEmailSender_VerifyUserAttribute` — AWS's OTHER, distinct
+ *     source, fired only by a user's own explicit attribute-verification
+ *     request (`GetUserAttributeVerificationCode`/`VerifyUserAttribute`).
+ *     Not reachable in this app today (no such self-service screen exists
+ *     in `frontend/`). ⚠️ **Copy mismatch, recorded but NOT fixed here**
+ *     (a separate decision with its own review, per the task that added
+ *     this note): if this source is ever reached by a genuine self-
+ *     initiated flow, "An administrator updated…" would misattribute a
+ *     change the user made themselves — this body was written under the
+ *     (then-mistaken) belief that admin edits emit `VerifyUserAttribute`,
+ *     so it fits the source it was NOT named for and may not fit the one
+ *     it was.
+ *
+ * Carries the decrypted code, never a password, either way.
  *
  * @param {string} to Recipient's email address — the NEW address being
  *   verified (validated by the caller before this is invoked).

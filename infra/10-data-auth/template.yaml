@@ -181,9 +181,16 @@ Parameters:
       `$ALLOWED_ORIGIN`, the same value it already computed for the
       frontend stack's live `CloudFrontUrl` output, so a normal deploy no
       longer leaves it empty. Left empty (e.g. a direct `sam deploy` that
-      bypasses `deploy.sh`), `CustomEmailSender_VerifyUserAttribute` (the
-      only handled trigger source whose message calls
-      `getPublicAppBaseUrl()`) throws when that source is actually invoked;
+      bypasses `deploy.sh`), the attribute-verification message throws
+      when invoked. ⚠️ CORRECTED post-deploy (validation-report.md B-4):
+      that message is shared by TWO handled sources -
+      `CustomEmailSender_UpdateUserAttribute`, which an admin email edit
+      measurably emits and which is therefore the first LIVE path
+      depending on this parameter being well-formed, and
+      `CustomEmailSender_VerifyUserAttribute`, which nothing reaches
+      today. This line previously named only the latter and called it
+      "the only handled trigger source" that calls
+      `getPublicAppBaseUrl()`;
       `CustomEmailSender_ForgotPassword`'s message never calls it at all
       (DD-1c) and is unaffected either way. Residual: on a genuine
       bootstrap deploy the frontend stack does not exist yet, so

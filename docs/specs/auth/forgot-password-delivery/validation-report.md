@@ -11,7 +11,7 @@
 | Deployed | **Yes** — `accelerate-tz-dev`, trigger live, verified by a real password reset |
 | Method | Three **dimension-scoped validators in parallel**, each instructed not to defer to the Leader's framing (root `CLAUDE.md` § Validation dispatch, KZ-012's countermeasure) |
 | Validators | coverage closure · decision consistency · claims-vs-code |
-| **Verdict** | ⛔ **NOT ARCHIVE-READY** — 3 blocking, ~11 documentation FAILs, ~12 WARN |
+| **Verdict** | ⛔ **NOT ARCHIVE-READY** — **4 blocking** (three prose, **one live behavioural** — B-4), ~11 documentation FAILs, ~12 WARN |
 
 ---
 
@@ -61,6 +61,39 @@ Two consequences:
 - ⚠️ **The Leader's own error:** `execution.md`'s *"2.55 s against a 15 s timeout — 17 % of budget"* divides by the function's `Timeout: 15` — which `design.md` states **in bold** is *"irrelevant to this"*. The single latency figure in the spec uses the denominator the design disqualified.
 
 **Close it by:** deleting the `(B)`; recording the budget in `design.md` beside DD-3a with T-7's 2.55 s as the datum, stated against Cognito's trigger ceiling rather than `Timeout: 15`; and saying plainly that DD-3a buys freeze-safety at ~0.6 s init plus a handshake inside the user's request.
+
+### B-4 · The trigger raises on the source the admin email-edit path actually emits — **live defect, found after this report's first draft**
+
+⚠️ **Added 2026-09-25, after W-1's probe was run.** This is the **only behavioural defect** the validation found; B-1…B-3 are all prose. It is recorded here as blocking because it is a measured regression in a shipped feature, live in DEV at the time of writing.
+
+`design.md` §5 handled `CustomEmailSender_VerifyUserAttribute` and asserted — **labelled *"Verified, not assumed"*** — that an admin editing a user's address emits it, citing round-1 **C-6**, which established that raising there *"would break that shipped admin feature."*
+
+**Measured (W-1's probe: throwaway user with `MessageAction: SUPPRESS`, `admin-update-user-attributes`, CloudWatch, user deleted):**
+
+```
+ERROR custom-email-sender: failed triggerSource=CustomEmailSender_UpdateUserAttribute
+      unhandled triggerSource "CustomEmailSender_UpdateUserAttribute"
+```
+and afterwards: `email` changed, **`email_verified: false`**.
+
+That path emits **`UpdateUserAttribute`**, a source in neither the handled set nor §5's "everything else" list. **The reachability analysis was right; the source name was wrong** — so the feature C-6 protected broke by exactly the mechanism C-6 predicted.
+
+| Live consequence | |
+|---|---|
+| The address changes | ✅ |
+| `email_verified` → **`false`** | ⚠️ |
+| **No verification mail** — before the trigger, Cognito sent it | ⛔ |
+| CloudWatch error on every admin email edit | ⛔ |
+
+⚠️ **And it breaks this spec's own deliverable.** `AccountRecoverySetting` is `verified_email` (priority 1), so a user left unverified **cannot use `/forgot-password`** — the feature this spec exists to ship. Raising on this source would disable password reset for anyone whose address an admin edits.
+
+**How the wrong name got in** — the transferable part. `proposal.md` §2.3's table is headed *"Measured on the live pool"*, and its measured columns genuinely were. But **`describe-user-pool` cannot tell you which trigger source fires** — the `triggerSource` name in the consequence column was an inference under a measured heading. C-6 inherited it explicitly, and §10's disposition then verified the **mechanism** and reported that as verifying the **sentence**. Three checks, each correct about the half it examined, and the half that mattered went unread. *(Structurally identical to the §6 defect found during T-5: a measured heading spanning measured and inferred content.)*
+
+**Fixed** (pending redeploy): `UpdateUserAttribute` handled, mapped to the existing verification builder — justified by the DD-5a test applied at source, `users.service.ts::update()` dispatching no mail of its own, so Cognito's is the only one. `VerifyUserAttribute` kept handled (AWS's other, currently unreachable source). §5, `proposal.md` §2.3 and `judgment.md` corrected; the judges' C-6 row left verbatim with an addendum below it.
+
+⚠️ **The redeploy's probe must observe the right thing.** `UpdateUserAttribute` is now the **first live path depending on `PUBLIC_APP_BASE_URL` being well-formed in production** — a value that reached production through the hand-composed deploy of **D-10**, and that resolves to `'*'` on a bootstrap. A `getPublicAppBaseUrl()` throw produces a *different* error line, not success — so **"the error is gone" is not sufficient**. Confirm `dispatched triggerSource=CustomEmailSender_UpdateUserAttribute` **and** that `email_verified` flips / the mail arrives, or one silent failure has merely replaced another.
+
+---
 
 ### B-3 · FR-5's `AND IT MUST be reversible` is a live, unstruck MUST the design declares impossible
 
@@ -128,7 +161,7 @@ Of 23 rows: one rests on a false premise (NFR-6), one contradicts the design ame
 | W-6 | FR-4's *"no copy **anywhere**"* is scoped in §5 to two message bodies. The frontend copy is compliant — *by luck*, it says "sent" | Widen the scope note |
 | W-7 | **Both `requirements.md` and `design.md` still read `Status: Draft — awaiting approval`** on a spec that is live in DEV | One line each |
 | W-8 | DD-4's *"worse than **today's** SES"* names a state that no longer exists, in 2 of 3 places | Re-tense |
-| W-9 | `design.md` §5's unreachable-source list names 4; the code's own test list drives 5 (`UpdateUserAttribute` unnamed). Not live today | One line |
+| ~~W-9~~ | ⚠️ **FALSIFIED by W-1's probe and promoted to B-4.** This row read *"`UpdateUserAttribute` unnamed … **not live today**"*. It is live, it fires on every admin email edit, and it was breaking a shipped feature. **A WARN superseded by the very probe the adjacent W-1 recommended** — kept, struck, as the record of how close this came to being filed as cosmetic. | — |
 | W-10 | Copy defect, `messages.mjs`: *"you can ignore this message. **y**our password will not change"* — lowercase after a period, a consequence of the em-dash→period edit | Two characters |
 | W-11 | `docs/specs/bugfix/otp-cross-caller-lockout/proposal.md` is on this branch and belongs to a **different spec** | Remove or split before archive |
 | W-12 | The *"297 non-whitespace characters (measured)"* IAM policy is **committed nowhere** — unauditable by construction | Commit it (scoped, no secrets) or drop the figure |
@@ -141,7 +174,7 @@ Of 23 rows: one rests on a false premise (NFR-6), one contradicts the design ame
 | Gate | Result |
 |---|---|
 | `./infra/scripts/validate.sh` | ✅ PASS ×3 stacks |
-| `custom-email-sender` `npm test` | ✅ **56/56** |
+| `custom-email-sender` `npm test` | ✅ **59/59** (was 56/56; B-4's fix added three, including a handled-set guard) |
 | `infra/scripts/tests/run-tests.sh` | ⛔ **50/51** — see **B-1** |
 | `backend/` · `frontend/` | Not run — **this branch touches neither** (verified against `main`) |
 | `test-report.md` | ❌ **Does not exist.** `/akili-test` was never run. Every test here was written by the agent that wrote the code it tests (KZ-012) |
@@ -160,7 +193,7 @@ Of 23 rows: one rests on a false premise (NFR-6), one contradicts the design ame
 
 ## 8. Remediation
 
-**Blocking (3):** B-1 · B-2 · B-3.
+**Blocking (4):** **B-4** (the only behavioural one — fix written, redeploy pending) · B-1 · B-2 · B-3.
 **Cheapest high-value (1):** W-1 — minutes, and it is the only live path with zero live evidence.
 **Documentation truth (13):** D-1…D-13 — all text-only.
 **WARN (12):** W-2…W-13.
@@ -175,6 +208,6 @@ Suggested order: **B-1** (a red gate and a violated shipped constraint) → **W-
 
 ⛔ **Not ready.**
 
-Three blocking findings, one of which (**B-1**) ships a violation of another spec's shipped requirement with a red gate and a false record of why. The documentation set is about to be **frozen as the permanent account of this work**, and it currently contains a requirement the design calls impossible, a closure resting on a premise the design refutes, three requirements reasoning from an abandoned route, and a quoted line that is not in the file it cites.
+Four blocking findings. **B-4** is a measured live regression in a shipped feature and is the one the per-task Reviewers could never have seen — it needed a real AWS call. Of the rest, **B-1** ships a violation of another spec's shipped requirement with a red gate and a false record of why. The documentation set is about to be **frozen as the permanent account of this work**, and it currently contains a requirement the design calls impossible, a closure resting on a premise the design refutes, three requirements reasoning from an abandoned route, and a quoted line that is not in the file it cites.
 
 **The code is ready. The record is not** — and archive freezes the record.

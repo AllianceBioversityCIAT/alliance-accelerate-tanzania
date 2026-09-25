@@ -59,10 +59,39 @@ const { decrypt } = buildClient(CommitmentPolicy.REQUIRE_ENCRYPT_ALLOW_DECRYPT);
 // second carrying whatever copy this function happened to pass it. Raising
 // means someone learns, on the day the setting changes, that a decision
 // was reversed — the same reasoning DD-2 already applies to the rest of
-// the unreachable set. The handled set is exactly two.
-const MESSAGE_BUILDERS = {
+// the unreachable set.
+//
+// ⚠️ CORRECTED post-deploy (validation-report.md B-4, design.md §5): an
+// admin editing a user's `email` via `users.service.ts::update()`
+// (`AdminUpdateUserAttributesCommand` against this auto-verified pool)
+// measurably emits `CustomEmailSender_UpdateUserAttribute` — NOT
+// `CustomEmailSender_VerifyUserAttribute`, which this file previously (and
+// wrongly) treated as the admin-edit source. `update()` dispatches no mail
+// of its own (unlike `create()`'s DD-5a case above), so raising on this
+// source would silently take away the only verification email that
+// address change ever gets, and — per `AccountRecoverySetting`'s
+// `verified_email` priority — leave the account's `email_verified` stuck
+// at `false` with no path back except another admin edit. Handled, same
+// builder, same message shape as `VerifyUserAttribute` below.
+// `VerifyUserAttribute` itself is KEPT handled even though nothing in this
+// codebase reaches it today (no self-service "verify my attribute" screen
+// exists in `frontend/`) — it is AWS's OTHER, distinct trigger source
+// (fired by a user's own explicit `GetUserAttributeVerificationCode`/
+// `VerifyUserAttribute` call, never by an admin edit), a correct handler
+// for it costs nothing to keep, and removing it would re-open exactly the
+// silent-loss class DD-2 exists to forbid the day some future self-service
+// flow reaches it. The handled set is exactly three.
+// Exported (read-only in practice — nothing in this module mutates it)
+// purely so the test suite can assert the handled set as a whole against
+// an explicit expected list, per validation-report.md B-4: a test naming
+// one more string guards only the instance just fixed, not the class ("the
+// handled set does not match what the pool actually emits"). Diffing the
+// live object's keys turns a future silent gain/loss of a source into a
+// visible test failure instead of a behaviour change nobody asserted on.
+export const MESSAGE_BUILDERS = {
   CustomEmailSender_ForgotPassword: buildPasswordResetMessage,
   CustomEmailSender_VerifyUserAttribute: buildAttributeVerificationMessage,
+  CustomEmailSender_UpdateUserAttribute: buildAttributeVerificationMessage,
 };
 
 // Deliberately simple — same spirit as config.mjs's BASE_URL_PATTERN:

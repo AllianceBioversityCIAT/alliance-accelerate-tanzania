@@ -575,7 +575,9 @@ The principal ARN was resolved with no shape validation. Under an assumed role o
 
 ### The all-or-nothing consequence, found by review and escalated to the user
 
-The trigger is **per-pool, all-or-nothing**: activating it routes *every* pool email through the function. `CustomEmailSenderPublicAppBaseUrl` was **passed by nothing** (Leader-verified: zero occurrences), and `config.mjs`'s `getPublicAppBaseUrl()` **throws** on empty — which `CustomEmailSender_VerifyUserAttribute` needs. **Activating the trigger would have broken the admin email-edit path.**
+The trigger is **per-pool, all-or-nothing**: activating it routes *every* pool email through the function. `CustomEmailSenderPublicAppBaseUrl` was **passed by nothing** (Leader-verified: zero occurrences), and `config.mjs`'s `getPublicAppBaseUrl()` **throws** on empty — which the attribute-verification message needs. **Activating the trigger would have broken the admin email-edit path.**
+
+> ⚠️ **Corrected 2026-09-25 (validation-report.md B-4).** This paragraph named `CustomEmailSender_VerifyUserAttribute` as the source the admin email-edit path emits. **It emits `CustomEmailSender_UpdateUserAttribute`** — measured against DEV after the deploy, by the probe W-1 recommended. The escalation's *reasoning* was sound and its fix was necessary; the source name was inherited from `proposal.md` §2.3, where it sat in a table headed *"Measured on the live pool"* as an inference, since `describe-user-pool` cannot report which trigger source fires. So T-6 widened scope to protect a path that is **not** the one at risk, and the one that was at risk **raised** — breaking the admin email-edit feature in DEV until B-4's fix. The widening was still right: `UpdateUserAttribute` shares that message, so it is now the first live path depending on that parameter.
 
 `CustomEmailSender_ForgotPassword` was never at risk — DD-1c removed the reset message's link, so the reset builder never calls it.
 

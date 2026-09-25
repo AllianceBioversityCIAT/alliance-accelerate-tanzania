@@ -61,7 +61,7 @@ The all-or-nothing rule sounds expensive until the pool is read. Measured on the
 | `MfaConfiguration` | `OFF` | no `CustomEmailSender_Authentication` events |
 | `AdminCreateUserConfig.AllowAdminCreateUserOnly` | `true` | no public self-signup ⇒ no `CustomEmailSender_SignUp` |
 | `create()` in `users.service.ts` | `MessageAction: 'SUPPRESS'` | no `CustomEmailSender_AdminCreateUser` mail |
-| `AutoVerifiedAttributes` / `VerificationMessageTemplate` | `["email"]` / `CONFIRM_WITH_CODE` | ⚠️ an email-attribute change **can** emit `CustomEmailSender_VerifyUserAttribute` — the one live edge besides ForgotPassword |
+| `AutoVerifiedAttributes` / `VerificationMessageTemplate` | `["email"]` / `CONFIRM_WITH_CODE` | ⚠️ an email-attribute change **can** emit a `CustomEmailSender_*` trigger — the one live edge besides ForgotPassword. *(⚠️ Corrected post-deploy, validation-report.md B-4: this row named the source `CustomEmailSender_VerifyUserAttribute`, asserted here without a measurement — the trigger's reachability was right, this name was not. Measured live in DEV: the source is `CustomEmailSender_UpdateUserAttribute`.)* |
 
 **Forgot-password is effectively the only email this pool emits.** C-1's breadth is a standing liability, not an immediate cost — but the function must still handle every `triggerSource` safely rather than assuming one.
 
@@ -168,7 +168,7 @@ ATP-71 made admin-initiated reset work. A stranded user asks an admin.
 | Cognito's trigger response ceiling is **not configurable**, and Cognito **retries** on timeout | The timeout path yields **duplicate codes plus an error**, not a clean failure |
 | `10-data-auth` cannot reach the broker credentials, the queue name, the API key, the sender identity or `PUBLIC_APP_BASE_URL` — all live in `20-backend`, which deploys **after** it | The function cannot be configured where the trigger forces it to live |
 | `10-data-auth` has **no SAM transform and no build step** | Hosting a Lambda there is a toolchain change, unbudgeted |
-| The trigger is all-or-nothing, and `users.service.ts::update()` can emit `CustomEmailSender_VerifyUserAttribute` | Failing loudly on unhandled sources **breaks a shipped admin feature** |
+| The trigger is all-or-nothing, and `users.service.ts::update()` can emit `CustomEmailSender_VerifyUserAttribute` *(⚠️ corrected post-deploy, validation-report.md B-4: measured to be `CustomEmailSender_UpdateUserAttribute`)* | Failing loudly on unhandled sources **breaks a shipped admin feature** |
 | `UpdateUserPool` resets every live setting absent from the template | The most dangerous step in the change, with no mechanism designed for it |
 
 **Seven of the fourteen findings do not exist under Option B.** No trigger, no KMS key, no Cognito ceiling, no all-or-nothing, no pool-wide update, no toolchain change, no cross-stack configuration problem.

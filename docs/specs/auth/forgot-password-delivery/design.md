@@ -225,14 +225,23 @@ That makes the pre-T-6 state an unscoped-but-inert permission on a function no p
 
 The trigger is **all-or-nothing**: once set, Cognito routes *every* pool email to this function.
 
-**Verified, not assumed:** `users.service.ts:361-367` sends `AdminUpdateUserAttributesCommand` with a new `email`, and the pool carries `AutoVerifiedAttributes: ["email"]`. So an admin editing a user's address **can** emit `CustomEmailSender_VerifyUserAttribute`. Round-1 C-6 established that raising on it would break that shipped admin feature.
+**Verified, not assumed** — but the verification proved the wrong half of the claim. **⚠️ CORRECTED post-deploy, validation-report.md B-4:** `users.service.ts:363-367` (line drift from the `:361-367` this row previously cited; the method itself is now at `:356`) sends `AdminUpdateUserAttributesCommand` with a new `email`, and the pool carries `AutoVerifiedAttributes: ["email"]` — that reachability was, and remains, correctly established: an admin editing a user's address **does** cause this trigger to fire. What was never independently checked is *which* Cognito `triggerSource` name that mechanism uses. **It is measured live in DEV to be `CustomEmailSender_UpdateUserAttribute`, not `CustomEmailSender_VerifyUserAttribute`.** Round-1 C-6 established that raising on the admin-edit source would break that shipped admin feature — that conclusion still holds, it was just attached to the wrong row.
 
 | `triggerSource` | Decision |
 |---|---|
 | `CustomEmailSender_ForgotPassword` | **Handle** — the purpose of this spec. |
-| `CustomEmailSender_VerifyUserAttribute` | **Handle.** Same shape, its own message. Reachable today via the admin user-edit path; raising here would break it. |
+| `CustomEmailSender_UpdateUserAttribute` | ⚠️ **Handle — corrected post-deploy, see the addendum below.** This, not `VerifyUserAttribute`, is the source `users.service.ts::update()`'s `AdminUpdateUserAttributesCommand` measurably emits against this auto-verified pool. Same shape, same message builder. Raising here would break the admin email-edit path — the risk C-6 named, on the right mechanism, under the wrong name. |
+| `CustomEmailSender_VerifyUserAttribute` | **Handle.** Same shape, its own message. **Not reachable today** (corrected — see addendum): AWS fires this only for a user's own explicit attribute-verification request, and no such self-service screen exists in `frontend/`. Kept handled anyway — a correct handler costs nothing, and dropping it would re-open the same silent-loss class the day a self-service flow reaches it. |
 | `CustomEmailSender_AdminCreateUser` | ⚠️ **RAISE — corrected 2026-09-23, see below.** *(This row previously said "handle defensively … the invitation must not vanish silently." That premise is false.)* |
 | Everything else (`SignUp`, `Authentication`, `ResendCode`, `AccountTakeOverNotification`) | **Raise, naming the source.** Not reachable in this pool today (no self-signup, MFA off). |
+
+### Addendum — the source name was wrong, not the reachability (validation-report.md B-4, found post-deploy)
+
+**What happened:** `proposal.md` §2.3 first named `CustomEmailSender_VerifyUserAttribute` as "the one live edge besides ForgotPassword" for an admin email-attribute change, without citing a measurement — a plausible-sounding guess (the action *is*, informally, "verifying an attribute"), not a checked one. `judgment.md`'s C-6 and this design's §5 then each verified that the *mechanism* — `update()`'s `AdminUpdateUserAttributesCommand` against an auto-verified pool — really does invoke the trigger, and reported that as verifying the *sentence*, which also named a specific `triggerSource` string. **Confirming the mechanism fires is not the same claim as confirming which of AWS's several `CustomEmailSender_*` names it fires under**, and only the first half was ever actually checked by reading code; the second half rode along, unverified, through three documents (`proposal.md` → `judgment.md` → this file) because each reader saw "verified" attached to the row and re-confirmed the mechanism again rather than the name.
+
+**The gap closed by measurement, not further reading:** a throwaway pool user's `email` attribute was changed with `admin-update-user-attributes` against the live DEV pool and CloudWatch was read directly. The trigger fired with `triggerSource=CustomEmailSender_UpdateUserAttribute` — a distinct AWS-defined value from `VerifyUserAttribute`, which per AWS's own trigger-source documentation fires only for a user's own explicit `GetUserAttributeVerificationCode`/`VerifyUserAttribute` request, never for an admin-initiated `AdminUpdateUserAttributes` call.
+
+**Consequence for T-4 (already shipped) and this spec's own C-6 disposition (§10):** the handled set gains `CustomEmailSender_UpdateUserAttribute` (mapped to the same `buildAttributeVerificationMessage` builder `VerifyUserAttribute` already used — same shape, same message), and `VerifyUserAttribute` itself is reclassified from "reachable today" to "not reachable today, kept handled anyway." Before this fix, `CustomEmailSender_UpdateUserAttribute` fell into the unhandled "everything else" set and **raised** — in production, this silently took away the only verification email an admin-initiated address change ever gets, flipping `email_verified` to `false` with no automatic path back.
 
 ### DD-5a — `AdminCreateUser` raises. The premise for handling it was wrong, and it was mine.
 
@@ -249,7 +258,7 @@ So the two behaviours trade like this:
 
 **Raise.** It is the same reasoning DD-2 already applies to the unreachable set, and the original row was the one place it was not applied — because I wrote it from "don't lose mail" rather than from what `create()` actually does.
 
-⚠️ **Consequence for T-4:** the `AdminCreateUser` branch and its use of `buildAttributeVerificationMessage` are **deleted**, not re-copied. The handled set is exactly two: `ForgotPassword` and `VerifyUserAttribute`. Everything else raises, naming the source.
+⚠️ **Consequence for T-4:** the `AdminCreateUser` branch and its use of `buildAttributeVerificationMessage` are **deleted**, not re-copied. At the time T-4 shipped, the handled set was `ForgotPassword` and `VerifyUserAttribute`. **⚠️ Corrected post-deploy (validation-report.md B-4, addendum above): the handled set is now exactly three** — `ForgotPassword`, `VerifyUserAttribute`, and `UpdateUserAttribute` (the actual admin-edit source). Everything else raises, naming the source.
 
 ### DD-2 — Raising is the right behaviour for the unreachable set, and this is why
 
@@ -356,7 +365,7 @@ Hosting a function with native dependencies therefore requires: the SAM transfor
 | C-2 | **Moot** — the frontend does not change. |
 | C-3 | **Out of scope** — a login-path finding; recorded, not fixed here. |
 | C-5 | **§6 / DD-3** — artefact-producing audit; DD-4 states the rollback limitation honestly. |
-| C-6 | **§5** — every source enumerated and decided; `VerifyUserAttribute` handled, verified reachable. |
+| C-6 | **§5** — every source enumerated and decided; the admin-edit source handled. ⚠️ **Corrected post-deploy (validation-report.md B-4):** the row originally read "`VerifyUserAttribute` handled, verified reachable" — reachability of the admin-edit *mechanism* was genuinely verified; the `triggerSource` *name* attached to it was not, and was wrong. The admin-edit source is `UpdateUserAttribute`; `VerifyUserAttribute` is handled but not reachable today. |
 | C-8 | **DD-1** — runtime secret read by predictable name. |
 | C-9 | **§4** — three separate policies on three resources, with the grant mechanism explained and cited. |
 | C-10 | **§3 step 3** — recipient validated before publish. |
