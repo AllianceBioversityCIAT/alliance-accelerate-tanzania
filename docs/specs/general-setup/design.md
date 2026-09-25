@@ -34,6 +34,10 @@ Which roles, where enforced (guard + serializer), PII handling, CORS/secrets imp
 ## 7. Infrastructure / Deployment
 Serverless/IaC changes, new AWS resources, env/secrets. **All commands and IaC use `--profile IBD-DEV`.**
 
+**A configuration-drift audit must enumerate the deploy PATHS, not only the configuration.** For every value the
+audit leaves out of the template, name which paths supply it — a value governed from outside the template is safe
+only while *every* path supplies it (KZ-auth--forgot-password-delivery-2).
+
 ## 8. Decision Records (ADR-style)
 ```
 ### Decision: <title>
