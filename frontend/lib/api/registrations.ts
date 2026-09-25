@@ -55,9 +55,15 @@
 
 import { apiFetch } from './client';
 
+export interface ConsentPolicyContactEntry {
+  label: string;
+  value: string;
+}
+
 export interface ConsentPolicySection {
   heading: string;
   body: string;
+  contact?: ConsentPolicyContactEntry[];
 }
 
 export interface ConsentPolicy {

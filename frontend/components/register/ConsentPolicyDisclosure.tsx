@@ -237,6 +237,16 @@ export default function ConsentPolicyDisclosure({
                 presence-assertion that cannot prove the rendered effect
                 (KZ-002). Verify by rendering, never by reading. */}
             <p className="mt-1 whitespace-pre-line text-sm text-muted">{section.body}</p>
+            {section.contact && section.contact.length > 0 && (
+              <dl className="mt-2 text-sm text-muted">
+                {section.contact.map((entry) => (
+                  <div key={entry.label} className="flex flex-wrap gap-x-1">
+                    <dt className="font-semibold text-fg">{entry.label}:</dt>
+                    <dd>{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </section>
         ))}
       </div>
