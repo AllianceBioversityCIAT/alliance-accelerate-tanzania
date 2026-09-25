@@ -39,8 +39,8 @@ describe('buildAdminResetMessage — sign-in link (FR-5, NFR-3)', () => {
 
     const msg = buildAdminResetMessage(TO, NEW_TEMP_PASSWORD, SUB);
 
-    expect(msg.text).toContain('https://registry.example.org/login');
-    expect(msg.html).toContain('https://registry.example.org/login');
+    expect(msg.text).toContain('https://registry.example.org/reset-password');
+    expect(msg.html).toContain('https://registry.example.org/reset-password');
   });
 
   it('does not double the slash when the configured base has a trailing one', () => {
@@ -48,9 +48,9 @@ describe('buildAdminResetMessage — sign-in link (FR-5, NFR-3)', () => {
 
     const msg = buildAdminResetMessage(TO, NEW_TEMP_PASSWORD, SUB);
 
-    expect(msg.text).toContain('https://registry.example.org/login');
-    expect(msg.text).not.toContain('example.org//login');
-    expect(msg.html).not.toContain('example.org//login');
+    expect(msg.text).toContain('https://registry.example.org/reset-password');
+    expect(msg.text).not.toContain('example.org//reset-password');
+    expect(msg.html).not.toContain('example.org//reset-password');
   });
 
   it('carries the new temporary password in both parts (FR-5 AND)', () => {
@@ -120,7 +120,7 @@ describe('buildAdminResetMessage — sign-in link (FR-5, NFR-3)', () => {
     process.env.PUBLIC_APP_BASE_URL = 'http://localhost:3000';
 
     expect(buildAdminResetMessage(TO, NEW_TEMP_PASSWORD, SUB).text).toContain(
-      'http://localhost:3000/login',
+      'http://localhost:3000/reset-password',
     );
   });
 });
@@ -160,5 +160,20 @@ describe('buildAdminResetMessage — copy is distinguishable from the invitation
 
     expect(msg.text.toLowerCase()).toContain('previous password');
     expect(msg.html!.toLowerCase()).toContain('previous password');
+  });
+});
+
+describe('buildAdminResetMessage — the link must not land on /login', () => {
+  // The regression this file's SIGN_IN_PATH comment records: /login redirects
+  // a visitor who already has a session into the app, so the recipient never
+  // reached the form and kept using the password this email invalidated.
+  it('points at /reset-password and never at the bare /login path', () => {
+    process.env.PUBLIC_APP_BASE_URL = 'https://registry.example.org';
+
+    const msg = buildAdminResetMessage(TO, NEW_TEMP_PASSWORD, SUB);
+
+    expect(msg.text).toContain('https://registry.example.org/reset-password');
+    expect(msg.text).not.toContain('https://registry.example.org/login');
+    expect(msg.html).not.toContain('https://registry.example.org/login');
   });
 });
