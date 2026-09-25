@@ -95,13 +95,13 @@ export function buildPasswordResetMessage(to, code) {
           value: code,
           caption:
             'Go back to the window or tab where you requested this reset ' +
-            'and enter it there — it is already waiting on that step, ' +
+            'and enter it there. It is already waiting on that step, ' +
             'with your email address filled in.',
         },
         {
           kind: 'note',
           text:
-            'If you did not request this, you can ignore this message — ' +
+            'If you did not request this, you can ignore this message. ' +
             'your password will not change unless this code is used.',
         },
       ],
