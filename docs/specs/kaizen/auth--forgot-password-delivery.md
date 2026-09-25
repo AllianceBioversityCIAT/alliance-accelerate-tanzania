@@ -61,7 +61,7 @@
 | Target | `docs/specs/general-setup/task.md` |
 | Edit | Under Testing & Verification: **"`git stash` cannot show a failure is pre-existing on a branch with commits — it shelves only the working tree. Check out the default branch and re-run; that is the only answer that distinguishes 'not from my diff' from 'not from this branch'."** |
 | Severity | High |
-| Status | pending |
+| Status | **applied (2026-09-25)** — both documented commands were run before documenting them: `run-tests.sh` 51/51, `custom-email-sender` 59/59. |
 
 ### P2
 
@@ -112,7 +112,7 @@
 | Target | root `CLAUDE.md` + `AGENTS.md`, `## Module Guides` index |
 | Edit | Index the new module: **"`infra/10-data-auth/functions/custom-email-sender/` — the Cognito `CustomEmailSender` trigger. Plain JavaScript (ESM), the only JS in a TypeScript repo (design.md DD-1b); its own `package.json` and jest runner; tests run with `npm test`, not bare `npx jest` (needs `node --experimental-vm-modules`)."** |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied (2026-09-25)** — ⚠️ applied on the spec branch at the product owner's explicit instruction, overriding the archive's branch gate. The gate's reason (shared-file writes from a branch) is a merge-conflict concern, not a correctness one; the ADR's gate reason (number collision) is specific and real, so **P5 stays pending**. |
 
 ### P7
 
