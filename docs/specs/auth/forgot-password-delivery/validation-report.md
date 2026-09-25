@@ -11,7 +11,8 @@
 | Deployed | **Yes** — `accelerate-tz-dev`, trigger live, verified by a real password reset |
 | Method | Three **dimension-scoped validators in parallel**, each instructed not to defer to the Leader's framing (root `CLAUDE.md` § Validation dispatch, KZ-012's countermeasure) |
 | Validators | coverage closure · decision consistency · claims-vs-code |
-| **Verdict** | ⛔ **NOT ARCHIVE-READY** — **4 blocking** (three prose, **one live behavioural** — B-4), ~11 documentation FAILs, ~12 WARN |
+| **Verdict** *(original, 2026-09-25 am)* | ⛔ **NOT ARCHIVE-READY** — **4 blocking** (three prose, **one live behavioural** — B-4), ~11 documentation FAILs, ~12 WARN |
+| **Verdict** *(updated, 2026-09-25 pm)* | ✅ **All 4 blocking findings closed.** B-4 fixed, deployed and **verified live** (mail received). B-1 closes the red gate (51/51). B-2 and B-3 amended and Reviewer-PASSed. **The ~11 documentation FAILs and ~12 WARNs remain open by explicit decision** — the owner scoped remediation to blocking + W-1. They are the accepted debt this spec archives with, and they are listed below rather than closed |
 
 ---
 

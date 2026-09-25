@@ -771,3 +771,27 @@ Two of them would have reached production: the missing `DependsOn` (a non-determ
 1. **Vendor documentation is a third-party claim under KZ-011, not a primary source.** The AWS CLI help raised a false T-6 blocker and was cited as authority for seven of §6's rows; a two-minute measurement refuted it.
 2. **A drift audit must enumerate the deploy paths, not only the configuration.** T-5 correctly identified what *sets* `UserPoolTags` and never asked what could *remove* it — so the first deploy silently dropped a cost-allocation tag from every resource in the stack. The audit, the rehearsal and two Reviewers all reasoned about the template rather than the invocation.
 3. **KZ-010, 4th recurrence, with a new consequence.** Two sessions executed T-5 in one checkout, unseen. This time the collision did not merely muddle the ledger — **it produced a wrong answer to the user**, who was told a permission set was unnecessary while the other session was blocked for want of exactly it.
+
+---
+
+## Post-validation — B-4 fixed, deployed, and verified live (2026-09-25)
+
+**Deployed 16:52 UTC**, targeted `sam deploy` **with `--config-file`** this time — the `Project` tag survived (the first deploy's omission had stripped it from every resource in the stack).
+
+**Verified by probe, twice, both after the fix:**
+
+| Observation | Result |
+|---|---|
+| `admin-update-user-attributes` → function log | **`dispatched triggerSource=CustomEmailSender_UpdateUserAttribute`** — not `failed` |
+| Duration | 2026.37 ms + 602.78 ms init |
+| ⚠️ **Mail arrived** | ✅ **confirmed by the product owner**, at a personal Gmail address, from `AccelerateTZ-No-reply@cgiar.org` |
+
+⚠️ **`dispatched` was the discriminating observation, and the Reviewer named why in advance:** a `getPublicAppBaseUrl()` refusal produces a *different* error line, so *"the old error is gone"* would have been satisfied by a new silent failure. Only `dispatched` rules that out.
+
+**This closes the attribute-verification path end to end — the one nothing had ever exercised.** It is a different message template from T-7's reset mail, it is the **only** builder that reads `PUBLIC_APP_BASE_URL` (the parameter T-6 widened scope to wire), and it was raising an error one hour earlier.
+
+> **A Leader imprecision, corrected.** The probe was specified as "confirm `email_verified` flips". It does **not** flip on dispatch — it flips when the user enters the code. After the fix it still reads `false`, and that is correct. The real change is not the flag, it is what the flag means: **before, `false` with no mail was a dead end; now, `false` with a mail sent is a pending step.** They look identical in a `describe-user-user` dump and are not remotely the same thing.
+
+**First probe attempt used a `+`-addressed variant of the owner's corporate address**, on the unverified assumption that CGIAR's tenant has subaddressing enabled — Microsoft 365 ships it **off** by default. The assumption was never checked, and the owner caught it. Re-run against a personal Gmail, where the convention is known to work. *Recorded because it is the same defect class this spec has been cataloguing all day, committed by the Leader while verifying a fix for it.*
+
+Live pool: 3 users, trigger intact, all probe users deleted.
