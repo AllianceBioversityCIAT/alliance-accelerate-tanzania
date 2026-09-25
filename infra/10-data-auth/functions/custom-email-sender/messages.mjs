@@ -102,7 +102,7 @@ export function buildPasswordResetMessage(to, code) {
           kind: 'note',
           text:
             'If you did not request this, you can ignore this message. ' +
-            'your password will not change unless this code is used.',
+            'Your password will not change unless this code is used.',
         },
       ],
     }),
