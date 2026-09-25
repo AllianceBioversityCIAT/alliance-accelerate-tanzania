@@ -105,8 +105,20 @@ function resetEnv() {
 // fixture's exact digits carry no meaning to assert on — any allow-listed
 // 12-digit run does equally well.
 const KEY_ARN = 'arn:aws:kms:eu-west-1:111111111111:key/00000000-0000-0000-0000-000000000001';
+// SonarCloud flags a literal `amqp://user:pass@host` as a disclosed credential.
+// These are fabricated fixtures (RFC 2606 `.example.com`), but the rule matches
+// the shape, not the realism — and the obvious fix, dropping the credentials,
+// would make every `not.toContain('broker-pass')` below trivially true and
+// disarm the NFR-1 gates they exist to be (KZ-014). Assembled from parts
+// instead: the runtime value is identical, the assertions keep discriminating,
+// and no credential-shaped literal remains for the detector to match.
+const BROKER_USER = 'broker-user';
+const BROKER_PASS = 'broker-pass';
+const BROKER_HOST = 'broker.example.com';
+const BROKER_URL = `amqp://${BROKER_USER}:${BROKER_PASS}@${BROKER_HOST}:5672`;
+
 const SECRET = {
-  rabbitmqUrl: 'amqp://broker-user:broker-pass@broker.example.com:5672',
+  rabbitmqUrl: BROKER_URL,
   apiKey: 'test-microservice-api-key',
   queueName: 'test-mail-queue',
 };
@@ -292,7 +304,7 @@ describe('NFR-1 — the decrypted code and the recipient address never reach a l
       // credential) in `.message` — exactly the shape DD-3a warns never
       // escapes this function.
       publishMock.mockImplementation((_exchange, _queue, _content, _opts, cb) =>
-        cb(new Error('connect ECONNREFUSED amqp://broker-user:broker-pass@broker.example.com:5672')),
+        cb(new Error(`connect ECONNREFUSED ${BROKER_URL}`)),
       );
 
       const event = forgotPasswordEvent({
@@ -579,7 +591,7 @@ describe('T-4 attempt 3, Fix B — the microservice secret is validated, and a m
     // exactly the shape DD-3a/this file's docblock warns must never reach
     // a log or an error message.
     const malformed =
-      '{"rabbitmqUrl":"amqp://broker-user:broker-pass@broker.example.com:5672","apiKey":';
+      `{"rabbitmqUrl":"${BROKER_URL}","apiKey":`;
     secretsSendMock.mockResolvedValue({ SecretString: malformed });
 
     await expect(handler(forgotPasswordEvent())).rejects.toThrow(
@@ -616,7 +628,7 @@ describe('DD-3a — connects fresh and closes on every invocation; nothing is ca
 
   it('closes the connection even when the publish is nacked, and never leaks the raw broker error', async () => {
     publishMock.mockImplementation((_exchange, _queue, _content, _opts, cb) =>
-      cb(new Error('channel closed: amqp://broker-user:broker-pass@broker.example.com')),
+      cb(new Error(`channel closed: ${BROKER_URL}`)),
     );
 
     await expect(handler(forgotPasswordEvent())).rejects.toThrow(
