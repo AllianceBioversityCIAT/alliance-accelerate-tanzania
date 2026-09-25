@@ -38,6 +38,9 @@ A task is **eligible** when its status is `[ ]`/`[~]` and every dependency is `[
 **Presence is not behaviour — and this applies to documents, not only tests (KZ-002, recurrence).** A procedure
 carrying every required clause can still be unexecutable. Operator-facing documents are verified against the
 **running product**, not against the spec that specified them.
+- **`git stash` cannot show that a failing gate is pre-existing** on a branch that carries commits — it shelves
+  only the working tree, so it answers *"not from my uncommitted diff"* and gets read as *"not from this branch"*.
+  Check out the default branch and re-run; that is the only check that separates the two (KZ-auth--forgot-password-delivery-1).
 - Every task MUST carry a runnable `Verify` command; the Implementer runs it before reporting completion.
 - Prefer the smallest verifying command (targeted test) over full-suite runs.
 - Backend: `npm run test` / `npm run build` / `npm run lint`. Frontend: `npm run build` / `npm run lint` / component tests.

@@ -61,7 +61,7 @@
 | Target | `docs/specs/general-setup/task.md` |
 | Edit | Under Testing & Verification: **"`git stash` cannot show a failure is pre-existing on a branch with commits — it shelves only the working tree. Check out the default branch and re-run; that is the only answer that distinguishes 'not from my diff' from 'not from this branch'."** |
 | Severity | High |
-| Status | pending |
+| Status | **applied (2026-09-25)** — written to `docs/specs/general-setup/task.md` § Testing & Verification. |
 
 ### P2
 
@@ -71,7 +71,7 @@
 | Target | `docs/specs/general-setup/design.md` |
 | Edit | Under drift/configuration audits: **"Enumerate the deploy paths, not only the configuration. For every value the audit leaves out of the template, name which paths supply it — a value governed from outside is safe only while every path does."** |
 | Severity | Medium |
-| Status | pending |
+| Status | **applied (2026-09-25)** — written to `docs/specs/general-setup/design.md` §7. |
 
 ### P3
 
@@ -81,7 +81,7 @@
 | Target | `KZ-010` |
 | Severity | **High** (raise) |
 | Edit | Recurrence **×4**, add `auth/forgot-password-delivery` as a source. ⚠️ **New in this instance, and worse than a muddled ledger: the collision produced a wrong answer to the user.** Two sessions executed T-5 in one checkout, unseen; the Leader told the user a permission set was unnecessary while the other session was blocked for want of exactly it. Also: the start-of-task `git log` check the rule prescribes **passed cleanly and still missed it** — the colliding commit did not exist yet. Re-check before writing and before committing, not only at task start. |
-| Status | pending |
+| Status | **applied (2026-09-25)** — KZ-010 raised to **High**, recurrence ×4 and this spec added as a source. |
 
 ### P4
 
@@ -91,7 +91,7 @@
 | Target | `KZ-011` |
 | Severity | High (unchanged) |
 | Edit | Add `auth/forgot-password-delivery` as a source, with the new shape: **vendor documentation is a third-party claim under this rule, not a primary source.** `aws cognito-idp update-user-pool help` states `EmailMessage` may be set only when `EmailSendingAccount` is `DEVELOPER`. It was cited as authority for **seven** classification rows and raised a false blocker against a deploy touching live accounts. **Two minutes of measurement refuted it** — the constraint is not enforced. Citing the vendor's own docs is not verification of the vendor's behaviour. |
-| Status | pending |
+| Status | **applied (2026-09-25)** — KZ-011 recurrence ×4 recorded with the vendor-documentation shape. |
 
 ### P5
 
@@ -102,7 +102,7 @@
 | Supersedes | none (new decision; sits beside ADR-006 Cognito and ADR-015 mail transport) |
 | Edit | **Cognito's self-service password-reset mail is delivered by a `CustomEmailSender` Lambda trigger, not by Cognito.** Cognito keeps the reset state machine — it generates, expires and verifies the code (FR-3); only delivery moved. The function decrypts the code against a customer-managed symmetric KMS key and publishes it over AMQP to the OneCGIAR notification microservice. Consequences: the trigger is **all-or-nothing per pool**, so every pool email routes through this function; it adds a **new deployable unit inside `10-data-auth`**; and **no rollback restores the prior behaviour** — removing it lands on `COGNITO_DEFAULT`, since SES is excluded permanently. Verified live on DEV 2026-09-25 by a real reset. |
 | Severity | High |
-| Status | pending — ⚠️ **no ADR number allocated.** `ADR-016` was verified free against `main` and all four unmerged branches on 2026-09-25, but numbering is an apply-time act on the apply-capable branch. |
+| Status | **applied (2026-09-25)** — **`ADR-016`**, allocated at apply time on `main` after re-probing that it was free across `main`, `dev`, `staging` and `feat/consent-contact-block`. Appended to `docs/trd/trd.md` §12; supersedes nothing. |
 
 ### P6
 
@@ -112,7 +112,7 @@
 | Target | root `CLAUDE.md` + `AGENTS.md`, `## Module Guides` index |
 | Edit | Index the new module: **"`infra/10-data-auth/functions/custom-email-sender/` — the Cognito `CustomEmailSender` trigger. Plain JavaScript (ESM), the only JS in a TypeScript repo (design.md DD-1b); its own `package.json` and jest runner; tests run with `npm test`, not bare `npx jest` (needs `node --experimental-vm-modules`)."** |
 | Severity | Medium |
-| Status | **applied (2026-09-25)** — ⚠️ applied on the spec branch at the product owner's explicit instruction, overriding the archive's branch gate. The gate's reason (shared-file writes from a branch) is a merge-conflict concern, not a correctness one; the ADR's gate reason (number collision) is specific and real, so **P5 stays pending**. |
+| Status | **applied (2026-09-25)** — ⚠️ applied on the spec branch at the product owner's explicit instruction, overriding the archive's branch gate. The gate's reason (shared-file writes from a branch) is a merge-conflict concern, not a correctness one; the ADR's gate reason (number collision) is specific and real, so P5 was held back — and allocated as **ADR-016** at apply time on `main`, which is the gate working as designed. |
 
 ### P7
 
