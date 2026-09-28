@@ -175,8 +175,12 @@ async function main() {
   await connection.close();
 }
 
-main().catch((err) => {
+// Top-level await: this is an ESM module, so the promise chain bought
+// nothing the language does not already give us.
+try {
+  await main();
+} catch (err) {
   console.error(`\n✖ probe failed: ${err?.name ?? 'Error'}: ${err?.message ?? String(err)}`);
   console.error('  (the broker URL and API key are never printed, so this message is safe to paste)');
   process.exit(2);
-});
+}

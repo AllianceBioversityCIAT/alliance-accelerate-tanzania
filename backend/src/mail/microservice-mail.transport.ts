@@ -525,13 +525,17 @@ async function connectFresh(
   // `channel` is filled in immediately below; every path that can return
   // early instead throws, so callers never observe an entry with a stale
   // placeholder channel.
-  const entry = {
+  const entry: CachedMicroserviceConnection = {
     model,
-    channel: null,
+    // The one field that genuinely needs an assertion, narrowed to itself.
+    // Casting the whole literal through `unknown` also switched OFF field
+    // checking for every other key — a misspelled `replyQueue` would have
+    // compiled and silently produced `undefined` at publish time.
+    channel: null as unknown as amqp.ConfirmChannel,
     healthy: true,
     replyQueue: '',
     pending: new Map<string, (ok: boolean) => void>(),
-  } as unknown as CachedMicroserviceConnection;
+  };
   attachHealthListeners(entry, model, logger);
   try {
     entry.channel = await model.createConfirmChannel();
