@@ -29,11 +29,15 @@ import {
   MicroserviceMailLockTimeoutError,
   MicroserviceMailPublishError,
   MicroserviceMailQueueNotFoundError,
+  MicroserviceMailRejectedError,
   MicroserviceMailTimeoutError,
   MicroserviceMailTransport,
   resetMicroserviceMailTransportState,
 } from './microservice-mail.transport';
 import { MailMessage } from './mail-transport.interface';
+
+/** Fixed so the envelope assertions stay deterministic; production mints a UUID per send. */
+const TEST_ENVELOPE_ID = 'test-envelope-id';
 
 jest.mock('amqplib');
 
@@ -51,8 +55,9 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 'Your reference is REG-2026-0007.',
     };
 
-    expect(buildMicroserviceEnvelope(message, config)).toEqual({
+    expect(buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID)).toEqual({
       pattern: 'send',
+      id: TEST_ENVELOPE_ID,
       data: {
         apiKey: 'test-api-key',
         data: {
@@ -80,7 +85,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       html: '<p>Rich HTML body.</p>',
     };
 
-    const envelope = buildMicroserviceEnvelope(message, config);
+    const envelope = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID);
 
     expect(envelope.data.data.emailBody.message).toEqual({
       text: 'Plain-text fallback.',
@@ -96,7 +101,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       html: '<p>Rich HTML body.</p>',
     };
 
-    const { message: builtMessage } = buildMicroserviceEnvelope(message, config).data.data
+    const { message: builtMessage } = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data
       .emailBody;
 
     expect(builtMessage.text).toBeDefined();
@@ -111,7 +116,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 'Plain-text only.',
     };
 
-    const { message: builtMessage } = buildMicroserviceEnvelope(message, config).data.data
+    const { message: builtMessage } = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data
       .emailBody;
 
     expect('socketFile' in builtMessage).toBe(false);
@@ -126,7 +131,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       html: '<p>Rich HTML body.</p>',
     };
 
-    const { message: builtMessage } = buildMicroserviceEnvelope(message, config).data.data
+    const { message: builtMessage } = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data
       .emailBody;
 
     expect(builtMessage.text).toBe('Plain-text fallback.');
@@ -140,7 +145,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    expect(buildMicroserviceEnvelope(message, config).data.data.emailBody.to).toEqual([
+    expect(buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data.emailBody.to).toEqual([
       'applicant@example.org',
     ]);
   });
@@ -152,7 +157,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    const { to } = buildMicroserviceEnvelope(message, config).data.data.emailBody;
+    const { to } = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data.emailBody;
 
     expect(Array.isArray(to)).toBe(true);
     expect(to).toEqual(['a@example.org', 'b@example.org']);
@@ -165,7 +170,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    expect(buildMicroserviceEnvelope(message, config).data.data.emailBody.to).toEqual([
+    expect(buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data.emailBody.to).toEqual([
       'a@example.org',
       'b@example.org',
       'c@example.org',
@@ -179,7 +184,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    expect(buildMicroserviceEnvelope(message, config).data.data.emailBody.to).toEqual([
+    expect(buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data.emailBody.to).toEqual([
       'applicant@example.org',
     ]);
   });
@@ -191,7 +196,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    const { from } = buildMicroserviceEnvelope(message, config).data.data;
+    const { from } = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).data.data;
 
     expect(from).toEqual({
       email: 'registry@example.org',
@@ -208,13 +213,21 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    const envelope = buildMicroserviceEnvelope(message, config);
+    const envelope = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID);
 
     expect(envelope.data.apiKey).toBe('test-api-key');
     expect(JSON.stringify(envelope.data.data)).not.toContain('test-api-key');
   });
 
-  it('never includes an id property anywhere in the envelope', () => {
+  // This assertion was once its own inverse: the envelope deliberately carried
+  // NO `id`, because the transport wanted fire-and-forget. `id` at the TOP level
+  // is precisely what makes NestJS's ServerRMQ treat the message as a request
+  // and reply to it — `replyTo` alone does not, which the ATP-70 probe
+  // established empirically. Awaiting that reply is the whole point now, so the
+  // property is required. It must still appear ONLY at the top level: the
+  // microservice's own DTO has no `id` field, and one inside `data` would be
+  // payload it does not expect.
+  it('carries the id at the top level, and nowhere deeper', () => {
     const message: MailMessage = {
       to: 'applicant@example.org',
       subject: 's',
@@ -222,12 +235,11 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       reference: 'REG-2026-0007',
     };
 
-    const envelope = buildMicroserviceEnvelope(message, config);
+    const envelope = buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID);
 
-    expect('id' in envelope).toBe(false);
+    expect(envelope.id).toBe(TEST_ENVELOPE_ID);
     expect('id' in envelope.data).toBe(false);
     expect('id' in envelope.data.data).toBe(false);
-    expect(JSON.stringify(envelope)).not.toContain('"id"');
   });
 
   it('sets pattern to the literal string "send"', () => {
@@ -237,7 +249,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
       text: 't',
     };
 
-    expect(buildMicroserviceEnvelope(message, config).pattern).toBe('send');
+    expect(buildMicroserviceEnvelope(message, config, TEST_ENVELOPE_ID).pattern).toBe('send');
   });
 });
 
@@ -266,6 +278,9 @@ interface ChannelScript {
    * always `connectFresh`'s own `checkQueue`; call 1+ is a later probe. */
   checkQueue: (callIndex: number) => CheckQueueBehavior;
   publish: (callIndex: number) => PublishBehavior;
+  /** Defaults to 'sent' when a script omits it, so the pre-existing cases
+   * keep asserting what they were written to assert. */
+  reply?: (callIndex: number) => ReplyBehavior;
   /** Optional override for both `channel.close` and `model.close` —
    * defaults to an immediately-resolving mock. Issue 2 (T-4 rework): a
    * `close` that never resolves is how the "detaches cleanup" gate proves
@@ -275,7 +290,11 @@ interface ChannelScript {
 }
 
 function okScript(): ChannelScript {
-  return { checkQueue: () => ({ kind: 'ok' }), publish: () => ({ kind: 'ack' }) };
+  return {
+    checkQueue: () => ({ kind: 'ok' }),
+    publish: () => ({ kind: 'ack' }),
+    reply: () => 'sent',
+  };
 }
 
 /** Mirrors the `code: 404` property the real `amqplib` sets on a
@@ -292,9 +311,16 @@ function makeNotFoundError(): Error & { code: number } {
   return err;
 }
 
+/** What the microservice replies after a confirmed publish. 'sent' is the
+ * 201 shape, 'rejected' the 500/err shape, 'none' the silence the send
+ * deadline exists to catch. */
+type ReplyBehavior = 'sent' | 'rejected' | 'none';
+
 interface FakeChannel extends EventEmitter {
   checkQueue: jest.Mock;
   publish: jest.Mock;
+  assertQueue: jest.Mock;
+  consume: jest.Mock;
   close: jest.Mock;
 }
 
@@ -306,7 +332,25 @@ interface FakeChannelModel extends EventEmitter {
 function createFakeChannel(script: ChannelScript): FakeChannel {
   let checkQueueCalls = 0;
   let publishCalls = 0;
+  let replyCalls = 0;
+  let onReply: ((msg: unknown) => void) | undefined;
   const emitter = new EventEmitter() as FakeChannel;
+
+  emitter.assertQueue = jest.fn(() => Promise.resolve({ queue: 'amq.gen-fake-reply' }));
+  emitter.consume = jest.fn((_queue: string, handler: (msg: unknown) => void) => {
+    onReply = handler;
+    return Promise.resolve({ consumerTag: 'fake' });
+  });
+
+  const deliverReply = (correlationId: string | undefined): void => {
+    const behavior = script.reply?.(replyCalls++) ?? 'sent';
+    if (behavior === 'none' || !onReply) return;
+    const body =
+      behavior === 'sent'
+        ? { response: { status: 201, description: 'Email sent successfully' }, isDisposed: true }
+        : { err: {}, isDisposed: true };
+    onReply({ properties: { correlationId }, content: Buffer.from(JSON.stringify(body)) });
+  };
 
   emitter.checkQueue = jest.fn((queueName: string) => {
     const behavior = script.checkQueue(checkQueueCalls++);
@@ -335,6 +379,7 @@ function createFakeChannel(script: ChannelScript): FakeChannel {
       const behavior = script.publish(publishCalls++);
       switch (behavior.kind) {
         case 'ack':
+          deliverReply(_options?.correlationId);
           callback?.(null, {});
           break;
         case 'nack':
@@ -346,6 +391,7 @@ function createFakeChannel(script: ChannelScript): FakeChannel {
           // confirm mode (an ack means "the broker took responsibility",
           // not "it was routed").
           emitter.emit('return', {});
+          deliverReply(_options?.correlationId);
           callback?.(null, {});
           break;
         case 'nack-after':
@@ -488,23 +534,36 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
     expect(options).toMatchObject({ persistent: true, mandatory: true });
   });
 
-  it('never declares, creates, or modifies the queue — only checkQueue is used (FR-1 BUT, DD-3)', async () => {
+  it('never declares, creates, or modifies the TARGET queue — it is only checkQueue\'d (FR-1 BUT, DD-3)', async () => {
     connectQueue = [{ type: 'ok', script: okScript() }];
 
-    // A-2 (T-4 rework): the previous version of this test asserted
-    // `expect(channel.assertQueue).toBeUndefined()`, which is a fact about
-    // `FakeChannel` — it never defines that method, regardless of what the
-    // transport calls — not a fact about the transport under test. The
-    // real guarantee comes from `FakeChannel`'s deliberately minimal
-    // surface (`checkQueue`/`publish`/`close` only, matching every real
-    // `ConfirmChannel` call this file makes): a hypothetical
-    // `channel.assertQueue(...)` call in the transport would hit
-    // `undefined(...)`, throw a `TypeError`, and reject this very `send()`.
-    // It is the `resolves` assertion below that proves the transport never
-    // calls it — not a property read off the mock.
+    // A-2 (T-4 rework) recorded that the guarantee here came from
+    // `FakeChannel`'s deliberately minimal surface: it defined no
+    // `assertQueue`, so any such call in the transport would hit
+    // `undefined(...)` and throw. ATP-70 dissolved that mechanism — awaiting
+    // the microservice's reply needs an exclusive reply queue, so
+    // `openReplyQueue` calls `assertQueue` and the mock now defines it. The
+    // requirement never changed and is still the platform team's: WE DO NOT
+    // TOUCH THEIR QUEUE. What changed is that "never calls assertQueue" is no
+    // longer the way to say it, and leaving the old assertion in place would
+    // have kept passing while proving nothing. So assert the requirement
+    // directly, on the argument: every assertQueue call must be the anonymous
+    // '' form (broker-named, exclusive, auto-delete — ours, and gone when the
+    // connection closes), and none of them may name the target queue.
     await expect(transport.send(buildMessage())).resolves.toBeUndefined();
 
-    expect(connections[0].channel.checkQueue).toHaveBeenCalledWith('accelerate-tz-email');
+    const channel = connections[0].channel;
+    expect(channel.checkQueue).toHaveBeenCalledWith('accelerate-tz-email');
+
+    const asserted = channel.assertQueue.mock.calls.map((call) => call[0]);
+    expect(asserted).toEqual(['']);
+    expect(asserted).not.toContain('accelerate-tz-email');
+
+    // And the one queue we do declare is disposable by construction.
+    expect(channel.assertQueue).toHaveBeenCalledWith('', {
+      exclusive: true,
+      autoDelete: true,
+    });
   });
 
   it('reuses a healthy cached connection — a second send does not reconnect (NFR-2)', async () => {
@@ -901,6 +960,144 @@ describe('MicroserviceMailTransport — connection lifecycle (design.md §4.3, �
       await outcome;
     },
   );
+
+  // ────────────────────────────────────────────────────────────────────────
+  // ATP-70 — the reply channel. Everything above this line predates it and
+  // proves only that a publish is CONFIRMED BY THE BROKER, which is handoff
+  // to RabbitMQ and says nothing about whether mail was sent. These five
+  // tests are the ones that fail if the outcome stops reaching the caller.
+  //
+  // What a 201 reply does and does not mean: the microservice replies 201
+  // once its SMTP relay ACCEPTS the message. An accepted message can still
+  // bounce afterwards, asynchronously, to the envelope sender — so a green
+  // result here is "the relay took it", not "it landed in the inbox". That
+  // remaining gap is deliberately out of scope (ATP-70 half B) and is not
+  // something these tests can close.
+  // ────────────────────────────────────────────────────────────────────────
+  describe('the microservice reply (ATP-70)', () => {
+    /** ack the publish, then reply with whatever `behavior` says. */
+    const scriptReplying = (behavior: ReplyBehavior): ChannelScript => ({
+      checkQueue: () => ({ kind: 'ok' }),
+      publish: () => ({ kind: 'ack' }),
+      reply: () => behavior,
+    });
+
+    it(
+      'publishes with replyTo and correlationId so the microservice has somewhere to answer — ' +
+        'mutation: dropping either option from `confirmPublish` reddens this, and reddens the ' +
+        'four tests below with it',
+      async () => {
+        connectQueue = [{ type: 'ok', script: okScript() }];
+
+        await transport.send(buildMessage());
+
+        const [, , content, options] = connections[0].channel.publish.mock.calls[0];
+        expect(options).toMatchObject({ replyTo: 'amq.gen-fake-reply' });
+
+        // The two ids must be the SAME value. NestJS's ServerRMQ echoes the
+        // BODY's `id` back as the reply's correlationId, while our pending map
+        // is keyed on the id we published — so if these two ever diverged,
+        // every reply would arrive unmatched and every send would time out
+        // despite the mail going through. `randomUUID()` means the value
+        // itself is unpredictable; the invariant is the agreement.
+        const published = JSON.parse((content as Buffer).toString('utf8'));
+        expect(published.id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        );
+        expect(options.correlationId).toBe(published.id);
+      },
+    );
+
+    it(
+      'a failure reply rejects the send — this is the whole point of ATP-70: a send the ' +
+        'microservice could not perform must not return as success. Mutation: making ' +
+        '`publishOnce` resolve regardless of the reply reddens this and nothing else',
+      async () => {
+        connectQueue = [{ type: 'ok', script: scriptReplying('rejected') }];
+
+        const send = transport.send(buildMessage());
+        const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailRejectedError);
+
+        // No timer advance: the reply settles on microtasks, so this must
+        // reject well before MAIL_SEND_TIMEOUT_MS. If it only rejected on
+        // the deadline, the caller would be told "timeout" for something the
+        // microservice answered clearly — a different diagnosis entirely.
+        await outcome;
+      },
+    );
+
+    it(
+      'a failure reply leaves the connection cached and healthy — the broker did nothing wrong, ' +
+        'so the next send must NOT pay a reconnect (mutation: adding `detachTeardown` to the ' +
+        'rejected-reply path reddens this)',
+      async () => {
+        connectQueue = [
+          { type: 'ok', script: { ...scriptReplying('rejected'), reply: (n) => (n === 0 ? 'rejected' : 'sent') } },
+        ];
+
+        await expect(transport.send(buildMessage())).rejects.toBeInstanceOf(
+          MicroserviceMailRejectedError,
+        );
+        await expect(transport.send(buildMessage())).resolves.toBeUndefined();
+
+        expect(connectMock).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it(
+      'silence becomes the send deadline, not an indefinite hang — `publishOnce` deliberately ' +
+        'keeps no timer of its own, because `raceAgainstDeadline` already bounds the whole send ' +
+        'at MAIL_SEND_TIMEOUT_MS. Mutation: removing that race hangs this test instead of failing it',
+      async () => {
+        connectQueue = [{ type: 'ok', script: scriptReplying('none') }];
+
+        const send = transport.send(buildMessage());
+        const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+        await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+
+        await outcome;
+      },
+    );
+
+    it(
+      "a reply bearing someone else's correlationId never settles our send — the pending map is " +
+        'keyed by correlationId precisely so two concurrent publishes cannot resolve each other. ' +
+        'Mutation: resolving the first pending waiter regardless of key reddens this',
+      async () => {
+        connectQueue = [
+          {
+            type: 'ok',
+            script: {
+              checkQueue: () => ({ kind: 'ok' }),
+              publish: () => ({ kind: 'ack' }),
+              // Silence for our own id; the stray reply is injected below.
+              reply: () => 'none',
+            },
+          },
+        ];
+
+        const send = transport.send(buildMessage());
+        await jest.advanceTimersByTimeAsync(0); // let the publish land and register the waiter
+
+        const stray = {
+          properties: { correlationId: 'not-our-correlation-id' },
+          content: Buffer.from(
+            JSON.stringify({ response: { status: 201 }, isDisposed: true }),
+            'utf8',
+          ),
+        };
+        const [, onReply] = connections[0].channel.consume.mock.calls[0];
+        (onReply as (msg: unknown) => void)(stray);
+
+        // A stray success must not be mistaken for ours: the send still runs
+        // out its deadline rather than resolving.
+        const outcome = expect(send).rejects.toBeInstanceOf(MicroserviceMailTimeoutError);
+        await jest.advanceTimersByTimeAsync(MAIL_SEND_TIMEOUT_MS);
+
+        await outcome;
+      },
+    );
+  });
 
   it(
     'opens the connection with the heartbeat encoded in the URL query string — amqplib reads ' +

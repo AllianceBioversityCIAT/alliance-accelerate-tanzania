@@ -1,5 +1,7 @@
 // @sdd-spec enhancement/email-notification-microservice (T-2)
 // @sdd-spec enhancement/email-notification-microservice (T-4)
+import { randomUUID } from 'node:crypto';
+
 import * as amqp from 'amqplib';
 import { Logger } from '@nestjs/common';
 import { MailMessage, MailTransport } from './mail-transport.interface';
@@ -71,13 +73,14 @@ interface MicroserviceEmailBody {
 }
 
 /**
- * The exact NestJS RMQ wire shape (FR-2). Note what is absent: no `id`
- * property anywhere. An `id` without a `reply_to` makes the microservice
- * attempt an RPC reply nothing will consume (FR-2's `BUT`) — the fix here is
- * simply to never add one, not to add and then strip one.
+ * The exact NestJS RMQ wire shape (FR-2), request variant. `id` is what makes
+ * NestJS's `ServerRMQ` treat this as a request rather than an event — the AMQP
+ * `replyTo` property alone does not; `publishOnce` sets both together, and
+ * neither is ever sent without the other.
  */
 export interface MicroserviceMailEnvelope {
   pattern: 'send';
+  id: string;
   data: {
     apiKey: string;
     data: {
@@ -114,6 +117,7 @@ function normalizeTo(to: string | string[]): string[] {
 export function buildMicroserviceEnvelope(
   message: MailMessage,
   config: MicroserviceEnvelopeConfig,
+  id: string,
 ): MicroserviceMailEnvelope {
   // message.text is always taken verbatim into `text`; message.html (when
   // present) is always taken verbatim into `socketFile`. Neither ever falls
@@ -125,6 +129,7 @@ export function buildMicroserviceEnvelope(
 
   return {
     pattern: 'send',
+    id,
     data: {
       apiKey: config.apiKey,
       data: {
@@ -235,6 +240,13 @@ export class MicroserviceMailPublishError extends MicroserviceMailTransportError
  * at `checkQueue` time but the message came back unroutable before (or
  * alongside) its ack, i.e. it disappeared between the check and the
  * publish. */
+export class MicroserviceMailRejectedError extends MicroserviceMailTransportError {
+  constructor() {
+    super('The mail microservice reported that it could not send the message.');
+    this.name = 'MicroserviceMailRejectedError';
+  }
+}
+
 export class MicroserviceMailUndeliverableError extends MicroserviceMailTransportError {
   constructor(queueName: string) {
     super(`Message to queue "${queueName}" was returned as unroutable.`);
@@ -305,6 +317,12 @@ interface MicroserviceMailBrokerConfig {
 interface CachedMicroserviceConnection {
   model: amqp.ChannelModel;
   channel: amqp.ConfirmChannel;
+  /** Exclusive, auto-delete reply queue, created per connection and torn down
+   * with it. Its name goes on every publish as `replyTo`. */
+  replyQueue: string;
+  /** correlationId → the waiter for that publish's reply. Entries are always
+   * removed by the waiter itself, on reply or on deadline. */
+  pending: Map<string, (ok: boolean) => void>;
   /** Owned by this module, set only by the `'error'`/`'close'` listeners
    * `connectFresh` attaches (DD-5) — NOT read from any `amqplib` promise
    * API, which exposes no public "is this still open" flag. */
@@ -453,6 +471,47 @@ async function verifyQueue(
   }
 }
 
+/**
+ * Exclusive + autoDelete so the queue dies with the connection and leaves
+ * nothing on the platform team's broker.
+ *
+ * A reply's payload carries the recipient address (NestJS echoes nodemailer's
+ * `accepted` array), so nothing from it is ever put into an error message or a
+ * log line — the waiter receives a boolean and the body is dropped here.
+ */
+async function openReplyQueue(
+  entry: CachedMicroserviceConnection,
+  logger: Logger,
+): Promise<void> {
+  const { queue } = await entry.channel.assertQueue('', {
+    exclusive: true,
+    autoDelete: true,
+  });
+  entry.replyQueue = queue;
+
+  await entry.channel.consume(
+    queue,
+    (msg) => {
+      if (!msg) return;
+      const waiter = entry.pending.get(msg.properties.correlationId ?? '');
+      if (!waiter) return;
+      let ok = false;
+      try {
+        const parsed = JSON.parse(msg.content.toString('utf8')) as {
+          err?: unknown;
+          response?: { status?: number };
+        };
+        ok = parsed.err === undefined && parsed.response?.status === 201;
+      } catch {
+        // A reply we cannot parse is not an outcome we can trust.
+        logger.warn('mail microservice replied with a body this transport could not parse');
+      }
+      waiter(ok);
+    },
+    { noAck: true },
+  );
+}
+
 /** §4.3 step 2 — open a fresh connection + confirm channel, attach the
  * DD-5 listeners, and verify the queue (DD-3). Tears down anything already
  * opened if a later step fails, so a failed connect never leaks a socket
@@ -466,12 +525,19 @@ async function connectFresh(
   // `channel` is filled in immediately below; every path that can return
   // early instead throws, so callers never observe an entry with a stale
   // placeholder channel.
-  const entry = { model, channel: null, healthy: true } as unknown as CachedMicroserviceConnection;
+  const entry = {
+    model,
+    channel: null,
+    healthy: true,
+    replyQueue: '',
+    pending: new Map<string, (ok: boolean) => void>(),
+  } as unknown as CachedMicroserviceConnection;
   attachHealthListeners(entry, model, logger);
   try {
     entry.channel = await model.createConfirmChannel();
     attachHealthListeners(entry, entry.channel, logger);
     await verifyQueue(entry.channel, config.queueName, logger);
+    await openReplyQueue(entry, logger);
   } catch (err) {
     detachTeardown(entry);
     throw err;
@@ -626,6 +692,8 @@ function confirmPublish(
   channel: amqp.ConfirmChannel,
   queueName: string,
   content: Buffer,
+  replyQueue: string,
+  correlationId: string,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let wasReturned = false;
@@ -641,6 +709,8 @@ function confirmPublish(
         persistent: true, // delivery_mode = 2 (FR-1)
         mandatory: true, // DD-3
         contentType: 'application/json',
+        replyTo: replyQueue,
+        correlationId,
       },
       (err) => {
         channel.removeListener('return', onReturn);
@@ -673,14 +743,31 @@ async function publishOnce(
   queueName: string,
 ): Promise<void> {
   const content = Buffer.from(JSON.stringify(envelope), 'utf8');
+  const outcome = new Promise<boolean>((resolve) => {
+    entry.pending.set(envelope.id, resolve);
+  });
   try {
-    await confirmPublish(entry.channel, queueName, content);
+    await confirmPublish(entry.channel, queueName, content, entry.replyQueue, envelope.id);
   } catch (err) {
+    entry.pending.delete(envelope.id);
     detachTeardown(entry);
     if (cached === entry) {
       cached = undefined;
     }
     throw err instanceof MicroserviceMailTransportError ? err : new MicroserviceMailPublishError();
+  }
+
+  // The confirm says the broker took the message; this says the microservice
+  // handed it to the relay. The caller's own deadline
+  // (`MAIL_SEND_TIMEOUT_MS`) bounds the wait — a reply that never comes
+  // leaves this promise pending and the deadline rejects for us, so there is
+  // no second timer here. The `finally` is what keeps `pending` from growing.
+  try {
+    if (!(await outcome)) {
+      throw new MicroserviceMailRejectedError();
+    }
+  } finally {
+    entry.pending.delete(envelope.id);
   }
 }
 
@@ -779,7 +866,7 @@ export class MicroserviceMailTransport implements MailTransport {
     // Same destructure-not-spread discipline as `send()` — `envelopeConfig`
     // was already built as its own narrow literal there, and is passed
     // through unchanged rather than merged with `brokerConfig`.
-    const envelope = buildMicroserviceEnvelope(message, envelopeConfig);
+    const envelope = buildMicroserviceEnvelope(message, envelopeConfig, randomUUID());
     await publishOnce(entry, envelope, brokerConfig.queueName);
   }
 }
