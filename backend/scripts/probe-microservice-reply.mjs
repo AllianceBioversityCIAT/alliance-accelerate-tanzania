@@ -21,48 +21,11 @@
  * mutates nothing.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = process.env.PROBE_ENV ?? join(HERE, '..', '.env');
+import { fail, loadEnv, readBrokerConfig, UNDELIVERABLE } from './probe-env.mjs';
 
 const REPLY_TIMEOUT_MS = Number(process.env.PROBE_REPLY_TIMEOUT_MS ?? 30_000);
-const UNDELIVERABLE = 'probe-no-such-mailbox@nonexistent.invalid';
-
-function loadEnv(path) {
-  let raw;
-  try {
-    raw = readFileSync(path, 'utf8');
-  } catch {
-    fail(`could not read ${path} — pass PROBE_ENV=/path/to/.env to override.`);
-  }
-  for (const line of raw.split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    const k = t.slice(0, eq).trim();
-    let v = t.slice(eq + 1).trim();
-    if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
-      v = v.slice(1, -1);
-    }
-    if (!(k in process.env)) process.env[k] = v;
-  }
-}
-
-function fail(msg) {
-  console.error(`\n✖ ${msg}`);
-  process.exit(2);
-}
-
-function required(name) {
-  const v = process.env[name];
-  if (!v) fail(`missing required env var ${name}`);
-  return v;
-}
 
 /** Keep the API key out of stdout even if the microservice echoes it back. */
 function redact(text, apiKey) {
@@ -91,14 +54,10 @@ function parseArgs(argv) {
 }
 
 async function main() {
-  loadEnv(ENV_PATH);
+  loadEnv();
   const { to, undeliverable } = parseArgs(process.argv.slice(2));
 
-  const rabbitmqUrl = required('RABBITMQ_URL');
-  const apiKey = required('MICROSERVICE_API_KEY');
-  const queueName = required('EMAIL_QUEUE_NAME');
-  const senderAddress = required('EMAIL_SENDER');
-  const senderName = process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -';
+  const { rabbitmqUrl, apiKey, queueName, senderAddress, senderName } = readBrokerConfig();
 
   const correlationId = randomUUID();
 

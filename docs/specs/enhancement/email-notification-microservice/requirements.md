@@ -79,10 +79,25 @@ D-F, D-G and D-H are the classes that matter most and the ones no green test cov
 - **Acceptance criteria:**
   - GIVEN a rendered `MailMessage`
   - WHEN it is published
-  - THEN the body is `{ "pattern": "send", "data": { "apiKey": <key>, "data": { "from": {...}, "emailBody": {...} } } }`
+  - THEN the body is `{ "pattern": "send", "id": <uuid>, "data": { "apiKey": <key>, "data": { "from": {...}, "emailBody": {...} } } }`
   - AND `MailMessage.html` maps to `emailBody.message.socketFile`, and `MailMessage.text` to `emailBody.message.text`
   - AND `emailBody.to` is always an **array** of addresses, never a comma-joined string
-  - **BUT it must NOT** include an `id` property — an `id` without `reply_to` makes the microservice attempt an RPC reply nothing will consume
+  - **AND IT MUST** carry `id` at the **top level only**, always published together with an AMQP `replyTo` property and never one without the other — `id` is what makes NestJS's `ServerRMQ` treat the message as a request rather than an event, and the `replyTo` property alone does not. It must not appear inside `data`: the microservice's own DTO has no such field.
+
+    > ⚠️ **Reversed 2026-09-28 (ATP-70, `fix/mail-failures-surfaced`).** This
+    > clause used to read, verbatim: *"**BUT it must NOT** include an `id`
+    > property — an `id` without `reply_to` makes the microservice attempt an
+    > RPC reply nothing will consume"*. That was correct on its own premise —
+    > nothing consumed a reply, so the reply was waste. The premise no longer
+    > holds: the transport opens an exclusive reply queue per connection and
+    > awaits the outcome, because a publisher confirm attests that RabbitMQ
+    > accepted the message and says nothing about whether mail was sent. The
+    > old clause's mechanism claim was also incomplete — it is `id` in the
+    > **body**, not the `replyTo` property, that decides request-vs-event,
+    > which was established by probe against the deployed broker
+    > (`backend/scripts/probe-microservice-reply.mjs`) rather than reasoned.
+    > The **`reply_to`-in-the-body** prohibition survives unchanged: the reply
+    > address is an AMQP property, never an envelope field.
   - **BUT it must NOT** place HTML in `message.text`, nor use the `message.file` field (HTTP-only; ignored on the queue path)
   - **AND IT MUST** send both `text` and `socketFile` whenever the message carries HTML, so text-only clients, screen readers and spam scoring keep their fallback
 

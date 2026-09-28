@@ -24,62 +24,22 @@
  * Reads backend/.env. Prints no credential.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = process.env.PROBE_ENV ?? join(HERE, '..', '.env');
-const UNDELIVERABLE = 'probe-no-such-mailbox@nonexistent.invalid';
+import { fail, loadEnv, readBrokerConfig, UNDELIVERABLE } from './probe-env.mjs';
+
 const REPLY_TIMEOUT_MS = 30_000;
-
-function fail(msg) {
-  console.error(`\n✖ ${msg}`);
-  process.exit(2);
-}
-
-function loadEnv(path) {
-  let raw;
-  try {
-    raw = readFileSync(path, 'utf8');
-  } catch {
-    fail(`could not read ${path} — pass PROBE_ENV=/path/to/.env to override.`);
-  }
-  for (const line of raw.split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq === -1) continue;
-    const k = t.slice(0, eq).trim();
-    let v = t.slice(eq + 1).trim();
-    if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
-      v = v.slice(1, -1);
-    }
-    if (!(k in process.env)) process.env[k] = v;
-  }
-}
-
-function required(name) {
-  const v = process.env[name];
-  if (!v) fail(`missing required env var ${name}`);
-  return v;
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  loadEnv(ENV_PATH);
+  loadEnv();
 
   const i = process.argv.indexOf('--idle');
   const idleSeconds = i !== -1 ? Number(process.argv[i + 1]) : 360;
   if (!Number.isFinite(idleSeconds) || idleSeconds < 0) fail('--idle takes a number of seconds.');
 
-  const rabbitmqUrl = required('RABBITMQ_URL');
-  const apiKey = required('MICROSERVICE_API_KEY');
-  const queueName = required('EMAIL_QUEUE_NAME');
-  const senderAddress = required('EMAIL_SENDER');
-  const senderName = process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -';
+  const { rabbitmqUrl, apiKey, queueName, senderAddress, senderName } = readBrokerConfig();
 
   console.log('── idle-survival probe ──────────────────────────────────────');
   console.log(`  queue         : ${queueName}`);
