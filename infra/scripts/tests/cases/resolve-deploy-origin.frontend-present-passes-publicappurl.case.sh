@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# resolve-deploy-origin.frontend-present-passes-cloudfronturl.case.sh
+# resolve-deploy-origin.frontend-present-passes-publicappurl.case.sh
 # (T-5, script-integration)
 # ---------------------------------------------------------------------------
 # requirements.md FR-4's first clause: GIVEN a 30-frontend stack exporting
-# CloudFrontUrl WHEN deploy.sh runs THEN it passes that URL as
+# PublicAppUrl WHEN deploy.sh runs THEN it passes that URL as
 # AllowedOrigin. Runs the REAL, unmodified deploy.sh (DD-2) all the way to
 # the backend `sam deploy` call and asserts the resolved URL is literally
 # what gets passed in --parameter-overrides — not merely that a lookup
@@ -57,6 +57,10 @@ case "\$1 \$2" in
     ;;
   "cloudformation describe-stacks")
     case "\$args" in
+      *PublicAppUrl*)
+        echo "https://app.example.org"
+        exit 0
+        ;;
       *CloudFrontUrl*)
         echo "https://dabc123.cloudfront.net"
         exit 0
@@ -97,5 +101,9 @@ status=$?
 set -e
 
 assert_status 0 "$status" "frontend present: deploy.sh runs to completion"
-assert_contains "AllowedOrigin=https://dabc123.cloudfront.net" "$output" "the resolved CloudFrontUrl is literally what's passed as AllowedOrigin"
-assert_contains "AllowedOrigin = https://dabc123.cloudfront.net (resolved from live stack" "$output" "origin resolution announces where the value came from"
+assert_contains "AllowedOrigin=https://app.example.org" "$output" "the resolved PublicAppUrl is literally what's passed as AllowedOrigin"
+assert_contains "AllowedOrigin = https://app.example.org (resolved from live stack" "$output" "origin resolution announces where the value came from"
+# Distinct stub values per output, so this cannot pass by reading the wrong one:
+# the canonical origin must come from PublicAppUrl and the second from
+# CloudFrontUrl, never the reverse.
+assert_contains "LegacyAllowedOrigin=https://dabc123.cloudfront.net" "$output" "the resolved CloudFrontUrl is passed as the second accepted origin"

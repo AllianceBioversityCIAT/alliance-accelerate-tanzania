@@ -11,8 +11,10 @@ Parameters:
   AllowedOrigin:
     Type: String
     Description: >-
-      CORS allow-origin for the HTTP API. Default `*` for the dev bootstrap
-      (step 3); locked to the CloudFront URL on the set-cors redeploy (step 5,
+      CORS allow-origin for the HTTP API - the app's canonical origin, which
+      the deploy scripts resolve from the frontend stack's PublicAppUrl output
+      (the custom domain once one is set). Default `*` for the dev bootstrap
+      (step 3); locked to the real origin on the set-cors redeploy (step 5,
       FR-6, DD-6).
     Default: "*"
   PublicAppBaseUrl:
@@ -24,6 +26,13 @@ Parameters:
       resolves to the live CloudFront URL on every steady-state deploy; set it
       explicitly once the app moves to its own domain, or whenever the CORS
       origin and the public URL stop being the same value. No trailing slash.
+    Default: ""
+  LegacyAllowedOrigin:
+    Type: String
+    Description: >-
+      A second origin to keep accepting alongside AllowedOrigin - the
+      distribution's own *.cloudfront.net URL, which still serves the app after
+      a custom domain is aliased onto it. Empty allows AllowedOrigin alone.
     Default: ""
   DataAuthStackName:
     Type: String
@@ -62,6 +71,7 @@ Conditions:
   # AllowedOrigin is "*", which is not a usable link — mail.config.ts rejects
   # it rather than mailing "*/register/status/" to an applicant.
   HasExplicitPublicAppBaseUrl: !Not [!Equals [!Ref PublicAppBaseUrl, ""]]
+  HasLegacyAllowedOrigin: !Not [!Equals [!Ref LegacyAllowedOrigin, ""]]
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -422,8 +432,13 @@ Resources:
       # Public reads use GET + OPTIONS (CORS preflight); POST/PATCH/DELETE are
       # now allowed for the Admin user-management module write endpoints (T-6).
       CorsConfiguration:
-        AllowOrigins:
-          - !Ref AllowedOrigin
+        # A list, so the *.cloudfront.net address keeps working after the
+        # custom domain becomes canonical. Both values come from the frontend
+        # stack's outputs - neither is written here.
+        AllowOrigins: !If
+          - HasLegacyAllowedOrigin
+          - [!Ref AllowedOrigin, !Ref LegacyAllowedOrigin]
+          - [!Ref AllowedOrigin]
         AllowMethods:
           - GET
           - OPTIONS
