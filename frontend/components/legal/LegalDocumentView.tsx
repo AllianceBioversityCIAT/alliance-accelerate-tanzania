@@ -1,3 +1,4 @@
+import React from 'react';
 // LegalDocumentView — the one shared renderer for the three public legal
 // documents (Cookie Notice, Terms of Use, Privacy Policy). T-2 (FR-7,
 // design.md §5.1, §5.3); extended T-8 to render the richer structure the
@@ -204,17 +205,24 @@ function SectionBlocks({ blocks }: Readonly<{ blocks: LegalContentBlock[] }>) {
             const firstLabel = block.entries[0]?.label ?? '';
 
             return (
-              <dl
-                key={contentKey(firstLabel, index)}
-                className="mt-3 space-y-1 text-sm leading-relaxed text-muted"
-              >
-                {block.entries.map((entry, entryIndex) => (
-                  <div key={contentKey(entry.label, entryIndex)} className="flex flex-wrap gap-x-2">
-                    <dt className="font-semibold text-fg">{entry.label}:</dt>
-                    <dd>{entry.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <React.Fragment key={contentKey(block.name ?? firstLabel, index)}>
+                {block.name && (
+                  <p className="mt-3 text-sm font-semibold leading-relaxed text-fg">
+                    {block.name}
+                  </p>
+                )}
+                <dl className="mt-1 space-y-1 text-sm leading-relaxed text-muted">
+                  {block.entries.map((entry, entryIndex) => (
+                    <div
+                      key={contentKey(entry.label, entryIndex)}
+                      className="flex flex-wrap gap-x-2"
+                    >
+                      <dt className="font-semibold text-fg">{entry.label}:</dt>
+                      <dd>{entry.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </React.Fragment>
             );
           }
 

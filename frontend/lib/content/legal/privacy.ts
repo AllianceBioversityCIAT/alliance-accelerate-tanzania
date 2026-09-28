@@ -95,12 +95,27 @@ export const PRIVACY_POLICY: LegalDocument = {
     // -----------------------------------------------------------------
     {
       heading: 'Who is Responsible for the Registry?',
-      paragraphs: [
-        'The Registry is operated by:',
-        'CIAT Address: Email:',
-        'For purposes of the Registry, this entity acts as the organization responsible for ' +
-          'the collection, use, storage, publication, and management of information submitted ' +
-          'through the platform.',
+      blocks: [
+        {
+          kind: 'paragraph',
+          text:
+            'The Registry is operated by:',
+        },
+        {
+          kind: 'contact',
+          name: 'CIAT Tanzania',
+          entries: [
+            { label: 'Address', value: 'c/o Selian Agricultural Research Institute, Dodoma Road, P.O. Box 2704, Arusha, Tanzania' },
+            { label: 'Email', value: 'S.Kalemera@cgiar.org' },
+          ],
+        },
+        {
+          kind: 'paragraph',
+          text:
+            'For purposes of the Registry, this entity acts as the organization responsible for ' +
+            'the collection, use, storage, publication, and management of information submitted ' +
+            'through the platform.',
+        },
       ],
     },
     {
