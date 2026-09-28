@@ -70,6 +70,9 @@ function redact(text, apiKey) {
 }
 
 function parseArgs(argv) {
+  // --malformed sends a `to` the microservice's own validator rejects, to find
+  // out what the reply channel CAN carry when something really does fail.
+  if (argv.includes('--malformed')) return { to: 'not-an-address', malformed: true };
   const undeliverable = argv.includes('--undeliverable');
   const i = argv.indexOf('--to');
   const to = i !== -1 ? argv[i + 1] : undefined;
@@ -99,12 +102,19 @@ async function main() {
 
   const correlationId = randomUUID();
 
+  // `id` in the BODY is what makes NestJS's ServerRMQ treat this as a request
+  // rather than an event; replyTo alone is not enough. Omit it with --no-id to
+  // reproduce today's production shape.
+  const withId = !process.argv.includes('--no-id');
+
+
   console.log('── probe ────────────────────────────────────────────────────');
   console.log(`  queue          : ${queueName}`);
   console.log(`  from           : ${senderAddress}`);
   console.log(`  to             : ${to}${undeliverable ? '  (reserved .invalid — nothing is delivered)' : '  ⚠️  REAL SEND'}`);
   console.log(`  correlationId  : ${correlationId}`);
   console.log(`  reply timeout  : ${REPLY_TIMEOUT_MS} ms`);
+  console.log(`  body \`id\`      : ${withId ? 'set (request shape)' : 'omitted (today\'s production shape)'}`);
   console.log(`  broker / key   : [set, not printed]`);
   console.log('─────────────────────────────────────────────────────────────\n');
 
@@ -120,6 +130,7 @@ async function main() {
 
   const envelope = {
     pattern: 'send',
+    ...(withId ? { id: correlationId } : {}),
     data: {
       apiKey,
       data: {
@@ -140,8 +151,11 @@ async function main() {
     const timer = setTimeout(() => resolve({ kind: 'timeout' }), REPLY_TIMEOUT_MS);
     onReply = (msg) => {
       if (!msg) return;
-      if (msg.properties.correlationId !== correlationId) {
-        console.log('  (ignored a reply carrying a different correlationId)');
+      const body = msg.content.toString('utf8');
+      let bodyId;
+      try { bodyId = JSON.parse(body)?.id; } catch { /* not JSON — fall through */ }
+      if (msg.properties.correlationId !== correlationId && bodyId !== correlationId) {
+        console.log('  (ignored a reply matching neither our correlationId nor our id)');
         return;
       }
       clearTimeout(timer);
