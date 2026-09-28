@@ -998,7 +998,7 @@ Resources:
           # imported (DD-1a: this package cannot depend on backend/).
           # EMAIL_SENDER is public by construction (the From header of
           # every message this system sends) - hiding it protects nothing.
-          EMAIL_SENDER: AccelerateTZ-No-reply@cgiar.org
+          EMAIL_SENDER: alliance-acceleratetz-no-reply@cgiar.org
           EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically (same
