@@ -116,6 +116,18 @@ export const PRIVACY_POLICY: LegalDocument = {
             'the collection, use, storage, publication, and management of information submitted ' +
             'through the platform.',
         },
+        {
+          kind: 'paragraph',
+          text:
+            'Authorized members of CIAT\u2019s Nairobi-based IT team may access information ' +
+            'stored in the Registry where necessary to provide technical maintenance, ' +
+            'security, troubleshooting, and operational support. Such access is limited to ' +
+            'personnel who require it for these purposes and is subject to appropriate ' +
+            'confidentiality, security, and data protection requirements. This technical ' +
+            'support arrangement does not change the role of CIAT\u2019s Tanzania office as the ' +
+            'entity responsible for the operation of the Registry and the management of ' +
+            'information submitted through the platform.',
+        },
       ],
     },
     {

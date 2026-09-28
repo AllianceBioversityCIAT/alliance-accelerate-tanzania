@@ -117,6 +117,43 @@ describe('/privacy page — approved-copy status (T-8)', () => {
   });
 });
 
+describe('/privacy page — the Nairobi IT access disclosure', () => {
+  // A data-access disclosure, not decoration: it tells a data subject that
+  // staff in a third country (Kenya) may reach their information. It sits in
+  // "Who is Responsible for the Registry?" because it qualifies the
+  // responsible-entity statement — not in "International Storage and
+  // Access", which is about hosting, nor in "Sharing of Information", since
+  // CIAT's own IT team is not a third party.
+  it('discloses the access, its limits, and that responsibility does not move', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Who is Responsible for the Registry?' });
+    const text = region.textContent ?? '';
+
+    // Who, and for what.
+    expect(text).toMatch(/nairobi-based it team may access information stored in the registry/i);
+    expect(text).toMatch(/technical maintenance, security, troubleshooting, and operational support/i);
+    // The limits — purpose limitation and the safeguards.
+    expect(text).toMatch(/limited to personnel who require it for these purposes/i);
+    expect(text).toMatch(/confidentiality, security, and data protection requirements/i);
+    // And that it does not move the responsible entity.
+    expect(text).toMatch(/does not change the role of CIAT’s Tanzania office/i);
+  });
+
+  it('states the arrangement in the present tense, not as a future promise', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Who is Responsible for the Registry?' });
+    const text = region.textContent ?? '';
+
+    // A policy describes what governs now. "will be limited"/"will be
+    // subject" reads as a commitment still outstanding — the same weakness
+    // removed from CIAT's "Users will be provided with appropriate notice".
+    expect(text).not.toMatch(/will be limited to personnel/i);
+    expect(text).not.toMatch(/will be subject to appropriate/i);
+  });
+});
+
 describe('/privacy page — the Cookies and Analytics section (CIAT-requested expansion)', () => {
   // This section is the ONE part of CIAT's Privacy Policy that is not carried
   // verbatim, and D-10 is superseded here. D-10 held that /privacy must not
