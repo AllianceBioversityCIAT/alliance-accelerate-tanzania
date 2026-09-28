@@ -27,7 +27,10 @@ jest.unstable_mockModule('@aws-crypto/client-node', () => ({
   CommitmentPolicy: { REQUIRE_ENCRYPT_ALLOW_DECRYPT: 'REQUIRE_ENCRYPT_ALLOW_DECRYPT' },
 }));
 
-const publishMock = jest.fn((_exchange, _queue, _content, _opts, cb) => cb(null));
+const publishMock = jest.fn((_exchange, _queue, _content, opts, cb) => {
+  cb(null);
+  deliverReply(opts);
+});
 // T-4 attempt 3, ADVISORY 3 — the mocked confirm channel needs `once`/
 // `removeListener` now that index.mjs attaches a 'return' listener before
 // every publish (mirrors amqp.ConfirmChannel's real EventEmitter surface).
@@ -40,11 +43,44 @@ const channelOnceMock = jest.fn((event, cb) => {
   }
 });
 const channelRemoveListenerMock = jest.fn();
-const createConfirmChannelMock = jest.fn(async () => ({
+
+// ATP-70 — the channel now opens an exclusive reply queue and consumes from
+// it, because a broker confirm attests only that RabbitMQ took the message,
+// never that any mail was sent. `capturedOnReply` holds the consumer so a
+// test can answer a publish, and `replyBehavior` decides how: 'sent' is the
+// microservice's 201 shape, 'rejected' its error shape, 'none' silence (the
+// reply timeout's case).
+let capturedOnReply;
+let replyBehavior = 'sent';
+const assertQueueMock = jest.fn(async () => ({ queue: 'amq.gen-fake-reply' }));
+const consumeMock = jest.fn(async (_queue, handler) => {
+  capturedOnReply = handler;
+  return { consumerTag: 'fake' };
+});
+
+/** Answer the publish the way the microservice would. Called synchronously
+ * from the publish stub: `publishEnvelope` registers its consumer BEFORE
+ * publishing, so the handler is always in place by then. */
+function deliverReply(options) {
+  if (replyBehavior === 'none' || !capturedOnReply) return;
+  const body =
+    replyBehavior === 'sent'
+      ? { response: { status: 201, description: 'Email sent successfully' }, isDisposed: true }
+      : { err: {}, isDisposed: true };
+  capturedOnReply({
+    properties: { correlationId: options?.correlationId },
+    content: Buffer.from(JSON.stringify(body), 'utf8'),
+  });
+}
+
+const channelStub = () => ({
   publish: publishMock,
   once: channelOnceMock,
   removeListener: channelRemoveListenerMock,
-}));
+  assertQueue: assertQueueMock,
+  consume: consumeMock,
+});
+const createConfirmChannelMock = jest.fn(async () => channelStub());
 const connectionCloseMock = jest.fn(async () => {});
 const connectMock = jest.fn(async () => ({
   createConfirmChannel: createConfirmChannelMock,
@@ -158,7 +194,17 @@ beforeEach(() => {
     messageHeader: {},
   });
   secretsSendMock.mockResolvedValue({ SecretString: JSON.stringify(SECRET) });
-  publishMock.mockImplementation((_exchange, _queue, _content, _opts, cb) => cb(null));
+  replyBehavior = 'sent';
+  capturedOnReply = undefined;
+  assertQueueMock.mockImplementation(async () => ({ queue: 'amq.gen-fake-reply' }));
+  consumeMock.mockImplementation(async (_queue, handler) => {
+    capturedOnReply = handler;
+    return { consumerTag: 'fake' };
+  });
+  publishMock.mockImplementation((_exchange, _queue, _content, opts, cb) => {
+    cb(null);
+    deliverReply(opts);
+  });
   connectMock.mockImplementation(async () => ({
     createConfirmChannel: createConfirmChannelMock,
     close: connectionCloseMock,
@@ -168,11 +214,7 @@ beforeEach(() => {
       capturedOnReturn = cb;
     }
   });
-  createConfirmChannelMock.mockImplementation(async () => ({
-    publish: publishMock,
-    once: channelOnceMock,
-    removeListener: channelRemoveListenerMock,
-  }));
+  createConfirmChannelMock.mockImplementation(async () => channelStub());
 });
 
 afterEach(() => {
@@ -337,11 +379,55 @@ describe('NFR-1 — the decrypted code and the recipient address never reach a l
 // field-for-field against `buildMicroserviceEnvelope`
 // (backend/src/mail/microservice-mail.transport.ts), which this task read
 // in full rather than re-deriving from memory. A renamed `socketFile`, a
-// composite `from`, a comma-joined `to`, or a stray `id`/`reply_to` must
-// each redden this.
+// composite `from`, a comma-joined `to`, or a stray `reply_to` must each
+// redden this.
+//
+// ATP-70 moved `id` from the forbidden list to the required one. It was
+// forbidden while nothing consumed a reply — an `id` with nowhere to answer
+// makes the microservice attempt an RPC reply into the void. A reply queue
+// is now opened and consumed per invocation, and `id` is what makes NestJS
+// treat the message as a request at all, so it must be present, at the top
+// level only. `reply_to` stays forbidden IN THE BODY: the reply address is
+// an AMQP property (`replyTo` in the publish options), never an envelope
+// field — the microservice's DTO has no such field and would ignore it.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ATP-70 — the reply channel. Everything else in this file proves the
+// message reached RabbitMQ; these two prove the OUTCOME reaches the caller.
+// Because this function is a Cognito CustomEmailSender trigger, throwing is
+// the only way a user ever finds out: Cognito's own ForgotPassword call then
+// fails, instead of reporting success for mail that was never sent.
+//
+// What these do NOT prove: that the mail arrived. The microservice replies
+// 201 once its SMTP relay accepts the message, and a probe against the
+// deployed broker drew a 201 for a reserved `.invalid` domain that can never
+// resolve. Bounces are asynchronous and invisible here (ATP-70 half B).
+// ---------------------------------------------------------------------------
+describe('ATP-70 — the microservice reply decides the outcome', () => {
+  it('throws when the microservice reports it could not send — mutation: dropping the ' +
+    '`if (!outcome) throw` in publishEnvelope reddens this and nothing else', async () => {
+    replyBehavior = 'rejected';
+
+    await expect(handler(forgotPasswordEvent())).rejects.toThrow(/failed to publish to the mail broker/);
+  });
+
+  it('throws when the microservice never replies — the wait is bounded, so a silent ' +
+    'microservice cannot hold the trigger past Cognito\'s own ceiling', async () => {
+    replyBehavior = 'none';
+
+    // Real timers, and therefore a real REPLY_TIMEOUT_MS wait (4 s). Fake
+    // timers were considered and rejected: the promise being raced is settled
+    // from a mocked AMQP consumer, so driving it under fake timers would test
+    // the harness's scheduling rather than the bound itself. Four seconds
+    // once is a fair price for an assertion that actually exercises the
+    // timeout. If the bound were removed, this test would hang instead of
+    // failing — that is the mutation signal.
+    await expect(handler(forgotPasswordEvent())).rejects.toThrow(/failed to publish to the mail broker/);
+  }, 15_000);
+});
+
 describe('DD-3a — the published envelope mirrors buildMicroserviceEnvelope\'s exact shape', () => {
-  it('publishes pattern/data/data/from/emailBody exactly, with to as a trimmed array and no id or reply_to', async () => {
+  it('publishes pattern/data/data/from/emailBody exactly, with to as a trimmed array, a top-level id, and no reply_to in the body', async () => {
     await handler(forgotPasswordEvent());
 
     expect(publishMock).toHaveBeenCalledTimes(1);
@@ -353,6 +439,7 @@ describe('DD-3a — the published envelope mirrors buildMicroserviceEnvelope\'s 
     const envelope = JSON.parse(content.toString('utf8'));
     expect(envelope).toStrictEqual({
       pattern: 'send',
+      id: expect.any(String),
       data: {
         apiKey: SECRET.apiKey,
         data: {
@@ -372,16 +459,31 @@ describe('DD-3a — the published envelope mirrors buildMicroserviceEnvelope\'s 
       },
     });
 
-    // Redundant with toStrictEqual above, stated explicitly because these
-    // three are the exact wire-format defects already recorded against
-    // this shape elsewhere in this repo (DD-3a) — a future edit that
-    // reintroduces any one of them must fail here, unambiguously.
-    expect(envelope).not.toHaveProperty('id');
+    // Stated explicitly because these are the exact wire-format defects
+    // already recorded against this shape elsewhere in this repo (DD-3a) —
+    // a future edit that reintroduces any one of them must fail here,
+    // unambiguously.
+    //
+    // The id must be a real correlation value AND must agree with the AMQP
+    // `correlationId` we published under: NestJS echoes the BODY's `id` back
+    // as the reply's correlationId, while the consumer matches on what we
+    // published. If the two ever diverged, every reply would arrive
+    // unmatched and every reset would fail on the reply timeout even though
+    // the mail went out.
+    expect(envelope.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(options.correlationId).toBe(envelope.id);
+    expect(options.replyTo).toBe('amq.gen-fake-reply');
     expect(envelope.data).not.toHaveProperty('id');
     expect(envelope.data).not.toHaveProperty('reply_to');
+    // `"reply_to"` stays forbidden anywhere in the serialized body. The
+    // companion `not.toContain('"id"')` assertion was removed rather than
+    // adjusted: `id` is now required at the top level, so a raw-substring
+    // check on it can only be either always-true or always-false — the
+    // structural assertions above are what pin its placement.
     const raw = content.toString('utf8');
     expect(raw).not.toContain('"reply_to"');
-    expect(raw).not.toContain('"id"');
   });
 
   it('never sends the "to" field as a comma-joined string', async () => {

@@ -361,7 +361,7 @@ Unchanged. The microservice prepends `TEST - ` for non-PROD keys; the environmen
 
 | Layer | Coverage | Requirements |
 |---|---|---|
-| Unit — envelope builder (pure) | Exact JSON; `html`→`socketFile`; `to` always an array; **no `id`**; HTML never in `text`; both parts when HTML exists; **`from.email`/`from.name` separate, never a `"Name" <addr>` composite** | FR-2, **FR-4**, DD-8 |
+| Unit — envelope builder (pure) | Exact JSON; `html`→`socketFile`; `to` always an array; **top-level `id`, and none deeper** (was **no `id`** — reversed 2026-09-28, ATP-70); HTML never in `text`; both parts when HTML exists; **`from.email`/`from.name` separate, never a `"Name" <addr>` composite** | FR-2, **FR-4**, DD-8 |
 | Unit — config | Throws naming each of the **four** required transport variables (§4.5); `EMAIL_SENDER_NAME` defaults; rejects a kind invalid for the phase; resolves lazily; never echoes a secret | FR-3 |
 | Unit — lifecycle (mocked `amqplib`) | Reuses a healthy pair; **a hanging probe is cut at `PROBE_TIMEOUT` and still leaves budget to reconnect**; a probe returning `NOT_FOUND` throws a configuration error **without** reconnecting; retries the connection once; **never republishes** after a publish-phase failure; releases the mutex on every path **including the timeout**; detaches cleanup | FR-1, NFR-1, NFR-2, DD-4, DD-11 |
 | Unit — `checkQueue` | A non-existent queue fails loudly as a configuration error; **never creates a queue**; `consumerCount == 0` warns without failing | FR-1, DD-3, D-J′ |
