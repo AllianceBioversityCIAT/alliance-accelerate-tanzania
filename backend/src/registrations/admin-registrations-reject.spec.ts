@@ -384,6 +384,30 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
       ).resolves.toBeDefined();
     });
 
+    // ATP-70 — same treatment as approve's. The rejection stays committed
+    // and the call still resolves; the difference is that the admin now
+    // learns the applicant was not reached instead of the outcome being
+    // discarded.
+    it('reports emailSent: false when the notification failed — mutation: returning a hardcoded `true` from dispatchRejectionEmail reddens this', async () => {
+      const tx = buildRejectTx();
+      wireRejectTransaction(tx);
+      mailService.sendRejection.mockRejectedValueOnce(new Error('mail transport unavailable'));
+
+      const result = await service.reject('reg-reject-1', REASON as never, ACTING_SUB);
+
+      expect(result.emailSent).toBe(false);
+      expect(result.registration.status).toBe('REJECTED');
+    });
+
+    it('reports emailSent: true on the happy path — without this the flag could be hardcoded false and still pass the test above', async () => {
+      const tx = buildRejectTx();
+      wireRejectTransaction(tx);
+
+      const result = await service.reject('reg-reject-1', REASON as never, ACTING_SUB);
+
+      expect(result.emailSent).toBe(true);
+    });
+
     it('the transaction never calls sendRejection itself — only the post-await dispatch does', async () => {
       const tx = buildRejectTx();
       wireRejectTransaction(tx);

@@ -366,6 +366,14 @@ export interface RegistrationApproveResult {
     publishedActorId: string | null;
   };
   actor: AdminActor;
+  /** Whether the applicant's approval notice actually went out. `false` never
+   * means the approval failed — it is committed before the mail is dispatched
+   * (DD-9) — only that the applicant has not been told. Mirrors
+   * `users.service.ts`'s `emailSent`, and is only meaningful now that the
+   * transport awaits the microservice's outcome (ATP-70): before that, a
+   * broker confirm was the strongest signal available and this would have
+   * read `true` for mail that was never sent. */
+  emailSent: boolean;
 }
 
 /**
@@ -384,6 +392,8 @@ export interface RegistrationRejectResult {
     reference: string;
     status: RegistrationStatus;
   };
+  /** See {@link RegistrationApproveResult.emailSent} — identical semantics. */
+  emailSent: boolean;
 }
 
 /**
@@ -1051,9 +1061,9 @@ export class AdminRegistrationsService {
     // has committed, using values returned FROM that (already-committed)
     // result. `fix/otp-mail-lambda-freeze` — now AWAITED (see this
     // method's class doc above); the send's own failure stays non-fatal.
-    await this.dispatchApprovalEmail(submitterEmail, registration.reference);
+    const emailSent = await this.dispatchApprovalEmail(submitterEmail, registration.reference);
 
-    return { registration, actor };
+    return { registration, actor, emailSent };
   }
 
   /**
@@ -1185,9 +1195,9 @@ export class AdminRegistrationsService {
     // value returned FROM that (already-committed) result — same placement
     // discipline as approve's dispatchApprovalEmail. `fix/otp-mail-lambda-
     // freeze` — now AWAITED; the send's own failure stays non-fatal.
-    await this.dispatchRejectionEmail(submitterEmail, registration.reference);
+    const emailSent = await this.dispatchRejectionEmail(submitterEmail, registration.reference);
 
-    return { registration };
+    return { registration, emailSent };
   }
 
   /**
@@ -1268,14 +1278,16 @@ export class AdminRegistrationsService {
    * method's latency, so there is no oracle to protect against. The catch
    * below is unchanged: still non-fatal, still class-name-only.
    */
-  private async dispatchApprovalEmail(to: string, reference: string): Promise<void> {
+  private async dispatchApprovalEmail(to: string, reference: string): Promise<boolean> {
     try {
       await this.mailService.sendApproval(to, reference);
+      return true;
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration approval notification send failed: errorType=${errorType} reference=${reference}`,
       );
+      return false;
     }
   }
 
@@ -1288,14 +1300,16 @@ export class AdminRegistrationsService {
    * fire-and-forget, for the same production reason documented on
    * `dispatchApprovalEmail` above; no constant-time floor here either.
    */
-  private async dispatchRejectionEmail(to: string, reference: string): Promise<void> {
+  private async dispatchRejectionEmail(to: string, reference: string): Promise<boolean> {
     try {
       await this.mailService.sendRejection(to, reference);
+      return true;
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration rejection notification send failed: errorType=${errorType} reference=${reference}`,
       );
+      return false;
     }
   }
 }
