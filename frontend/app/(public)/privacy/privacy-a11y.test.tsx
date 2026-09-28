@@ -117,64 +117,122 @@ describe('/privacy page — approved-copy status (T-8)', () => {
   });
 });
 
-describe('/privacy page — Legal’s Cookies section (FR-5 scenario (b), D-4, D-10)', () => {
-  // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): editing one word of
-  // Legal's Cookies section in privacy.ts must redden this assertion. Run
-  // with one word changed, observe red, then revert — see the
-  // Implementer's report for the failing output. This test hardcodes its
-  // own independent copy of Legal's exact wording (not imported from
-  // privacy.ts), so an edit to the source is genuinely caught rather than
-  // trivially agreeing with itself.
-  it('is carried verbatim and unamended — every paragraph/bullet text matches Legal’s source exactly, in order', () => {
+describe('/privacy page — the Cookies and Analytics section (CIAT-requested expansion)', () => {
+  // This section is the ONE part of CIAT's Privacy Policy that is not carried
+  // verbatim, and D-10 is superseded here. D-10 held that /privacy must not
+  // name Google — that the recipient disclosure belonged only on /cookies.
+  // CIAT then asked, against this very section, to "confirm whether the
+  // platform uses any analytics, tracking, advertising, or third-party
+  // monitoring tools" and said the section "will need to be expanded to
+  // describe the specific technologies, purposes, data collected, retention
+  // periods, and any applicable consent requirements". Naming Google is now
+  // required by the document's own author, so the old assertion is inverted
+  // rather than deleted — a reader of this file should find the reversal and
+  // its reason, not a silently missing test.
+  it('names Google Analytics 4 as the technology and Google as the recipient (supersedes D-10)', () => {
     renderPrivacyPage();
 
-    const region = screen.getByRole('region', { name: 'Cookies' });
-    // Only the <p>/<li> elements that came from Legal's own blocks — the
-    // engineering pointer paragraph (asserted separately below) is the
-    // LAST <p>, deliberately excluded here by slicing it off, so this
-    // comparison is scoped to Legal's words only.
-    const allParagraphsAndItems = Array.from(region.querySelectorAll('p, li')).map(
-      (el) => el.textContent,
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const text = region.textContent ?? '';
+
+    expect(text).toMatch(/google analytics 4/i);
+    expect(text).toMatch(/recipient: google/i);
+  });
+
+  it('states the single actual purpose and denies the four CIAT originally listed', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const text = region.textContent ?? '';
+
+    // The one purpose that occurs.
+    expect(text).toMatch(/aggregated and non-identifiable statistics/i);
+    // CIAT's original opening named operation, security, functionality and
+    // performance. None of them uses a cookie here, and the section now says
+    // so explicitly rather than leaving the reader with the wider claim.
+    expect(text).toMatch(
+      /stores none for authentication, security, fraud prevention or performance purposes/i,
     );
-    const actual = allParagraphsAndItems.slice(0, -1); // drop the trailing pointer <p>
+  });
 
-    // This is this test's OWN independent copy of Legal's exact wording
-    // (not imported from privacy.ts) — an edit to the source is genuinely
-    // caught, rather than the test trivially agreeing with itself.
-    const expectedLegalText = [
-      'The Registry may use cookies and similar technologies to support the operation, security, functionality, and performance of the platform.',
-      'Cookies are small text files that are stored on a user’s device when visiting a website. These technologies may be used to:',
-      'Enable and maintain essential platform functionality;',
-      'Authenticate administrator sessions and maintain secure access to administrative features;',
-      'Improve the performance and reliability of the Registry;',
-      'Detect and prevent unauthorized access, fraud, or misuse;',
-      'Generate aggregated and non-identifiable statistics regarding the use of the Registry; and',
-      'Support troubleshooting, maintenance, and security monitoring activities.',
-      'Users will be provided with appropriate notice to manage cookie preferences.',
-      'Users may also manage or disable cookies through their browser settings. Please note that disabling certain cookies may affect the availability or functionality of some features of the Registry.',
-      'The Registry does not use cookies to collect personal information beyond what is reasonably necessary for the purposes described in this Privacy Policy.',
-      'For additional information regarding the technologies used by the Registry, users may contact CIAT using the contact details provided in this Privacy Policy.',
-    ];
+  it('carries the four disclosures CIAT asked for: technology, data, recipient, retention', () => {
+    renderPrivacyPage();
 
-    expect(actual).toEqual(expectedLegalText);
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const items = Array.from(region.querySelectorAll('li')).map((el) => el.textContent ?? '');
+
+    // The policy states what the cookies DO; their literal names live on
+    // /cookies, where a reader who wants to verify them in the browser will
+    // look. A name informs nobody on its own — `_ga_*` is glob notation.
+    expect(
+      items.some((i) => /cookies stored: two cookies set by google analytics/i.test(i)),
+    ).toBe(true);
+    expect(
+      items.some((i) => /without identifying the person using it/i.test(i)),
+    ).toBe(true);
+    expect(items.some((i) => /information collected:/i.test(i))).toBe(true);
+    expect(items.some((i) => /recipient:/i.test(i))).toBe(true);
+    expect(items.some((i) => /retention:/i.test(i))).toBe(true);
+  });
+
+  it('keeps the geographic granularity at city level, never softened to region or country', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+
+    // ADR-011 records understating this as a real defect caught in review.
+    expect(region.textContent ?? '').toMatch(/country, region and city level/i);
+  });
+
+  it('states that no custom event, identifier or parameter reaches Google', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const text = region.textContent ?? '';
+
+    expect(text).toMatch(/transmits no custom events, identifiers or parameters/i);
+    expect(text).toMatch(/no organisation record, profile identifier or search term is sent/i);
+  });
+
+  it('keeps the three sentences carried verbatim from CIAT', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const text = region.textContent ?? '';
+
+    expect(text).toContain(
+      'Cookies are small text files that are stored on a user’s device when visiting a website.',
+    );
+    expect(text).toContain(
+      'Users may also manage or disable cookies through their browser settings.',
+    );
+    expect(text).toContain(
+      'For additional information regarding the technologies used by the Registry, users may ' +
+        'contact CIAT using the contact details provided in this Privacy Policy.',
+    );
+  });
+
+  it('reverses CIAT\u2019s claim that disabling cookies degrades the Registry', () => {
+    renderPrivacyPage();
+
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
+    const text = region.textContent ?? '';
+
+    // CIAT's source said disabling "may affect the availability or
+    // functionality of some features". Nothing here depends on a cookie.
+    expect(text).toMatch(/does not affect its availability or functionality/i);
+    expect(text).not.toMatch(/may affect the availability or functionality/i);
   });
 
   it('closes with an engineering-authored pointer link to /cookies (D-4), not a consent-change control', () => {
     renderPrivacyPage();
 
-    const region = screen.getByRole('region', { name: 'Cookies' });
+    const region = screen.getByRole('region', { name: 'Cookies and Analytics' });
     const link = within(region).getByRole('link', { name: /cookie notice/i });
     expect(link).toHaveAttribute('href', '/cookies');
 
-    // D-4: the consent-change control lives only on /cookies, never here.
+    // D-4 still holds on this half: the control lives only on /cookies.
     expect(within(region).queryByRole('button')).not.toBeInTheDocument();
-  });
-
-  it('does NOT name Google as recipient (D-10) — that disclosure lives only on /cookies', () => {
-    renderPrivacyPage();
-
-    const bodyText = document.body.textContent ?? '';
-    expect(bodyText).not.toMatch(/google/i);
   });
 });
 

@@ -405,60 +405,123 @@ export const PRIVACY_POLICY: LegalDocument = {
       ],
     },
     {
-      // D-4 / D-10 / FR-5 scenario (b) — Legal's text below is carried
-      // VERBATIM AND UNAMENDED. Only the final block (the pointer to
-      // /cookies) is engineering-authored — see module doc above.
-      heading: 'Cookies',
+      // Cookies — the one section of CIAT's Privacy Policy that is NOT carried
+      // verbatim. Legal asked for it to be expanded ("please confirm whether
+      // the platform uses any analytics, tracking, advertising, or third-party
+      // monitoring tools… this section will need to be expanded to describe the
+      // specific technologies, purposes, data collected, retention periods, and
+      // any applicable consent requirements"), and answering that required
+      // editing, not appending.
+      //
+      // Kept verbatim from Legal: the definition of a cookie, the
+      // browser-settings sentence, and the closing contact paragraph.
+      //
+      // Changed, and why — this list is the record CIAT was given:
+      //   - the opening named four purposes (operation, security, functionality,
+      //     performance); none of them occurs. Replaced with the one that does.
+      //   - the six-bullet list described hypothetical uses. Legal asked for the
+      //     actual ones, so it is replaced by the concrete inventory below;
+      //     keeping both would have contradicted this section with itself.
+      //   - "Users will be provided with appropriate notice to manage cookie
+      //     preferences" promised a mechanism that exists; the consent
+      //     paragraph now describes it instead of promising it.
+      //   - "disabling certain cookies may affect the availability or
+      //     functionality" was inverted: nothing here depends on cookies.
+      //   - "does not use cookies to collect personal information beyond what is
+      //     reasonably necessary" was dropped for the explicit list of what IS
+      //     collected. With IP-derived geolocation that reassurance is
+      //     contestable, and a concrete list protects a reader better.
+      //
+      // The facts below were verified against the tree, not recalled: a sweep
+      // for GTM, Meta Pixel, Hotjar, Clarity, Segment, Mixpanel, Amplitude,
+      // PostHog, Sentry, Datadog and AWS analytics returned nothing, the backend
+      // emits no Set-Cookie, and the only gtag calls are GA4's own init pair.
+      heading: 'Cookies and Analytics',
       blocks: [
         {
           kind: 'paragraph',
           text:
-            'The Registry may use cookies and similar technologies to support the operation, ' +
-            'security, functionality, and performance of the platform.',
+            'Cookies are small text files that are stored on a user\u2019s device when ' +
+            'visiting a website.',
         },
         {
           kind: 'paragraph',
           text:
-            'Cookies are small text files that are stored on a user’s device when visiting a ' +
-            'website. These technologies may be used to:',
+            'The Registry uses them for one purpose: to generate aggregated and ' +
+            'non-identifiable statistics regarding the use of the Registry, and only where ' +
+            'the user has consented. The Registry does not require cookies to operate, and ' +
+            'stores none for authentication, security, fraud prevention or performance ' +
+            'purposes. A user\u2019s cookie preference, and for administrators the sign-in ' +
+            'session tokens, are held in the browser\u2019s local storage rather than in ' +
+            'cookies, and no response from the Registry\u2019s servers sets a cookie of any ' +
+            'kind.',
+        },
+        {
+          kind: 'subBlocks',
+          blocks: [
+            {
+              heading: 'Analytics technology used',
+              paragraphs: [
+                'The only analytics, tracking, advertising or third-party monitoring ' +
+                  'technology used by the Registry is Google Analytics 4. The Registry uses ' +
+                  'no tag manager, advertising pixel or session-recording tool.',
+              ],
+            },
+          ],
         },
         {
           kind: 'bullets',
           items: [
-            'Enable and maintain essential platform functionality;',
-            'Authenticate administrator sessions and maintain secure access to administrative features;',
-            'Improve the performance and reliability of the Registry;',
-            'Detect and prevent unauthorized access, fraud, or misuse;',
-            'Generate aggregated and non-identifiable statistics regarding the use of the Registry; and',
-            'Support troubleshooting, maintenance, and security monitoring activities.',
+            'Cookies stored: two cookies set by Google Analytics. They allow a returning ' +
+              'browser to be recognised as the same one, without identifying the person ' +
+              'using it. Their exact names are listed in the Cookie Notice.',
+            'Information collected: pages viewed; sessions, meaning the number of separate ' +
+              'visits; approximate geographic origin at country, region and city level, ' +
+              'derived from the user\u2019s IP address; and device and browser category.',
+            'Recipient: Google, which may process this information outside Tanzania in ' +
+              'accordance with its own terms.',
+            'Retention: Google retains event-level data for 2 months and user-level data ' +
+              'for 14 months. The user-level period restarts each time the same user visits ' +
+              'again, so it runs from a user\u2019s most recent activity rather than from their ' +
+              'first.',
           ],
         },
-        { kind: 'paragraph', text: 'Users will be provided with appropriate notice to manage cookie preferences.' },
         {
           kind: 'paragraph',
           text:
-            'Users may also manage or disable cookies through their browser settings. Please ' +
-            'note that disabling certain cookies may affect the availability or functionality ' +
-            'of some features of the Registry.',
+            'The Registry transmits no custom events, identifiers or parameters to Google. ' +
+            'No organisation record, profile identifier or search term is sent.',
         },
         {
-          kind: 'paragraph',
-          text:
-            'The Registry does not use cookies to collect personal information beyond what is ' +
-            'reasonably necessary for the purposes described in this Privacy Policy.',
+          kind: 'subBlocks',
+          blocks: [
+            {
+              heading: 'Consent and control',
+              paragraphs: [
+                'No analytics cookie is stored and no Google Analytics script is loaded ' +
+                  'before the user accepts. A user who declines, or who makes no choice, is ' +
+                  'not measured.',
+                'A user may change this choice at any time through the Cookie Notice, which ' +
+                  'also lists the cookies stored and the information they collect. Accepting ' +
+                  'takes effect immediately; declining takes effect from the next page load. ' +
+                  'Changing the choice does not delete cookies already stored on the device.',
+                'Users may also manage or disable cookies through their browser settings. ' +
+                  'Because the Registry does not depend on cookies to operate, disabling them ' +
+                  'does not affect its availability or functionality.',
+              ],
+            },
+          ],
         },
         {
           kind: 'paragraph',
           text:
             'For additional information regarding the technologies used by the Registry, ' +
-            'users may contact CIAT using the contact details provided in this Privacy Policy.',
+            'users may contact CIAT using the contact details provided in this Privacy ' +
+            'Policy.',
         },
-        // --- Engineering-authored pointer (D-4). NOT Legal's text. ---
         {
           kind: 'paragraph',
-          text:
-            'For the specific cookies this site sets today, and to change your consent ' +
-            'choice, see the',
+          text: 'For the cookies this site sets and to manage your preferences, see the ',
           link: { href: '/cookies', label: 'Cookie Notice' },
         },
       ],
