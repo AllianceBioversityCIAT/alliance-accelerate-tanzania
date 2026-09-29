@@ -787,18 +787,42 @@ Until then, the public RDS endpoint is mitigated by **TLS-required** connections
 (unverified certificate chain) and a **strong generated password** in Secrets
 Manager.
 
-The third mitigation this section used to list — **no real applicant PII today**,
-product owner, 2026-09-17: the database holds test data only, no public
-self-registration or contact-form submission from a real person received — is
-**a snapshot, and it must be re-confirmed before anyone relies on it again.**
-It was already fragile when recorded, because the self-registration write path is
-live and unauthenticated on this same environment, so it can stop being true
-without anyone acting or noticing. It is more fragile now that §1 names this
-environment production: the site is public, it carries published Privacy Policy,
-Terms of Use and Cookie Notice pages, and it invites registrations. Treat the
-snapshot as expired until checked.
+The third mitigation this section lists — **no real applicant PII yet** — is the
+one with a **known expiry**, and it is the reason the items above have a deadline
+rather than a backlog position.
+
+**The handover (product owner, 2026-09-29).** The database holds demonstration
+data only. It is shown to the client at a walkthrough meeting on **Thursday
+2026-10-01**, wiped immediately afterwards because the contents are fabricated,
+and the client then begins entering **their own real data**. From that point the
+database holds real records about real organisations and real named contact
+people, and this mitigation is gone.
+
+**The trigger is the first real record, not the date.** The meeting may move; the
+property that matters does not. A previous version of this paragraph carried a
+bare date (2026-09-17) with no expiry condition attached, which is precisely how
+it went stale unnoticed — the same defect §11's own opening now describes at the
+level of the whole environment. So: treat this mitigation as **live until the
+first real record is written, expected 2026-10-01**, and as **void from that
+moment**, whenever it actually arrives.
+
+Two consequences worth stating plainly, because they are easy to get backwards:
+
+- **The planned wipe is a data operation, not a stack operation.** Deleting rows
+  or dropping and re-seeding schemas is unaffected by `DeletionProtection`, which
+  guards the *DB instance*. Enabling deletion protection **before** the meeting
+  therefore does not interfere with the wipe, and closes the window in which a
+  mistaken stack delete during the demo preparation destroys the instance.
+- **Everything above gets harder to change after the handover, not easier.** A
+  maintenance window on a database holding the client's own working data is a
+  conversation with the client; today it is a decision internal to the team. The
+  cheap items in the hardening list — deletion protection, backup retention — are
+  reversible, take effect without downtime at their current values, and are
+  materially easier to land on **2026-09-30** than on **2026-10-02**.
 
 **Easy teardown** (section 10) is listed here as a mitigation of the *dev*
 posture and does not survive the change of role either: on a production database,
 `DeletionProtection: false` and a one-day backup window make teardown a risk
-rather than a safety valve.
+rather than a safety valve. Note that easy teardown is **not** what the
+2026-10-01 wipe needs — see above; that is a data operation, and section 10 is
+about destroying the stack.
