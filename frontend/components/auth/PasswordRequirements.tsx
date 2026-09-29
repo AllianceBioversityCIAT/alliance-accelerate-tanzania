@@ -10,7 +10,7 @@ import { PASSWORD_REQUIREMENTS_TEXT } from '@/lib/auth/password-policy';
 
 export default function PasswordRequirements({ id }: { id: string }) {
   return (
-    <p id={id} className="mt-2 text-sm text-muted">
+    <p id={id} className="mt-2 text-xs italic text-muted">
       {PASSWORD_REQUIREMENTS_TEXT}
     </p>
   );
