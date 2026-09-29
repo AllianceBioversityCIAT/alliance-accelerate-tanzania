@@ -1,0 +1,48 @@
+--- a/Jenkinsfile
++++ b/Jenkinsfile
+@@ -- 'Deploy Backend' stage, origin resolution --
+ # The app's canonical origin now comes from the frontend stack's PublicAppUrl
+ # output, NOT CloudFrontUrl. `Distribution.DomainName` — which is all
+ # CloudFrontUrl reports — only ever returns the *.cloudfront.net name and can
+ # never return an alias, so once a custom domain is aliased onto the
+ # distribution, CloudFrontUrl stops being the app's address. Resolving it into
+ # AllowedOrigin then breaks CORS for the real site and, because the backend
+ # template's PublicAppBaseUrl falls back to AllowedOrigin, sends every
+ # applicant-facing mail link to the old address.
+ #
+ # CloudFrontUrl is still resolved, as LegacyAllowedOrigin: the *.cloudfront.net
+ # address keeps serving the app, so it stays an accepted CORS origin.
+-ALLOWED_ORIGIN="$(
+-  aws cloudformation describe-stacks \
+-    --stack-name "${FRONTEND_STACK}" \
+-    --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+-    --output text --profile IBD-DEV --region "${AWS_DEFAULT_REGION}" 2>&1
+-)"
+-if [ -z "${ALLOWED_ORIGIN}" ] || [ "${ALLOWED_ORIGIN}" = "None" ]; then
+-    echo "▸ Frontend stack has no CloudFrontUrl yet — bootstrapping CORS as '*'"
+-    ALLOWED_ORIGIN='*'
+-fi
+-echo "▸ AllowedOrigin = ${ALLOWED_ORIGIN}"
++resolve_frontend_output() {
++  aws cloudformation describe-stacks \
++    --stack-name "${FRONTEND_STACK}" \
++    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
++    --output text --profile IBD-DEV --region "${AWS_DEFAULT_REGION}" 2>/dev/null
++}
++
++ALLOWED_ORIGIN="$(resolve_frontend_output PublicAppUrl || true)"
++if [ -z "${ALLOWED_ORIGIN}" ] || [ "${ALLOWED_ORIGIN}" = "None" ]; then
++    echo "▸ Frontend stack has no PublicAppUrl yet — bootstrapping CORS as '*'"
++    ALLOWED_ORIGIN='*'
++fi
++LEGACY_ALLOWED_ORIGIN="$(resolve_frontend_output CloudFrontUrl || true)"
++if [ "${LEGACY_ALLOWED_ORIGIN}" = "None" ]; then
++    LEGACY_ALLOWED_ORIGIN=''
++fi
++echo "▸ AllowedOrigin       = ${ALLOWED_ORIGIN}"
++echo "▸ LegacyAllowedOrigin = ${LEGACY_ALLOWED_ORIGIN}"
+@@ -- 'Deploy Backend' stage, --parameter-overrides --
+       AllowedOrigin="${ALLOWED_ORIGIN}" \
++      LegacyAllowedOrigin="${LEGACY_ALLOWED_ORIGIN}" \
+       DataAuthStackName="${DATA_AUTH_STACK}" \
+       MailTransport="microservice" \

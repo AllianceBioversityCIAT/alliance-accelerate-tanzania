@@ -70,7 +70,7 @@ FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 
 # Backend CORS origin (FR-4, FR-5, T-5). An explicit ALLOWED_ORIGIN from the
 # operator always wins — same precedence MAIL_TRANSPORT has, below. Otherwise
-# resolve the LIVE CloudFrontUrl output from the frontend stack via the
+# resolve the LIVE PublicAppUrl output from the frontend stack via the
 # shared resolve_stack_value helper (_guard.sh, NFR-4): read the live value
 # instead of asserting one, the same lesson MAIL_TRANSPORT already applies a
 # few lines down. '*' survives ONLY where the 30-frontend stack genuinely
@@ -83,9 +83,13 @@ FRONTEND_STACK="${FRONTEND_STACK:-accelerate-tz-dev-frontend}"
 # all, locked later by set-cors.sh (T-8, FR-6, DD-6).
 if [[ -n "${ALLOWED_ORIGIN:-}" ]]; then
   echo "==> AllowedOrigin = $ALLOWED_ORIGIN (operator override via ALLOWED_ORIGIN env var)"
+  # An operator who pins the origin gets NO lookup at all — not for the second
+  # origin either (FR-4's override clause). Only an explicit
+  # LEGACY_ALLOWED_ORIGIN adds one here.
+  LEGACY_ALLOWED_ORIGIN="${LEGACY_ALLOWED_ORIGIN:-}"
 else
   if RESOLVED_ALLOWED_ORIGIN="$(resolve_stack_value "$FRONTEND_STACK" \
-      "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue | [0]" \
+      "Stacks[0].Outputs[?OutputKey=='PublicAppUrl'].OutputValue | [0]" \
       output)"; then
     ALLOWED_ORIGIN="$RESOLVED_ALLOWED_ORIGIN"
     echo "==> AllowedOrigin = $ALLOWED_ORIGIN (resolved from live stack '$FRONTEND_STACK')"
@@ -104,6 +108,23 @@ else
         exit 1
         ;;
     esac
+  fi
+
+  # The distribution's own *.cloudfront.net address, kept as a second accepted
+  # CORS origin so it still works once a custom domain is canonical. Absent is
+  # a legitimate answer (nothing deployed yet) and means "allow AllowedOrigin
+  # alone"; the canonical resolution above has already aborted on a FAILED
+  # lookup, so reaching here with a failure is not possible.
+  if [[ -n "${LEGACY_ALLOWED_ORIGIN:-}" ]]; then
+    echo "==> LegacyAllowedOrigin = $LEGACY_ALLOWED_ORIGIN (operator override via LEGACY_ALLOWED_ORIGIN env var)"
+  elif RESOLVED_LEGACY_ORIGIN="$(resolve_stack_value "$FRONTEND_STACK" \
+      "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue | [0]" \
+      output)"; then
+    LEGACY_ALLOWED_ORIGIN="$RESOLVED_LEGACY_ORIGIN"
+    echo "==> LegacyAllowedOrigin = $LEGACY_ALLOWED_ORIGIN (resolved from live stack '$FRONTEND_STACK')"
+  else
+    LEGACY_ALLOWED_ORIGIN=""
+    echo "==> LegacyAllowedOrigin = '' — no CloudFrontUrl on stack '$FRONTEND_STACK' yet." >&2
   fi
 fi
 
@@ -497,6 +518,7 @@ sam deploy \
   --stack-name "$BACKEND_STACK" \
   --parameter-overrides \
     AllowedOrigin="$ALLOWED_ORIGIN" \
+    LegacyAllowedOrigin="$LEGACY_ALLOWED_ORIGIN" \
     DataAuthStackName="$DATA_AUTH_STACK" \
     MailTransport="$MAIL_TRANSPORT" \
   "${SAM_DEPLOY_FLAGS[@]}"

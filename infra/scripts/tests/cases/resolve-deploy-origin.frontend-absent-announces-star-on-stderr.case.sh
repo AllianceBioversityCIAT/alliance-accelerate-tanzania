@@ -54,7 +54,7 @@ case "\$1 \$2" in
     ;;
   "cloudformation describe-stacks")
     case "\$args" in
-      *CloudFrontUrl*)
+      *PublicAppUrl*|*CloudFrontUrl*)
         echo "An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id accelerate-tz-dev-frontend does not exist" >&2
         exit 255
         ;;

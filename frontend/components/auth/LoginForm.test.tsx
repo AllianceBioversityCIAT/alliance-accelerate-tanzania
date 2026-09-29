@@ -60,6 +60,7 @@ jest.mock('@/lib/auth/auth-client', () => ({
 // ---------------------------------------------------------------------------
 
 import LoginForm from './LoginForm';
+import { PASSWORD_REQUIREMENTS_TEXT } from '@/lib/auth/password-policy';
 
 /* eslint-disable */
 const { confirmNewPassword } = require('@/lib/auth/auth-client') as {
@@ -181,6 +182,18 @@ describe('LoginForm', () => {
         screen.getByRole('heading', { name: /set your new password/i })
       ).toBeInTheDocument();
     });
+  });
+
+  it('states the password policy and links it to the field via aria-describedby', async () => {
+    mockSignIn.mockResolvedValueOnce({ status: 'new_password_required' });
+
+    renderForm();
+    fillAndSubmitCredentials();
+
+    const field = await screen.findByLabelText(/new password/i);
+    const hint = screen.getByText(PASSWORD_REQUIREMENTS_TEXT);
+
+    expect(field).toHaveAttribute('aria-describedby', hint.id);
   });
 
   // ── (e) confirmNewPassword → refresh() then routes ──────────────────────────

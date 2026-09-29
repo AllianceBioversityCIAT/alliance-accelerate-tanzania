@@ -36,6 +36,7 @@
 
 import { KmsKeyringNode, buildClient, CommitmentPolicy } from '@aws-crypto/client-node';
 import * as amqp from 'amqplib';
+import { randomUUID } from 'node:crypto';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { buildPasswordResetMessage, buildAttributeVerificationMessage } from './messages.mjs';
 
@@ -279,9 +280,16 @@ async function readMicroserviceMailSecret() {
  *   - the HTML part is keyed `socketFile`, present ONLY when the message
  *     has HTML — never `file`, never `null` when absent (a third recorded
  *     defect: `file` is HTTP-only and ignored on this queue path).
- *   - NO `id` property anywhere, and NO `reply_to`: an `id` without a
- *     `reply_to` makes the microservice attempt an RPC reply nothing
- *     consumes (that file's FR-2 `BUT`, `proposal.md` §12.1).
+ *   - `id` at the TOP LEVEL, and a `replyTo` AMQP property, always
+ *     together and never one without the other (ATP-70). This reverses
+ *     what this bullet used to say — "NO `id` property anywhere, and NO
+ *     `reply_to`" — which was correct while nothing consumed a reply. A
+ *     reply queue is now opened per invocation and consumed, so the
+ *     microservice's outcome reaches us: `id` is precisely what makes
+ *     NestJS's `ServerRMQ` treat this as a request rather than an event
+ *     (the AMQP `replyTo` property alone does not — measured, not
+ *     assumed). Note the microservice's own DTO has no `id` field, so it
+ *     must stay at the top level and never appear inside `data`.
  */
 function buildEnvelope(message, config) {
   const emailMessage = message.html
@@ -290,6 +298,7 @@ function buildEnvelope(message, config) {
 
   return {
     pattern: 'send',
+    id: randomUUID(),
     data: {
       apiKey: config.apiKey,
       data: {
@@ -335,12 +344,50 @@ function buildEnvelope(message, config) {
  * so a return is never missed regardless of ordering (identical reasoning
  * to `confirmPublish`'s own docblock).
  */
+/** How long to wait for the microservice's reply. Sized from a measurement
+ * on the deployed broker (reply in 1261 ms) with generous headroom, while
+ * staying comfortably under Cognito's own trigger wait — which is shorter
+ * than this function's 15 s Lambda Timeout and is the real ceiling. */
+const REPLY_TIMEOUT_MS = 4000;
+
 async function publishEnvelope(envelope, brokerConfig) {
   let connection;
   try {
     connection = await amqp.connect(brokerConfig.rabbitmqUrl);
     const channel = await connection.createConfirmChannel();
     const content = Buffer.from(JSON.stringify(envelope), 'utf8');
+
+    // ATP-70 — the reply queue. Exclusive and auto-delete, so it dies with
+    // this connection and leaves no residue on the platform team's broker;
+    // declared anonymously ('') so the broker names it and we never touch
+    // the TARGET queue, which stays checkQueue-only.
+    const { queue: replyQueue } = await channel.assertQueue('', {
+      exclusive: true,
+      autoDelete: true,
+    });
+
+    // Registered BEFORE the publish, so a fast reply cannot arrive while
+    // nobody is listening. Matched on correlationId: the microservice echoes
+    // the envelope's `id` back, and that is the value we published under.
+    let settleReply;
+    const replied = new Promise((resolve) => {
+      settleReply = resolve;
+    });
+    await channel.consume(
+      replyQueue,
+      (msg) => {
+        if (!msg || msg.properties.correlationId !== envelope.id) return;
+        try {
+          const parsed = JSON.parse(msg.content.toString('utf8'));
+          settleReply(parsed.err === undefined && parsed.response?.status === 201);
+        } catch {
+          // A body we cannot parse is not an outcome we can trust.
+          settleReply(false);
+        }
+      },
+      { noAck: true },
+    );
+
     let wasReturned = false;
     const onReturn = () => {
       wasReturned = true;
@@ -355,6 +402,12 @@ async function publishEnvelope(envelope, brokerConfig) {
           persistent: true, // delivery_mode = 2, matching the backend transport
           mandatory: true, // ADVISORY 3 — see docblock above
           contentType: 'application/json',
+          // ATP-70 — where to answer, and under which id. These two travel
+          // together with the envelope's top-level `id` and are never sent
+          // without it: `replyTo` gives the microservice somewhere to
+          // publish, `correlationId` is what the consumer above matches on.
+          replyTo: replyQueue,
+          correlationId: envelope.id,
         },
         (err) => {
           channel.removeListener('return', onReturn);
@@ -374,6 +427,38 @@ async function publishEnvelope(envelope, brokerConfig) {
         },
       );
     });
+
+    // ATP-70 — await the OUTCOME, not just the handoff. The broker confirm
+    // above says RabbitMQ has the message; it says nothing about whether any
+    // mail was sent. Without this wait, a microservice that cannot send
+    // leaves the user reading "check your email" in front of a mailbox that
+    // will never receive anything — and since this function is a Cognito
+    // CustomEmailSender trigger, throwing here is what makes Cognito's own
+    // ForgotPassword call fail, which is how the user finds out.
+    //
+    // Bounded, and the bound matters. Cognito's wait for a trigger is much
+    // shorter than this Lambda's own 15 s Timeout, so an unbounded wait
+    // would surface as a Cognito timeout rather than a diagnosable error.
+    // Measured on the deployed broker (2026-09-28, eu-west-1): publish
+    // confirm 106 ms, microservice reply 1261 ms. REPLY_TIMEOUT_MS is set
+    // well above that and still well under Cognito's ceiling.
+    //
+    // What a success here does NOT mean: the reply is sent once the
+    // microservice's SMTP relay ACCEPTS the message. The same probe drew a
+    // 201 — with `accepted` populated and a `250 ok` — for a reserved
+    // `.invalid` domain that can never resolve. So this closes "the mail was
+    // never sent", not "the mail arrived"; a later bounce is invisible here
+    // and is tracked separately (ATP-70 half B).
+    const timer = setTimeout(() => settleReply(false), REPLY_TIMEOUT_MS);
+    let outcome;
+    try {
+      outcome = await replied;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!outcome) {
+      throw new Error('custom-email-sender: the mail microservice did not report success.');
+    }
   } catch {
     // Deliberately swallow the original error's detail here (NFR-1) — see
     // CustomEmailSenderPublishError's docblock. `handler`'s catch logs only
