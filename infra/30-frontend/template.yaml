@@ -4,10 +4,42 @@ Description: >-
   served from a PRIVATE S3 bucket exclusively via CloudFront, fronted by Origin
   Access Control (OAC) (T-5). A viewer-request CloudFront Function rewrites the
   per-route export's directory paths to their index.html so `/map` resolves
-  (DD-5). No SAM Transform - these are plain CloudFormation resources. No custom
-  domain: the default *.cloudfront.net domain is the app URL (FR-5, NFR-3).
+  (DD-5). No SAM Transform - these are plain CloudFormation resources. The app is
+  served from the custom domain in CustomDomainName, with the default
+  *.cloudfront.net domain still answering alongside it (FR-5, NFR-3).
   Stack: accelerate-tz-dev-frontend. Deploy with:
   sam deploy --profile IBD-DEV --region eu-west-1.
+
+Parameters:
+  # This stack owns the distribution, so it is the only place that can know the
+  # app's real public address - `Distribution.DomainName` only ever returns the
+  # *.cloudfront.net name, never an alias. Everything downstream derives the URL
+  # from the PublicAppUrl output below, so the domain is written HERE and nowhere
+  # else.
+  CustomDomainName:
+    Type: String
+    Description: >-
+      Public DNS name the app is served from, aliased onto this distribution.
+      Empty falls back to the default *.cloudfront.net domain.
+    Default: accelerate-tz.alliance.cgiar.org
+  AcmCertificateId:
+    Type: String
+    Description: >-
+      Id of the ACM certificate covering CustomDomainName - the uuid only; the
+      full ARN is composed below with this account's id, because an account id
+      may not be versioned under infra/ (the account-id gate in
+      scripts/tests enforces that). The certificate MUST live in us-east-1:
+      CloudFront reads certificates from that region only, whatever region the
+      stack itself is deployed in. This one is the *.alliance.cgiar.org
+      wildcard, which covers accelerate-tz.alliance.cgiar.org.
+    Default: e4741547-0e83-4c0a-b430-550d3782cdf2
+
+Conditions:
+  # Both halves are required: an alias without a matching certificate is a
+  # distribution CloudFront refuses to deploy.
+  HasCustomDomain: !And
+    - !Not [!Equals [!Ref CustomDomainName, ""]]
+    - !Not [!Equals [!Ref AcmCertificateId, ""]]
 
 Resources:
   # ════════════════════════════════════════════════════════════════════════════
@@ -148,8 +180,8 @@ Resources:
   # ════════════════════════════════════════════════════════════════════════════
   # Single private-S3 origin via OAC; redirect-to-HTTPS; the rewrite function on
   # viewer-request; AWS managed CachingOptimized policy; PriceClass_100 to keep
-  # dev cost minimal (NFR-6/§9). No aliases/ACM - uses the default CloudFront cert
-  # and *.cloudfront.net domain (NFR-3).
+  # dev cost minimal (NFR-6/§9). Aliases + ACM when CustomDomainName is set, the
+  # default CloudFront certificate and domain otherwise (NFR-3).
   Distribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -159,6 +191,18 @@ Resources:
         HttpVersion: http2
         PriceClass: PriceClass_100
         DefaultRootObject: index.html
+        # Declared here, not attached by hand. An alias that exists only in the
+        # console is removed by the next deploy of this stack, without an error.
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref CustomDomainName]
+          - !Ref AWS::NoValue
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/${AcmCertificateId}"
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
         Origins:
           - Id: FrontendS3Origin
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
@@ -207,11 +251,24 @@ Resources:
                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution.Id}"
 
 Outputs:
+  PublicAppUrl:
+    Description: >-
+      The app's canonical public URL - the custom domain when one is set, the
+      default CloudFront domain otherwise. This is what the backend CORS
+      AllowedOrigin and the mail templates' PUBLIC_APP_BASE_URL derive from
+      (FR-6, DD-6); CloudFrontUrl below cannot serve that role because it never
+      reports an alias.
+    Value: !If
+      - HasCustomDomain
+      - !Sub "https://${CustomDomainName}"
+      - !Sub "https://${Distribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicAppUrl"
   CloudFrontUrl:
     Description: >-
-      Public HTTPS app URL (default CloudFront domain). The frontend is reachable
-      here; also used as the backend CORS AllowedOrigin on the set-cors redeploy
-      (step 5, FR-6, DD-6).
+      The distribution's own *.cloudfront.net URL. Still the address
+      deploy-frontend.sh resolves the distribution Id from, and still a working
+      way to reach the app - but no longer its canonical URL: use PublicAppUrl.
     Value: !Sub "https://${Distribution.DomainName}"
     Export:
       Name: !Sub "${AWS::StackName}-CloudFrontUrl"
