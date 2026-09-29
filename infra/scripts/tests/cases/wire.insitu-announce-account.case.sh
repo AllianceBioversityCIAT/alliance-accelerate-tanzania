@@ -48,7 +48,7 @@ source "$TESTS_DIR/lib/assert.sh"
 
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 
-WRITING_SCRIPTS=(deploy.sh deploy-frontend.sh set-cors.sh migrate-seed.sh teardown.sh)
+WRITING_SCRIPTS=(deploy.sh deploy-frontend.sh deploy-data-auth.sh set-cors.sh migrate-seed.sh teardown.sh)
 
 RECIPE="$(mktemp)"
 trap 'rm -f "$RECIPE"' EXIT

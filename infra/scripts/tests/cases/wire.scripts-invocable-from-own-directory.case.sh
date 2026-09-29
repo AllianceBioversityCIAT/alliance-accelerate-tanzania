@@ -60,6 +60,7 @@ SCRIPTS=(
   teardown.sh
   migrate-seed.sh
   deploy-frontend.sh
+  deploy-data-auth.sh
   validate.sh
 )
 

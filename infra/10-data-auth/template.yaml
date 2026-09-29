@@ -189,14 +189,17 @@ Parameters:
       NFR-3) - mirrors `config.mjs`'s `getPublicAppBaseUrl()`, which throws
       rather than emitting a link built from an unset/`*`/non-http(s) value.
       This template's own `Default` still stays EMPTY (THIS stack has no
-      AllowedOrigin of its own to fall back to) - but `infra/scripts/
-      deploy.sh` (T-6, widened past DD-2c with the user's approval after a
-      Reviewer escalation) now resolves this parameter from
-      `$ALLOWED_ORIGIN`, the same value it already computed for the
-      frontend stack's live `CloudFrontUrl` output, so a normal deploy no
-      longer leaves it empty. Left empty (e.g. a direct `sam deploy` that
-      bypasses `deploy.sh`), the attribute-verification message throws
-      when invoked. ⚠️ CORRECTED post-deploy (validation-report.md B-4):
+      AllowedOrigin of its own to fall back to). TWO scripts fill it, both
+      from the frontend stack's `PublicAppUrl` output - the one place the
+      public domain is written: `infra/scripts/deploy.sh` (T-6, widened
+      past DD-2c with the user's approval after a Reviewer escalation) via
+      `$ALLOWED_ORIGIN`, and `infra/scripts/deploy-data-auth.sh` for a
+      targeted deploy of THIS stack alone. Use one of them. A direct
+      `sam deploy` that bypasses both does NOT leave this empty and does
+      NOT throw - CloudFormation keeps the STORED value for any parameter
+      absent from `--parameter-overrides`, so the links keep pointing
+      wherever the last full deploy happened to resolve, with nothing
+      failing. That silence is why the dedicated script exists. ⚠️ CORRECTED post-deploy (validation-report.md B-4):
       that message is shared by TWO handled sources -
       `CustomEmailSender_UpdateUserAttribute`, which an admin email edit
       measurably emits and which is therefore the first LIVE path

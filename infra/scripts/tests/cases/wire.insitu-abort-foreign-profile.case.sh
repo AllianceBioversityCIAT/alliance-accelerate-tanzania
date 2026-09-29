@@ -31,7 +31,7 @@ source "$TESTS_DIR/lib/assert.sh"
 
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
 
-SCRIPTS=(deploy.sh deploy-frontend.sh set-cors.sh migrate-seed.sh teardown.sh validate.sh smoke.sh)
+SCRIPTS=(deploy.sh deploy-frontend.sh deploy-data-auth.sh set-cors.sh migrate-seed.sh teardown.sh validate.sh smoke.sh)
 
 for name in "${SCRIPTS[@]}"; do
   set +e
