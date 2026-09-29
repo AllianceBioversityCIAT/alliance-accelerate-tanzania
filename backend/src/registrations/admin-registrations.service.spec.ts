@@ -1338,7 +1338,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         },
       );
 
-      it('a notification failure does not reject approve() — it is fire-and-forget, logged by error class name only', async () => {
+      it('a notification failure does not reject approve() — the approval is already committed, so a mail failure must never surface as a failed adjudication (DD-9)', async () => {
         const tx = buildTx();
         wireTransaction(tx);
         mailService.sendApproval.mockRejectedValueOnce(new Error('mail transport unavailable'));
@@ -1346,6 +1346,42 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         await expect(
           service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB),
         ).resolves.toBeDefined();
+      });
+
+      // ATP-70. The approval stays committed and the call still resolves —
+      // the test above is unchanged. What changes is that the outcome is no
+      // longer discarded: the admin is told the applicant was not reached.
+      // Before the transport awaited the microservice's reply this flag could
+      // not have been honest, because a broker confirm was the strongest
+      // signal available and it would have read `true` for mail that was
+      // never sent.
+      it('reports emailSent: false when the notification failed — mutation: returning a hardcoded `true` from dispatchApprovalEmail reddens this', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+        mailService.sendApproval.mockRejectedValueOnce(new Error('mail transport unavailable'));
+
+        const result = await service.approve(
+          'reg-approve-1',
+          ACKNOWLEDGEMENT as never,
+          ACTING_SUB,
+        );
+
+        expect(result.emailSent).toBe(false);
+        // The adjudication itself is untouched by the mail outcome.
+        expect(result.registration.status).toBe('APPROVED');
+      });
+
+      it('reports emailSent: true on the happy path — without this the flag could be hardcoded false and still pass the test above', async () => {
+        const tx = buildTx();
+        wireTransaction(tx);
+
+        const result = await service.approve(
+          'reg-approve-1',
+          ACKNOWLEDGEMENT as never,
+          ACTING_SUB,
+        );
+
+        expect(result.emailSent).toBe(true);
       });
 
       it('the transaction never calls sendApproval itself — only the post-await dispatch does', async () => {

@@ -191,6 +191,7 @@
  * oracle distinguishing addresses from one another.
  */
 import {
+  BadGatewayException,
   BadRequestException,
   Injectable,
   Logger,
@@ -743,6 +744,49 @@ export class RegistrationsService {
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(`verification code send failed: errorType=${errorType}`);
+
+      // ATP-70 — SURFACED, no longer swallowed. Read the paragraph above
+      // as history: it still describes why the send is awaited, but its
+      // claim that "failure is still only logged, never surfaced to the
+      // caller — a 202 has already been decided" is what this block
+      // reverses, deliberately.
+      //
+      // Why DD-9 does not cover this call site. Quoted verbatim from
+      // `docs/specs/archive/2026-08-06-actors--public-self-registration/
+      // design.md` §DD-9: "Commit first, then send; log failures, never
+      // rethrow. A mail outage cannot block publication." Its premise is
+      // its own first clause — commit FIRST — which holds for the receipt,
+      // the approval and the rejection mail, each dispatched after its
+      // transaction commits, and where a 502 would misreport a committed
+      // registration as failed. Nothing is committed here. The
+      // code exists only inside this unsent mail, so a silent failure
+      // leaves the applicant reading "check your email" in front of a
+      // mailbox that will never receive anything, with no way to tell that
+      // from a slow delivery and no path forward. That is the exact
+      // complaint ATP-70 was opened for.
+      //
+      // Why this does not reopen the FR-4 enumeration surface. That
+      // surface is byte-identity across "known address", "unknown
+      // address" and "over-cap address" — and this exit is reachable by
+      // none of those three: the transport's outcome does not depend on
+      // whether the mailbox exists. The ATP-70 probe measured that
+      // directly — a reserved `.invalid` domain, which can never resolve,
+      // still drew a 201 success reply, because the microservice's reply
+      // attests that its SMTP relay ACCEPTED the message, not that anyone
+      // received it. So a failure here means the transport or the
+      // microservice is down for everyone, which is infrastructure
+      // trouble and already an excluded case: the non-cap `throw err`
+      // exit above takes exactly this shape, for exactly this reason.
+      //
+      // Unpadded, consistently with that exit. The floor equalizes the
+      // three enumerable outcomes; this one is not among them, and
+      // delaying an outage report by up to four seconds would buy no
+      // timing benefit this method claims.
+      throw new BadGatewayException({
+        statusCode: 502,
+        error: 'Bad Gateway',
+        message: 'We could not send your verification code right now. Please try again shortly.',
+      });
     }
 
     await padToVerificationCodeResponseFloor(startedAtMs, this.logger);

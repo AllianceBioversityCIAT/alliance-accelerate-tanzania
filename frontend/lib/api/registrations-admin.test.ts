@@ -126,6 +126,7 @@ const APPROVE_RESULT: RegistrationApproveResult = {
     publishedActorId: ADMIN_ACTOR.id,
   },
   actor: ADMIN_ACTOR,
+  emailSent: true,
 };
 
 const REJECT_RESULT: RegistrationRejectResult = {
@@ -134,6 +135,7 @@ const REJECT_RESULT: RegistrationRejectResult = {
     reference: 'REG-2026-0184',
     status: 'REJECTED',
   },
+  emailSent: true,
 };
 
 const DISMISS_RESULT: DismissDuplicateResult = {

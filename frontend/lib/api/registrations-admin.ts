@@ -272,6 +272,9 @@ export interface RegistrationApproveResult {
     publishedActorId: string | null;
   };
   actor: AdminActor;
+  /** Whether the applicant's approval notice went out. `false` never means the
+   * approval failed — it is committed before the mail is dispatched. */
+  emailSent: boolean;
 }
 
 /**
@@ -285,6 +288,8 @@ export interface RegistrationRejectResult {
     reference: string;
     status: RegistrationStatus;
   };
+  /** See {@link RegistrationApproveResult.emailSent}. */
+  emailSent: boolean;
 }
 
 /**

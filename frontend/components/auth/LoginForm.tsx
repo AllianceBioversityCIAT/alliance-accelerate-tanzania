@@ -21,6 +21,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import PasswordRequirements from '@/components/auth/PasswordRequirements';
 import { confirmNewPassword } from '@/lib/auth/auth-client';
 import { useAuth } from '@/lib/auth/useAuth';
 import { useSession } from '@/lib/auth/useSession';
@@ -55,6 +56,7 @@ function Input({
   value,
   onChange,
   disabled,
+  describedBy,
 }: {
   id: string;
   type: 'email' | 'password';
@@ -62,6 +64,7 @@ function Input({
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
+  describedBy?: string;
 }) {
   return (
     <input
@@ -72,6 +75,7 @@ function Input({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
+      aria-describedby={describedBy}
       required
       className={[
         'block w-full rounded-md border border-border bg-surface text-fg',
@@ -297,7 +301,9 @@ export default function LoginForm() {
               value={newPass}
               onChange={setNewPass}
               disabled={busy}
+              describedBy="new-password-requirements"
             />
+            <PasswordRequirements id="new-password-requirements" />
           </div>
 
           <Button

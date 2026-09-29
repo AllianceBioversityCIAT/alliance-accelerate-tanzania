@@ -23,6 +23,7 @@
 import { type FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import PasswordRequirements from '@/components/auth/PasswordRequirements';
 import { resetPassword, confirmResetPassword } from '@/lib/auth/auth-client';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,7 @@ function Input({
   value,
   onChange,
   disabled,
+  describedBy,
 }: {
   id: string;
   type: 'email' | 'password' | 'text';
@@ -62,6 +64,7 @@ function Input({
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
+  describedBy?: string;
 }) {
   return (
     <input
@@ -72,6 +75,7 @@ function Input({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
+      aria-describedby={describedBy}
       required
       className={[
         'block w-full rounded-md border border-border bg-surface text-fg',
@@ -270,7 +274,9 @@ export default function ForgotPasswordForm() {
               value={newPass}
               onChange={setNewPass}
               disabled={busy}
+              describedBy="new-password-requirements"
             />
+            <PasswordRequirements id="new-password-requirements" />
           </div>
 
           <Button

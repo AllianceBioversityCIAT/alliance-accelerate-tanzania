@@ -76,6 +76,16 @@ import { ActivityTrail } from './ActivityTrail';
 import { AcknowledgeDialog } from './AcknowledgeDialog';
 import { RejectDialog, type RejectDialogInput } from './RejectDialog';
 
+/** Shown when the adjudication committed but its notice did not reach the
+ * applicant. Worded so a failed send can never read as a failed adjudication
+ * — the same distinction CredentialHandoff draws for invitation mail. */
+const APPROVAL_NOT_NOTIFIED =
+  'The approval notice could not be emailed — this did not affect the approval. ' +
+  'The registration is approved and published; contact the applicant directly.';
+const REJECTION_NOT_NOTIFIED =
+  'The rejection notice could not be emailed — this did not affect the rejection. ' +
+  'The registration is rejected; contact the applicant directly.';
+
 // ---------------------------------------------------------------------------
 // Constants — the approve gate (FR-12 scenario 3, design.md §7.4)
 // ---------------------------------------------------------------------------
@@ -388,6 +398,10 @@ export function RegistrationDetailPanel({
   const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | undefined>();
   const [announcementError, setAnnouncementError] = useState<string | undefined>();
+  // Separate from `announcement` on purpose: that one is styled as success,
+  // and an adjudication that committed but did not reach the applicant is not
+  // a plain success. Mirrors CredentialHandoff's emailSent treatment.
+  const [notificationWarning, setNotificationWarning] = useState<string | undefined>();
 
   const closeDialog = useCallback(() => {
     setActiveDialog(null);
@@ -416,10 +430,15 @@ export function RegistrationDetailPanel({
     setApproveError(undefined);
     setApproveLoading(true);
     try {
-      await approveRegistration(detail.id, { acknowledgement: APPROVAL_ACKNOWLEDGEMENT_TEXT }, token);
+      const result = await approveRegistration(
+        detail.id,
+        { acknowledgement: APPROVAL_ACKNOWLEDGEMENT_TEXT },
+        token,
+      );
       setActiveDialog(null);
       setAnnouncementError(undefined);
       setAnnouncement(`${detail.reference} approved and published to the public directory.`);
+      setNotificationWarning(result.emailSent ? undefined : APPROVAL_NOT_NOTIFIED);
       await onRefresh();
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
@@ -441,10 +460,15 @@ export function RegistrationDetailPanel({
       setRejectError(undefined);
       setRejectLoading(true);
       try {
-        await rejectRegistration(detail.id, { reason: input.reason, note: input.note }, token);
+        const result = await rejectRegistration(
+          detail.id,
+          { reason: input.reason, note: input.note },
+          token,
+        );
         setActiveDialog(null);
         setAnnouncementError(undefined);
         setAnnouncement(`${detail.reference} rejected.`);
+        setNotificationWarning(result.emailSent ? undefined : REJECTION_NOT_NOTIFIED);
         await onRefresh();
       } catch (caught: unknown) {
         if (caught instanceof AuthFailureError) {
@@ -470,6 +494,9 @@ export function RegistrationDetailPanel({
       try {
         await dismissDuplicateCandidate(detail.id, { candidateActorId }, token);
         setAnnouncement('Candidate marked as not a duplicate.');
+        // This action sends no mail, so any standing notice warning belongs
+        // to an earlier action and must not linger beside a new announcement.
+        setNotificationWarning(undefined);
         await onRefresh();
       } catch (caught: unknown) {
         if (caught instanceof AuthFailureError) {
@@ -481,6 +508,7 @@ export function RegistrationDetailPanel({
             ? caught.message
             : 'Failed to update this candidate.';
         setAnnouncement(undefined);
+        setNotificationWarning(undefined);
         setAnnouncementError(message);
       } finally {
         setDismissingId(null);
@@ -515,6 +543,14 @@ export function RegistrationDetailPanel({
         >
           {announcement}
         </div>
+      )}
+      {notificationWarning && (
+        <p
+          role="note"
+          className="rounded-md border border-warning bg-surface-alt px-4 py-3 text-sm text-warning"
+        >
+          {notificationWarning}
+        </p>
       )}
       {announcementError && (
         <div

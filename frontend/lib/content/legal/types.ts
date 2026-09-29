@@ -129,6 +129,7 @@ export type LegalContentBlock =
     }
   | {
       kind: 'contact';
+      name?: string;
       entries: LegalContactEntry[];
     };
 

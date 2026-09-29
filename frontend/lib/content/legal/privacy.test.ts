@@ -34,16 +34,12 @@
 import { PRIVACY_POLICY } from './privacy';
 import { collectUnfilledFieldTokens } from './unfilled-fields';
 
-describe('privacy.ts — unfilled-field inventory (PART 2, not yet publishable)', () => {
+describe('privacy.ts — unfilled-field inventory (PART 2 — list now empty: publishable)', () => {
   it('the set of unfilled Legal tokens equals the expected list', () => {
     expect(collectUnfilledFieldTokens(PRIVACY_POLICY)).toEqual([
-      // The only two still outstanding, both in the "Who is Responsible for
-      // the Registry?" prose line ("CIAT Address: Email:"), which CIAT has
-      // not yet filled. The Contact Us block and the effective date were
-      // supplied on 2026-09-25. /privacy stays NOT publishable until this
-      // list is empty.
-      'Address: (blank, in prose)',
-      'Email: (blank, in prose)',
+      // EMPTY as of 2026-09-28: the Google Analytics retention periods were
+      // the last outstanding field. Per this file's own rule, an empty list
+      // is the signal that /privacy is publishable.
     ]);
   });
 });

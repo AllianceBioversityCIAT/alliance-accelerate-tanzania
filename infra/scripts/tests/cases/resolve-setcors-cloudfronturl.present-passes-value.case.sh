@@ -3,9 +3,10 @@
 # resolve-setcors-cloudfronturl.present-passes-value.case.sh
 # (T-5, script-integration)
 # ---------------------------------------------------------------------------
-# The success path for set-cors.sh's converted CloudFrontUrl lookup: a
-# genuinely present frontend stack resolves its CloudFrontUrl and that
-# value is what gets passed as AllowedOrigin to the backend redeploy —
+# The success path for set-cors.sh's frontend-output lookups: a genuinely
+# present frontend stack resolves its PublicAppUrl into AllowedOrigin and its
+# CloudFrontUrl into the second accepted origin — distinct stub values, so
+# reading the wrong output fails rather than passing by coincidence;
 # sanity coverage for the conversion (jq extraction → resolve_stack_value),
 # proving the migration did not silently break the ordinary case.
 # ---------------------------------------------------------------------------
@@ -34,7 +35,10 @@ case "\$1 \$2" in
     exit 0
     ;;
   "cloudformation describe-stacks")
-    echo "https://dabc123.cloudfront.net"
+    case "\$*" in
+      *PublicAppUrl*) echo "https://app.example.org" ;;
+      *)              echo "https://dabc123.cloudfront.net" ;;
+    esac
     exit 0
     ;;
   *)
@@ -64,4 +68,5 @@ status=$?
 set -e
 
 assert_status 0 "$status" "set-cors.sh: present frontend stack runs to completion"
-assert_contains "AllowedOrigin=https://dabc123.cloudfront.net" "$output" "the resolved CloudFrontUrl is literally what's passed as AllowedOrigin"
+assert_contains "AllowedOrigin=https://app.example.org" "$output" "the resolved PublicAppUrl is literally what's passed as AllowedOrigin"
+assert_contains "LegacyAllowedOrigin=https://dabc123.cloudfront.net" "$output" "the resolved CloudFrontUrl is passed as the second accepted origin"

@@ -41,6 +41,13 @@ jest.mock('amqplib');
 interface FakeChannel extends EventEmitter {
   checkQueue: jest.Mock;
   publish: jest.Mock;
+  // ATP-70: the transport now awaits the microservice's reply, so it opens an
+  // exclusive reply queue and consumes from it. A channel mock without these
+  // two fails inside `openReplyQueue` and surfaces as a bare
+  // `MicroserviceMailConnectionError`, which looks nothing like the real
+  // cause — that is exactly how this file first broke under the change.
+  assertQueue: jest.Mock;
+  consume: jest.Mock;
   close: jest.Mock;
 }
 
@@ -78,7 +85,40 @@ function createWorkingChannel(): FakeChannel {
   channel.checkQueue = jest
     .fn()
     .mockResolvedValue({ queue: 'accelerate-tz-email', messageCount: 0, consumerCount: 1 });
-  channel.publish = publishStub((callback) => callback?.(null, {}));
+
+  let onReply: ((msg: unknown) => void) | undefined;
+  channel.assertQueue = jest.fn().mockResolvedValue({ queue: 'amq.gen-fake-reply' });
+  channel.consume = jest.fn((_queue: string, handler: (msg: unknown) => void) => {
+    onReply = handler;
+    return Promise.resolve({ consumerTag: 'fake' });
+  });
+
+  // Ack the publish, then answer it the way the microservice does on success:
+  // `{ response: { status: 201 } }`, keyed to the correlationId we published
+  // under. Delivered synchronously from inside the publish callback, which is
+  // safe because `publishOnce` registers its waiter BEFORE publishing — and
+  // necessary because these tests run under fake timers, where a
+  // `setImmediate` would never fire unless a test advanced them.
+  channel.publish = jest.fn(
+    (
+      _exchange: string,
+      _routingKey: string,
+      _content: Buffer,
+      options: amqp.Options.Publish | undefined,
+      callback?: (err: unknown, ok: unknown) => void,
+    ) => {
+      callback?.(null, {});
+      onReply?.({
+        properties: { correlationId: options?.correlationId },
+        content: Buffer.from(
+          JSON.stringify({ response: { status: 201 }, isDisposed: true }),
+          'utf8',
+        ),
+      });
+      return true;
+    },
+  ) as FakeChannel['publish'];
+
   channel.close = jest.fn().mockResolvedValue(undefined);
   return channel;
 }

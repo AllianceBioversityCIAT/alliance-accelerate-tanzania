@@ -316,6 +316,7 @@ describe('RegistrationDetailPanel', () => {
       mockApproveRegistration.mockResolvedValue({
         registration: { id: 'reg-1', reference: 'REG-2026-0184', status: 'APPROVED', publishedActorId: 'actor-9' },
         actor: {},
+        emailSent: true,
       });
       const { onRefresh } = renderPanel();
 
@@ -336,6 +337,53 @@ describe('RegistrationDetailPanel', () => {
 
       const status = screen.getByRole('status');
       expect(status).toHaveTextContent('REG-2026-0184 approved and published to the public directory.');
+    });
+
+    // ATP-70 — the admin is the only person who can act on a notice that did
+    // not reach the applicant, and they are standing right here when it
+    // happens. The wording is load-bearing: the approval IS committed, so
+    // this must never read as a failed approval.
+    it('warns the admin when the approval notice could not be emailed — the approval still reads as done', async () => {
+      mockApproveRegistration.mockResolvedValue({
+        registration: { id: 'reg-1', reference: 'REG-2026-0184', status: 'APPROVED', publishedActorId: 'actor-9' },
+        actor: {},
+        emailSent: false,
+      });
+      renderPanel();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      fireEvent.change(screen.getByLabelText('Type “I confirm consent is on file” to confirm'), {
+        target: { value: 'I confirm consent is on file' },
+      });
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }));
+
+      const note = await screen.findByRole('note');
+      expect(note).toHaveTextContent('could not be emailed');
+      expect(note).toHaveTextContent('did not affect the approval');
+
+      // The success announcement stands alongside it, unchanged: the
+      // registration really was approved and published.
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'REG-2026-0184 approved and published to the public directory.',
+      );
+    });
+
+    it('shows no such warning when the notice went out — mutation: rendering the warning unconditionally reddens this', async () => {
+      mockApproveRegistration.mockResolvedValue({
+        registration: { id: 'reg-1', reference: 'REG-2026-0184', status: 'APPROVED', publishedActorId: 'actor-9' },
+        actor: {},
+        emailSent: true,
+      });
+      renderPanel();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      fireEvent.change(screen.getByLabelText('Type “I confirm consent is on file” to confirm'), {
+        target: { value: 'I confirm consent is on file' },
+      });
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }));
+
+      await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
     });
 
     it('calls onAuthFailure on a 401 from approveRegistration', async () => {
@@ -393,6 +441,7 @@ describe('RegistrationDetailPanel', () => {
     it('calls rejectRegistration with the reason and note, announces the result, and refreshes', async () => {
       mockRejectRegistration.mockResolvedValue({
         registration: { id: 'reg-1', reference: 'REG-2026-0184', status: 'REJECTED' },
+        emailSent: true,
       });
       const { onRefresh } = renderPanel();
 

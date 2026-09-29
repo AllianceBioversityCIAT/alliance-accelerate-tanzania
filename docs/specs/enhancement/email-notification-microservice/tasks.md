@@ -25,7 +25,7 @@
       Traces: FR-2, FR-4, DD-8 · `design.md` §4.2
       Files: `backend/src/mail/microservice-mail.transport.ts` (builder only), `…spec.ts`
       Verify: `cd backend && npm test -- microservice-mail --silent`
-      Done when: asserts the exact JSON — `pattern: "send"`, `data.apiKey`, `data.data.{from,emailBody}`; `html` → `socketFile`; `text` → `text`; `to` always a **trimmed array**; `from.email`/`from.name` as **separate fields, never a `"Name" <addr>` composite** (FR-4's `BUT`); **no `id` key** (FR-2's `BUT`); HTML never placed in `text` (FR-2's `BUT`); both parts present when HTML exists (FR-2's `AND IT MUST`).
+      Done when: asserts the exact JSON — `pattern: "send"`, `data.apiKey`, `data.data.{from,emailBody}`; `html` → `socketFile`; `text` → `text`; `to` always a **trimmed array**; `from.email`/`from.name` as **separate fields, never a `"Name" <addr>` composite** (FR-4's `BUT`); **no `id` key** (FR-2's `BUT`) — *reversed 2026-09-28, ATP-70: `id` is now required at the top level; see FR-2's note*; HTML never placed in `text` (FR-2's `BUT`); both parts present when HTML exists (FR-2's `AND IT MUST`).
       Gate discriminates: rename `socketFile` → `file` and confirm the suite reddens.
       Skills: `nestjs-expert`, `api-design-principles`
 
@@ -210,7 +210,7 @@ T-10…T-16 are mutually independent and may run in parallel once T-9 is `[x]`.
 | FR-1 | `BUT` never declare/create the queue | T-4 |
 | FR-1 | `AND IT MUST` publish exactly once, no internal retry | T-4 |
 | FR-2 | envelope shape, `socketFile`, array `to` | T-2 |
-| FR-2 | `BUT` no `id` · `BUT` no HTML in `text`/`file` | T-2 |
+| FR-2 | `AND IT MUST` top-level `id` (was `BUT` no `id` — reversed 2026-09-28, ATP-70) · `BUT` no HTML in `text`/`file` | T-2 |
 | FR-2 | `AND IT MUST` both parts when HTML exists | T-2 |
 | FR-3 | four required throw · `EMAIL_SENDER_NAME` defaults | T-3 |
 | FR-3 | `BUT` lazy resolution | T-3 |

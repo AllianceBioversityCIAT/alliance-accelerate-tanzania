@@ -37,6 +37,7 @@
  */
 import { createHmac } from 'node:crypto';
 import {
+  BadGatewayException,
   BadRequestException,
   Logger,
   NotFoundException,
@@ -169,15 +170,70 @@ describe('RegistrationsService.requestVerificationCode', () => {
       },
     );
 
-    it('never throws when the mail dispatch itself fails — logged, not surfaced', async () => {
+    // ATP-70 inverted this test. It used to assert the opposite — "never
+    // throws when the mail dispatch itself fails — logged, not surfaced" —
+    // and it passed, which is exactly the behaviour the ticket was opened
+    // against: the applicant was told to check an inbox nothing had been
+    // sent to. The code lives only inside that unsent mail, so there is no
+    // partial success to protect here (unlike the receipt/approval/rejection
+    // mails, which follow a COMMITTED write and where DD-9's swallow is
+    // still correct).
+    it('surfaces the failure to the caller as a 502 — the applicant must not be told to ' +
+      'check an inbox nothing was sent to (ATP-70)', async () => {
       emailVerificationService.issueCode.mockResolvedValue({
         code: '123456',
         expiresAt: new Date(),
       });
       mailService.sendVerificationCode.mockRejectedValue(new Error('mail transport unavailable'));
 
-      const promise = service.requestVerificationCode('anyone@example.com');
-      await expect(settleAfterFloor(promise)).resolves.toBeUndefined();
+      await expect(service.requestVerificationCode('anyone@example.com')).rejects.toBeInstanceOf(
+        BadGatewayException,
+      );
+    });
+
+    // Deliberately NO settleAfterFloor / timer advance: the floor equalizes
+    // the three enumerable outcomes (known, unknown, over-cap address), and
+    // a transport outage is none of them — the microservice replies the same
+    // way whether or not the mailbox exists, which the ATP-70 probe measured
+    // against a `.invalid` domain. Padding an outage report would buy no
+    // timing benefit. If the throw were moved above the floor's `await`, or
+    // the floor applied to this exit, this test would hang rather than pass.
+    it('does not pay the constant-time floor on the transport-failure exit', async () => {
+      emailVerificationService.issueCode.mockResolvedValue({
+        code: '123456',
+        expiresAt: new Date(),
+      });
+      mailService.sendVerificationCode.mockRejectedValue(new Error('mail transport unavailable'));
+
+      await expect(service.requestVerificationCode('anyone@example.com')).rejects.toBeInstanceOf(
+        BadGatewayException,
+      );
+    });
+
+    // The 502 body is a new egress surface this change created, so it gets
+    // the same scrutiny as the log line below: a fixed string, no address.
+    it('the surfaced 502 body carries no applicant address', async () => {
+      const applicantEmail = 'applicant@example.com';
+      emailVerificationService.issueCode.mockResolvedValue({
+        code: '123456',
+        expiresAt: new Date(),
+      });
+      mailService.sendVerificationCode.mockRejectedValue(
+        new Error(`Recipient rejected: ${applicantEmail}`),
+      );
+
+      await expect(service.requestVerificationCode(applicantEmail)).rejects.toMatchObject({
+        response: {
+          statusCode: 502,
+          error: 'Bad Gateway',
+          message: 'We could not send your verification code right now. Please try again shortly.',
+        },
+      });
+
+      const raised = await service.requestVerificationCode(applicantEmail).catch((e) => e);
+      expect(JSON.stringify((raised as BadGatewayException).getResponse())).not.toContain(
+        applicantEmail,
+      );
     });
   });
 
@@ -209,7 +265,13 @@ describe('RegistrationsService.requestVerificationCode', () => {
         transportRejection.name = 'TransportRejectedError';
         mailService.sendVerificationCode.mockRejectedValue(transportRejection);
 
-        await settleAfterFloor(service.requestVerificationCode(applicantEmail));
+        // ATP-70: this call now rejects (the failure is surfaced). The
+        // assertions below are UNCHANGED — what this test guards is the
+        // emitted log line, and that line must keep carrying the class name
+        // and never the address, whichever way the method exits.
+        await expect(service.requestVerificationCode(applicantEmail)).rejects.toBeInstanceOf(
+          BadGatewayException,
+        );
 
         expect(errorSpy).toHaveBeenCalledTimes(1);
         const [emittedLine] = errorSpy.mock.calls[0] as [string];
@@ -226,7 +288,9 @@ describe('RegistrationsService.requestVerificationCode', () => {
       });
       mailService.sendVerificationCode.mockRejectedValue('applicant@example.com: rejected');
 
-      await settleAfterFloor(service.requestVerificationCode('applicant@example.com'));
+      await expect(
+        service.requestVerificationCode('applicant@example.com'),
+      ).rejects.toBeInstanceOf(BadGatewayException);
 
       expect(errorSpy).toHaveBeenCalledTimes(1);
       const [emittedLine] = errorSpy.mock.calls[0] as [string];

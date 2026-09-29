@@ -3,19 +3,23 @@
 # set-cors.sh — ACCELERATE Tanzania Seed Registry (infra/aws-deployment, T-8)
 # ---------------------------------------------------------------------------
 # PURPOSE
-#   Lock the backend HTTP API CORS to the CloudFront origin — design.md §1
+#   Lock the backend HTTP API CORS to the app's real origin — design.md §1
 #   (step 5), DD-6 (FR-6). The backend bootstraps with a permissive `*` CORS
 #   default; once the frontend is deployed this redeploys 20-backend with
-#   AllowedOrigin = the CloudFront URL so only the real app origin is allowed.
+#   AllowedOrigin = the app's canonical URL so only the real app origin is
+#   allowed.
 #   Steps:
-#     1. Resolve CloudFrontUrl from the 30-frontend stack outputs (override via
-#        CLOUDFRONT_URL) — nothing hardcoded (FR-7). It is already an
-#        `https://<dist>.cloudfront.net` with no trailing slash, i.e. the exact
-#        CORS Origin form an API expects.
+#     1. Resolve PublicAppUrl (the custom domain when one is set) and
+#        CloudFrontUrl (the distribution's own address, kept as a second
+#        accepted origin) from the 30-frontend stack outputs — overrides via
+#        PUBLIC_APP_URL / CLOUDFRONT_URL, nothing hardcoded (FR-7). Both are
+#        already `https://…` with no trailing slash, i.e. the exact CORS
+#        Origin form an API expects.
 #     2. `sam build` the backend (Metadata: BuildMethod: makefile means a deploy
 #        must build first to package dist/ + the Prisma engine).
-#     3. `sam deploy` 20-backend with AllowedOrigin=<CloudFrontUrl> (idempotent
-#        change set; DataAuthStackName preserved).
+#     3. `sam deploy` 20-backend with AllowedOrigin=<PublicAppUrl> and
+#        LegacyAllowedOrigin=<CloudFrontUrl> (idempotent change set;
+#        DataAuthStackName preserved).
 #
 #   The CloudFront URL is non-secret and is echoed as progress (NFR-2).
 #
@@ -30,7 +34,7 @@
 #
 # USAGE
 #   ./infra/scripts/set-cors.sh
-#   CLOUDFRONT_URL=https://d111.cloudfront.net ./infra/scripts/set-cors.sh
+#   PUBLIC_APP_URL=https://app.example.org ./infra/scripts/set-cors.sh
 #   MAIL_TRANSPORT=microservice ./infra/scripts/set-cors.sh  # preserve the current transport
 # ---------------------------------------------------------------------------
 
@@ -158,13 +162,18 @@ echo
 # deploy.sh's origin resolution uses — set-cors.sh runs only AFTER the
 # frontend stack is deployed, so an absent frontend stack here is a broken
 # operator sequence, not a legitimate bootstrap (design.md §7.1).
-if [[ -n "${CLOUDFRONT_URL:-}" ]]; then
-  echo "==> Using CLOUDFRONT_URL from env: $CLOUDFRONT_URL"
+resolve_frontend_output() {
+  local key="$1" stack="$2"
+  resolve_stack_value "$stack" \
+    "Stacks[0].Outputs[?OutputKey=='${key}'].OutputValue | [0]" \
+    output
+}
+
+if [[ -n "${PUBLIC_APP_URL:-}" ]]; then
+  echo "==> Using PUBLIC_APP_URL from env: $PUBLIC_APP_URL"
 else
-  echo "==> Resolving CloudFrontUrl from stack '$FRONTEND_STACK' ..."
-  if CLOUDFRONT_URL="$(resolve_stack_value "$FRONTEND_STACK" \
-      "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue | [0]" \
-      output)"; then
+  echo "==> Resolving PublicAppUrl from stack '$FRONTEND_STACK' ..."
+  if PUBLIC_APP_URL="$(resolve_frontend_output PublicAppUrl "$FRONTEND_STACK")"; then
     :
   else
     rc=$?
@@ -176,14 +185,28 @@ else
         exit 1
         ;;
       *)
-        echo "ERROR: could not resolve CloudFrontUrl from stack '$FRONTEND_STACK'." >&2
+        echo "ERROR: could not resolve PublicAppUrl from stack '$FRONTEND_STACK'." >&2
+        echo "       A frontend stack deployed before the PublicAppUrl output" >&2
+        echo "       existed will not have it — redeploy 30-frontend, or pass" >&2
+        echo "       PUBLIC_APP_URL explicitly to override." >&2
         exit 1
         ;;
     esac
   fi
 fi
 
-echo "==> Locking backend CORS AllowedOrigin to: $CLOUDFRONT_URL"
+# Second accepted origin. Absent is a legitimate answer here (unlike the
+# canonical URL above), so this never aborts the run.
+if [[ -n "${CLOUDFRONT_URL:-}" ]]; then
+  echo "==> Using CLOUDFRONT_URL from env: $CLOUDFRONT_URL"
+elif CLOUDFRONT_URL="$(resolve_frontend_output CloudFrontUrl "$FRONTEND_STACK")"; then
+  echo "==> LegacyAllowedOrigin = $CLOUDFRONT_URL (resolved from '$FRONTEND_STACK')"
+else
+  CLOUDFRONT_URL=""
+  echo "==> LegacyAllowedOrigin = '' — no CloudFrontUrl on '$FRONTEND_STACK'." >&2
+fi
+
+echo "==> Locking backend CORS AllowedOrigin to: $PUBLIC_APP_URL"
 echo
 
 # ── Step 1: sam build (required by Metadata: BuildMethod: makefile) ───────────
@@ -198,12 +221,13 @@ sam build \
   --profile "$PROFILE" --region "$REGION"
 
 # ── Step 2: redeploy the backend with the locked CORS origin ─────────────────
-echo "==> Redeploying $BACKEND_STACK with AllowedOrigin=$CLOUDFRONT_URL ..."
+echo "==> Redeploying $BACKEND_STACK with AllowedOrigin=$PUBLIC_APP_URL ..."
 sam deploy \
   --template "$BACKEND_BUILD_DIR/template.yaml" \
   --stack-name "$BACKEND_STACK" \
   --parameter-overrides \
-    AllowedOrigin="$CLOUDFRONT_URL" \
+    AllowedOrigin="$PUBLIC_APP_URL" \
+    LegacyAllowedOrigin="$CLOUDFRONT_URL" \
     DataAuthStackName="$DATA_AUTH_STACK" \
     MailTransport="$MAIL_TRANSPORT" \
   --config-file "$SAMCONFIG" \
