@@ -22,6 +22,14 @@ import {
   type SignInOutput,
 } from 'aws-amplify/auth';
 import type { Role } from './useSession';
+import { INVALID_PASSWORD_MESSAGE } from './password-policy';
+
+/** Reads a Cognito error's name defensively; '' when there isn't one. */
+function errorName(err: unknown): string {
+  return typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string'
+    ? (err as { name: string }).name
+    : '';
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,6 +189,11 @@ export async function confirmNewPassword(newPassword: string): Promise<SignInRes
 
     return { status: 'error', message: 'Password change incomplete — unexpected next step.' };
   } catch (err: unknown) {
+    // A policy rejection names only the first rule broken ("Password not long
+    // enough"), so state the whole policy instead of echoing it.
+    if (errorName(err) === 'InvalidPasswordException') {
+      return { status: 'error', message: INVALID_PASSWORD_MESSAGE };
+    }
     const message =
       err instanceof Error ? err.message : 'An unexpected error occurred while setting password.';
     return { status: 'error', message };
@@ -213,18 +226,13 @@ export async function signOut(): Promise<void> {
  * back to the caller (NFR-4 — no internal leakage / account enumeration).
  */
 function resetErrorMessage(err: unknown): string {
-  const name =
-    typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string'
-      ? (err as { name: string }).name
-      : '';
-
-  switch (name) {
+  switch (errorName(err)) {
     case 'CodeMismatchException':
       return "That code isn't correct. Check the code from your email, or request a new one.";
     case 'ExpiredCodeException':
       return 'That code has expired. Request a new one and try again.';
     case 'InvalidPasswordException':
-      return "That password doesn't meet the requirements. Try a stronger one.";
+      return INVALID_PASSWORD_MESSAGE;
     case 'LimitExceededException':
       return 'Too many attempts. Please wait a few minutes and try again.';
     default:
@@ -244,11 +252,7 @@ export async function resetPassword(username: string): Promise<ResetRequestResul
     return { status: 'code_sent' };
   } catch (err: unknown) {
     // Do not reveal non-existence on the request path (NFR-4).
-    const name =
-      typeof err === 'object' && err !== null && typeof (err as { name?: unknown }).name === 'string'
-        ? (err as { name: string }).name
-        : '';
-    if (name === 'UserNotFoundException') {
+    if (errorName(err) === 'UserNotFoundException') {
       return { status: 'code_sent' };
     }
     return { status: 'error', message: resetErrorMessage(err) };

@@ -52,6 +52,7 @@ import {
 import { SessionProvider, useSessionContext } from './SessionProvider';
 import { useSession }                         from './useSession';
 import { _resetAmplifyConfig }                from './amplify-config';
+import { INVALID_PASSWORD_MESSAGE }           from './password-policy';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -340,7 +341,7 @@ describe('confirmResetPassword()', () => {
 
     expect(result).toEqual({
       status: 'error',
-      message: "That password doesn't meet the requirements. Try a stronger one.",
+      message: INVALID_PASSWORD_MESSAGE,
     });
   });
 
