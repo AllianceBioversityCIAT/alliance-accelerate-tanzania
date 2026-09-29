@@ -753,9 +753,21 @@ aws ses delete-identity-policy --identity j.cadavid@cgiar.org \
 
 ## 11. Hardening follow-up (`infra/network-hardening`)
 
-This dev bootstrap intentionally trades production posture for a minimal, cheap,
-easy-to-deploy footprint (DD-1/DD-2/DD-3, NFR-3). The deferred hardening — to be
-specified separately as **`infra/network-hardening`** — covers:
+These stacks were written as a **dev bootstrap**, intentionally trading production
+posture for a minimal, cheap, easy-to-deploy footprint (DD-1/DD-2/DD-3, NFR-3).
+That trade was correct for what they were.
+
+⚠️ **They are no longer a dev bootstrap.** `docs/infrastructure.md` §1 records
+that this deployment is **production** — the only deployed environment, serving
+the public at `accelerate-tz.alliance.cgiar.org`, with no development, staging or
+test environment planned. The trade-off was never re-evaluated against that change
+of role; it carried over silently, which is why the templates still say `dev-only`
+and this section still said "dev bootstrap". Everything below is therefore an
+**open production risk**, not deferred dev work — same list, different standing.
+Priority and acceptance are **OQ-INFRA-7** in `docs/infrastructure.md`.
+
+The hardening — to be specified separately as **`infra/network-hardening`** —
+covers:
 
 - **Lambda-in-VPC** with **private RDS** (no public DB endpoint; drop the
   `0.0.0.0/0:3306` ingress rule).
@@ -765,12 +777,28 @@ specified separately as **`infra/network-hardening`** — covers:
 - **RDS IAM authentication** (replace the long-lived Secrets Manager password).
 - **Verified TLS** — certificate-chain validation (`sslaccept=strict`, or RDS
   Proxy / IAM auth); today `accept_invalid_certs`.
+- **Durability and availability** (added 2026-09-29 with the change of role):
+  raise `BackupRetentionPeriod` above 1 day, enable `DeletionProtection`, and
+  decide `MultiAZ` deliberately. These sit in `10-data-auth/template.yaml`
+  alongside the network settings and were chosen for the same reason (NFR-6,
+  cost on a disposable stack), so they belong in the same follow-up.
 
 Until then, the public RDS endpoint is mitigated by **TLS-required** connections
-(unverified certificate chain), a **strong generated password** in Secrets Manager,
-**no real applicant PII today** — product owner, 2026-09-17: the DEV database
-holds test data only; no public self-registration or contact-form submission
-from a real person has been received. That is a snapshot, not a structural
-property: the self-registration write path is live and unauthenticated on
-this same environment, so it can stop being true without
-anyone acting or noticing. **Easy teardown** (section 10) rounds out the mitigations.
+(unverified certificate chain) and a **strong generated password** in Secrets
+Manager.
+
+The third mitigation this section used to list — **no real applicant PII today**,
+product owner, 2026-09-17: the database holds test data only, no public
+self-registration or contact-form submission from a real person received — is
+**a snapshot, and it must be re-confirmed before anyone relies on it again.**
+It was already fragile when recorded, because the self-registration write path is
+live and unauthenticated on this same environment, so it can stop being true
+without anyone acting or noticing. It is more fragile now that §1 names this
+environment production: the site is public, it carries published Privacy Policy,
+Terms of Use and Cookie Notice pages, and it invites registrations. Treat the
+snapshot as expired until checked.
+
+**Easy teardown** (section 10) is listed here as a mitigation of the *dev*
+posture and does not survive the change of role either: on a production database,
+`DeletionProtection: false` and a one-day backup window make teardown a risk
+rather than a safety valve.
