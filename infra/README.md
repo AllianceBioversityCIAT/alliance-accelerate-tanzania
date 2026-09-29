@@ -187,16 +187,26 @@ distribution Id from the domain, then builds the static export with
 `aws s3 sync out/ → s3://<bucket> --delete`, and a `/*` CloudFront invalidation.
 Override resolution via `API_BASE_URL` / `DISTRIBUTION_ID`.
 
-### Step 5 — lock CORS to the CloudFront origin
+### Step 5 — lock CORS to the app's real origin
 
 ```bash
 ./infra/scripts/set-cors.sh
 ```
 
-`set-cors.sh` locks backend CORS (FR-6): resolves `CloudFrontUrl` (30-frontend
-output; override via `CLOUDFRONT_URL`), then `sam build` + `sam deploy` 20-backend
-with `AllowedOrigin=<CloudFrontUrl>`. After this, only the real app origin is
-allowed.
+`set-cors.sh` locks backend CORS (FR-6): resolves `PublicAppUrl` (30-frontend
+output — the custom domain when one is set; override via `PUBLIC_APP_URL`) and
+`CloudFrontUrl` (the distribution's own address, kept as a second accepted
+origin; override via `CLOUDFRONT_URL`), then `sam build` + `sam deploy`
+20-backend with `AllowedOrigin` and `LegacyAllowedOrigin`. After this, only
+those two origins are allowed.
+
+**Not `CloudFrontUrl` for the canonical origin.** That output is
+`!Sub "https://${Distribution.DomainName}"`, and the attribute only ever
+reports the `*.cloudfront.net` name — it cannot report an alias, so it stops
+describing the app's address the moment a custom domain exists while still
+resolving cleanly to the wrong value. `PublicAppUrl` is the output that knows
+the difference, and `PUBLIC_APP_BASE_URL` reaches it through the backend
+template's fallback to `AllowedOrigin`.
 
 ### Step 6 — end-to-end smoke
 
