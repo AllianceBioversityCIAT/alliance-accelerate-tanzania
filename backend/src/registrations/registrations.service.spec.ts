@@ -49,9 +49,11 @@ import {
   EmailVerificationService,
 } from './email-verification.service';
 import { MailService } from '../mail/mail.service';
+import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import { VERIFICATION_CODE_PRESEND_ALLOWANCE_MS } from '../mail/mail-timing';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  ADMIN_NOTICE_DEADLINE_MS,
   LOOKUP_MAX_ATTEMPTS_PER_WINDOW,
   RegistrationsService,
   VERIFICATION_CODE_RESPONSE_FLOOR_MS,
@@ -97,6 +99,7 @@ describe('RegistrationsService.requestVerificationCode', () => {
       emailVerificationService as unknown as EmailVerificationService,
       mailService as unknown as MailService,
       {} as unknown as PrismaService,
+      {} as unknown as AdminRecipientResolver,
     );
     // `fix/otp-mail-lambda-freeze` — every path through this method now
     // pads to `VERIFICATION_CODE_RESPONSE_FLOOR_MS`; fake timers keep that
@@ -575,7 +578,8 @@ describe('RegistrationsService.submitRegistration', () => {
   let registrationCreateSpy: jest.Mock;
   let transactionSpy: jest.Mock;
   let emailVerificationService: { verifyCode: jest.Mock; consumeCode: jest.Mock };
-  let mailService: { sendReceipt: jest.Mock };
+  let mailService: { sendReceipt: jest.Mock; sendNewRegistrationNotice: jest.Mock };
+  let adminRecipientResolver: { resolve: jest.Mock };
   let service: RegistrationsService;
 
   /**
@@ -655,11 +659,18 @@ describe('RegistrationsService.submitRegistration', () => {
       verifyCode: jest.fn().mockResolvedValue({ outcome: 'MATCHED', id: 'ev-row-1' }),
       consumeCode: jest.fn().mockResolvedValue(true),
     };
-    mailService = { sendReceipt: jest.fn().mockResolvedValue(undefined) };
+    mailService = {
+      sendReceipt: jest.fn().mockResolvedValue(undefined),
+      sendNewRegistrationNotice: jest.fn().mockResolvedValue(undefined),
+    };
+    adminRecipientResolver = {
+      resolve: jest.fn().mockResolvedValue(['admin1@example.org', 'admin2@example.org']),
+    };
     service = new RegistrationsService(
       emailVerificationService as unknown as EmailVerificationService,
       mailService as unknown as MailService,
       buildFakePrisma(),
+      adminRecipientResolver as unknown as AdminRecipientResolver,
     );
   });
 
@@ -907,6 +918,102 @@ describe('RegistrationsService.submitRegistration', () => {
     });
   });
 
+  describe('ATP-78 — admin notice of a new self-registration', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      errorSpy.mockRestore();
+    });
+
+    it('sends the admins the reference, organisation, type and region — and no contact details', async () => {
+      const result = await service.submitRegistration(validDto());
+
+      expect(mailService.sendNewRegistrationNotice).toHaveBeenCalledTimes(1);
+      expect(mailService.sendNewRegistrationNotice).toHaveBeenCalledWith(
+        ['admin1@example.org', 'admin2@example.org'],
+        {
+          reference: result.reference,
+          traderName: 'Mbeya Seed Traders Ltd',
+          traderType: 'seed_company',
+          region: 'Mbeya',
+        },
+      );
+    });
+
+    it('is sent only after the receipt, i.e. after the submission committed', async () => {
+      await service.submitRegistration(validDto());
+
+      const receiptOrder = mailService.sendReceipt.mock.invocationCallOrder[0];
+      const noticeOrder = mailService.sendNewRegistrationNotice.mock.invocationCallOrder[0];
+      expect(noticeOrder).toBeGreaterThan(receiptOrder);
+    });
+
+    it('is not sent when the submission never commits', async () => {
+      await expect(
+        service.submitRegistration(validDto({ consent: { accepted: false } })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(adminRecipientResolver.resolve).not.toHaveBeenCalled();
+      expect(mailService.sendNewRegistrationNotice).not.toHaveBeenCalled();
+    });
+
+    it('a recipient-resolution failure never fails the submission', async () => {
+      const missingFallback = new Error('Missing required env var CONTACT_FALLBACK_RECIPIENT');
+      adminRecipientResolver.resolve.mockRejectedValue(missingFallback);
+
+      const result = await service.submitRegistration(validDto());
+
+      expect(result.reference).toMatch(/^REG-\d{4}-\d{4,}$/);
+      expect(mailService.sendNewRegistrationNotice).not.toHaveBeenCalled();
+      expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const [line] = errorSpy.mock.calls[0] as [string];
+      expect(line).toContain('admin notice send failed');
+      expect(line).toContain(result.reference);
+    });
+
+    it('a hung recipient lookup is cut off at the deadline — the submission still resolves, once, and the timeout is logged', async () => {
+      jest.useFakeTimers();
+      try {
+        adminRecipientResolver.resolve.mockReturnValue(new Promise<string[]>(() => undefined));
+
+        const promise = service.submitRegistration(validDto());
+        await jest.advanceTimersByTimeAsync(ADMIN_NOTICE_DEADLINE_MS);
+        const result = await promise;
+
+        expect(result.reference).toMatch(/^REG-\d{4}-\d{4,}$/);
+        expect(registrationCreateSpy).toHaveBeenCalledTimes(1);
+        expect(mailService.sendNewRegistrationNotice).not.toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        const [line] = errorSpy.mock.calls[0] as [string];
+        expect(line).toContain('AdminNoticeDeadlineExceededError');
+        expect(line).toContain(result.reference);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('a send failure never fails the submission, and the log line never carries an address', async () => {
+      const rejection = new Error('Recipient rejected: admin1@example.org is not verified');
+      rejection.name = 'TransportRejectedError';
+      mailService.sendNewRegistrationNotice.mockRejectedValue(rejection);
+
+      const result = await service.submitRegistration(validDto());
+
+      expect(result.reference).toMatch(/^REG-\d{4}-\d{4,}$/);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const [line] = errorSpy.mock.calls[0] as [string];
+      expect(line).toContain('TransportRejectedError');
+      expect(line).toContain(result.reference);
+      expect(line).not.toContain('admin1@example.org');
+      expect(line).not.toContain('neema@khsc.co.tz');
+    });
+  });
+
   describe(
     'receipt-failure logging never leaks the address (rework attempt 2, FAIL 3 — mirrors ' +
       "T-8's already-reviewed pair for the identical hazard on this SECOND mail dispatch path, " +
@@ -982,6 +1089,7 @@ describe('RegistrationsService.submitRegistration', () => {
           if (calls === 1) throw p2002();
           return {};
         }),
+        adminRecipientResolver as unknown as AdminRecipientResolver,
       );
 
       const now = new Date('2026-08-06T10:15:00Z');
@@ -1022,6 +1130,7 @@ describe('RegistrationsService.submitRegistration', () => {
             buildFakePrisma(async () => {
               throw p2002();
             }),
+            adminRecipientResolver as unknown as AdminRecipientResolver,
           );
 
           let caught: unknown;
@@ -1291,6 +1400,7 @@ describe('RegistrationsService.lookupRegistration', () => {
       {} as unknown as EmailVerificationService,
       {} as unknown as MailService,
       buildFakePrisma(),
+      {} as unknown as AdminRecipientResolver,
     );
   });
 
@@ -1328,6 +1438,7 @@ describe('RegistrationsService.lookupRegistration', () => {
             registration: { findUnique: findUniqueSpy },
             registrationLookupAttempt: { update: updateSpy },
           } as unknown as PrismaService,
+          {} as unknown as AdminRecipientResolver,
         );
 
         // One more wrong attempt from the SAME caller pushes them to EXACTLY

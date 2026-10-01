@@ -8,6 +8,7 @@ import { AdminRegistrationsService } from './admin-registrations.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { ActorAuditService } from '../actors/actor-audit.service';
+import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import { LoggingModule } from '../logging/logging.module';
 import { RequestContextMiddleware } from '../logging/request-context.middleware';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -109,6 +110,12 @@ import {
  * this class but does not export it, and `ActorAuditService` itself has no
  * constructor dependencies, so providing a second instance here costs
  * nothing beyond one extra DI-managed singleton per container.
+ *
+ * ATP-78 — adds `AdminRecipientResolver` so `RegistrationsService` can
+ * notify the admins of a new self-registration. Provided again rather than
+ * exported from `ContactModule`, for the same reason as the two above; a
+ * second instance only means a second 60 s cache. Default (singleton)
+ * scope, never request-scoped — see `ContactModule`'s note on why.
  */
 @Module({
   imports: [
@@ -128,6 +135,7 @@ import {
     DuplicateDetectionService,
     ActingAdminResolver,
     ActorAuditService,
+    AdminRecipientResolver,
   ],
 })
 export class RegistrationsModule implements NestModule {
