@@ -25,10 +25,13 @@
  *     field alone
  *   - NFR-2: jest-axe clean in both the closed and open states; reveal and
  *     clear both have accessible names
+ *   - ATP-80: "Use my current location" writes both values in one call and
+ *     opens the map; each failure (unsupported, denied, unavailable, timeout)
+ *     shows its own message and writes nothing
  */
 
-import React from 'react';
-import { render, screen } from '@testing-library/react';
+import React, { useState } from 'react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import CoordinatePicker from './CoordinatePicker';
@@ -196,5 +199,148 @@ describe('CoordinatePicker', () => {
     );
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+// ── ATP-80: "Use my current location" ───────────────────────────────────────
+
+type SuccessCb = (position: { coords: { latitude: number; longitude: number; accuracy: number } }) => void;
+type ErrorCb = (error: { code: number }) => void;
+
+describe('CoordinatePicker — use my current location (ATP-80)', () => {
+  let getCurrentPosition: jest.Mock;
+  const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+
+  function installGeolocation(value: unknown) {
+    Object.defineProperty(navigator, 'geolocation', { value, configurable: true });
+  }
+
+  beforeEach(() => {
+    getCurrentPosition = jest.fn();
+    installGeolocation({ getCurrentPosition });
+  });
+
+  afterEach(() => {
+    if (originalGeolocation) {
+      Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+    } else {
+      delete (navigator as { geolocation?: unknown }).geolocation;
+    }
+  });
+
+  // Controlled host, as both forms are: the picker holds no coordinate state.
+  function Host({ onChange = noop }: { onChange?: (lat: string, lng: string) => void }) {
+    const [coords, setCoords] = useState({ lat: '', lng: '' });
+    return (
+      <>
+        <CoordinatePicker
+          latitude={coords.lat}
+          longitude={coords.lng}
+          onChange={(lat, lng) => {
+            onChange(lat, lng);
+            setCoords({ lat, lng });
+          }}
+        />
+        <button type="button" onClick={() => setCoords({ lat: '-7', lng: '36' })}>
+          type manually
+        </button>
+      </>
+    );
+  }
+
+  async function clickLocate() {
+    await userEvent.setup().click(screen.getByRole('button', { name: /use my current location/i }));
+  }
+
+  function lastCallbacks(): { success: SuccessCb; error: ErrorCb; options: PositionOptions } {
+    const [success, error, options] = getCurrentPosition.mock.calls.at(-1);
+    return { success, error, options };
+  }
+
+  it('asks for a fresh high-accuracy fix', async () => {
+    render(<Host />);
+    await clickLocate();
+
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(lastCallbacks().options).toEqual(
+      expect.objectContaining({ enableHighAccuracy: true, maximumAge: 0 }),
+    );
+  });
+
+  it('shows a busy, disabled control while waiting for the device', async () => {
+    render(<Host />);
+    await clickLocate();
+
+    expect(screen.getByRole('button', { name: /finding your location/i })).toBeDisabled();
+  });
+
+  it('writes both coordinates in one call, opens the map and states the accuracy', async () => {
+    const onChange = jest.fn();
+    render(<Host onChange={onChange} />);
+    expect(screen.queryByTestId('coordinate-picker-map-mock')).not.toBeInTheDocument();
+
+    await clickLocate();
+    act(() =>
+      lastCallbacks().success({ coords: { latitude: -6.123456, longitude: 35.74, accuracy: 18.4 } }),
+    );
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith('-6.12346', '35.74000');
+    expect(screen.getByTestId('coordinate-picker-map-mock')).toBeInTheDocument();
+    expect(receivedProps!.latitude).toBe('-6.12346');
+    expect(screen.getByRole('status')).toHaveTextContent(/accurate to about 18 m/i);
+    expect(screen.getByRole('button', { name: /use my current location/i })).toBeEnabled();
+  });
+
+  it('drops the confirmation once the coordinates are changed by hand', async () => {
+    render(<Host />);
+    await clickLocate();
+    act(() => lastCallbacks().success({ coords: { latitude: -6.1, longitude: 35.7, accuracy: 10 } }));
+    expect(screen.getByRole('status')).toHaveTextContent(/location set from your device/i);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'type manually' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('');
+  });
+
+  it.each([
+    [1, /location access is blocked.*browser settings/i],
+    [2, /could not be found.*location services/i],
+    [3, /took too long/i],
+  ])('error code %i shows its message, writes nothing and keeps the map closed', async (code, text) => {
+    const onChange = jest.fn();
+    render(<Host onChange={onChange} />);
+    await clickLocate();
+    act(() => lastCallbacks().error({ code }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(text);
+    expect(alert).toHaveTextContent(/enter the coordinates above or pick the point on the map/i);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('coordinate-picker-map-mock')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /use my current location/i })).toBeEnabled();
+  });
+
+  it('says so when the browser has no geolocation at all', async () => {
+    delete (navigator as { geolocation?: unknown }).geolocation;
+    installGeolocation(undefined);
+    render(<Host />);
+    await clickLocate();
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot share your location/i);
+  });
+
+  it('is disabled while the form submits', () => {
+    render(<CoordinatePicker latitude="" longitude="" onChange={noop} disabled />);
+
+    expect(screen.getByRole('button', { name: /use my current location/i })).toBeDisabled();
+  });
+
+  it('has no jest-axe violations with an error showing', async () => {
+    const { container } = render(<Host />);
+    await clickLocate();
+    act(() => lastCallbacks().error({ code: 1 }));
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
