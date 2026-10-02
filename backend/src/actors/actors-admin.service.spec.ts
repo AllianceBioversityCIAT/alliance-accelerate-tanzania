@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
@@ -14,6 +15,7 @@ import {
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
+import { buildTraderId } from './trader-id.util';
 
 /**
  * T-5 — ActorsAdminService unit tests with a MOCKED PrismaService (no DB).
@@ -157,6 +159,25 @@ interface MockPrisma {
     count: jest.Mock;
   };
   $transaction: jest.Mock;
+  $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
+}
+
+/**
+ * T-2 — a Prisma `P2002` on `traderId`, the REAL MySQL shape (`meta.target`
+ * is the index-name string `Actor_traderId_key`, measured against the local
+ * container, execution.md T-2 attempt 2). Shared by the retry/exhaustion
+ * tests below.
+ */
+function buildTraderIdCollisionError(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(
+    'Unique constraint failed on the fields: (`traderId`)',
+    {
+      code: 'P2002',
+      clientVersion: '1.0.0',
+      meta: { modelName: 'Actor', target: 'Actor_traderId_key' },
+    },
+  );
 }
 
 describe('ActorsAdminService (mocked Prisma)', () => {
@@ -166,6 +187,11 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   let prisma: MockPrisma;
 
   beforeEach(() => {
+    // T-2 — in-memory ActorSequence counter (design.md §4.2), so create's
+    // retry loop allocates a genuinely fresh id per attempt, not a canned one.
+    const sequenceRows: Array<{ year: number; seq: number }> = [];
+    let sessionNewSeq: number | null = null;
+
     prisma = {
       actor: {
         findMany: jest.fn(),
@@ -190,6 +216,31 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
+      $executeRaw: jest.fn(
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (!sql.includes('ActorSequence')) {
+            throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
+          }
+          const [year, count] = values as [number, number];
+          let row = sequenceRows.find((r) => r.year === year);
+          if (!row) {
+            row = { year, seq: count };
+            sequenceRows.push(row);
+          } else {
+            row.seq += count;
+          }
+          sessionNewSeq = row.seq;
+          return 1;
+        },
+      ),
+      $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        if (!sql.includes('@newActorSeq')) {
+          throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
+        }
+        return [{ newActorSeq: sessionNewSeq as number }];
+      }),
       // Pass the same mocked prisma object back into the callback so tx.*
       // resolves to the same in-memory delegates.
       $transaction: jest.fn(async (callback) => callback(prisma)),
@@ -333,11 +384,30 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   });
 
   describe('create', () => {
+    // Pins the clock so a test's own `new Date().getUTCFullYear()` and
+    // `create()`'s internal `new Date()` can never read different years
+    // (the year-boundary race a real clock would otherwise leave open).
+    const FIXED_NOW = new Date('2026-06-15T12:00:00.000Z');
+
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+      jest.setSystemTime(FIXED_NOW);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    // T-2 — `as unknown as AdminActorCreateDto` below: with `traderId` gone,
+    // these deliberately-partial fixtures no longer satisfy TS's `as` cast.
+
     it('creates actor with scalar fields and crop links, writes audit, returns AdminActor', async () => {
-      const created = fixtureCreatedActor({ id: 'actor-new' });
+      const year = FIXED_NOW.getUTCFullYear();
+      const expectedTraderId = buildTraderId(year, 1);
+      const created = fixtureCreatedActor({ id: 'actor-new', traderId: expectedTraderId });
       const full = fixtureActor({
         id: 'actor-new',
-        traderId: 'TZ-SEED-0002',
+        traderId: expectedTraderId,
         traderName: 'New Actor',
         crops: [{ crop: { name: 'sorghum' } }],
       });
@@ -348,22 +418,24 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         crops: ['sorghum'],
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       const res = await service.create(dto, ACTING_SUB);
 
+      // FR-2 — the system-assigned id is what reaches the write, never a
+      // client value (there is none here — the DTO has no `traderId` field
+      // at all any more).
       expect(prisma.actor.create).toHaveBeenCalledWith({
         data: {
-          traderId: 'TZ-SEED-0002',
           traderName: 'New Actor',
           region: 'Arusha',
           traderType: 'seed_company',
+          traderId: expectedTraderId,
         },
       });
       expect(prisma.cropsOnActors.createMany).toHaveBeenCalledWith({
@@ -380,18 +452,21 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(auditData.actingSub).toBe(ACTING_SUB);
       expect(auditData.actingEmail).toBe(ACTING_EMAIL);
       expect(auditData.changes.kind).toBe('snapshot');
-      expect(auditData.changes.values.traderId).toBe('TZ-SEED-0002');
+      expect(auditData.changes.values.traderId).toBe(expectedTraderId);
       expect(auditData.changes.values.crops).toEqual(['sorghum']);
 
       expect(res.id).toBe('actor-new');
+      expect(res.traderId).toBe(expectedTraderId);
       expect(res.crops).toEqual(['sorghum']);
     });
 
     it('creates actor without crops when dto.crops is omitted', async () => {
-      const created = fixtureCreatedActor({ id: 'actor-no-crops' });
+      const year = FIXED_NOW.getUTCFullYear();
+      const expectedTraderId = buildTraderId(year, 1);
+      const created = fixtureCreatedActor({ id: 'actor-no-crops', traderId: expectedTraderId });
       const full = fixtureActor({
         id: 'actor-no-crops',
-        traderId: 'TZ-SEED-0003',
+        traderId: expectedTraderId,
         traderName: 'No Crops Actor',
         crops: [],
       });
@@ -400,12 +475,11 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0003',
+      const dto = {
         traderName: 'No Crops Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await service.create(dto, ACTING_SUB);
 
@@ -414,13 +488,12 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     });
 
     it('throws BadRequestException when consentStatus === GRANTED and !acknowledged', async () => {
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         consentStatus: ConsentStatus.GRANTED,
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
         BadRequestException,
@@ -428,52 +501,131 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException 409 on duplicate traderId (P2002)', async () => {
-      const error = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed on the fields: (`traderId`)',
-        {
-          code: 'P2002',
-          clientVersion: '1.0.0',
-          meta: { target: ['traderId'] },
-        },
-      );
-      prisma.actor.create.mockRejectedValue(error);
+    // Falsifier 2 (tasks.md T-2, design.md §4.2) — removing the retry is
+    // what must redden this.
+    it('retries once after a traderId collision and succeeds with a freshly-allocated id (design.md §4.2)', async () => {
+      const year = FIXED_NOW.getUTCFullYear();
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0001',
-        traderName: 'Duplicate',
+      prisma.actor.create
+        .mockRejectedValueOnce(buildTraderIdCollisionError())
+        .mockImplementationOnce(async (args: { data: Record<string, unknown> }) => ({
+          id: 'actor-new',
+          ...args.data,
+        }));
+      prisma.actor.findUnique.mockResolvedValue(
+        fixtureActor({
+          id: 'actor-new',
+          traderId: buildTraderId(year, 2),
+          traderName: 'New Actor',
+          crops: [],
+        }),
+      );
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+      const dto = {
+        traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
-      await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
-        ConflictException,
+      const res = await service.create(dto, ACTING_SUB);
+
+      expect(prisma.actor.create).toHaveBeenCalledTimes(2);
+      const attemptedIds = prisma.actor.create.mock.calls.map(
+        (call: unknown[]) => (call[0] as { data: { traderId: string } }).data.traderId,
       );
+      // The retry's allocation is GENUINELY new — never the id the
+      // rolled-back first attempt already (uselessly) consumed.
+      expect(attemptedIds).toEqual([buildTraderId(year, 1), buildTraderId(year, 2)]);
+      expect(res.traderId).toBe(buildTraderId(year, 2));
+    });
+
+    // Falsifier 3 (tasks.md T-2) — uncapped retries, or the wrong cap, must
+    // redden this (never reaching the 500, or reaching it at the wrong count).
+    it('exhausts allocation retries after 3 collisions and returns 500 — never a 409 (design.md §4.2 exhaustion)', async () => {
+      const year = FIXED_NOW.getUTCFullYear();
+      prisma.actor.create.mockRejectedValue(buildTraderIdCollisionError());
+
+      const dto = {
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+      } as unknown as AdminActorCreateDto;
+
+      let caught: unknown;
+      try {
+        await service.create(dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(InternalServerErrorException);
+      expect(caught).not.toBeInstanceOf(ConflictException);
+      expect((caught as InternalServerErrorException).getStatus()).toBe(500);
+
+      expect(prisma.actor.create).toHaveBeenCalledTimes(3);
+      const attemptedIds = prisma.actor.create.mock.calls.map(
+        (call: unknown[]) => (call[0] as { data: { traderId: string } }).data.traderId,
+      );
+      expect(attemptedIds).toEqual([
+        buildTraderId(year, 1),
+        buildTraderId(year, 2),
+        buildTraderId(year, 3),
+      ]);
+      expect(new Set(attemptedIds).size).toBe(3);
+      expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    // Falsifier 5 (rework) — un-narrowing isTraderIdCollisionError back to
+    // "any P2002" is what must redden this.
+    it('does not retry a P2002 on a different unique target — maps to the generic 409 (design.md §4.4)', async () => {
+      const otherTargetError = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`PRIMARY`)',
+        { code: 'P2002', clientVersion: '1.0.0', meta: { modelName: 'Actor', target: 'PRIMARY' } },
+      );
+      prisma.actor.create.mockRejectedValue(otherTargetError);
+
+      const dto = {
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+      } as unknown as AdminActorCreateDto;
+
+      let caught: unknown;
+      try {
+        await service.create(dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(ConflictException);
+      expect((caught as ConflictException).message).toBe('Unique constraint violation');
+      expect(prisma.actor.create).toHaveBeenCalledTimes(1);
     });
 
     it('does not write audit when actor.create fails (rollback leaves no audit row)', async () => {
       prisma.actor.create.mockRejectedValue(new Error('DB unavailable'));
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await expect(service.create(dto, ACTING_SUB)).rejects.toThrow('DB unavailable');
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      // A non-collision error is never retried — a single attempt only.
+      expect(prisma.actor.create).toHaveBeenCalledTimes(1);
     });
 
     it('throws BadRequestException (field-level) when creating GRANTED without provenance (FR-3, R-1/NFR-7)', async () => {
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         consentStatus: ConsentStatus.GRANTED,
         acknowledged: true,
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       let caught: unknown;
       try {
@@ -522,7 +674,6 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
 
       const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
@@ -868,27 +1019,33 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('throws ConflictException 409 when changing traderId to a duplicate', async () => {
-      const before = fixtureActor();
-      prisma.actor.findUnique.mockResolvedValue(before);
+    // Falsifier 4 (tasks.md T-2) — re-adding 'traderId' to SCALAR_FIELDS is
+    // what must redden the toHaveBeenCalledWith assertion below.
+    it('ignores a client-sent traderId on update — it is never forwarded to the write and the stored id never changes', async () => {
+      const before = fixtureActor({ traderId: 'TZ-SEED-0001' });
+      const after = fixtureActor({ traderId: 'TZ-SEED-0001', region: 'Dodoma' });
 
-      const error = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed on the fields: (`traderId`)',
-        {
-          code: 'P2002',
-          clientVersion: '1.0.0',
-          meta: { target: ['traderId'] },
-        },
-      );
-      prisma.actor.update.mockRejectedValue(error);
+      prisma.actor.findUnique
+        .mockResolvedValueOnce(before)
+        .mockResolvedValueOnce(after);
+      prisma.actor.update.mockResolvedValue(after);
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorUpdateDto = {
+      const dto = {
         traderId: 'TZ-SEED-9999',
-      } as AdminActorUpdateDto;
+        region: 'Dodoma',
+      } as unknown as AdminActorUpdateDto;
 
-      await expect(
-        service.update('actor-1', dto, ACTING_SUB),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const res = await service.update('actor-1', dto, ACTING_SUB);
+
+      expect(prisma.actor.update).toHaveBeenCalledWith({
+        where: { id: 'actor-1' },
+        data: { region: 'Dodoma' },
+      });
+      expect(prisma.actor.update.mock.calls[0][0].data).not.toHaveProperty(
+        'traderId',
+      );
+      expect(res.traderId).toBe('TZ-SEED-0001');
     });
 
     it('writes no audit row for a no-op update (empty diff)', async () => {

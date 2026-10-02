@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
@@ -21,6 +23,11 @@ import {
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 import { missingIntakeFields } from '../common/intake-contract';
+import {
+  allocateTraderIds,
+  isTraderIdCollisionError,
+  MAX_TRADER_ID_ALLOCATION_ATTEMPTS,
+} from './trader-id.util';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -74,7 +81,6 @@ const CROPS_INCLUDE = {
  * client; crop assignments are handled separately via `CropsOnActors`.
  */
 const SCALAR_FIELDS = [
-  'traderId',
   'traderName',
   'region',
   'district',
@@ -101,6 +107,8 @@ const SCALAR_FIELDS = [
 
 @Injectable()
 export class ActorsAdminService {
+  private readonly logger = new Logger(ActorsAdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly actorAuditService: ActorAuditService,
@@ -153,12 +161,9 @@ export class ActorsAdminService {
   }
 
   /**
-   * Create a single actor (FR-1).
-   *
-   * Resolves the acting Admin email before opening the transaction, then creates
-   * the Actor row, optionally links crops, refetches the full row, and writes a
-   * `CREATE` audit entry in the same transaction. Duplicate `traderId` is mapped
-   * to a clean 409.
+   * Create a single actor (FR-1, FR-2). Allocates a system-generated
+   * `traderId` and retries on collision up to {@link MAX_TRADER_ID_ALLOCATION_ATTEMPTS}
+   * (design.md §4.2) before giving up with a 500 — never a 409 for this.
    */
   async create(
     dto: AdminActorCreateDto,
@@ -178,37 +183,62 @@ export class ActorsAdminService {
     }
 
     const acting = await this.resolveActing(actingSub);
+    const now = new Date();
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.actor.create({
-          data: this.buildScalarData(dto) as Prisma.ActorCreateInput,
+    for (let attempt = 1; attempt <= MAX_TRADER_ID_ALLOCATION_ATTEMPTS; attempt += 1) {
+      const [traderId] = await allocateTraderIds(this.prisma, 1, now);
+
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const created = await tx.actor.create({
+            data: {
+              ...this.buildScalarData(dto),
+              traderId,
+            } as Prisma.ActorCreateInput,
+          });
+
+          if (dto.crops && dto.crops.length > 0) {
+            const cropLinks = await this.buildCropLinks(
+              tx,
+              created.id,
+              dto.crops,
+            );
+            await tx.cropsOnActors.createMany({ data: cropLinks });
+          }
+
+          const full = await tx.actor.findUnique({
+            where: { id: created.id },
+            include: CROPS_INCLUDE,
+          });
+          if (!full) {
+            throw new Error('Created actor could not be refetched');
+          }
+
+          const adminActor = toAdminActor(full);
+          await this.actorAuditService.logCreate(tx, adminActor, acting);
+          return adminActor;
         });
-
-        if (dto.crops && dto.crops.length > 0) {
-          const cropLinks = await this.buildCropLinks(
-            tx,
-            created.id,
-            dto.crops,
+      } catch (err) {
+        if (isTraderIdCollisionError(err)) {
+          if (attempt < MAX_TRADER_ID_ALLOCATION_ATTEMPTS) {
+            continue;
+          }
+          this.logger.error(
+            `trader id allocation exhausted: year=${now.getUTCFullYear()} ` +
+              `attempts=${MAX_TRADER_ID_ALLOCATION_ATTEMPTS}`,
           );
-          await tx.cropsOnActors.createMany({ data: cropLinks });
+          throw new InternalServerErrorException(
+            'Unable to create the actor right now. Please try again.',
+          );
         }
-
-        const full = await tx.actor.findUnique({
-          where: { id: created.id },
-          include: CROPS_INCLUDE,
-        });
-        if (!full) {
-          throw new Error('Created actor could not be refetched');
-        }
-
-        const adminActor = toAdminActor(full);
-        await this.actorAuditService.logCreate(tx, adminActor, acting);
-        return adminActor;
-      });
-    } catch (err) {
-      throw this.mapPrismaError(err);
+        throw this.mapPrismaError(err);
+      }
     }
+
+    // Unreachable — satisfies TS control-flow analysis only (same as RegistrationsService.submitRegistration).
+    throw new InternalServerErrorException(
+      'Unable to create the actor right now. Please try again.',
+    );
   }
 
   /**
@@ -738,23 +768,15 @@ export class ActorsAdminService {
   }
 
   /**
-   * Map Prisma errors to domain HTTP exceptions.
-   *
-   * A duplicate `traderId` (`P2002` on the unique index) becomes a clean 409.
-   * All other errors are re-thrown unchanged so the original exception type
-   * (e.g. `NotFoundException`) propagates.
+   * Map Prisma errors to domain HTTP exceptions (design.md §4.4). Every
+   * `P2002` becomes a generic 409 — a `traderId` collision never reaches
+   * here (create's retry loop intercepts it via `isTraderIdCollisionError`,
+   * and update can no longer write `traderId` at all). All other errors are
+   * re-thrown unchanged so the original exception type propagates.
    */
   private mapPrismaError(err: unknown): never {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === 'P2002') {
-        const targets = Array.isArray(err.meta?.target) ? err.meta.target : [];
-        if (targets.includes('traderId')) {
-          throw new ConflictException(
-            'An actor with this traderId already exists',
-          );
-        }
-        throw new ConflictException('Unique constraint violation');
-      }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ConflictException('Unique constraint violation');
     }
     throw err;
   }

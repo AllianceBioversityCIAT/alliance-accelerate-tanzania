@@ -79,13 +79,19 @@ describe('ActorCreateDto', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
-  it('rejects missing required fields (traderId, traderName)', async () => {
+  it('rejects missing required fields (traderName)', async () => {
     const dto = plainToInstance(ActorCreateDto, {
       region: 'Mbeya',
       traderType: 'seed_company',
     });
     const props = await invalidProps(dto);
-    expect(props).toEqual(expect.arrayContaining(['traderId', 'traderName']));
+    expect(props).toEqual(expect.arrayContaining(['traderName']));
+  });
+
+  // FR-2 — no decorator exists for traderId, so a client-sent value can't fail validate() (stripping happens at the pipe, proven in the e2e spec).
+  it('a client-sent traderId does not block validation either way (no decorator exists for it)', async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, traderId: 'CLIENT-SUPPLIED' });
+    expect(await validate(dto)).toHaveLength(0);
   });
 
   // T-1 (intake-required-fields) FR-1 — the same required set self-registration

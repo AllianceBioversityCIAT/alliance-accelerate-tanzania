@@ -62,14 +62,14 @@
       Review: `full`. It is the contract every later task consumes, and the fixture churn is wide.
       Done when: admin create and edit reject each missing required field and each over-bound value at the API, an incomplete stored actor is still readable but not savable incomplete, and all five falsifiers were shown red.
 
-- [ ] **T-2** System-generated Trader ID on admin create  (deps: T-1)
+- [x] **T-2** System-generated Trader ID on admin create  (deps: T-1)
       Scope:
       - **First step:** confirm P-17's gap stands. Record it in `execution.md`; no spike.
       - Migration `add_actor_sequence` (design §2).
       - `backend/src/actors/trader-id.util.ts`: range allocation, the `TM-<year>-<NNNN>` format, widening past 9999 (design §4.2).
       - `traderId` leaves `ActorCreateDto`, `AdminActorUpdateDto` and `SCALAR_FIELDS`.
       - `create` allocates before its transaction, merges the ID explicitly, and retries on `P2002` up to 3 attempts. Exhaustion is a 500.
-      - `mapPrismaError`'s `traderId` branch is kept for the retry path only.
+      - ~~`mapPrismaError`'s `traderId` branch is kept for the retry path only.~~ *Amended 2026-10-02 (design §4.4): the branch is removed, and `isTraderIdCollisionError` is narrowed to `meta.target` `traderId`.*
       Traces: FR-2 scenarios 1–4 for **create** (scenario 2's concurrency clause is a declared gap with retry-spec substitute; design §10); design §2, §4.2, §4.4 step 4, DD-2, P-9, P-10, P-17, P-24
       Files: `backend/prisma/schema.prisma`, `backend/prisma/migrations/<ts>_add_actor_sequence/`, `backend/src/actors/trader-id.util.ts` (+ spec), the DTOs, `actors-admin.service.ts` (+ spec)
       Skills: `nestjs-expert`, `tdd`

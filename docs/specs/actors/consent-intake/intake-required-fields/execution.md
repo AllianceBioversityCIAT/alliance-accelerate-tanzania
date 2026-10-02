@@ -71,3 +71,112 @@
 - **runtime events:** none.
 - **Requirements covered:** FR-1 (API side: create and edit, bounds, crops, the legacy-actor read and write), NFR-1 (DTO half), and the FR-1 messages clause (create).
 - **Final status:** **PASS**. 2 attempts, 2 review rounds.
+- **Product-owner ruling (2026-10-02, Daniela Gómez) — option 1.** Every edit, a consent-withdrawal-only edit included, requires a complete actor. No exemption is added. The rationale is D-3: current data is test data, and no new actor can be incomplete.
+
+### T-2 — System-generated Trader ID on admin create
+
+- **First step (P-17):** confirmed. `backend/CLAUDE.md` *Testing conventions* states the e2e harness is "AppModule + in-memory Prisma mock override". The gap stands for tests.
+- **Environment:** local MySQL is the existing `accelerate-mysql` Docker container, started by the Leader after the product owner started Docker Desktop. `prisma migrate status` was up to date at 81762fa.
+
+**Attempt 1 — FAIL** (2026-10-02)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It is a T2 tier, so effort cannot be raised to `max`; the tier rule escalates the tier instead, and the Leader chose not to, because the Reviewer runs on opus.
+- **Files changed:**
+  - new: `backend/prisma/migrations/20261002165928_add_actor_sequence/`, `backend/src/actors/trader-id.util.ts` (+ spec)
+  - modified: `schema.prisma`, `dto/actor-create.dto.ts`, `actors-admin.service.ts` (+ spec), `dto/actor-dto.spec.ts`, `common/intake-contract.spec.ts`, `test/admin-actors-crud.e2e.spec.ts`
+- **Implementer verification:**
+  - The migration applied to local MySQL; 85 suites / 1316 tests passed; build clean; eslint 0.
+  - All 4 falsifiers were reported red, then restored.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 85 / 1316, build, eslint 0, migrate status up to date.
+- **Leader extra evidence, real MySQL.** A throwaway probe (`backend/src/__alloc_probe.ts`, deleted afterwards) called `allocateTraderIds` against the local container:
+  - Allocating 3 then 2 gave `TM-2099-0001..0003` and `TM-2099-0004..0005`, which are contiguous.
+  - 20 concurrent `allocateTraderIds(…, 1)` calls over the Prisma pool gave 25 ids in total, 25 distinct.
+  - This **partially substitutes** the P-17 concurrency gap: one process, pooled connections. No committed test would fail on non-atomic SQL.
+- **Reviewers:** parallel lens mode, because the task touches a migration.
+  - **A** (`opus`; conformance + reliability + risk): **FAIL**. Two comments in `trader-id.util.ts` and `trader-id.util.spec.ts` claim the range allocator "has proven under real concurrent load" and "inherits that proof by construction".
+    - The cited source makes that claim for `EmailSendBudget`, not `RegistrationSequence`.
+    - The statement shape is not identical: it adds `count`.
+    - Violates design §4.2 ("the range variant is new") and the T-2 Disqualifier.
+  - **B** (`opus`; conformance + resilience + readability): **FAIL**.
+    1. Oversized comment blocks: an 11-line block above a two-field model, about 20 added docstring lines, a 22-line spec header, and 6–8 line blocks per test. This violates the memory rule *comments match the change size*.
+    2. Inaccurate comments:
+       - (a) `mapPrismaError`'s `traderId` branch is dead: `isTraderIdCollisionError` catches *every* P2002, and nothing routes a collision to `mapPrismaError`. That contradicts design §4.4 ("kept for the allocation-retry path").
+       - (b) The same "inherits by construction" overclaim as A.
+  - Both reviewers PASS conformance and resilience.
+- **Advisory (4R):**
+  - Narrow `isTraderIdCollisionError` to `meta.target` containing `traderId` (A).
+  - Falsifier 3 reddened on the call count, not the status (A; the Leader accepts it as a direct assertion).
+  - Burned ids on a 400 inside the transaction (A, B; accepted by §4.2).
+  - The `requiredPropertiesOf` `exclude` parameter is unused.
+  - `NaN` on an empty `SELECT` result.
+  - No PATCH-with-`traderId` e2e.
+  - A UTC year-boundary flake in the unit tests (B).
+- **runtime events:** none.
+
+**Leader adjudication after attempt 1:**
+- Both FAILs are in scope and caused by this task. They are false claims about artefacts (KZ-008) and comment density.
+- **Execute-time design edit**, which does not change any requirement's meaning: design §4.4's `mapPrismaError` bullet is amended. Its old premise ("kept for the retry path") is false in the code as built.
+  - New design: `isTraderIdCollisionError` is narrowed to a P2002 whose `meta.target` names `traderId`, which is reviewer A's advisory.
+  - `mapPrismaError`'s now-dead `traderId` branch is removed.
+  - A non-`traderId` P2002 falls through to the generic "Unique constraint violation" 409, as today.
+- The edit is carried as a named conformance check into the attempt-2 Reviewer brief and the T-3 Reviewer brief.
+
+**Attempt 2 — FAIL** (2026-10-02)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received both attempt-1 reports verbatim, plus the §4.4 edit and three `[advisory-grade]` items: the non-finite guard, removing `exclude`, and the year-boundary clock.
+- **Implementer verification:** migrate status up to date; 85 suites / 1318 tests; build clean; eslint 0.
+  - Falsifiers 2, 3 and the new 5 (un-narrowing) were re-run red.
+  - Falsifiers 1 and 4 were unchanged since attempt 1.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 85 / 1318, build, eslint, migrate status.
+- **Reviewer:** single reviewer, all four lenses. This deviates from parallel lens mode because the migration did not change in this attempt (the schema edit is comment-only).
+  - **FAIL:**
+    1. The narrowed `isTraderIdCollisionError` recognises only an **array** `meta.target`. If MySQL reports the index name as a **string**, a real collision is never retried, and the admin sees a 409. That breaks §4.2 and FR-2 scenario 2.
+    2. A stale comment says the check "mirrors `mapPrismaError`'s read of `meta.target`", but that read was removed.
+  - Attempt-1 FAILs A, B1 and B2 were all confirmed resolved.
+- **Leader settled issue 1 against real MySQL** (local container, `@prisma/client` ^6.1.0). A throwaway probe (`backend/src/__p2002_probe.ts`, deleted) created two Actors with the same `traderId`. The result was:
+  `code P2002 meta {"modelName":"Actor","target":"Actor_traderId_key"} typeof target string`.
+  - **The finding is confirmed.** The defect was introduced by the Leader's own execute-time design edit after attempt 1.
+  - Side observation, not in scope: the removed pre-existing `mapPrismaError` `traderId` branch also read `target` as an array, so it would never have fired on MySQL either.
+- **Advisory:**
+  - Leftover oversized comments: the 6-line JSDoc for the removed `traderId` field in `actor-create.dto.ts`, a 6-line comment over a 2-line test, and the `create()` docstring.
+  - `registrations/admin-registrations.service.ts` still says "`ActorCreateDto` accepts any client-supplied `traderId`". That became stale with this task.
+  - There is still no PATCH-with-`traderId` e2e.
+- **runtime events:** none.
+
+**Leader decision:**
+- **Execute-time design edit:** design §4.4 now states that `meta.target` is matched in **both** shapes. On MySQL the measured shape is the index-name string `Actor_traderId_key`; an array that includes `traderId` is also accepted, for portability.
+- Attempt 3 is the last allowed. Effort stays at xhigh (the T2 cap).
+
+**Attempt 3 — PASS** (2026-10-02)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received the attempt-2 report verbatim and the measured MySQL shape.
+- **Changes:**
+  - `isTraderIdCollisionError` accepts both a string `meta.target` containing `traderId` and an array that includes it.
+  - Fixtures now throw the real `'Actor_traderId_key'` shape.
+  - The stale comment was removed.
+  - Advisory trims were applied, and the stale sentence in `admin-registrations.service.ts` was fixed.
+- **Implementer verification:** 85 suites / 1320 tests; build clean; eslint 0; migrate status up to date. Falsifiers 6, 1 and 5 were re-run red, then restored.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 85 / 1320, build, eslint.
+  - **Real-engine check:** a throwaway probe (deleted) forced a real duplicate-`traderId` create on local MySQL, and `isTraderIdCollisionError(e)` returned **true**.
+- **Reviewer:** `akili-reviewer` (opus), single reviewer, all four lenses, **PASS**. Both attempt-2 items are resolved, and the amended §4.4 is implemented. `.includes('traderId')` on a future composite index is judged a true Trader-ID collision, which is consistent with §4.4.
+- **Advisory:**
+  1. In `trader-id.util.spec.ts`, the comment on the `Actor_otherField_key` test wrongly claims the array-only revert reddens it. What actually reddens is the real-shape-true test. **Forward pointer → T-3 brief** (`[advisory-grade]` label fix).
+  2. Optional: match the string exactly.
+  3. The MySQL `meta.target` shape is now pinned only by fixtures and this log. Re-check it if `@prisma/client` moves past 6.x.
+  4. No PATCH e2e (optional).
+- **runtime events:** none.
+- **Requirements covered:** FR-2 scenarios 1, 3 and 4 and the BUT clause for create and update. Scenario 2 uses retry specs, partially substituted by the real-MySQL probes; real concurrency through the test harness remains a declared gap.
+- **Final status:** **PASS**. 3 attempts, 4 review verdicts (attempt 1 had two parallel lens reviewers).
+
+**Budget check (recomputed now):** 2 of 8 tasks are done, and **6 review verdicts** have been used against ~13 (T-1: 2; T-2: 4). The budget is not yet exceeded, but the trend runs about 3 per task against ~1.6 planned. This is reported to the product owner at this gate.
+
+## Budget tripwire — after T-2 (2026-10-02)
+
+| Measure | Budget | Actual after 2 of 8 tasks | Source |
+|---|---|---|---|
+| LOC changed | ~1,800 | **~1,956** (T-1: +1096/−36; T-2: +692/−132) | `git diff --stat 1bf27d0 81762fa -- backend`; `git diff --stat 81762fa -- backend` |
+| Review verdicts | ~13 | 6 | this log |
+| Tasks | 8 | 2 done | tasks.md |
+
+- **LOC is over budget with 6 tasks left.**
+- **Cause:** tests dominate. Each task adds falsifier-backed specs and rewrites shared fixtures; for example, the e2e harness gained an in-memory `ActorSequence`.
+  - The budget assumed about 700 production / 1,100 test LOC for the **whole** spec. T-1 and T-2 alone exceed that.
+  - Review rounds also run at about 3 per task, against about 1.6 planned. Both FAIL sources were the Leader's own: a closure gap in T-1, and a design edit in T-2 that introduced the MySQL-shape defect.
+- **Execution stopped. Escalated to the product owner** per `/akili-execute` *Budget Tripwire*.

@@ -76,19 +76,10 @@ function decoratedProperties(target: ClassConstructor): Set<string> {
   return new Set(names);
 }
 
-/**
- * The DERIVED required-property set for a DTO: every decorated property that
- * is required (`isRequired` above), minus `exclude` (used for `traderId`,
- * which stays on `AdminActorCreateDto` until T-2 and so is not part of this
- * task's required-set contract).
- */
-function requiredPropertiesOf(
-  target: ClassConstructor,
-  exclude: readonly string[] = [],
-): Set<string> {
+/** The DERIVED required-property set for a DTO: every decorated property that is required (`isRequired` above). */
+function requiredPropertiesOf(target: ClassConstructor): Set<string> {
   const required = new Set<string>();
   for (const property of decoratedProperties(target)) {
-    if (exclude.includes(property)) continue;
     if (isRequired(target, property)) required.add(property);
   }
   return required;
@@ -188,8 +179,8 @@ describe('Intake contract — NFR-1 metadata pin', () => {
       expect(required).toEqual(REFERENCE_REQUIRED_FIELDS);
     });
 
-    it('AdminActorCreateDto (minus traderId, pending T-2) requires exactly this set — no more, no less', () => {
-      const required = requiredPropertiesOf(AdminActorCreateDto, ['traderId']);
+    it('AdminActorCreateDto requires exactly this set — no more, no less (T-2: traderId carries no metadata at all)', () => {
+      const required = requiredPropertiesOf(AdminActorCreateDto);
       expect(required).toEqual(REFERENCE_REQUIRED_FIELDS);
     });
   });

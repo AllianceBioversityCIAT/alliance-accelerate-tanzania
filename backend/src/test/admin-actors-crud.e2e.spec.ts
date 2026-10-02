@@ -381,7 +381,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     });
   }
 
-  function throwUniqueViolation(target: string[]): never {
+  function throwUniqueViolation(target: string[] | string): never {
     throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
       clientVersion: '0.0.0',
@@ -430,7 +430,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     create: jest.fn(async (args: { data: Record<string, unknown> }) => {
       const data = args.data;
       if (actors.some((a) => a.traderId === data.traderId)) {
-        throwUniqueViolation(['traderId']);
+        // Real MySQL P2002 shape (design.md §4.4): meta.target is the index-name string.
+        throwUniqueViolation('Actor_traderId_key');
       }
       const now = new Date();
       const created = {
@@ -574,7 +575,40 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }),
   };
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog };
+  // T-2 — in-memory ActorSequence counter (design.md §4.2). Reachable
+  // through the SAME $transaction as create/update, since allocateTraderIds
+  // opens its own transaction before the caller's.
+  let sequenceRows: Array<{ year: number; seq: number }> = [];
+  let sessionNewSeq: number | null = null;
+
+  const $executeRaw = jest.fn(
+    async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?');
+      if (!sql.includes('ActorSequence')) {
+        throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
+      }
+      const [year, count] = values as [number, number];
+      let row = sequenceRows.find((r) => r.year === year);
+      if (!row) {
+        row = { year, seq: count };
+        sequenceRows.push(row);
+      } else {
+        row.seq += count;
+      }
+      sessionNewSeq = row.seq;
+      return 1;
+    },
+  );
+
+  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
+    const sql = strings.join('?');
+    if (!sql.includes('@newActorSeq')) {
+      throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
+    }
+    return [{ newActorSeq: sessionNewSeq as number }];
+  });
+
+  const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -589,6 +623,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropLinks = [];
     actorSeq = 0;
     auditSeq = 0;
+    sequenceRows = [];
+    sessionNewSeq = null;
 
     for (const actorRow of actors) {
       const names = (
@@ -606,14 +642,27 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }
   };
 
-  return { actor, cropsOnActors, crop, actorAuditLog, $transaction, reset };
+  return {
+    actor,
+    cropsOnActors,
+    crop,
+    actorAuditLog,
+    $transaction,
+    $executeRaw,
+    $queryRaw,
+    reset,
+  };
 }
 
 const admin = { Authorization: 'Bearer admin-token' };
 const staff = { Authorization: 'Bearer staff-token' };
 const pub = { Authorization: 'Bearer public-token' };
 
-/** Valid create payload that does not require consent acknowledgement. */
+/**
+ * Valid create payload (no consent acknowledgement needed). `traderId` is
+ * left in on purpose — the system assigns its own, so every test here also
+ * proves a client-sent value is ignored (design.md §4.2).
+ */
 const validCreatePayload = (): Record<string, unknown> => ({
   traderId: 'TZ-NEW-0001',
   traderName: 'New Seed Actor',
@@ -719,7 +768,10 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .send(validCreatePayload())
         .expect(201);
 
-      expect(res.body.traderId).toBe('TZ-NEW-0001');
+      // T-2 (intake-required-fields) FR-2 — the system assigns the id; the
+      // payload's own `traderId: 'TZ-NEW-0001'` is never stored.
+      expect(res.body.traderId).toMatch(/^TM-\d{4}-\d{4}$/);
+      expect(res.body.traderId).not.toBe('TZ-NEW-0001');
       expect(res.body.traderName).toBe('New Seed Actor');
       expect(res.body.consentStatus).toBe('UNKNOWN');
       expect(res.body.crops).toEqual(['sorghum', 'common_bean']);
@@ -766,15 +818,18 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       }
     });
 
-    it('returns 409 for a duplicate traderId', async () => {
+    // design.md §4.2 — a client-sent traderId matching an existing actor no
+    // longer collides; it's ignored and a fresh id is assigned.
+    it('ignores a client-sent traderId even when it matches an existing actor — the create still succeeds with a generated id (FR-2 scenario 3)', async () => {
       const payload = { ...validCreatePayload(), traderId: 'TZ-SEED-0001' };
       const res = await request(app.getHttpServer())
         .post('/api/v1/admin/actors')
         .set(admin)
         .send(payload)
-        .expect(409);
+        .expect(201);
 
-      expect(res.body.message).toMatch(/traderId already exists/i);
+      expect(res.body.traderId).toMatch(/^TM-\d{4}-\d{4}$/);
+      expect(res.body.traderId).not.toBe('TZ-SEED-0001');
     });
   });
 
@@ -1010,6 +1065,10 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .expect(201);
 
       const id = createRes.body.id as string;
+      // T-2 (intake-required-fields) FR-2 — the system-assigned id, never
+      // the payload's own `traderId: 'TZ-NEW-0001'`.
+      const generatedTraderId = createRes.body.traderId as string;
+      expect(generatedTraderId).toMatch(/^TM-\d{4}-\d{4}$/);
 
       const detailRes = await request(app.getHttpServer())
         .get(`/api/v1/admin/actors/${id}`)
@@ -1062,7 +1121,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         'CREATE',
       ]);
       expect(historyRes2.body.data[0].actorId).toBe(id);
-      expect(historyRes2.body.data[0].traderId).toBe('TZ-NEW-0001');
+      expect(historyRes2.body.data[0].traderId).toBe(generatedTraderId);
       expect(historyRes2.body.data[0].traderName).toBe('New Seed Actor');
       expect(historyRes2.body.data[0].changes.kind).toBe('snapshot');
     });

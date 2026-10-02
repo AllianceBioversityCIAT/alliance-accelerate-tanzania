@@ -38,10 +38,7 @@ const REGISTRATION_SOURCE_VALUES = Object.values(RegistrationSource);
 const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
 
 export class ActorCreateDto {
-  /** Source business key — required, deduped on import (FR-2). */
-  @IsString()
-  @MinLength(1)
-  traderId!: string;
+  // `traderId` is system-assigned (`trader-id.util.ts`, FR-2); a client-sent value is stripped by the global pipe's `whitelist`, not declared here.
 
   /** Bound matches self-registration's `RegistrationPayloadDto.traderName` (intake-contract.ts, FR-1). */
   @IsString()

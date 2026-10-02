@@ -294,8 +294,8 @@ const TRADER_ID_PREFIX = 'SR-';
  * registration's `reference`. Inherits `Registration.reference`'s own
  * `@unique` + atomic-allocation race-safety (`registration-reference.util.ts`)
  * with no second counter — unique AMONG SELF-REGISTERED ACTORS, not
- * table-wide by construction (`ActorCreateDto` accepts any client-supplied
- * `traderId`), which is why {@link AdminRegistrationsService.approve} must
+ * table-wide by construction (admin-created actors now get their own
+ * system-assigned `TM-` id instead, `trader-id.util.ts`, FR-2), which is why {@link AdminRegistrationsService.approve} must
  * still catch a `P2002` on the resulting `tx.actor.create` call.
  */
 export function deriveTraderIdFromReference(reference: string): string {

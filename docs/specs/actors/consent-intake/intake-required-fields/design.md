@@ -91,7 +91,7 @@ Self-registration is untouched (FR-1: it is the reference).
   - When `dto.crops` is absent, the stored links count.
   - An explicit `crops: []` is rejected with a 400 on `crops`, so a PATCH can no longer wipe every crop.
 - **Response** carries the weak candidates as `duplicateWarnings`.
-- **`mapPrismaError`:** the "An actor with this traderId already exists" branch becomes unreachable from client input and is kept only for the allocation-retry path.
+- **`mapPrismaError`:** the "An actor with this traderId already exists" branch is **removed**. *Amended 2026-10-02 during T-2: the r2 text kept it "for the allocation-retry path", but the retry loop never routes a collision there, so it would be dead code.* The retry's collision test (`isTraderIdCollisionError`) is narrowed to a `P2002` whose `meta.target` names `traderId`. **On MySQL, `meta.target` is the index-name string `Actor_traderId_key`** (measured against the local container, execution.md T-2 attempt 2), so the check accepts that string and, for portability, an array of field names that includes `traderId`. Any other `P2002` falls through to `mapPrismaError`'s generic 409, as today.
 
 ### 4.5 Import — `ActorImportService`
 - `validateRow` consumes the intake contract. The Trader ID cell and `registrationSource` parsing go away, and imports are always `TEAM_MANAGED`.
