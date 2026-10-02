@@ -17,6 +17,28 @@ async function invalidProps(dto: object): Promise<string[]> {
   return errors.map((e) => e.property);
 }
 
+/**
+ * A `validator.js`-valid email of EXACTLY `totalLength` characters, built by
+ * padding the domain with dot-separated labels (each ≤ 63 chars, the DNS
+ * label limit) rather than the local part (capped at 64 by `isEmail`).
+ * Padding the local part instead — e.g. `'x'.repeat(181) + '@example.com'`
+ * — fails `@IsEmail()`'s FORMAT check on its own regardless of length,
+ * which would make a bound test pass for the wrong reason (an inert
+ * fixture: it can't tell a length violation from a format violation).
+ */
+function validEmailOfLength(totalLength: number): string {
+  const prefix = 'a@';
+  const tld = '.com';
+  let remaining = totalLength - prefix.length - tld.length;
+  const labels: string[] = [];
+  while (remaining > 63) {
+    labels.push('x'.repeat(63));
+    remaining -= 64; // 63 label chars + 1 joining dot
+  }
+  labels.push('x'.repeat(remaining));
+  return `${prefix}${labels.join('.')}${tld}`;
+}
+
 describe('ActorCreateDto', () => {
   const validInput = {
     traderId: 'TZ-0001',
@@ -25,7 +47,9 @@ describe('ActorCreateDto', () => {
     district: 'Mbeya Urban',
     traderType: 'seed_company',
     sex: 'F',
+    contactPerson: 'Neema Shirima',
     capacityTons: 1250.5,
+    phone: '+255700000000',
     email: 'contact@mbeyaseed.co.tz',
     gpsLatitude: -8.9094,
     gpsLongitude: 33.4607,
@@ -37,12 +61,20 @@ describe('ActorCreateDto', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
+  // T-1 (intake-required-fields) — "required fields only" now includes the
+  // intake contract's set (contactPerson, capacityTons, phone, email), not
+  // just identity/location. `crops` is `AdminActorCreateDto`'s field, tested
+  // there.
   it('passes a minimal input (required fields only)', async () => {
     const dto = plainToInstance(ActorCreateDto, {
       traderId: 'TZ-0002',
       traderName: 'Dodoma Groundnut Co-op',
       region: 'Dodoma',
       traderType: 'cooperative',
+      contactPerson: 'Halima Mrisho',
+      capacityTons: 0,
+      phone: '+255700000001',
+      email: 'halima@example.com',
     });
     expect(await validate(dto)).toHaveLength(0);
   });
@@ -54,6 +86,52 @@ describe('ActorCreateDto', () => {
     });
     const props = await invalidProps(dto);
     expect(props).toEqual(expect.arrayContaining(['traderId', 'traderName']));
+  });
+
+  // T-1 (intake-required-fields) FR-1 — the same required set self-registration
+  // enforces, now required on the admin-side base DTO too.
+  it.each(['contactPerson', 'capacityTons', 'phone', 'email'])(
+    'rejects a missing %s',
+    async (field) => {
+      const input = { ...validInput } as Record<string, unknown>;
+      delete input[field];
+      const dto = plainToInstance(ActorCreateDto, input);
+      expect(await invalidProps(dto)).toContain(field);
+    },
+  );
+
+  // FR-1 "capacity of zero" scenario — self-registration accepts 0, and so must this path.
+  it('accepts capacityTons of exactly 0', async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, capacityTons: 0 });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // FR-1 "same bounds" scenario — taken verbatim from self-registration (intake-contract.ts).
+  it.each([
+    { field: 'traderName', maxLength: 200 },
+    { field: 'phone', maxLength: 40 },
+  ])('rejects $field over its $maxLength-char bound', async ({ field, maxLength }) => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      [field]: 'x'.repeat(maxLength + 1),
+    });
+    expect(await invalidProps(dto)).toContain(field);
+  });
+
+  it('rejects an email over its 191-char bound (requirements.md FR-1 — matches the VARCHAR(191) column)', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      email: validEmailOfLength(192),
+    });
+    expect(await invalidProps(dto)).toContain('email');
+  });
+
+  it('accepts an email exactly at the 191-char bound', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      email: validEmailOfLength(191),
+    });
+    expect(await validate(dto)).toHaveLength(0);
   });
 
   it('rejects a non-canonical region', async () => {

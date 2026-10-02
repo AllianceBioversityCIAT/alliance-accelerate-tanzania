@@ -1,4 +1,11 @@
-import { ArrayUnique, IsBoolean, IsIn, IsOptional } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+} from 'class-validator';
 import { ActorCreateDto } from './actor-create.dto';
 
 /**
@@ -10,17 +17,24 @@ import { ActorCreateDto } from './actor-create.dto';
  * and the explicit consent acknowledgement required when setting
  * `consentStatus` to `GRANTED`.
  *
- * Design refs: `docs/specs/admin/actor-crud-audit/design.md` §3.
+ * Design refs: `docs/specs/admin/actor-crud-audit/design.md` §3;
+ * `docs/specs/actors/consent-intake/intake-required-fields/design.md` §4.1.
  */
 
 export const CROP_NAMES = ['sorghum', 'common_bean', 'groundnut'] as const;
 
 export class AdminActorCreateDto extends ActorCreateDto {
-  /** Crop slugs for this actor — fixed 3-crop catalog, no duplicates (FR-1). */
-  @IsOptional()
+  /**
+   * Crop slugs for this actor — fixed 3-crop catalog, no duplicates, at
+   * least one (FR-1, intake-contract.ts). `otherCrops` alone does NOT
+   * satisfy this — it is a separate free-text field (requirements.md FR-1's
+   * "no crop, only Other crops" scenario).
+   */
+  @IsArray()
+  @ArrayNotEmpty()
   @IsIn(CROP_NAMES as readonly string[], { each: true })
   @ArrayUnique()
-  crops?: string[];
+  crops!: string[];
 
   /**
    * Explicit acknowledgement flag required by the service when the payload

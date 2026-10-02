@@ -28,7 +28,7 @@
 
 ## 3. Tasks
 
-- [ ] **T-1** The intake contract, and the required set on admin create and edit  (deps: none)
+- [x] **T-1** The intake contract, and the required set on admin create and edit  (deps: none)
       Scope:
       - Create `backend/src/common/intake-contract.ts` (design §4.1).
       - Make `ActorCreateDto` / `AdminActorCreateDto` require Contact Person, ≥1 crop, Capacity, Phone and Email, with self-registration's bounds: traderName ≤ 200, contactPerson ≤ 120, phone ≤ 40, email ≤ 191, capacity ≥ 0.
@@ -294,6 +294,7 @@ T-3 and T-4 are independent once T-2 is done. Do **not** run them concurrently i
 | FR-1 · *BUT* Other crops alone MUST NOT satisfy | T-1 (falsifier 2), T-6 |
 | FR-1 · edit of an incomplete actor → rejected until filled | T-1 (API), T-6 (form shows the field error) |
 | FR-1 · *BUT* not altered, hidden or flagged just by existing | T-1 (a spec: read paths still return the incomplete actor) |
+| FR-1 · *MUST* use the same field-level messages as self-registration for the same omission | T-1 (create), T-4 (import). *Added during execution, 2026-10-02 (T-1 attempt 1 advisory). Interpretation: binds where a self-registration counterpart exists; see execution.md T-1.* |
 | FR-1 · import row missing a required cell → `failed`, others unaffected | T-4 |
 | FR-1 · capacity 0 accepted | T-1, T-4 |
 | FR-1 · same bounds (200 / 120 / 40 / 191) | T-1 (admin), T-4 (import) |

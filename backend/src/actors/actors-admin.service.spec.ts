@@ -75,6 +75,11 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     sex: 'M',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
+    // T-1 (intake-required-fields) — part of the required set (FR-1); a
+    // COMPLETE fixture by default so unrelated `update` tests aren't tripped
+    // by the merged-state required check. Tests of the "incomplete legacy
+    // actor" scenario override one of these fields back to `null`.
+    contactPerson: 'Grace Mushi',
     phone: '+255700000000',
     email: 'director@example.com',
     technicalSupport: 'Needs cold storage',
@@ -503,7 +508,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         id: 'actor-new',
         traderId: 'TZ-SEED-0002',
         traderName: 'New Actor',
-        crops: [],
+        crops: [{ crop: { name: 'sorghum' } }],
         consentStatus: ConsentStatus.GRANTED,
         registrationSource: 'SELF_REGISTERED',
         consentMethod: 'SIGNED_FORM',
@@ -514,12 +519,20 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.create.mockResolvedValue(created);
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
 
       const dto: AdminActorCreateDto = {
         traderId: 'TZ-SEED-0002',
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
+        contactPerson: 'Neema Shirima',
+        capacityTons: 100,
+        phone: '+255700000000',
+        email: 'new-actor@example.com',
+        // Advisory (tasks.md T-1 rework) — crops is required now (FR-1); an
+        // empty array here was never a realistic valid-create payload.
+        crops: ['sorghum'],
         consentStatus: ConsentStatus.GRANTED,
         acknowledged: true,
         registrationSource: 'SELF_REGISTERED' as never,
@@ -645,31 +658,135 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       });
     });
 
-    it('removes all crop links when dto.crops is an empty array', async () => {
+    // T-1 (intake-required-fields) FR-1/design.md §4.4 — reverses the old
+    // "removes all crop links" behaviour: a PATCH can no longer wipe every
+    // crop. Falsifier 4 (tasks.md T-1): letting `crops: []` pass here is
+    // exactly what must redden.
+    it('rejects an explicit empty crops array on update (400, field "crops")', async () => {
       const before = fixtureActor({
         crops: [{ crop: { name: 'sorghum' } }],
       });
-      const after = fixtureActor({ crops: [] });
-
-      prisma.actor.findUnique
-        .mockResolvedValueOnce(before)
-        .mockResolvedValueOnce(after);
-      prisma.actor.update.mockResolvedValue(after);
-      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      prisma.actor.findUnique.mockResolvedValue(before);
 
       const dto: AdminActorUpdateDto = { crops: [] } as AdminActorUpdateDto;
 
-      await service.update('actor-1', dto, ACTING_SUB);
+      let caught: unknown;
+      try {
+        await service.update('actor-1', dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
 
-      expect(prisma.cropsOnActors.deleteMany).toHaveBeenCalledWith({
-        where: { actorId: 'actor-1' },
+      expect(caught).toBeInstanceOf(BadRequestException);
+      const response = (caught as BadRequestException).getResponse() as {
+        details: Array<{ field: string }>;
+      };
+      expect(response.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'crops' })]),
+      );
+      expect(prisma.actor.update).not.toHaveBeenCalled();
+      expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    // FR-1 scenario 3 / design.md §4.4 — the merged-state required check.
+    // Falsifier 3 (tasks.md T-1): dropping this check is what must redden.
+    describe('merged-state required check (FR-1 scenario 3)', () => {
+      it('rejects an edit of an actor stored without email until email is filled', async () => {
+        const before = fixtureActor({ email: null });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+        } as AdminActorUpdateDto;
+
+        let caught: unknown;
+        try {
+          await service.update('actor-1', dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const response = (caught as BadRequestException).getResponse() as {
+          details: Array<{ field: string }>;
+        };
+        expect(response.details).toEqual(
+          expect.arrayContaining([expect.objectContaining({ field: 'email' })]),
+        );
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
       });
-      expect(prisma.cropsOnActors.createMany).not.toHaveBeenCalled();
 
-      const auditData = prisma.actorAuditLog.create.mock.calls[0][0].data;
-      expect(auditData.changes.fields.crops).toEqual({
-        from: ['sorghum'],
-        to: [],
+      it('allows the same edit once the missing field is supplied in the patch', async () => {
+        const before = fixtureActor({ email: null });
+        const after = fixtureActor({ region: 'Dodoma', email: 'new@example.com' });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+          email: 'new@example.com',
+        } as AdminActorUpdateDto;
+
+        const res = await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(res.email).toBe('new@example.com');
+      });
+
+      it('keeps the stored crop links when dto.crops is absent (not re-required)', async () => {
+        const before = fixtureActor({
+          crops: [{ crop: { name: 'sorghum' } }],
+        });
+        const after = fixtureActor({
+          traderName: 'Renamed',
+          crops: [{ crop: { name: 'sorghum' } }],
+        });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          traderName: 'Renamed',
+        } as AdminActorUpdateDto;
+
+        await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('rejects an edit when the stored crop count is zero and the patch never supplies crops', async () => {
+        const before = fixtureActor({ crops: [] });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+        } as AdminActorUpdateDto;
+
+        let caught: unknown;
+        try {
+          await service.update('actor-1', dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const response = (caught as BadRequestException).getResponse() as {
+          details: Array<{ field: string }>;
+        };
+        expect(response.details).toEqual(
+          expect.arrayContaining([expect.objectContaining({ field: 'crops' })]),
+        );
+        expect(prisma.actor.update).not.toHaveBeenCalled();
       });
     });
 

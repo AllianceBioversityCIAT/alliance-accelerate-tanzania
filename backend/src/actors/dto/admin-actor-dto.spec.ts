@@ -21,6 +21,25 @@ async function invalidProps(dto: object): Promise<string[]> {
   return errors.map((e) => e.property);
 }
 
+/**
+ * A `validator.js`-valid email of EXACTLY `totalLength` characters (see
+ * `actor-dto.spec.ts`'s copy for why padding the local part instead would be
+ * an inert fixture — `@IsEmail()` rejects a long local part on format
+ * grounds regardless of the `@MaxLength` bound under test).
+ */
+function validEmailOfLength(totalLength: number): string {
+  const prefix = 'a@';
+  const tld = '.com';
+  let remaining = totalLength - prefix.length - tld.length;
+  const labels: string[] = [];
+  while (remaining > 63) {
+    labels.push('x'.repeat(63));
+    remaining -= 64;
+  }
+  labels.push('x'.repeat(remaining));
+  return `${prefix}${labels.join('.')}${tld}`;
+}
+
 describe('AdminActorCreateDto', () => {
   const validInput = {
     traderId: 'TZ-0001',
@@ -29,7 +48,9 @@ describe('AdminActorCreateDto', () => {
     district: 'Mbeya Urban',
     traderType: 'seed_company',
     sex: 'F',
+    contactPerson: 'Neema Shirima',
     capacityTons: 1250.5,
+    phone: '+255700000000',
     email: 'contact@mbeyaseed.co.tz',
     gpsLatitude: -8.9094,
     gpsLongitude: 33.4607,
@@ -44,9 +65,12 @@ describe('AdminActorCreateDto', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
-  it('passes a valid create input without crops', async () => {
+  // T-1 (intake-required-fields) FR-1 — crops is now required (at least one),
+  // reversing the old "without crops" pass. `otherCrops` is free text and
+  // must NOT substitute for it (the "other crops alone" scenario below).
+  it('rejects create input with crops omitted', async () => {
     const dto = plainToInstance(AdminActorCreateDto, validInput);
-    expect(await validate(dto)).toHaveLength(0);
+    expect(await invalidProps(dto)).toContain('crops');
   });
 
   it('rejects an invalid crop name', async () => {
@@ -63,6 +87,46 @@ describe('AdminActorCreateDto', () => {
       crops: ['sorghum', 'sorghum'],
     });
     expect(await invalidProps(dto)).toContain('crops');
+  });
+
+  // Falsifier 2 (tasks.md T-1) — otherCrops alone must NOT satisfy the crop
+  // requirement, matching self-registration's rule exactly.
+  it('rejects an explicit empty crops array even when otherCrops is filled', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      otherCrops: 'millet',
+      crops: [],
+    });
+    expect(await invalidProps(dto)).toContain('crops');
+  });
+
+  // T-1 — the required set self-registration enforces, now required here too.
+  it.each(['contactPerson', 'capacityTons', 'phone', 'email'])(
+    'rejects a missing %s',
+    async (field) => {
+      const input = { ...validInput, crops: ['sorghum'] } as Record<string, unknown>;
+      delete input[field];
+      const dto = plainToInstance(AdminActorCreateDto, input);
+      expect(await invalidProps(dto)).toContain(field);
+    },
+  );
+
+  it('rejects phone over its 40-char bound', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      phone: 'x'.repeat(41),
+    });
+    expect(await invalidProps(dto)).toContain('phone');
+  });
+
+  it('rejects an email over its 191-char bound (requirements.md FR-1 — matches the VARCHAR(191) column)', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      email: validEmailOfLength(192),
+    });
+    expect(await invalidProps(dto)).toContain('email');
   });
 
   it('rejects a non-boolean acknowledged value', async () => {
@@ -95,6 +159,7 @@ describe('AdminActorCreateDto', () => {
   it('passes and round-trips a non-empty contactPerson and otherCrops', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
       ...validInput,
+      crops: ['sorghum'],
       contactPerson: 'Neema Shirima',
       otherCrops: 'Sesame trial plot',
     });
@@ -120,6 +185,7 @@ describe('AdminActorCreateDto', () => {
   it('accepts contactPerson and otherCrops exactly at their bound', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
       ...validInput,
+      crops: ['sorghum'],
       contactPerson: 'x'.repeat(120),
       otherCrops: 'x'.repeat(300),
     });

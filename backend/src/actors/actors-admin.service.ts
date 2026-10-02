@@ -20,6 +20,7 @@ import {
 } from './actor-audit.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import { missingIntakeFields } from '../common/intake-contract';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -252,6 +253,40 @@ export class ActorsAdminService {
         });
         if (!before) {
           throw new NotFoundException(`Actor ${id} not found`);
+        }
+
+        // FR-1/NFR-1 — the merged-state required-set check (design.md §4.4,
+        // intake-contract.ts): a field absent from the PATCH keeps the
+        // STORED value, so this fires only when the EFFECTIVE value (after
+        // merging) would leave the actor missing something the required set
+        // demands — never merely because the actor already existed
+        // incomplete (FR-1 scenario 3's BUT clause).
+        const missingFields = missingIntakeFields(
+          {
+            contactPerson: before.contactPerson,
+            capacityTons: before.capacityTons,
+            phone: before.phone,
+            email: before.email,
+            cropsCount: before.crops.length,
+          },
+          {
+            contactPerson: dto.contactPerson,
+            capacityTons: dto.capacityTons,
+            phone: dto.phone,
+            email: dto.email,
+            crops: dto.crops,
+          },
+        );
+        if (missingFields.length > 0) {
+          throw new BadRequestException({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: 'Missing required field(s)',
+            details: missingFields.map((field) => ({
+              field,
+              message: `${field} is required`,
+            })),
+          });
         }
 
         if (
