@@ -20,7 +20,7 @@
  * Assertions:
  *   1. axe(container) → toHaveNoViolations (WCAG 2.1 AA).
  *   2. Exactly ONE <h1> (the About hero heading).
- *   3. The external Alliance credits link is present with a discernible name
+ *   3. The external project website link is present with a discernible name
  *      and rel="noopener noreferrer".
  *   4. Registry CTA links render: "Explore the Map" → /map,
  *      "Browse the Directory" → /directory.
@@ -85,16 +85,14 @@ describe('/about page — axe accessibility (T-9, NFR-3)', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
-  it('T-9: Alliance credits external link has a discernible name and rel="noopener noreferrer"', () => {
+  it('ATP-77: project website link has a discernible name and rel="noopener noreferrer"', () => {
     renderAboutPage();
 
-    // The link wraps the text "Alliance project page" and points to the
-    // Alliance project page on alliancebioversityciat.org.
-    const creditsLink = screen.getByRole('link', { name: /alliance project page/i });
+    const websiteLink = screen.getByRole('link', { name: /accelerate project website/i });
 
-    expect(creditsLink).toBeInTheDocument();
-    expect(creditsLink).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(creditsLink).toHaveAttribute(
+    expect(websiteLink).toHaveAttribute('target', '_blank');
+    expect(websiteLink).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(websiteLink).toHaveAttribute(
       'href',
       'https://alliancebioversityciat.org/projects/accelerate'
     );

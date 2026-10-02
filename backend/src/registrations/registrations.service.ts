@@ -207,6 +207,7 @@ import {
 } from './email-verification.service';
 import { getOtpHmacSecret } from './email-verification.config';
 import { MailService } from '../mail/mail.service';
+import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import {
   MAIL_LOCK_WAIT_TIMEOUT_MS,
   MAIL_SEND_TIMEOUT_MS,
@@ -607,6 +608,33 @@ function withPreSendAllowance<T>(promise: Promise<T>): Promise<T> {
 }
 
 /**
+ * ATP-78 — upper bound on the admin notice (Cognito lookup plus one send).
+ * Leaves room under the 15 s Lambda timeout for verification, the write
+ * and the receipt, which are bounded separately.
+ */
+export const ADMIN_NOTICE_DEADLINE_MS = 5000;
+
+export class AdminNoticeDeadlineExceededError extends Error {
+  constructor() {
+    super(`admin notice did not settle within ${ADMIN_NOTICE_DEADLINE_MS} ms.`);
+    this.name = 'AdminNoticeDeadlineExceededError';
+  }
+}
+
+/**
+ * Same shape as {@link withPreSendAllowance}: the loser's later rejection
+ * is always observed, and the timer never outlives the call.
+ */
+function withAdminNoticeDeadline(promise: Promise<void>): Promise<void> {
+  let timer!: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new AdminNoticeDeadlineExceededError()), ADMIN_NOTICE_DEADLINE_MS);
+  });
+  promise.catch(() => {});
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Pads out to {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS}, measured from
  * `startedAtMs` (a `Date.now()` snapshot taken at the top of {@link
  * RegistrationsService.requestVerificationCode}). A no-op once the floor
@@ -656,6 +684,7 @@ export class RegistrationsService {
     private readonly emailVerificationService: EmailVerificationService,
     private readonly mailService: MailService,
     private readonly prisma: PrismaService,
+    private readonly adminRecipientResolver: AdminRecipientResolver,
   ) {}
 
   /**
@@ -913,7 +942,9 @@ export class RegistrationsService {
    * plus {@link MAIL_SEND_TIMEOUT_MS} for everything the race covers (see
    * {@link VERIFICATION_CODE_RESPONSE_FLOOR_MS}'s docblock, F4, for why the
    * two are additive, not one covering the other) — no second timeout is
-   * layered on here.
+   * layered on the receipt. ATP-78's admin notice, awaited after it, is
+   * different: it carries its own {@link ADMIN_NOTICE_DEADLINE_MS} cap
+   * (see `dispatchAdminNotice`).
    */
   async submitRegistration(dto: RegistrationCreateDto): Promise<RegistrationCreateResponse> {
     this.assertConsentAccepted(dto.consent);
@@ -1022,6 +1053,7 @@ export class RegistrationsService {
     // longer be misread as a reference collision and retried into a
     // duplicate row, nor swallowed into the exhaustion `503`.
     await this.dispatchReceiptEmail(submitterEmail, committedReference);
+    await this.dispatchAdminNotice(committedReference, dto.payload);
     return { reference: committedReference };
   }
 
@@ -1092,6 +1124,47 @@ export class RegistrationsService {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
       this.logger.error(
         `registration receipt send failed: errorType=${errorType} reference=${reference}`,
+      );
+    }
+  }
+
+  /**
+   * ATP-78 — tell the admins a new registration is waiting for review.
+   * Same contract as {@link dispatchReceiptEmail}: after commit, awaited,
+   * never rethrown, logged by error class and reference only.
+   *
+   * Recipient resolution sits inside the `try` too: an empty admin group
+   * with no `CONTACT_FALLBACK_RECIPIENT` throws. The whole step is capped
+   * at {@link ADMIN_NOTICE_DEADLINE_MS}, because the Cognito lookup behind
+   * `resolve()` has no timeout of its own, and a hang here would otherwise
+   * run into the Lambda timeout and report an already-committed
+   * registration as failed.
+   *
+   * Known residual: the deadline stops the wait, not the work. A send cut
+   * off mid-flight keeps the transport's mail lock until it settles, so the
+   * next receipt on the same container can fail its lock wait — logged and
+   * non-fatal, like any receipt failure.
+   */
+  private async dispatchAdminNotice(
+    reference: string,
+    payload: RegistrationPayloadDto,
+  ): Promise<void> {
+    const send = (async () => {
+      const recipients = await this.adminRecipientResolver.resolve();
+      await this.mailService.sendNewRegistrationNotice(recipients, {
+        reference,
+        traderName: payload.traderName,
+        traderType: payload.traderType,
+        region: payload.region,
+      });
+    })();
+
+    try {
+      await withAdminNoticeDeadline(send);
+    } catch (err: unknown) {
+      const errorType = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.error(
+        `registration admin notice send failed: errorType=${errorType} reference=${reference}`,
       );
     }
   }

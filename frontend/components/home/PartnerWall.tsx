@@ -11,8 +11,7 @@
 // Logo treatment (NFR-4, FR-5):
 //   - Logo'd partners: next/image inside a fixed h-12 cell so logos of varying
 //     aspect ratio align vertically. max-h-9 md:max-h-10 w-auto object-contain.
-//     Grayscale + opacity-80 at rest, transitions to full color on hover/focus-visible.
-//     CSS-only, no JS. motion-reduce:transition-none respects prefers-reduced-motion.
+//     Full color at all times (client request, ATP-76).
 //   - Text-fallback partners (no logo asset): styled <span> inside the same
 //     accessible link wrapper, vertically centered in the h-12 cell.
 //
@@ -69,8 +68,7 @@ function TierLabel({ label }: { label: string }) {
 
 /**
  * Renders a single partner as an accessible external link.
- * Logo'd partners use next/image in a fixed h-12 cell with grayscale-to-color
- * hover treatment. Partners without a logo asset fall back to a styled text label,
+ * Logo'd partners use next/image in a fixed h-12 cell, in full color. Partners without a logo asset fall back to a styled text label,
  * also vertically centered in an h-12 cell so it aligns with the logos.
  */
 function PartnerLogo({ p }: { p: Partner }) {
@@ -91,7 +89,7 @@ function PartnerLogo({ p }: { p: Partner }) {
             alt={p.name}
             width={dims.width}
             height={dims.height}
-            className="max-h-9 md:max-h-10 w-auto object-contain grayscale opacity-80 transition group-hover:grayscale-0 group-hover:opacity-100 group-focus-visible:grayscale-0 group-focus-visible:opacity-100 motion-reduce:transition-none"
+            className="max-h-9 md:max-h-10 w-auto object-contain"
           />
         ) : (
           <span className="text-sm font-semibold text-muted">{p.name}</span>

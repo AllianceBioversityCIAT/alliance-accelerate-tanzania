@@ -4,6 +4,10 @@
  * recipient list for the public contact form (design.md §4.3, requirements.md
  * FR-3, NFR-8).
  *
+ * Also consumed by `RegistrationsService` (ATP-78) to address the
+ * new-registration notice; there, a throw from `resolve()` is caught and
+ * logged, so a missing fallback drops the notice, never the submission.
+ *
  * Mirrors `ActingAdminResolver`'s per-container cache shape (one shared
  * instance, a plain in-memory cache, `resetCache()` test seam) with one
  * deliberate divergence: that precedent caches a `sub -> email` mapping that
@@ -157,7 +161,8 @@ export class AdminRecipientResolver {
     if (!value) {
       throw new Error(
         'Missing required env var CONTACT_FALLBACK_RECIPIENT. Set it so the ' +
-          'contact form has somewhere to deliver when the admin group ' +
+          'contact form and the new-registration notice have somewhere to ' +
+          'deliver when the admin group ' +
           'resolves empty or the Cognito directory call fails (design.md §4.3).',
       );
     }
