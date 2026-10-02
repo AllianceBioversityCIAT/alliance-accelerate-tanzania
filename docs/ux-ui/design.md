@@ -122,7 +122,7 @@
 | Screen | Audience | Core content |
 |---|---|---|
 | Landing | Public | Hero, 3–4 metric stat cards, CTA into Directory & Map, crop legend. |
-| About | Public | Project narrative: hero, the challenge (3% formal-sector clause), the demand-led model (`PillarCards`), crops & value chains (per-crop cards with representative varieties), partners (`PartnerWall`), four enterprise case studies, an "About this registry" section with CTAs into Map / Directory / Contact, and a credits/sources block attributing field figures and linking the Alliance project page. |
+| About | Public | Project narrative: hero, the challenge (3% formal-sector clause), the demand-led model (`PillarCards`), crops & value chains (per-crop cards with representative varieties), partners (`PartnerWall`), four enterprise case studies (the hero links the ACCELERATE project website), and an "About this registry" section with CTAs into Map / Directory / Contact. |
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
 | Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |

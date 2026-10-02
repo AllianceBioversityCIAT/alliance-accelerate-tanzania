@@ -1695,7 +1695,15 @@ describe(
           // before the controller method runs), but the DI graph still
           // needs the method to exist on this override.
           sendApproval: jest.fn().mockResolvedValue(undefined),
+          // ATP-78 — `POST /registrations` now also notifies the admins.
+          sendNewRegistrationNotice: jest.fn().mockResolvedValue(undefined),
         } as unknown as MailService)
+        // ATP-78 — keeps this gate hermetic: no live Cognito lookup.
+        .overrideProvider(AdminRecipientResolver)
+        .useValue({
+          resolve: jest.fn().mockResolvedValue(['admin@example.org']),
+          resetCache: jest.fn(),
+        } as unknown as AdminRecipientResolver)
         // `admin/registration-review-queue` T-4 — the FIRST `access: 'admin'`
         // FIXTURE_MAP entry needs a real guard stack over HTTP so
         // `sendAnonymous`/`sendStaff` actually exercise `JwtAuthGuard` +

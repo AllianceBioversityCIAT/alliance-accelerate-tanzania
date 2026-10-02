@@ -9,18 +9,20 @@
 // mounts it (FR-7). The only reference to the Leaflet shell is behind
 // `dynamic()`, so the chunk is fetched only once `open` becomes true.
 //
-// Owns exactly two things `CoordinatePickerMap` does not: the open/closed
+// Owns three things `CoordinatePickerMap` does not: the open/closed
 // disclosure (FR-7 sc. 1 — the shell must not even be RENDERED while closed,
 // not just visually hidden, per the T-3 review's `fitBounds`/`getSize()`
-// hazard) and the clear control (FR-4). Holds no coordinate state itself —
-// `latitude`/`longitude` are passed straight through, and `onChange` is the
-// one write path (DD-2): there is no `onLatitudeChange`/`onLongitudeChange`
-// pair to keep in sync, so a single-field write is inexpressible here by
-// construction, not by discipline.
+// hazard), the clear control (FR-4), and the device-location control (ATP-80),
+// which needs no Leaflet and writes through the same `onChange`. Holds no
+// coordinate state itself — `latitude`/`longitude` are passed straight
+// through, and `onChange` is the one write path (DD-2): there is no
+// `onLatitudeChange`/`onLongitudeChange` pair to keep in sync, so a
+// single-field write is inexpressible here by construction, not by discipline.
 
 import dynamic from 'next/dynamic';
 import { useId, useState } from 'react';
 import Button from '@/components/ui/Button';
+import { formatCoordinate } from '@/lib/geo/coordinates';
 
 const CoordinatePickerMap = dynamic(() => import('./CoordinatePickerMap'), {
   ssr: false,
@@ -34,6 +36,32 @@ const CoordinatePickerMap = dynamic(() => import('./CoordinatePickerMap'), {
     </div>
   ),
 });
+
+// ── Device location (ATP-80) ──────────────────────────────────────────────────
+
+// High accuracy asks a phone for GPS rather than a cell/Wi-Fi estimate; the
+// timeout bounds that wait, and maximumAge 0 refuses a fix cached at another site.
+const GEOLOCATION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 15000,
+  maximumAge: 0,
+};
+
+const MANUAL_FALLBACK = 'You can still enter the coordinates above or pick the point on the map.';
+
+// Keyed by GeolocationPositionError.code (1, 2, 3); `0` is "no geolocation API".
+const LOCATE_ERRORS: Record<number, string> = {
+  0: `This browser cannot share your location. ${MANUAL_FALLBACK}`,
+  1: `Location access is blocked. To use it, allow location for this site in your browser settings. ${MANUAL_FALLBACK}`,
+  2: `Your location could not be found. Check that location services are turned on. ${MANUAL_FALLBACK}`,
+  3: `Finding your location took too long. Try again, ideally outdoors or near a window. ${MANUAL_FALLBACK}`,
+};
+
+type LocateStatus =
+  | { kind: 'idle' }
+  | { kind: 'locating' }
+  | { kind: 'located'; lat: string; lng: string; accuracy: number }
+  | { kind: 'error'; message: string };
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -63,7 +91,37 @@ export default function CoordinatePicker({
   describedBy,
 }: Readonly<CoordinatePickerProps>) {
   const [open, setOpen] = useState(initiallyOpen);
+  const [locate, setLocate] = useState<LocateStatus>({ kind: 'idle' });
   const mapRegionId = useId();
+
+  function locateDevice() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocate({ kind: 'error', message: LOCATE_ERRORS[0] });
+      return;
+    }
+    setLocate({ kind: 'locating' });
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const lat = formatCoordinate(coords.latitude);
+        const lng = formatCoordinate(coords.longitude);
+        onChange(lat, lng);
+        setLocate({ kind: 'located', lat, lng, accuracy: Math.round(coords.accuracy) });
+        setOpen(true);
+      },
+      (error) => {
+        setLocate({ kind: 'error', message: LOCATE_ERRORS[error.code] ?? LOCATE_ERRORS[2] });
+      },
+      GEOLOCATION_OPTIONS,
+    );
+  }
+
+  // The confirmation describes the values it wrote; once the person edits or
+  // clears them it would describe something no longer on screen.
+  const located =
+    locate.kind === 'located' && locate.lat === latitude && locate.lng === longitude
+      ? locate
+      : null;
+  const locating = locate.kind === 'locating';
 
   // FR-4 sc. 2: disabled, not absent, when there is nothing to clear — a
   // half-filled pair (FR-1 sc. 3) still counts as "something to clear".
@@ -86,12 +144,29 @@ export default function CoordinatePicker({
         <Button
           type="button"
           variant="secondary"
+          disabled={disabled || locating}
+          onClick={locateDevice}
+        >
+          {locating ? 'Finding your location…' : 'Use my current location'}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
           disabled={disabled || nothingToClear}
           onClick={() => onChange('', '')}
         >
           Clear location
         </Button>
       </div>
+      <p role="status" className="text-xs text-muted empty:hidden">
+        {located &&
+          `Location set from your device, accurate to about ${located.accuracy} m. Check the pin and drag it to the exact spot if needed.`}
+      </p>
+      {locate.kind === 'error' && (
+        <p role="alert" className="text-xs text-danger">
+          {locate.message}
+        </p>
+      )}
       {/* Conditionally RENDERED, never render-and-hide (T-3 review hard
           constraint): a 0x0 container at mount makes Leaflet's `fitBounds`
           compute `getScaleZoom(0)` = -Infinity, clamped to zoom 0, and the

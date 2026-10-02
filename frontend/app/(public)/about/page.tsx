@@ -3,7 +3,7 @@
 //
 // All copy is sourced verbatim from docs/reference/accelerate-web-copy-brief.md §3.
 // Sections in order: hero (§3.1), challenge (§3.2), approach (§3.3), crops (§3.4),
-// partners (§3.5), model in action (§3.6), registry (§3.7), credits (§3.8).
+// partners (§3.5), model in action (§3.6), registry (§3.7).
 //
 // A11y contract:
 //   - Exactly ONE <h1> (the hero heading).
@@ -84,6 +84,19 @@ export default function AboutPage() {
                 demand-led model that speeds the adoption of new, higher-yielding crop varieties
                 across Tanzania&rsquo;s sorghum, common bean, and groundnut value chains.
               </p>
+
+              {/* ATP-77: project website link, moved here from the old credits block. */}
+              <div>
+                <Button
+                  variant="primary"
+                  href="https://alliancebioversityciat.org/projects/accelerate"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Visit the ACCELERATE project website — opens in a new tab"
+                >
+                  Visit the project website
+                </Button>
+              </div>
 
             </div>
 
@@ -192,7 +205,7 @@ export default function AboutPage() {
           §3.4  CROPS & VALUE CHAINS
           Per-crop blocks driven by CROPS content array + inline §3.4 copy.
           Varieties surfaced as a muted sub-label where available (§4.2).
-          🟡 secondary figures — attributed in §3.8 credits (no emoji in UI).
+          🟡 secondary figures (no emoji in UI).
       ==================================================================== */}
       <section
         aria-labelledby="crops-heading"
@@ -245,7 +258,7 @@ export default function AboutPage() {
                     {crop.description}
                   </p>
 
-                  {/* Representative varieties sub-label (§4.2 — muted, attributed in §3.8) */}
+                  {/* Representative varieties sub-label (§4.2 — muted) */}
                   {crop.varieties && crop.varieties.length > 0 && (
                     <p className="text-xs text-muted leading-relaxed">
                       <span className="font-semibold text-fg">Key varieties:</span>{' '}
@@ -299,7 +312,7 @@ export default function AboutPage() {
       {/* ====================================================================
           §3.6  THE MODEL IN ACTION
           Four enterprise case studies as a card grid.
-          All figures are from published partner case studies (attributed in §3.8).
+          All figures are from published partner case studies.
       ==================================================================== */}
       <section
         aria-labelledby="model-in-action-heading"
@@ -456,42 +469,6 @@ export default function AboutPage() {
               Contact us
             </Button>
           </div>
-
-        </div>
-      </section>
-
-      {/* ====================================================================
-          §3.8  CREDITS / SOURCES
-          Small-print block with Alliance project page link (new tab, noopener).
-          Attributes that field figures come from published partner case studies.
-      ==================================================================== */}
-      <section
-        aria-labelledby="credits-heading"
-        className="bg-surface-alt border-t border-border"
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-
-          <h2
-            id="credits-heading"
-            className="text-xs font-semibold uppercase tracking-widest text-muted mb-3"
-          >
-            Credits &amp; sources
-          </h2>
-
-          <p className="text-xs text-muted leading-relaxed max-w-prose">
-            Project information adapted from the Alliance of Bioversity International &amp; CIAT
-            and PABRA. Field figures are drawn from published partner case studies. Learn more at
-            the{' '}
-            <a
-              href="https://alliancebioversityciat.org/projects/accelerate"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline text-primary hover:text-primary-hover transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-            >
-              Alliance project page
-            </a>
-            .
-          </p>
 
         </div>
       </section>

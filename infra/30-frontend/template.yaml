@@ -140,10 +140,11 @@ Resources:
   #     host and the page loads GA4; a CSP that misses either breaks them, and
   #     sometimes only in some browsers. It goes out in Report-Only first, as
   #     its own change.
-  #   - Permissions-Policy. The obvious value would be denying geolocation, but
-  #     the map is expected to gain a "locate me" capability; denying it here
-  #     would fail later with no visible error and no obvious cause. If one is
-  #     ever added, `geolocation=(self)` is the correct value.
+  #   - Permissions-Policy. The location picker's "Use my current location"
+  #     (ATP-80) needs geolocation, and with no header the browser's default
+  #     allowlist is already `self`. Denying it here would break that button
+  #     with no visible error. If one is ever added, `geolocation=(self)` is
+  #     the correct value.
   SecurityHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:

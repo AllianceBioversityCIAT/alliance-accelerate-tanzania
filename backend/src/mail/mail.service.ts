@@ -44,6 +44,10 @@ import { buildApprovalMessage } from './templates/approval.template';
 import { buildRejectionMessage } from './templates/rejection.template';
 import { buildInvitationMessage } from './templates/invitation.template';
 import { buildAdminResetMessage } from './templates/admin-reset.template';
+import {
+  buildNewRegistrationMessage,
+  NewRegistrationNoticeData,
+} from './templates/new-registration.template';
 
 @Injectable()
 export class MailService {
@@ -122,6 +126,16 @@ export class MailService {
     reference?: string,
   ): Promise<void> {
     await this.dispatch('admin-reset', buildAdminResetMessage(to, temporaryPassword, reference));
+  }
+
+  /**
+   * ATP-78 — tell the admins a self-registration is waiting for review.
+   * Recipients are resolved by the caller (`AdminRecipientResolver`), as
+   * for {@link sendContactMessage}. Same DD-9 contract as the receipt:
+   * dispatch only after the submission has committed.
+   */
+  async sendNewRegistrationNotice(to: string[], data: NewRegistrationNoticeData): Promise<void> {
+    await this.dispatch('new-registration', buildNewRegistrationMessage(to, data));
   }
 
   /**
