@@ -190,6 +190,8 @@ Replacing the natural key as the duplicate guard is a TRD-level decision; TRD :7
 | A strong match silently capped away | DD-3, plus a test where the fixture holds 5 name+GPS weak matches and 1 email-only strong match (the falsifier). |
 | Large test churn | Budgeted (§11). Consumers are listed per task. |
 | Deploy skew between backend and frontend | §3 *Deploy coupling*. Admin-only, so the window is short. |
+| Two concurrent creates with the same email/phone both pass the duplicate gate (check-then-create; no DB uniqueness on contact fields) | **Declared gap** (added 2026-10-02 during T-3). Admin-only intake makes concurrent identical submissions rare. The history shows both creates. |
+| More than 50 strong candidates for one new actor exceeds `confirmedNotDuplicateOf`'s `ArrayMaxSize(50)`, so it cannot be confirmed | **Accepted limit** (added 2026-10-02 during T-3). Fifty strong matches is itself a data defect to clean up first. |
 | A Trader ID collision inside an import chunk | The per-chunk allocate-and-retry (§4.5). A collision costs one chunk retry. Only if 3 retries all collide, which is not expected with atomic allocation, do that chunk's rows fail. Other chunks are never affected. |
 
 ## 10. Test Plan Outline
@@ -210,8 +212,8 @@ Replacing the natural key as the duplicate guard is a TRD-level decision; TRD :7
 | Measure | Estimate |
 |---|---|
 | Tasks | ~~7~~ **8**: re-sized at decomposition, when import was split into template/validation (T-4) and duplicates (T-5). See tasks.md Document Control. |
-| LOC (incl. tests and fixture churn) | **~1,800**: about 700 production, about 1,100 tests |
-| Review rounds | ~~~12~~ **~13** (most tasks 1–2; T-3 and T-5 up to 3) |
+| LOC (incl. tests and fixture churn) | ~~~1,800~~ **~5,500**, revised 2026-10-02 after the T-2 tripwire (execution.md). Tests dominate. |
+| Review rounds | ~~~12~~ ~~~13~~ **~22**, revised 2026-10-02 after the T-2 tripwire |
 
 The proposal's Lite estimate was re-checked here. Standard is right; it is not Full, because there is no new public surface or infra.
 

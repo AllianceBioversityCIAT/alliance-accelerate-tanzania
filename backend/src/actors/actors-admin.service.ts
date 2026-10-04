@@ -19,6 +19,7 @@ import {
   ActorAuditService,
   ActingAdmin,
   ConsentFillPatch,
+  DuplicateConfirmationSnapshot,
 } from './actor-audit.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
@@ -28,6 +29,8 @@ import {
   isTraderIdCollisionError,
   MAX_TRADER_ID_ALLOCATION_ATTEMPTS,
 } from './trader-id.util';
+import { IntakeDuplicateService } from './intake-duplicate.service';
+import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -64,6 +67,15 @@ export interface AdminActorList {
   page: number;
   pageSize: number;
   total: number;
+}
+
+/**
+ * T-3 — `create()`'s response envelope (design.md §3): the created actor,
+ * plus the weak matches surfaced as an informational warning (FR-3's weak
+ * scenario — always present, possibly empty, never blocks the create).
+ */
+export interface AdminActorCreateResult extends AdminActor {
+  duplicateWarnings: DuplicateCandidate[];
 }
 
 const DEFAULT_PAGE = 1;
@@ -113,6 +125,7 @@ export class ActorsAdminService {
     private readonly prisma: PrismaService,
     private readonly actorAuditService: ActorAuditService,
     private readonly actingAdminResolver: ActingAdminResolver,
+    private readonly intakeDuplicateService: IntakeDuplicateService,
   ) {}
 
   /**
@@ -161,14 +174,17 @@ export class ActorsAdminService {
   }
 
   /**
-   * Create a single actor (FR-1, FR-2). Allocates a system-generated
+   * Create a single actor (FR-1, FR-2, FR-3). Allocates a system-generated
    * `traderId` and retries on collision up to {@link MAX_TRADER_ID_ALLOCATION_ATTEMPTS}
    * (design.md §4.2) before giving up with a 500 — never a 409 for this.
+   *
+   * FR-3's duplicate gate runs BEFORE allocation (design.md §4.4 steps 1-2):
+   * a create blocked on an unconfirmed strong match never burns a Trader ID.
    */
   async create(
     dto: AdminActorCreateDto,
     actingSub: string,
-  ): Promise<AdminActor> {
+  ): Promise<AdminActorCreateResult> {
     if (dto.consentStatus === ConsentStatus.GRANTED && !dto.acknowledged) {
       throw new BadRequestException(
         'Consent acknowledgement is required to set status to GRANTED',
@@ -181,6 +197,38 @@ export class ActorsAdminService {
     if (!isConsentProvenanceSatisfied(null, dto)) {
       throw this.buildProvenanceError(dto.consentMethod, dto.consentObtainedAt ?? null);
     }
+
+    // FR-3 — the duplicate gate (design.md §4.3, §4.4 step 2, DD-3, DD-4).
+    // Recomputed on every request: `confirmedNotDuplicateOf` only clears
+    // candidates the SERVER currently finds, so a changed field that now
+    // matches a different actor is never silently waved through.
+    const { strong, weak } = await this.intakeDuplicateService.check({
+      phone: dto.phone ?? null,
+      email: dto.email ?? null,
+      traderName: dto.traderName,
+      gpsLatitude: dto.gpsLatitude ?? null,
+      gpsLongitude: dto.gpsLongitude ?? null,
+    });
+    const confirmedIds = new Set(dto.confirmedNotDuplicateOf ?? []);
+    const unconfirmedStrong = strong.filter((c) => !confirmedIds.has(c.actorId));
+    if (unconfirmedStrong.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: unconfirmedStrong,
+      });
+    }
+    const confirmedStrong = strong.filter((c) => confirmedIds.has(c.actorId));
+    const duplicateConfirmation: DuplicateConfirmationSnapshot[] | null =
+      confirmedStrong.length > 0
+        ? confirmedStrong.map((c) => ({
+            kind: 'actor' as const,
+            actorId: c.actorId,
+            traderId: c.traderId,
+            traderName: c.traderName,
+            matchedOn: c.matchedOn,
+          }))
+        : null;
 
     const acting = await this.resolveActing(actingSub);
     const now = new Date();
@@ -215,8 +263,13 @@ export class ActorsAdminService {
           }
 
           const adminActor = toAdminActor(full);
-          await this.actorAuditService.logCreate(tx, adminActor, acting);
-          return adminActor;
+          await this.actorAuditService.logCreate(
+            tx,
+            adminActor,
+            acting,
+            duplicateConfirmation,
+          );
+          return { ...adminActor, duplicateWarnings: weak };
         });
       } catch (err) {
         if (isTraderIdCollisionError(err)) {

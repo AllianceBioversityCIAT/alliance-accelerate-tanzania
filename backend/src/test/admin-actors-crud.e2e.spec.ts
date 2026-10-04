@@ -134,6 +134,34 @@ const INITIAL_ACTORS: Record<string, unknown>[] = [
     consentStatus: ConsentStatus.UNKNOWN,
     contactPerson: null,
   }),
+  // T-3 (intake-required-fields) FR-3 — dedicated fixtures for the
+  // duplicate-detection gate, with phone/email/traderName/GPS distinct from
+  // every other fixture above (which all share `fixtureActor()`'s defaults),
+  // so a duplicate test matches EXACTLY the actor it targets.
+  fixtureActor({
+    id: 'actor-dup-target-1',
+    traderId: 'TZ-DUP-0001',
+    traderName: 'Dup Target One',
+    region: 'Kigoma',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.UNKNOWN,
+    phone: '+255788880001',
+    email: 'dup-target-one@example.com',
+    gpsLatitude: -4.5,
+    gpsLongitude: 29.5,
+  }),
+  fixtureActor({
+    id: 'actor-dup-target-2',
+    traderId: 'TZ-DUP-0002',
+    traderName: 'Dup Target Two',
+    region: 'Kigoma',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.UNKNOWN,
+    phone: '+255788880002',
+    email: 'dup-target-two@example.com',
+    gpsLatitude: -5.5,
+    gpsLongitude: 30.5,
+  }),
 ];
 
 /** Fixed 3-crop catalog used to resolve crop names → ids. */
@@ -1792,6 +1820,153 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
 
       expect(res.body.region).toBe('Shinyanga');
       expect(res.body.email).toBe('now-complete@example.com');
+    });
+  });
+
+  /**
+   * T-3 (intake-required-fields) FR-3 — the duplicate-detection gate on
+   * admin create, over real HTTP through the real global pipe (design.md
+   * §3, §4.3, §4.4). `actor-dup-target-1`/`-2` above are dedicated fixtures
+   * so a test's match is unambiguous.
+   */
+  describe('FR-3 — duplicate detection gate on admin create', () => {
+    it('returns 409 with duplicateCandidates on a strong (email) match, naming it (case-insensitive) — the direct-POST enforcement', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'Dup-Target-One@Example.com',
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(409);
+
+      expect(res.body.statusCode).toBe(409);
+      expect(res.body.message).toBe('Possible duplicate');
+      expect(res.body.duplicateCandidates).toEqual([
+        {
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['email'],
+        },
+      ]);
+
+      // Nothing was created.
+      const listRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      expect(listRes.body.total).toBe(INITIAL_ACTORS.length);
+    });
+
+    it('creates and records the confirmation when the strong candidate is named in confirmedNotDuplicateOf', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-one@example.com',
+        confirmedNotDuplicateOf: ['actor-dup-target-1'],
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.email).toBe('dup-target-one@example.com');
+      expect(res.body.duplicateWarnings).toEqual([]);
+
+      const historyRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${res.body.id}/history`)
+        .set(admin)
+        .expect(200);
+      const createEntry = historyRes.body.data.find(
+        (e: { action: string }) => e.action === 'CREATE',
+      );
+      expect(createEntry.duplicateConfirmation).toEqual([
+        {
+          kind: 'actor',
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['email'],
+        },
+      ]);
+    });
+
+    it('creates without confirmation and returns duplicateWarnings when only a weak (name) match exists — MUST NOT ask', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        traderName: 'Dup Target One', // matches actor-dup-target-1's name only
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.duplicateWarnings).toEqual([
+        {
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['traderName'],
+        },
+      ]);
+    });
+
+    it('re-asks when the confirmed id does not cover a DIFFERENT actor the current email strongly matches (confirmation not reusable)', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-two@example.com',
+        confirmedNotDuplicateOf: ['actor-dup-target-1'], // confirms the WRONG actor
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(409);
+
+      expect(res.body.duplicateCandidates).toEqual([
+        {
+          actorId: 'actor-dup-target-2',
+          traderId: 'TZ-DUP-0002',
+          traderName: 'Dup Target Two',
+          matchedOn: ['email'],
+        },
+      ]);
+    });
+
+    // Falsifier 5 (tasks.md T-3) — an empty confirmedNotDuplicateOf must not
+    // read as "fully confirmed".
+    it('does not bypass the gate when confirmedNotDuplicateOf is present but empty', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-one@example.com',
+        confirmedNotDuplicateOf: [],
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(409);
+    });
+
+    it('rejects confirmedNotDuplicateOf with more than 50 entries — 400', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        confirmedNotDuplicateOf: Array.from({ length: 51 }, (_, i) => `actor-${i}`),
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
     });
   });
 

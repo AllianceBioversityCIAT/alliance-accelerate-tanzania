@@ -1,10 +1,12 @@
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
   IsOptional,
+  IsString,
 } from 'class-validator';
 import { ActorCreateDto } from './actor-create.dto';
 
@@ -44,4 +46,16 @@ export class AdminActorCreateDto extends ActorCreateDto {
   @IsOptional()
   @IsBoolean()
   acknowledged?: boolean;
+
+  /**
+   * Actor ids the admin has confirmed are NOT duplicates of this new actor
+   * (FR-3; design.md §3, DD-4). The server recomputes the strong-match set
+   * on every request — an id that names no CURRENT strong candidate
+   * confirms nothing, and a candidate not named here still gates (409).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  confirmedNotDuplicateOf?: string[];
 }

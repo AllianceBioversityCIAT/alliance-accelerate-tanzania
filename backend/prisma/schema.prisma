@@ -118,6 +118,11 @@ model ActorAuditLog {
   actingEmail  String?
   changes      Json
   acknowledged Boolean?
+  // T-3 — snapshot of the strong candidates the admin confirmed were NOT
+  // duplicates (design.md §2, FR-3). Null when the create had none to
+  // confirm. A separate column, not a `changes` key, because the history
+  // renderer's `isSnapshot` branches on the `changes` shape (P-12).
+  duplicateConfirmation Json?
   createdAt    DateTime         @default(now())
 
   @@index([actorId, createdAt])

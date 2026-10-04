@@ -23,6 +23,8 @@ export interface AuditEntry {
   actingEmail: string | null;
   changes: unknown;
   acknowledged: boolean | null;
+  /** T-3 — the confirmed-not-duplicate snapshot, or `null` (design.md §2). */
+  duplicateConfirmation: unknown;
   createdAt: string;
 }
 
@@ -42,6 +44,7 @@ export function toAuditEntry(log: ActorAuditLog): AuditEntry {
     actingEmail: log.actingEmail,
     changes: log.changes,
     acknowledged: log.acknowledged,
+    duplicateConfirmation: log.duplicateConfirmation,
     createdAt: log.createdAt.toISOString(),
   };
 }

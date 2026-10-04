@@ -214,9 +214,12 @@ describe('isTraderIdCollisionError', () => {
     expect(isTraderIdCollisionError(err)).toBe(false);
   });
 
-  // Falsifier 6 (rework, attempt 3) — reverting to the array-only check
-  // (`Array.isArray(target) ? target : []`) must redden this exact
-  // assertion, because the real MySQL shape is a string.
+  // Falsifier 6 (rework, attempt 3) — an array-only check
+  // (`Array.isArray(target) ? target : []`) still returns `false` HERE too
+  // (this target is a string), so it does NOT redden this assertion. What it
+  // actually reddens is "is true for the real MySQL P2002 shape" above: a
+  // real collision (`Actor_traderId_key`, a string) would stop being
+  // recognized at all, and that positive-case test would fail.
   it('falsifier 6: is false for a P2002 on a different unique target (real MySQL string shape)', () => {
     const err = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',

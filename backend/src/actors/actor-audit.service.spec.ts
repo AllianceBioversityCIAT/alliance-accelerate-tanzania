@@ -138,6 +138,54 @@ describe('ActorAuditService', () => {
       expect(changes.values.gpsAltitude).toBe('1400');
       expect(changes.values.gpsAccuracy).toBe('5');
     });
+
+    /**
+     * T-3 (intake-required-fields) — `duplicateConfirmation` (design.md §2,
+     * FR-3): a separate column, not a `changes` key (P-12).
+     */
+    describe('duplicateConfirmation (FR-3)', () => {
+      it('writes Prisma.JsonNull when no duplicateConfirmation is passed (falsifier 6)', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-2' });
+
+        await service.logCreate(tx, fixtureActor(), acting);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes Prisma.JsonNull when an EMPTY duplicateConfirmation array is passed', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-3' });
+
+        await service.logCreate(tx, fixtureActor(), acting, []);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes the confirmed-candidate snapshot verbatim when provided (falsifier 6)', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-4' });
+        const confirmation = [
+          {
+            kind: 'actor' as const,
+            actorId: 'actor-existing-1',
+            traderId: 'TZ-SEED-0099',
+            traderName: 'Prior Trader',
+            matchedOn: ['email' as const],
+          },
+        ];
+
+        await service.logCreate(tx, fixtureActor(), acting, confirmation);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(confirmation);
+      });
+    });
   });
 
   describe('logDelete', () => {

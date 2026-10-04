@@ -180,3 +180,87 @@
   - The budget assumed about 700 production / 1,100 test LOC for the **whole** spec. T-1 and T-2 alone exceed that.
   - Review rounds also run at about 3 per task, against about 1.6 planned. Both FAIL sources were the Leader's own: a closure gap in T-1, and a design edit in T-2 that introduced the MySQL-shape defect.
 - **Execution stopped. Escalated to the product owner** per `/akili-execute` *Budget Tripwire*.
+- **Product-owner decision (2026-10-02): option 1.** Continue with the revised budget of **~5,500 LOC · ~22 review rounds** (tasks.md and design.md §11 updated). Execution resumes at T-3.
+- **Leader process deviation (self-reported).** tasks.md's Budget row says execution "escalates to the user when any task reaches a 3rd review round". T-2's attempt 3 was its 3rd round, and **the Leader dispatched it without escalating first**. This rule was missed. The attempt passed and the product owner has since reviewed the budget, so nothing is reverted. From T-3 onward, a task's 3rd round stops for the user before dispatch.
+
+### T-3 — Intake duplicate check and the admin-create gate
+
+**P-14, settled (first step).** `IntakeDuplicateService.check()` was called once per candidate for 1,000 candidates, each against a 1,000-row **mocked** `actor.findMany`.
+- Runs: 633 / 613 / 633 ms. The spread is 20 ms, against a 9.4 s margin to the 10 s disqualifier.
+- **Limits:** local CPU only, a mocked scan with no DB fetch, not a Lambda timing, and the in-file index is excluded.
+- **Outcome:** the matcher's comparison cost is not a Pivot risk. NFR-2 for the real import path is **re-timed in T-5**.
+
+**Attempt 1 — FAIL** (2026-10-02)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh.
+- **Files changed:**
+  - new: `intake-duplicate.service.ts` (+ spec), migration `20261002200652_add_audit_duplicate_confirmation`
+  - modified: `duplicate-detection.service.ts` (exports), `actors.module.ts`, `schema.prisma`, `actor-audit.service.ts` (+ spec), `audit-entry.serializer.ts`, `dto/admin-actor-create.dto.ts`, `actors-admin.service.ts` (+ spec), `admin-actors.controller.ts`, `trader-id.util.spec.ts` (the T-2 forward-pointer label fix), `test/admin-actors-crud.e2e.spec.ts`
+  - The declared scope addition, exposing `audit-entry.serializer` `duplicateConfirmation` on the admin history read, was judged in scope and PII-safe by Reviewer A.
+- **Implementer verification:**
+  - The migration applied; 86 suites / 1353 tests; build clean; eslint 0.
+  - All 6 falsifiers reported red, then restored.
+  - The registration-queue specs are untouched and green.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 86 / 1353, build, eslint, migrate status.
+- **Reviewers:** parallel lens mode.
+  - **A** (`opus`; conformance + reliability + risk): **PASS**.
+  - **B** (`opus`; conformance + resilience + readability): **FAIL**.
+    1. `NormalizedActorRow` was exported with a comment saying `IntakeDuplicateService` reuses it, but nothing imports it (KZ-008; it is dead).
+    2. `check()` has no batch form. That contradicts design §4.3, "one actor scan … reused for a whole import batch", and leaves T-5 to rework this service. `IntakeDuplicateIndex.match()` returns unsplit matches and `isStrongMatch` is private, so T-5 would duplicate the strong/weak rule.
+- **Advisory (4R):**
+  - The concurrent-create check-then-create race: both reviewers.
+  - DD-3's uncapped strong set conflicts with `@ArrayMaxSize(50)` on `confirmedNotDuplicateOf` (A).
+  - A T-6 forward pointer (A).
+  - The P-14 limits (A, B).
+  - The `classify` doc claims it is "independently unit-testable", but it is not exported (B).
+  - `createIndex()` is uncalled (B).
+  - Oversized comments (B).
+  - There is no unknown-confirmed-id-with-no-strong-match test (B).
+  - The `JsonNull` sentinel in the e2e mock (A).
+- **runtime events:** none.
+
+**Leader adjudication after attempt 1:**
+- B's FAIL is in scope and caused by this task: the T-3 scope names the in-file API "for T-5", and design §4.3 names batch reuse.
+- **Declared gap:** the concurrent-create race. Two simultaneous creates with the same email or phone can both pass the gate, because there is no DB uniqueness on contact fields.
+  - FR-3 and the design are silent on concurrency, so this is a gap rather than a defect.
+  - It is recorded here and as a design §9 risk row (execute-time edit), with the same standing as FR-2 scenario 2.
+- **Accepted limit:** a create with more than 50 strong candidates cannot be confirmed, because of `ArrayMaxSize(50)`. Fifty strong matches for one new actor is itself a data defect. It is recorded as a design §9 risk row (execute-time edit); no code change.
+- **Forward pointer → T-6:** a 409 lists only the unconfirmed candidates. The dialog must resubmit the **union** of every id confirmed during the session, or a confirm-A → 409-B sequence drops A and loops.
+- **Forward pointer → T-6:** the in-memory e2e mock stores the `Prisma.JsonNull` sentinel, not `null`. Never assert `null` there.
+
+**Attempt 2 — PASS** (2026-10-04)
+- **Runtime events:**
+  - A provider-limit stall (network outage, 600 s watchdog), climbed per the ladder:
+    - **rung 1 tree probe:** partial edits were present (`loadActorSnapshot`, `checkBatch`, the `NormalizedActorRow` import), recorded and kept;
+    - **rung 3:** resumed by message, and the worker's context survived. No attempt was consumed.
+  - **Background waits:** the worker waited twice on its own `npm test`. It later reported two stalled Jest runs at 0 % CPU, which it killed and re-ran with direct file redirection.
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received Reviewer B's attempt-1 report verbatim.
+- **Files changed (cumulative):** the attempt-1 set, plus:
+  - `intake-duplicate.service.ts`:
+    - `loadActorSnapshot` makes one scan, and `classifyAgainstSnapshot` is pure;
+    - `checkBatch`, with `check` delegating to it;
+    - a shared `partitionByStrength` also used by `IntakeDuplicateIndex.match()`, which now returns `{strong, weak}`;
+    - `NormalizedActorRow` is genuinely imported;
+    - `createIndex` is removed.
+  - Spec additions.
+  - Comment trims in `duplicate-detection.service.ts`, `actor-audit.service.ts`, `trader-id.util.spec.ts` and `actors-admin.service.spec.ts`.
+  - An unknown-confirmed-id test.
+- **Implementer verification:** migrate status up to date; 86 suites / 1358 tests; build clean; eslint 0.
+  - **P-14 re-timed through `checkBatch`:** one snapshot, 1,000 candidates against 1,000 mocked actors gave **16 / 8 / 7 ms**. Limits: local CPU, a mocked scan, not Lambda, and the in-file index is excluded.
+  - **Falsifiers, red then restored:**
+    - the per-candidate scan, red on `toHaveBeenCalledTimes(1)`;
+    - `traderName` classified strong in the shared rule, 9 reds across `intake-duplicate.service.spec` **and** `actors-admin.service.spec`;
+    - the DD-3 cap;
+    - the boolean confirmation.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 86 / 1358 (exit 0), build, eslint, migrate status, and no stray processes.
+- **Reviewer:** `akili-reviewer` (opus), single reviewer, all four lenses (round 2 of this task), **PASS**.
+  - Both attempt-1 items are resolved.
+  - The §4.5 direction rule is supported by the caller-controlled add order.
+  - The §9 rows describe the code accurately.
+  - The P-14 timing remains author-reported, and its limits are stated above.
+- **Advisory:**
+  - **Forward pointer → T-5:** `IntakeDuplicateIndexMatch` carries `{key, …}`, while design §3 specifies the in-file candidate as `{kind:'row', row, traderName, matchedOn}`. T-5 must map `key → row` and must not leak `key` onto the wire.
+  - There is no spec for "an unknown confirmed id plus a real strong match → 409". It holds by construction.
+  - The comment correction in `trader-id.util.spec.ts` sits outside T-3's file list. It is noted in the commit message.
+  - Long comments remain: a repeated defensive-stub note and a ~30-line module doc.
+- **Requirements covered:** FR-3 on the API side (all five scenarios, the BUT clause and the PII line), NFR-3 on the create surface, and the NFR-2 premise (P-14).
+- **Final status:** **PASS**. 2 attempts, 3 review verdicts (attempt 1 had two parallel lens reviewers).

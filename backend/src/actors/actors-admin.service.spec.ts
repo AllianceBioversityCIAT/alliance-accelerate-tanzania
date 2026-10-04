@@ -16,6 +16,7 @@ import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
 import { buildTraderId } from './trader-id.util';
+import { IntakeDuplicateService } from './intake-duplicate.service';
 
 /**
  * T-5 — ActorsAdminService unit tests with a MOCKED PrismaService (no DB).
@@ -184,6 +185,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   let service: ActorsAdminService;
   let actorAuditService: ActorAuditService;
   let actingAdminResolver: ActingAdminResolver;
+  let intakeDuplicateService: IntakeDuplicateService;
   let prisma: MockPrisma;
 
   beforeEach(() => {
@@ -251,11 +253,19 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       resolve: jest.fn().mockResolvedValue(ACTING_EMAIL),
       resetCache: jest.fn(),
     } as unknown as ActingAdminResolver;
+    // T-3 — the REAL IntakeDuplicateService wired to the same mocked
+    // `prisma.actor.findMany`, exactly like `actorAuditService` above is the
+    // real `ActorAuditService` over the same mocked `tx`: it proves the
+    // actual duplicate-check code path, not a stand-in.
+    intakeDuplicateService = new IntakeDuplicateService(
+      prisma as unknown as never,
+    );
 
     service = new ActorsAdminService(
       prisma as unknown as never,
       actorAuditService,
       actingAdminResolver,
+      intakeDuplicateService,
     );
   });
 
@@ -392,6 +402,11 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     beforeEach(() => {
       jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
       jest.setSystemTime(FIXED_NOW);
+      // T-3 — `create()` now runs the FR-3 duplicate scan unconditionally;
+      // default to "no existing actors" so every pre-existing test in this
+      // describe (none of which cares about duplicates) is unaffected.
+      // Duplicate-specific tests below override this per-test.
+      prisma.actor.findMany.mockResolvedValue([]);
     });
 
     afterEach(() => {
@@ -707,6 +722,314 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(res.registrationSource).toBe('SELF_REGISTERED');
       expect(res.consentMethod).toBe('SIGNED_FORM');
       expect(res.consentReference).toBe('DOC-123');
+    });
+
+    /**
+     * T-3 — the FR-3 duplicate gate on admin create (design.md §4.3, §4.4,
+     * DD-3, DD-4). `prisma.actor.findMany` here stands in for
+     * `IntakeDuplicateService.check()`'s one scan — these are genuinely
+     * exercising `IntakeDuplicateService` (constructed for real above), not
+     * a mock of it.
+     */
+    describe('duplicate detection gate (FR-3)', () => {
+      function existingActorRow(overrides: Partial<Record<string, unknown>> = {}) {
+        return {
+          id: 'actor-strong-1',
+          traderId: 'TZ-STRONG-0001',
+          traderName: 'Strong Match Co',
+          phone: '+255788880001',
+          email: 'strong-match@example.com',
+          gpsLatitude: -4.5,
+          gpsLongitude: 29.5,
+          ...overrides,
+        };
+      }
+
+      const baseDto = () =>
+        ({
+          traderName: 'New Actor',
+          region: 'Arusha',
+          traderType: 'seed_company',
+          contactPerson: 'Jane M',
+          capacityTons: 10,
+          phone: '+255711111111',
+          email: 'new-actor@example.com',
+          crops: ['sorghum'],
+        }) as unknown as AdminActorCreateDto;
+
+      function stubSuccessfulCreate(id: string) {
+        prisma.actor.create.mockResolvedValue(fixtureCreatedActor({ id }));
+        prisma.actor.findUnique.mockResolvedValue(
+          fixtureActor({ id, crops: [] }),
+        );
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+        // `baseDto()` carries `crops: ['sorghum']`, which routes through
+        // `buildCropLinks` → `prisma.crop.findMany`.
+        prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
+      }
+
+      it('throws ConflictException (409) with duplicateCandidates when a strong (email) match is unconfirmed', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        // Defensive: if the gate incorrectly fails to fire, `create` would
+        // proceed down the success path — stub it so THAT path cannot also
+        // throw for an unrelated reason, keeping any red purely about the
+        // gate assertion below, never a crash elsewhere.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = { ...baseDto(), email: 'strong-match@example.com' };
+
+        let caught: unknown;
+        try {
+          await service.create(dto as AdminActorCreateDto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          statusCode: number;
+          message: string;
+          duplicateCandidates: unknown[];
+        };
+        expect(response.statusCode).toBe(409);
+        expect(response.message).toBe('Possible duplicate');
+        expect(response.duplicateCandidates).toEqual([
+          {
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'Strong Match Co',
+            matchedOn: ['email'],
+          },
+        ]);
+        // A gated create never allocates or opens the create transaction.
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.actor.create).not.toHaveBeenCalled();
+      });
+
+      it('creates and audits the confirmation when the strong candidate is named in confirmedNotDuplicateOf', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          confirmedNotDuplicateOf: ['actor-strong-1'],
+        } as unknown as AdminActorCreateDto;
+
+        const res = await service.create(dto, ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([]);
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual([
+          {
+            kind: 'actor',
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'Strong Match Co',
+            matchedOn: ['email'],
+          },
+        ]);
+      });
+
+      it('omits duplicateConfirmation (writes Prisma.JsonNull) when there was nothing to confirm (falsifier 6)', async () => {
+        stubSuccessfulCreate('actor-new');
+
+        await service.create(baseDto(), ACTING_SUB);
+
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('creates (201) with duplicateConfirmation as Prisma.JsonNull when confirmedNotDuplicateOf names only unknown ids and there is no strong match', async () => {
+        prisma.actor.findMany.mockResolvedValue([]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          confirmedNotDuplicateOf: ['actor-does-not-exist'],
+        } as unknown as AdminActorCreateDto;
+
+        const res = await service.create(dto, ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([]);
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('creates without confirmation and returns duplicateWarnings when only a weak (traderName) match exists', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ phone: null, email: null, traderName: 'New Actor' }),
+        ]);
+        stubSuccessfulCreate('actor-new');
+
+        const res = await service.create(baseDto(), ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([
+          {
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'New Actor',
+            matchedOn: ['traderName'],
+          },
+        ]);
+        // A weak match never asks — exactly one create attempt.
+        expect(prisma.actor.create).toHaveBeenCalledTimes(1);
+      });
+
+      // Falsifier 3 (tasks.md T-3) — `traderName` must never classify as
+      // strong; the weak-creates test above already proves this behaviorally,
+      // and this test pins the classification directly against the gate.
+      it('never gates creation on a traderName-only match', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ phone: null, email: null, traderName: 'New Actor' }),
+        ]);
+        stubSuccessfulCreate('actor-new');
+
+        await expect(service.create(baseDto(), ACTING_SUB)).resolves.toBeDefined();
+        expect(prisma.$transaction).toHaveBeenCalled();
+      });
+
+      // Falsifier 2 (tasks.md T-3) — a confirmation naming actor A must NOT
+      // clear a DIFFERENT actor B the current (changed) email strongly
+      // matches: the confirmation is a set of ids, never a boolean.
+      it('re-asks when the confirmed id does not cover the actor the CURRENT fields match (not reusable)', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ id: 'actor-a', traderId: 'TZ-A', email: 'a@example.com' }),
+          existingActorRow({
+            id: 'actor-b',
+            traderId: 'TZ-B',
+            traderName: 'B Co',
+            email: 'b@example.com',
+          }),
+        ]);
+        // Defensive: see the comment above — keeps any red
+        // purely about the gate assertion below.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'b@example.com',
+          confirmedNotDuplicateOf: ['actor-a'],
+        } as unknown as AdminActorCreateDto;
+
+        let caught: unknown;
+        try {
+          await service.create(dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<{ actorId: string }>;
+        };
+        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual([
+          'actor-b',
+        ]);
+      });
+
+      // Falsifier 5 (tasks.md T-3) — an EMPTY confirmedNotDuplicateOf must
+      // not read as "fully confirmed"; it confirms nothing.
+      it('does not bypass the gate when confirmedNotDuplicateOf is present but empty', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          confirmedNotDuplicateOf: [],
+        } as unknown as AdminActorCreateDto;
+
+        await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      });
+
+      // Falsifier 4 (tasks.md T-3, NFR-3) — no matched VALUE ever appears on
+      // the candidate, only attribute names.
+      it('candidates never carry a matched VALUE — only actorId/traderId/traderName/matchedOn (NFR-3)', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = { ...baseDto(), email: 'strong-match@example.com' };
+
+        let caught: unknown;
+        try {
+          await service.create(dto as AdminActorCreateDto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<Record<string, unknown>>;
+        };
+        for (const candidate of response.duplicateCandidates) {
+          expect(Object.keys(candidate).sort()).toEqual([
+            'actorId',
+            'matchedOn',
+            'traderId',
+            'traderName',
+          ]);
+        }
+      });
+
+      // Falsifier 1 (tasks.md T-3, DD-3) — the DD-3 fixture: 5 weak
+      // (name+GPS) matches plus 1 strong (email-only) match. An email-only
+      // strong match MUST still gate even though every weak match outranks
+      // it by `matchedOn.length` (2 vs 1) — proving the strong set is never
+      // capped by re-applying the registration matcher's sort-then-slice-5.
+      it('DD-3: an email-only strong match still gates alongside 5 weak name+GPS matches', async () => {
+        const weakRows = Array.from({ length: 5 }, (_, i) =>
+          existingActorRow({
+            id: `actor-weak-${i}`,
+            traderId: `TZ-WEAK-${i}`,
+            phone: null,
+            email: null,
+            traderName: 'New Actor', // matches dto.traderName
+            gpsLatitude: -4.5,
+            gpsLongitude: 29.5, // matches dto's GPS below
+          }),
+        );
+        const strongRow = existingActorRow({
+          id: 'actor-email-only',
+          traderId: 'TZ-EMAIL-ONLY',
+          phone: null,
+          email: 'strong-match@example.com',
+          traderName: 'Totally Unrelated Name',
+          gpsLatitude: 10, // far away — no GPS overlap
+          gpsLongitude: 10,
+        });
+        prisma.actor.findMany.mockResolvedValue([...weakRows, strongRow]);
+        // Defensive: see the comment above — keeps any red purely about
+        // the gate assertion below.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          traderName: 'New Actor',
+          gpsLatitude: -4.5,
+          gpsLongitude: 29.5,
+        } as unknown as AdminActorCreateDto;
+
+        let caught: unknown;
+        try {
+          await service.create(dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<{ actorId: string }>;
+        };
+        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual([
+          'actor-email-only',
+        ]);
+      });
     });
   });
 

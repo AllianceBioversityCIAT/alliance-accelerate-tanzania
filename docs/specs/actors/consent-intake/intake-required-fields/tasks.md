@@ -10,7 +10,7 @@
 | Approval Mode | gated |
 | Requirements | [`requirements.md`](requirements.md): FR-1 to FR-6, NFR-1 to NFR-4 |
 | Design | [`design.md`](design.md) r2 (judgment **APPROVED**, [`judgment.md`](judgment.md)) |
-| Budget | **8 tasks · ~1,800 LOC · ~13 review rounds.** *Re-sized at decomposition: design §11 said 7 tasks. Import was split into T-4 (template and validation) and T-5 (duplicates), because one task carrying both exceeded a single focused session. LOC is unchanged.* `/akili-execute` **escalates to the user when any task reaches a 3rd review round**, or when actuals pass the budget. |
+| Budget | **Revised 2026-10-02 after the T-2 tripwire, approved by the product owner: 8 tasks · ~5,500 LOC · ~22 review rounds** (execution.md *Budget tripwire — after T-2*). Original: 8 tasks · ~1,800 LOC · ~13 review rounds. *Re-sized at decomposition: design §11 said 7 tasks. Import was split into T-4 (template and validation) and T-5 (duplicates), because one task carrying both exceeded a single focused session. LOC was unchanged at decomposition.* `/akili-execute` **escalates to the user when any task reaches a 3rd review round**, or when actuals pass the budget. |
 | Branch | `feature/atp-84-consent-request-email` |
 
 ---
@@ -85,7 +85,7 @@
       Review: `full`. Identity allocation is correctness-critical.
       Done when: a created actor carries a `TM-` ID, a client-sent `traderId` never lands, existing IDs never change on edit, the migration applies locally, and all four falsifiers were shown red.
 
-- [ ] **T-3** Intake duplicate check and the admin-create gate  (deps: T-2)
+- [x] **T-3** Intake duplicate check and the admin-create gate  (deps: T-2)
       Scope:
       - **First step, which settles P-14:** measure the matcher over a 1,000-candidate batch against ≥1,000 fixture actors, run 3 times. Record the spread in `execution.md`. If any run is > 10 s, **stop and Pivot** (design §4.3's algorithm is the premise).
       - Export the normalizers and `computeMatchedOn` from `duplicate-detection.service.ts`, with no behaviour change to the registration queue.
