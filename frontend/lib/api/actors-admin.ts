@@ -110,6 +110,61 @@ export interface BulkResult {
   notFound: string[];
 }
 
+// ── Duplicate detection (T-6, `actors/consent-intake/intake-required-fields`) ──
+
+/**
+ * Which attribute(s) a duplicate candidate matched on. Mirrors the backend
+ * `DuplicateMatchAttribute` (`backend/src/registrations/duplicate-detection.service.ts`)
+ * exactly — never the matched VALUE, only its name (NFR-3).
+ */
+export type DuplicateMatchAttribute = 'phone' | 'email' | 'traderName' | 'gps';
+
+/**
+ * One possible-duplicate candidate surfaced on admin create (FR-3). Mirrors
+ * the backend `DuplicateCandidate` exactly: Trader ID, name, and which
+ * attributes matched — never `phone`/`email` values (NFR-3).
+ */
+export interface DuplicateCandidate {
+  actorId: string;
+  traderId: string;
+  traderName: string;
+  matchedOn: DuplicateMatchAttribute[];
+}
+
+/**
+ * The 409 response body for a duplicate-blocked create (design.md §3):
+ * `{statusCode, message: 'Possible duplicate', duplicateCandidates}`, listing
+ * the strong candidates not yet confirmed. Surfaces on `ApiError.body`.
+ */
+export interface DuplicateConflictBody {
+  statusCode: number;
+  message: string;
+  duplicateCandidates: DuplicateCandidate[];
+}
+
+/**
+ * One entry of `AuditEntry.duplicateConfirmation` (FR-3, FR-4) — mirrors the
+ * backend `DuplicateConfirmationSnapshot` exactly
+ * (`backend/src/actors/actor-audit.service.ts`). Discriminated by `kind`:
+ * `'actor'` for a confirmed existing-actor match (the only kind admin create
+ * produces); `'row'` for an in-file import match not yet resolved to a
+ * created actor (T-5).
+ */
+export type DuplicateConfirmationSnapshot =
+  | {
+      kind: 'actor';
+      actorId: string;
+      traderId: string;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    }
+  | {
+      kind: 'row';
+      row: number;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    };
+
 /**
  * Query parameters for `adminListActors` (mirrors AdminActorListQueryDto).
  *
@@ -217,6 +272,12 @@ export interface AuditEntry {
   actingEmail: string | null;
   changes: unknown;
   acknowledged: boolean | null;
+  /**
+   * T-6 (FR-3) — the confirmed-not-duplicate snapshot, or `null` when nothing
+   * was confirmed for this entry. Mirrors the backend's `AuditEntry.duplicateConfirmation`
+   * exactly — always present on the wire, never an absent key.
+   */
+  duplicateConfirmation: DuplicateConfirmationSnapshot[] | null;
   createdAt: string;
 }
 
@@ -240,9 +301,16 @@ export interface ActorHistoryList {
  * (T-9 FR-6 closure) mirrors `ActorCreateDto`'s optional `registrationSource`
  * field the same way — `ActorForm`'s Consent & provenance fieldset now
  * surfaces it alongside the three consent fields.
+ *
+ * T-6 (`actors/consent-intake/intake-required-fields`, FR-2/FR-3) — `traderId`
+ * is REMOVED: the Trader ID is now always system-generated, never a client
+ * input (a client-sent value is stripped server-side by the global pipe's
+ * `whitelist`). `confirmedNotDuplicateOf` is added: actor ids the admin has
+ * confirmed are not duplicates of this new actor, recomputed by the server on
+ * every request (design.md DD-4) — at most 50 (`ArrayMaxSize(50)` mirrored,
+ * not re-enforced client-side per design §9).
  */
 export interface AdminActorCreateInput {
-  traderId: string;
   traderName: string;
   region: string;
   traderType: string;
@@ -268,6 +336,8 @@ export interface AdminActorCreateInput {
   gpsAccuracy?: number | null;
   crops?: string[];
   acknowledged?: boolean;
+  /** T-6 (FR-3) — actor ids confirmed not to be duplicates of this new actor. */
+  confirmedNotDuplicateOf?: string[];
 }
 
 /**
@@ -287,6 +357,16 @@ export interface ActorHistoryQuery {
 export interface ActorDeleteResult {
   deleted: true;
   id: string;
+}
+
+/**
+ * T-6 — `createActor`'s response envelope (design.md §3): the created actor,
+ * plus the weak matches surfaced as an informational warning (FR-3's weak
+ * scenario — always present, possibly empty, never blocks the create).
+ * Mirrors the backend `AdminActorCreateResult` exactly.
+ */
+export interface AdminActorCreateResult extends AdminActor {
+  duplicateWarnings: DuplicateCandidate[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -423,9 +503,11 @@ export async function adminGetActor(id: string, token: string): Promise<AdminAct
  * POST /api/v1/admin/actors
  *
  * Creates a new actor with the supplied full field set (FR-1). Returns the
- * created actor in Admin projection with HTTP 201. Duplicate `traderId` throws
- * a plain Error (409); missing acknowledgement on a GRANTED consent transition
- * throws a plain Error (400).
+ * created actor in Admin projection with HTTP 201, plus `duplicateWarnings`
+ * (weak matches, FR-3). A strong, unconfirmed duplicate match throws
+ * `ApiError` (409) whose `body.duplicateCandidates` names the matches —
+ * resubmit with `confirmedNotDuplicateOf` to proceed. Missing acknowledgement
+ * on a GRANTED consent transition throws `ApiError` (400).
  *
  * @param dto    Actor fields to create.
  * @param token  Cognito access token from the caller's session.
@@ -433,8 +515,8 @@ export async function adminGetActor(id: string, token: string): Promise<AdminAct
 export async function createActor(
   dto: AdminActorCreateInput,
   token: string,
-): Promise<AdminActor> {
-  return apiFetch<AdminActor>(BASE, {
+): Promise<AdminActorCreateResult> {
+  return apiFetch<AdminActorCreateResult>(BASE, {
     method: 'POST',
     token,
     body: dto,
@@ -530,32 +612,99 @@ export interface ImportRowError {
   message: string;
 }
 
+/**
+ * T-7 (`actors/consent-intake/intake-required-fields`) — one duplicate
+ * candidate surfaced on an import row. Mirrors the backend
+ * `ImportDuplicateCandidate` exactly: discriminated by `kind` because a
+ * row's candidates can mix a match against an EXISTING actor (`'actor'`)
+ * and a match against an EARLIER row of the same workbook (`'row'`) in one
+ * array. Carries no `phone`/`email` value, only the matched-attribute
+ * NAMES (NFR-3) — the same projection `DuplicateCandidate` already holds
+ * for the admin-create surface.
+ */
+export type ImportDuplicateCandidate =
+  | {
+      kind: 'actor';
+      actorId: string;
+      traderId: string;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    }
+  | {
+      kind: 'row';
+      row: number;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    };
+
+/**
+ * T-7 — the exact confirmation key `design.md` §3/DD-4 specifies for one
+ * duplicate candidate: `actor:<id>` for an existing-actor match, `row:<n>`
+ * for an earlier row of the same workbook. Ticking a row's confirmation
+ * checkbox must send ALL of its shown candidates' keys (never a subset), or
+ * the server's recomputed strong-key check still blocks the row.
+ */
+export function importDuplicateCandidateKey(candidate: ImportDuplicateCandidate): string {
+  return candidate.kind === 'actor' ? `actor:${candidate.actorId}` : `row:${candidate.row}`;
+}
+
+/** One row's confirmed duplicate candidates (T-7). Mirrors `DuplicateConfirmationEntryDto`. */
+export interface ImportDuplicateConfirmationInput {
+  /** Excel data-row number this confirmation applies to. */
+  row: number;
+  /** Candidate keys the admin confirmed are NOT duplicates of this row (see {@link importDuplicateCandidateKey}). */
+  candidates: string[];
+}
+
 /** Per-row outcome, tied to the Excel data-row number (header = row 1). */
 export interface ImportRowResult {
   /** Excel data-row number the outcome refers to. */
   rowNumber: number;
-  /** Row identity echoed for the report — non-PII (FR-7). */
+  /**
+   * Row identity echoed for the report — non-PII (FR-7). `null` in preview
+   * (Trader IDs are system-generated and do not exist until a row is
+   * actually created); the assigned Trader ID once the row is `created` on
+   * commit. The literal "—" an admin sees in preview is a UI rendering
+   * choice (`ImportPreviewTable`'s `row.traderId ?? '—'`), not a wire value.
+   */
   traderId: string | null;
   traderName: string | null;
   /**
    * `create` — prospective create in preview mode.
    * `created` — actor created (commit mode only; carries `actorId`).
-   * `skipped-exists` — `traderId` already in the registry (FR-4).
-   * `skipped-duplicate-in-file` — `traderId` repeated later in the same file (FR-4).
+   * `possible-duplicate` — a strong match (DB or in-file) was not confirmed;
+   * never created (T-7; replaces `skipped-exists` / `skipped-duplicate-in-file`).
    * `failed` — validation failed (carries `errors`).
    */
-  outcome:
-    | 'create'
-    | 'created'
-    | 'skipped-exists'
-    | 'skipped-duplicate-in-file'
-    | 'failed';
+  outcome: 'create' | 'created' | 'possible-duplicate' | 'failed';
   /** New actor id — commit + `created` only. */
   actorId?: string;
   /** Field-level errors — `failed` only; field names + messages, never PII values (FR-11). */
   errors?: ImportRowError[];
   /** Non-fatal notes, e.g. 'GPS out of range — imported with GPS cleared' (DR-5). */
   warnings?: string[];
+  /**
+   * T-7 — strong matches (phone/email) this row was classified against.
+   * Present whenever at least one strong match exists, whatever the row's
+   * outcome. **Capped at 50 on the wire**: gating (whether the row becomes
+   * `possible-duplicate`) always uses the FULL strong-key set, never this
+   * truncated list — see `duplicateCandidatesTotal`.
+   */
+  duplicateCandidates?: ImportDuplicateCandidate[];
+  /**
+   * T-7 — the full count of strong matches behind `duplicateCandidates`,
+   * present whenever that field is. Equal to its length unless truncated by
+   * the 50-item wire cap, in which case the row can never be confirmed
+   * (`ArrayMaxSize(50)` on the confirmation DTO) and its checkbox is
+   * disabled.
+   */
+  duplicateCandidatesTotal?: number;
+  /**
+   * T-7 — weak matches (name/GPS only) this row was classified against —
+   * advisory, never gates creation. Present whenever at least one weak match
+   * exists. Never empty when present.
+   */
+  duplicateWarnings?: ImportDuplicateCandidate[];
 }
 
 /** Aggregate counts across all data rows (FR-7). */
@@ -563,7 +712,12 @@ export interface ImportReportTotals {
   rows: number;
   toCreate: number;
   created: number;
-  skipped: number;
+  /**
+   * T-7 — rows held as a `possible-duplicate` outcome (renamed from
+   * `skipped`). `toCreate + possibleDuplicate + failed = rows` in preview;
+   * `created + possibleDuplicate + failed = rows` on commit.
+   */
+  possibleDuplicate: number;
   failed: number;
   warnings: number;
 }
@@ -576,17 +730,17 @@ export interface ImportReportTotals {
  * reflects reality.
  */
 /**
- * T-4/T-5 — one entry of the per-reason breakdown of rows that did not import
- * (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
+ * T-4/T-5/T-7 — one entry of the per-reason breakdown of rows that did not
+ * import (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
  *
  * `reason` is `string` here because it is `string` on the backend, **not**
  * because a narrower type was loosened to make something compile. The
- * vocabulary is closed in behavior (a template column's `field`, a
- * `skipped-*` outcome, or the literal `batch-rolled-back`) but not in the
- * type system: `TEMPLATE_COLUMNS` is annotated `readonly TemplateColumn[]`,
- * whose `field` is `string`, so the column half of the vocabulary has no
- * literal union to mirror. Narrowing this side alone would make the frontend
- * type claim something the wire does not guarantee.
+ * vocabulary is closed in behavior (a template column's `field`, the literal
+ * `possible-duplicate` outcome, or the literal `batch-rolled-back`) but not
+ * in the type system: `TEMPLATE_COLUMNS` is annotated `readonly
+ * TemplateColumn[]`, whose `field` is `string`, so the column half of the
+ * vocabulary has no literal union to mirror. Narrowing this side alone would
+ * make the frontend type claim something the wire does not guarantee.
  */
 export interface ImportFailureReason {
   reason: string;
@@ -601,8 +755,8 @@ export interface ImportReport {
   rows: ImportRowResult[];
   /**
    * T-4 (FR-7) — why rows did not import, one reason per row, so the counts
-   * sum to `totals.failed + totals.skipped` exactly. Ordered by count
-   * descending, then reason ascending (NFR-6).
+   * sum to `totals.failed + totals.possibleDuplicate` exactly. Ordered by
+   * count descending, then reason ascending (NFR-6).
    *
    * **Optional, and absent — not empty — when nothing failed or was skipped.**
    * The backend omits the key entirely on a clean import, so a consumer must
@@ -651,12 +805,18 @@ function fileToBase64(file: File): Promise<string> {
  * @param acknowledged  File-level consent acknowledgement — pass `true` on a
  *                       commit that publishes any GRANTED rows (FR-6). Omit
  *                       otherwise; it is only sent when explicitly provided.
+ * @param duplicateConfirmations  T-7 — rows the admin confirmed are not
+ *                       duplicates, each naming ALL of that row's shown
+ *                       candidate keys. Ignored by the server in `preview`
+ *                       mode; omitted from the wire entirely when not
+ *                       supplied (mirrors `acknowledged`'s pattern).
  */
 export async function importActors(
   file: File,
   mode: 'preview' | 'commit',
   token: string,
   acknowledged?: boolean,
+  duplicateConfirmations?: ImportDuplicateConfirmationInput[],
 ): Promise<ImportReport> {
   if (!file.name.toLowerCase().endsWith(IMPORT_EXTENSION)) {
     throw new Error('Only .xlsx files can be imported. Please select an Excel workbook.');
@@ -675,6 +835,7 @@ export async function importActors(
       fileBase64,
       mode,
       ...(acknowledged !== undefined && { acknowledged }),
+      ...(duplicateConfirmations !== undefined && { duplicateConfirmations }),
     },
   });
 }

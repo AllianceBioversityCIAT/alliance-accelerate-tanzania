@@ -33,8 +33,10 @@ import {
   deleteActor,
   getActorHistory,
   importActors,
+  importDuplicateCandidateKey,
   type AdminActor,
   type AdminActorCreateInput,
+  type AdminActorCreateResult,
   type AdminActorUpdateInput,
   type AuditEntry,
   type ActorHistoryList,
@@ -100,6 +102,7 @@ const AUDIT_ENTRY: AuditEntry = {
     },
   },
   acknowledged: null,
+  duplicateConfirmation: null,
   createdAt: '2024-06-01T00:00:00.000Z',
 };
 
@@ -116,12 +119,17 @@ const DELETE_RESULT: ActorDeleteResult = {
 };
 
 const CREATE_INPUT: AdminActorCreateInput = {
-  traderId: 'T-002',
   traderName: 'Iringa Cooperative',
   region: 'Iringa',
   traderType: 'cooperative',
   consentStatus: 'UNKNOWN',
   crops: ['groundnut'],
+};
+
+/** The 201 response envelope (T-6) — the created actor plus `duplicateWarnings`. */
+const CREATE_RESULT: AdminActorCreateResult = {
+  ...ADMIN_ACTOR,
+  duplicateWarnings: [],
 };
 
 const UPDATE_INPUT: AdminActorUpdateInput = {
@@ -137,14 +145,24 @@ const IMPORT_BASE64 = 'QUJD';
 const IMPORT_REPORT: ImportReport = {
   mode: 'preview',
   templateVersionDetected: 'v1',
-  totals: { rows: 2, toCreate: 1, created: 0, skipped: 1, failed: 0, warnings: 0 },
+  totals: { rows: 2, toCreate: 1, created: 0, possibleDuplicate: 1, failed: 0, warnings: 0 },
   rows: [
     { rowNumber: 1, traderId: 'T-100', traderName: 'New Trader', outcome: 'create' },
     {
       rowNumber: 2,
-      traderId: 'T-001',
+      traderId: null,
       traderName: 'Mbeya Seeds Ltd',
-      outcome: 'skipped-exists',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: ACTOR_ID,
+          traderId: 'T-001',
+          traderName: 'Mbeya Seeds Ltd',
+          matchedOn: ['email'],
+        },
+      ],
+      duplicateCandidatesTotal: 1,
     },
   ],
 };
@@ -369,7 +387,7 @@ describe('adminGetActor()', () => {
 
 describe('createActor()', () => {
   it('hits POST /api/v1/admin/actors', async () => {
-    global.fetch = makeFetchOk(ADMIN_ACTOR, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createActor(CREATE_INPUT, TOKEN);
 
@@ -378,7 +396,7 @@ describe('createActor()', () => {
   });
 
   it('attaches Authorization: Bearer <token>', async () => {
-    global.fetch = makeFetchOk(ADMIN_ACTOR, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createActor(CREATE_INPUT, TOKEN);
 
@@ -387,7 +405,7 @@ describe('createActor()', () => {
   });
 
   it('sends Content-Type: application/json', async () => {
-    global.fetch = makeFetchOk(ADMIN_ACTOR, 201);
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createActor(CREATE_INPUT, TOKEN);
 
@@ -395,21 +413,32 @@ describe('createActor()', () => {
     expect(headers['Content-Type']).toBe('application/json');
   });
 
-  it('sends the correct JSON body', async () => {
-    global.fetch = makeFetchOk(ADMIN_ACTOR, 201);
+  it('sends the correct JSON body — no traderId key at all (FR-2, system-generated)', async () => {
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     await createActor(CREATE_INPUT, TOKEN);
 
     const body = JSON.parse(callInit().body as string);
     expect(body).toEqual(CREATE_INPUT);
+    expect(body).not.toHaveProperty('traderId');
   });
 
-  it('returns the parsed AdminActor on 201', async () => {
-    global.fetch = makeFetchOk(ADMIN_ACTOR, 201);
+  it('sends confirmedNotDuplicateOf when supplied (FR-3)', async () => {
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
+
+    await createActor({ ...CREATE_INPUT, confirmedNotDuplicateOf: ['actor-1', 'actor-2'] }, TOKEN);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.confirmedNotDuplicateOf).toEqual(['actor-1', 'actor-2']);
+  });
+
+  it('returns the parsed AdminActorCreateResult on 201, including duplicateWarnings', async () => {
+    global.fetch = makeFetchOk(CREATE_RESULT, 201);
 
     const result = await createActor(CREATE_INPUT, TOKEN);
 
-    expect(result).toEqual(ADMIN_ACTOR);
+    expect(result).toEqual(CREATE_RESULT);
+    expect(result.duplicateWarnings).toEqual([]);
   });
 
   it('throws AuthFailureError on 401', async () => {
@@ -423,21 +452,43 @@ describe('createActor()', () => {
       statusCode: 400,
       message: 'Validation failed',
       error: 'Bad Request',
-      details: [{ field: 'traderId', message: 'traderId is required' }],
+      details: [{ field: 'phone', message: 'phone is required' }],
     });
 
     await expect(createActor(CREATE_INPUT, TOKEN)).rejects.toThrow('Validation failed');
   });
 
-  it('throws a plain Error on 409 duplicate traderId', async () => {
+  it('throws ApiError (409) carrying duplicateCandidates on a strong unconfirmed match (FR-3)', async () => {
+    const envelope = {
+      statusCode: 409,
+      message: 'Possible duplicate',
+      duplicateCandidates: [
+        { actorId: 'actor-1', traderId: 'TM-2026-0001', traderName: 'Kilimo Traders', matchedOn: ['email'] },
+      ],
+    };
+    global.fetch = makeFetchNotOk(409, envelope);
+
+    await expect(createActor(CREATE_INPUT, TOKEN)).rejects.toThrow('Possible duplicate');
+
+    global.fetch = makeFetchNotOk(409, envelope);
+    let caught: unknown;
+    try {
+      await createActor(CREATE_INPUT, TOKEN);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as ApiError).body).toEqual(envelope);
+  });
+
+  it('throws a plain Error on a generic 409 (no candidates — not every conflict is a duplicate)', async () => {
     global.fetch = makeFetchNotOk(409, {
       statusCode: 409,
-      message: 'An actor with this traderId already exists',
+      message: 'A conflicting record already exists',
       error: 'Conflict',
     });
 
     await expect(createActor(CREATE_INPUT, TOKEN)).rejects.toThrow(
-      'An actor with this traderId already exists',
+      'A conflicting record already exists',
     );
   });
 });
@@ -510,16 +561,16 @@ describe('updateActor()', () => {
     await expect(updateActor(ACTOR_ID, UPDATE_INPUT, TOKEN)).rejects.toThrow('Actor not found');
   });
 
-  it('throws a plain Error on 409 duplicate traderId', async () => {
+  it('throws a plain Error on a generic 409 conflict', async () => {
     global.fetch = makeFetchNotOk(409, {
       statusCode: 409,
-      message: 'An actor with this traderId already exists',
+      message: 'A conflicting record already exists',
       error: 'Conflict',
     });
 
-    await expect(updateActor(ACTOR_ID, { traderId: 'T-EXISTING' }, TOKEN)).rejects.toThrow(
-      'An actor with this traderId already exists',
-    );
+    await expect(
+      updateActor(ACTOR_ID, { traderName: 'Iringa Cooperative Ltd' }, TOKEN),
+    ).rejects.toThrow('A conflicting record already exists');
   });
 });
 
@@ -713,6 +764,29 @@ describe('importActors()', () => {
     expect(body.acknowledged).toBe(false);
   });
 
+  // T-7 — duplicateConfirmations (design.md §3, DD-4).
+  it('omits duplicateConfirmations when it is not passed', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, true);
+
+    const body = JSON.parse(callInit().body as string);
+    expect('duplicateConfirmations' in body).toBe(false);
+  });
+
+  it('includes duplicateConfirmations exactly as given when passed', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, true, [
+      { row: 2, candidates: ['actor:actor-cuid-001'] },
+    ]);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.duplicateConfirmations).toEqual([
+      { row: 2, candidates: ['actor:actor-cuid-001'] },
+    ]);
+  });
+
   it('returns the parsed ImportReport', async () => {
     global.fetch = makeFetchOk(IMPORT_REPORT);
 
@@ -720,7 +794,7 @@ describe('importActors()', () => {
 
     expect(result).toEqual(IMPORT_REPORT);
     expect(result.totals.toCreate).toBe(1);
-    expect(result.rows[1].outcome).toBe('skipped-exists');
+    expect(result.rows[1].outcome).toBe('possible-duplicate');
   });
 
   it('accepts an uppercase .XLSX extension (case-insensitive)', async () => {
@@ -825,5 +899,34 @@ describe('shared infrastructure', () => {
 
     await expect(createActor(CREATE_INPUT, TOKEN)).rejects.toThrow('NEXT_PUBLIC_API_BASE_URL');
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// importDuplicateCandidateKey (T-7, design.md §3/DD-4)
+// ---------------------------------------------------------------------------
+
+describe('importDuplicateCandidateKey', () => {
+  it('builds "actor:<id>" for an existing-actor candidate', () => {
+    expect(
+      importDuplicateCandidateKey({
+        kind: 'actor',
+        actorId: 'a1',
+        traderId: 'T-001',
+        traderName: 'Mbeya Seeds Ltd',
+        matchedOn: ['email'],
+      }),
+    ).toBe('actor:a1');
+  });
+
+  it('builds "row:<n>" for an in-file candidate', () => {
+    expect(
+      importDuplicateCandidateKey({
+        kind: 'row',
+        row: 5,
+        traderName: 'Mbeya Seeds Ltd',
+        matchedOn: ['phone'],
+      }),
+    ).toBe('row:5');
   });
 });

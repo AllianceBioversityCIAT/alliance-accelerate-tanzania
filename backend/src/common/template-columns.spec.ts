@@ -1,10 +1,10 @@
-import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
+import { ConsentMethod, ConsentStatus } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
+import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import {
   CONSENT_METHOD_VALUES,
   CROP_COLUMN_CATALOG,
   CROP_YES_NO,
-  REGISTRATION_SOURCE_VALUES,
   SEX_VALUES,
   TEMPLATE_COLUMNS,
   TEMPLATE_HEADERS,
@@ -24,12 +24,11 @@ describe('template-columns', () => {
   };
 
   it('exports the template version stamp', () => {
-    expect(TEMPLATE_VERSION).toBe('v3');
+    expect(TEMPLATE_VERSION).toBe('v4');
   });
 
   it('lists columns in the exact field-staff order', () => {
     expect(TEMPLATE_COLUMNS.map((c) => c.field)).toEqual([
-      'traderId',
       'traderName',
       'traderType',
       'region',
@@ -43,13 +42,10 @@ describe('template-columns', () => {
       'email',
       'gpsLatitude',
       'gpsLongitude',
-      'gpsAltitude',
-      'gpsAccuracy',
       'cropSorghum',
       'cropCommonBean',
       'cropGroundnut',
       'consentStatus',
-      'registrationSource',
       'consentMethod',
       'consentObtainedAt',
       'consentReference',
@@ -58,20 +54,32 @@ describe('template-columns', () => {
     ]);
   });
 
+  /** T-4 (consent-intake/intake-required-fields) — the four columns the
+   * removed template no longer carries (Trader ID, GPS Altitude, GPS
+   * Accuracy, Registration Source). */
+  it('no longer carries Trader ID, GPS Altitude, GPS Accuracy or Registration Source (v4)', () => {
+    const fields = TEMPLATE_COLUMNS.map((c) => c.field);
+    for (const removed of ['traderId', 'gpsAltitude', 'gpsAccuracy', 'registrationSource']) {
+      expect(fields).not.toContain(removed);
+    }
+  });
+
   /**
    * T-4 (public-profile-disclosure) D-13 — pins EVERY column's required flag
    * by value, not just the ones already `true`. A header-existence assertion
    * proves presence, not agreement: this is the test that reddens if any
    * existing column's required/optional status is ever flipped, by this task
-   * or a later one (FR-5's `BUT it must NOT change the required/optional
-   * status of any existing column`).
+   * or a later one.
+   *
+   * T-4 (consent-intake/intake-required-fields) — Contact Person, Capacity,
+   * Phone and Email flip to `true` here, derived from `INTAKE_REQUIRED_FIELDS`
+   * (NFR-1) rather than a second hand-maintained boolean list.
    */
-  it('pins every column\'s required flag by value (D-13)', () => {
+  it('pins every column\'s required flag by value, matching the intake contract (NFR-1)', () => {
     const requiredByField = Object.fromEntries(
       TEMPLATE_COLUMNS.map((c) => [c.field, c.required]),
     );
     expect(requiredByField).toEqual({
-      traderId: true,
       traderName: true,
       traderType: true,
       region: true,
@@ -79,49 +87,48 @@ describe('template-columns', () => {
       marketLocation: false,
       sex: false,
       position: false,
-      capacityTons: false,
+      capacityTons: true,
       technicalSupport: false,
-      phone: false,
-      email: false,
+      phone: true,
+      email: true,
       gpsLatitude: false,
       gpsLongitude: false,
-      gpsAltitude: false,
-      gpsAccuracy: false,
       cropSorghum: false,
       cropCommonBean: false,
       cropGroundnut: false,
       consentStatus: false,
-      registrationSource: false,
       consentMethod: false,
       consentObtainedAt: false,
       consentReference: false,
-      contactPerson: false,
+      contactPerson: true,
       otherCrops: false,
     });
+    // The 4 contract scalars this template carries as columns (`crops` has no
+    // single column) are exactly the ones flipped to required above.
+    for (const field of INTAKE_REQUIRED_FIELDS) {
+      if (field === 'crops') continue;
+      expect(requiredByField[field]).toBe(true);
+    }
   });
 
   it('exposes the headers in the same order as the columns', () => {
     expect(TEMPLATE_HEADERS).toEqual(TEMPLATE_COLUMNS.map((c) => c.header));
     // Human-readable headers for the constrained/identity columns.
-    expect(byField('traderId').header).toBe('Trader ID');
+    expect(byField('traderName').header).toBe('Trader Name');
     expect(byField('cropCommonBean').header).toBe('Crop: Common bean');
     expect(byField('consentStatus').header).toBe('Consent Status');
-    expect(byField('registrationSource').header).toBe('Registration Source');
     expect(byField('consentMethod').header).toBe('Consent Method');
     expect(byField('consentObtainedAt').header).toBe('Consent Obtained At');
     expect(byField('consentReference').header).toBe('Consent Reference');
   });
 
-  it('marks exactly the ActorCreateDto-required fields as required', () => {
+  it('marks exactly the intake-contract-required fields as required (v4)', () => {
     const required = TEMPLATE_COLUMNS.filter((c) => c.required).map(
       (c) => c.field,
     );
-    expect(required).toEqual([
-      'traderId',
-      'traderName',
-      'traderType',
-      'region',
-    ]);
+    expect(required.sort()).toEqual(
+      ['traderName', 'traderType', 'region', 'contactPerson', 'capacityTons', 'phone', 'email'].sort(),
+    );
   });
 
   it('enforces region allowed values equal to the canonical regions', () => {
@@ -172,21 +179,9 @@ describe('template-columns', () => {
       'email',
       'gpsLatitude',
       'gpsLongitude',
-      'gpsAltitude',
-      'gpsAccuracy',
     ]) {
       expect(byField(field).format).toBeTruthy();
     }
-  });
-
-  // T-6 — the four new columns (FR-1, FR-2, FR-5, NFR-3).
-
-  it('enforces registration-source allowed values equal to the Prisma RegistrationSource enum', () => {
-    expect(REGISTRATION_SOURCE_VALUES).toEqual(Object.values(RegistrationSource));
-    expect(byField('registrationSource').allowedValues).toEqual(
-      REGISTRATION_SOURCE_VALUES,
-    );
-    expect(byField('registrationSource').required).toBe(false);
   });
 
   it('enforces consent-method allowed values equal to the Prisma ConsentMethod enum', () => {
@@ -218,12 +213,12 @@ describe('template-columns', () => {
     expect(byField('otherCrops').header).toBe('Other Crops');
   });
 
-  it('marks Contact Person and Other Crops optional with NO allowed-value list', () => {
+  it('marks Contact Person required (v4) and Other Crops optional, neither with an allowed-value list', () => {
     // FR-5: headers, Instructions allowed-value lists, and parser must agree.
     // Neither column is constrained, so the absence of `allowedValues` here
     // IS the agreement — the Instructions sheet must reflect the same thing
     // (asserted in generate-template.spec.ts).
-    expect(byField('contactPerson').required).toBe(false);
+    expect(byField('contactPerson').required).toBe(true);
     expect(byField('contactPerson').allowedValues).toBeUndefined();
     expect(byField('otherCrops').required).toBe(false);
     expect(byField('otherCrops').allowedValues).toBeUndefined();

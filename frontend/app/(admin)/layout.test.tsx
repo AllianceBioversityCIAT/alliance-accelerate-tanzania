@@ -172,6 +172,33 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
+  // ---------------------------------------------------------------------------
+  // Scroll containment (double-scrollbar / blank-bottom fix)
+  //
+  // jsdom does not run layout, so it cannot prove an absolutely-positioned
+  // descendant stays inside these panes during a real scroll — that was
+  // proven by measuring `document.documentElement.scrollHeight` in headless
+  // Chromium before/after. What it *can* prove, like the ActorsTable sticky-
+  // column tests above, is that the `relative` class (the containing-block
+  // fix) is present on both scroll panes, so a regression that strips it
+  // fails here.
+  // ---------------------------------------------------------------------------
+
+  it('makes the main content region a containing block (relative) so absolutely-positioned descendants cannot escape its scroll', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    expect(screen.getByRole('main')).toHaveClass('relative');
+  });
+
+  it('makes the sidebar scroll pane a containing block (relative) the same way', () => {
+    renderAdminLayout(ADMIN_SESSION);
+
+    const sidebarScrollPane = document.getElementById('admin-sidebar')!.querySelector(
+      ':scope > div',
+    );
+    expect(sidebarScrollPane).toHaveClass('relative');
+  });
+
   // ── Shell chrome: brand link + mobile menu toggle ─────────────────────────
 
   it('brand mark leaves the console for the public site', () => {

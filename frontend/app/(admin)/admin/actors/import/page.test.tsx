@@ -48,6 +48,11 @@ jest.mock('@/lib/auth/auth-client', () => ({
 const mockImportActors = jest.fn();
 jest.mock('@/lib/api/actors-admin', () => ({
   importActors: (...args: unknown[]) => mockImportActors(...args),
+  // T-7 — a real implementation, not another mock: the page calls this to
+  // build `duplicateConfirmations`, and its behavior (not just its call
+  // shape) is what the "only ticked rows are sent" test is verifying.
+  importDuplicateCandidateKey: (candidate: { kind: string; actorId?: string; row?: number }) =>
+    candidate.kind === 'actor' ? `actor:${candidate.actorId}` : `row:${candidate.row}`,
 }));
 
 jest.mock('@/lib/api/client', () => {
@@ -84,13 +89,13 @@ const ACK_PHRASE = 'I confirm consent is on file';
 
 const PREVIEW_REPORT: ImportReport = {
   mode: 'preview',
-  totals: { rows: 1, toCreate: 1, created: 0, skipped: 0, failed: 0, warnings: 0 },
-  rows: [{ rowNumber: 2, traderId: 'TZ-001', traderName: 'Meru Agro', outcome: 'create' }],
+  totals: { rows: 1, toCreate: 1, created: 0, possibleDuplicate: 0, failed: 0, warnings: 0 },
+  rows: [{ rowNumber: 2, traderId: null, traderName: 'Meru Agro', outcome: 'create' }],
 };
 
 const COMMIT_REPORT: ImportReport = {
   mode: 'commit',
-  totals: { rows: 1, toCreate: 1, created: 1, skipped: 0, failed: 0, warnings: 0 },
+  totals: { rows: 1, toCreate: 1, created: 1, possibleDuplicate: 0, failed: 0, warnings: 0 },
   rows: [
     { rowNumber: 2, traderId: 'TZ-001', traderName: 'Meru Agro', outcome: 'created', actorId: 'a1' },
   ],
@@ -98,14 +103,113 @@ const COMMIT_REPORT: ImportReport = {
 
 const PREVIEW_REPORT_GRANTED: ImportReport = {
   mode: 'preview',
-  totals: { rows: 1, toCreate: 1, created: 0, skipped: 0, failed: 0, warnings: 1 },
+  totals: { rows: 1, toCreate: 1, created: 0, possibleDuplicate: 0, failed: 0, warnings: 1 },
   rows: [
     {
       rowNumber: 2,
-      traderId: 'TZ-001',
+      traderId: null,
       traderName: 'Meru Agro',
       outcome: 'create',
       warnings: ['Consent is GRANTED — acknowledgement will be required to import this actor'],
+    },
+  ],
+};
+
+// T-7 (actors/consent-intake/intake-required-fields) — a preview carrying two
+// possible-duplicate rows alongside a plain create, so a test can tick ONE of
+// them and verify only that row's confirmation is sent, with ALL of its
+// shown candidate keys (design.md §3, DD-4).
+const PREVIEW_REPORT_WITH_DUPES: ImportReport = {
+  mode: 'preview',
+  totals: { rows: 3, toCreate: 1, created: 0, possibleDuplicate: 2, failed: 0, warnings: 0 },
+  rows: [
+    { rowNumber: 2, traderId: null, traderName: 'Plain Create', outcome: 'create' },
+    {
+      rowNumber: 3,
+      traderId: null,
+      traderName: 'Meru Agro',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: 'actor-1',
+          traderId: 'TZ-001',
+          traderName: 'Meru Agro Ltd',
+          matchedOn: ['email'],
+        },
+        { kind: 'row', row: 2, traderName: 'Plain Create', matchedOn: ['phone'] },
+      ],
+      duplicateCandidatesTotal: 2,
+    },
+    {
+      rowNumber: 4,
+      traderId: null,
+      traderName: 'Second Dup',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: 'actor-2',
+          traderId: 'TZ-002',
+          traderName: 'Second Dup Existing',
+          matchedOn: ['phone'],
+        },
+      ],
+      duplicateCandidatesTotal: 1,
+    },
+  ],
+};
+
+// T-7 (rework) — every row flagged: `toCreate` is 0 because the backend's
+// total excludes EVERY possible-duplicate row, confirmed or not. Before the
+// fix, `toCreate` alone drove the button, so this report could never be
+// imported no matter what the admin ticked.
+const ALL_FLAGGED_REPORT: ImportReport = {
+  mode: 'preview',
+  totals: { rows: 1, toCreate: 0, created: 0, possibleDuplicate: 1, failed: 0, warnings: 0 },
+  rows: [
+    {
+      rowNumber: 2,
+      traderId: null,
+      traderName: 'Meru Agro',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: 'actor-1',
+          traderId: 'TZ-001',
+          traderName: 'Meru Agro Ltd',
+          matchedOn: ['email'],
+        },
+      ],
+      duplicateCandidatesTotal: 1,
+    },
+  ],
+};
+
+// T-7 (rework) — a possible-duplicate row past the 50-shown wire cap
+// (`duplicateCandidatesTotal` > `duplicateCandidates.length`): its checkbox
+// is disabled and it can never be confirmed (`ArrayMaxSize(50)`), so ticking
+// it must not raise the derived commit count either.
+const OVER_CAP_PREVIEW_REPORT: ImportReport = {
+  mode: 'preview',
+  totals: { rows: 1, toCreate: 0, created: 0, possibleDuplicate: 1, failed: 0, warnings: 0 },
+  rows: [
+    {
+      rowNumber: 2,
+      traderId: null,
+      traderName: 'Shared Email Co',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: 'actor-1',
+          traderId: 'TZ-001',
+          traderName: 'Meru Agro Ltd',
+          matchedOn: ['email'],
+        },
+      ],
+      duplicateCandidatesTotal: 60,
     },
   ],
 };
@@ -196,15 +300,199 @@ describe('ActorImportPage — full flow (no acknowledgement)', () => {
     fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
 
     await waitFor(() =>
-      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined),
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined, undefined),
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     // Result view + live-region summary.
     expect(await screen.findByText(/import complete/i)).toBeInTheDocument();
-    const status = screen.getByText(/1 created, 0 skipped, 0 failed/i);
+    const status = screen.getByText(/1 created, 0 possible duplicates, 0 failed/i);
     expect(status).toBeInTheDocument();
     expect(status.closest('[aria-live="polite"]')).not.toBeNull();
+  });
+});
+
+// ── Per-row duplicate confirmation (T-7) ─────────────────────────────────────
+
+describe('ActorImportPage — duplicate confirmation', () => {
+  it('sends only the ticked row, with ALL of its shown candidate keys, and leaves the other possible-duplicate row unconfirmed', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    const file = await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    // Tick ONLY row 3's checkbox (one of its two rendered instances — table + card).
+    const rowThreeBoxes = screen.getAllByRole('checkbox', { name: /row 3\)/i });
+    expect(rowThreeBoxes.length).toBeGreaterThan(0);
+    fireEvent.click(rowThreeBoxes[0]);
+
+    // Both instances reflect the same confirmed state (shared, lifted state).
+    for (const box of screen.getAllByRole('checkbox', { name: /row 3\)/i })) {
+      expect(box).toBeChecked();
+    }
+    // Row 4's checkbox was never touched.
+    for (const box of screen.getAllByRole('checkbox', { name: /row 4\)/i })) {
+      expect(box).not.toBeChecked();
+    }
+
+    // T-7 (rework) — ticking row 3 raises the commit count by one over the
+    // backend's `toCreate` (1): the button must read the derived count, not
+    // the raw total, or this confirmation could never be sent (the FAIL this
+    // rework fixes).
+    fireEvent.click(screen.getByRole('button', { name: /import 2 actors/i }));
+
+    await waitFor(() =>
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined, [
+        { row: 3, candidates: ['actor:actor-1', 'row:2'] },
+      ]),
+    );
+  });
+
+  it('sends undefined duplicateConfirmations when no possible-duplicate row is ticked', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    const file = await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /import 1 actor/i }));
+
+    await waitFor(() =>
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined, undefined),
+    );
+  });
+
+  it('resets confirmations when a different file is selected', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]);
+    expect(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]).toBeChecked();
+
+    // Re-selecting (e.g. choosing a different file) previews again and must
+    // not carry the old confirmation forward onto the new report's rows.
+    const file2 = await selectFile(xlsxFile('other.xlsx'));
+    await waitFor(() =>
+      expect(mockImportActors).toHaveBeenNthCalledWith(2, file2, 'preview', TOKEN),
+    );
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    for (const box of screen.getAllByRole('checkbox', { name: /row 3\)/i })) {
+      expect(box).not.toBeChecked();
+    }
+  });
+});
+
+// ── Commit count derivation (T-7, rework) ────────────────────────────────────
+//
+// The Reviewer FAIL this rework fixes: the commit button read
+// `report.totals.toCreate` directly, which EXCLUDES every possible-duplicate
+// row whether or not the admin confirmed it. That made the button disabled
+// and wrong-labeled the moment any row was flagged — up to and including a
+// re-upload where every row is flagged (`toCreate` permanently 0).
+
+describe('ActorImportPage — commit count derivation (T-7 rework)', () => {
+  it('derives the commit count from confirmed rows when toCreate is 0 (every row flagged)', async () => {
+    resolveByMode(ALL_FLAGGED_REPORT, COMMIT_REPORT);
+
+    await renderReady();
+    const file = await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    // Falsifier (a): before ticking, the raw `toCreate` (0) would leave the
+    // button disabled forever and claim nothing is importable.
+    expect(screen.getByText(/no rows are eligible to import/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import 0 actors/i })).toBeDisabled();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 2\)/i })[0]);
+
+    const button = screen.getByRole('button', { name: /import 1 actor/i });
+    expect(button).toBeEnabled();
+    expect(screen.queryByText(/no rows are eligible to import/i)).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined, [
+        { row: 2, candidates: ['actor:actor-1'] },
+      ]),
+    );
+  });
+
+  it('raises the commit count by one for each confirmable row ticked, and drops it back when unticked', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import 1 actor/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]);
+    expect(screen.getByRole('button', { name: /import 2 actors/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 4\)/i })[0]);
+    expect(screen.getByRole('button', { name: /import 3 actors/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]);
+    expect(screen.getByRole('button', { name: /import 2 actors/i })).toBeInTheDocument();
+  });
+
+  it('ignores a ticked over-cap (tooMany) row when deriving the commit count', async () => {
+    resolveByMode(OVER_CAP_PREVIEW_REPORT, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    const box = screen.getAllByRole('checkbox', { name: /row 2\)/i })[0];
+    expect(box).toBeDisabled();
+
+    // Falsifier (b): the checkbox is disabled in the UI, but the derived
+    // count must ALSO ignore this row defensively — assert that directly by
+    // driving the change event past the disabled attribute.
+    fireEvent.click(box);
+
+    expect(screen.getByRole('button', { name: /import 0 actors/i })).toBeDisabled();
+    expect(screen.getByText(/no rows are eligible to import/i)).toBeInTheDocument();
+  });
+
+  it('shows the updated wording for what is excluded from the import', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/possible duplicates you have not confirmed and failed rows are not imported/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/skipped/i)).not.toBeInTheDocument();
+  });
+
+  // F-4 (NFR-4): the count changes on every row tick, so it must be
+  // announced through a polite live region, not just shown visually.
+  it('announces the creatable count through a polite live region, updated as rows are ticked', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    const countRegion = screen.getByText(/1 actor will be created/i);
+    expect(countRegion).toHaveAttribute('aria-live', 'polite');
+    expect(countRegion.closest('[role="status"]')).not.toBeNull();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]);
+
+    expect(screen.getByText(/2 actors will be created/i)).toHaveAttribute('aria-live', 'polite');
   });
 });
 
@@ -235,7 +523,7 @@ describe('ActorImportPage — acknowledgement gate', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() =>
-      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, true),
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, true, undefined),
     );
     expect(await screen.findByText(/import complete/i)).toBeInTheDocument();
   });
@@ -251,7 +539,7 @@ describe('ActorImportPage — acknowledgement gate', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined),
+      expect(mockImportActors).toHaveBeenLastCalledWith(file, 'commit', TOKEN, undefined, undefined),
     );
   });
 
@@ -362,7 +650,7 @@ describe('ActorImportPage — file picker', () => {
 describe('ActorImportPage — empty template', () => {
   const EMPTY_REPORT: ImportReport = {
     mode: 'preview',
-    totals: { rows: 0, toCreate: 0, created: 0, skipped: 0, failed: 0, warnings: 0 },
+    totals: { rows: 0, toCreate: 0, created: 0, possibleDuplicate: 0, failed: 0, warnings: 0 },
     rows: [],
   };
 
@@ -384,20 +672,20 @@ describe('ActorImportPage — empty template', () => {
 describe('ActorImportPage — failure breakdown', () => {
   const BREAKDOWN_REPORT: ImportReport = {
     mode: 'preview',
-    totals: { rows: 4, toCreate: 1, created: 0, skipped: 1, failed: 2, warnings: 0 },
+    totals: { rows: 4, toCreate: 1, created: 0, possibleDuplicate: 1, failed: 2, warnings: 0 },
     rows: [
-      { rowNumber: 2, traderId: 'TZ-001', traderName: 'Meru Agro', outcome: 'create' },
-      { rowNumber: 3, traderId: 'TZ-002', traderName: 'Dup', outcome: 'skipped-exists' },
+      { rowNumber: 2, traderId: null, traderName: 'Meru Agro', outcome: 'create' },
+      { rowNumber: 3, traderId: null, traderName: 'Dup', outcome: 'possible-duplicate' },
       {
         rowNumber: 4,
-        traderId: 'TZ-003',
+        traderId: null,
         traderName: 'Bad Type',
         outcome: 'failed',
         errors: [{ field: 'traderType', message: 'Trader Type is not in the allowed taxonomy.' }],
       },
       {
         rowNumber: 5,
-        traderId: 'TZ-004',
+        traderId: null,
         traderName: 'Bad Type Two',
         outcome: 'failed',
         errors: [{ field: 'traderType', message: 'Trader Type is not in the allowed taxonomy.' }],
@@ -405,7 +693,7 @@ describe('ActorImportPage — failure breakdown', () => {
     ],
     failureBreakdown: [
       { reason: 'traderType', count: 2 },
-      { reason: 'skipped-exists', count: 1 },
+      { reason: 'possible-duplicate', count: 1 },
     ],
   };
 
@@ -422,7 +710,7 @@ describe('ActorImportPage — failure breakdown', () => {
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent('traderType');
     expect(items[0]).toHaveTextContent('2');
-    expect(items[1]).toHaveTextContent('skipped-exists');
+    expect(items[1]).toHaveTextContent('possible-duplicate');
     expect(items[1]).toHaveTextContent('1');
   });
 

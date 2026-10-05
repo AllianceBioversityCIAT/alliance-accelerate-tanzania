@@ -8,18 +8,22 @@
  * Covers the full Actor field set in sections: Identity, Location/GPS,
  * Capacity & support, Contact (PII), Crops, and Consent & provenance.
  *
- * Client validation mirrors the backend DTOs. Server 400 field errors and
- * 409 duplicate traderId are mapped inline via aria-describedby. A change
- * that sets consentStatus to GRANTED from another status (or in create mode)
- * opens the existing AcknowledgeDialog and only sends acknowledged: true
- * after typed confirmation.
+ * Client validation mirrors the backend DTOs and the shared intake contract
+ * (FR-1). Server 400 field errors are mapped inline via aria-describedby. A
+ * change that sets consentStatus to GRANTED from another status (or in
+ * create mode) opens the existing AcknowledgeDialog and only sends
+ * acknowledged: true after typed confirmation. A 409 carrying unconfirmed
+ * strong duplicate candidates (FR-3) opens DuplicateConfirmDialog instead of
+ * mapping to a field error — Trader ID is system-generated (FR-2) and is no
+ * longer an input on create; it is shown read-only on edit.
  *
  * Static-export safe (no SSR); tokens only (system-design §7); WCAG 2.1 AA.
  */
 
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 
 import { AcknowledgeDialog } from './AcknowledgeDialog';
+import { DuplicateConfirmDialog } from './DuplicateConfirmDialog';
 import Button from '../ui/Button';
 import { SearchableSelect } from '../ui/SearchableSelect';
 
@@ -27,11 +31,21 @@ import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
 import {
+  CONTACT_PERSON_MAX_LENGTH,
+  EMAIL_MAX_LENGTH,
+  FRONTEND_INTAKE_REQUIRED_FIELDS,
+  PHONE_MAX_LENGTH,
+  TRADER_NAME_MAX_LENGTH,
+} from '@/lib/content/intake-required-fields';
+import {
   createActor,
   updateActor,
   type AdminActor,
   type AdminActorCreateInput,
+  type AdminActorCreateResult,
   type ConsentMethod,
+  type DuplicateCandidate,
+  type DuplicateConflictBody,
   type RegistrationSource,
 } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
@@ -120,8 +134,6 @@ interface FormValues {
   marketLocation: string;
   gpsLatitude: string;
   gpsLongitude: string;
-  gpsAltitude: string;
-  gpsAccuracy: string;
   capacityTons: string;
   technicalSupport: string;
   phone: string;
@@ -153,7 +165,14 @@ export interface ActorFormProps {
   mode: 'create' | 'edit';
   initialValues?: AdminActor;
   token: string;
-  onSuccess: () => void;
+  /**
+   * Called after a successful create/update with the saved actor (T-6) — a
+   * create's result also carries `duplicateWarnings` (FR-3's weak scenario),
+   * which `new/page.tsx` reads to decide whether to show the informational
+   * dialog before redirecting. Called with no argument on Cancel, which has
+   * no actor to report.
+   */
+  onSuccess: (actor?: AdminActorCreateResult | AdminActor) => void;
   onAuthFailure: () => void;
 }
 
@@ -179,8 +198,6 @@ function toFormValues(actor?: AdminActor): FormValues {
       marketLocation: '',
       gpsLatitude: '',
       gpsLongitude: '',
-      gpsAltitude: '',
-      gpsAccuracy: '',
       capacityTons: '',
       technicalSupport: '',
       phone: '',
@@ -206,8 +223,6 @@ function toFormValues(actor?: AdminActor): FormValues {
     marketLocation: actor.marketLocation ?? '',
     gpsLatitude: actor.gpsLatitude?.toString() ?? '',
     gpsLongitude: actor.gpsLongitude?.toString() ?? '',
-    gpsAltitude: actor.gpsAltitude?.toString() ?? '',
-    gpsAccuracy: actor.gpsAccuracy?.toString() ?? '',
     capacityTons: actor.capacityTons?.toString() ?? '',
     technicalSupport: actor.technicalSupport ?? '',
     phone: actor.phone ?? '',
@@ -360,6 +375,39 @@ function needsProvenanceCheck(
   );
 }
 
+/**
+ * FR-1 / NFR-1 — one entry per {@link FRONTEND_INTAKE_REQUIRED_FIELDS} member,
+ * `Record`-typed against it so adding or removing an entry there is a
+ * compile error here until this map is updated too. `validate()` below
+ * loops over the constant itself rather than re-declaring each field's
+ * "is required" check inline — that is what makes the pin test
+ * (`ActorForm.test.tsx`, "declares exactly the same required set…") and a
+ * per-field "left blank" test redden on the SAME mutation: drop `'phone'`
+ * from the constant and this loop stops checking it, while the pin test's
+ * literal comparison also goes red. Bounds/format (max length, email shape)
+ * are NOT part of "required" and stay as separate per-field checks below.
+ *
+ * Deliberately stricter than the backend's `isBlankScalar` (`intake-contract.ts`),
+ * which counts a whitespace-only string as present (length >= 1, never
+ * trimmed): these `isBlank` checks trim first, matching the `trim() || null`
+ * normalization applied to the same fields when building the submit payload
+ * below — a whitespace-only value is caught here rather than passing client
+ * validation and then being normalized to `null` and rejected by the server
+ * instead.
+ */
+const REQUIRED_FIELD_CHECKS: Record<
+  (typeof FRONTEND_INTAKE_REQUIRED_FIELDS)[number],
+  { message: string; isBlank: (values: FormValues) => boolean }
+> = {
+  contactPerson: { message: 'Contact person is required.', isBlank: (v) => !v.contactPerson.trim() },
+  // `otherCrops` alone does NOT satisfy the crop requirement (FR-1's "no
+  // crop, only Other crops" scenario) — only the fixed 3-crop checkboxes count.
+  crops: { message: 'Select at least one crop.', isBlank: (v) => v.crops.length < 1 },
+  capacityTons: { message: 'Capacity is required.', isBlank: (v) => !v.capacityTons.trim() },
+  phone: { message: 'Phone is required.', isBlank: (v) => !v.phone.trim() },
+  email: { message: 'Email is required.', isBlank: (v) => !v.email.trim() },
+};
+
 function validate(
   values: FormValues,
   mode: 'create' | 'edit',
@@ -367,14 +415,45 @@ function validate(
 ): Record<string, string> {
   const errors: Record<string, string> = {};
 
-  if (!values.traderId.trim()) errors.traderId = 'Trader ID is required.';
-  if (!values.traderName.trim()) errors.traderName = 'Trader name is required.';
+  if (!values.traderName.trim()) {
+    errors.traderName = 'Trader name is required.';
+  } else if (values.traderName.trim().length > TRADER_NAME_MAX_LENGTH) {
+    errors.traderName = `Trader name must be ${TRADER_NAME_MAX_LENGTH} characters or fewer.`;
+  }
   if (!values.region) errors.region = 'Region is required.';
   if (!values.traderType) errors.traderType = 'Trader type is required.';
   if (!values.consentStatus) errors.consentStatus = 'Consent status is required.';
 
-  if (values.email.trim() && !isValidEmail(values.email)) {
-    errors.email = 'Enter a valid email address.';
+  for (const field of FRONTEND_INTAKE_REQUIRED_FIELDS) {
+    const check = REQUIRED_FIELD_CHECKS[field];
+    if (check.isBlank(values)) {
+      errors[field] = check.message;
+    }
+  }
+
+  // Bounds/format checks: per field, and only meaningful once the required
+  // check above has already passed (mirrors the previous if/else-if chain).
+  if (!errors.contactPerson && values.contactPerson.trim().length > CONTACT_PERSON_MAX_LENGTH) {
+    errors.contactPerson = `Contact person must be ${CONTACT_PERSON_MAX_LENGTH} characters or fewer.`;
+  }
+
+  if (!errors.capacityTons) {
+    const cap = Number(values.capacityTons);
+    if (Number.isNaN(cap) || cap < 0) {
+      errors.capacityTons = 'Capacity must be 0 or greater.';
+    }
+  }
+
+  if (!errors.phone && values.phone.trim().length > PHONE_MAX_LENGTH) {
+    errors.phone = `Phone must be ${PHONE_MAX_LENGTH} characters or fewer.`;
+  }
+
+  if (!errors.email) {
+    if (!isValidEmail(values.email)) {
+      errors.email = 'Enter a valid email address.';
+    } else if (values.email.trim().length > EMAIL_MAX_LENGTH) {
+      errors.email = `Email must be ${EMAIL_MAX_LENGTH} characters or fewer.`;
+    }
   }
 
   if (needsProvenanceCheck(mode, values, initialValues)) {
@@ -400,13 +479,6 @@ function validate(
     }
   }
 
-  if (values.capacityTons.trim()) {
-    const cap = Number(values.capacityTons);
-    if (Number.isNaN(cap) || cap < 0) {
-      errors.capacityTons = 'Capacity must be 0 or greater.';
-    }
-  }
-
   return errors;
 }
 
@@ -416,7 +488,6 @@ function buildDto(
   initialValues?: AdminActor,
 ): AdminActorCreateInput {
   return {
-    traderId: values.traderId.trim(),
     traderName: values.traderName.trim(),
     region: values.region,
     traderType: values.traderType,
@@ -441,8 +512,6 @@ function buildDto(
     email: values.email.trim() || null,
     gpsLatitude: values.gpsLatitude.trim() ? Number(values.gpsLatitude) : null,
     gpsLongitude: values.gpsLongitude.trim() ? Number(values.gpsLongitude) : null,
-    gpsAltitude: values.gpsAltitude.trim() ? Number(values.gpsAltitude) : null,
-    gpsAccuracy: values.gpsAccuracy.trim() ? Number(values.gpsAccuracy) : null,
     crops: values.crops,
   };
 }
@@ -457,15 +526,26 @@ function needsAcknowledgement(
   return initialConsentStatus !== 'GRANTED';
 }
 
+/**
+ * T-6 (design.md §3) — type-narrows `ApiError.body` for the 409 "Possible
+ * duplicate" shape. A 409 that is NOT duplicate-shaped (e.g. some other
+ * conflict) falls through to {@link mapApiError}'s generic form-error path —
+ * `mapApiError` no longer assumes every 409 is a Trader ID collision (P-13):
+ * that collision can no longer even occur, since Trader ID is system-
+ * generated and never client-supplied (FR-2).
+ */
+function hasDuplicateCandidates(body: unknown): body is DuplicateConflictBody {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    Array.isArray((body as Partial<DuplicateConflictBody>).duplicateCandidates)
+  );
+}
+
 function mapApiError(err: unknown): { formError?: string; fieldErrors: Record<string, string> } {
   const fieldErrors: Record<string, string> = {};
 
   if (err instanceof ApiError) {
-    if (err.status === 409) {
-      fieldErrors.traderId = err.message;
-      return { fieldErrors };
-    }
-
     if (err.status === 400 && Array.isArray(err.details)) {
       for (const d of err.details) {
         const detail = d as Partial<FieldErrorDetail>;
@@ -555,6 +635,25 @@ export default function ActorForm({
   const [showAck, setShowAck] = useState(false);
   const [pendingDto, setPendingDto] = useState<AdminActorCreateInput | null>(null);
 
+  // ── Duplicate gate (T-6, FR-3) ───────────────────────────────────────────
+  // Unconfirmed strong candidates from the most recent 409, or `null` when
+  // the dialog is closed — this one drives DuplicateConfirmDialog's `open`/
+  // `candidates` props, so it stays state (it affects render output).
+  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[] | null>(
+    null,
+  );
+  // The dto that produced the 409, and the UNION of every candidate id
+  // confirmed so far THIS session (across however many 409 rounds). Neither
+  // is ever read during render — both are read only inside event-handler
+  // code (`handleDuplicateConfirm`) — so a ref avoids a redundant re-render
+  // every confirm round (vercel-react-best-practices: rerender-state-only-in-handlers).
+  // A 409 only lists the CURRENTLY unconfirmed candidates (design.md DD-4) —
+  // resubmitting with only the latest round's ids would drop an earlier
+  // confirmation and loop (forward pointer, T-3 execution.md: confirm A,
+  // 409 names B, confirm B must resubmit {A, B}).
+  const pendingDuplicateDtoRef = useRef<AdminActorCreateInput | null>(null);
+  const confirmedActorIdsRef = useRef<Set<string>>(new Set());
+
   const baseId = useId();
 
   const fieldId = useCallback((field: keyof FormValues) => `${baseId}-${field}`, [baseId]);
@@ -593,17 +692,31 @@ export default function ActorForm({
 
       try {
         if (mode === 'create') {
-          await createActor(dto, token);
+          const created = await createActor(dto, token);
+          setDuplicateCandidates(null);
+          pendingDuplicateDtoRef.current = null;
+          onSuccess(created);
         } else {
           if (!initialValues) throw new Error('Missing actor id for update.');
-          await updateActor(initialValues.id, dto, token);
+          const updated = await updateActor(initialValues.id, dto, token);
+          onSuccess(updated);
         }
-        onSuccess();
       } catch (err) {
         if (err instanceof AuthFailureError) {
           onAuthFailure();
           return;
         }
+
+        // FR-3 — a strong, unconfirmed duplicate match. Open the dialog
+        // instead of treating this like any other error (create-only: the
+        // duplicate gate never runs on edit, design.md §3).
+        if (mode === 'create' && err instanceof ApiError && err.status === 409 && hasDuplicateCandidates(err.body)) {
+          setDuplicateCandidates(err.body.duplicateCandidates);
+          pendingDuplicateDtoRef.current = dto;
+          setLoading(false);
+          return;
+        }
+
         const mapped = mapApiError(err);
         if (mapped.formError) {
           setFormError(mapped.formError);
@@ -614,6 +727,31 @@ export default function ActorForm({
     },
     [mode, initialValues, token, onSuccess, onAuthFailure],
   );
+
+  const handleDuplicateConfirm = useCallback(() => {
+    const pendingDto = pendingDuplicateDtoRef.current;
+    if (!pendingDto || !duplicateCandidates) return;
+
+    for (const candidate of duplicateCandidates) {
+      confirmedActorIdsRef.current.add(candidate.actorId);
+    }
+
+    const dtoWithConfirmation: AdminActorCreateInput = {
+      ...pendingDto,
+      confirmedNotDuplicateOf: Array.from(confirmedActorIdsRef.current),
+    };
+    setDuplicateCandidates(null);
+    pendingDuplicateDtoRef.current = null;
+    void doSubmit(dtoWithConfirmation);
+  }, [duplicateCandidates, doSubmit]);
+
+  const handleDuplicateCancel = useCallback(() => {
+    setDuplicateCandidates(null);
+    pendingDuplicateDtoRef.current = null;
+    setLoading(false);
+    // confirmedActorIdsRef is NOT cleared here — a later resubmit still
+    // needs the union of ids confirmed in earlier rounds (DD-4).
+  }, []);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -707,6 +845,28 @@ export default function ActorForm({
           disabled={loading}
           invalid={!!error}
           describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
+  /**
+   * T-6 (FR-2) — edit mode only: the Trader ID is shown read-only (disabled,
+   * never submitted — `buildDto` has no `traderId` key at all). Not wrapped
+   * by `renderInput`/`validate()`'s required-field machinery, since it is
+   * never user-editable and never part of the required set.
+   */
+  const renderReadOnlyTraderId = () => {
+    const id = fieldId('traderId');
+    return (
+      <Field id={id} label="Trader ID">
+        <input
+          id={id}
+          type="text"
+          value={values.traderId}
+          readOnly
+          disabled
+          className={inputClasses(false)}
         />
       </Field>
     );
@@ -849,8 +1009,13 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Identity</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {renderInput('traderId', 'Trader ID', 'text', true)}
-              {renderInput('traderName', 'Trader name', 'text', true)}
+              {/*
+                T-6 (FR-2) — Trader ID is system-generated: no input on
+                create at all; read-only on edit (the admin sees it, never
+                types it, and it never changes).
+              */}
+              {mode === 'edit' && renderReadOnlyTraderId()}
+              {renderInput('traderName', 'Trader name', 'text', true, undefined, TRADER_NAME_MAX_LENGTH)}
               {renderSelect(
                 'traderType',
                 'Trader type',
@@ -873,8 +1038,6 @@ export default function ActorForm({
               {renderInput('marketLocation', 'Market location')}
               {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
               {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
-              {renderInput('gpsAltitude', 'GPS altitude', 'number')}
-              {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
             </div>
             {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
                 cell would cap the map at ~1/3 card width on lg. Mounted
@@ -901,7 +1064,7 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Capacity & support</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {renderInput('capacityTons', 'Capacity (tons)', 'number', false, 'Must be 0 or greater')}
+              {renderInput('capacityTons', 'Capacity (tons)', 'number', true, 'Must be 0 or greater')}
               {renderTextarea('technicalSupport', 'Technical support required')}
             </div>
           </fieldset>
@@ -912,9 +1075,9 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {renderInput('contactPerson', 'Contact person', 'text', false, undefined, 120)}
-              {renderInput('phone', 'Phone')}
-              {renderInput('email', 'Email', 'email')}
+              {renderInput('contactPerson', 'Contact person', 'text', true, undefined, CONTACT_PERSON_MAX_LENGTH)}
+              {renderInput('phone', 'Phone', 'text', true, undefined, PHONE_MAX_LENGTH)}
+              {renderInput('email', 'Email', 'email', true, undefined, EMAIL_MAX_LENGTH)}
             </div>
           </fieldset>
         </div>
@@ -922,8 +1085,16 @@ export default function ActorForm({
         {/* Crops */}
         <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
           <fieldset className="border-0 p-0 m-0">
-            <legend className="mb-4 text-base font-semibold text-fg">Crops</legend>
-            <div className="flex flex-wrap gap-4">
+            <legend className="mb-4 text-base font-semibold text-fg">
+              <span id={`${baseId}-crops-group-label`}>Crops</span>
+              <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
+            </legend>
+            <fieldset
+              aria-labelledby={`${baseId}-crops-group-label`}
+              aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
+              className="flex flex-wrap gap-4 border-0 p-0 m-0 min-w-0"
+            >
+              <legend className="sr-only" />
               {CROP_NAMES.map((crop) => {
                 const id = `${baseId}-crop-${crop.value}`;
                 const checked = values.crops.includes(crop.value);
@@ -944,7 +1115,12 @@ export default function ActorForm({
                   </div>
                 );
               })}
-            </div>
+            </fieldset>
+            {errors.crops && (
+              <p id={`${baseId}-crops-error`} role="alert" className="mt-1.5 text-xs text-danger">
+                {errors.crops}
+              </p>
+            )}
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {renderInput(
                 'otherCrops',
@@ -983,7 +1159,7 @@ export default function ActorForm({
           <Button
             type="button"
             variant="secondary"
-            onClick={onSuccess}
+            onClick={() => onSuccess()}
             disabled={loading}
           >
             Cancel
@@ -1002,6 +1178,14 @@ export default function ActorForm({
         confirmLabel="Grant consent"
         onConfirm={handleAckConfirm}
         onCancel={handleAckCancel}
+        loading={loading}
+      />
+
+      <DuplicateConfirmDialog
+        open={duplicateCandidates !== null}
+        candidates={duplicateCandidates ?? []}
+        onConfirm={handleDuplicateConfirm}
+        onCancel={handleDuplicateCancel}
         loading={loading}
       />
     </>

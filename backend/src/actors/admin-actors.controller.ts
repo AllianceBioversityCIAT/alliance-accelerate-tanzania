@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import {
   ActorsAdminService,
+  AdminActorCreateResult,
   AdminActorList,
   BulkConsentResult,
   BulkResult,
@@ -104,13 +105,19 @@ export class AdminActorsController {
     return this.actorsAdminService.bulkDelete(dto.ids, user.sub);
   }
 
-  /** `POST /api/v1/admin/actors` — create a single actor (FR-1). */
+  /**
+   * `POST /api/v1/admin/actors` — create a single actor (FR-1, FR-3). A
+   * strong duplicate match that is not named in `confirmedNotDuplicateOf`
+   * surfaces as a 409 (`ActorsAdminService.create` throws `ConflictException`
+   * with a `duplicateCandidates` body); the 201 response carries any weak
+   * matches as `duplicateWarnings`.
+   */
   @Post()
   @HttpCode(201)
   create(
     @Body() dto: AdminActorCreateDto,
     @CurrentUser() user: AuthUser,
-  ): Promise<AdminActor> {
+  ): Promise<AdminActorCreateResult> {
     return this.actorsAdminService.create(dto, user.sub);
   }
 

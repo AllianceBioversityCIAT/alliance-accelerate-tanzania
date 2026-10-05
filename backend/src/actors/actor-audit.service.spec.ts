@@ -138,6 +138,54 @@ describe('ActorAuditService', () => {
       expect(changes.values.gpsAltitude).toBe('1400');
       expect(changes.values.gpsAccuracy).toBe('5');
     });
+
+    /**
+     * T-3 (intake-required-fields) — `duplicateConfirmation` (design.md §2,
+     * FR-3): a separate column, not a `changes` key (P-12).
+     */
+    describe('duplicateConfirmation (FR-3)', () => {
+      it('writes Prisma.JsonNull when no duplicateConfirmation is passed (falsifier 6)', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-2' });
+
+        await service.logCreate(tx, fixtureActor(), acting);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes Prisma.JsonNull when an EMPTY duplicateConfirmation array is passed', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-3' });
+
+        await service.logCreate(tx, fixtureActor(), acting, []);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes the confirmed-candidate snapshot verbatim when provided (falsifier 6)', async () => {
+        const tx = mockTx();
+        tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-4' });
+        const confirmation = [
+          {
+            kind: 'actor' as const,
+            actorId: 'actor-existing-1',
+            traderId: 'TZ-SEED-0099',
+            traderName: 'Prior Trader',
+            matchedOn: ['email' as const],
+          },
+        ];
+
+        await service.logCreate(tx, fixtureActor(), acting, confirmation);
+
+        const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(data.duplicateConfirmation).toEqual(confirmation);
+      });
+    });
   });
 
   describe('logDelete', () => {
@@ -607,6 +655,69 @@ describe('ActorAuditService', () => {
 
       expect(result).toEqual({ count: 0 });
       expect(tx.actorAuditLog.createMany).not.toHaveBeenCalled();
+    });
+
+    // T-5 (actors/consent-intake/intake-required-fields, design.md §2/§4.5) —
+    // `duplicateConfirmations`, aligned by index with `actors`.
+    describe('duplicateConfirmations (T-5)', () => {
+      it('writes each row its own confirmation snapshot, aligned by index', async () => {
+        const tx = mockTx();
+        const rows = [
+          fixtureActor({ id: 'a1', traderId: 'TZ-1' }),
+          fixtureActor({ id: 'a2', traderId: 'TZ-2' }),
+        ];
+        tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 2 });
+
+        await service.logImport(tx, rows, acting, undefined, [
+          [
+            {
+              kind: 'actor',
+              actorId: 'existing-1',
+              traderId: 'TZ-EXIST',
+              traderName: 'Existing Co',
+              matchedOn: ['email'],
+            },
+          ],
+          null,
+        ]);
+
+        const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+          .data as Array<Record<string, unknown>>;
+        expect(data[0].duplicateConfirmation).toEqual([
+          {
+            kind: 'actor',
+            actorId: 'existing-1',
+            traderId: 'TZ-EXIST',
+            traderName: 'Existing Co',
+            matchedOn: ['email'],
+          },
+        ]);
+        expect(data[1].duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes Prisma.JsonNull for every row when the param is omitted entirely', async () => {
+        const tx = mockTx();
+        const rows = [fixtureActor({ id: 'a1' })];
+        tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 1 });
+
+        await service.logImport(tx, rows, acting);
+
+        const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+          .data as Array<Record<string, unknown>>;
+        expect(data[0].duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('writes Prisma.JsonNull for a row whose own confirmation array is empty', async () => {
+        const tx = mockTx();
+        const rows = [fixtureActor({ id: 'a1' })];
+        tx.actorAuditLog.createMany = jest.fn().mockResolvedValue({ count: 1 });
+
+        await service.logImport(tx, rows, acting, undefined, [[]]);
+
+        const data = (tx.actorAuditLog.createMany as jest.Mock).mock.calls[0][0]
+          .data as Array<Record<string, unknown>>;
+        expect(data[0].duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
     });
   });
 

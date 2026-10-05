@@ -118,9 +118,22 @@ model ActorAuditLog {
   actingEmail  String?
   changes      Json
   acknowledged Boolean?
+  // T-3 — snapshot of the strong candidates the admin confirmed were NOT
+  // duplicates (design.md §2, FR-3). Null when the create had none to
+  // confirm. A separate column, not a `changes` key, because the history
+  // renderer's `isSnapshot` branches on the `changes` shape (P-12).
+  duplicateConfirmation Json?
   createdAt    DateTime         @default(now())
 
   @@index([actorId, createdAt])
+}
+
+// T-2 — race-safe, per-year Trader ID counter (design.md §2, §4.2, DD-2). A
+// sibling of RegistrationSequence, not a generalization of it. Gaps
+// accepted: the id is a key, not a count.
+model ActorSequence {
+  year Int @id
+  seq  Int @default(0)
 }
 
 // Public self-registration (docs/specs/actors/public-self-registration, T-1).

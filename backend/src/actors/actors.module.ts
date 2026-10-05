@@ -7,6 +7,7 @@ import { AdminActorsController } from './admin-actors.controller';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import { ActorAuditService } from './actor-audit.service';
 import { ActorImportService } from './actor-import.service';
+import { IntakeDuplicateService } from './intake-duplicate.service';
 
 /**
  * T-5 / T-2 / T-3 — ActorsModule: public read API + Admin-only actor operations.
@@ -24,6 +25,10 @@ import { ActorImportService } from './actor-import.service';
     ActingAdminResolver,
     ActorAuditService,
     ActorImportService,
+    // T-3 — depends only on PrismaService (design.md §4.3, P-11); the
+    // registration queue's DuplicateDetectionService is deliberately NOT
+    // added here — only its exported pure functions are imported.
+    IntakeDuplicateService,
   ],
 })
 export class ActorsModule {}

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
@@ -14,6 +15,9 @@ import {
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
+import { buildTraderId } from './trader-id.util';
+import { IntakeDuplicateService } from './intake-duplicate.service';
+import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
 
 /**
  * T-5 — ActorsAdminService unit tests with a MOCKED PrismaService (no DB).
@@ -75,6 +79,11 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     sex: 'M',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
+    // T-1 (intake-required-fields) — part of the required set (FR-1); a
+    // COMPLETE fixture by default so unrelated `update` tests aren't tripped
+    // by the merged-state required check. Tests of the "incomplete legacy
+    // actor" scenario override one of these fields back to `null`.
+    contactPerson: 'Grace Mushi',
     phone: '+255700000000',
     email: 'director@example.com',
     technicalSupport: 'Needs cold storage',
@@ -152,15 +161,39 @@ interface MockPrisma {
     count: jest.Mock;
   };
   $transaction: jest.Mock;
+  $executeRaw: jest.Mock;
+  $queryRaw: jest.Mock;
+}
+
+/**
+ * T-2 — a Prisma `P2002` on `traderId`, the REAL MySQL shape (`meta.target`
+ * is the index-name string `Actor_traderId_key`, measured against the local
+ * container, execution.md T-2 attempt 2). Shared by the retry/exhaustion
+ * tests below.
+ */
+function buildTraderIdCollisionError(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(
+    'Unique constraint failed on the fields: (`traderId`)',
+    {
+      code: 'P2002',
+      clientVersion: '1.0.0',
+      meta: { modelName: 'Actor', target: 'Actor_traderId_key' },
+    },
+  );
 }
 
 describe('ActorsAdminService (mocked Prisma)', () => {
   let service: ActorsAdminService;
   let actorAuditService: ActorAuditService;
   let actingAdminResolver: ActingAdminResolver;
+  let intakeDuplicateService: IntakeDuplicateService;
   let prisma: MockPrisma;
 
   beforeEach(() => {
+    // T-2 — in-memory ActorSequence counter (design.md §4.2), so create's
+    // retry loop allocates a genuinely fresh id per attempt, not a canned one.
+    const { $executeRaw, $queryRaw } = createActorSequenceMock();
+
     prisma = {
       actor: {
         findMany: jest.fn(),
@@ -185,6 +218,8 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
+      $executeRaw,
+      $queryRaw,
       // Pass the same mocked prisma object back into the callback so tx.*
       // resolves to the same in-memory delegates.
       $transaction: jest.fn(async (callback) => callback(prisma)),
@@ -195,11 +230,19 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       resolve: jest.fn().mockResolvedValue(ACTING_EMAIL),
       resetCache: jest.fn(),
     } as unknown as ActingAdminResolver;
+    // T-3 — the REAL IntakeDuplicateService wired to the same mocked
+    // `prisma.actor.findMany`, exactly like `actorAuditService` above is the
+    // real `ActorAuditService` over the same mocked `tx`: it proves the
+    // actual duplicate-check code path, not a stand-in.
+    intakeDuplicateService = new IntakeDuplicateService(
+      prisma as unknown as never,
+    );
 
     service = new ActorsAdminService(
       prisma as unknown as never,
       actorAuditService,
       actingAdminResolver,
+      intakeDuplicateService,
     );
   });
 
@@ -328,11 +371,35 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   });
 
   describe('create', () => {
+    // Pins the clock so a test's own `new Date().getUTCFullYear()` and
+    // `create()`'s internal `new Date()` can never read different years
+    // (the year-boundary race a real clock would otherwise leave open).
+    const FIXED_NOW = new Date('2026-06-15T12:00:00.000Z');
+
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+      jest.setSystemTime(FIXED_NOW);
+      // T-3 — `create()` now runs the FR-3 duplicate scan unconditionally;
+      // default to "no existing actors" so every pre-existing test in this
+      // describe (none of which cares about duplicates) is unaffected.
+      // Duplicate-specific tests below override this per-test.
+      prisma.actor.findMany.mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    // T-2 — `as unknown as AdminActorCreateDto` below: with `traderId` gone,
+    // these deliberately-partial fixtures no longer satisfy TS's `as` cast.
+
     it('creates actor with scalar fields and crop links, writes audit, returns AdminActor', async () => {
-      const created = fixtureCreatedActor({ id: 'actor-new' });
+      const year = FIXED_NOW.getUTCFullYear();
+      const expectedTraderId = buildTraderId(year, 1);
+      const created = fixtureCreatedActor({ id: 'actor-new', traderId: expectedTraderId });
       const full = fixtureActor({
         id: 'actor-new',
-        traderId: 'TZ-SEED-0002',
+        traderId: expectedTraderId,
         traderName: 'New Actor',
         crops: [{ crop: { name: 'sorghum' } }],
       });
@@ -343,22 +410,24 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         crops: ['sorghum'],
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       const res = await service.create(dto, ACTING_SUB);
 
+      // FR-2 — the system-assigned id is what reaches the write, never a
+      // client value (there is none here — the DTO has no `traderId` field
+      // at all any more).
       expect(prisma.actor.create).toHaveBeenCalledWith({
         data: {
-          traderId: 'TZ-SEED-0002',
           traderName: 'New Actor',
           region: 'Arusha',
           traderType: 'seed_company',
+          traderId: expectedTraderId,
         },
       });
       expect(prisma.cropsOnActors.createMany).toHaveBeenCalledWith({
@@ -375,18 +444,21 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(auditData.actingSub).toBe(ACTING_SUB);
       expect(auditData.actingEmail).toBe(ACTING_EMAIL);
       expect(auditData.changes.kind).toBe('snapshot');
-      expect(auditData.changes.values.traderId).toBe('TZ-SEED-0002');
+      expect(auditData.changes.values.traderId).toBe(expectedTraderId);
       expect(auditData.changes.values.crops).toEqual(['sorghum']);
 
       expect(res.id).toBe('actor-new');
+      expect(res.traderId).toBe(expectedTraderId);
       expect(res.crops).toEqual(['sorghum']);
     });
 
     it('creates actor without crops when dto.crops is omitted', async () => {
-      const created = fixtureCreatedActor({ id: 'actor-no-crops' });
+      const year = FIXED_NOW.getUTCFullYear();
+      const expectedTraderId = buildTraderId(year, 1);
+      const created = fixtureCreatedActor({ id: 'actor-no-crops', traderId: expectedTraderId });
       const full = fixtureActor({
         id: 'actor-no-crops',
-        traderId: 'TZ-SEED-0003',
+        traderId: expectedTraderId,
         traderName: 'No Crops Actor',
         crops: [],
       });
@@ -395,12 +467,11 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0003',
+      const dto = {
         traderName: 'No Crops Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await service.create(dto, ACTING_SUB);
 
@@ -409,13 +480,12 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     });
 
     it('throws BadRequestException when consentStatus === GRANTED and !acknowledged', async () => {
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         consentStatus: ConsentStatus.GRANTED,
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
         BadRequestException,
@@ -423,52 +493,131 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictException 409 on duplicate traderId (P2002)', async () => {
-      const error = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed on the fields: (`traderId`)',
-        {
-          code: 'P2002',
-          clientVersion: '1.0.0',
-          meta: { target: ['traderId'] },
-        },
-      );
-      prisma.actor.create.mockRejectedValue(error);
+    // Falsifier 2 (tasks.md T-2, design.md §4.2) — removing the retry is
+    // what must redden this.
+    it('retries once after a traderId collision and succeeds with a freshly-allocated id (design.md §4.2)', async () => {
+      const year = FIXED_NOW.getUTCFullYear();
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0001',
-        traderName: 'Duplicate',
+      prisma.actor.create
+        .mockRejectedValueOnce(buildTraderIdCollisionError())
+        .mockImplementationOnce(async (args: { data: Record<string, unknown> }) => ({
+          id: 'actor-new',
+          ...args.data,
+        }));
+      prisma.actor.findUnique.mockResolvedValue(
+        fixtureActor({
+          id: 'actor-new',
+          traderId: buildTraderId(year, 2),
+          traderName: 'New Actor',
+          crops: [],
+        }),
+      );
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+      const dto = {
+        traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
-      await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
-        ConflictException,
+      const res = await service.create(dto, ACTING_SUB);
+
+      expect(prisma.actor.create).toHaveBeenCalledTimes(2);
+      const attemptedIds = prisma.actor.create.mock.calls.map(
+        (call: unknown[]) => (call[0] as { data: { traderId: string } }).data.traderId,
       );
+      // The retry's allocation is GENUINELY new — never the id the
+      // rolled-back first attempt already (uselessly) consumed.
+      expect(attemptedIds).toEqual([buildTraderId(year, 1), buildTraderId(year, 2)]);
+      expect(res.traderId).toBe(buildTraderId(year, 2));
+    });
+
+    // Falsifier 3 (tasks.md T-2) — uncapped retries, or the wrong cap, must
+    // redden this (never reaching the 500, or reaching it at the wrong count).
+    it('exhausts allocation retries after 3 collisions and returns 500 — never a 409 (design.md §4.2 exhaustion)', async () => {
+      const year = FIXED_NOW.getUTCFullYear();
+      prisma.actor.create.mockRejectedValue(buildTraderIdCollisionError());
+
+      const dto = {
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+      } as unknown as AdminActorCreateDto;
+
+      let caught: unknown;
+      try {
+        await service.create(dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(InternalServerErrorException);
+      expect(caught).not.toBeInstanceOf(ConflictException);
+      expect((caught as InternalServerErrorException).getStatus()).toBe(500);
+
+      expect(prisma.actor.create).toHaveBeenCalledTimes(3);
+      const attemptedIds = prisma.actor.create.mock.calls.map(
+        (call: unknown[]) => (call[0] as { data: { traderId: string } }).data.traderId,
+      );
+      expect(attemptedIds).toEqual([
+        buildTraderId(year, 1),
+        buildTraderId(year, 2),
+        buildTraderId(year, 3),
+      ]);
+      expect(new Set(attemptedIds).size).toBe(3);
+      expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    // Falsifier 5 (rework) — un-narrowing isTraderIdCollisionError back to
+    // "any P2002" is what must redden this.
+    it('does not retry a P2002 on a different unique target — maps to the generic 409 (design.md §4.4)', async () => {
+      const otherTargetError = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`PRIMARY`)',
+        { code: 'P2002', clientVersion: '1.0.0', meta: { modelName: 'Actor', target: 'PRIMARY' } },
+      );
+      prisma.actor.create.mockRejectedValue(otherTargetError);
+
+      const dto = {
+        traderName: 'New Actor',
+        region: 'Arusha',
+        traderType: 'seed_company',
+      } as unknown as AdminActorCreateDto;
+
+      let caught: unknown;
+      try {
+        await service.create(dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(ConflictException);
+      expect((caught as ConflictException).message).toBe('Unique constraint violation');
+      expect(prisma.actor.create).toHaveBeenCalledTimes(1);
     });
 
     it('does not write audit when actor.create fails (rollback leaves no audit row)', async () => {
       prisma.actor.create.mockRejectedValue(new Error('DB unavailable'));
 
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       await expect(service.create(dto, ACTING_SUB)).rejects.toThrow('DB unavailable');
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      // A non-collision error is never retried — a single attempt only.
+      expect(prisma.actor.create).toHaveBeenCalledTimes(1);
     });
 
     it('throws BadRequestException (field-level) when creating GRANTED without provenance (FR-3, R-1/NFR-7)', async () => {
-      const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
+      const dto = {
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
         consentStatus: ConsentStatus.GRANTED,
         acknowledged: true,
-      } as AdminActorCreateDto;
+      } as unknown as AdminActorCreateDto;
 
       let caught: unknown;
       try {
@@ -503,7 +652,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         id: 'actor-new',
         traderId: 'TZ-SEED-0002',
         traderName: 'New Actor',
-        crops: [],
+        crops: [{ crop: { name: 'sorghum' } }],
         consentStatus: ConsentStatus.GRANTED,
         registrationSource: 'SELF_REGISTERED',
         consentMethod: 'SIGNED_FORM',
@@ -514,12 +663,19 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       prisma.actor.create.mockResolvedValue(created);
       prisma.actor.findUnique.mockResolvedValue(full);
       prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
 
       const dto: AdminActorCreateDto = {
-        traderId: 'TZ-SEED-0002',
         traderName: 'New Actor',
         region: 'Arusha',
         traderType: 'seed_company',
+        contactPerson: 'Neema Shirima',
+        capacityTons: 100,
+        phone: '+255700000000',
+        email: 'new-actor@example.com',
+        // Advisory (tasks.md T-1 rework) — crops is required now (FR-1); an
+        // empty array here was never a realistic valid-create payload.
+        crops: ['sorghum'],
         consentStatus: ConsentStatus.GRANTED,
         acknowledged: true,
         registrationSource: 'SELF_REGISTERED' as never,
@@ -543,6 +699,309 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(res.registrationSource).toBe('SELF_REGISTERED');
       expect(res.consentMethod).toBe('SIGNED_FORM');
       expect(res.consentReference).toBe('DOC-123');
+    });
+
+    /**
+     * T-3 — the FR-3 duplicate gate on admin create (design.md §4.3, §4.4,
+     * DD-3, DD-4). `prisma.actor.findMany` here stands in for
+     * `IntakeDuplicateService.check()`'s one scan — these are genuinely
+     * exercising `IntakeDuplicateService` (constructed for real above), not
+     * a mock of it.
+     */
+    describe('duplicate detection gate (FR-3)', () => {
+      function existingActorRow(overrides: Partial<Record<string, unknown>> = {}) {
+        return {
+          id: 'actor-strong-1',
+          traderId: 'TZ-STRONG-0001',
+          traderName: 'Strong Match Co',
+          phone: '+255788880001',
+          email: 'strong-match@example.com',
+          gpsLatitude: -4.5,
+          gpsLongitude: 29.5,
+          ...overrides,
+        };
+      }
+
+      const baseDto = () =>
+        ({
+          traderName: 'New Actor',
+          region: 'Arusha',
+          traderType: 'seed_company',
+          contactPerson: 'Jane M',
+          capacityTons: 10,
+          phone: '+255711111111',
+          email: 'new-actor@example.com',
+          crops: ['sorghum'],
+        }) as unknown as AdminActorCreateDto;
+
+      function stubSuccessfulCreate(id: string) {
+        prisma.actor.create.mockResolvedValue(fixtureCreatedActor({ id }));
+        prisma.actor.findUnique.mockResolvedValue(
+          fixtureActor({ id, crops: [] }),
+        );
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+        // `baseDto()` carries `crops: ['sorghum']`, which routes through
+        // `buildCropLinks` → `prisma.crop.findMany`.
+        prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
+      }
+
+      /** Runs `service.create`, asserts the rejection is a 409 naming exactly `expectedActorIds`. */
+      async function createAndExpectDuplicateConflictIds(
+        dto: AdminActorCreateDto,
+        expectedActorIds: string[],
+      ): Promise<void> {
+        let caught: unknown;
+        try {
+          await service.create(dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<{ actorId: string }>;
+        };
+        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual(
+          expectedActorIds,
+        );
+      }
+
+      it('throws ConflictException (409) with duplicateCandidates when a strong (email) match is unconfirmed', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        // Defensive: if the gate incorrectly fails to fire, `create` would
+        // proceed down the success path — stub it so THAT path cannot also
+        // throw for an unrelated reason, keeping any red purely about the
+        // gate assertion below, never a crash elsewhere.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = { ...baseDto(), email: 'strong-match@example.com' };
+
+        let caught: unknown;
+        try {
+          await service.create(dto as AdminActorCreateDto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          statusCode: number;
+          message: string;
+          duplicateCandidates: unknown[];
+        };
+        expect(response.statusCode).toBe(409);
+        expect(response.message).toBe('Possible duplicate');
+        expect(response.duplicateCandidates).toEqual([
+          {
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'Strong Match Co',
+            matchedOn: ['email'],
+          },
+        ]);
+        // A gated create never allocates or opens the create transaction.
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.actor.create).not.toHaveBeenCalled();
+      });
+
+      it('creates and audits the confirmation when the strong candidate is named in confirmedNotDuplicateOf', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          confirmedNotDuplicateOf: ['actor-strong-1'],
+        } as unknown as AdminActorCreateDto;
+
+        const res = await service.create(dto, ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([]);
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual([
+          {
+            kind: 'actor',
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'Strong Match Co',
+            matchedOn: ['email'],
+          },
+        ]);
+      });
+
+      it('omits duplicateConfirmation (writes Prisma.JsonNull) when there was nothing to confirm (falsifier 6)', async () => {
+        stubSuccessfulCreate('actor-new');
+
+        await service.create(baseDto(), ACTING_SUB);
+
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('creates (201) with duplicateConfirmation as Prisma.JsonNull when confirmedNotDuplicateOf names only unknown ids and there is no strong match', async () => {
+        prisma.actor.findMany.mockResolvedValue([]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          confirmedNotDuplicateOf: ['actor-does-not-exist'],
+        } as unknown as AdminActorCreateDto;
+
+        const res = await service.create(dto, ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([]);
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0]
+          .data as Record<string, unknown>;
+        expect(auditData.duplicateConfirmation).toEqual(Prisma.JsonNull);
+      });
+
+      it('creates without confirmation and returns duplicateWarnings when only a weak (traderName) match exists', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ phone: null, email: null, traderName: 'New Actor' }),
+        ]);
+        stubSuccessfulCreate('actor-new');
+
+        const res = await service.create(baseDto(), ACTING_SUB);
+
+        expect(res.duplicateWarnings).toEqual([
+          {
+            actorId: 'actor-strong-1',
+            traderId: 'TZ-STRONG-0001',
+            traderName: 'New Actor',
+            matchedOn: ['traderName'],
+          },
+        ]);
+        // A weak match never asks — exactly one create attempt.
+        expect(prisma.actor.create).toHaveBeenCalledTimes(1);
+      });
+
+      // Falsifier 3 (tasks.md T-3) — `traderName` must never classify as
+      // strong; the weak-creates test above already proves this behaviorally,
+      // and this test pins the classification directly against the gate.
+      it('never gates creation on a traderName-only match', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ phone: null, email: null, traderName: 'New Actor' }),
+        ]);
+        stubSuccessfulCreate('actor-new');
+
+        await expect(service.create(baseDto(), ACTING_SUB)).resolves.toBeDefined();
+        expect(prisma.$transaction).toHaveBeenCalled();
+      });
+
+      // Falsifier 2 (tasks.md T-3) — a confirmation naming actor A must NOT
+      // clear a DIFFERENT actor B the current (changed) email strongly
+      // matches: the confirmation is a set of ids, never a boolean.
+      it('re-asks when the confirmed id does not cover the actor the CURRENT fields match (not reusable)', async () => {
+        prisma.actor.findMany.mockResolvedValue([
+          existingActorRow({ id: 'actor-a', traderId: 'TZ-A', email: 'a@example.com' }),
+          existingActorRow({
+            id: 'actor-b',
+            traderId: 'TZ-B',
+            traderName: 'B Co',
+            email: 'b@example.com',
+          }),
+        ]);
+        // Defensive: see the comment above — keeps any red
+        // purely about the gate assertion below.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'b@example.com',
+          confirmedNotDuplicateOf: ['actor-a'],
+        } as unknown as AdminActorCreateDto;
+
+        await createAndExpectDuplicateConflictIds(dto, ['actor-b']);
+      });
+
+      // Falsifier 5 (tasks.md T-3) — an EMPTY confirmedNotDuplicateOf must
+      // not read as "fully confirmed"; it confirms nothing.
+      it('does not bypass the gate when confirmedNotDuplicateOf is present but empty', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          confirmedNotDuplicateOf: [],
+        } as unknown as AdminActorCreateDto;
+
+        await expect(service.create(dto, ACTING_SUB)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      });
+
+      // Falsifier 4 (tasks.md T-3, NFR-3) — no matched VALUE ever appears on
+      // the candidate, only attribute names.
+      it('candidates never carry a matched VALUE — only actorId/traderId/traderName/matchedOn (NFR-3)', async () => {
+        prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
+        stubSuccessfulCreate('actor-new');
+
+        const dto = { ...baseDto(), email: 'strong-match@example.com' };
+
+        let caught: unknown;
+        try {
+          await service.create(dto as AdminActorCreateDto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<Record<string, unknown>>;
+        };
+        for (const candidate of response.duplicateCandidates) {
+          expect(Object.keys(candidate).sort()).toEqual([
+            'actorId',
+            'matchedOn',
+            'traderId',
+            'traderName',
+          ]);
+        }
+      });
+
+      // Falsifier 1 (tasks.md T-3, DD-3) — the DD-3 fixture: 5 weak
+      // (name+GPS) matches plus 1 strong (email-only) match. An email-only
+      // strong match MUST still gate even though every weak match outranks
+      // it by `matchedOn.length` (2 vs 1) — proving the strong set is never
+      // capped by re-applying the registration matcher's sort-then-slice-5.
+      it('DD-3: an email-only strong match still gates alongside 5 weak name+GPS matches', async () => {
+        const weakRows = Array.from({ length: 5 }, (_, i) =>
+          existingActorRow({
+            id: `actor-weak-${i}`,
+            traderId: `TZ-WEAK-${i}`,
+            phone: null,
+            email: null,
+            traderName: 'New Actor', // matches dto.traderName
+            gpsLatitude: -4.5,
+            gpsLongitude: 29.5, // matches dto's GPS below
+          }),
+        );
+        const strongRow = existingActorRow({
+          id: 'actor-email-only',
+          traderId: 'TZ-EMAIL-ONLY',
+          phone: null,
+          email: 'strong-match@example.com',
+          traderName: 'Totally Unrelated Name',
+          gpsLatitude: 10, // far away — no GPS overlap
+          gpsLongitude: 10,
+        });
+        prisma.actor.findMany.mockResolvedValue([...weakRows, strongRow]);
+        // Defensive: see the comment above — keeps any red purely about
+        // the gate assertion below.
+        stubSuccessfulCreate('actor-new');
+
+        const dto = {
+          ...baseDto(),
+          email: 'strong-match@example.com',
+          traderName: 'New Actor',
+          gpsLatitude: -4.5,
+          gpsLongitude: 29.5,
+        } as unknown as AdminActorCreateDto;
+
+        await createAndExpectDuplicateConflictIds(dto, ['actor-email-only']);
+      });
     });
   });
 
@@ -570,6 +1029,34 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   });
 
   describe('update', () => {
+    /**
+     * FR-1 scenario 3 / design.md §4.4 — runs `service.update`, asserts it
+     * rejects with a 400 naming `field`, and that the update itself never
+     * ran. Returns nothing; callers add their own extra non-call assertions
+     * (e.g. `cropsOnActors.deleteMany`, `actorAuditLog.create`) after it.
+     */
+    async function updateAndExpectFieldRejection(
+      actorId: string,
+      dto: AdminActorUpdateDto,
+      field: string,
+    ): Promise<void> {
+      let caught: unknown;
+      try {
+        await service.update(actorId, dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      const response = (caught as BadRequestException).getResponse() as {
+        details: Array<{ field: string }>;
+      };
+      expect(response.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field })]),
+      );
+      expect(prisma.actor.update).not.toHaveBeenCalled();
+    }
+
     it('applies only submitted scalar fields and records a diff audit', async () => {
       const before = fixtureActor({
         traderName: 'Old Name',
@@ -645,31 +1132,93 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       });
     });
 
-    it('removes all crop links when dto.crops is an empty array', async () => {
+    // T-1 (intake-required-fields) FR-1/design.md §4.4 — reverses the old
+    // "removes all crop links" behaviour: a PATCH can no longer wipe every
+    // crop. Falsifier 4 (tasks.md T-1): letting `crops: []` pass here is
+    // exactly what must redden.
+    it('rejects an explicit empty crops array on update (400, field "crops")', async () => {
       const before = fixtureActor({
         crops: [{ crop: { name: 'sorghum' } }],
       });
-      const after = fixtureActor({ crops: [] });
-
-      prisma.actor.findUnique
-        .mockResolvedValueOnce(before)
-        .mockResolvedValueOnce(after);
-      prisma.actor.update.mockResolvedValue(after);
-      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      prisma.actor.findUnique.mockResolvedValue(before);
 
       const dto: AdminActorUpdateDto = { crops: [] } as AdminActorUpdateDto;
 
-      await service.update('actor-1', dto, ACTING_SUB);
+      await updateAndExpectFieldRejection('actor-1', dto, 'crops');
+      expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
 
-      expect(prisma.cropsOnActors.deleteMany).toHaveBeenCalledWith({
-        where: { actorId: 'actor-1' },
+    // FR-1 scenario 3 / design.md §4.4 — the merged-state required check.
+    // Falsifier 3 (tasks.md T-1): dropping this check is what must redden.
+    describe('merged-state required check (FR-1 scenario 3)', () => {
+      it('rejects an edit of an actor stored without email until email is filled', async () => {
+        const before = fixtureActor({ email: null });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'email');
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
       });
-      expect(prisma.cropsOnActors.createMany).not.toHaveBeenCalled();
 
-      const auditData = prisma.actorAuditLog.create.mock.calls[0][0].data;
-      expect(auditData.changes.fields.crops).toEqual({
-        from: ['sorghum'],
-        to: [],
+      it('allows the same edit once the missing field is supplied in the patch', async () => {
+        const before = fixtureActor({ email: null });
+        const after = fixtureActor({ region: 'Dodoma', email: 'new@example.com' });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+          email: 'new@example.com',
+        } as AdminActorUpdateDto;
+
+        const res = await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(res.email).toBe('new@example.com');
+      });
+
+      it('keeps the stored crop links when dto.crops is absent (not re-required)', async () => {
+        const before = fixtureActor({
+          crops: [{ crop: { name: 'sorghum' } }],
+        });
+        const after = fixtureActor({
+          traderName: 'Renamed',
+          crops: [{ crop: { name: 'sorghum' } }],
+        });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          traderName: 'Renamed',
+        } as AdminActorUpdateDto;
+
+        await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('rejects an edit when the stored crop count is zero and the patch never supplies crops', async () => {
+        const before = fixtureActor({ crops: [] });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          region: 'Dodoma',
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'crops');
       });
     });
 
@@ -751,27 +1300,33 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('throws ConflictException 409 when changing traderId to a duplicate', async () => {
-      const before = fixtureActor();
-      prisma.actor.findUnique.mockResolvedValue(before);
+    // Falsifier 4 (tasks.md T-2) — re-adding 'traderId' to SCALAR_FIELDS is
+    // what must redden the toHaveBeenCalledWith assertion below.
+    it('ignores a client-sent traderId on update — it is never forwarded to the write and the stored id never changes', async () => {
+      const before = fixtureActor({ traderId: 'TZ-SEED-0001' });
+      const after = fixtureActor({ traderId: 'TZ-SEED-0001', region: 'Dodoma' });
 
-      const error = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed on the fields: (`traderId`)',
-        {
-          code: 'P2002',
-          clientVersion: '1.0.0',
-          meta: { target: ['traderId'] },
-        },
-      );
-      prisma.actor.update.mockRejectedValue(error);
+      prisma.actor.findUnique
+        .mockResolvedValueOnce(before)
+        .mockResolvedValueOnce(after);
+      prisma.actor.update.mockResolvedValue(after);
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
 
-      const dto: AdminActorUpdateDto = {
+      const dto = {
         traderId: 'TZ-SEED-9999',
-      } as AdminActorUpdateDto;
+        region: 'Dodoma',
+      } as unknown as AdminActorUpdateDto;
 
-      await expect(
-        service.update('actor-1', dto, ACTING_SUB),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const res = await service.update('actor-1', dto, ACTING_SUB);
+
+      expect(prisma.actor.update).toHaveBeenCalledWith({
+        where: { id: 'actor-1' },
+        data: { region: 'Dodoma' },
+      });
+      expect(prisma.actor.update.mock.calls[0][0].data).not.toHaveProperty(
+        'traderId',
+      );
+      expect(res.traderId).toBe('TZ-SEED-0001');
     });
 
     it('writes no audit row for a no-op update (empty diff)', async () => {
@@ -897,6 +1452,41 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     const BATCH_METHOD = ConsentMethod.PORTAL_CHECKBOX;
     const BATCH_DATE = '2026-07-01T00:00:00.000Z';
     const BATCH_REFERENCE = 'BATCH-2026-07';
+
+    /**
+     * Design.md §4.1 preserve/fill matrix — runs `bulkSetConsent` on a
+     * single existing actor with the shared `BATCH_*` provenance and asserts
+     * the exact `updateMany` write and audit diff it must leave.
+     */
+    async function expectBulkConsentWrite(
+      existingActor: ReturnType<typeof fixtureActor>,
+      expectedData: Record<string, unknown>,
+      expectedAuditFields: Record<string, unknown>,
+    ): Promise<{ preserved: number }> {
+      prisma.actor.findMany.mockResolvedValue([existingActor]);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      const res = await service.bulkSetConsent(
+        [existingActor.id as string],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [existingActor.id] } },
+        data: expectedData,
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      expect(auditData[0].changes.fields).toEqual(expectedAuditFields);
+
+      return { preserved: res.preserved };
+    }
 
     it('flips status to GRANTED, fills provenance on the NOT_RECORDED set, and returns preserved: 0', async () => {
       const existing = [
@@ -1107,7 +1697,9 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     });
 
     it('reachable via un-publish-then-strip (design.md §4.1 row 5): a DENIED actor with its own method and reference but a stripped date is filled on the date alone and keeps its method', async () => {
-      const existing = [
+      // Only the date is written — method and reference are the actor's own
+      // and are never touched.
+      const { preserved } = await expectBulkConsentWrite(
         fixtureActor({
           id: 'actor-date-only',
           consentStatus: ConsentStatus.DENIED,
@@ -1115,41 +1707,21 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           consentObtainedAt: null,
           consentReference: 'DOC-777',
         }),
-      ];
-      prisma.actor.findMany.mockResolvedValue(existing);
-      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
-      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
-
-      const res = await service.bulkSetConsent(
-        ['actor-date-only'],
-        'GRANTED',
-        ACTING_SUB,
-        true,
-        BATCH_METHOD,
-        BATCH_DATE,
-        BATCH_REFERENCE,
-      );
-
-      expect(res.preserved).toBe(0);
-      // Only the date is written — method and reference are the actor's own
-      // and are never touched.
-      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['actor-date-only'] } },
-        data: {
+        {
           consentStatus: ConsentStatus.GRANTED,
           consentObtainedAt: BATCH_DATE,
         },
-      });
-
-      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
-      expect(auditData[0].changes.fields).toEqual({
-        consentStatus: { from: 'DENIED', to: 'GRANTED' },
-        consentObtainedAt: { from: null, to: BATCH_DATE },
-      });
+        {
+          consentStatus: { from: 'DENIED', to: 'GRANTED' },
+          consentObtainedAt: { from: null, to: BATCH_DATE },
+        },
+      );
+      expect(preserved).toBe(0);
     });
 
     it('ADVISORY-1: an actor with NOT_RECORDED method and its OWN non-null consentReference keeps that reference — the batch reference never overwrites it', async () => {
-      const existing = [
+      // consentReference is absent — the actor's own OWN-REF-1 survives.
+      const { preserved } = await expectBulkConsentWrite(
         fixtureActor({
           id: 'actor-ref-preserved',
           consentStatus: ConsentStatus.UNKNOWN,
@@ -1157,38 +1729,18 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           consentObtainedAt: null,
           consentReference: 'OWN-REF-1',
         }),
-      ];
-      prisma.actor.findMany.mockResolvedValue(existing);
-      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
-      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
-
-      const res = await service.bulkSetConsent(
-        ['actor-ref-preserved'],
-        'GRANTED',
-        ACTING_SUB,
-        true,
-        BATCH_METHOD,
-        BATCH_DATE,
-        BATCH_REFERENCE,
-      );
-
-      expect(res.preserved).toBe(0);
-      // consentReference is absent — the actor's own OWN-REF-1 survives.
-      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['actor-ref-preserved'] } },
-        data: {
+        {
           consentStatus: ConsentStatus.GRANTED,
           consentMethod: BATCH_METHOD,
           consentObtainedAt: BATCH_DATE,
         },
-      });
-
-      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
-      expect(auditData[0].changes.fields).toEqual({
-        consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
-        consentMethod: { from: 'NOT_RECORDED', to: BATCH_METHOD },
-        consentObtainedAt: { from: null, to: BATCH_DATE },
-      });
+        {
+          consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
+          consentMethod: { from: 'NOT_RECORDED', to: BATCH_METHOD },
+          consentObtainedAt: { from: null, to: BATCH_DATE },
+        },
+      );
+      expect(preserved).toBe(0);
     });
 
     it('skips the audit row for an actor with no field change at all', async () => {

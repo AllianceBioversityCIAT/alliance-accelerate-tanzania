@@ -60,9 +60,10 @@ const HOW_TO_LINES: readonly string[] = [
   '1. Enter one actor per row on the "Data" sheet. Do not rename, reorder, or delete the header row.',
   '2. Columns marked Required must be filled in — rows missing a required value are rejected on import.',
   '3. Where a column has a dropdown (Trader Type, Region, Sex, the three Crop columns, Consent Status), pick a listed value.',
-  '4. For each crop the actor deals in, choose YES or NO in that crop’s column.',
+  '4. For each crop the actor deals in, choose YES or NO in that crop’s column. At least one crop must be YES.',
   '5. Leave a cell blank when you have no value; blank optional cells are accepted.',
   '6. Save the file as .xlsx and upload it from Admin → Actors → Import.',
+  '7. Trader ID is not a column here — the system assigns it automatically when a row is imported. A row that closely matches an existing actor or another row in this file may be held for review instead of being imported right away.',
 ];
 
 // Pin the ZIP entry timestamp as soon as this module loads, before any workbook

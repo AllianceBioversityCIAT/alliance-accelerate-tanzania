@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
@@ -17,9 +19,18 @@ import {
   ActorAuditService,
   ActingAdmin,
   ConsentFillPatch,
+  DuplicateConfirmationSnapshot,
 } from './actor-audit.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
+import {
+  allocateTraderIds,
+  isTraderIdCollisionError,
+  MAX_TRADER_ID_ALLOCATION_ATTEMPTS,
+} from './trader-id.util';
+import { IntakeDuplicateService } from './intake-duplicate.service';
+import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -58,6 +69,15 @@ export interface AdminActorList {
   total: number;
 }
 
+/**
+ * T-3 — `create()`'s response envelope (design.md §3): the created actor,
+ * plus the weak matches surfaced as an informational warning (FR-3's weak
+ * scenario — always present, possibly empty, never blocks the create).
+ */
+export interface AdminActorCreateResult extends AdminActor {
+  duplicateWarnings: DuplicateCandidate[];
+}
+
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -73,7 +93,6 @@ const CROPS_INCLUDE = {
  * client; crop assignments are handled separately via `CropsOnActors`.
  */
 const SCALAR_FIELDS = [
-  'traderId',
   'traderName',
   'region',
   'district',
@@ -100,10 +119,13 @@ const SCALAR_FIELDS = [
 
 @Injectable()
 export class ActorsAdminService {
+  private readonly logger = new Logger(ActorsAdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly actorAuditService: ActorAuditService,
     private readonly actingAdminResolver: ActingAdminResolver,
+    private readonly intakeDuplicateService: IntakeDuplicateService,
   ) {}
 
   /**
@@ -152,17 +174,17 @@ export class ActorsAdminService {
   }
 
   /**
-   * Create a single actor (FR-1).
+   * Create a single actor (FR-1, FR-2, FR-3). Allocates a system-generated
+   * `traderId` and retries on collision up to {@link MAX_TRADER_ID_ALLOCATION_ATTEMPTS}
+   * (design.md §4.2) before giving up with a 500 — never a 409 for this.
    *
-   * Resolves the acting Admin email before opening the transaction, then creates
-   * the Actor row, optionally links crops, refetches the full row, and writes a
-   * `CREATE` audit entry in the same transaction. Duplicate `traderId` is mapped
-   * to a clean 409.
+   * FR-3's duplicate gate runs BEFORE allocation (design.md §4.4 steps 1-2):
+   * a create blocked on an unconfirmed strong match never burns a Trader ID.
    */
   async create(
     dto: AdminActorCreateDto,
     actingSub: string,
-  ): Promise<AdminActor> {
+  ): Promise<AdminActorCreateResult> {
     if (dto.consentStatus === ConsentStatus.GRANTED && !dto.acknowledged) {
       throw new BadRequestException(
         'Consent acknowledgement is required to set status to GRANTED',
@@ -176,38 +198,100 @@ export class ActorsAdminService {
       throw this.buildProvenanceError(dto.consentMethod, dto.consentObtainedAt ?? null);
     }
 
-    const acting = await this.resolveActing(actingSub);
-
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.actor.create({
-          data: this.buildScalarData(dto) as Prisma.ActorCreateInput,
-        });
-
-        if (dto.crops && dto.crops.length > 0) {
-          const cropLinks = await this.buildCropLinks(
-            tx,
-            created.id,
-            dto.crops,
-          );
-          await tx.cropsOnActors.createMany({ data: cropLinks });
-        }
-
-        const full = await tx.actor.findUnique({
-          where: { id: created.id },
-          include: CROPS_INCLUDE,
-        });
-        if (!full) {
-          throw new Error('Created actor could not be refetched');
-        }
-
-        const adminActor = toAdminActor(full);
-        await this.actorAuditService.logCreate(tx, adminActor, acting);
-        return adminActor;
+    // FR-3 — the duplicate gate (design.md §4.3, §4.4 step 2, DD-3, DD-4).
+    // Recomputed on every request: `confirmedNotDuplicateOf` only clears
+    // candidates the SERVER currently finds, so a changed field that now
+    // matches a different actor is never silently waved through.
+    const { strong, weak } = await this.intakeDuplicateService.check({
+      phone: dto.phone ?? null,
+      email: dto.email ?? null,
+      traderName: dto.traderName,
+      gpsLatitude: dto.gpsLatitude ?? null,
+      gpsLongitude: dto.gpsLongitude ?? null,
+    });
+    const confirmedIds = new Set(dto.confirmedNotDuplicateOf ?? []);
+    const unconfirmedStrong = strong.filter((c) => !confirmedIds.has(c.actorId));
+    if (unconfirmedStrong.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: unconfirmedStrong,
       });
-    } catch (err) {
-      throw this.mapPrismaError(err);
     }
+    const confirmedStrong = strong.filter((c) => confirmedIds.has(c.actorId));
+    const duplicateConfirmation: DuplicateConfirmationSnapshot[] | null =
+      confirmedStrong.length > 0
+        ? confirmedStrong.map((c) => ({
+            kind: 'actor' as const,
+            actorId: c.actorId,
+            traderId: c.traderId,
+            traderName: c.traderName,
+            matchedOn: c.matchedOn,
+          }))
+        : null;
+
+    const acting = await this.resolveActing(actingSub);
+    const now = new Date();
+
+    for (let attempt = 1; attempt <= MAX_TRADER_ID_ALLOCATION_ATTEMPTS; attempt += 1) {
+      const [traderId] = await allocateTraderIds(this.prisma, 1, now);
+
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const created = await tx.actor.create({
+            data: {
+              ...this.buildScalarData(dto),
+              traderId,
+            } as Prisma.ActorCreateInput,
+          });
+
+          if (dto.crops && dto.crops.length > 0) {
+            const cropLinks = await this.buildCropLinks(
+              tx,
+              created.id,
+              dto.crops,
+            );
+            await tx.cropsOnActors.createMany({ data: cropLinks });
+          }
+
+          const full = await tx.actor.findUnique({
+            where: { id: created.id },
+            include: CROPS_INCLUDE,
+          });
+          if (!full) {
+            throw new Error('Created actor could not be refetched');
+          }
+
+          const adminActor = toAdminActor(full);
+          await this.actorAuditService.logCreate(
+            tx,
+            adminActor,
+            acting,
+            duplicateConfirmation,
+          );
+          return { ...adminActor, duplicateWarnings: weak };
+        });
+      } catch (err) {
+        if (isTraderIdCollisionError(err)) {
+          if (attempt < MAX_TRADER_ID_ALLOCATION_ATTEMPTS) {
+            continue;
+          }
+          this.logger.error(
+            `trader id allocation exhausted: year=${now.getUTCFullYear()} ` +
+              `attempts=${MAX_TRADER_ID_ALLOCATION_ATTEMPTS}`,
+          );
+          throw new InternalServerErrorException(
+            'Unable to create the actor right now. Please try again.',
+          );
+        }
+        throw this.mapPrismaError(err);
+      }
+    }
+
+    // Unreachable — satisfies TS control-flow analysis only (same as RegistrationsService.submitRegistration).
+    throw new InternalServerErrorException(
+      'Unable to create the actor right now. Please try again.',
+    );
   }
 
   /**
@@ -252,6 +336,46 @@ export class ActorsAdminService {
         });
         if (!before) {
           throw new NotFoundException(`Actor ${id} not found`);
+        }
+
+        // FR-1/NFR-1 — the merged-state required-set check (design.md §4.4,
+        // intake-contract.ts): a field absent from the PATCH keeps the
+        // STORED value, so this fires only when the EFFECTIVE value (after
+        // merging) would leave the actor missing something the required set
+        // demands — never merely because the actor already existed
+        // incomplete (FR-1 scenario 3's BUT clause).
+        const missingFields = [
+          ...missingIdentityFields(
+            { traderName: before.traderName, traderType: before.traderType, region: before.region },
+            { traderName: dto.traderName, traderType: dto.traderType, region: dto.region },
+          ),
+          ...missingIntakeFields(
+            {
+              contactPerson: before.contactPerson,
+              capacityTons: before.capacityTons,
+              phone: before.phone,
+              email: before.email,
+              cropsCount: before.crops.length,
+            },
+            {
+              contactPerson: dto.contactPerson,
+              capacityTons: dto.capacityTons,
+              phone: dto.phone,
+              email: dto.email,
+              crops: dto.crops,
+            },
+          ),
+        ];
+        if (missingFields.length > 0) {
+          throw new BadRequestException({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: 'Missing required field(s)',
+            details: missingFields.map((field) => ({
+              field,
+              message: `${field} is required`,
+            })),
+          });
         }
 
         if (
@@ -703,23 +827,15 @@ export class ActorsAdminService {
   }
 
   /**
-   * Map Prisma errors to domain HTTP exceptions.
-   *
-   * A duplicate `traderId` (`P2002` on the unique index) becomes a clean 409.
-   * All other errors are re-thrown unchanged so the original exception type
-   * (e.g. `NotFoundException`) propagates.
+   * Map Prisma errors to domain HTTP exceptions (design.md §4.4). Every
+   * `P2002` becomes a generic 409 — a `traderId` collision never reaches
+   * here (create's retry loop intercepts it via `isTraderIdCollisionError`,
+   * and update can no longer write `traderId` at all). All other errors are
+   * re-thrown unchanged so the original exception type propagates.
    */
   private mapPrismaError(err: unknown): never {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === 'P2002') {
-        const targets = Array.isArray(err.meta?.target) ? err.meta.target : [];
-        if (targets.includes('traderId')) {
-          throw new ConflictException(
-            'An actor with this traderId already exists',
-          );
-        }
-        throw new ConflictException('Unique constraint violation');
-      }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ConflictException('Unique constraint violation');
     }
     throw err;
   }

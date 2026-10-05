@@ -29,7 +29,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 import { ActorHistoryPanel } from './ActorHistoryPanel';
-import type { AuditEntry, ActorHistoryList } from '@/lib/api/actors-admin';
+import type { AuditEntry, ActorHistoryList, DuplicateConfirmationSnapshot } from '@/lib/api/actors-admin';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -55,6 +55,7 @@ const UPDATE_ENTRY: AuditEntry = {
     },
   },
   acknowledged: null,
+  duplicateConfirmation: null,
   createdAt: '2024-06-02T10:30:00.000Z',
 };
 
@@ -76,6 +77,7 @@ const CREATE_ENTRY: AuditEntry = {
     },
   },
   acknowledged: null,
+  duplicateConfirmation: null,
   createdAt: '2024-06-01T09:00:00.000Z',
 };
 
@@ -96,6 +98,7 @@ const DELETE_ENTRY: AuditEntry = {
     },
   },
   acknowledged: null,
+  duplicateConfirmation: null,
   createdAt: '2024-06-03T14:00:00.000Z',
 };
 
@@ -257,6 +260,128 @@ describe('ActorHistoryPanel — snapshot entries', () => {
 });
 
 // ---------------------------------------------------------------------------
+// duplicateConfirmation rendering (T-6, `actors/consent-intake/intake-required-fields`, FR-3)
+//
+// `duplicateConfirmation` is a field on `AuditEntry` ITSELF, independent of
+// `changes`'s diff/snapshot shape — an UPDATE, CREATE, or IMPORT entry can
+// all carry one. Forward pointer (T-3 execution.md): the real API returns
+// `null` for "nothing confirmed"; a test harness mock has been seen to store
+// an empty array instead, and Prisma's own `JsonNull` sentinel is a
+// non-array object — the renderer's `!Array.isArray(...)` guard (not just a
+// `=== null` check) is what makes all three render nothing.
+// ---------------------------------------------------------------------------
+
+describe('ActorHistoryPanel — duplicateConfirmation (T-6, FR-3)', () => {
+  it('renders "Confirmed not a duplicate of <traderId> (matched on <attribute>)" for an actor-kind snapshot', async () => {
+    const snapshot: DuplicateConfirmationSnapshot[] = [
+      { kind: 'actor', actorId: 'actor-1', traderId: 'TM-2026-0012', traderName: 'Kilimo Traders', matchedOn: ['email'] },
+    ];
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: snapshot }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(
+      screen.getByText('Confirmed not a duplicate of TM-2026-0012 (matched on email address)'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders every snapshot when more than one candidate was confirmed, naming each attribute set', async () => {
+    const snapshot: DuplicateConfirmationSnapshot[] = [
+      { kind: 'actor', actorId: 'actor-1', traderId: 'TM-2026-0012', traderName: 'Kilimo Traders', matchedOn: ['email'] },
+      { kind: 'actor', actorId: 'actor-2', traderId: 'TM-2026-0013', traderName: 'Songwe Agro', matchedOn: ['phone', 'email'] },
+    ];
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: snapshot }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(
+      screen.getByText('Confirmed not a duplicate of TM-2026-0012 (matched on email address)'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Confirmed not a duplicate of TM-2026-0013 (matched on phone number, email address)'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders a row-kind snapshot naming the workbook row, not a Trader ID (T-5 import, unresolved in-file match)', async () => {
+    const snapshot: DuplicateConfirmationSnapshot[] = [
+      { kind: 'row', row: 5, traderName: 'Mbeya Seeds Ltd', matchedOn: ['phone'] },
+    ];
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: snapshot }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(
+      screen.getByText('Confirmed not a duplicate of row 5 (matched on phone number)'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders nothing extra when duplicateConfirmation is null', async () => {
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: null }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(screen.queryByText(/confirmed not a duplicate/i)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing extra for the in-memory e2e mock empty-array shape (forward pointer: never assert null there)', async () => {
+    // A test harness mock has been seen to store an empty array instead of
+    // `null` — both must render nothing.
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: [] }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(screen.queryByText(/confirmed not a duplicate/i)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing extra for a non-array JSON-null-like sentinel object (Prisma.JsonNull shape)', async () => {
+    // Prisma's own `JsonNull` sentinel deserializes as a non-array object,
+    // never as `[]` — this exercises the `!Array.isArray(...)` branch of the
+    // guard specifically, which the empty-array case above does not.
+    mockGetActorHistory.mockResolvedValue({
+      data: [{ ...CREATE_ENTRY, duplicateConfirmation: {} }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByRole('listitem')).toBeInTheDocument());
+
+    expect(screen.queryByText(/confirmed not a duplicate/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
 
@@ -407,6 +532,7 @@ describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
       actingEmail: null,
       changes: { kind: 'snapshot', values: { region: 'Mbeya' } },
       acknowledged: null,
+      duplicateConfirmation: null,
       createdAt: '2024-06-05T00:00:00.000Z',
     }));
 
@@ -444,6 +570,7 @@ describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
       actingEmail: 'reviewer@example.com',
       changes: { kind: 'snapshot', values: { region: 'Mbeya' } },
       acknowledged: null,
+      duplicateConfirmation: null,
       createdAt: '2024-06-06T00:00:00.000Z',
     };
 

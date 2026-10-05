@@ -22,6 +22,7 @@ import {
   Registration,
 } from '@prisma/client';
 import { AdminActor } from './admin-actor.serializer';
+import { DuplicateMatchAttribute } from '../registrations/duplicate-detection.service';
 
 /** Acting admin identity snapshotted into each audit row. */
 export interface ActingAdmin {
@@ -126,6 +127,28 @@ export type ConsentFillPatch = Partial<{
   consentReference: string | null;
 }>;
 
+/**
+ * T-3 — one entry of `ActorAuditLog.duplicateConfirmation` (design.md §2,
+ * FR-3). Discriminated by `kind` so an import-row confirmation (T-5, no
+ * `Actor` row exists yet at preview time) and an existing-actor confirmation
+ * share one column without ambiguity. `logCreate` only ever produces the
+ * `'actor'` member — admin create has no "earlier row" to name.
+ */
+export type DuplicateConfirmationSnapshot =
+  | {
+      kind: 'actor';
+      actorId: string;
+      traderId: string;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    }
+  | {
+      kind: 'row';
+      row: number;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    };
+
 @Injectable()
 export class ActorAuditService {
   /**
@@ -133,11 +156,16 @@ export class ActorAuditService {
    *
    * Decimal fields are serialized as strings; crops are serialized as a
    * `string[]` of crop names.
+   *
+   * `duplicateConfirmation` (T-3, FR-3): the confirmed strong candidates'
+   * snapshot, or `Prisma.JsonNull` when there was nothing to confirm (the
+   * generated nullable-Json type rejects a bare `null`).
    */
   async logCreate(
     tx: Prisma.TransactionClient,
     actor: AdminActor,
     acting: ActingAdmin,
+    duplicateConfirmation?: DuplicateConfirmationSnapshot[] | null,
   ): Promise<ActorAuditLog> {
     return tx.actorAuditLog.create({
       data: {
@@ -148,6 +176,10 @@ export class ActorAuditService {
         actingSub: acting.sub,
         actingEmail: acting.email ?? null,
         changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+        duplicateConfirmation:
+          duplicateConfirmation && duplicateConfirmation.length > 0
+            ? (duplicateConfirmation as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
       },
     });
   }
@@ -348,6 +380,12 @@ export class ActorAuditService {
    * omitted, the column is left unset so `UNKNOWN`/`DENIED`-only imports don't
    * record a spurious flag.
    *
+   * `duplicateConfirmations` (T-5, FR-4) — one entry per `actors[i]`, aligned
+   * by index: the row's confirmed strong candidates, already resolved by the
+   * caller (an in-file `'row'` snapshot becomes `'actor'` once that earlier
+   * row's own create landed — design.md §4.5), or `null`/omitted when there
+   * was nothing to confirm. Mirrors `logCreate`'s `Prisma.JsonNull` sentinel.
+   *
    * @sdd-spec admin/actor-import
    */
   async logImport(
@@ -355,13 +393,15 @@ export class ActorAuditService {
     actors: AdminActor[],
     acting: ActingAdmin,
     acknowledged?: boolean,
+    duplicateConfirmations?: Array<DuplicateConfirmationSnapshot[] | null | undefined>,
   ): Promise<{ count: number }> {
     if (actors.length === 0) {
       return { count: 0 };
     }
 
     return tx.actorAuditLog.createMany({
-      data: actors.map((actor) => {
+      data: actors.map((actor, index) => {
+        const confirmation = duplicateConfirmations?.[index];
         const row: Prisma.ActorAuditLogCreateManyInput = {
           actorId: actor.id,
           traderId: actor.traderId,
@@ -370,6 +410,10 @@ export class ActorAuditService {
           actingSub: acting.sub,
           actingEmail: acting.email ?? null,
           changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+          duplicateConfirmation:
+            confirmation && confirmation.length > 0
+              ? (confirmation as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
         };
         if (acknowledged !== undefined) {
           row.acknowledged = acknowledged;
