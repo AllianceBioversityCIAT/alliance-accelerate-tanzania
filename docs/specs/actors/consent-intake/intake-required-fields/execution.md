@@ -264,3 +264,102 @@
   - Long comments remain: a repeated defensive-stub note and a ~30-line module doc.
 - **Requirements covered:** FR-3 on the API side (all five scenarios, the BUT clause and the PII line), NFR-3 on the create surface, and the NFR-2 premise (P-14).
 - **Final status:** **PASS**. 2 attempts, 3 review verdicts (attempt 1 had two parallel lens reviewers).
+
+## Standing authorization — budget (2026-10-04, Daniela Gómez)
+
+> "sigue, y si se pasa el presupuesto no pares, ajustalo y sigue"
+
+- **For the rest of this spec**, a budget overrun does **not** stop execution. The Leader re-baselines the budget, records the delta and the cause here, and continues.
+- **Leader's reading:** the tasks.md Budget row's "3rd review round" escalation is part of that same tripwire, so it is also covered: log it and continue.
+- **Still stops for the product owner:** a HALT after 3 failed attempts, a Pivot, a `FATAL_FAIL`, and a destructive action. These are not budget events.
+
+### T-4 — Template v4 and import row validation on the intake contract
+
+**Attempt 1 — FAIL** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh.
+- **Files changed:**
+  - `common/template-columns.ts` (+ spec), `common/generate-template.spec.ts`, `common/intake-contract.spec.ts`
+  - `scripts/generate-import-template.ts`
+  - `actors/actor-import.service.ts` (+ spec)
+  - `test/admin-actor-import.e2e.spec.ts`, `test/partner-profile-onboarding-import.e2e.spec.ts`
+  - the regenerated `frontend/public/templates/actor-import-template.xlsx`
+  - The legacy `backend/src/import/**` is untouched: `git diff --stat -- backend/src/import` is empty (Leader-checked).
+- **Implementer verification:** 86 suites / 1382 tests; build; eslint 0. All 6 falsifiers reported red, then restored.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. The Leader re-ran `generate:template` and the byte-identity spec stayed green, so the generator is stable. 86 / 1382, exit 0; build; eslint.
+- **Disqualifier (stated):** the import suites mock Prisma. They prove row routing and chunk fault isolation as the code handles it, **not** that per-chunk transactions commit or roll back in MySQL. That gap follows P-17.
+- **Reviewers:** parallel lens mode.
+  - **A** (conformance + reliability + risk): **FAIL**. The email ≤191 bound test cannot fail: the fixture's local part is over 64 characters, so `isEmail` rejects it first. That is the bound protecting a whole chunk from a `VARCHAR(191)` rollback.
+  - **B** (conformance + resilience + readability): **FAIL**.
+    1. The exhaustion test exhausts the last chunk, so a `break` on exhaustion would stay green, and the title is false.
+    2. The same email-bound fixture as A.
+    3. `CONTRACT_REQUIRED_PROPERTIES` is a hand re-typed copy of the contract, and its comment falsely says NFR-1 pins it.
+    4. FR-5: "at least one crop" is not marked required anywhere in the template.
+    5. A weakened assertion: the partner-profile e2e no-upsert before/after equality was deleted.
+    6. Comment truthfulness and density: "3 contract scalars" when there are 4; "removed" for rewritten tests; 5–12-line blocks.
+  - Both reviewers confirmed:
+    - per-attempt allocation;
+    - chunk-local exhaustion in code;
+    - the real MySQL collision shape;
+    - forced `TEAM_MANAGED`;
+    - unchanged `GRANTED` provenance;
+    - required set and bounds that match the admin path;
+    - no data-loss path in the code.
+- **Advisory (4R):**
+  - The pre-existing isolation tests now reject the allocation transaction, not the chunk transaction, and their comments are stale. No test drives a non-collision error inside the chunk transaction.
+  - Falsifier 5 asserts call counts, not distinct IDs.
+  - Memoize `missingContractFieldErrors`. It runs one `validateSync` per missing field per row, which matters for the NFR-2 budget T-5 shares.
+  - The `actor-import.types.ts` doc still describes `skipped-*` as live outcomes.
+  - The `lambda-handler` e2e fixtures carry an inert `traderId` / `idPrefix`, and their rows now fail validation. The tests stay valid; this is a cleanup.
+  - HOW_TO line 7's "held for review" depends on T-5 landing before release.
+- **runtime events:** none.
+
+**Concurrency observation (2026-10-04, during T-4 attempt 2):**
+- The T-4 Implementer reported intermittent failures in files untouched by T-4 (`admin-registrations-reject.e2e.spec.ts`, `pii-boundary.spec.ts`). Each file passed in isolation afterwards.
+- The Leader checked the process table and found **four other `claude` processes with this checkout as their cwd**: PIDs 14847 and 14928 (`--resume`, started 2026-10-01 08:34), and 95536 and 96006 (started 2026-10-01 14:42 / 15:44). Two of them showed non-zero CPU.
+- The branch (`feature/atp-84-consent-request-email`), HEAD (`2e730f2`) and the working tree contain only this spec's changes. No foreign commits or edits have been detected so far.
+- The Leader's own quiet-tree re-runs were green (86 / 1384, exit 0), after killing a stale idle Jest left by the worker.
+- This is KZ-010 (one AKILI session per checkout). It is surfaced to the product owner at the T-4 gate.
+
+**Attempt 2 — PASS** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received both attempt-1 reports verbatim.
+- **Changes:**
+  - Removed `CONTRACT_REQUIRED_PROPERTIES`. A contract-driven `it.each(INTAKE_REQUIRED_FIELDS)` over a `Record<IntakeRequiredField, CellMap>` replaces it.
+  - The email fixture is now a well-formed 192-character address that self-asserts `isEmail`.
+  - The exhaustion test now exhausts chunk 1, with chunk 2 still created.
+  - HOW_TO line 4 says "At least one crop must be YES", with a test.
+  - Restored the partner-profile no-upsert equality.
+  - Memoized `missingContractFieldErrors`.
+  - Added a non-collision chunk-create-transaction test.
+  - Falsifier 5 now also asserts distinct IDs.
+  - Corrected the `actor-import.types.ts` doc and comment fixes.
+  - Regenerated the asset.
+- **Implementer verification:** 86 suites / 1384 tests; build; eslint 0. Falsifiers red, then restored:
+  - an exhaustion rethrow **and** a `break`;
+  - the email bound branch removed;
+  - a dummy contract field, which fails with TS2741 compile under ts-jest with diagnostics on;
+  - the HOW_TO crop line reverted;
+  - a simulated upsert;
+  - a byte flip, the v3 stamp, and contactPerson not required.
+- The Implementer later added a note: intermittent failures in untouched files (`admin-registrations-reject.e2e`, `pii-boundary`) that pass in isolation. It attributed them to concurrent sessions; see the concurrency observation above.
+- **Evidence re-run (Leader, inline):** **VERIFIED** on a quiet tree. The Leader killed a stale idle Jest left by the worker. A first run exited 143 with all 86 / 1384 passing; a second run exited 0 with 86 / 1384. Build and eslint passed, and the regenerated template stays byte-identical.
+- **Reviewer:** `akili-reviewer` (opus), single reviewer, all four lenses (round 2 of this task), **PASS**.
+  - All substantive attempt-1 FAILs are fixed.
+  - The compile-time drift gate was judged acceptable: the jest transform is plain `ts-jest` with diagnostics on. **Caveat:** setting `isolatedModules` or `diagnostics:false` would silently disable it.
+- **Advisory:**
+  1. Comment density did not go down; several 6–9 line blocks remain.
+  2. New small comment inaccuracies:
+     - (a) a garbled fragment in the `BLANK_OVERRIDE_FOR` doc;
+     - (b) the spec header says every `skipped-*` scenario was REWRITTEN, but "names skipped rows" was deleted;
+     - (c) the phone comment cites design §4.1 instead of the intake contract;
+     - (d) the Contact Person comment says "above" when the check is below.
+  3. Cached error objects are shared by reference across rows. Nothing mutates them today.
+  4. HOW_TO line 7 depends on T-5.
+  5. Stray `traderId` overrides remain in one chunk test and in `lambda-handler`.
+  - **Forward pointer → T-5 brief:** advisories 1–2 and 5 go in as `[advisory-grade]` cleanup, since T-5 edits the same files.
+- **runtime events:** none (the stale Jest was a worker leftover, not a runtime event).
+- **Requirements covered:**
+  - FR-1 import: missing cell, capacity 0, bounds, same messages;
+  - FR-2 import path: per-chunk allocation, retry, chunk-local exhaustion;
+  - FR-5: all four scenarios plus the Instructions sheet, including the crop requirement;
+  - NFR-1: the template half, and the import side through the contract-driven test.
+- **Final status:** **PASS**. 2 attempts, 3 review verdicts.

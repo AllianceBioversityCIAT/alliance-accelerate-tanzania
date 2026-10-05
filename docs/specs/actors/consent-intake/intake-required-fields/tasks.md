@@ -115,7 +115,7 @@
       Review: `full`. This is the gate whose failure creates duplicates silently.
       Done when: P-14 is settled in `execution.md`, a strong match cannot be created without naming every strong candidate, a confirmation is audited, weak matches create with warnings, the registration-queue suites are unchanged and green, and all six falsifiers were shown red.
 
-- [ ] **T-4** Template v4 and import row validation on the intake contract  (deps: T-2)
+- [x] **T-4** Template v4 and import row validation on the intake contract  (deps: T-2)
       Scope (design §4.5 first bullet, §4.6):
       - `TEMPLATE_VERSION = 'v4'`. Drop Trader ID, GPS Altitude, GPS Accuracy and Registration Source. Required flags come from the intake contract.
       - Add the `HOW_TO_LINES` line.

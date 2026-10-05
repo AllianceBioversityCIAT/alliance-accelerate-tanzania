@@ -27,9 +27,9 @@ export interface ImportRowResult {
   /**
    * `create` — prospective create in preview mode.
    * `created` — actor created (commit mode only; carries `actorId`).
-   * `skipped-exists` — `traderId` already in the registry (FR-4).
-   * `skipped-duplicate-in-file` — `traderId` repeated later in the same file (FR-4).
    * `failed` — validation failed (carries `errors`).
+   * The `skipped-*` values are not produced today (design.md §4.5 removed
+   * the Trader-ID dedupe that made them); kept in the union for T-5.
    */
   outcome:
     | 'create'

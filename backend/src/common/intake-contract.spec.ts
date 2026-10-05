@@ -12,6 +12,7 @@ import {
   INTAKE_REQUIRED_FIELDS,
   missingIntakeFields,
 } from './intake-contract';
+import { TEMPLATE_COLUMNS } from './template-columns';
 
 /**
  * T-1 — NFR-1: "one definition, not three copies." These read class-validator's
@@ -182,6 +183,26 @@ describe('Intake contract — NFR-1 metadata pin', () => {
     it('AdminActorCreateDto requires exactly this set — no more, no less (T-2: traderId carries no metadata at all)', () => {
       const required = requiredPropertiesOf(AdminActorCreateDto);
       expect(required).toEqual(REFERENCE_REQUIRED_FIELDS);
+    });
+
+    /**
+     * T-4 (consent-intake/intake-required-fields) — the import template's
+     * `required` column flags are the THIRD consumer NFR-1 demands ("the
+     * required set is defined once and consumed by the admin DTO, the
+     * import validator and the template generator"). `crops` has no single
+     * template column (it is the three YES/NO columns, enforced as
+     * "at least one" at row-validation time, design.md §4.6), so the
+     * reference set here is the same identity ∪ declaration union minus
+     * `crops`.
+     */
+    it('TEMPLATE_COLUMNS requires exactly this set minus crops (no single crops column) — no more, no less', () => {
+      const required = new Set(
+        TEMPLATE_COLUMNS.filter((c) => c.required).map((c) => c.field),
+      );
+      const expectedTemplateRequired = new Set(
+        [...REFERENCE_REQUIRED_FIELDS].filter((field) => field !== 'crops'),
+      );
+      expect(required).toEqual(expectedTemplateRequired);
     });
   });
 });

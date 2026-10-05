@@ -83,13 +83,21 @@ async function buildWorkbook(
   return Buffer.from(buf).toString('base64');
 }
 
-/** A minimal valid data row (required fields only); override as needed. */
+/**
+ * A minimal valid data row (every intake-contract required field filled);
+ * override as needed. `traderId` is NOT a column any more (T-4,
+ * consent-intake/intake-required-fields) — the system assigns it at commit.
+ */
 function validRow(overrides: CellMap = {}): CellMap {
   return {
-    traderId: 'TZ-1',
     traderName: 'Actor One',
     traderType: 'seed_company',
     region: 'Arusha',
+    contactPerson: 'Jane Mwangi',
+    capacityTons: 10,
+    phone: '0700000002',
+    email: 'actor@example.org',
+    cropSorghum: 'YES',
     ...overrides,
   };
 }
@@ -226,6 +234,13 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   let cropLinks: Array<{ actorId: string; cropId: string }> = [];
   let actorSeq = 0;
   let auditSeq = 0;
+  // T-4 (consent-intake/intake-required-fields) — in-memory `ActorSequence`
+  // counter (design.md §4.2), mirroring `admin-actors-crud.e2e.spec.ts`'s T-2
+  // pattern: `allocateTraderIds` opens its own transaction, resolved to the
+  // SAME `tx` below by the `$transaction` mock, so it is reachable exactly
+  // like the chunk's own create transaction.
+  let sequenceRows: Array<{ year: number; seq: number }> = [];
+  let sessionNewSeq: number | null = null;
 
   function seed(): void {
     actors = initialActors.map((a) => ({ ...a }));
@@ -233,6 +248,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropLinks = [];
     actorSeq = 0;
     auditSeq = 0;
+    sequenceRows = [];
+    sessionNewSeq = null;
     for (const actor of actors) {
       const names = (
         (actor.crops as { crop?: { name?: string } }[] | undefined) ?? []
@@ -476,7 +493,34 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }),
   };
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog };
+  const $executeRaw = jest.fn(
+    async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?');
+      if (!sql.includes('ActorSequence')) {
+        throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
+      }
+      const [year, count] = values as [number, number];
+      let row = sequenceRows.find((r) => r.year === year);
+      if (!row) {
+        row = { year, seq: count };
+        sequenceRows.push(row);
+      } else {
+        row.seq += count;
+      }
+      sessionNewSeq = row.seq;
+      return 1;
+    },
+  );
+
+  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
+    const sql = strings.join('?');
+    if (!sql.includes('@newActorSeq')) {
+      throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
+    }
+    return [{ newActorSeq: sessionNewSeq as number }];
+  });
+
+  const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') return arg(tx);
     return Promise.all(arg);
@@ -655,31 +699,35 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
   });
 
   describe('Commit lifecycle with a mixed fixture (FR-4..FR-8, FR-11)', () => {
-    /** row2 create+crops+PII, row3 create, row4 dup-exists, row5/6 in-file dup,
-     * row7 invalid (region+email), row8 create+GPS warning. */
+    /**
+     * row2 create+crops+PII, row3 create, row4 create, row5/6 create (T-4,
+     * consent-intake/intake-required-fields: the Trader-ID dedupe that used
+     * to hold row4 as `skipped-exists` and row6 as
+     * `skipped-duplicate-in-file` is removed — design.md §4.5, "the branch
+     * has no import dedupe in between", T-5 replaces it), row7 invalid
+     * (region+email), row8 create+GPS warning.
+     */
     const mixedRows = (): CellMap[] => [
       validRow({
-        traderId: 'TZ-IMP-1',
         traderName: 'Import One',
         phone: IMPORT_PII_PHONE,
         email: IMPORT_PII_EMAIL,
         cropSorghum: 'YES',
         cropGroundnut: 'YES',
       }),
-      validRow({ traderId: 'TZ-IMP-2', traderName: 'Import Two', region: 'Dodoma' }),
-      validRow({ traderId: 'TZ-EXIST-1', traderName: 'Dup Of Existing' }),
-      validRow({ traderId: 'TZ-DUP', traderName: 'Dup First', region: 'Tanga' }),
-      validRow({ traderId: 'TZ-DUP', traderName: 'Dup Second', region: 'Tanga' }),
+      validRow({ traderName: 'Import Two', region: 'Dodoma' }),
+      validRow({ traderName: 'Dup Of Existing' }),
+      validRow({ traderName: 'Dup First', region: 'Tanga' }),
+      validRow({ traderName: 'Dup Second', region: 'Tanga' }),
       validRow({
-        traderId: 'TZ-BAD',
         traderName: 'Bad Row',
         region: 'Atlantis',
         email: IMPORT_BAD_EMAIL,
       }),
-      validRow({ traderId: 'TZ-GPS', traderName: 'Gps Row', region: 'Iringa', gpsLatitude: 999 }),
+      validRow({ traderName: 'Gps Row', region: 'Iringa', gpsLatitude: 999 }),
     ];
 
-    it('creates valid rows with crops + IMPORT audit, skips/fails the rest, and never echoes PII', async () => {
+    it('creates valid rows with crops + IMPORT audit, fails the rest, and never echoes PII', async () => {
       const fileBase64 = await buildWorkbook(mixedRows());
 
       const res = await request(app.getHttpServer())
@@ -691,9 +739,9 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.mode).toBe('commit');
       expect(res.body.totals).toEqual({
         rows: 7,
-        toCreate: 4,
-        created: 4,
-        skipped: 2,
+        toCreate: 6,
+        created: 6,
+        skipped: 0,
         failed: 1,
         warnings: 1,
       });
@@ -701,11 +749,15 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       // Per-row outcomes tied to Excel row numbers.
       expect(rowByNumber(res.body, 2).outcome).toBe('created');
       expect(rowByNumber(res.body, 3).outcome).toBe('created');
-      expect(rowByNumber(res.body, 4).outcome).toBe('skipped-exists');
+      expect(rowByNumber(res.body, 4).outcome).toBe('created');
       expect(rowByNumber(res.body, 5).outcome).toBe('created');
-      expect(rowByNumber(res.body, 6).outcome).toBe('skipped-duplicate-in-file');
+      expect(rowByNumber(res.body, 6).outcome).toBe('created');
       expect(rowByNumber(res.body, 7).outcome).toBe('failed');
       expect(rowByNumber(res.body, 8).outcome).toBe('created');
+      // T-4 — every created row's Trader ID is now system-generated.
+      for (const n of [2, 3, 4, 5, 6, 8]) {
+        expect(rowByNumber(res.body, n).traderId).toMatch(/^TM-\d{4}-\d{4}$/);
+      }
 
       // Failed row carries both field errors (names only).
       const failed = rowByNumber(res.body, 7);
@@ -760,21 +812,28 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
       expect(existing.body.traderName).toBe('Existing Registry Trader');
 
-      // Net new actors: 4 created on top of the 2 seeded.
+      // Net new actors: 6 created on top of the 2 seeded.
       const list = await request(app.getHttpServer())
         .get('/api/v1/admin/actors')
         .set(admin)
         .expect(200);
-      expect(list.body.total).toBe(6);
+      expect(list.body.total).toBe(8);
     });
   });
 
-  describe('Re-upload idempotence (FR-4)', () => {
-    it('creates on the first commit and creates nothing on the second', async () => {
+  /**
+   * T-4 (consent-intake/intake-required-fields) — the Trader-ID dedupe that
+   * made a re-upload idempotent is removed (design.md §4.5); T-5 replaces it
+   * with duplicate classification. Until then, re-uploading the SAME
+   * workbook creates a second, independent batch — a declared, acceptable
+   * gap on this unreleased branch (tasks.md T-4).
+   */
+  describe('Re-upload creates again in this interim window (FR-4; T-5 restores idempotence)', () => {
+    it('creates on the first commit and creates again on the second, with no skipped rows', async () => {
       const fileBase64 = await buildWorkbook([
-        validRow({ traderId: 'TZ-ID-1', traderName: 'Idem One' }),
-        validRow({ traderId: 'TZ-ID-2', traderName: 'Idem Two' }),
-        validRow({ traderId: 'TZ-ID-3', traderName: 'Idem Three' }),
+        validRow({ traderName: 'Idem One' }),
+        validRow({ traderName: 'Idem Two' }),
+        validRow({ traderName: 'Idem Three' }),
       ]);
       const body = { fileName: 'actors.xlsx', fileBase64, mode: 'commit' };
 
@@ -790,12 +849,14 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .set(admin)
         .send(body)
         .expect(200);
-      expect(second.body.totals).toMatchObject({ created: 0, skipped: 3, failed: 0 });
+      expect(second.body.totals).toMatchObject({ created: 3, skipped: 0, failed: 0 });
       expect(
-        second.body.rows.every(
-          (r: { outcome: string }) => r.outcome === 'skipped-exists',
-        ),
+        second.body.rows.every((r: { outcome: string }) => r.outcome === 'created'),
       ).toBe(true);
+      // Every Trader ID is freshly allocated, never reused across the batches.
+      const firstIds = first.body.rows.map((r: { traderId: string }) => r.traderId);
+      const secondIds = second.body.rows.map((r: { traderId: string }) => r.traderId);
+      expect(new Set([...firstIds, ...secondIds]).size).toBe(6);
     });
   });
 
@@ -891,12 +952,10 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       expect(rowByNumber(res.body, 4).outcome).toBe('created');
     });
 
-    it('persists registrationSource and all three provenance fields on the created actor (round-trip)', async () => {
+    it('persists all three provenance fields on the created actor, always as TEAM_MANAGED (round-trip, T-4)', async () => {
       const fileBase64 = await buildWorkbook([
         validRow({
-          traderId: 'TZ-PROV-FULL',
           consentStatus: 'GRANTED',
-          registrationSource: 'SELF_REGISTERED',
           consentMethod: 'EMAIL',
           consentObtainedAt: '2026-01-15',
           consentReference: 'thread-abc',
@@ -921,7 +980,9 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .get(`/api/v1/admin/actors/${actorId}`)
         .set(admin)
         .expect(200);
-      expect(detail.body.registrationSource).toBe('SELF_REGISTERED');
+      // T-4 — Registration Source is no longer a column; imports are always
+      // TEAM_MANAGED (FR-5), regardless of any stray `registrationSource` key.
+      expect(detail.body.registrationSource).toBe('TEAM_MANAGED');
       expect(detail.body.consentMethod).toBe('EMAIL');
       expect(detail.body.consentObtainedAt).toBe('2026-01-15T00:00:00.000Z');
       expect(detail.body.consentReference).toBe('thread-abc');

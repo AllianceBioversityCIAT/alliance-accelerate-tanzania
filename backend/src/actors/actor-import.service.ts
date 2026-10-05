@@ -19,12 +19,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma, RegistrationSource } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
-import { isEmail } from 'class-validator';
+import { isEmail, validateSync } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import { ActorAuditService, ActingAdmin } from './actor-audit.service';
 import { AdminActor, toAdminActor } from './admin-actor.serializer';
+import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import {
   ImportFailureReason,
@@ -37,7 +39,6 @@ import {
   CONSENT_VALUES,
   CROP_COLUMN_CATALOG,
   CropColumnField,
-  REGISTRATION_SOURCE_VALUES,
   TEMPLATE_COLUMNS,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
@@ -52,6 +53,12 @@ import {
   parseCapacityTons,
 } from '../common/normalize';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import { INTAKE_MAX_LENGTHS, IntakeRequiredField } from '../common/intake-contract';
+import {
+  allocateTraderIds,
+  isTraderIdCollisionError,
+  MAX_TRADER_ID_ALLOCATION_ATTEMPTS,
+} from './trader-id.util';
 
 /** Hard caps (design §3): decoded file size and data-row count. */
 const MAX_DECODED_BYTES = 4 * 1024 * 1024; // 4 MB
@@ -133,9 +140,39 @@ function templateColumnIndex(field: string): number {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
-/** Scalar Actor create payload assembled from a validated row. */
+/**
+ * T-4 (FR-1) — one row's message(s) for a required field, reusing
+ * `AdminActorCreateDto`'s own class-validator output for the same "missing"
+ * shape (NFR-1), rather than a hand-typed paraphrase. Memoized per field
+ * (module-level map, not per row) to keep `validateSync` off the per-row hot
+ * path (NFR-2).
+ */
+const MISSING_FIELD_ERROR_CACHE = new Map<IntakeRequiredField, ImportRowError[]>();
+
+function missingContractFieldErrors(field: IntakeRequiredField): ImportRowError[] {
+  const cached = MISSING_FIELD_ERROR_CACHE.get(field);
+  if (cached) return cached;
+
+  const probeInput: Record<string, unknown> =
+    field === 'crops' ? { crops: [] } : { [field]: undefined };
+  const probe = plainToInstance(AdminActorCreateDto, probeInput);
+  const violations = validateSync(probe, { skipMissingProperties: false });
+  const match = violations.find((v) => v.property === field);
+  const messages = Object.values(match?.constraints ?? {});
+  // Fallback only guards a future metadata drift (NFR-1's set-equality test
+  // pins the normal case); it must never throw and kill the whole row.
+  const result =
+    messages.length > 0
+      ? messages.map((message) => ({ field, message }))
+      : [{ field, message: `${field} is required` }];
+  MISSING_FIELD_ERROR_CACHE.set(field, result);
+  return result;
+}
+
+/** Scalar Actor create payload assembled from a validated row. `traderId` is
+ * merged in separately at commit time, once a chunk has allocated one
+ * (design.md §4.2/§4.5) — a row never carries its own Trader ID. */
 interface ActorScalarData {
-  traderId: string;
   traderName: string;
   region: string;
   traderType: string;
@@ -155,10 +192,8 @@ interface ActorScalarData {
   email?: string;
   gpsLatitude?: number;
   gpsLongitude?: number;
-  gpsAltitude?: number;
-  gpsAccuracy?: number;
   consentStatus: ConsentStatus;
-  /** T-6 — which track produced this record (FR-1); defaults to TEAM_MANAGED. */
+  /** Imports are always TEAM_MANAGED (FR-5, T-4); no longer a column. */
   registrationSource: RegistrationSource;
   /** T-6 — how consent was obtained (FR-2); defaults to NOT_RECORDED. */
   consentMethod: ConsentMethod;
@@ -168,9 +203,8 @@ interface ActorScalarData {
   consentReference?: string;
   /**
    * T-4 (public-profile-disclosure) — named natural person, published
-   * deliberately once consent is GRANTED. Bound to 120 chars in
-   * `validateRow`, matching `ActorCreateDto.contactPerson` (the column
-   * itself is `VARCHAR(191)`, but 120 keeps every intake path identical).
+   * deliberately once consent is GRANTED. Bound in `validateRow` to
+   * `INTAKE_MAX_LENGTHS.contactPerson`, matching every other intake path.
    */
   contactPerson?: string;
   /**
@@ -184,21 +218,20 @@ interface ActorScalarData {
 /** Mutable per-row working state threaded through the pipeline phases. */
 interface WorkRow {
   rowNumber: number;
+  /** `null` until a chunk allocates and commits this row (design.md §4.2). */
   traderId: string | null;
   traderName: string | null;
   errors: ImportRowError[];
   warnings: string[];
   /**
-   * `candidate` — passed validation + dedupe + consent gate, eligible to create.
+   * `candidate` — passed validation + consent gate, eligible to create.
    * `failed` — validation, consent-gate, or commit-chunk failure (has errors).
-   * `skipped-exists` / `skipped-dup` — duplicate rules (FR-4).
-   * `created` — committed (has `actorId`).
+   * `created` — committed (has `actorId`). No `skipped-*` state here — the
+   * Trader-ID dedupe is removed (design.md §4.5); T-5 adds duplicate states.
    */
   state:
     | 'candidate'
     | 'failed'
-    | 'skipped-exists'
-    | 'skipped-dup'
     | 'created';
   /** Present while the row is a create candidate. */
   create?: {
@@ -264,8 +297,6 @@ export class ActorImportService {
     const commit = dto.mode === 'commit';
     const rows = rawRows.map((raw) => this.validateRow(raw));
 
-    this.dedupeInFile(rows);
-    await this.dedupeAgainstDb(rows);
     this.applyConsentGate(rows, commit, dto.acknowledged);
 
     if (commit) {
@@ -419,14 +450,17 @@ export class ActorImportService {
     const errors: ImportRowError[] = [];
     const warnings: string[] = [];
 
-    const traderId = cells.traderId || null;
+    // T-4 — Trader ID is no longer a column: it is system-assigned per chunk
+    // at commit time (design.md §4.2/§4.5), never parsed from a cell.
     const traderName = cells.traderName || null;
 
-    if (!traderId) {
-      errors.push({ field: 'traderId', message: 'Trader ID is required.' });
-    }
     if (!traderName) {
       errors.push({ field: 'traderName', message: 'Trader Name is required.' });
+    } else if (traderName.length > INTAKE_MAX_LENGTHS.traderName) {
+      errors.push({
+        field: 'traderName',
+        message: `Trader Name must be ${INTAKE_MAX_LENGTHS.traderName} characters or fewer.`,
+      });
     }
 
     // Region — required + canonical (normalized).
@@ -475,9 +509,12 @@ export class ActorImportService {
       }
     }
 
-    // Capacity — optional; when present must be a number ≥ 0.
+    // Capacity — required (FR-1). Blank → missing omission; non-blank,
+    // non-numeric → its own format error (design.md §4.1).
     let capacityTons: number | undefined;
-    if (cells.capacityTons) {
+    if (!cells.capacityTons) {
+      errors.push(...missingContractFieldErrors('capacityTons'));
+    } else {
       const parsed = parseCapacityTons(cells.capacityTons);
       if (parsed === null) {
         errors.push({
@@ -489,16 +526,18 @@ export class ActorImportService {
       }
     }
 
-    // Phone — optional; normalized to E.164 or cleared with a warning (FR-5,
-    // T-3). NOT an error: FR-5 forbids rejecting a real organisation over an
-    // unusable phone, so the row stays a create candidate either way.
-    //
-    // The two branches are independent, not exclusive. `normalizePhone()`
-    // counts *segments*, so a cell like "garbage/<number>" returns
-    // `{ phone: null, additionalCount: 1 }` and must raise BOTH warnings
-    // (T-1 advisory A2). Never assume `phone !== null` when the count is > 0.
+    // Phone — required (FR-1). An unnormalizable (but present) value warns
+    // and clears rather than failing the row (FR-5); the two phone-cleared
+    // warnings below are independent, not exclusive (design.md §4.1).
     let phone: string | null | undefined;
-    if (cells.phone) {
+    if (!cells.phone) {
+      errors.push(...missingContractFieldErrors('phone'));
+    } else if (cells.phone.length > INTAKE_MAX_LENGTHS.phone) {
+      errors.push({
+        field: 'phone',
+        message: `Phone must be ${INTAKE_MAX_LENGTHS.phone} characters or fewer.`,
+      });
+    } else {
       const normalized = normalizePhone(cells.phone);
       // `null`, never the raw string — storing an unnormalizable value is the
       // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
@@ -511,14 +550,21 @@ export class ActorImportService {
       }
     }
 
-    // Email — optional; when present must be a valid address. Never echo value.
+    // Email — required (FR-1). Blank → missing omission; over bound rejected
+    // before the format check; present + in-bound must be a valid address.
+    // Never echo the value.
     let email: string | undefined;
-    if (cells.email) {
-      if (!isEmail(cells.email)) {
-        errors.push({ field: 'email', message: 'Email format is invalid.' });
-      } else {
-        email = cells.email;
-      }
+    if (!cells.email) {
+      errors.push(...missingContractFieldErrors('email'));
+    } else if (cells.email.length > INTAKE_MAX_LENGTHS.email) {
+      errors.push({
+        field: 'email',
+        message: `Email must be ${INTAKE_MAX_LENGTHS.email} characters or fewer.`,
+      });
+    } else if (!isEmail(cells.email)) {
+      errors.push({ field: 'email', message: 'Email format is invalid.' });
+    } else {
+      email = cells.email;
     }
 
     // GPS — out-of-range or non-numeric lat/long clears ALL GPS + warns (DR-5).
@@ -538,19 +584,9 @@ export class ActorImportService {
       }
     }
 
-    // Registration Source — optional; blank defaults to TEAM_MANAGED (FR-1).
-    let registrationSource: RegistrationSource = RegistrationSource.TEAM_MANAGED;
-    if (cells.registrationSource) {
-      const upper = cells.registrationSource.toUpperCase();
-      if (!(REGISTRATION_SOURCE_VALUES as string[]).includes(upper)) {
-        errors.push({
-          field: 'registrationSource',
-          message: `Registration Source must be one of ${REGISTRATION_SOURCE_VALUES.join(', ')}.`,
-        });
-      } else {
-        registrationSource = upper as RegistrationSource;
-      }
-    }
+    // Registration Source — no longer a column; imports are always
+    // TEAM_MANAGED (FR-5, T-4).
+    const registrationSource: RegistrationSource = RegistrationSource.TEAM_MANAGED;
 
     // Consent Method — optional; blank defaults to NOT_RECORDED (FR-2). Always
     // normalized to the enum BEFORE the provenance gate sees it — a raw,
@@ -602,22 +638,20 @@ export class ActorImportService {
       }
     }
 
-    // Contact Person — optional named natural person, published deliberately
-    // once consent is GRANTED (public-profile-disclosure FR-4/FR-5). Bound to
-    // 120 chars to match `ActorCreateDto.contactPerson` — the column is
-    // `VARCHAR(191)`, but 120 keeps every intake path identical. Follows the
-    // Consent Reference precedent above: a second import-path writer, so it
-    // gets its own bound rather than trusting the column to reject silently.
+    // Contact Person — required (FR-1, intake-required-fields): published
+    // deliberately once consent is GRANTED (public-profile-disclosure
+    // FR-4/FR-5). A blank cell is the missing omission above; bound to
+    // `INTAKE_MAX_LENGTHS.contactPerson`, matching every other intake path.
     let contactPerson: string | undefined;
-    if (cells.contactPerson) {
-      if (cells.contactPerson.length > 120) {
-        errors.push({
-          field: 'contactPerson',
-          message: 'Contact Person must be 120 characters or fewer.',
-        });
-      } else {
-        contactPerson = cells.contactPerson;
-      }
+    if (!cells.contactPerson) {
+      errors.push(...missingContractFieldErrors('contactPerson'));
+    } else if (cells.contactPerson.length > INTAKE_MAX_LENGTHS.contactPerson) {
+      errors.push({
+        field: 'contactPerson',
+        message: `Contact Person must be ${INTAKE_MAX_LENGTHS.contactPerson} characters or fewer.`,
+      });
+    } else {
+      contactPerson = cells.contactPerson;
     }
 
     // Other Crops — optional actor-declared free text, published
@@ -636,12 +670,16 @@ export class ActorImportService {
       }
     }
 
-    // Crops — three YES/NO columns → crop-name list (DR-3).
+    // Crops — three YES/NO columns → crop-name list (DR-3). At least one is
+    // required (FR-1): zero names is the same "missing" shape as `crops: []`.
     const cropNames = this.resolveCrops(cells, errors);
+    if (cropNames.length === 0) {
+      errors.push(...missingContractFieldErrors('crops'));
+    }
 
     const row: WorkRow = {
       rowNumber,
-      traderId,
+      traderId: null,
       traderName,
       errors,
       warnings,
@@ -651,7 +689,6 @@ export class ActorImportService {
     if (row.state === 'candidate') {
       row.create = {
         scalar: {
-          traderId: traderId as string,
           traderName: traderName as string,
           region: region as string,
           traderType: traderType as string,
@@ -665,8 +702,6 @@ export class ActorImportService {
           email,
           gpsLatitude: gps.lat,
           gpsLongitude: gps.lng,
-          gpsAltitude: gps.alt,
-          gpsAccuracy: gps.acc,
           consentStatus,
           registrationSource,
           consentMethod,
@@ -744,10 +779,11 @@ export class ActorImportService {
   }
 
   /**
-   * Resolve the four GPS cells. If a present lat/long is out of range or
-   * non-numeric (or a present altitude/accuracy is non-numeric), ALL four GPS
-   * values are cleared and a single warning is recorded (DR-5) — GPS problems
-   * never fail a whole actor.
+   * Resolve the two GPS cells the template still carries (GPS Altitude and
+   * GPS Accuracy are no longer import columns, T-4 — they stay on the admin
+   * form and in the database, D-11). If a present lat/long is out of range
+   * or non-numeric, BOTH GPS values are cleared and a warning is recorded
+   * (DR-5) — GPS problems never fail a whole actor.
    */
   private resolveGps(
     cells: Record<string, string>,
@@ -755,19 +791,13 @@ export class ActorImportService {
   ): {
     lat?: number;
     lng?: number;
-    alt?: number;
-    acc?: number;
   } {
     const lat = this.numOrNull(cells.gpsLatitude);
     const lng = this.numOrNull(cells.gpsLongitude);
-    const alt = this.numOrNull(cells.gpsAltitude);
-    const acc = this.numOrNull(cells.gpsAccuracy);
 
     const invalid =
       (cells.gpsLatitude !== '' && !isValidLatitude(lat)) ||
-      (cells.gpsLongitude !== '' && !isValidLongitude(lng)) ||
-      (cells.gpsAltitude !== '' && alt === null) ||
-      (cells.gpsAccuracy !== '' && (acc === null || acc < 0));
+      (cells.gpsLongitude !== '' && !isValidLongitude(lng));
 
     if (invalid) {
       warnings.push(GPS_CLEARED_WARNING);
@@ -777,8 +807,6 @@ export class ActorImportService {
     return {
       lat: lat ?? undefined,
       lng: lng ?? undefined,
-      alt: alt ?? undefined,
-      acc: acc ?? undefined,
     };
   }
 
@@ -811,53 +839,7 @@ export class ActorImportService {
     return names;
   }
 
-  // ---- dedupe + consent gate --------------------------------------------
-
-  /**
-   * In-file dedupe on `traderId` (FR-4): the first valid occurrence wins; later
-   * valid rows with the same id become `skipped-duplicate-in-file`.
-   */
-  private dedupeInFile(rows: WorkRow[]): void {
-    const seen = new Set<string>();
-    for (const row of rows) {
-      if (row.state !== 'candidate' || !row.traderId) continue;
-      if (seen.has(row.traderId)) {
-        row.state = 'skipped-dup';
-        row.create = undefined;
-      } else {
-        seen.add(row.traderId);
-      }
-    }
-  }
-
-  /**
-   * DB dedupe (FR-4): one `findMany` over the surviving candidates' traderIds;
-   * any already in the registry become `skipped-exists` (the existing actor is
-   * never touched).
-   */
-  private async dedupeAgainstDb(rows: WorkRow[]): Promise<void> {
-    const candidateIds = rows
-      .filter((r) => r.state === 'candidate' && r.traderId)
-      .map((r) => r.traderId as string);
-    if (candidateIds.length === 0) return;
-
-    const existing = await this.prisma.actor.findMany({
-      where: { traderId: { in: candidateIds } },
-      select: { traderId: true },
-    });
-    const existingIds = new Set(existing.map((a) => a.traderId));
-
-    for (const row of rows) {
-      if (
-        row.state === 'candidate' &&
-        row.traderId &&
-        existingIds.has(row.traderId)
-      ) {
-        row.state = 'skipped-exists';
-        row.create = undefined;
-      }
-    }
-  }
+  // ---- consent gate -------------------------------------------------------
 
   /**
    * Consent gate (FR-3, FR-6, NFR-7, DD-5). Two INDEPENDENT checks, both must
@@ -866,10 +848,9 @@ export class ActorImportService {
    * 1. Per-row provenance (T-6, new): the SAME shared `isConsentProvenanceSatisfied`
    *    predicate consulted by create/update/bulk-consent (NFR-7 — one
    *    implementation, not a reimplementation here). Import only ever creates
-   *    NEW actors — `dedupeAgainstDb` already routed any existing `traderId`
-   *    to `skipped-exists` — so `stored` is always `null`, which means
-   *    condition (a) always fires for an effective-`GRANTED` row; the
-   *    predicate reduces to "does this row itself carry a method (not
+   *    NEW actors, so `stored` is always `null`, which means condition (a)
+   *    always fires for an effective-`GRANTED` row; the predicate reduces to
+   *    "does this row itself carry a method (not
    *    `NOT_RECORDED`) and a date". A failure rejects ONLY this row (QA-9's
    *    per-row isolation) with a field-level reason; neighbours are untouched.
    * 2. The pre-existing file-level `acknowledged` flag (unchanged, DD-2/DD-5):
@@ -949,10 +930,10 @@ export class ActorImportService {
   // ---- commit ------------------------------------------------------------
 
   /**
-   * Create the surviving candidates in chunked transactions (FR-5). Each chunk
-   * is one `$transaction` (actor + crop links + one `IMPORT` audit batch); a
-   * chunk failure rolls that chunk back and fails only its rows — later chunks
-   * still run.
+   * Create the surviving candidates in chunked transactions (FR-5). Each
+   * chunk is one `$transaction` (actor + crop links + one `IMPORT` audit
+   * batch); a chunk failure rolls that chunk back and fails only its rows —
+   * later chunks still run.
    */
   private async commit(
     rows: WorkRow[],
@@ -967,15 +948,37 @@ export class ActorImportService {
 
     for (let i = 0; i < candidates.length; i += COMMIT_CHUNK_SIZE) {
       const chunk = candidates.slice(i, i + COMMIT_CHUNK_SIZE);
+      await this.commitChunk(chunk, acting, cropIdByName, acknowledged);
+    }
+  }
+
+  /**
+   * Allocate this chunk's Trader IDs, then create it in one transaction
+   * (design.md §4.2, §4.5). A `traderId` collision retries the WHOLE chunk,
+   * up to {@link MAX_TRADER_ID_ALLOCATION_ATTEMPTS} times; exhaustion or any
+   * other error keeps the existing whole-chunk failure (P-23) — later chunks
+   * still run, nothing is rethrown out of `commit`.
+   */
+  private async commitChunk(
+    chunk: WorkRow[],
+    acting: ActingAdmin,
+    cropIdByName: Map<string, string>,
+    acknowledged?: boolean,
+  ): Promise<void> {
+    const now = new Date();
+
+    for (let attempt = 1; attempt <= MAX_TRADER_ID_ALLOCATION_ATTEMPTS; attempt += 1) {
       try {
+        const traderIds = await allocateTraderIds(this.prisma, chunk.length, now);
         const createdIds = await this.prisma.$transaction(async (tx) => {
           const createdActors: AdminActor[] = [];
           const ids: string[] = [];
 
-          for (const row of chunk) {
+          for (let idx = 0; idx < chunk.length; idx += 1) {
+            const row = chunk[idx];
             const create = row.create as NonNullable<WorkRow['create']>;
             const actor = await tx.actor.create({
-              data: this.buildCreateData(create.scalar),
+              data: this.buildCreateData(create.scalar, traderIds[idx]),
             });
 
             const linkedNames = create.cropNames.filter((name) =>
@@ -1011,18 +1014,25 @@ export class ActorImportService {
         chunk.forEach((row, idx) => {
           row.state = 'created';
           row.actorId = createdIds[idx];
+          row.traderId = traderIds[idx];
         });
-      } catch {
+        return;
+      } catch (err) {
+        if (isTraderIdCollisionError(err) && attempt < MAX_TRADER_ID_ALLOCATION_ATTEMPTS) {
+          continue;
+        }
         for (const row of chunk) {
           row.state = 'failed';
           row.create = undefined;
           row.actorId = undefined;
+          row.traderId = null;
           row.errors.push({
-            field: '_row',
+            field: ROW_LEVEL_ERROR_FIELD,
             message:
               'This batch failed and was rolled back; the row was not imported.',
           });
         }
+        return;
       }
     }
   }
@@ -1043,9 +1053,16 @@ export class ActorImportService {
     return new Map(crops.map((c) => [c.name, c.id]));
   }
 
-  /** Build a Prisma create payload, omitting undefined optionals. */
-  private buildCreateData(scalar: ActorScalarData): Prisma.ActorCreateInput {
-    const data: Record<string, unknown> = {};
+  /**
+   * Build a Prisma create payload, omitting undefined optionals. `traderId`
+   * is merged in explicitly — it is allocated per chunk (design.md §4.2),
+   * never carried on the row's own scalar data.
+   */
+  private buildCreateData(
+    scalar: ActorScalarData,
+    traderId: string,
+  ): Prisma.ActorCreateInput {
+    const data: Record<string, unknown> = { traderId };
     for (const [key, value] of Object.entries(scalar)) {
       if (value !== undefined) {
         data[key] = value;
@@ -1160,6 +1177,8 @@ export class ActorImportService {
     mode: 'preview' | 'commit',
     row: WorkRow,
   ): ImportRowResult {
+    // No `skipped-*` outcome is produced here (design.md §4.5); the union
+    // keeps those values for T-5.
     let outcome: ImportRowResult['outcome'];
     switch (row.state) {
       case 'candidate':
@@ -1167,12 +1186,6 @@ export class ActorImportService {
         break;
       case 'created':
         outcome = 'created';
-        break;
-      case 'skipped-exists':
-        outcome = 'skipped-exists';
-        break;
-      case 'skipped-dup':
-        outcome = 'skipped-duplicate-in-file';
         break;
       default:
         outcome = 'failed';
