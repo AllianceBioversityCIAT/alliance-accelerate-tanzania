@@ -82,3 +82,12 @@
 
 - **Final verification:** VERIFIED as above.
 - **Issues encountered:** one Implementer test run stalled while piped through `tail`. The direct re-run was green. Other idle `claude` sessions share this checkout; none ran Jest during measurement.
+
+#### T-1 continue gate — decision recorded (2026-10-05)
+
+- **D-24 (product owner):** an admin re-grant of a link-accepted actor does not inherit the link's `consentObtainedAt` or `consentReference`.
+- **Execute-time spec edits** (they carry D-24 and do not change any approved requirement's meaning; this is a new decision):
+  - `requirements.md`: the decisions table gains D-24, and FR-10 gains a scenario.
+  - `design.md` §5.7: the Update rule gains rule 4.
+  - `tasks.md` T-3: scope, traces, tests and falsifier gain D-24.
+- **Carry:** T-3's Reviewer brief lists "conformance to `design.md` §5.7 rule 4 as amended 2026-10-05".

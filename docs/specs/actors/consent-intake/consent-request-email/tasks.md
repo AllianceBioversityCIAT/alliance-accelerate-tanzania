@@ -114,6 +114,7 @@ T-1…T-13 ─► T-14
     - FR-4 (*all matching*, *filter changed* — server)
     - FR-5 (ids target — server)
     - FR-12 (all three scenarios; the AND for a later Accept is completed in T-5)
+    - FR-10 scenario *an admin re-grant does not inherit link evidence* (D-24, added at the T-1 continue gate)
     - design §5.1, §5.2 step 1, §5.5, P-6, P-12, P-30
   - **Scope:**
     - Pure `consent-eligibility.ts`.
@@ -122,6 +123,7 @@ T-1…T-13 ─► T-14
     - Hooks inside `update` (consent status or email in the diff), `bulkSetConsent`, `remove` and `bulkDelete`.
     - `ConsentRequestsService.preview` / `enqueue` and the admin routes `POST preview` and `POST /admin/consent-requests`.
     - Module wiring: `ActorsModule` imports the supersession module; the new module re-provides the audit and resolver services.
+    - **D-24 (design §5.7 rule 4):** in `ActorsAdminService.update` and `bulkSetConsent`, a re-grant of a stored-`EMAIL_LINK` actor takes method, date and reference from the request, never the link-era values.
   - **Tests:**
     - The five-reason matrix fixture: one actor per reason.
     - Expired does not block.
@@ -132,11 +134,13 @@ T-1…T-13 ─► T-14
     - Bulk lock, delete and bulk delete each supersede.
     - An expired `SENT` row is not superseded.
     - `adminList`'s existing specs stay green.
+    - D-24: a single re-grant with no `consentObtainedAt` → `400`; with a date and no reference → `consentReference` is `null`. A bulk unlock of a `DENIED + EMAIL_LINK` row gets the batch's date and reference (or `null`), not the stored ones.
   - **Falsifier:**
     - Drop `FAILED` from the pending set. The double-enqueue fixture goes red.
     - Remove the `update` hook. The withdrawal fixture (`UNKNOWN` actor, open `SENT` request, PATCH `consentStatus: DENIED`) goes red, because the request stays `SENT`.
     - Make the `email` diff check `consentStatus` only. The email-corrected fixture goes red.
     - Supersede expired `SENT` too. The expired-evidence fixture goes red.
+    - Fall back to the stored date on a D-24 re-grant. The missing-date fixture (stored `EMAIL_LINK` + `consentObtainedAt` set, status `DENIED`, PATCH `GRANTED` + `SIGNED_FORM` + `acknowledged`, no date) goes red, because it returns 200.
   - **Red run:** the supersede-on-edit test observed red on the request-status assertion before the hook exists.
   - **Disqualifier:** a filter-equality test whose fixture matches every actor, since it cannot tell the filter apart from no filter.
   - **Consumers:** `actors-admin.service.ts` (every spec touching `update`, `bulkSetConsent`, `remove`, `bulkDelete`, `adminList`), `actors.module.ts`, `admin-actors-crud.e2e.spec.ts`.
