@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { ConsentMethod } from '@prisma/client';
 import { ActorCreateDto } from './actor-create.dto';
 import { ListQueryDto } from './list-query.dto';
 import {
@@ -145,6 +146,17 @@ describe('ActorCreateDto', () => {
   it('rejects an out-of-set sex value', async () => {
     const dto = plainToInstance(ActorCreateDto, { ...validInput, sex: 'Z' });
     expect(await invalidProps(dto)).toContain('sex');
+  });
+
+  // T-1 (consent-request-email, DD-9) — the admin-assertable subset is
+  // enforced on this base class, so `AdminActorCreateDto` (and anything
+  // else extending it) inherits the restriction automatically.
+  it('rejects EMAIL_LINK as a consentMethod — only the actor\'s own response can record it (DD-9)', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
   });
 });
 

@@ -50,7 +50,7 @@ T-1…T-13 ─► T-14
 
 ## PR 1 — Backend core
 
-- [ ] **T-1 Schema, enums and the admin-assertable method rules** (deps: none)
+- [x] **T-1 Schema, enums and the admin-assertable method rules** (deps: none)
   - **Size:** M (~900 LOC) · **Effort:** `max` (consent gate) · **Skills:** `nestjs-expert`, `tdd`
   - **Traces:** FR-10 (admin-gate BUT; *AND IT MUST NOT write/move into `EMAIL_LINK`*; scenario *link evidence is frozen*), FR-13 (data shape), NFR-9 (no FK) · design §4, §5.7, DD-9, P-2, P-15, P-16, P-28
   - **Scope:**

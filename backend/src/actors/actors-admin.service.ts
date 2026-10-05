@@ -22,7 +22,10 @@ import {
   DuplicateConfirmationSnapshot,
 } from './actor-audit.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
-import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import {
+  isConsentProvenanceSatisfied,
+  isSameProvenanceValue,
+} from '../common/consent-provenance.policy';
 import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
 import {
   allocateTraderIds,
@@ -388,6 +391,12 @@ export class ActorsAdminService {
           );
         }
 
+        // FR-10/DD-9 (design.md §5.7, rules 1-3) — no admin write may assert
+        // or move an actor into EMAIL_LINK, and a GRANTED-by-link actor's
+        // evidence is frozen while it stays GRANTED. Independent of the
+        // acknowledged check above and of the provenance check below.
+        this.enforceConsentMethodRules(before, dto);
+
         // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
         // STORED row loaded above (design.md §4.1's concurrency assumption:
         // read-then-decide inside this same transaction). Independent of the
@@ -608,11 +617,23 @@ export class ActorsAdminService {
 
         if (isUnlock) {
           for (const row of existing) {
+            // DD-9 (design.md §5.7) — a row already GRANTED through
+            // EMAIL_LINK is the actor's own evidence; it is left untouched
+            // regardless of the batch's values (rule 3). A NON-GRANTED row
+            // whose stored method is EMAIL_LINK (e.g. it was later set
+            // DENIED by an admin) counts as MISSING a method — it is never
+            // "preserved" with a label that claims the actor's own act, and
+            // the batch's assertable method fills it instead (RB-2).
+            const isGrantedEmailLink =
+              row.consentStatus === ConsentStatus.GRANTED &&
+              row.consentMethod === ConsentMethod.EMAIL_LINK;
             const missingMethod =
-              row.consentMethod === ConsentMethod.NOT_RECORDED;
-            const missingDate = row.consentObtainedAt === null;
+              !isGrantedEmailLink &&
+              (row.consentMethod === ConsentMethod.NOT_RECORDED ||
+                row.consentMethod === ConsentMethod.EMAIL_LINK);
+            const missingDate = !isGrantedEmailLink && row.consentObtainedAt === null;
 
-            if (!missingMethod && !missingDate) {
+            if (isGrantedEmailLink || (!missingMethod && !missingDate)) {
               preservedIds.push(row.id);
               continue;
             }
@@ -744,6 +765,106 @@ export class ActorsAdminService {
     );
 
     return result;
+  }
+
+  /**
+   * DD-9 / design.md §5.7 — no admin write path may assert `EMAIL_LINK`, and
+   * a `GRANTED`-by-link actor's evidence is frozen. `AdminActorUpdateDto`
+   * validates `consentMethod` against the FULL enum (unlike create/bulk/
+   * import, which use `ADMIN_ASSERTABLE_CONSENT_METHODS`) because
+   * `ActorForm.buildDto` always resends the stored value — so these three
+   * rules are what keeps that unchanged re-send legal while still refusing
+   * an actual admin assertion of `EMAIL_LINK` (FR-10 scenarios "the admin
+   * gate is bypassed by design, and only here" / "link evidence is frozen").
+   *
+   * 1. A CHANGE to `EMAIL_LINK` (stored method differs, payload asserts it).
+   * 2. Any transition INTO `GRANTED` whose EFFECTIVE method is `EMAIL_LINK`
+   *    (RB-2) — covers an actor that accepted by link, was later set
+   *    `DENIED` by an admin (method never cleared), and is now being
+   *    re-granted: the re-grant is the admin's own assertion and must carry
+   *    an admin-assertable method.
+   * 3. While the actor IS `GRANTED` by link and STAYS `GRANTED`, its
+   *    `consentMethod`/`consentObtainedAt`/`consentReference` are frozen —
+   *    only a status change (which falls under rule 2 on a later re-grant)
+   *    can correct the record.
+   *
+   * Throws a field-level `BadRequestException` naming the offending field,
+   * or returns without effect when none of the three rules fire.
+   */
+  private enforceConsentMethodRules(
+    before: { consentStatus: ConsentStatus | string; consentMethod: ConsentMethod | string; consentObtainedAt: Date | null; consentReference: string | null },
+    dto: AdminActorUpdateDto,
+  ): void {
+    const storedMethod = before.consentMethod;
+    const effectiveStatus = dto.consentStatus ?? before.consentStatus;
+    const effectiveMethod = dto.consentMethod ?? storedMethod;
+
+    // Rule 1 — a CHANGE to EMAIL_LINK.
+    if (
+      dto.consentMethod === ConsentMethod.EMAIL_LINK &&
+      storedMethod !== ConsentMethod.EMAIL_LINK
+    ) {
+      throw this.buildConsentMethodError(
+        'consentMethod',
+        'consentMethod cannot be set to EMAIL_LINK — only the actor\'s own response to a consent request can record it',
+      );
+    }
+
+    // Rule 2 — any transition INTO GRANTED whose EFFECTIVE method is
+    // EMAIL_LINK (a re-grant after an admin set the actor DENIED/UNKNOWN).
+    if (
+      effectiveStatus === ConsentStatus.GRANTED &&
+      before.consentStatus !== ConsentStatus.GRANTED &&
+      effectiveMethod === ConsentMethod.EMAIL_LINK
+    ) {
+      throw this.buildConsentMethodError(
+        'consentMethod',
+        'Granting consent requires an admin-assertable consentMethod, not EMAIL_LINK',
+      );
+    }
+
+    // Rule 3 — evidence frozen while GRANTED by link (status unchanged).
+    const wasGrantedByLink =
+      before.consentStatus === ConsentStatus.GRANTED &&
+      storedMethod === ConsentMethod.EMAIL_LINK;
+    if (wasGrantedByLink && effectiveStatus === ConsentStatus.GRANTED) {
+      const frozen: Array<{
+        field: 'consentMethod' | 'consentObtainedAt' | 'consentReference';
+        submitted: string | Date | null | undefined;
+        stored: string | Date | null | undefined;
+      }> = [
+        { field: 'consentMethod', submitted: dto.consentMethod, stored: storedMethod },
+        {
+          field: 'consentObtainedAt',
+          submitted: dto.consentObtainedAt,
+          stored: before.consentObtainedAt,
+        },
+        {
+          field: 'consentReference',
+          submitted: dto.consentReference,
+          stored: before.consentReference,
+        },
+      ];
+      for (const { field, submitted, stored } of frozen) {
+        if (submitted === undefined) continue;
+        if (!isSameProvenanceValue(submitted, stored)) {
+          throw this.buildConsentMethodError(
+            field,
+            `${field} cannot be changed while consent is GRANTED by EMAIL_LINK — change the status to correct the record`,
+          );
+        }
+      }
+    }
+  }
+
+  /** Same field-level 400 envelope as {@link buildProvenanceError}, for the DD-9 rules above. */
+  private buildConsentMethodError(field: string, message: string): BadRequestException {
+    return new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: 'Consent method change is not permitted',
+      details: [{ field, message }],
+    });
   }
 
   /**

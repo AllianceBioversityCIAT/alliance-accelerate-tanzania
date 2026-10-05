@@ -1,6 +1,7 @@
 import { ConsentMethod, ConsentStatus } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 import {
   CONSENT_METHOD_VALUES,
   CROP_COLUMN_CATALOG,
@@ -184,12 +185,21 @@ describe('template-columns', () => {
     }
   });
 
-  it('enforces consent-method allowed values equal to the Prisma ConsentMethod enum', () => {
-    expect(CONSENT_METHOD_VALUES).toEqual(Object.values(ConsentMethod));
+  // T-1 (consent-request-email, DD-9) — the template's allowed-value list
+  // is the ADMIN-ASSERTABLE subset, not the full Prisma enum: `EMAIL_LINK`
+  // is written only by an actor's own response to a consent-request link,
+  // never importable, and keeping this set unchanged is what keeps the
+  // committed import template byte-identical (no regeneration needed,
+  // design.md §5.7 — `generate-template.spec.ts` is the falsifier for that).
+  it('enforces consent-method allowed values equal to the admin-assertable subset, not the full Prisma enum (DD-9)', () => {
+    expect(CONSENT_METHOD_VALUES).toEqual(ADMIN_ASSERTABLE_CONSENT_METHODS);
     expect(byField('consentMethod').allowedValues).toEqual(CONSENT_METHOD_VALUES);
     expect(byField('consentMethod').required).toBe(false);
     // PORTAL_CHECKBOX is listed even though this spec never writes it (design.md §2).
     expect(CONSENT_METHOD_VALUES).toContain('PORTAL_CHECKBOX');
+    // EMAIL_LINK exists on the Prisma enum but must NEVER be importable.
+    expect(Object.values(ConsentMethod)).toContain('EMAIL_LINK');
+    expect(CONSENT_METHOD_VALUES).not.toContain('EMAIL_LINK');
   });
 
   it('provides format hints for the free-text/date provenance columns', () => {

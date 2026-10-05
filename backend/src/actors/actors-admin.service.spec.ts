@@ -1288,6 +1288,100 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
 
+    // T-1 (consent-request-email, DD-9, design.md §5.7) — no admin write may
+    // assert or move an actor into EMAIL_LINK, and a GRANTED-by-link actor's
+    // evidence is frozen while it stays GRANTED.
+    describe('EMAIL_LINK admin-assertable rules (DD-9, design.md §5.7)', () => {
+      const GRANTED_BY_LINK_OBTAINED_AT = new Date('2026-02-01T00:00:00Z');
+
+      function grantedByLinkActor(overrides: Partial<Record<string, unknown>> = {}) {
+        return fixtureActor({
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.EMAIL_LINK,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT,
+          consentReference: 'consent-req-1',
+          ...overrides,
+        });
+      }
+
+      it('accepts an unchanged EMAIL_LINK re-send with a capacity-only edit (capacity-only edit passes)', async () => {
+        const before = grantedByLinkActor({ capacityTons: 1000 });
+        const after = grantedByLinkActor({ capacityTons: 1500 });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT.toISOString() as never,
+          consentReference: 'consent-req-1',
+          capacityTons: 1500,
+        } as AdminActorUpdateDto;
+
+        const res = await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(res.capacityTons).toBe(1500);
+      });
+
+      // Falsifier 1 (tasks.md T-1) — a direct assertion of EMAIL_LINK on an
+      // actor not already carrying it.
+      it('rejects a change TO EMAIL_LINK (rule 1)', async () => {
+        const before = fixtureActor({
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+        });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'consentMethod');
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      // Falsifier 2 (tasks.md T-1) — EMAIL_LINK -> DENIED -> GRANTED re-grant.
+      // The stored method is STILL EMAIL_LINK (an admin lock never clears
+      // it), so rule 1 alone does not fire here; rule 2 is what must catch
+      // the re-grant.
+      it('rejects an EMAIL_LINK -> DENIED -> GRANTED re-grant (rule 2)', async () => {
+        const before = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.GRANTED,
+          acknowledged: true,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'consentMethod');
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      // Falsifier 3 (tasks.md T-1) — a date/reference/method edit on a
+      // GRANTED + EMAIL_LINK actor, status unchanged.
+      it.each([
+        { field: 'consentMethod', value: ConsentMethod.SIGNED_FORM },
+        { field: 'consentObtainedAt', value: '2026-03-01T00:00:00.000Z' },
+        { field: 'consentReference', value: 'DOC-999' },
+      ])('rejects a $field change on a GRANTED + EMAIL_LINK actor (rule 3)', async ({ field, value }) => {
+        const before = grantedByLinkActor();
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto = {
+          consentStatus: ConsentStatus.GRANTED,
+          [field]: value,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, field);
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('throws NotFoundException when actor id does not exist', async () => {
       prisma.actor.findUnique.mockResolvedValue(null);
 
@@ -1741,6 +1835,89 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         },
       );
       expect(preserved).toBe(0);
+    });
+
+    // T-1 (consent-request-email, DD-9, design.md §5.7) — bulk unlock's
+    // fill/preserve partition must treat a non-GRANTED EMAIL_LINK row as
+    // missing a method (never "preserved" with a label claiming the
+    // actor's own act), and leave an already-GRANTED EMAIL_LINK row alone.
+    describe('EMAIL_LINK rows (DD-9, design.md §5.7)', () => {
+      // Falsifier (tasks.md T-1) — "remove the bulk GRANTED + EMAIL_LINK
+      // skip" is what must redden this.
+      it('fills a DENIED + EMAIL_LINK row with the batch method (never relabels it) and leaves a GRANTED + EMAIL_LINK row untouched', async () => {
+        const grantedByLinkObtainedAt = new Date('2026-02-01T00:00:00Z');
+        const existing = [
+          // Was accepted by link, later locked DENIED by an admin — the
+          // method was never cleared. A bulk re-grant must fill it with the
+          // BATCH method, not leave EMAIL_LINK standing as if the actor
+          // consented again.
+          fixtureActor({
+            id: 'actor-denied-email-link',
+            consentStatus: ConsentStatus.DENIED,
+            consentMethod: ConsentMethod.EMAIL_LINK,
+            consentObtainedAt: grantedByLinkObtainedAt,
+            consentReference: 'consent-req-1',
+          }),
+          // Already GRANTED by link — untouched, reported preserved.
+          fixtureActor({
+            id: 'actor-granted-email-link',
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: ConsentMethod.EMAIL_LINK,
+            consentObtainedAt: grantedByLinkObtainedAt,
+            consentReference: 'consent-req-2',
+          }),
+        ];
+        prisma.actor.findMany.mockResolvedValue(existing);
+        prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+        prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+        const res = await service.bulkSetConsent(
+          ['actor-denied-email-link', 'actor-granted-email-link'],
+          'GRANTED',
+          ACTING_SUB,
+          true,
+          BATCH_METHOD,
+          BATCH_DATE,
+          BATCH_REFERENCE,
+        );
+
+        expect(res).toEqual({
+          requested: 2,
+          applied: 2,
+          notFound: [],
+          preserved: 1,
+        });
+
+        // Two distinct writes: a status-only preserve for the GRANTED+link
+        // row, and a method+date fill (NOT a relabel — its date and
+        // reference were already present, so only consentMethod is filled)
+        // for the DENIED+link row.
+        expect(prisma.actor.updateMany).toHaveBeenCalledTimes(2);
+        expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['actor-granted-email-link'] } },
+          data: { consentStatus: ConsentStatus.GRANTED },
+        });
+        expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['actor-denied-email-link'] } },
+          data: {
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: BATCH_METHOD,
+          },
+        });
+
+        // The GRANTED+link row is a true no-op (status GRANTED -> GRANTED,
+        // nothing else touched), so it gets NO audit row at all — same
+        // empty-diff-skip convention as every other no-op bulk row.
+        const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+        expect(auditData).toHaveLength(1);
+        expect(auditData[0].actorId).toBe('actor-denied-email-link');
+        expect(auditData[0].changes.fields.consentMethod).toEqual({
+          from: ConsentMethod.EMAIL_LINK,
+          to: BATCH_METHOD,
+        });
+        expect(auditData[0].changes.fields.consentObtainedAt).toBeUndefined();
+        expect(auditData[0].changes.fields.consentReference).toBeUndefined();
+      });
     });
 
     it('skips the audit row for an actor with no field change at all', async () => {

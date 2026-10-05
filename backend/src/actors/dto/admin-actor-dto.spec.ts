@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus } from '@prisma/client';
 import { AdminActorCreateDto } from './admin-actor-create.dto';
 import { AdminActorUpdateDto } from './admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './actor-history-query.dto';
@@ -157,6 +157,35 @@ describe('AdminActorCreateDto', () => {
     });
     expect(await validate(dto)).toHaveLength(0);
   });
+
+  // T-1 (consent-request-email, DD-9) — Falsifier 1 (tasks.md T-1): swapping
+  // ADMIN_ASSERTABLE_CONSENT_METHODS for Object.values(ConsentMethod) in
+  // actor-create.dto.ts is what must redden this.
+  it('rejects EMAIL_LINK as a consentMethod on create — only the actor\'s own response can record it (DD-9)', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
+  });
+
+  it('accepts every admin-assertable consentMethod value on create', async () => {
+    for (const method of [
+      ConsentMethod.NOT_RECORDED,
+      ConsentMethod.PORTAL_CHECKBOX,
+      ConsentMethod.SIGNED_FORM,
+      ConsentMethod.EMAIL,
+      ConsentMethod.VERBAL_FIELD,
+    ]) {
+      const dto = plainToInstance(AdminActorCreateDto, {
+        ...validInput,
+        crops: ['sorghum'],
+        consentMethod: method,
+      });
+      expect(await invalidProps(dto)).not.toContain('consentMethod');
+    }
+  });
 });
 
 describe('AdminActorUpdateDto', () => {
@@ -213,6 +242,27 @@ describe('AdminActorUpdateDto', () => {
       email: 'not-an-email',
     });
     expect(await invalidProps(dto)).toContain('email');
+  });
+
+  // T-1 (consent-request-email, design.md §5.7) — the UPDATE DTO keeps the
+  // FULL ConsentMethod enum (unlike create's admin-assertable subset),
+  // because ActorForm.buildDto always resends the stored value (P-16): a
+  // narrowed update DTO would 400 every save of an EMAIL_LINK actor. This
+  // pins the redeclared decorator actually overriding the inherited one
+  // from ActorCreateDto (class-validator resolves per property+target, own
+  // metadata wins — verified judgment-day).
+  it('accepts EMAIL_LINK as consentMethod shape-wise on update (the admin-assertable rule is enforced service-side, not here)', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).not.toContain('consentMethod');
+  });
+
+  it('still rejects a bogus consentMethod value on update', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      consentMethod: 'BOGUS',
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
   });
 });
 
