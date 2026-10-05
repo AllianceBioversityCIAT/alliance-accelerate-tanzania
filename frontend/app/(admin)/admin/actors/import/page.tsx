@@ -28,7 +28,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { getSession } from '@/lib/auth/auth-client';
-import { importActors, type ImportReport } from '@/lib/api/actors-admin';
+import {
+  importActors,
+  importDuplicateCandidateKey,
+  type ImportDuplicateConfirmationInput,
+  type ImportReport,
+  type ImportRowResult,
+} from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 
 import { ImportPreviewTable } from '@/components/admin/ImportPreviewTable';
@@ -127,6 +133,71 @@ function reportNeedsAcknowledgement(report: ImportReport | null): boolean {
   );
 }
 
+/**
+ * T-7 (rework) — a `possible-duplicate` row the admin ticked that can
+ * actually be confirmed: it must carry at least one shown candidate, and
+ * must not sit past the 50-item wire cap (`duplicateCandidatesTotal` >
+ * `duplicateCandidates.length`) — the same `tooMany` gate that disables the
+ * row's checkbox in `ImportPreviewTable`. Centralized so the confirmation
+ * payload and the derived create count (below) can never disagree about
+ * which ticked rows count.
+ */
+function isConfirmableRow(row: ImportRowResult, confirmedRows: ReadonlySet<number>): boolean {
+  if (row.outcome !== 'possible-duplicate') return false;
+  if (!confirmedRows.has(row.rowNumber)) return false;
+  const candidates = row.duplicateCandidates ?? [];
+  if (candidates.length === 0) return false;
+  const total = row.duplicateCandidatesTotal ?? candidates.length;
+  return total <= candidates.length;
+}
+
+/**
+ * T-7 — builds the commit request's `duplicateConfirmations` from the rows
+ * the admin ticked in the preview. Only `possible-duplicate` rows the admin
+ * confirmed are included, each naming ALL of that row's shown candidate
+ * keys (design.md §3, DD-4) — never a subset, or the server's recomputed
+ * strong-key check still blocks the row. Returns `undefined` (never `[]`)
+ * when there is nothing to confirm, mirroring `acknowledged`'s omit-when-absent
+ * wire convention.
+ */
+function buildDuplicateConfirmations(
+  report: ImportReport | null,
+  confirmedRows: ReadonlySet<number>,
+): ImportDuplicateConfirmationInput[] | undefined {
+  if (!report || confirmedRows.size === 0) return undefined;
+
+  const entries: ImportDuplicateConfirmationInput[] = [];
+  for (const row of report.rows) {
+    if (!isConfirmableRow(row, confirmedRows)) continue;
+    const candidates = row.duplicateCandidates ?? [];
+    entries.push({ row: row.rowNumber, candidates: candidates.map(importDuplicateCandidateKey) });
+  }
+  return entries.length > 0 ? entries : undefined;
+}
+
+/**
+ * T-7 (rework) — the number of actors the commit action will actually
+ * create. `report.totals.toCreate` EXCLUDES every `possible-duplicate` row,
+ * confirmed or not (it is a preview-time count computed before any
+ * confirmation exists), so it alone is the wrong value for anything the
+ * admin reads as "what happens if I press this button": a re-upload where
+ * every row is flagged leaves it at 0 forever, and a mixed file undercounts
+ * by exactly the number of rows ticked. This adds back one per ticked row
+ * that is still confirmable (see {@link isConfirmableRow}) — an over-cap
+ * ticked row cannot raise it, matching its disabled, unconfirmable checkbox.
+ */
+function confirmableCreateCount(
+  report: ImportReport | null,
+  confirmedRows: ReadonlySet<number>,
+): number {
+  if (!report) return 0;
+  let confirmedCreatable = 0;
+  for (const row of report.rows) {
+    if (isConfirmableRow(row, confirmedRows)) confirmedCreatable += 1;
+  }
+  return report.totals.toCreate + confirmedCreatable;
+}
+
 // ---------------------------------------------------------------------------
 // Totals chips
 // ---------------------------------------------------------------------------
@@ -147,7 +218,7 @@ function TotalsChips({ report }: { report: ImportReport }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <Chip label="Rows" value={t.rows} />
       <Chip label={isCommit ? 'Created' : 'To create'} value={isCommit ? t.created : t.toCreate} />
-      <Chip label="To skip" value={t.skipped} />
+      <Chip label="Possible duplicates" value={t.possibleDuplicate} />
       <Chip label="Invalid" value={t.failed} />
       <Chip label="Warnings" value={t.warnings} />
     </div>
@@ -190,8 +261,8 @@ function FailureBreakdown({ report }: { report: ImportReport }) {
         ))}
       </ul>
       <p className="text-xs text-muted">
-        One reason per row, so these add up to the skipped and invalid counts above. A row with
-        more than one problem is counted once, under its first column in template order.
+        One reason per row, so these add up to the possible-duplicate and invalid counts above. A
+        row with more than one problem is counted once, under its first column in template order.
       </p>
     </div>
   );
@@ -218,6 +289,9 @@ export default function ActorImportPage() {
 
   const [ackOpen, setAckOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  /** T-7 — Excel row numbers the admin ticked "Not a duplicate — create" for. */
+  const [confirmedRows, setConfirmedRows] = useState<Set<number>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -279,7 +353,18 @@ export default function ActorImportPage() {
     setApiError(undefined);
     setAckOpen(false);
     setDragOver(false);
+    setConfirmedRows(new Set());
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  /** T-7 — toggles one row's confirmation; passed to `ImportPreviewTable` only in preview. */
+  const toggleConfirmedRow = useCallback((rowNumber: number, checked: boolean) => {
+    setConfirmedRows((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(rowNumber);
+      else next.delete(rowNumber);
+      return next;
+    });
   }, []);
 
   // ── Preview on file selection (shared by the picker and drag & drop) ──────
@@ -289,6 +374,7 @@ export default function ActorImportPage() {
       setFileError(undefined);
       setApiError(undefined);
       setReport(null);
+      setConfirmedRows(new Set());
 
       if (!picked) {
         setFile(null);
@@ -360,15 +446,23 @@ export default function ActorImportPage() {
       setApiError(undefined);
       setPhase('committing');
       try {
-        const result = await importActors(file, 'commit', token, acknowledged);
+        const duplicateConfirmations = buildDuplicateConfirmations(report, confirmedRows);
+        const result = await importActors(
+          file,
+          'commit',
+          token,
+          acknowledged,
+          duplicateConfirmations,
+        );
         setReport(result);
+        setConfirmedRows(new Set());
         setPhase('result');
       } catch (caught: unknown) {
         setPhase('preview');
         applyError(caught);
       }
     },
-    [file, token, applyError],
+    [file, token, applyError, report, confirmedRows],
   );
 
   const handleConfirm = useCallback(() => {
@@ -386,7 +480,10 @@ export default function ActorImportPage() {
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
-  const toCreate = report?.totals.toCreate ?? 0;
+  // T-7 (rework) — derived during render (no effect needed), the same way
+  // `inFlight`/`resultSummary` already are: it must stay in lockstep with
+  // `confirmedRows` on every tick, not just on report arrival.
+  const creatableCount = confirmableCreateCount(report, confirmedRows);
   const inFlight = phase === 'previewing' || phase === 'committing';
 
   // Mirror inFlight into a ref so the drag handlers read the current value without
@@ -396,7 +493,7 @@ export default function ActorImportPage() {
   }, [inFlight]);
 
   const resultSummary = report
-    ? `${report.totals.created} created, ${report.totals.skipped} skipped, ${report.totals.failed} failed.`
+    ? `${report.totals.created} created, ${report.totals.possibleDuplicate} possible duplicate${report.totals.possibleDuplicate === 1 ? '' : 's'}, ${report.totals.failed} failed.`
     : '';
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -598,18 +695,22 @@ export default function ActorImportPage() {
                 <FailureBreakdown report={report} />
               </div>
 
-              <ImportPreviewTable rows={report.rows} />
+              <ImportPreviewTable
+                rows={report.rows}
+                confirmedRows={confirmedRows}
+                onToggleConfirm={toggleConfirmedRow}
+              />
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted">
-                  {toCreate === 0
+                  {creatableCount === 0
                     ? 'No rows are eligible to import. Fix the file and upload again.'
-                    : `${toCreate} actor${toCreate === 1 ? '' : 's'} will be created. Skipped and failed rows are not imported.`}
+                    : `${creatableCount} actor${creatableCount === 1 ? '' : 's'} will be created. Possible duplicates you have not confirmed and failed rows are not imported.`}
                 </p>
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={toCreate === 0 || inFlight}
+                  disabled={creatableCount === 0 || inFlight}
                   aria-busy={phase === 'committing'}
                   className={[
                     'inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5',
@@ -620,7 +721,7 @@ export default function ActorImportPage() {
                 >
                   {phase === 'committing'
                     ? 'Importing…'
-                    : `Import ${toCreate} actor${toCreate === 1 ? '' : 's'}`}
+                    : `Import ${creatableCount} actor${creatableCount === 1 ? '' : 's'}`}
                 </button>
               </div>
             </>

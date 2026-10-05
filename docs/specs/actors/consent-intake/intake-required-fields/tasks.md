@@ -216,7 +216,7 @@
       Review: `full`.
       Done when: the form enforces the same set as the API, the strong path cannot create without the dialog's confirmation, weak warnings are shown, the history shows confirmations, captures exist at three widths, and all six falsifiers were shown red.
 
-- [ ] **T-7** Import page: per-row confirmation and the new outcomes  (deps: T-5, T-6)
+- [x] **T-7** Import page: per-row confirmation and the new outcomes  (deps: T-5, T-6)
       Scope (design §5):
       - `ImportPreviewTable` shows `possible-duplicate` rows with their candidates and a **Not a duplicate — create** checkbox, in the `hidden md:block` table **and** the `md:hidden` cards (P-19).
       - Weak warnings use `bg-surface-alt text-warning` (I-11).

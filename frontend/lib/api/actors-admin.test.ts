@@ -33,6 +33,7 @@ import {
   deleteActor,
   getActorHistory,
   importActors,
+  importDuplicateCandidateKey,
   type AdminActor,
   type AdminActorCreateInput,
   type AdminActorCreateResult,
@@ -144,14 +145,24 @@ const IMPORT_BASE64 = 'QUJD';
 const IMPORT_REPORT: ImportReport = {
   mode: 'preview',
   templateVersionDetected: 'v1',
-  totals: { rows: 2, toCreate: 1, created: 0, skipped: 1, failed: 0, warnings: 0 },
+  totals: { rows: 2, toCreate: 1, created: 0, possibleDuplicate: 1, failed: 0, warnings: 0 },
   rows: [
     { rowNumber: 1, traderId: 'T-100', traderName: 'New Trader', outcome: 'create' },
     {
       rowNumber: 2,
-      traderId: 'T-001',
+      traderId: null,
       traderName: 'Mbeya Seeds Ltd',
-      outcome: 'skipped-exists',
+      outcome: 'possible-duplicate',
+      duplicateCandidates: [
+        {
+          kind: 'actor',
+          actorId: ACTOR_ID,
+          traderId: 'T-001',
+          traderName: 'Mbeya Seeds Ltd',
+          matchedOn: ['email'],
+        },
+      ],
+      duplicateCandidatesTotal: 1,
     },
   ],
 };
@@ -753,6 +764,29 @@ describe('importActors()', () => {
     expect(body.acknowledged).toBe(false);
   });
 
+  // T-7 — duplicateConfirmations (design.md §3, DD-4).
+  it('omits duplicateConfirmations when it is not passed', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, true);
+
+    const body = JSON.parse(callInit().body as string);
+    expect('duplicateConfirmations' in body).toBe(false);
+  });
+
+  it('includes duplicateConfirmations exactly as given when passed', async () => {
+    global.fetch = makeFetchOk({ ...IMPORT_REPORT, mode: 'commit' });
+
+    await importActors(makeFile(IMPORT_CONTENT, 'actors.xlsx'), 'commit', TOKEN, true, [
+      { row: 2, candidates: ['actor:actor-cuid-001'] },
+    ]);
+
+    const body = JSON.parse(callInit().body as string);
+    expect(body.duplicateConfirmations).toEqual([
+      { row: 2, candidates: ['actor:actor-cuid-001'] },
+    ]);
+  });
+
   it('returns the parsed ImportReport', async () => {
     global.fetch = makeFetchOk(IMPORT_REPORT);
 
@@ -760,7 +794,7 @@ describe('importActors()', () => {
 
     expect(result).toEqual(IMPORT_REPORT);
     expect(result.totals.toCreate).toBe(1);
-    expect(result.rows[1].outcome).toBe('skipped-exists');
+    expect(result.rows[1].outcome).toBe('possible-duplicate');
   });
 
   it('accepts an uppercase .XLSX extension (case-insensitive)', async () => {
@@ -865,5 +899,34 @@ describe('shared infrastructure', () => {
 
     await expect(createActor(CREATE_INPUT, TOKEN)).rejects.toThrow('NEXT_PUBLIC_API_BASE_URL');
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// importDuplicateCandidateKey (T-7, design.md §3/DD-4)
+// ---------------------------------------------------------------------------
+
+describe('importDuplicateCandidateKey', () => {
+  it('builds "actor:<id>" for an existing-actor candidate', () => {
+    expect(
+      importDuplicateCandidateKey({
+        kind: 'actor',
+        actorId: 'a1',
+        traderId: 'T-001',
+        traderName: 'Mbeya Seeds Ltd',
+        matchedOn: ['email'],
+      }),
+    ).toBe('actor:a1');
+  });
+
+  it('builds "row:<n>" for an in-file candidate', () => {
+    expect(
+      importDuplicateCandidateKey({
+        kind: 'row',
+        row: 5,
+        traderName: 'Mbeya Seeds Ltd',
+        matchedOn: ['phone'],
+      }),
+    ).toBe('row:5');
   });
 });

@@ -612,32 +612,99 @@ export interface ImportRowError {
   message: string;
 }
 
+/**
+ * T-7 (`actors/consent-intake/intake-required-fields`) — one duplicate
+ * candidate surfaced on an import row. Mirrors the backend
+ * `ImportDuplicateCandidate` exactly: discriminated by `kind` because a
+ * row's candidates can mix a match against an EXISTING actor (`'actor'`)
+ * and a match against an EARLIER row of the same workbook (`'row'`) in one
+ * array. Carries no `phone`/`email` value, only the matched-attribute
+ * NAMES (NFR-3) — the same projection `DuplicateCandidate` already holds
+ * for the admin-create surface.
+ */
+export type ImportDuplicateCandidate =
+  | {
+      kind: 'actor';
+      actorId: string;
+      traderId: string;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    }
+  | {
+      kind: 'row';
+      row: number;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    };
+
+/**
+ * T-7 — the exact confirmation key `design.md` §3/DD-4 specifies for one
+ * duplicate candidate: `actor:<id>` for an existing-actor match, `row:<n>`
+ * for an earlier row of the same workbook. Ticking a row's confirmation
+ * checkbox must send ALL of its shown candidates' keys (never a subset), or
+ * the server's recomputed strong-key check still blocks the row.
+ */
+export function importDuplicateCandidateKey(candidate: ImportDuplicateCandidate): string {
+  return candidate.kind === 'actor' ? `actor:${candidate.actorId}` : `row:${candidate.row}`;
+}
+
+/** One row's confirmed duplicate candidates (T-7). Mirrors `DuplicateConfirmationEntryDto`. */
+export interface ImportDuplicateConfirmationInput {
+  /** Excel data-row number this confirmation applies to. */
+  row: number;
+  /** Candidate keys the admin confirmed are NOT duplicates of this row (see {@link importDuplicateCandidateKey}). */
+  candidates: string[];
+}
+
 /** Per-row outcome, tied to the Excel data-row number (header = row 1). */
 export interface ImportRowResult {
   /** Excel data-row number the outcome refers to. */
   rowNumber: number;
-  /** Row identity echoed for the report — non-PII (FR-7). */
+  /**
+   * Row identity echoed for the report — non-PII (FR-7). `null` in preview
+   * (Trader IDs are system-generated and do not exist until a row is
+   * actually created); the assigned Trader ID once the row is `created` on
+   * commit. The literal "—" an admin sees in preview is a UI rendering
+   * choice (`ImportPreviewTable`'s `row.traderId ?? '—'`), not a wire value.
+   */
   traderId: string | null;
   traderName: string | null;
   /**
    * `create` — prospective create in preview mode.
    * `created` — actor created (commit mode only; carries `actorId`).
-   * `skipped-exists` — `traderId` already in the registry (FR-4).
-   * `skipped-duplicate-in-file` — `traderId` repeated later in the same file (FR-4).
+   * `possible-duplicate` — a strong match (DB or in-file) was not confirmed;
+   * never created (T-7; replaces `skipped-exists` / `skipped-duplicate-in-file`).
    * `failed` — validation failed (carries `errors`).
    */
-  outcome:
-    | 'create'
-    | 'created'
-    | 'skipped-exists'
-    | 'skipped-duplicate-in-file'
-    | 'failed';
+  outcome: 'create' | 'created' | 'possible-duplicate' | 'failed';
   /** New actor id — commit + `created` only. */
   actorId?: string;
   /** Field-level errors — `failed` only; field names + messages, never PII values (FR-11). */
   errors?: ImportRowError[];
   /** Non-fatal notes, e.g. 'GPS out of range — imported with GPS cleared' (DR-5). */
   warnings?: string[];
+  /**
+   * T-7 — strong matches (phone/email) this row was classified against.
+   * Present whenever at least one strong match exists, whatever the row's
+   * outcome. **Capped at 50 on the wire**: gating (whether the row becomes
+   * `possible-duplicate`) always uses the FULL strong-key set, never this
+   * truncated list — see `duplicateCandidatesTotal`.
+   */
+  duplicateCandidates?: ImportDuplicateCandidate[];
+  /**
+   * T-7 — the full count of strong matches behind `duplicateCandidates`,
+   * present whenever that field is. Equal to its length unless truncated by
+   * the 50-item wire cap, in which case the row can never be confirmed
+   * (`ArrayMaxSize(50)` on the confirmation DTO) and its checkbox is
+   * disabled.
+   */
+  duplicateCandidatesTotal?: number;
+  /**
+   * T-7 — weak matches (name/GPS only) this row was classified against —
+   * advisory, never gates creation. Present whenever at least one weak match
+   * exists. Never empty when present.
+   */
+  duplicateWarnings?: ImportDuplicateCandidate[];
 }
 
 /** Aggregate counts across all data rows (FR-7). */
@@ -645,7 +712,12 @@ export interface ImportReportTotals {
   rows: number;
   toCreate: number;
   created: number;
-  skipped: number;
+  /**
+   * T-7 — rows held as a `possible-duplicate` outcome (renamed from
+   * `skipped`). `toCreate + possibleDuplicate + failed = rows` in preview;
+   * `created + possibleDuplicate + failed = rows` on commit.
+   */
+  possibleDuplicate: number;
   failed: number;
   warnings: number;
 }
@@ -658,17 +730,17 @@ export interface ImportReportTotals {
  * reflects reality.
  */
 /**
- * T-4/T-5 — one entry of the per-reason breakdown of rows that did not import
- * (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
+ * T-4/T-5/T-7 — one entry of the per-reason breakdown of rows that did not
+ * import (FR-7). Mirrors `backend/src/actors/actor-import.types.ts` exactly.
  *
  * `reason` is `string` here because it is `string` on the backend, **not**
  * because a narrower type was loosened to make something compile. The
- * vocabulary is closed in behavior (a template column's `field`, a
- * `skipped-*` outcome, or the literal `batch-rolled-back`) but not in the
- * type system: `TEMPLATE_COLUMNS` is annotated `readonly TemplateColumn[]`,
- * whose `field` is `string`, so the column half of the vocabulary has no
- * literal union to mirror. Narrowing this side alone would make the frontend
- * type claim something the wire does not guarantee.
+ * vocabulary is closed in behavior (a template column's `field`, the literal
+ * `possible-duplicate` outcome, or the literal `batch-rolled-back`) but not
+ * in the type system: `TEMPLATE_COLUMNS` is annotated `readonly
+ * TemplateColumn[]`, whose `field` is `string`, so the column half of the
+ * vocabulary has no literal union to mirror. Narrowing this side alone would
+ * make the frontend type claim something the wire does not guarantee.
  */
 export interface ImportFailureReason {
   reason: string;
@@ -683,8 +755,8 @@ export interface ImportReport {
   rows: ImportRowResult[];
   /**
    * T-4 (FR-7) — why rows did not import, one reason per row, so the counts
-   * sum to `totals.failed + totals.skipped` exactly. Ordered by count
-   * descending, then reason ascending (NFR-6).
+   * sum to `totals.failed + totals.possibleDuplicate` exactly. Ordered by
+   * count descending, then reason ascending (NFR-6).
    *
    * **Optional, and absent — not empty — when nothing failed or was skipped.**
    * The backend omits the key entirely on a clean import, so a consumer must
@@ -733,12 +805,18 @@ function fileToBase64(file: File): Promise<string> {
  * @param acknowledged  File-level consent acknowledgement — pass `true` on a
  *                       commit that publishes any GRANTED rows (FR-6). Omit
  *                       otherwise; it is only sent when explicitly provided.
+ * @param duplicateConfirmations  T-7 — rows the admin confirmed are not
+ *                       duplicates, each naming ALL of that row's shown
+ *                       candidate keys. Ignored by the server in `preview`
+ *                       mode; omitted from the wire entirely when not
+ *                       supplied (mirrors `acknowledged`'s pattern).
  */
 export async function importActors(
   file: File,
   mode: 'preview' | 'commit',
   token: string,
   acknowledged?: boolean,
+  duplicateConfirmations?: ImportDuplicateConfirmationInput[],
 ): Promise<ImportReport> {
   if (!file.name.toLowerCase().endsWith(IMPORT_EXTENSION)) {
     throw new Error('Only .xlsx files can be imported. Please select an Excel workbook.');
@@ -757,6 +835,7 @@ export async function importActors(
       fileBase64,
       mode,
       ...(acknowledged !== undefined && { acknowledged }),
+      ...(duplicateConfirmations !== undefined && { duplicateConfirmations }),
     },
   });
 }

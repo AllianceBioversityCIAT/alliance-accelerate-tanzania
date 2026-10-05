@@ -534,3 +534,69 @@
   - NFR-3 (no values);
   - NFR-4: focus trap, Escape, `aria-live`, captures.
 - **Final status:** **PASS**. 3 attempts, 3 review verdicts. Round 3 was logged and continued under the standing authorization.
+
+### T-7 — Import page: per-row confirmation and the new outcomes
+
+**Attempt 1 — FAIL** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh.
+- **Files changed:** `lib/api/actors-admin.ts` (+ test), `components/admin/ImportPreviewTable.tsx` (+ test), `app/(admin)/admin/actors/import/page.tsx` (+ test).
+- **Implementer verification:** 120 suites / 1832 tests; tsc; lint; build with 27 routes. All 5 falsifiers were reported red, then restored.
+  - **Captures** at 375 / 767 / 768 / 1440 (`scratchpad/t7-captures/`): fonts loaded, no overflow, and the table/cards swap exactly at 767 → 768.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 120 / 1832, exit 0; tsc; lint 0; build 0, with a route list identical to T-6's. `bg-warning/10` appears only in the test asserting its absence. The Leader viewed `t7-768.png`.
+- **Reviewer:** `akili-reviewer` (opus), **FAIL**.
+  1. The commit button and its copy still use `totals.toCreate`, which excludes ticked `possible-duplicate` rows.
+     - (a) A re-upload where every row is flagged leaves the button **disabled**, and the page says "No rows are eligible". The confirmation can never be sent, and FR-4's main scenario cannot be completed.
+     - (b) Otherwise the label undercounts what the commit actually creates.
+  2. The copy "Skipped and failed rows are not imported" is stale.
+  - **Leader's visual question, answered:** the Trader ID and post-commit labels in the preview section are a **harness fixture artifact**. `validateRow` sets `traderId: null` and the component renders `?? '—'`.
+- **Advisory:**
+  - In weak-warning lines, the inner `text-fg` spans override the amber colour.
+  - The over-cap note should be tied with `aria-describedby` and start with a capital.
+  - Page-test fixtures still carry preview-row `traderId`s; set them to `null`.
+  - The `ImportRowResult.traderId` JSDoc describes the UI rather than the field.
+- **runtime events:** none.
+
+**Attempt 2 — PASS** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received the attempt-1 report verbatim.
+- **Changes:**
+  - `isConfirmableRow` is now the single source for both the payload and `confirmableCreateCount`, which is `toCreate` plus the ticked confirmable rows. That count drives the button's disabled state, its label and the summary.
+  - The summary now reads "Possible duplicates you have not confirmed and failed rows are not imported."
+  - The over-cap note has an `aria-describedby`.
+  - Preview fixtures use `traderId: null`.
+  - The `traderId` JSDoc was corrected.
+  - The "To create" chip was deliberately left as the raw backend breakdown.
+- **Implementer verification:** 120 suites / 1836 tests; tsc; lint; build.
+  - Reverting the count turned 3 tests red.
+  - Ignoring the over-cap rule turned the over-cap test red. The reviewer doubts this one; see below.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 120 / 1836, exit 0; tsc; lint 0; build 0; same route list.
+- **Reviewer:** `akili-reviewer` (opus), round 2, **PASS**. Both attempt-1 items are resolved.
+  - **Issue recorded for action before archive** (not a T-7 defect; it cannot be fixed in the UI):
+    - **The T-5 ordering bypasses the consent gate for held rows.** `classifyDuplicates` runs before `applyConsentGate`, and the gate skips `possible-duplicate` rows. That has two effects:
+      - (a) A ticked `GRANTED` row with valid provenance fails at commit with "Acknowledgement is required…", unless another row triggered the acknowledgement dialog. FR-4 ("confirming a row → created") breaks for that row. It fails closed.
+      - (b) A strongly matched `GRANTED` row with a blank Consent Method shows as `possible-duplicate` in preview, not `failed` with the provenance reason. That violates FR-5 ("when previewed … fails with today's provenance reason, unchanged").
+    - `ImportRowResult` carries no consent status, so the UI cannot compensate.
+- **Advisory:**
+  - The "To create" chip next to a larger button count reads as contradictory. Relabel it, or show "+N confirmed".
+  - "No rows are eligible … upload again" is misleading when rows could be ticked instead.
+  - The over-cap falsifier clicks a *disabled* checkbox, so it may not discriminate. The disabled control is the real gate; this is low risk.
+  - "Skipped" wording remains in a comment and in the `failureBreakdown` JSDoc.
+  - Weak-line colour contrast and the lowercase note.
+  - The captures were not re-taken after the copy change.
+- **runtime events:** none.
+- **Requirements covered:**
+  - FR-4 UI side: confirm a row, weak warnings shown, totals shown, and unticked rows not created;
+  - NFR-4.
+  - FR-4 "confirming a row" for `GRANTED` rows is **open**: see the T-5 reopening below.
+- **Final status:** **PASS**. 2 attempts, 2 review verdicts.
+
+## Reopening T-5 (2026-10-04, Leader)
+
+- **Why:** the T-7 reviewer found a defect in T-5's shipped code, which is commit `05d468f` (issue above).
+  - **Routing test:** it is in scope (FR-4 and FR-5 are T-5's rows), and **this spec caused it** (the T-5 ordering).
+  - It is an implementation defect against approved requirements, **not** a spec change. That makes it neither a Pivot nor an advisory.
+- **What happens:** T-5 moves `[x] → [~]` for one more attempt (attempt 3) with this finding as the brief.
+  - **Fix:** run the provenance check and the acknowledgement warning on `possible-duplicate` rows too.
+  - **Precedence (design decision, Leader):** a provenance failure outranks the hold, so the row is `failed` with today's reason. Rationale: FR-5 says the reason is "unchanged", and a held row that can never be created is worse than a failed row.
+  - This is an execute-time design edit to §4.5. It does not change any requirement's meaning: it restores FR-5.
+- T-8 waits for it.
+- **The product owner is informed at this gate.**
