@@ -112,6 +112,9 @@ Self-registration is untouched (FR-1: it is the reference).
 
   `logImport` writes each row's `duplicateConfirmation`. A `row` snapshot is resolved to the created `traderId` when the referenced row was created earlier in the same import.
 - **Stale preview:** commit recomputes everything, so FR-4's "premise changed" scenario needs no extra state.
+- **Consent gate on held rows** (*amended 2026-10-04 after T-7's review*). `applyConsentGate` also runs on `possible-duplicate` rows.
+  - A provenance failure **outranks** the hold: the row becomes `failed` with today's provenance reason, as FR-5 requires ("unchanged").
+  - A held `GRANTED` row with valid provenance carries the preview acknowledgement warning, so the existing file-level acknowledgement dialog fires before a confirmed row reaches commit (FR-4).
 
 ### 4.6 Template v4 — `backend/src/common/template-columns.ts`, `backend/scripts/generate-import-template.ts`
 - `TEMPLATE_VERSION = 'v4'`. Trader ID, GPS Altitude, GPS Accuracy and Registration Source are dropped. The required flags come from the intake contract.

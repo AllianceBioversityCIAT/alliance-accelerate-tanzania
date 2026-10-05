@@ -600,3 +600,33 @@
   - This is an execute-time design edit to §4.5. It does not change any requirement's meaning: it restores FR-5.
 - T-8 waits for it.
 - **The product owner is informed at this gate.**
+
+**T-5 attempt 3 (reopened) — PASS** (2026-10-05)
+- **Runtime event:** a stall from a network outage, with the 600 s watchdog firing. Climbed per the ladder:
+  - **rung 1 tree probe:** partial edits in `actor-import.service.ts` (+31/−5) and its spec (+116), kept;
+  - **rung 3:** resumed by message, and the worker's context survived. No attempt was consumed.
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received the T-7 Reviewer's finding verbatim, plus the design §4.5 amendment.
+- **Changes:**
+  - `classifyDuplicates` no longer clears `row.create` on hold. Commit still gates on `state === 'candidate'`.
+  - `applyConsentGate` now runs on `possible-duplicate` rows:
+    - provenance fails: the row becomes `failed` with today's reason, and `create` is cleared;
+    - provenance passes on a `GRANTED` row: the row stays held and carries `CONSENT_ACK_WARNING`, in preview only.
+  - A held row that fails provenance keeps its candidates on the wire. The reviewer accepted this; design §3 does not limit candidates by outcome.
+  - 5 new specs.
+- **Implementer verification:** backend 86 / 1412; build; eslint. Frontend 120 / 1836, unaffected and unedited.
+  - **Falsifiers, red then restored:**
+    - skipping held rows again: 3 reds;
+    - dropping the warning on held rows: red;
+    - dropping the commit-time acknowledgement gate for confirmed rows: red.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. Backend 86 / 1412, exit 0; build; eslint.
+- **Reviewer:** `akili-reviewer` (opus), **PASS**.
+  - Every read of `row.create` and `state` was traced: no held row can be created unconfirmed.
+  - The FR-5 reason text comes from the same `buildProvenanceRowErrors` call.
+  - One reason per row and the totals invariants hold, as does KZ-007.
+  - The frontend `reportNeedsAcknowledgement` picks up the held-row warning.
+- **Advisory:**
+  1. Untested: an **unconfirmed** held `GRANTED` row in commit mode without `acknowledged` must stay `possible-duplicate`, and commit mode must not add the warning to held rows.
+  2. The acknowledgement dialog also fires when a held `GRANTED` row is left unticked. This is harmless friction.
+  3. `totals.warnings` now counts held `GRANTED` rows.
+- **Requirements now closed:** FR-5 "GRANTED without provenance → failed with today's reason, unchanged" for strongly matched rows, and FR-4 "confirming a row → created" for `GRANTED` rows.
+- **Final status:** **PASS**. 3 attempts in total for T-5, plus 1 review verdict this round.

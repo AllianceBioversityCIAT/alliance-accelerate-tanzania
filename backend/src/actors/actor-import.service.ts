@@ -943,9 +943,12 @@ export class ActorImportService {
    *   gate later fails stays a match source").
    * - **The gate:** a row's strong keys (`actor:<id>` / `row:<n>`) must ALL
    *   be named in its own `duplicateConfirmations` entry, or it becomes
-   *   `possible-duplicate` and is excluded from the consent gate and commit
-   *   (both filter on `state === 'candidate'`). The server recomputes this
-   *   every run (DD-4) — a confirmation covers only the candidates it names.
+   *   `possible-duplicate` and is excluded from commit (which filters on
+   *   `state === 'candidate'`). `row.create` is kept, not cleared, so
+   *   `applyConsentGate` can still check a held row's provenance (T-5
+   *   attempt 3, design.md §4.5 amendment) — a held row is never created
+   *   either way. The server recomputes this every run (DD-4) — a
+   *   confirmation covers only the candidates it names.
    * - **Wire cap (attempt-2 rework):** `row.duplicateCandidates` is truncated
    *   to {@link MAX_WIRE_DUPLICATE_CANDIDATES}; `strongKeys`, used for the
    *   gate above, is never truncated.
@@ -1005,7 +1008,10 @@ export class ActorImportService {
 
       if (strongKeys.length > 0 && !allConfirmed) {
         row.state = 'possible-duplicate';
-        row.create = undefined;
+        // `row.create` is kept (not cleared): the consent gate (below) still
+        // needs its scalar data to check a held row's provenance (design.md
+        // §4.5 amendment, T-5 attempt 3). Commit only ever creates rows whose
+        // STATE is 'candidate', so a held row is never created regardless.
       }
       // `IntakeDuplicateIndex` enforces nothing about direction or exclusion
       // itself (intake-duplicate.service.ts docblock) — THIS caller decides:
@@ -1034,6 +1040,15 @@ export class ActorImportService {
    *    required on commit — without it those rows fail. In preview the row
    *    stays a create candidate but carries a warning so the UI knows to show
    *    the acknowledgement dialog.
+   *
+   * T-5 attempt 3 (design.md §4.5 amendment) — this also runs on HELD
+   * (`possible-duplicate`) rows, not just `candidate` ones: `classifyDuplicates`
+   * no longer clears `row.create` when it holds a row, so its scalar data is
+   * still here. A provenance failure outranks the hold (FR-5: the row reports
+   * `failed`, never `possible-duplicate`). A held row that passes provenance
+   * is never created either way, so only the preview acknowledgement warning
+   * applies to it — that is what makes the frontend's file-level
+   * acknowledgement dialog fire before a LATER confirmation reaches commit.
    */
   private applyConsentGate(
     rows: WorkRow[],
@@ -1041,7 +1056,8 @@ export class ActorImportService {
     acknowledged?: boolean,
   ): void {
     for (const row of rows) {
-      if (row.state !== 'candidate' || !row.create) continue;
+      const held = row.state === 'possible-duplicate';
+      if ((row.state !== 'candidate' && !held) || !row.create) continue;
 
       const scalar = row.create.scalar;
       const provenanceOk = isConsentProvenanceSatisfied(null, {
@@ -1063,6 +1079,11 @@ export class ActorImportService {
       }
 
       if (!row.create.consentGranted) continue;
+
+      if (held) {
+        if (!commit) row.warnings.push(CONSENT_ACK_WARNING);
+        continue;
+      }
 
       if (commit && acknowledged !== true) {
         row.state = 'failed';

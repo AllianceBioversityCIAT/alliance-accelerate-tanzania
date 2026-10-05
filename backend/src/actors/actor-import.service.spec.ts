@@ -1292,6 +1292,122 @@ describe('ActorImportService', () => {
         expect(commitReport.rows[ROW_COUNT - 1].outcome).toBe('possible-duplicate');
       });
     });
+
+    // T-5 attempt 3 — reopened after the T-7 Reviewer found that the consent
+    // gate skipped held (`possible-duplicate`) rows entirely (design.md §4.5
+    // amendment). "Row Five" / "Row Twelve" share the default phone+email, so
+    // Row Twelve is always the later, held row.
+    describe('consent gate runs on held rows too (design.md §4.5 amendment)', () => {
+      it('a strongly matched GRANTED row with blank Consent Method fails with the provenance reason, never held (FR-5, falsifier: skip held rows in the gate)', async () => {
+        const b64 = await buildWorkbook([
+          validRow({ traderName: 'Row Five' }),
+          validRow({ traderName: 'Row Twelve', consentStatus: 'GRANTED' }),
+        ]);
+
+        const report = await service.run(previewDto(b64), 'sub-1');
+
+        expect(report.rows[1].outcome).toBe('failed');
+        const fields = (report.rows[1].errors ?? []).map((e) => e.field).sort();
+        expect(fields).toEqual(['consentMethod', 'consentObtainedAt']);
+        expect(report.totals).toMatchObject({ toCreate: 1, possibleDuplicate: 0, failed: 1 });
+      });
+
+      it('a strongly matched GRANTED row with valid provenance stays possible-duplicate AND carries the acknowledgement warning (falsifier: do not attach the warning to held rows)', async () => {
+        const b64 = await buildWorkbook([
+          validRow({ traderName: 'Row Five' }),
+          validRow({
+            traderName: 'Row Twelve',
+            consentStatus: 'GRANTED',
+            consentMethod: 'SIGNED_FORM',
+            consentObtainedAt: '2026-01-01',
+          }),
+        ]);
+
+        const report = await service.run(previewDto(b64), 'sub-1');
+
+        expect(report.rows[1].outcome).toBe('possible-duplicate');
+        expect(report.rows[1].warnings?.some((w) => /acknowledgement/i.test(w))).toBe(true);
+        expect(report.totals).toMatchObject({ toCreate: 1, possibleDuplicate: 1, failed: 0 });
+      });
+
+      it('commit: that row confirmed + acknowledged true is created (falsifier: drop the gate at commit for confirmed rows)', async () => {
+        const rows = [
+          validRow({ traderName: 'Row Five' }),
+          validRow({
+            traderName: 'Row Twelve',
+            consentStatus: 'GRANTED',
+            consentMethod: 'SIGNED_FORM',
+            consentObtainedAt: '2026-01-01',
+          }),
+        ];
+        const b64 = await buildWorkbook(rows);
+        const preview = await service.run(previewDto(b64), 'sub-1');
+        const candidateKeys = (preview.rows[1].duplicateCandidates ?? []).map((c) =>
+          c.kind === 'row' ? `row:${c.row}` : `actor:${c.actorId}`,
+        );
+
+        const report = await service.run(
+          commitDto(
+            await buildWorkbook(rows),
+            true,
+            [{ row: preview.rows[1].rowNumber, candidates: candidateKeys }],
+          ),
+          'sub-1',
+        );
+
+        expect(report.rows[1].outcome).toBe('created');
+        expect(report.totals).toMatchObject({ created: 2, possibleDuplicate: 0, failed: 0 });
+      });
+
+      it('commit: that row confirmed WITHOUT acknowledged still fails with today\'s acknowledgement reason', async () => {
+        const rows = [
+          validRow({ traderName: 'Row Five' }),
+          validRow({
+            traderName: 'Row Twelve',
+            consentStatus: 'GRANTED',
+            consentMethod: 'SIGNED_FORM',
+            consentObtainedAt: '2026-01-01',
+          }),
+        ];
+        const b64 = await buildWorkbook(rows);
+        const preview = await service.run(previewDto(b64), 'sub-1');
+        const candidateKeys = (preview.rows[1].duplicateCandidates ?? []).map((c) =>
+          c.kind === 'row' ? `row:${c.row}` : `actor:${c.actorId}`,
+        );
+
+        const report = await service.run(
+          commitDto(
+            await buildWorkbook(rows),
+            undefined,
+            [{ row: preview.rows[1].rowNumber, candidates: candidateKeys }],
+          ),
+          'sub-1',
+        );
+
+        expect(report.rows[1].outcome).toBe('failed');
+        expect(report.rows[1].errors?.[0].field).toBe('consentStatus');
+      });
+
+      it('a held row that the consent gate then fails still counts as an in-file match source for a later row (KZ-007)', async () => {
+        const b64 = await buildWorkbook([
+          validRow({ traderName: 'Row Five' }),
+          validRow({ traderName: 'Row Twelve', consentStatus: 'GRANTED' }), // held, then failed by the gate
+          validRow({ traderName: 'Row Twenty' }), // shares the same phone+email as both
+        ]);
+
+        const report = await service.run(previewDto(b64), 'sub-1');
+
+        expect(report.rows[1].outcome).toBe('failed');
+        expect(report.rows[2].outcome).toBe('possible-duplicate');
+        const sources = (report.rows[2].duplicateCandidates ?? [])
+          .filter((c) => c.kind === 'row')
+          .map((c) => (c.kind === 'row' ? c.row : null));
+        expect(sources).toEqual(expect.arrayContaining([2, 3]));
+        expect(
+          report.totals.toCreate + report.totals.possibleDuplicate + report.totals.failed,
+        ).toBe(report.totals.rows);
+      });
+    });
   });
 
   describe('consent gate (FR-6)', () => {
