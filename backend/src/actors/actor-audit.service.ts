@@ -380,6 +380,12 @@ export class ActorAuditService {
    * omitted, the column is left unset so `UNKNOWN`/`DENIED`-only imports don't
    * record a spurious flag.
    *
+   * `duplicateConfirmations` (T-5, FR-4) — one entry per `actors[i]`, aligned
+   * by index: the row's confirmed strong candidates, already resolved by the
+   * caller (an in-file `'row'` snapshot becomes `'actor'` once that earlier
+   * row's own create landed — design.md §4.5), or `null`/omitted when there
+   * was nothing to confirm. Mirrors `logCreate`'s `Prisma.JsonNull` sentinel.
+   *
    * @sdd-spec admin/actor-import
    */
   async logImport(
@@ -387,13 +393,15 @@ export class ActorAuditService {
     actors: AdminActor[],
     acting: ActingAdmin,
     acknowledged?: boolean,
+    duplicateConfirmations?: Array<DuplicateConfirmationSnapshot[] | null | undefined>,
   ): Promise<{ count: number }> {
     if (actors.length === 0) {
       return { count: 0 };
     }
 
     return tx.actorAuditLog.createMany({
-      data: actors.map((actor) => {
+      data: actors.map((actor, index) => {
+        const confirmation = duplicateConfirmations?.[index];
         const row: Prisma.ActorAuditLogCreateManyInput = {
           actorId: actor.id,
           traderId: actor.traderId,
@@ -402,6 +410,10 @@ export class ActorAuditService {
           actingSub: acting.sub,
           actingEmail: acting.email ?? null,
           changes: this.buildSnapshot(actor) as unknown as Prisma.InputJsonValue,
+          duplicateConfirmation:
+            confirmation && confirmation.length > 0
+              ? (confirmation as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
         };
         if (acknowledged !== undefined) {
           row.acknowledged = acknowledged;

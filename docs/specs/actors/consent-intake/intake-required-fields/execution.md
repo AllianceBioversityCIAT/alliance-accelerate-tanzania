@@ -363,3 +363,83 @@
   - FR-5: all four scenarios plus the Instructions sheet, including the crop requirement;
   - NFR-1: the template half, and the import side through the contract-driven test.
 - **Final status:** **PASS**. 2 attempts, 3 review verdicts.
+- **Product-owner decision (2026-10-04): option 2.** The other sessions are left open; the product owner is not working in them. The Leader continues and re-checks `git status` and `git log` before every commit.
+
+### T-5 — Import duplicate classification and per-row confirmation
+
+**Attempt 1 — FAIL** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh.
+- **Files changed:** `actor-import.types.ts`, `actor-import.service.ts` (+ spec), `actor-audit.service.ts` (+ spec), `dto/actor-import-request.dto.ts` (+ spec), `test/admin-actor-import.e2e.spec.ts`, `test/partner-profile-onboarding-import.e2e.spec.ts`.
+- **Implementer verification:** 86 suites / 1404 tests; build; eslint 0. All 6 falsifiers were reported red, then restored.
+- **NFR-2 re-timing:** `run()` in preview over 1,000 rows, with the **real** `IntakeDuplicateService` and the in-file index, against a fake Prisma of 1,000 actors. Runs: **82.5 / 55.0 / 47.7 ms**.
+  - Limits: local CPU, mocked DB.
+  - The fixture used distinct identities, so the worst case of shared identities was not timed.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 86 / 1404, exit 0; build; eslint.
+  - No `skipped-*` production hits, apart from one explanatory doc comment in `actor-import.types.ts`.
+- **Reviewers:** parallel lens mode.
+  - **A** (`opus`; conformance + reliability + risk): **FAIL**.
+    - Strong in-file candidates are uncapped on the wire. N rows sharing one phone or email produce N(N−1)/2 candidates.
+    - About 385 such rows exceed Lambda's 6 MB synchronous response limit, and the preview would 5xx with no report.
+    - Neither §9 nor DD-3 covers this case.
+    - Everything else conforms, including the snapshot resolution across chunks and the `logImport` alignment.
+  - **B** (`opus`; conformance + resilience + readability): **FAIL**.
+    1. The FR-4 weak scenario against an **existing actor** is untested. Only the in-file weak case is driven, and nothing exercises `dbResult.weak`.
+    2. "No NFR-2 evidence." **This is the Leader's own brief omission:** the 82.5 / 55.0 / 47.7 ms timing was given to Reviewer A but not to Reviewer B. The evidence exists, as recorded above.
+    3. A KZ-008 comment says "byte-identical after the second run", but the test only checks `traderName`.
+- **Advisory (4R):**
+  - Falsifier 5's commit-form red was not executed.
+  - The countability fixture has a row named `'Weak Match'` that matches nothing.
+  - "Ignored in preview" for `duplicateConfirmations` has no spec.
+  - The `create` outcome is still in the union. It is needed, but design §3 and tasks.md say otherwise.
+  - The `skipped-*` doc comment remains.
+  - Candidate keys are not format-checked.
+  - The `bulkRow` phone may normalize to a cleared value.
+  - Comment density is still high.
+  - Weak matches are DB ≤5 plus in-file ≤5 (acceptable; record it in §3).
+  - The import `candidates` `ArrayMaxSize(50)` limit is not in §9.
+  - Strings in `candidates` have no `@MaxLength`.
+  - The NFR-3 unit key set covers only the `kind:'row'` shape.
+- **runtime events:** none.
+
+**Leader adjudication and execute-time design edits** (none changes a requirement's meaning):
+- **design §3, import row:**
+  - The outcome union is `create | created | possible-duplicate | failed`. `create` is the preview state; this documents what is already built.
+  - **Per-row strong candidates on the wire are capped at 50**, with a `duplicateCandidatesTotal` count. Gating still uses the **full** strong-key set, so a row with more than 50 strong candidates cannot be confirmed. That joins the §9 accepted limit.
+  - Weak matches are DB ≤5 plus in-file ≤5.
+- **design §9:** the ">50" accepted-limit row is extended to the import's per-entry `candidates`, and to the wire cap.
+- **tasks.md T-5 scope line:** the union is amended to match.
+- **Attempt 2 brief:**
+  - both reports, verbatim;
+  - A's issue resolved by the edits above, with a shared-identity spec (N rows sharing one email give a bounded per-row length, a correct total, and are still gated) and a worst-case timing;
+  - B's issues 1 and 3;
+  - B's issue 2 answered by the recorded timing, plus a new worst-case timing;
+  - `[advisory-grade]`: the preview-ignores-confirmations spec, falsifier 5 on the commit form, the `'Weak Match'` rename, the `@Matches` / `@MaxLength` on keys, an actor-kind NFR-3 key set, and the `skipped-*` comment.
+
+**Attempt 2 — PASS** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received both attempt-1 reports verbatim, plus the design edits.
+- **Changes:**
+  - `MAX_WIRE_DUPLICATE_CANDIDATES = 50` and `duplicateCandidatesTotal`. Gating still uses the full `strongKeys`.
+  - New specs: 200 rows sharing one email (length, total, gating), and "confirming the 50 shown does not create".
+  - A DB-weak commit spec.
+  - The admin e2e re-upload now compares full detail bodies with `toEqual`.
+  - All `[advisory-grade]` items were left undone.
+- **Implementer verification:** 86 suites / 1407 tests; build; eslint 0.
+  - **Worst-case probe:** the real `IntakeDuplicateService`, preview mode, 1,000 rows all sharing one email, against 1,000 mocked actors. Timings **194.6 / 194.8 / 158.7 ms**; serialized report **3,979,526 bytes**. The last row was `possible-duplicate`, with 50 candidates out of 999.
+  - The probe's name length and DB match count were not reported, so the size figure cannot be reproduced exactly.
+  - **Falsifiers, red then restored:** 1, 2, 3, 4 and 6; removing the cap; folding DB weak matches into strong.
+  - Falsifier 5 was not re-run in either attempt: its commit form was never executed red.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 86 / 1407, exit 0; build; eslint; quiet tree.
+- **Reviewer:** `akili-reviewer` (opus), single reviewer, all four lenses (round 2 of this task), **PASS**. All attempt-1 FAILs are resolved.
+  - The 3.80 MB figure is not a true worst case, because size scales with name length.
+  - It is **not a defect**: NFR-2 is a timing budget, and in-Lambda gzip covers browser clients.
+  - The reviewer asked for it to be recorded as a residual risk. **design §9 now has that row**, as an execute-time edit (doc only).
+- **Done-when grep interpretation (Leader):** `actor-import.types.ts` keeps one doc comment that names the removed outcomes in order to explain what replaced them. The Leader accepts it as an explanatory reference, not a live use. It can be reworded in cleanup.
+- **Advisory, not done:**
+  - a "preview ignores confirmations" spec;
+  - the `'Weak Match'` fixture name;
+  - `@Matches` / `@MaxLength` on candidate keys;
+  - duplicate `row` entries in `duplicateConfirmations`, which resolve last-wins;
+  - docblock trims.
+- **runtime events:** none.
+- **Requirements covered:** FR-4 on the API side (all six scenarios and the BUT clause); NFR-2 on the import path, as timing; NFR-3 on the import surface.
+- **Final status:** **PASS**. 2 attempts, 3 review verdicts.

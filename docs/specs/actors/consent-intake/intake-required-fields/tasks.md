@@ -148,11 +148,11 @@
       Review: `full`.
       Done when: a v4 workbook imports with generated IDs as `TEAM_MANAGED`, v3 is rejected, the asset matches the generator byte for byte, chunk exhaustion is chunk-local, and all six falsifiers were shown red.
 
-- [ ] **T-5** Import duplicate classification and per-row confirmation  (deps: T-3, T-4)
+- [x] **T-5** Import duplicate classification and per-row confirmation  (deps: T-3, T-4)
       Scope (design §3 import row, §4.5):
       - `classifyDuplicates` runs over rows that passed validation, against the DB and against **earlier** rows. Failed rows are never match sources; `possible-duplicate` rows are.
       - Add `duplicateConfirmations` to `ActorImportRequestDto`.
-      - The outcome union becomes `created | possible-duplicate | failed`.
+      - The outcome union becomes `create | created | possible-duplicate | failed`. *Amended 2026-10-04; see design §3.* Strong candidates on the wire are capped at 50 per row, with `duplicateCandidatesTotal`, while gating uses the full set.
       - Each row gets `duplicateCandidates` and `duplicateWarnings`.
       - Totals: `skipped` is renamed `possibleDuplicate`.
       - `logImport` writes each row's `duplicateConfirmation`, with row snapshots resolved to created IDs.

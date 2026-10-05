@@ -124,6 +124,12 @@ const districtRescueRow: CellMap = {
   traderType: 'bulk_buyer',
   region: DERIVED_REGION,
   district: 'Mbozi',
+  // T-5 (actors/consent-intake/intake-required-fields) — every row below
+  // that is NOT deliberately testing duplicate classification gets its own
+  // phone+email: `REQUIRED_FIELDS_FILLER`'s shared default would otherwise
+  // make every row a strong match of row 2 (design.md §4.5, FR-4).
+  phone: '0700000001',
+  email: 'district-rescue@example.org',
 };
 
 /**
@@ -154,12 +160,17 @@ const unnormalizablePhoneRow: CellMap = {
   traderType: 'offtaker',
   region: 'Arusha',
   phone: '+44 20 7946 0958',
+  // T-5 — the phone override above already makes this row's phone unique
+  // (it normalizes to null); its EMAIL still needs its own value so it
+  // isn't an accidental strong match of another row (design.md §4.5).
+  email: 'unnormalizable-phone@example.org',
 };
 
 /**
- * Class 4 — "a duplicate key" (FR-2). The Trader-ID dedupe that used to hold
- * this pair is removed (design.md §4.5); both rows are plain creates until
- * T-5 restores equivalent coverage under duplicate classification.
+ * Class 4 — "a duplicate key" (FR-2/FR-4). These two rows deliberately KEEP
+ * `REQUIRED_FIELDS_FILLER`'s shared phone+email — row B strongly matches row
+ * A in-file (design.md §4.5) and is held as `possible-duplicate`, replacing
+ * the old Trader-ID dedupe this pair used to exercise.
  */
 const duplicateKeyRowA: CellMap = {
   ...REQUIRED_FIELDS_FILLER,
@@ -213,6 +224,9 @@ const dmsCoordinatesRow: CellMap = {
   region: 'Mbeya',
   gpsLatitude: "8°75'13\"S",
   gpsLongitude: "33°75'39\"E",
+  // T-5 — its own identity, same reason as `districtRescueRow` above.
+  phone: '0700000002',
+  email: 'dms-coordinates@example.org',
 };
 
 /** Excel rows 2..8, in this fixed order (Excel row number = index + 2). */
@@ -477,13 +491,20 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         expect(JSON.stringify(row4.warnings)).not.toContain(digits);
       }
 
-      // Class 4 — duplicate key: T-4 (consent-intake/intake-required-fields)
-      // removes the Trader-ID dedupe that used to hold the second row as
-      // `skipped-duplicate-in-file` (design.md §4.5); T-5 restores
-      // equivalent coverage under duplicate classification. In this interim
-      // window both rows are plain creates.
+      // Class 4 — duplicate key: row A creates, row B strongly matches it
+      // in-file (shared phone+email) and is held as `possible-duplicate`
+      // (design.md §4.5, FR-4 within-file scenario).
       expect(rowByNumber(res.body, 5).outcome).toBe('create');
-      expect(rowByNumber(res.body, 6).outcome).toBe('create');
+      const row6 = rowByNumber(res.body, 6);
+      expect(row6.outcome).toBe('possible-duplicate');
+      expect(row6.duplicateCandidates).toEqual([
+        {
+          kind: 'row',
+          row: 5,
+          traderName: 'Fixture Duplicate Org A',
+          matchedOn: expect.arrayContaining(['phone', 'email']),
+        },
+      ]);
 
       // Class 5 — blank required field (quarantine on absent district):
       // quarantined on `region`, never guessed.
@@ -504,12 +525,13 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
       // `actor-import.service.spec.ts`'s T-4 block.
       expect(res.body.totals).toMatchObject({
         rows: 7,
-        toCreate: 5,
+        toCreate: 4,
         created: 0,
-        skipped: 0,
+        possibleDuplicate: 1,
         failed: 2,
       });
       expect(res.body.failureBreakdown).toEqual([
+        { reason: 'possible-duplicate', count: 1 },
         { reason: 'region', count: 1 },
         { reason: 'traderType', count: 1 },
       ]);
@@ -533,15 +555,16 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
 
       expect(res.body.totals).toMatchObject({
         rows: 7,
-        toCreate: 5,
-        created: 5,
-        skipped: 0,
+        toCreate: 4,
+        created: 4,
+        possibleDuplicate: 1,
         failed: 2,
       });
 
-      // The database mock actually received exactly 5 creates — not inferred
-      // from `totals.created`, but from the mock's own call count.
-      expect(prismaMock.actor.create).toHaveBeenCalledTimes(5);
+      // The database mock actually received exactly 4 creates — not inferred
+      // from `totals.created`, but from the mock's own call count. Row 6
+      // ("Dup Second") is held as a possible duplicate of row 5, never created.
+      expect(prismaMock.actor.create).toHaveBeenCalledTimes(4);
       // T-4 — one chunk's commit transaction, plus one for Trader ID
       // allocation (`allocateTraderIds` opens its own transaction,
       // design.md §4.2).
@@ -597,24 +620,39 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
       expect(dmsCreateData).not.toHaveProperty('gpsAltitude');
       expect(dmsCreateData).not.toHaveProperty('gpsAccuracy');
 
-      // Classes 2 and 5 never became actors at all.
+      // Classes 2 and 5 never became actors at all, nor does the held
+      // Class-4 duplicate (row 6).
       expect(rowByNumber(res.body, 3).actorId).toBeUndefined();
+      expect(rowByNumber(res.body, 6).actorId).toBeUndefined();
       expect(rowByNumber(res.body, 7).actorId).toBeUndefined();
     });
   });
 
   /**
-   * T-4 (consent-intake/intake-required-fields) — the Trader-ID dedupe that
-   * made a re-upload idempotent is REMOVED (design.md §4.5); T-5 restores
-   * equivalent protection under duplicate classification. Declared,
-   * acceptable gap on this unreleased branch (tasks.md T-4) — the describe
-   * name is kept (renamed) as the forward pointer to what T-5 must restore.
+   * T-5 — duplicate classification restores re-upload idempotence
+   * (design.md §4.5, FR-4 scenario 1): a re-posted workbook's own rows now
+   * strongly match the actors the FIRST commit created, so the second commit
+   * holds every row and creates zero.
    */
-  describe('Re-upload creates again in this interim window (FR-2 scenario, upload half; T-5 restores idempotence)', () => {
-    it('creates on the first commit and creates again on the second, with no skipped rows, and leaves the first run\'s actor untouched', async () => {
+  describe('Re-upload holds every row as a possible duplicate (FR-4 scenario 1, T-5)', () => {
+    it('creates on the first commit; the identical second commit flags both rows, creates zero, and leaves the first run\'s actor untouched', async () => {
       const cleanRows: CellMap[] = [
-        { ...REQUIRED_FIELDS_FILLER, traderName: 'Idempotency Org A', traderType: 'seed_company', region: 'Arusha' },
-        { ...REQUIRED_FIELDS_FILLER, traderName: 'Idempotency Org B', traderType: 'seed_company', region: 'Dodoma' },
+        {
+          ...REQUIRED_FIELDS_FILLER,
+          traderName: 'Idempotency Org A',
+          traderType: 'seed_company',
+          region: 'Arusha',
+          phone: '0700000030',
+          email: 'idempotency-a@example.org',
+        },
+        {
+          ...REQUIRED_FIELDS_FILLER,
+          traderName: 'Idempotency Org B',
+          traderType: 'seed_company',
+          region: 'Dodoma',
+          phone: '0700000031',
+          email: 'idempotency-b@example.org',
+        },
       ];
       const fileBase64 = await buildWorkbook(cleanRows);
       const body = {
@@ -628,7 +666,7 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         .set(admin)
         .send(body)
         .expect(200);
-      expect(first.body.totals).toMatchObject({ created: 2, skipped: 0, failed: 0 });
+      expect(first.body.totals).toMatchObject({ created: 2, possibleDuplicate: 0, failed: 0 });
       expect(first.body.rows.map((r: { outcome: string }) => r.outcome)).toEqual([
         'created',
         'created',
@@ -652,22 +690,19 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         .send(body)
         .expect(200);
 
-      expect(second.body.totals).toMatchObject({ created: 2, skipped: 0, failed: 0 });
+      expect(second.body.totals).toMatchObject({ created: 0, possibleDuplicate: 2, failed: 0 });
       expect(second.body.rows.map((r: { outcome: string }) => r.outcome)).toEqual([
-        'created',
-        'created',
+        'possible-duplicate',
+        'possible-duplicate',
       ]);
 
-      // Both runs reached the database mock — 4 creates total, no dedupe.
-      expect(prismaMock.actor.create).toHaveBeenCalledTimes(4);
+      // Only the FIRST run reached the database mock — the second run
+      // created nothing (FR-4 scenario 1: "committing without confirming
+      // any row creates zero actors").
+      expect(prismaMock.actor.create).toHaveBeenCalledTimes(2);
 
-      // Every Trader ID is freshly allocated, never reused across runs.
-      const firstIds = first.body.rows.map((r: { traderId: string }) => r.traderId);
-      const secondIds = second.body.rows.map((r: { traderId: string }) => r.traderId);
-      expect(new Set([...firstIds, ...secondIds]).size).toBe(4);
-
-      // The first run's actor is byte-identical after the second run — there
-      // is no upsert mode, only more creates (FR-2's own clause).
+      // The first run's actor is byte-identical after the second run — no
+      // upsert mode, and this time no second create either.
       const afterSecondRun = await request(app.getHttpServer())
         .get(`/api/v1/admin/actors/${firstActorId}`)
         .set(admin)

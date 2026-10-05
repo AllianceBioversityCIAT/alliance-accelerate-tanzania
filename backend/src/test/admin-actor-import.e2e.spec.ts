@@ -216,6 +216,11 @@ const INITIAL_ACTORS: Record<string, unknown>[] = [
     region: 'Dodoma',
     district: null,
     traderType: 'cooperative',
+    // T-5 (actors/consent-intake/intake-required-fields) — gives this seed
+    // actor an identity so the "Dup Of Existing" row below can strongly
+    // match it by phone+email, the way its name has always implied.
+    phone: '0700000099',
+    email: 'existing-trader@example.org',
     consentStatus: ConsentStatus.UNKNOWN,
     crops: [{ crop: { name: 'groundnut' } }],
     createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -668,8 +673,12 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       expect(before.body.total).toBe(2);
 
       const fileBase64 = await buildWorkbook([
-        validRow({ traderId: 'TZ-P-1', traderName: 'Prospect One' }),
-        validRow({ traderId: 'TZ-P-2', traderName: 'Prospect Two' }),
+        validRow({ traderName: 'Prospect One' }),
+        validRow({
+          traderName: 'Prospect Two',
+          phone: '0700000041',
+          email: 'prospect-two@example.org',
+        }),
       ]);
 
       const res = await request(app.getHttpServer())
@@ -700,13 +709,17 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
 
   describe('Commit lifecycle with a mixed fixture (FR-4..FR-8, FR-11)', () => {
     /**
-     * row2 create+crops+PII, row3 create, row4 create, row5/6 create (T-4,
-     * consent-intake/intake-required-fields: the Trader-ID dedupe that used
-     * to hold row4 as `skipped-exists` and row6 as
-     * `skipped-duplicate-in-file` is removed — design.md §4.5, "the branch
-     * has no import dedupe in between", T-5 replaces it), row7 invalid
-     * (region+email), row8 create+GPS warning.
+     * row2 create+crops+PII, row3 create, row4 possible-duplicate (strong DB
+     * match on `actor-exist-1`), row5 create, row6 possible-duplicate
+     * (strong in-file match on row5), row7 invalid (region+email), row8
+     * create+GPS warning.
      */
+    // T-5 (actors/consent-intake/intake-required-fields) — every row below
+    // that is expected to CREATE cleanly carries its own distinct phone+email
+    // so it is never an accidental in-file match; "Dup Of Existing" and the
+    // "Dup First"/"Dup Second" pair deliberately keep a SHARED identity (an
+    // existing actor's, and each other's) to exercise real duplicate
+    // classification (design.md §4.5, FR-4).
     const mixedRows = (): CellMap[] => [
       validRow({
         traderName: 'Import One',
@@ -715,16 +728,43 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         cropSorghum: 'YES',
         cropGroundnut: 'YES',
       }),
-      validRow({ traderName: 'Import Two', region: 'Dodoma' }),
-      validRow({ traderName: 'Dup Of Existing' }),
-      validRow({ traderName: 'Dup First', region: 'Tanga' }),
-      validRow({ traderName: 'Dup Second', region: 'Tanga' }),
+      validRow({
+        traderName: 'Import Two',
+        region: 'Dodoma',
+        phone: '0700000010',
+        email: 'import-two@example.org',
+      }),
+      // Strong DB match: shares `actor-exist-1`'s seeded phone+email.
+      validRow({
+        traderName: 'Dup Of Existing',
+        phone: '0700000099',
+        email: 'existing-trader@example.org',
+      }),
+      validRow({
+        traderName: 'Dup First',
+        region: 'Tanga',
+        phone: '0700000050',
+        email: 'dup-pair@example.org',
+      }),
+      // In-file strong match: shares "Dup First"'s phone+email, not row 2's.
+      validRow({
+        traderName: 'Dup Second',
+        region: 'Tanga',
+        phone: '0700000050',
+        email: 'dup-pair@example.org',
+      }),
       validRow({
         traderName: 'Bad Row',
         region: 'Atlantis',
         email: IMPORT_BAD_EMAIL,
       }),
-      validRow({ traderName: 'Gps Row', region: 'Iringa', gpsLatitude: 999 }),
+      validRow({
+        traderName: 'Gps Row',
+        region: 'Iringa',
+        gpsLatitude: 999,
+        phone: '0700000080',
+        email: 'gps-row@example.org',
+      }),
     ];
 
     it('creates valid rows with crops + IMPORT audit, fails the rest, and never echoes PII', async () => {
@@ -739,9 +779,9 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.mode).toBe('commit');
       expect(res.body.totals).toEqual({
         rows: 7,
-        toCreate: 6,
-        created: 6,
-        skipped: 0,
+        toCreate: 4,
+        created: 4,
+        possibleDuplicate: 2,
         failed: 1,
         warnings: 1,
       });
@@ -749,15 +789,37 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       // Per-row outcomes tied to Excel row numbers.
       expect(rowByNumber(res.body, 2).outcome).toBe('created');
       expect(rowByNumber(res.body, 3).outcome).toBe('created');
-      expect(rowByNumber(res.body, 4).outcome).toBe('created');
+      expect(rowByNumber(res.body, 4).outcome).toBe('possible-duplicate');
       expect(rowByNumber(res.body, 5).outcome).toBe('created');
-      expect(rowByNumber(res.body, 6).outcome).toBe('created');
+      expect(rowByNumber(res.body, 6).outcome).toBe('possible-duplicate');
       expect(rowByNumber(res.body, 7).outcome).toBe('failed');
       expect(rowByNumber(res.body, 8).outcome).toBe('created');
       // T-4 — every created row's Trader ID is now system-generated.
-      for (const n of [2, 3, 4, 5, 6, 8]) {
+      for (const n of [2, 3, 5, 8]) {
         expect(rowByNumber(res.body, n).traderId).toMatch(/^TM-\d{4}-\d{4}$/);
       }
+
+      // T-5 — row 4 strongly matches the SEEDED `actor-exist-1` (DB match);
+      // row 6 strongly matches row 5 (in-file match). Neither is created.
+      expect(rowByNumber(res.body, 4).actorId).toBeUndefined();
+      expect(rowByNumber(res.body, 4).duplicateCandidates).toEqual([
+        {
+          kind: 'actor',
+          actorId: 'actor-exist-1',
+          traderId: 'TZ-EXIST-1',
+          traderName: 'Existing Registry Trader',
+          matchedOn: expect.arrayContaining(['phone', 'email']),
+        },
+      ]);
+      expect(rowByNumber(res.body, 6).actorId).toBeUndefined();
+      expect(rowByNumber(res.body, 6).duplicateCandidates).toEqual([
+        {
+          kind: 'row',
+          row: 5,
+          traderName: 'Dup First',
+          matchedOn: expect.arrayContaining(['phone', 'email']),
+        },
+      ]);
 
       // Failed row carries both field errors (names only).
       const failed = rowByNumber(res.body, 7);
@@ -812,28 +874,31 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
       expect(existing.body.traderName).toBe('Existing Registry Trader');
 
-      // Net new actors: 6 created on top of the 2 seeded.
+      // Net new actors: 4 created on top of the 2 seeded.
       const list = await request(app.getHttpServer())
         .get('/api/v1/admin/actors')
         .set(admin)
         .expect(200);
-      expect(list.body.total).toBe(8);
+      expect(list.body.total).toBe(6);
     });
   });
 
   /**
-   * T-4 (consent-intake/intake-required-fields) — the Trader-ID dedupe that
-   * made a re-upload idempotent is removed (design.md §4.5); T-5 replaces it
-   * with duplicate classification. Until then, re-uploading the SAME
-   * workbook creates a second, independent batch — a declared, acceptable
-   * gap on this unreleased branch (tasks.md T-4).
+   * T-5 — duplicate classification restores re-upload idempotence
+   * (design.md §4.5, FR-4 scenario 1): the second commit's duplicate scan
+   * finds the FIRST run's own actors, holds every row as a possible
+   * duplicate, and creates zero.
    */
-  describe('Re-upload creates again in this interim window (FR-4; T-5 restores idempotence)', () => {
-    it('creates on the first commit and creates again on the second, with no skipped rows', async () => {
+  describe('Re-upload holds every row as a possible duplicate (FR-4 scenario 1, T-5)', () => {
+    it('creates on the first commit; the identical second commit flags every row and creates zero', async () => {
       const fileBase64 = await buildWorkbook([
-        validRow({ traderName: 'Idem One' }),
-        validRow({ traderName: 'Idem Two' }),
-        validRow({ traderName: 'Idem Three' }),
+        validRow({ traderName: 'Idem One', phone: '0700000061', email: 'idem-one@example.org' }),
+        validRow({ traderName: 'Idem Two', phone: '0700000062', email: 'idem-two@example.org' }),
+        validRow({
+          traderName: 'Idem Three',
+          phone: '0700000063',
+          email: 'idem-three@example.org',
+        }),
       ]);
       const body = { fileName: 'actors.xlsx', fileBase64, mode: 'commit' };
 
@@ -842,21 +907,101 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .set(admin)
         .send(body)
         .expect(200);
-      expect(first.body.totals).toMatchObject({ created: 3, skipped: 0, failed: 0 });
+      expect(first.body.totals).toMatchObject({ created: 3, possibleDuplicate: 0, failed: 0 });
+      expect(
+        first.body.rows.every((r: { outcome: string }) => r.outcome === 'created'),
+      ).toBe(true);
+      const firstActorIds = first.body.rows.map((r: { actorId: string }) => r.actorId);
+
+      // No upsert mode (FR-2): the second run must not touch the first run's
+      // actors at all, so each one's full detail is captured BEFORE the
+      // second commit and compared after — not just one field (KZ-008; the
+      // partner-profile-onboarding idempotency suite uses the same pattern).
+      const beforeSecondRun = new Map<string, unknown>();
+      for (const id of firstActorIds) {
+        const detail = await request(app.getHttpServer())
+          .get(`/api/v1/admin/actors/${id}`)
+          .set(admin)
+          .expect(200);
+        beforeSecondRun.set(id, detail.body);
+      }
 
       const second = await request(app.getHttpServer())
         .post(IMPORT_URL)
         .set(admin)
         .send(body)
         .expect(200);
-      expect(second.body.totals).toMatchObject({ created: 3, skipped: 0, failed: 0 });
+      expect(second.body.totals).toMatchObject({ created: 0, possibleDuplicate: 3, failed: 0 });
       expect(
-        second.body.rows.every((r: { outcome: string }) => r.outcome === 'created'),
+        second.body.rows.every(
+          (r: { outcome: string }) => r.outcome === 'possible-duplicate',
+        ),
       ).toBe(true);
-      // Every Trader ID is freshly allocated, never reused across the batches.
-      const firstIds = first.body.rows.map((r: { traderId: string }) => r.traderId);
-      const secondIds = second.body.rows.map((r: { traderId: string }) => r.traderId);
-      expect(new Set([...firstIds, ...secondIds]).size).toBe(6);
+      // Zero actors landed on the second run — only the first run's 3 creates.
+      const list = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      // 2 seeded + the first run's 3 — none from the second run.
+      expect(list.body.total).toBe(5);
+
+      // Each of the first run's actors is byte-identical (full detail body)
+      // after the second run — no upsert mode, and the second run created
+      // nothing to collide with them.
+      for (const id of firstActorIds) {
+        const afterSecondRun = await request(app.getHttpServer())
+          .get(`/api/v1/admin/actors/${id}`)
+          .set(admin)
+          .expect(200);
+        expect(afterSecondRun.body).toEqual(beforeSecondRun.get(id));
+      }
+    });
+
+    it('committing confirmed rows from a re-upload creates only the confirmed ones', async () => {
+      const fileBase64 = await buildWorkbook([
+        validRow({ traderName: 'Confirm One', phone: '0700000071', email: 'confirm-one@example.org' }),
+        validRow({ traderName: 'Confirm Two', phone: '0700000072', email: 'confirm-two@example.org' }),
+      ]);
+      const body = { fileName: 'actors.xlsx', fileBase64, mode: 'commit' };
+
+      const first = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send(body)
+        .expect(200);
+      const firstActorId1 = first.body.rows[0].actorId as string;
+
+      const preview = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({ ...body, mode: 'preview' })
+        .expect(200);
+      const candidateKey = `actor:${preview.body.rows[0].duplicateCandidates[0].actorId}`;
+      expect(candidateKey).toBe(`actor:${firstActorId1}`);
+
+      const second = await request(app.getHttpServer())
+        .post(IMPORT_URL)
+        .set(admin)
+        .send({
+          ...body,
+          duplicateConfirmations: [{ row: 2, candidates: [candidateKey] }],
+        })
+        .expect(200);
+
+      expect(second.body.totals).toMatchObject({ created: 1, possibleDuplicate: 1, failed: 0 });
+      expect(second.body.rows[0].outcome).toBe('created');
+      expect(second.body.rows[1].outcome).toBe('possible-duplicate');
+
+      // The confirmed row's audit entry records the confirmation, resolved
+      // to the original actor (design.md §4.5).
+      const newActorId = second.body.rows[0].actorId as string;
+      const history = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${newActorId}/history`)
+        .set(admin)
+        .expect(200);
+      expect(history.body.data[0].duplicateConfirmation).toEqual([
+        expect.objectContaining({ kind: 'actor', actorId: firstActorId1 }),
+      ]);
     });
   });
 
@@ -921,13 +1066,14 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
   describe('Per-row consent provenance (T-6, FR-3, FR-5, NFR-7, DD-5)', () => {
     it('fails a GRANTED row missing provenance, leaving its neighbours to import normally (QA-9)', async () => {
       const fileBase64 = await buildWorkbook([
-        validRow({ traderId: 'TZ-PROV-BEFORE', traderName: 'Before' }),
+        validRow({ traderName: 'Before', phone: '0700000091', email: 'prov-before@example.org' }),
         validRow({
-          traderId: 'TZ-PROV-MISSING',
           traderName: 'No Provenance',
           consentStatus: 'GRANTED',
+          phone: '0700000092',
+          email: 'prov-missing@example.org',
         }),
-        validRow({ traderId: 'TZ-PROV-AFTER', traderName: 'After' }),
+        validRow({ traderName: 'After', phone: '0700000093', email: 'prov-after@example.org' }),
       ]);
 
       const res = await request(app.getHttpServer())
@@ -1165,8 +1311,13 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
     it('accepts a multi-chunk payload larger than the default limit and commits it', async () => {
       const rows = Array.from({ length: 250 }, (_, i) =>
         validRow({
-          traderId: `TZ-BIG-${i + 1}`,
           traderName: `Big Row ${i + 1}`,
+          // T-5 — every row needs its OWN identity: 250 rows sharing
+          // `validRow()`'s default phone+email would all strongly match
+          // row 1, collapsing this fixture to 1 create + 249 possible
+          // duplicates instead of exercising the chunking/size path.
+          phone: `0${String(i + 1).padStart(9, '0')}`,
+          email: `big-row-${i + 1}@example.org`,
           technicalSupport: randomText(1000 + i, 480),
         }),
       );
