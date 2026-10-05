@@ -17,6 +17,7 @@ import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
 import { buildTraderId } from './trader-id.util';
 import { IntakeDuplicateService } from './intake-duplicate.service';
+import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
 
 /**
  * T-5 — ActorsAdminService unit tests with a MOCKED PrismaService (no DB).
@@ -191,8 +192,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   beforeEach(() => {
     // T-2 — in-memory ActorSequence counter (design.md §4.2), so create's
     // retry loop allocates a genuinely fresh id per attempt, not a canned one.
-    const sequenceRows: Array<{ year: number; seq: number }> = [];
-    let sessionNewSeq: number | null = null;
+    const { $executeRaw, $queryRaw } = createActorSequenceMock();
 
     prisma = {
       actor: {
@@ -218,31 +218,8 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
-      $executeRaw: jest.fn(
-        async (strings: TemplateStringsArray, ...values: unknown[]) => {
-          const sql = strings.join('?');
-          if (!sql.includes('ActorSequence')) {
-            throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
-          }
-          const [year, count] = values as [number, number];
-          let row = sequenceRows.find((r) => r.year === year);
-          if (!row) {
-            row = { year, seq: count };
-            sequenceRows.push(row);
-          } else {
-            row.seq += count;
-          }
-          sessionNewSeq = row.seq;
-          return 1;
-        },
-      ),
-      $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
-        const sql = strings.join('?');
-        if (!sql.includes('@newActorSeq')) {
-          throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
-        }
-        return [{ newActorSeq: sessionNewSeq as number }];
-      }),
+      $executeRaw,
+      $queryRaw,
       // Pass the same mocked prisma object back into the callback so tx.*
       // resolves to the same in-memory delegates.
       $transaction: jest.fn(async (callback) => callback(prisma)),
@@ -768,6 +745,27 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
       }
 
+      /** Runs `service.create`, asserts the rejection is a 409 naming exactly `expectedActorIds`. */
+      async function createAndExpectDuplicateConflictIds(
+        dto: AdminActorCreateDto,
+        expectedActorIds: string[],
+      ): Promise<void> {
+        let caught: unknown;
+        try {
+          await service.create(dto, ACTING_SUB);
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const response = (caught as ConflictException).getResponse() as {
+          duplicateCandidates: Array<{ actorId: string }>;
+        };
+        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual(
+          expectedActorIds,
+        );
+      }
+
       it('throws ConflictException (409) with duplicateCandidates when a strong (email) match is unconfirmed', async () => {
         prisma.actor.findMany.mockResolvedValue([existingActorRow()]);
         // Defensive: if the gate incorrectly fails to fire, `create` would
@@ -915,20 +913,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           confirmedNotDuplicateOf: ['actor-a'],
         } as unknown as AdminActorCreateDto;
 
-        let caught: unknown;
-        try {
-          await service.create(dto, ACTING_SUB);
-        } catch (err) {
-          caught = err;
-        }
-
-        expect(caught).toBeInstanceOf(ConflictException);
-        const response = (caught as ConflictException).getResponse() as {
-          duplicateCandidates: Array<{ actorId: string }>;
-        };
-        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual([
-          'actor-b',
-        ]);
+        await createAndExpectDuplicateConflictIds(dto, ['actor-b']);
       });
 
       // Falsifier 5 (tasks.md T-3) — an EMPTY confirmedNotDuplicateOf must
@@ -1015,20 +1000,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           gpsLongitude: 29.5,
         } as unknown as AdminActorCreateDto;
 
-        let caught: unknown;
-        try {
-          await service.create(dto, ACTING_SUB);
-        } catch (err) {
-          caught = err;
-        }
-
-        expect(caught).toBeInstanceOf(ConflictException);
-        const response = (caught as ConflictException).getResponse() as {
-          duplicateCandidates: Array<{ actorId: string }>;
-        };
-        expect(response.duplicateCandidates.map((c) => c.actorId)).toEqual([
-          'actor-email-only',
-        ]);
+        await createAndExpectDuplicateConflictIds(dto, ['actor-email-only']);
       });
     });
   });
@@ -1057,6 +1029,34 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   });
 
   describe('update', () => {
+    /**
+     * FR-1 scenario 3 / design.md §4.4 — runs `service.update`, asserts it
+     * rejects with a 400 naming `field`, and that the update itself never
+     * ran. Returns nothing; callers add their own extra non-call assertions
+     * (e.g. `cropsOnActors.deleteMany`, `actorAuditLog.create`) after it.
+     */
+    async function updateAndExpectFieldRejection(
+      actorId: string,
+      dto: AdminActorUpdateDto,
+      field: string,
+    ): Promise<void> {
+      let caught: unknown;
+      try {
+        await service.update(actorId, dto, ACTING_SUB);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      const response = (caught as BadRequestException).getResponse() as {
+        details: Array<{ field: string }>;
+      };
+      expect(response.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field })]),
+      );
+      expect(prisma.actor.update).not.toHaveBeenCalled();
+    }
+
     it('applies only submitted scalar fields and records a diff audit', async () => {
       const before = fixtureActor({
         traderName: 'Old Name',
@@ -1144,21 +1144,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
       const dto: AdminActorUpdateDto = { crops: [] } as AdminActorUpdateDto;
 
-      let caught: unknown;
-      try {
-        await service.update('actor-1', dto, ACTING_SUB);
-      } catch (err) {
-        caught = err;
-      }
-
-      expect(caught).toBeInstanceOf(BadRequestException);
-      const response = (caught as BadRequestException).getResponse() as {
-        details: Array<{ field: string }>;
-      };
-      expect(response.details).toEqual(
-        expect.arrayContaining([expect.objectContaining({ field: 'crops' })]),
-      );
-      expect(prisma.actor.update).not.toHaveBeenCalled();
+      await updateAndExpectFieldRejection('actor-1', dto, 'crops');
       expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
@@ -1174,21 +1160,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           region: 'Dodoma',
         } as AdminActorUpdateDto;
 
-        let caught: unknown;
-        try {
-          await service.update('actor-1', dto, ACTING_SUB);
-        } catch (err) {
-          caught = err;
-        }
-
-        expect(caught).toBeInstanceOf(BadRequestException);
-        const response = (caught as BadRequestException).getResponse() as {
-          details: Array<{ field: string }>;
-        };
-        expect(response.details).toEqual(
-          expect.arrayContaining([expect.objectContaining({ field: 'email' })]),
-        );
-        expect(prisma.actor.update).not.toHaveBeenCalled();
+        await updateAndExpectFieldRejection('actor-1', dto, 'email');
         expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
       });
 
@@ -1246,21 +1218,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           region: 'Dodoma',
         } as AdminActorUpdateDto;
 
-        let caught: unknown;
-        try {
-          await service.update('actor-1', dto, ACTING_SUB);
-        } catch (err) {
-          caught = err;
-        }
-
-        expect(caught).toBeInstanceOf(BadRequestException);
-        const response = (caught as BadRequestException).getResponse() as {
-          details: Array<{ field: string }>;
-        };
-        expect(response.details).toEqual(
-          expect.arrayContaining([expect.objectContaining({ field: 'crops' })]),
-        );
-        expect(prisma.actor.update).not.toHaveBeenCalled();
+        await updateAndExpectFieldRejection('actor-1', dto, 'crops');
       });
     });
 
@@ -1495,6 +1453,41 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     const BATCH_DATE = '2026-07-01T00:00:00.000Z';
     const BATCH_REFERENCE = 'BATCH-2026-07';
 
+    /**
+     * Design.md §4.1 preserve/fill matrix — runs `bulkSetConsent` on a
+     * single existing actor with the shared `BATCH_*` provenance and asserts
+     * the exact `updateMany` write and audit diff it must leave.
+     */
+    async function expectBulkConsentWrite(
+      existingActor: ReturnType<typeof fixtureActor>,
+      expectedData: Record<string, unknown>,
+      expectedAuditFields: Record<string, unknown>,
+    ): Promise<{ preserved: number }> {
+      prisma.actor.findMany.mockResolvedValue([existingActor]);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      const res = await service.bulkSetConsent(
+        [existingActor.id as string],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [existingActor.id] } },
+        data: expectedData,
+      });
+
+      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+      expect(auditData[0].changes.fields).toEqual(expectedAuditFields);
+
+      return { preserved: res.preserved };
+    }
+
     it('flips status to GRANTED, fills provenance on the NOT_RECORDED set, and returns preserved: 0', async () => {
       const existing = [
         fixtureActor({ id: 'actor-1', consentStatus: ConsentStatus.UNKNOWN }),
@@ -1704,7 +1697,9 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     });
 
     it('reachable via un-publish-then-strip (design.md §4.1 row 5): a DENIED actor with its own method and reference but a stripped date is filled on the date alone and keeps its method', async () => {
-      const existing = [
+      // Only the date is written — method and reference are the actor's own
+      // and are never touched.
+      const { preserved } = await expectBulkConsentWrite(
         fixtureActor({
           id: 'actor-date-only',
           consentStatus: ConsentStatus.DENIED,
@@ -1712,41 +1707,21 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           consentObtainedAt: null,
           consentReference: 'DOC-777',
         }),
-      ];
-      prisma.actor.findMany.mockResolvedValue(existing);
-      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
-      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
-
-      const res = await service.bulkSetConsent(
-        ['actor-date-only'],
-        'GRANTED',
-        ACTING_SUB,
-        true,
-        BATCH_METHOD,
-        BATCH_DATE,
-        BATCH_REFERENCE,
-      );
-
-      expect(res.preserved).toBe(0);
-      // Only the date is written — method and reference are the actor's own
-      // and are never touched.
-      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['actor-date-only'] } },
-        data: {
+        {
           consentStatus: ConsentStatus.GRANTED,
           consentObtainedAt: BATCH_DATE,
         },
-      });
-
-      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
-      expect(auditData[0].changes.fields).toEqual({
-        consentStatus: { from: 'DENIED', to: 'GRANTED' },
-        consentObtainedAt: { from: null, to: BATCH_DATE },
-      });
+        {
+          consentStatus: { from: 'DENIED', to: 'GRANTED' },
+          consentObtainedAt: { from: null, to: BATCH_DATE },
+        },
+      );
+      expect(preserved).toBe(0);
     });
 
     it('ADVISORY-1: an actor with NOT_RECORDED method and its OWN non-null consentReference keeps that reference — the batch reference never overwrites it', async () => {
-      const existing = [
+      // consentReference is absent — the actor's own OWN-REF-1 survives.
+      const { preserved } = await expectBulkConsentWrite(
         fixtureActor({
           id: 'actor-ref-preserved',
           consentStatus: ConsentStatus.UNKNOWN,
@@ -1754,38 +1729,18 @@ describe('ActorsAdminService (mocked Prisma)', () => {
           consentObtainedAt: null,
           consentReference: 'OWN-REF-1',
         }),
-      ];
-      prisma.actor.findMany.mockResolvedValue(existing);
-      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
-      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
-
-      const res = await service.bulkSetConsent(
-        ['actor-ref-preserved'],
-        'GRANTED',
-        ACTING_SUB,
-        true,
-        BATCH_METHOD,
-        BATCH_DATE,
-        BATCH_REFERENCE,
-      );
-
-      expect(res.preserved).toBe(0);
-      // consentReference is absent — the actor's own OWN-REF-1 survives.
-      expect(prisma.actor.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['actor-ref-preserved'] } },
-        data: {
+        {
           consentStatus: ConsentStatus.GRANTED,
           consentMethod: BATCH_METHOD,
           consentObtainedAt: BATCH_DATE,
         },
-      });
-
-      const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
-      expect(auditData[0].changes.fields).toEqual({
-        consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
-        consentMethod: { from: 'NOT_RECORDED', to: BATCH_METHOD },
-        consentObtainedAt: { from: null, to: BATCH_DATE },
-      });
+        {
+          consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
+          consentMethod: { from: 'NOT_RECORDED', to: BATCH_METHOD },
+          consentObtainedAt: { from: null, to: BATCH_DATE },
+        },
+      );
+      expect(preserved).toBe(0);
     });
 
     it('skips the audit row for an actor with no field change at all', async () => {

@@ -25,7 +25,6 @@
 
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import * as ExcelJS from 'exceljs';
 import { isEmail, validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
@@ -37,19 +36,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { MAX_TRADER_ID_ALLOCATION_ATTEMPTS } from './trader-id.util';
-import {
-  TEMPLATE_COLUMNS,
-  TEMPLATE_HEADERS,
-  TEMPLATE_VERSION,
-} from '../common/template-columns';
+import { TEMPLATE_VERSION } from '../common/template-columns';
 import {
   INTAKE_MAX_LENGTHS,
   INTAKE_REQUIRED_FIELDS,
   IntakeRequiredField,
 } from '../common/intake-contract';
 import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
-
-type CellMap = Record<string, string | number>;
+import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
+import {
+  CellMap,
+  buildWorkbook,
+  validRow,
+} from '../test/support/actor-import-workbook.fixture';
 
 /** A real Prisma `P2002` on `traderId`, the MySQL shape measured in T-2 (execution.md). */
 function buildTraderIdCollisionError(): Prisma.PrismaClientKnownRequestError {
@@ -61,53 +60,6 @@ function buildTraderIdCollisionError(): Prisma.PrismaClientKnownRequestError {
       meta: { modelName: 'Actor', target: 'Actor_traderId_key' },
     },
   );
-}
-
-/** Build a base64 .xlsx from data rows keyed by TEMPLATE_COLUMNS `field`. */
-async function buildWorkbook(
-  dataRows: CellMap[],
-  opts: {
-    sheetName?: string;
-    headers?: string[];
-    instructionsVersion?: string;
-  } = {},
-): Promise<string> {
-  const wb = new ExcelJS.Workbook();
-
-  if (opts.instructionsVersion) {
-    const ins = wb.addWorksheet('Instructions');
-    ins.getCell('A1').value = 'Template version:';
-    ins.getCell('B1').value = opts.instructionsVersion;
-  }
-
-  const ws = wb.addWorksheet(opts.sheetName ?? 'Data');
-  ws.addRow(opts.headers ?? [...TEMPLATE_HEADERS]);
-  for (const row of dataRows) {
-    ws.addRow(TEMPLATE_COLUMNS.map((col) => row[col.field] ?? ''));
-  }
-
-  const buf = await wb.xlsx.writeBuffer();
-  return Buffer.from(buf).toString('base64');
-}
-
-/**
- * A minimal valid data row (every intake-contract required field filled);
- * override as needed. `traderId` is NOT a column any more (T-4) — the system
- * assigns it at commit; any stray `traderId` key in an override is simply
- * never written to a cell.
- */
-function validRow(overrides: CellMap = {}): CellMap {
-  return {
-    traderName: 'Actor One',
-    traderType: 'seed_company',
-    region: 'Arusha',
-    contactPerson: 'Jane Mwangi',
-    capacityTons: 10,
-    phone: '0700000002',
-    email: 'actor@example.org',
-    cropSorghum: 'YES',
-    ...overrides,
-  };
 }
 
 /**
@@ -186,8 +138,7 @@ describe('ActorImportService', () => {
     // `allocateTraderIds` opens its own transaction, resolved to this same
     // `tx` by the `$transaction` mock below (mirrors
     // `actors-admin.service.spec.ts`'s T-2 pattern).
-    let sequenceRows: Array<{ year: number; seq: number }> = [];
-    let sessionNewSeq: number | null = null;
+    const { $executeRaw, $queryRaw } = createActorSequenceMock();
 
     tx = {
       actor: {
@@ -210,31 +161,8 @@ describe('ActorImportService', () => {
         })),
       },
       cropsOnActors: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      $executeRaw: jest.fn(
-        async (strings: TemplateStringsArray, ...values: unknown[]) => {
-          const sql = strings.join('?');
-          if (!sql.includes('ActorSequence')) {
-            throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
-          }
-          const [year, count] = values as [number, number];
-          let row = sequenceRows.find((r) => r.year === year);
-          if (!row) {
-            row = { year, seq: count };
-            sequenceRows.push(row);
-          } else {
-            row.seq += count;
-          }
-          sessionNewSeq = row.seq;
-          return 1;
-        },
-      ),
-      $queryRaw: jest.fn(async (strings: TemplateStringsArray) => {
-        const sql = strings.join('?');
-        if (!sql.includes('@newActorSeq')) {
-          throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
-        }
-        return [{ newActorSeq: sessionNewSeq as number }];
-      }),
+      $executeRaw,
+      $queryRaw,
     };
 
     prisma = {
@@ -1301,6 +1229,22 @@ describe('ActorImportService', () => {
     // amendment). "Row Five" / "Row Twelve" share the default phone+email, so
     // Row Twelve is always the later, held row.
     describe('consent gate runs on held rows too (design.md §4.5 amendment)', () => {
+      /**
+       * Previews `rows` and returns row 1's duplicate-confirmation inputs
+       * (`rowNumber` + the `row:N`/`actor:id` candidate keys) for the
+       * commit-time gate tests below that confirm against them.
+       */
+      async function previewRowOneCandidateKeys(
+        rows: CellMap[],
+      ): Promise<{ rowNumber: number; candidateKeys: string[] }> {
+        const b64 = await buildWorkbook(rows);
+        const preview = await service.run(previewDto(b64), 'sub-1');
+        const candidateKeys = (preview.rows[1].duplicateCandidates ?? []).map(
+          (c) => (c.kind === 'row' ? `row:${c.row}` : `actor:${c.actorId}`),
+        );
+        return { rowNumber: preview.rows[1].rowNumber, candidateKeys };
+      }
+
       it('a strongly matched GRANTED row with blank Consent Method fails with the provenance reason, never held (FR-5, falsifier: skip held rows in the gate)', async () => {
         const b64 = await buildWorkbook([
           validRow({ traderName: 'Row Five' }),
@@ -1343,18 +1287,12 @@ describe('ActorImportService', () => {
             consentObtainedAt: '2026-01-01',
           }),
         ];
-        const b64 = await buildWorkbook(rows);
-        const preview = await service.run(previewDto(b64), 'sub-1');
-        const candidateKeys = (preview.rows[1].duplicateCandidates ?? []).map((c) =>
-          c.kind === 'row' ? `row:${c.row}` : `actor:${c.actorId}`,
-        );
+        const { rowNumber, candidateKeys } = await previewRowOneCandidateKeys(rows);
 
         const report = await service.run(
-          commitDto(
-            await buildWorkbook(rows),
-            true,
-            [{ row: preview.rows[1].rowNumber, candidates: candidateKeys }],
-          ),
+          commitDto(await buildWorkbook(rows), true, [
+            { row: rowNumber, candidates: candidateKeys },
+          ]),
           'sub-1',
         );
 
@@ -1372,18 +1310,12 @@ describe('ActorImportService', () => {
             consentObtainedAt: '2026-01-01',
           }),
         ];
-        const b64 = await buildWorkbook(rows);
-        const preview = await service.run(previewDto(b64), 'sub-1');
-        const candidateKeys = (preview.rows[1].duplicateCandidates ?? []).map((c) =>
-          c.kind === 'row' ? `row:${c.row}` : `actor:${c.actorId}`,
-        );
+        const { rowNumber, candidateKeys } = await previewRowOneCandidateKeys(rows);
 
         const report = await service.run(
-          commitDto(
-            await buildWorkbook(rows),
-            undefined,
-            [{ row: preview.rows[1].rowNumber, candidates: candidateKeys }],
-          ),
+          commitDto(await buildWorkbook(rows), undefined, [
+            { row: rowNumber, candidates: candidateKeys },
+          ]),
           'sub-1',
         );
 
@@ -1587,32 +1519,16 @@ describe('ActorImportService', () => {
       expect(fields).toEqual(['consentMethod']);
     });
 
-    it('converts a date-only Consent Obtained At cell to a full instant (E-2)', async () => {
-      const b64 = await buildWorkbook([
-        validRow({
-          consentStatus: 'GRANTED',
-          consentMethod: 'SIGNED_FORM',
-          consentObtainedAt: '2026-02-20',
-        }),
-      ]);
-
-      const report = await service.run(commitDto(b64, true), 'sub-1');
-
-      expect(report.rows[0].outcome).toBe('created');
-      const created = tx.actor.create.mock.calls[0][0].data as Record<
-        string,
-        unknown
-      >;
-      expect(created.consentObtainedAt).toBe('2026-02-20T00:00:00.000Z');
-    });
-
-    it('converts an Excel serial date number for Consent Obtained At (E-2)', async () => {
+    it.each([
+      { label: 'a date-only cell', input: '2026-02-20', expected: '2026-02-20T00:00:00.000Z' },
       // Excel serial 46023 = 2026-01-01 (epoch 1899-12-30).
+      { label: 'an Excel serial date number', input: 46023, expected: '2026-01-01T00:00:00.000Z' },
+    ])('converts $label for Consent Obtained At to a full instant (E-2)', async ({ input, expected }) => {
       const b64 = await buildWorkbook([
         validRow({
           consentStatus: 'GRANTED',
           consentMethod: 'SIGNED_FORM',
-          consentObtainedAt: 46023,
+          consentObtainedAt: input,
         }),
       ]);
 
@@ -1623,7 +1539,7 @@ describe('ActorImportService', () => {
         string,
         unknown
       >;
-      expect(created.consentObtainedAt).toBe('2026-01-01T00:00:00.000Z');
+      expect(created.consentObtainedAt).toBe(expected);
     });
 
     it('rejects an unparsable Consent Obtained At value with a field error, never a 500', async () => {

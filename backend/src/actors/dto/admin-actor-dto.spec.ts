@@ -5,6 +5,11 @@ import { ConsentStatus } from '@prisma/client';
 import { AdminActorCreateDto } from './admin-actor-create.dto';
 import { AdminActorUpdateDto } from './admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './actor-history-query.dto';
+import {
+  invalidProps,
+  validActorInput,
+  validEmailOfLength,
+} from '../../test/support/actor-input.fixture';
 
 /**
  * T-2 — Unit tests for the admin actor write/query DTOs (FR-1, FR-3, FR-7, NFR-1, NFR-6).
@@ -15,47 +20,8 @@ import { ActorHistoryQueryDto } from './actor-history-query.dto';
  * pagination bounds are the focus.
  */
 
-/** Helper: which property names produced at least one constraint violation. */
-async function invalidProps(dto: object): Promise<string[]> {
-  const errors = await validate(dto);
-  return errors.map((e) => e.property);
-}
-
-/**
- * A `validator.js`-valid email of EXACTLY `totalLength` characters (see
- * `actor-dto.spec.ts`'s copy for why padding the local part instead would be
- * an inert fixture — `@IsEmail()` rejects a long local part on format
- * grounds regardless of the `@MaxLength` bound under test).
- */
-function validEmailOfLength(totalLength: number): string {
-  const prefix = 'a@';
-  const tld = '.com';
-  let remaining = totalLength - prefix.length - tld.length;
-  const labels: string[] = [];
-  while (remaining > 63) {
-    labels.push('x'.repeat(63));
-    remaining -= 64;
-  }
-  labels.push('x'.repeat(remaining));
-  return `${prefix}${labels.join('.')}${tld}`;
-}
-
 describe('AdminActorCreateDto', () => {
-  const validInput = {
-    traderId: 'TZ-0001',
-    traderName: 'Mbeya Seed Traders Ltd',
-    region: 'Mbeya',
-    district: 'Mbeya Urban',
-    traderType: 'seed_company',
-    sex: 'F',
-    contactPerson: 'Neema Shirima',
-    capacityTons: 1250.5,
-    phone: '+255700000000',
-    email: 'contact@mbeyaseed.co.tz',
-    gpsLatitude: -8.9094,
-    gpsLongitude: 33.4607,
-    consentStatus: ConsentStatus.UNKNOWN,
-  };
+  const validInput = validActorInput({ consentStatus: ConsentStatus.UNKNOWN });
 
   it('passes a valid create input with crops', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {

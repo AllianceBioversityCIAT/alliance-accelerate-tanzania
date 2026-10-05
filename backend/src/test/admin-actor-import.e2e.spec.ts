@@ -41,6 +41,12 @@ import {
 } from '../common/pii-consent.policy';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
+import { createActorSequenceMock } from './support/actor-sequence.mock';
+import {
+  CellMap,
+  buildWorkbook,
+  validRow,
+} from './support/actor-import-workbook.fixture';
 
 /**
  * Distinctive PII values seeded INTO uploaded rows. FR-11: they must never
@@ -65,42 +71,10 @@ const SEED_PII_PHONE = '+255-999-SEEDLEAK';
 const SEED_PII_EMAIL = 'seed-leak-detector@example.test';
 
 // ---- xlsx fixture builders -------------------------------------------------
-
-type CellMap = Record<string, string | number>;
-
-/** Build a base64 `.xlsx` from data rows keyed by TEMPLATE_COLUMNS `field`. */
-async function buildWorkbook(
-  dataRows: CellMap[],
-  opts: { sheetName?: string; headers?: string[] } = {},
-): Promise<string> {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(opts.sheetName ?? 'Data');
-  ws.addRow(opts.headers ?? [...TEMPLATE_HEADERS]);
-  for (const row of dataRows) {
-    ws.addRow(TEMPLATE_COLUMNS.map((col) => row[col.field] ?? ''));
-  }
-  const buf = await wb.xlsx.writeBuffer();
-  return Buffer.from(buf).toString('base64');
-}
-
-/**
- * A minimal valid data row (every intake-contract required field filled);
- * override as needed. `traderId` is NOT a column any more (T-4,
- * consent-intake/intake-required-fields) — the system assigns it at commit.
- */
-function validRow(overrides: CellMap = {}): CellMap {
-  return {
-    traderName: 'Actor One',
-    traderType: 'seed_company',
-    region: 'Arusha',
-    contactPerson: 'Jane Mwangi',
-    capacityTons: 10,
-    phone: '0700000002',
-    email: 'actor@example.org',
-    cropSorghum: 'YES',
-    ...overrides,
-  };
-}
+// `buildWorkbook`/`validRow` live in `./support/actor-import-workbook.fixture`
+// (shared with `actors/actor-import.service.spec.ts`); `TEMPLATE_COLUMNS` /
+// `TEMPLATE_HEADERS` / `ExcelJS` stay imported directly here too for the
+// stale-template fixture below, which builds a workbook by hand.
 
 /**
  * Deterministic high-entropy string generator. exceljs stores strings in a
@@ -244,8 +218,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   // pattern: `allocateTraderIds` opens its own transaction, resolved to the
   // SAME `tx` below by the `$transaction` mock, so it is reachable exactly
   // like the chunk's own create transaction.
-  let sequenceRows: Array<{ year: number; seq: number }> = [];
-  let sessionNewSeq: number | null = null;
+  const actorSequence = createActorSequenceMock();
 
   function seed(): void {
     actors = initialActors.map((a) => ({ ...a }));
@@ -253,8 +226,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropLinks = [];
     actorSeq = 0;
     auditSeq = 0;
-    sequenceRows = [];
-    sessionNewSeq = null;
+    actorSequence.reset();
     for (const actor of actors) {
       const names = (
         (actor.crops as { crop?: { name?: string } }[] | undefined) ?? []
@@ -498,32 +470,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }),
   };
 
-  const $executeRaw = jest.fn(
-    async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      const sql = strings.join('?');
-      if (!sql.includes('ActorSequence')) {
-        throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
-      }
-      const [year, count] = values as [number, number];
-      let row = sequenceRows.find((r) => r.year === year);
-      if (!row) {
-        row = { year, seq: count };
-        sequenceRows.push(row);
-      } else {
-        row.seq += count;
-      }
-      sessionNewSeq = row.seq;
-      return 1;
-    },
-  );
-
-  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
-    const sql = strings.join('?');
-    if (!sql.includes('@newActorSeq')) {
-      throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
-    }
-    return [{ newActorSeq: sessionNewSeq as number }];
-  });
+  const { $executeRaw, $queryRaw } = actorSequence;
 
   const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
   const $transaction = jest.fn(async (arg: any) => {
@@ -1192,16 +1139,18 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
   });
 
   describe('Stale template version (T-6, FR-5)', () => {
-    it('rejects a workbook stamped with an older template version, telling the admin to re-download', async () => {
-      // The header row deliberately uses the OLD (pre-T-6, 20-column) header
-      // set, not the current TEMPLATE_HEADERS — a real v1 workbook's headers
-      // won't match the current template (it's missing the newer columns).
-      // If the version check ran AFTER locateDataSheet instead of before, this
-      // mismatch would surface as the generic "no Data sheet matching" 400
-      // instead of the specific "out of date" message, so this fixture is
-      // what actually locks the ordering (T-6 rework attempt 2, Reviewer
-      // Issue 5 — both stale-template tests previously built from the
-      // CURRENT headers, so they passed regardless of check order).
+    /**
+     * A workbook stamped `v1` with the OLD (pre-T-6, 20-column) header set —
+     * not the current TEMPLATE_HEADERS, since a real v1 workbook's headers
+     * won't match the current template (it's missing the newer columns). If
+     * the version check ran AFTER locateDataSheet instead of before, this
+     * mismatch would surface as the generic "no Data sheet matching" 400
+     * instead of the specific "out of date" message, so this fixture is what
+     * actually locks the ordering (T-6 rework attempt 2, Reviewer Issue 5 —
+     * both stale-template tests previously built from the CURRENT headers,
+     * so they passed regardless of check order).
+     */
+    async function buildStaleTemplateWorkbook(): Promise<string> {
       const oldHeaders = TEMPLATE_HEADERS.slice(0, 20);
       const wb = new ExcelJS.Workbook();
       const ins = wb.addWorksheet('Instructions');
@@ -1210,7 +1159,11 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
       ws.addRow([...oldHeaders]);
       ws.addRow(TEMPLATE_COLUMNS.map((col) => validRow()[col.field] ?? ''));
       const buf = await wb.xlsx.writeBuffer();
-      const fileBase64 = Buffer.from(buf).toString('base64');
+      return Buffer.from(buf).toString('base64');
+    }
+
+    it('rejects a workbook stamped with an older template version, telling the admin to re-download', async () => {
+      const fileBase64 = await buildStaleTemplateWorkbook();
 
       const res = await request(app.getHttpServer())
         .post(IMPORT_URL)
@@ -1226,15 +1179,7 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
     // pre-existing assertions above; asserted separately so it fails against
     // the pre-T-6 message and isn't satisfied by "names both versions" alone.
     it('points the admin to where to download the current template', async () => {
-      const oldHeaders = TEMPLATE_HEADERS.slice(0, 20);
-      const wb = new ExcelJS.Workbook();
-      const ins = wb.addWorksheet('Instructions');
-      ins.getCell('A1').value = 'Template version: v1';
-      const ws = wb.addWorksheet('Data');
-      ws.addRow([...oldHeaders]);
-      ws.addRow(TEMPLATE_COLUMNS.map((col) => validRow()[col.field] ?? ''));
-      const buf = await wb.xlsx.writeBuffer();
-      const fileBase64 = Buffer.from(buf).toString('base64');
+      const fileBase64 = await buildStaleTemplateWorkbook();
 
       const res = await request(app.getHttpServer())
         .post(IMPORT_URL)

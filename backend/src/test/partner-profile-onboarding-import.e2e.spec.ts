@@ -65,6 +65,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
 import { DISTRICT_TO_REGION } from '../common/normalize';
+import { createActorSequenceMock } from './support/actor-sequence.mock';
 
 // ---- xlsx fixture builder (mirrors admin-actor-import.e2e.spec.ts) ---------
 
@@ -250,8 +251,7 @@ function buildPrismaMock() {
   // counter (design.md §4.2), mirroring `admin-actor-import.e2e.spec.ts`'s
   // own T-4 addition: `allocateTraderIds` opens its own transaction,
   // resolved to the SAME `tx` by the `$transaction` mock below.
-  let sequenceRows: Array<{ year: number; seq: number }> = [];
-  let sessionNewSeq: number | null = null;
+  const actorSequence = createActorSequenceMock();
 
   const nextActorId = (): string =>
     `actor-mock-${String((actorSeq += 1)).padStart(4, '0')}`;
@@ -335,32 +335,7 @@ function buildPrismaMock() {
     }),
   };
 
-  const $executeRaw = jest.fn(
-    async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      const sql = strings.join('?');
-      if (!sql.includes('ActorSequence')) {
-        throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
-      }
-      const [year, count] = values as [number, number];
-      let row = sequenceRows.find((r) => r.year === year);
-      if (!row) {
-        row = { year, seq: count };
-        sequenceRows.push(row);
-      } else {
-        row.seq += count;
-      }
-      sessionNewSeq = row.seq;
-      return 1;
-    },
-  );
-
-  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
-    const sql = strings.join('?');
-    if (!sql.includes('@newActorSeq')) {
-      throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
-    }
-    return [{ newActorSeq: sessionNewSeq as number }];
-  });
+  const { $executeRaw, $queryRaw } = actorSequence;
 
   const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
   const $transaction = jest.fn(async (arg: any) => {
@@ -378,8 +353,7 @@ function buildPrismaMock() {
       actors = [];
       auditLog = [];
       actorSeq = 0;
-      sequenceRows = [];
-      sessionNewSeq = null;
+      actorSequence.reset();
       actor.findMany.mockClear();
       actor.create.mockClear();
       $transaction.mockClear();

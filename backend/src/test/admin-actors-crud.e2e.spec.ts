@@ -18,6 +18,8 @@ import {
   NEVER_PUBLIC_FIELDS,
 } from '../common/pii-consent.policy';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import { createActorSequenceMock } from './support/actor-sequence.mock';
+import { validEmailOfLength } from './support/actor-input.fixture';
 
 /**
  * T-6 — End-to-end tests for Admin single-actor CRUD + audit history
@@ -606,35 +608,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   // T-2 — in-memory ActorSequence counter (design.md §4.2). Reachable
   // through the SAME $transaction as create/update, since allocateTraderIds
   // opens its own transaction before the caller's.
-  let sequenceRows: Array<{ year: number; seq: number }> = [];
-  let sessionNewSeq: number | null = null;
-
-  const $executeRaw = jest.fn(
-    async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      const sql = strings.join('?');
-      if (!sql.includes('ActorSequence')) {
-        throw new Error(`Fake $executeRaw: unrecognized SQL: ${sql}`);
-      }
-      const [year, count] = values as [number, number];
-      let row = sequenceRows.find((r) => r.year === year);
-      if (!row) {
-        row = { year, seq: count };
-        sequenceRows.push(row);
-      } else {
-        row.seq += count;
-      }
-      sessionNewSeq = row.seq;
-      return 1;
-    },
-  );
-
-  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
-    const sql = strings.join('?');
-    if (!sql.includes('@newActorSeq')) {
-      throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
-    }
-    return [{ newActorSeq: sessionNewSeq as number }];
-  });
+  const actorSequence = createActorSequenceMock();
+  const { $executeRaw, $queryRaw } = actorSequence;
 
   const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
 
@@ -651,8 +626,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropLinks = [];
     actorSeq = 0;
     auditSeq = 0;
-    sequenceRows = [];
-    sessionNewSeq = null;
+    actorSequence.reset();
 
     for (const actorRow of actors) {
       const names = (
@@ -713,25 +687,8 @@ const validCreatePayload = (): Record<string, unknown> => ({
   crops: ['sorghum', 'common_bean'],
 });
 
-/**
- * A `validator.js`-valid email of EXACTLY `totalLength` characters, built by
- * padding the domain (dot-separated labels, each ≤ 63 chars — the DNS label
- * limit) rather than the local part (capped at 64 by `@IsEmail()`). See
- * `actor-dto.spec.ts`'s copy of this helper for why padding the local part
- * instead is an inert fixture.
- */
-function validEmailOfLength(totalLength: number): string {
-  const prefix = 'a@';
-  const tld = '.com';
-  let remaining = totalLength - prefix.length - tld.length;
-  const labels: string[] = [];
-  while (remaining > 63) {
-    labels.push('x'.repeat(63));
-    remaining -= 64;
-  }
-  labels.push('x'.repeat(remaining));
-  return `${prefix}${labels.join('.')}${tld}`;
-}
+// `validEmailOfLength` lives in `./support/actor-input.fixture` (shared with
+// `actor-dto.spec.ts` / `admin-actor-dto.spec.ts`).
 
 describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
   let app: INestApplication;
