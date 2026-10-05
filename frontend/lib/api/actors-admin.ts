@@ -110,6 +110,61 @@ export interface BulkResult {
   notFound: string[];
 }
 
+// ── Duplicate detection (T-6, `actors/consent-intake/intake-required-fields`) ──
+
+/**
+ * Which attribute(s) a duplicate candidate matched on. Mirrors the backend
+ * `DuplicateMatchAttribute` (`backend/src/registrations/duplicate-detection.service.ts`)
+ * exactly — never the matched VALUE, only its name (NFR-3).
+ */
+export type DuplicateMatchAttribute = 'phone' | 'email' | 'traderName' | 'gps';
+
+/**
+ * One possible-duplicate candidate surfaced on admin create (FR-3). Mirrors
+ * the backend `DuplicateCandidate` exactly: Trader ID, name, and which
+ * attributes matched — never `phone`/`email` values (NFR-3).
+ */
+export interface DuplicateCandidate {
+  actorId: string;
+  traderId: string;
+  traderName: string;
+  matchedOn: DuplicateMatchAttribute[];
+}
+
+/**
+ * The 409 response body for a duplicate-blocked create (design.md §3):
+ * `{statusCode, message: 'Possible duplicate', duplicateCandidates}`, listing
+ * the strong candidates not yet confirmed. Surfaces on `ApiError.body`.
+ */
+export interface DuplicateConflictBody {
+  statusCode: number;
+  message: string;
+  duplicateCandidates: DuplicateCandidate[];
+}
+
+/**
+ * One entry of `AuditEntry.duplicateConfirmation` (FR-3, FR-4) — mirrors the
+ * backend `DuplicateConfirmationSnapshot` exactly
+ * (`backend/src/actors/actor-audit.service.ts`). Discriminated by `kind`:
+ * `'actor'` for a confirmed existing-actor match (the only kind admin create
+ * produces); `'row'` for an in-file import match not yet resolved to a
+ * created actor (T-5).
+ */
+export type DuplicateConfirmationSnapshot =
+  | {
+      kind: 'actor';
+      actorId: string;
+      traderId: string;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    }
+  | {
+      kind: 'row';
+      row: number;
+      traderName: string;
+      matchedOn: DuplicateMatchAttribute[];
+    };
+
 /**
  * Query parameters for `adminListActors` (mirrors AdminActorListQueryDto).
  *
@@ -217,6 +272,12 @@ export interface AuditEntry {
   actingEmail: string | null;
   changes: unknown;
   acknowledged: boolean | null;
+  /**
+   * T-6 (FR-3) — the confirmed-not-duplicate snapshot, or `null` when nothing
+   * was confirmed for this entry. Mirrors the backend's `AuditEntry.duplicateConfirmation`
+   * exactly — always present on the wire, never an absent key.
+   */
+  duplicateConfirmation: DuplicateConfirmationSnapshot[] | null;
   createdAt: string;
 }
 
@@ -240,9 +301,16 @@ export interface ActorHistoryList {
  * (T-9 FR-6 closure) mirrors `ActorCreateDto`'s optional `registrationSource`
  * field the same way — `ActorForm`'s Consent & provenance fieldset now
  * surfaces it alongside the three consent fields.
+ *
+ * T-6 (`actors/consent-intake/intake-required-fields`, FR-2/FR-3) — `traderId`
+ * is REMOVED: the Trader ID is now always system-generated, never a client
+ * input (a client-sent value is stripped server-side by the global pipe's
+ * `whitelist`). `confirmedNotDuplicateOf` is added: actor ids the admin has
+ * confirmed are not duplicates of this new actor, recomputed by the server on
+ * every request (design.md DD-4) — at most 50 (`ArrayMaxSize(50)` mirrored,
+ * not re-enforced client-side per design §9).
  */
 export interface AdminActorCreateInput {
-  traderId: string;
   traderName: string;
   region: string;
   traderType: string;
@@ -268,6 +336,8 @@ export interface AdminActorCreateInput {
   gpsAccuracy?: number | null;
   crops?: string[];
   acknowledged?: boolean;
+  /** T-6 (FR-3) — actor ids confirmed not to be duplicates of this new actor. */
+  confirmedNotDuplicateOf?: string[];
 }
 
 /**
@@ -287,6 +357,16 @@ export interface ActorHistoryQuery {
 export interface ActorDeleteResult {
   deleted: true;
   id: string;
+}
+
+/**
+ * T-6 — `createActor`'s response envelope (design.md §3): the created actor,
+ * plus the weak matches surfaced as an informational warning (FR-3's weak
+ * scenario — always present, possibly empty, never blocks the create).
+ * Mirrors the backend `AdminActorCreateResult` exactly.
+ */
+export interface AdminActorCreateResult extends AdminActor {
+  duplicateWarnings: DuplicateCandidate[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -423,9 +503,11 @@ export async function adminGetActor(id: string, token: string): Promise<AdminAct
  * POST /api/v1/admin/actors
  *
  * Creates a new actor with the supplied full field set (FR-1). Returns the
- * created actor in Admin projection with HTTP 201. Duplicate `traderId` throws
- * a plain Error (409); missing acknowledgement on a GRANTED consent transition
- * throws a plain Error (400).
+ * created actor in Admin projection with HTTP 201, plus `duplicateWarnings`
+ * (weak matches, FR-3). A strong, unconfirmed duplicate match throws
+ * `ApiError` (409) whose `body.duplicateCandidates` names the matches —
+ * resubmit with `confirmedNotDuplicateOf` to proceed. Missing acknowledgement
+ * on a GRANTED consent transition throws `ApiError` (400).
  *
  * @param dto    Actor fields to create.
  * @param token  Cognito access token from the caller's session.
@@ -433,8 +515,8 @@ export async function adminGetActor(id: string, token: string): Promise<AdminAct
 export async function createActor(
   dto: AdminActorCreateInput,
   token: string,
-): Promise<AdminActor> {
-  return apiFetch<AdminActor>(BASE, {
+): Promise<AdminActorCreateResult> {
+  return apiFetch<AdminActorCreateResult>(BASE, {
     method: 'POST',
     token,
     body: dto,

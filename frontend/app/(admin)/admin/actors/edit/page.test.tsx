@@ -111,6 +111,15 @@ import type { AdminActor } from '@/lib/api/actors-admin';
 // dialog involved) so the test isolates the field-freeze bug.
 // ---------------------------------------------------------------------------
 
+/**
+ * T-6 (`actors/consent-intake/intake-required-fields`, FR-1) — contactPerson,
+ * crops, capacityTons, phone, and email are now part of the required set
+ * every intake path shares, enforced client-side before a save: an actor
+ * missing any of them cannot be re-saved until they're filled (FR-1 scenario
+ * 3). This fixture populates all five so the R-1 regression this file tests
+ * (cross-actor field-freeze on a searchParams-only navigation) isn't masked
+ * by an unrelated required-field validation error.
+ */
 function buildActor(overrides: Partial<AdminActor>): AdminActor {
   return {
     id: 'actor-a',
@@ -119,15 +128,15 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     region: 'Arusha',
     district: null,
     traderType: 'seed_company',
-    contactPerson: null,
+    contactPerson: 'Asha Mwinyi',
     sex: null,
     position: null,
     marketLocation: null,
-    capacityTons: null,
+    capacityTons: 100,
     otherCrops: null,
     technicalSupport: null,
-    phone: null,
-    email: null,
+    phone: '+255700000000',
+    email: 'asha@example.com',
     gpsLatitude: null,
     gpsLongitude: null,
     gpsAltitude: null,
@@ -137,7 +146,7 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     consentMethod: 'NOT_RECORDED',
     consentObtainedAt: null,
     consentReference: null,
-    crops: [],
+    crops: ['sorghum'],
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,

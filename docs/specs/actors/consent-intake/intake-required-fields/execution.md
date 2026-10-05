@@ -443,3 +443,94 @@
 - **runtime events:** none.
 - **Requirements covered:** FR-4 on the API side (all six scenarios and the BUT clause); NFR-2 on the import path, as timing; NFR-3 on the import surface.
 - **Final status:** **PASS**. 2 attempts, 3 review verdicts.
+
+## Budget re-baseline — after T-5 (2026-10-04, under the standing authorization)
+
+| Measure | Revised budget | Actual after 5 of 8 tasks | New baseline |
+|---|---|---|---|
+| LOC changed (backend + template) | ~5,500 | **~6,286**: T-1 1,132; T-2 824; T-3 1,404; T-4 1,505; T-5 1,421 (`git diff --stat` per task commit) | **~9,500** |
+| Review verdicts | ~22 | **15**: T-1 2; T-2 4; T-3 3; T-4 3; T-5 3 | **~26** |
+
+- **Cause, unchanged:** tests dominate each task, and every task needed a rework round. Production code remains within the original estimate.
+- **Remaining:** T-6 and T-7 (frontend) at about 1,200 LOC each, and T-8 (docs) at about 200.
+- Per the product owner's standing instruction, **execution continues** with no stop.
+
+### T-6 — Admin form: required fields, no Trader ID input, the duplicate dialog
+
+**Attempt 1 — FAIL** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. Skills: `vercel-react-best-practices`, `tailwind-design-system`, `frontend-design`, `react-doctor`.
+- **Files changed:**
+  - new: `components/admin/DuplicateConfirmDialog.tsx`, `lib/content/intake-required-fields.ts`, `app/(admin)/admin/actors/new/page.test.tsx`
+  - modified: `lib/api/client.ts` (+ test), `lib/api/actors-admin.ts` (+ test), `components/admin/ActorForm.tsx` (+ test), `components/admin/ActorHistoryPanel.tsx` (+ test), `app/(admin)/admin/actors/new/page.tsx`, `app/(admin)/admin/actors/edit/page.test.tsx`
+- **Implementer verification:** `tsc` exit 0; 120 suites / 1811 tests; lint clean (4 pre-existing `<img>` warnings); static-export build with 27 routes. react-doctor went from 80 to 82.
+  - All 6 falsifiers were reported red, then restored.
+  - **Captures:** 9 PNGs at 375 / 768 / 1440 from a throwaway harness page (deleted). Fonts were loaded and there was no page overflow; at 375 only Leaflet's internal panes overflow.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 120 / 1811 exit 0; lint 0; build 0. No `/NN` token-opacity utilities in the added lines. The Leader viewed `duplicate-dialog-375`.
+- **Reviewer:** `akili-reviewer` (opus), with all four lenses and the visual check over 4 captures. **FAIL:**
+  - `FRONTEND_INTAKE_REQUIRED_FIELDS` is never used by `validate()`, which hardcodes each check. So the "frontend required-set pin" test compares an unused constant with a literal and **can never fail** when `validate()` changes.
+  - Two comments claim the opposite.
+  - Falsifier 5's red really came from "rejects a create with Phone left blank".
+  - This is the KZ-002 class: a gate that cannot fail.
+  - Type fidelity, the union of confirmed ids, the read-only Trader ID, the weak info dialog, the history line, tokens and captures all passed.
+- **Advisory (4R):**
+  - The dialog panel shows the browser's default focus outline, which is not a token. Focus Cancel instead, or add `focus:outline-none` to the `tabIndex=-1` panel.
+  - At 375 the dialog touches the viewport edges, matching the house `ConfirmDialog`. That calls for a shared follow-up.
+  - The copy "held for review" is misleading on create, where nothing is held. Suggest "has not been created".
+  - The `ActorHistoryPanel.test` comment about the `JsonNull` sentinel does not match the `[]` fixture.
+  - A stray blank line, and the confirmed-ids ref is not reset on Cancel (harmless).
+- **runtime events:** none.
+
+**Attempt 2 — FAIL** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received the attempt-1 report verbatim.
+- **Changes:**
+  - `validate()` now loops over `FRONTEND_INTAKE_REQUIRED_FIELDS` through a total `Record` (`REQUIRED_FIELD_CHECKS`), and the comments were corrected.
+  - The panel got `focus:outline-none`.
+  - The copy now reads "has not been created".
+  - A `{}` non-array test was added to `ActorHistoryPanel`.
+  - Captures re-taken.
+- **Implementer verification:** 120 / 1812; tsc 0; lint; build.
+  - Falsifier 5 (removing `phone` from the constant) gave TS2353, a red pin, and a red Phone-blank test.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 120 / 1812, exit 0; tsc; lint 0; build 0 with 27 routes. `out/` has no harness route, and no stray processes (one VS Code process, unrelated).
+- **Reviewer:** `akili-reviewer` (opus), round 2. The attempt-1 FAIL is resolved, and the pin now catches the drift.
+  - **New FAIL (NFR-4):** `DuplicateConfirmDialog` focuses the `tabIndex=-1` panel. `useDialogFocusTrap` only wraps at the first and last focusables, so **Shift+Tab from the panel escapes** to ActorForm's Submit button behind the backdrop, where Escape no longer works. No test covers this, because jsdom has no native Tab.
+- **Advisory:**
+  - "Not possible by construction" overstates it.
+  - The pin compares two frontend copies; the backend is not pinned from the frontend (DD-1 accepts this).
+  - Whitespace: the frontend trims, the backend does not, so the client is stricter.
+  - Carried-over cosmetics.
+- **runtime events:** none.
+- **Leader note:** the next attempt is this task's **3rd review round**. Under the standing authorization it is logged and execution continues, with no stop. Attempt 3 is the last before a HALT.
+
+**Attempt 3 — PASS** (2026-10-04)
+- **Implementer:** `akili-implementer` (sonnet), effort xhigh. It received the attempt-2 report verbatim.
+- **Changes:**
+  - `DuplicateConfirmDialog` now focuses the first enabled button on open, and the panel's `tabIndex` / `focus:outline-none` are removed.
+  - The weak info dialog already focused a real OK button; it is unchanged.
+  - Tests: open focus is a BUTTON inside the dialog, and a Shift+Tab test goes through the hook's handler.
+  - Advisory comments reworded. The client's trimmed blank check is kept, with a comment.
+- **Implementer verification:** 120 suites / 1813 tests; tsc; lint; build.
+  - **Falsifier:** reverting to panel focus turns both assertions red.
+  - **Real browser** (headless Chrome via CDP, throwaway harness deleted):
+    - initial focus: `BUTTON "Cancel"`, inside the dialog;
+    - after Shift+Tab: `BUTTON "Not a duplicate — create"`, still inside the dialog.
+  - Capture: `scratchpad/duplicate-dialog-375.png`.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. 120 / 1813, exit 0; tsc; lint 0; build 0. The route list is identical to attempt 2 (27 lines), with no harness and no stray processes.
+- **Reviewer:** `akili-reviewer` (opus), round 3, **PASS**.
+  - The NFR-4 issue is resolved.
+  - No regression in attempts 1–2's passing items.
+  - The whitespace claim is verified: `buildDto` sends `trim() || null`.
+- **Reviewer's boundary:** the native Tab order in the browser is the author's CDP measurement only. No test drives native tabbing.
+- **Advisory:**
+  - The `hasDuplicateCandidates` doc says a Trader ID collision "can no longer even occur"; "no longer client-attributable" is more accurate.
+  - `DialogFooter` disables the focused button while loading, so focus drops to `<body>`. This is pre-existing, house-wide.
+  - The 375 gutter (house-wide; follow-up).
+  - The hook has no focus restore on close; this is a known defect.
+- **runtime events:** none.
+- **Requirements covered:**
+  - FR-1 form side;
+  - FR-2: ID shown, no input on create, read-only on edit;
+  - FR-3 UI side: strong dialog, confirm and resubmit of the union, weak info dialog, audit line;
+  - NFR-1 frontend half;
+  - NFR-3 (no values);
+  - NFR-4: focus trap, Escape, `aria-live`, captures.
+- **Final status:** **PASS**. 3 attempts, 3 review verdicts. Round 3 was logged and continued under the standing authorization.

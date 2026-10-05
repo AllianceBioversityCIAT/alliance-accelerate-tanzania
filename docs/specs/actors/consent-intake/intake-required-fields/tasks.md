@@ -10,7 +10,7 @@
 | Approval Mode | gated |
 | Requirements | [`requirements.md`](requirements.md): FR-1 to FR-6, NFR-1 to NFR-4 |
 | Design | [`design.md`](design.md) r2 (judgment **APPROVED**, [`judgment.md`](judgment.md)) |
-| Budget | **Revised 2026-10-02 after the T-2 tripwire, approved by the product owner: 8 tasks · ~5,500 LOC · ~22 review rounds** (execution.md *Budget tripwire — after T-2*). Original: 8 tasks · ~1,800 LOC · ~13 review rounds. *Re-sized at decomposition: design §11 said 7 tasks. Import was split into T-4 (template and validation) and T-5 (duplicates), because one task carrying both exceeded a single focused session. LOC was unchanged at decomposition.* `/akili-execute` **escalates to the user when any task reaches a 3rd review round**, or when actuals pass the budget. |
+| Budget | **Re-baselined 2026-10-04 after T-5, under the product owner's standing authorization: 8 tasks · ~9,500 LOC · ~26 review rounds.** Earlier revision, 2026-10-02 after the T-2 tripwire: 8 tasks · ~5,500 LOC · ~22 review rounds (execution.md *Budget tripwire — after T-2*). Original: 8 tasks · ~1,800 LOC · ~13 review rounds. *Re-sized at decomposition: design §11 said 7 tasks. Import was split into T-4 (template and validation) and T-5 (duplicates), because one task carrying both exceeded a single focused session. LOC was unchanged at decomposition.* `/akili-execute` **escalates to the user when any task reaches a 3rd review round**, or when actuals pass the budget. |
 | Branch | `feature/atp-84-consent-request-email` |
 
 ---
@@ -175,7 +175,7 @@
       Review: `full`.
       Done when: every FR-4 scenario has a red-then-green spec, `skipped-*` no longer exists in backend production code (`grep -rn "skipped-exists\|skipped-duplicate-in-file" backend/src --include=*.ts` → test-fixture hits only, or zero), NFR-2 is re-timed, and all six falsifiers were shown red.
 
-- [ ] **T-6** Admin form: required fields, no Trader ID input, the duplicate dialog  (deps: T-3)
+- [x] **T-6** Admin form: required fields, no Trader ID input, the duplicate dialog  (deps: T-3)
       Scope (design §5):
       - `ApiError` keeps `body`.
       - The `lib/api/actors-admin.ts` types mirror T-1 to T-3's contracts exactly.

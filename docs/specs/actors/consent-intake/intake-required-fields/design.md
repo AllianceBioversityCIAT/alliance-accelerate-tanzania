@@ -216,8 +216,8 @@ Replacing the natural key as the duplicate guard is a TRD-level decision; TRD :7
 | Measure | Estimate |
 |---|---|
 | Tasks | ~~7~~ **8**: re-sized at decomposition, when import was split into template/validation (T-4) and duplicates (T-5). See tasks.md Document Control. |
-| LOC (incl. tests and fixture churn) | ~~~1,800~~ **~5,500**, revised 2026-10-02 after the T-2 tripwire (execution.md). Tests dominate. |
-| Review rounds | ~~~12~~ ~~~13~~ **~22**, revised 2026-10-02 after the T-2 tripwire |
+| LOC (incl. tests and fixture churn) | ~~~1,800~~ ~~~5,500~~ **~9,500**, re-baselined 2026-10-04 after T-5 (execution.md). Tests dominate. |
+| Review rounds | ~~~12~~ ~~~13~~ ~~~22~~ **~26**, re-baselined 2026-10-04 after T-5 |
 
 The proposal's Lite estimate was re-checked here. Standard is right; it is not Full, because there is no new public surface or infra.
 
