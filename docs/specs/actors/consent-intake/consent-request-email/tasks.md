@@ -83,7 +83,7 @@ T-1…T-13 ─► T-14
     - All tests green, all falsifiers executed red.
     - Backend build, lint and the full suite green.
 
-- [ ] **T-2 Admin-managed consent edition registry** (deps: none)
+- [x] **T-2 Admin-managed consent edition registry** (deps: none)
   - **Size:** S (~450 LOC, mostly text + tests) · **Effort:** `medium` · **Skills:** `tdd`
   - **Traces:** FR-1 (all scenarios, the AND MUST NOT "signing", the BUT self-registration unchanged) · design §7.2, P-8, P-18
   - **Scope:**
