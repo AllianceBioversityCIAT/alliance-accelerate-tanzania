@@ -224,7 +224,7 @@ describe('DirectoryView — keyboard, focus, and ARIA', () => {
     // accessible name is its visible "Region" label — the redundant
     // aria-label="Filter by region" was removed (OQ-1) (NFR-3).
     expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/filter by actor type/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 
