@@ -8,6 +8,8 @@
  * the `ImportReport.rows` returned by `importActors` (design.md §3/§5). Columns:
  *   Row #  ·  Trader ID  ·  Name  ·  Outcome (badge)  ·  Details (errors/warnings)
  *
+ * The Trader ID column/line is gated by the caller-supplied `showTraderId` prop (see below) — never inferred from row data.
+ *
  * Rows are grouped invalid-first — failed, then possible-duplicate, then
  * create/created — so an Admin sees the problems that need attention at the
  * top; the Excel row number stays visible on every row regardless of position
@@ -293,10 +295,12 @@ function PreviewCard({
   row,
   confirmed,
   onToggleConfirm,
+  showTraderId,
 }: {
   row: ImportRowResult;
   confirmed: boolean;
   onToggleConfirm?: (checked: boolean) => void;
+  showTraderId: boolean;
 }) {
   return (
     <article
@@ -309,7 +313,8 @@ function PreviewCard({
             {row.traderName ?? '—'}
           </p>
           <p className="mt-0.5 text-xs text-muted">
-            Row {row.rowNumber} · {row.traderId ?? '—'}
+            Row {row.rowNumber}
+            {showTraderId ? ` · ${row.traderId ?? '—'}` : ''}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -339,12 +344,15 @@ export interface ImportPreviewTableProps {
   confirmedRows?: ReadonlySet<number>;
   /** T-7 — called when the admin toggles a `possible-duplicate` row's checkbox. */
   onToggleConfirm?: (rowNumber: number, checked: boolean) => void;
+  /** Whether to render the Trader ID column/line — `false` for a preview (always `null` until commit), `true` for the result. Defaults to `true`. */
+  showTraderId?: boolean;
 }
 
 export function ImportPreviewTable({
   rows,
   confirmedRows,
   onToggleConfirm,
+  showTraderId = true,
 }: ImportPreviewTableProps) {
   // Group invalid-first while preserving Excel row order within each group.
   const sorted = rows
@@ -369,7 +377,10 @@ export function ImportPreviewTable({
           </caption>
           <thead className="bg-surface-alt">
             <tr>
-              {['Row #', 'Trader ID', 'Name', 'Outcome', 'Details'].map((col) => (
+              {(showTraderId
+                ? ['Row #', 'Trader ID', 'Name', 'Outcome', 'Details']
+                : ['Row #', 'Name', 'Outcome', 'Details']
+              ).map((col) => (
                 <th
                   key={col}
                   scope="col"
@@ -386,9 +397,11 @@ export function ImportPreviewTable({
                 <td className="px-4 py-3 font-medium text-fg whitespace-nowrap">
                   {row.rowNumber}
                 </td>
-                <td className="px-4 py-3 text-muted whitespace-nowrap">
-                  {row.traderId ?? '—'}
-                </td>
+                {showTraderId && (
+                  <td className="px-4 py-3 text-muted whitespace-nowrap">
+                    {row.traderId ?? '—'}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-fg">{row.traderName ?? '—'}</td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex flex-col items-start gap-1">
@@ -417,6 +430,7 @@ export function ImportPreviewTable({
               row={row}
               confirmed={confirmedRows?.has(row.rowNumber) ?? false}
               onToggleConfirm={toggleHandlerFor?.(row.rowNumber)}
+              showTraderId={showTraderId}
             />
           </div>
         ))}

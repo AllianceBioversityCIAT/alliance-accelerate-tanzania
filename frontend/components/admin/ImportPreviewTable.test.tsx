@@ -187,17 +187,32 @@ describe('ImportPreviewTable — grouping and structure', () => {
     expect(within(table).getByText('Details')).toBeInTheDocument();
   });
 
-  it('shows "—" for the Trader ID of a preview row and the assigned id after commit', () => {
-    const { rerender } = render(<ImportPreviewTable rows={[POSSIBLE_DUPLICATE_ROW]} />);
+  // Falsifier (import preview fix): showing the Trader ID column/line in the
+  // PREVIEW render (showTraderId={false}) must redden this test — the
+  // backend always sends `traderId: null` until commit, so the column is an
+  // always-empty distraction there.
+  it('hides the Trader ID column and card line in preview (showTraderId={false})', () => {
+    render(<ImportPreviewTable rows={[FAILED_ROW]} showTraderId={false} />);
     const table = screen.getByRole('table', { name: /import rows/i });
-    expect(within(table).getByText('—')).toBeInTheDocument();
+    const cardsList = screen.getByRole('list', { name: /import rows/i });
+    expect(within(table).queryByText('Trader ID')).not.toBeInTheDocument();
+    expect(within(table).queryByText(FAILED_ROW.traderId!)).not.toBeInTheDocument();
+    expect(within(cardsList).queryByText(FAILED_ROW.traderId!, { exact: false })).not.toBeInTheDocument();
+  });
 
-    rerender(
-      <ImportPreviewTable
-        rows={[{ ...CREATE_ROW, outcome: 'created', actorId: 'a1', traderId: 'TM-2026-0003' }]}
-      />,
-    );
-    expect(screen.getAllByText('TM-2026-0003').length).toBeGreaterThan(0);
+  it('shows the Trader ID column and card line in the result view (showTraderId={true})', () => {
+    const createdRow: ImportRowResult = {
+      ...CREATE_ROW,
+      outcome: 'created',
+      actorId: 'a1',
+      traderId: 'TM-2026-0003',
+    };
+    render(<ImportPreviewTable rows={[createdRow]} showTraderId />);
+    const table = screen.getByRole('table', { name: /import rows/i });
+    const cardsList = screen.getByRole('list', { name: /import rows/i });
+    expect(within(table).getByText('Trader ID')).toBeInTheDocument();
+    expect(within(table).getByText('TM-2026-0003')).toBeInTheDocument();
+    expect(within(cardsList).getByText(/tm-2026-0003/i)).toBeInTheDocument();
   });
 });
 
