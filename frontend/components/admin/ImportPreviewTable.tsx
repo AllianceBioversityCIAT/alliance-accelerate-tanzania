@@ -50,7 +50,11 @@
 import { useId } from 'react';
 
 import { matchedOnLabel } from './DuplicateConfirmDialog';
-import type { ImportDuplicateCandidate, ImportRowResult } from '@/lib/api/actors-admin';
+import {
+  importDuplicateCandidateKey,
+  type ImportDuplicateCandidate,
+  type ImportRowResult,
+} from '@/lib/api/actors-admin';
 
 // ---------------------------------------------------------------------------
 // Outcome presentation
@@ -109,7 +113,7 @@ function hasAnyWarning(row: ImportRowResult): boolean {
 // Badges
 // ---------------------------------------------------------------------------
 
-function OutcomeBadge({ row }: { row: ImportRowResult }) {
+function OutcomeBadge({ row }: Readonly<{ row: ImportRowResult }>) {
   return (
     <span
       className={[
@@ -135,7 +139,7 @@ function WarningBadge() {
 // ---------------------------------------------------------------------------
 
 /** One candidate's identity + matched attributes, as a single readable line. */
-function CandidateLine({ candidate }: { candidate: ImportDuplicateCandidate }) {
+function CandidateLine({ candidate }: Readonly<{ candidate: ImportDuplicateCandidate }>) {
   if (candidate.kind === 'actor') {
     return (
       <>
@@ -167,11 +171,11 @@ function DuplicateCandidates({
   row,
   confirmed,
   onToggleConfirm,
-}: {
+}: Readonly<{
   row: ImportRowResult;
   confirmed: boolean;
   onToggleConfirm?: (checked: boolean) => void;
-}) {
+}>) {
   // Stable per-mount id (table and card render separate instances of this
   // component for the same row, so a literal `row.rowNumber`-based id would
   // collide across the two DOM trees).
@@ -186,8 +190,8 @@ function DuplicateCandidates({
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-alt p-2">
       <ul className="flex flex-col gap-0.5">
-        {candidates.map((candidate, i) => (
-          <li key={`c-${i}`} className="text-xs text-muted">
+        {candidates.map((candidate) => (
+          <li key={importDuplicateCandidateKey(candidate)} className="text-xs text-muted">
             <CandidateLine candidate={candidate} />
           </li>
         ))}
@@ -207,7 +211,7 @@ function DuplicateCandidates({
               'disabled:cursor-not-allowed disabled:opacity-50',
             ].join(' ')}
           />
-          Not a duplicate — create
+          <span>Not a duplicate — create</span>
         </label>
       )}
       {tooMany && (
@@ -220,7 +224,7 @@ function DuplicateCandidates({
 }
 
 /** Weak matches — advisory only, never gates creation (design.md I-11). */
-function DuplicateWarnings({ row }: { row: ImportRowResult }) {
+function DuplicateWarnings({ row }: Readonly<{ row: ImportRowResult }>) {
   const weak = row.duplicateWarnings ?? [];
   if (weak.length === 0) return null;
 
@@ -245,11 +249,11 @@ function RowDetails({
   row,
   confirmed,
   onToggleConfirm,
-}: {
+}: Readonly<{
   row: ImportRowResult;
   confirmed: boolean;
   onToggleConfirm?: (checked: boolean) => void;
-}) {
+}>) {
   const hasErrors = row.errors && row.errors.length > 0;
   const hasWarnings = row.warnings && row.warnings.length > 0;
   const hasCandidates = (row.duplicateCandidates?.length ?? 0) > 0;
@@ -276,8 +280,8 @@ function RowDetails({
       {hasWeakWarnings && <DuplicateWarnings row={row} />}
       {hasWarnings && (
         <ul className="flex flex-col gap-0.5">
-          {row.warnings!.map((warn, i) => (
-            <li key={`pw-${i}`} className="text-xs text-warning">
+          {row.warnings!.map((warn) => (
+            <li key={warn} className="text-xs text-warning">
               {warn}
             </li>
           ))}
@@ -296,12 +300,12 @@ function PreviewCard({
   confirmed,
   onToggleConfirm,
   showTraderId,
-}: {
+}: Readonly<{
   row: ImportRowResult;
   confirmed: boolean;
   onToggleConfirm?: (checked: boolean) => void;
   showTraderId: boolean;
-}) {
+}>) {
   return (
     <article
       aria-label={`Row ${row.rowNumber}`}
@@ -353,7 +357,7 @@ export function ImportPreviewTable({
   confirmedRows,
   onToggleConfirm,
   showTraderId = true,
-}: ImportPreviewTableProps) {
+}: Readonly<ImportPreviewTableProps>) {
   // Group invalid-first while preserving Excel row order within each group.
   const sorted = rows
     .map((row, index) => ({ row, index }))

@@ -180,10 +180,8 @@ export default function NewActorPage() {
   }, [router]);
 
   const handleSuccess = useCallback((actor?: AdminActorCreateResult | AdminActor) => {
-    const duplicateWarnings =
-      actor && 'duplicateWarnings' in actor ? actor.duplicateWarnings : undefined;
-    if (duplicateWarnings && duplicateWarnings.length > 0) {
-      setCreatedWithWarnings(actor as AdminActorCreateResult);
+    if (actor && 'duplicateWarnings' in actor && (actor.duplicateWarnings?.length ?? 0) > 0) {
+      setCreatedWithWarnings(actor);
       return;
     }
     router.push('/admin/actors');

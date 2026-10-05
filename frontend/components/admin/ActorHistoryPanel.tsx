@@ -233,9 +233,9 @@ function duplicateConfirmationLine(snapshot: DuplicateConfirmationSnapshot): str
 
 function DuplicateConfirmationList({
   duplicateConfirmation,
-}: {
+}: Readonly<{
   duplicateConfirmation: DuplicateConfirmationSnapshot[] | null;
-}) {
+}>) {
   // The real API returns `null` for "nothing confirmed"; an in-memory e2e
   // test harness mock has stored the Prisma.JsonNull sentinel instead — never
   // assert on that shape here, just render nothing for null/empty either way.

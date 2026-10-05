@@ -119,6 +119,7 @@ export function DuplicateConfirmDialog({
   if (!open) return null;
 
   const count = candidates.length;
+  const describedBy = error ? `${descId} ${errorId}` : descId;
 
   return (
     <>
@@ -131,7 +132,7 @@ export function DuplicateConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={`${descId}${error ? ` ${errorId}` : ''}`}
+        aria-describedby={describedBy}
         onKeyDown={handleKeyDown}
         className={[
           'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',

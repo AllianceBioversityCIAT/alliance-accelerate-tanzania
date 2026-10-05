@@ -1056,45 +1056,70 @@ export class ActorImportService {
     acknowledged?: boolean,
   ): void {
     for (const row of rows) {
-      const held = row.state === 'possible-duplicate';
-      if ((row.state !== 'candidate' && !held) || !row.create) continue;
+      this.applyConsentGateToRow(row, commit, acknowledged);
+    }
+  }
 
-      const scalar = row.create.scalar;
-      const provenanceOk = isConsentProvenanceSatisfied(null, {
-        consentStatus: scalar.consentStatus,
-        consentMethod: scalar.consentMethod,
-        consentObtainedAt: scalar.consentObtainedAt,
-        consentReference: scalar.consentReference,
+  /** Per-row body of {@link applyConsentGate} — see that method's docblock. */
+  private applyConsentGateToRow(
+    row: WorkRow,
+    commit: boolean,
+    acknowledged?: boolean,
+  ): void {
+    const held = row.state === 'possible-duplicate';
+    if ((row.state !== 'candidate' && !held) || !row.create) return;
+
+    if (!this.passesProvenanceGate(row, row.create.scalar)) return;
+    if (!row.create.consentGranted) return;
+
+    if (held) {
+      if (!commit) row.warnings.push(CONSENT_ACK_WARNING);
+      return;
+    }
+
+    this.applyAcknowledgementGate(row, commit, acknowledged);
+  }
+
+  /**
+   * Provenance half of the consent gate (T-6). On failure, fails the row and
+   * returns `false`; a passing row is left untouched and returns `true`.
+   */
+  private passesProvenanceGate(row: WorkRow, scalar: ActorScalarData): boolean {
+    const provenanceOk = isConsentProvenanceSatisfied(null, {
+      consentStatus: scalar.consentStatus,
+      consentMethod: scalar.consentMethod,
+      consentObtainedAt: scalar.consentObtainedAt,
+      consentReference: scalar.consentReference,
+    });
+    if (provenanceOk) return true;
+
+    row.state = 'failed';
+    row.create = undefined;
+    row.errors.push(
+      ...this.buildProvenanceRowErrors(scalar.consentMethod, scalar.consentObtainedAt),
+    );
+    return false;
+  }
+
+  /**
+   * File-level acknowledgement half of the consent gate (DD-2/DD-5), for a
+   * non-held `candidate` row whose provenance already passed and that
+   * publishes `GRANTED`.
+   */
+  private applyAcknowledgementGate(
+    row: WorkRow,
+    commit: boolean,
+    acknowledged?: boolean,
+  ): void {
+    if (commit && acknowledged !== true) {
+      row.state = 'failed';
+      row.create = undefined;
+      row.errors.push({
+        field: 'consentStatus',
+        message: 'Acknowledgement is required to import GRANTED actors.',
       });
-      if (!provenanceOk) {
-        row.state = 'failed';
-        row.create = undefined;
-        row.errors.push(
-          ...this.buildProvenanceRowErrors(
-            scalar.consentMethod,
-            scalar.consentObtainedAt,
-          ),
-        );
-        continue;
-      }
-
-      if (!row.create.consentGranted) continue;
-
-      if (held) {
-        if (!commit) row.warnings.push(CONSENT_ACK_WARNING);
-        continue;
-      }
-
-      if (commit && acknowledged !== true) {
-        row.state = 'failed';
-        row.create = undefined;
-        row.errors.push({
-          field: 'consentStatus',
-          message: 'Acknowledgement is required to import GRANTED actors.',
-        });
-      } else if (!commit) {
-        row.warnings.push(CONSENT_ACK_WARNING);
-      }
+    } else if (!commit) {
+      row.warnings.push(CONSENT_ACK_WARNING);
     }
   }
 

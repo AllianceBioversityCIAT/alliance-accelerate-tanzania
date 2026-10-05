@@ -1923,11 +1923,16 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         confirmedNotDuplicateOf: [],
       };
 
-      await request(app.getHttpServer())
+      const before = await prismaMock.actor.count({});
+
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/actors')
         .set(admin)
-        .send(payload)
-        .expect(409);
+        .send(payload);
+
+      expect(res.status).toBe(409);
+      const after = await prismaMock.actor.count({});
+      expect(after).toBe(before);
     });
 
     it('rejects confirmedNotDuplicateOf with more than 50 entries — 400', async () => {
@@ -1936,11 +1941,12 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         confirmedNotDuplicateOf: Array.from({ length: 51 }, (_, i) => `actor-${i}`),
       };
 
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/actors')
         .set(admin)
-        .send(payload)
-        .expect(400);
+        .send(payload);
+
+      expect(res.status).toBe(400);
     });
   });
 

@@ -274,6 +274,139 @@ function FailureBreakdown({ report }: { report: ImportReport }) {
 
 type Phase = 'idle' | 'previewing' | 'preview' | 'committing' | 'result';
 
+/** "" for exactly one, "s" otherwise — keeps a plural suffix out of a nested ternary (S3358). */
+function pluralSuffix(count: number): string {
+  return count === 1 ? '' : 's';
+}
+
+/**
+ * Maps a caught error to the right piece of page state. Pulled out of the
+ * component (S3776) so its branching isn't counted against the component's
+ * own cognitive complexity.
+ */
+function mapImportError(
+  caught: unknown,
+  handlers: {
+    onAuthFailure: () => void;
+    onApiError: (message: string) => void;
+    onFileError: (message: string) => void;
+  },
+): void {
+  if (caught instanceof AuthFailureError) {
+    handlers.onAuthFailure();
+    return;
+  }
+  if (caught instanceof ApiError) {
+    // 400 = file-level validation the Admin can act on (format, caps, base64) —
+    // show the server's specific message. Any other status (e.g. 5xx) reads raw,
+    // so present a friendly, actionable fallback instead (NFR-3).
+    handlers.onApiError(caught.status === 400 ? caught.message : GENERIC_IMPORT_ERROR);
+    return;
+  }
+  // Plain Error from the client-side guard (non-.xlsx / oversize).
+  handlers.onFileError(
+    caught instanceof Error ? caught.message : 'The file could not be imported.',
+  );
+}
+
+/** Resolves the session token on mount, or tells the caller to redirect to /login. */
+async function resolveSessionToken(
+  isCancelled: () => boolean,
+  onNoSession: () => void,
+  onToken: (token: string) => void,
+): Promise<void> {
+  const session = await getSession();
+  if (isCancelled()) return;
+  if (!session) {
+    onNoSession();
+    return;
+  }
+  onToken(session.accessToken);
+}
+
+interface PreviewCallbacks {
+  setFile: (file: File | null) => void;
+  setPhase: (phase: Phase) => void;
+  setReport: (report: ImportReport | null) => void;
+  onAuthFailure: () => void;
+  onError: (caught: unknown) => void;
+}
+
+/**
+ * Runs the preview (dry-run) call for a newly picked file. Pulled out of
+ * `processFile` (S3776) so its branching isn't counted against the
+ * component's own cognitive complexity.
+ */
+async function runPreview(
+  picked: File | null,
+  token: string | null,
+  callbacks: PreviewCallbacks,
+): Promise<void> {
+  if (!picked) {
+    callbacks.setFile(null);
+    callbacks.setPhase('idle');
+    return;
+  }
+
+  callbacks.setFile(picked);
+
+  if (!token) {
+    callbacks.onAuthFailure();
+    return;
+  }
+
+  callbacks.setPhase('previewing');
+  try {
+    const result = await importActors(picked, 'preview', token);
+    callbacks.setReport(result);
+    callbacks.setPhase('preview');
+  } catch (caught: unknown) {
+    callbacks.setPhase('idle');
+    callbacks.onError(caught);
+  }
+}
+
+interface CommitCallbacks {
+  setApiError: (message: string | undefined) => void;
+  setPhase: (phase: Phase) => void;
+  setReport: (report: ImportReport | null) => void;
+  setConfirmedRows: (rows: Set<number>) => void;
+  onError: (caught: unknown) => void;
+}
+
+/**
+ * Runs the commit call. Pulled out of `commit` (S3776) so its try/catch
+ * isn't counted against the component's own cognitive complexity.
+ */
+async function runCommit(
+  file: File | null,
+  token: string | null,
+  report: ImportReport | null,
+  confirmedRows: ReadonlySet<number>,
+  acknowledged: boolean | undefined,
+  callbacks: CommitCallbacks,
+): Promise<void> {
+  if (!file || !token) return;
+  callbacks.setApiError(undefined);
+  callbacks.setPhase('committing');
+  try {
+    const duplicateConfirmations = buildDuplicateConfirmations(report, confirmedRows);
+    const result = await importActors(
+      file,
+      'commit',
+      token,
+      acknowledged,
+      duplicateConfirmations,
+    );
+    callbacks.setReport(result);
+    callbacks.setConfirmedRows(new Set());
+    callbacks.setPhase('result');
+  } catch (caught: unknown) {
+    callbacks.setPhase('preview');
+    callbacks.onError(caught);
+  }
+}
+
 export default function ActorImportPage() {
   const router = useRouter();
 
@@ -305,18 +438,7 @@ export default function ActorImportPage() {
 
   useEffect(() => {
     let cancelled = false;
-
-    async function init() {
-      const session = await getSession();
-      if (cancelled) return;
-      if (!session) {
-        handleAuthFailure();
-        return;
-      }
-      setToken(session.accessToken);
-    }
-
-    void init();
+    void resolveSessionToken(() => cancelled, handleAuthFailure, setToken);
     return () => {
       cancelled = true;
     };
@@ -326,19 +448,11 @@ export default function ActorImportPage() {
 
   const applyError = useCallback(
     (caught: unknown) => {
-      if (caught instanceof AuthFailureError) {
-        handleAuthFailure();
-        return;
-      }
-      if (caught instanceof ApiError) {
-        // 400 = file-level validation the Admin can act on (format, caps, base64) —
-        // show the server's specific message. Any other status (e.g. 5xx) reads raw,
-        // so present a friendly, actionable fallback instead (NFR-3).
-        setApiError(caught.status === 400 ? caught.message : GENERIC_IMPORT_ERROR);
-        return;
-      }
-      // Plain Error from the client-side guard (non-.xlsx / oversize).
-      setFileError(caught instanceof Error ? caught.message : 'The file could not be imported.');
+      mapImportError(caught, {
+        onAuthFailure: handleAuthFailure,
+        onApiError: setApiError,
+        onFileError: setFileError,
+      });
     },
     [handleAuthFailure],
   );
@@ -370,34 +484,19 @@ export default function ActorImportPage() {
   // ── Preview on file selection (shared by the picker and drag & drop) ──────
 
   const processFile = useCallback(
-    async (picked: File | null) => {
+    (picked: File | null) => {
       setFileError(undefined);
       setApiError(undefined);
       setReport(null);
       setConfirmedRows(new Set());
 
-      if (!picked) {
-        setFile(null);
-        setPhase('idle');
-        return;
-      }
-
-      setFile(picked);
-
-      if (!token) {
-        handleAuthFailure();
-        return;
-      }
-
-      setPhase('previewing');
-      try {
-        const result = await importActors(picked, 'preview', token);
-        setReport(result);
-        setPhase('preview');
-      } catch (caught: unknown) {
-        setPhase('idle');
-        applyError(caught);
-      }
+      return runPreview(picked, token, {
+        setFile,
+        setPhase,
+        setReport,
+        onAuthFailure: handleAuthFailure,
+        onError: applyError,
+      });
     },
     [token, applyError, handleAuthFailure],
   );
@@ -441,27 +540,14 @@ export default function ActorImportPage() {
   // ── Commit ─────────────────────────────────────────────────────────────────
 
   const commit = useCallback(
-    async (acknowledged?: boolean) => {
-      if (!file || !token) return;
-      setApiError(undefined);
-      setPhase('committing');
-      try {
-        const duplicateConfirmations = buildDuplicateConfirmations(report, confirmedRows);
-        const result = await importActors(
-          file,
-          'commit',
-          token,
-          acknowledged,
-          duplicateConfirmations,
-        );
-        setReport(result);
-        setConfirmedRows(new Set());
-        setPhase('result');
-      } catch (caught: unknown) {
-        setPhase('preview');
-        applyError(caught);
-      }
-    },
+    (acknowledged?: boolean) =>
+      runCommit(file, token, report, confirmedRows, acknowledged, {
+        setApiError,
+        setPhase,
+        setReport,
+        setConfirmedRows,
+        onError: applyError,
+      }),
     [file, token, applyError, report, confirmedRows],
   );
 
@@ -493,7 +579,7 @@ export default function ActorImportPage() {
   }, [inFlight]);
 
   const resultSummary = report
-    ? `${report.totals.created} created, ${report.totals.possibleDuplicate} possible duplicate${report.totals.possibleDuplicate === 1 ? '' : 's'}, ${report.totals.failed} failed.`
+    ? `${report.totals.created} created, ${report.totals.possibleDuplicate} possible duplicate${pluralSuffix(report.totals.possibleDuplicate)}, ${report.totals.failed} failed.`
     : '';
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -707,7 +793,7 @@ export default function ActorImportPage() {
                 <p role="status" aria-live="polite" className="text-sm text-muted">
                   {creatableCount === 0
                     ? 'No rows are eligible to import. Fix the file and upload again.'
-                    : `${creatableCount} actor${creatableCount === 1 ? '' : 's'} will be created. Possible duplicates you have not confirmed and failed rows are not imported.`}
+                    : `${creatableCount} actor${pluralSuffix(creatableCount)} will be created. Possible duplicates you have not confirmed and failed rows are not imported.`}
                 </p>
                 <button
                   type="button"
@@ -723,7 +809,7 @@ export default function ActorImportPage() {
                 >
                   {phase === 'committing'
                     ? 'Importing…'
-                    : `Import ${creatableCount} actor${creatableCount === 1 ? '' : 's'}`}
+                    : `Import ${creatableCount} actor${pluralSuffix(creatableCount)}`}
                 </button>
               </div>
             </>

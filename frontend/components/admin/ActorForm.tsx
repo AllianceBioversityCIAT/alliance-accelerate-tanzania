@@ -1086,15 +1086,15 @@ export default function ActorForm({
         <div className="rounded-md border border-border bg-surface p-4 sm:p-6 shadow-sm">
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">
-              Crops
+              <span id={`${baseId}-crops-group-label`}>Crops</span>
               <span aria-hidden="true" className="ml-0.5 text-danger">*</span>
             </legend>
-            <div
-              role="group"
-              aria-label="Crops"
+            <fieldset
+              aria-labelledby={`${baseId}-crops-group-label`}
               aria-describedby={errors.crops ? `${baseId}-crops-error` : undefined}
-              className="flex flex-wrap gap-4"
+              className="flex flex-wrap gap-4 border-0 p-0 m-0 min-w-0"
             >
+              <legend className="sr-only" />
               {CROP_NAMES.map((crop) => {
                 const id = `${baseId}-crop-${crop.value}`;
                 const checked = values.crops.includes(crop.value);
@@ -1115,7 +1115,7 @@ export default function ActorForm({
                   </div>
                 );
               })}
-            </div>
+            </fieldset>
             {errors.crops && (
               <p id={`${baseId}-crops-error`} role="alert" className="mt-1.5 text-xs text-danger">
                 {errors.crops}
