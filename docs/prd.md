@@ -26,7 +26,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 | Persona | Role in system | Primary needs |
 |---|---|---|
 | **Public visitor** (donor, researcher, partner, general public) | `Public` (unauthenticated) | Browse and search the actor directory; see the map and aggregate metrics — none of which ever carries an actor's contact data; view a consenting actor's full profile, including contact details, one actor at a time. |
-| **Field/Data-entry staff** (program officers, enumerators) | `Staff` | Add and edit actor records, including PII; import field-collected CSVs; cannot manage users or delete in bulk. |
+| **Field/Data-entry staff** (program officers, enumerators) | `Staff` | Add and edit actor records, including PII; import field-collected workbooks; cannot manage users or delete in bulk. |
 | **Administrator** (program lead, data manager) | `Admin` | Full CRUD on all records and fields; user/role management; bulk import including PII; data governance. *(Bulk **export** was part of this row until 2026-09-21 — see §5 Out of Scope.)* |
 
 ## 4. Goals & Success Metrics
@@ -48,7 +48,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 3. **Geospatial Visualization (Seed Maps)** — interactive Leaflet map of actor locations with Crop / Region / Capacity / Trader-type filters.
 4. **Data Management & Admin Backend** — protected Next.js Admin UI + secured NestJS routes for CRUD on Actor Profiles, with form validation.
 5. **Access Control & Data Protection** — RBAC (`Public` / `Staff` / `Admin`) with PII field-level protection.
-6. **Data Import** — CSV bulk import service for initial seeding and ongoing partner-profile onboarding. *(Read "Data Import/Export", and promised "filtered CSV export that enforces data-protection rules", until 2026-09-21. The export half is now Out of Scope below; ATP-53 is closed as cancelled.)*
+6. **Data Import** — `.xlsx` workbook bulk import (create-only) for initial seeding and ongoing partner-profile onboarding. *(Read "Data Import/Export", and promised "filtered CSV export that enforces data-protection rules", until 2026-09-21. The export half is now Out of Scope below; ATP-53 is closed as cancelled.)*
 7. **Public Self-Registration** — an anonymous applicant submits an organisation's own details through a public form, verifies their email address, and accepts a versioned consent policy; the submission is stored with no public read path for any field until an Admin approves or rejects it. Runs alongside the team-managed intake in item 4, not in place of it.
 
 ### Out of Scope (v1)
@@ -66,7 +66,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **US-3 (Public):** As a visitor landing on the homepage, I can see headline metrics (actors mapped, crops tracked, regions covered), so that I understand the dataset's scale at a glance.
 - **US-4 (Staff):** As data-entry staff, I can sign in and create or edit an actor record through a validated form, so that field corrections reach the central registry reliably.
 - **US-5 (Staff/Admin):** As authorized staff, I can view full actor profiles including PII, so that I can contact and verify actors.
-- **US-6 (Admin):** As an administrator, I can bulk-import a CSV of actors matching the canonical schema, so that I can seed and update the registry efficiently.
+- **US-6 (Admin):** As an administrator, I can bulk-import an `.xlsx` workbook of actors matching the canonical schema, so that I can seed and extend the registry efficiently.
 - **US-7 (Admin/Staff):** As an authorized user, I can export a filtered dataset as CSV, and the export respects my role's PII permissions, so that data sharing stays compliant.
 - **US-8 (Admin):** As an administrator, I can manage users and their roles, so that access stays governed.
 - **US-9 (Applicant):** As a prospective actor with no AT team contact, I can submit my organisation's details through a public form, verify my email address, and accept the consent policy, so that I can join the registry on my own — and I can check my submission's status by reference code afterward, whether or not the confirmation email arrives.
@@ -76,8 +76,8 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **AC-1:** The public actor **list** response (`GET /actors`) omits `phone` and `email` (and the rest of the contact block) for every actor, regardless of consent or role. The public actor **detail** response (`GET /actors/:id`) includes `phone` and `email` only for an actor whose consent is `GRANTED`; a non-`GRANTED` actor's detail request returns `404` and none of that actor's fields. (Testable: API contract test per endpoint and consent state.)
 - **AC-2:** The directory paginates at a fixed page size and supports search across `traderName`, `region`, `district`, and `crop`; p95 latency < 1s over the seed dataset.
 - **AC-3:** The map plots a marker for every actor with valid `gpsLatitude`/`gpsLongitude`; the four filters compose (AND) and update markers without a full page reload.
-- **AC-4:** Creating/editing an actor rejects invalid input (missing required fields, malformed email, out-of-range GPS) with field-level error messages; valid input persists to MySQL.
-- **AC-5:** CSV import maps every column in the canonical schema, reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
+- **AC-4:** Creating/editing an actor rejects invalid input (missing required fields, malformed email, out-of-range GPS) with field-level error messages; valid input persists to MySQL. The required set is the same across every team-managed intake path (admin create, admin edit, bulk import): Trader Name, Trader Type, Region, Contact Person, at least one crop, Capacity (tonnes, ≥ 0), Phone, Email — the same fields and bounds public self-registration already enforces. Trader ID is never a client input for a team-managed actor: the system assigns it (`TM-<year>-<NNNN>`); self-registered actors keep their own `SR-` id, and every existing Trader ID is unchanged.
+- **AC-5:** `.xlsx` workbook import maps every column in the canonical schema, reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
 - **AC-6:** The public dashboard CSV export never carries the contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) for any actor — structural, since the export is built from the same list projection as `GET /actors` — and does carry `sex`/`otherCrops` as non-contact, gender-disaggregated/demographic fields (`public-profile-disclosure` A-1); an `Admin` export includes the full record.
 - **AC-7:** All AWS CLI / IaC / deployment commands use the `IBD-DEV` profile.
 - **AC-8:** A public self-registration submission is stored with no public read path for any submitted field until an Admin approves it; no response on the public registration paths echoes a payload field, the submitter's email, or the submission's internal id. (Testable: PII-boundary test over HTTP — release gate.)

@@ -630,3 +630,118 @@
   3. `totals.warnings` now counts held `GRANTED` rows.
 - **Requirements now closed:** FR-5 "GRANTED without provenance → failed with today's reason, unchanged" for strongly matched rows, and FR-4 "confirming a row → created" for `GRANTED` rows.
 - **Final status:** **PASS**. 3 attempts in total for T-5, plus 1 review verdict this round.
+
+### T-8 — Baseline documents
+
+**Attempt 1 — FAIL** (2026-10-05)
+- **Implementer:** `akili-implementer` (sonnet), effort high. Skills: `software-architect`, `product-manager-toolkit`, `cognitive-doc-design`.
+- **Changes:**
+  - `docs/prd.md`: AC-4 extended.
+  - `docs/trd/trd.md`:
+    - the natural-key row (L71);
+    - a new paragraph on `ActorSequence` and the audit column;
+    - the CSV-import bullet;
+    - QA-9;
+    - a new `ADR-NNN` row.
+  - `backend/CLAUDE.md` / `AGENTS.md` were not edited. Both are version-agnostic and agree.
+- **Unmerged-branch ADR check:** no branch touches `trd.md` ahead of main, and main holds ADR-016.
+- **Pre-change grep** at b6e8853 found 3 hits: TRD L71, L209 and L398.
+- **Post-change grep:** 3 hits, all of them negations written by the Implementer.
+- **Evidence re-run (Leader, inline):** the grep reproduced; each hit was read and is a negation.
+- **Reviewer:** `akili-reviewer` (opus), the mandatory baseline review. **FAIL:**
+  1. **TRD §4 (API surface) untouched**, though FR-6 bullet 2 says "data model **and API sections**". The rows list `POST/PATCH/DELETE /api/v1/actors` and `POST /api/v1/import` (multipart CSV), which no controller answers. The live routes are under `admin/actors`.
+  2. **Stale import-contract lines (KZ-004):**
+     - L56 `ImportModule` "transactional bulk upsert";
+     - L87 contactPerson "optional on import";
+     - L94 says the table lists accepted import headers, which still includes `Trader_id` and the GPS altitude/accuracy rows dropped in v4.
+  3. The rewritten L211 keeps a false "CSV import: parse (streaming)". The real import is a base64 `.xlsx` loaded with exceljs. "Assigned immediately before its chunk commits" is imprecise.
+  4. The negating mentions are not live instructions, but they can be deleted with no loss (KZ-008), so the grep should reach a literal 0.
+- **Reviewer adjudication (b):** leaving `backend/CLAUDE.md` / `AGENTS.md` unedited is acceptable, recorded as a **scoped deviation** from T-8's Files list: they are version-agnostic and agree.
+- **Advisory:**
+  - ADR-NNN omits DD-5 item 2: legacy actors with no contact data are re-created on re-import.
+  - The "can exceed 6 MB" claim cites only the 3.80 MB measurement; add §9's ~7 MB estimate and its provenance.
+  - "Stays held" fits an import row, but an over-cap admin create is 409-blocked, not held.
+  - "Neither column": `ActorSequence` is a table, not a column.
+  - `ADR-NNN` is cited 4 times, and the archive-time allocation must sweep all four.
+  - Pre-existing wording: PRD US-6 "update", and "CSV" in QA-9 / AC-5.
+- **runtime events:** none.
+- **Leader decision:** issues 1–4 are in scope (FR-6). The Leader-authored design §4.7 under-scoped §4, and the requirement outranks it.
+
+**Attempt 2 — FAIL** (2026-10-05)
+- **Implementer:** `akili-implementer` (sonnet), effort high. It received the attempt-1 report verbatim.
+- **Changes:**
+  - TRD §4 now lists the 9 real `/api/v1/admin/actors*` routes.
+  - L56, L67, L71, L87 and L94 corrected.
+  - §5 rewritten as an exceljs `.xlsx` base64 import with accurate allocation timing.
+  - Negations deleted, so the recorded grep is literally 0.
+  - ADR-NNN consequences extended.
+  - PRD AC-5 changed to `.xlsx`.
+  - The Implementer found but did not fix PRD L29 (Staff "import field-collected CSVs", while the route is Admin-only).
+- **Evidence re-run (Leader, inline):** the recorded grep is empty (exit 1).
+- **Reviewer:** `akili-reviewer` (opus), round 2.
+  - All attempt-1 FAILs are resolved, and every new TRD route and sentence holds against the code. ADR-NNN appears 4 times, consistently.
+  - **FAIL (KZ-004):** PRD L51 ("CSV bulk import service") and US-6 ("bulk-import a CSV … seed and **update**") are now false. They contradict AC-5 and TRD §5 "never CSV". US-6's "update" also echoes the removed upsert.
+- **Adjudication of PRD L29:**
+  - The word "CSVs" is this spec's surface: fix it.
+  - "Staff can import / add / edit" is **pre-existing RBAC drift**, since every `/admin/actors*` route is Admin-only. Recorded for archive as a role-model item that needs a product decision; not fixed here.
+- **Advisory:**
+  - TRD L184 and L216, "each row's Trader ID allocated in its own transaction", reads as one transaction per row. It is one range per chunk.
+  - §12.3 "per-row isolation" should read "per-row validation, per-chunk commit isolation".
+- **runtime events:** none.
+- Attempt 3 is this task's 3rd review round. It is logged and continues under the standing authorization.
+
+**Attempt 3 — PASS** (2026-10-05)
+- **Implementer:** `akili-implementer` (sonnet), effort high. It received the attempt-2 report verbatim.
+- **PRD changes:**
+  - L29: "CSVs" → "workbooks". The role claim is untouched.
+  - L51: "`.xlsx` workbook bulk import (create-only)".
+  - US-6: "an `.xlsx` workbook … seed and extend".
+- **TRD changes (advisory):**
+  - L184 and L216: one `ActorSequence` range per chunk.
+  - §12.3: per-row validation and per-chunk commit isolation.
+- **PRD sweep:** 11 hits, 3 updated, 8 unrelated. The recorded grep returned 0.
+- **Evidence re-run (Leader, inline):** the grep was empty (exit 1). Any "CSV" mentions that remain in the PRD near "import" are only the legacy source files and a dated historical note.
+- **Reviewer:** `akili-reviewer` (opus), round 3, the mandatory baseline review. **PASS.**
+  - The range and isolation wording holds against `commitChunk` and `allocateTraderIds`.
+  - No regression.
+  - The KZ-004 sweep is clean.
+- **Advisory:**
+  - The PRD L29 Staff-import role drift must reach the archive ledger (below).
+  - "Allocation keeps colliding" would be more exact as "Trader IDs keep colliding".
+  - **ADR-NNN** appears in 4 places (TRD §3, the ADR index, QA-9 and the L71 row). Allocate the number at apply time on `main` after the unmerged-branch check, then sweep all four.
+- **Scoped deviation (recorded):** `backend/CLAUDE.md` / `backend/AGENTS.md` were not edited. They are version-agnostic and agree; reviewer-accepted.
+- **runtime events:** none.
+- **Requirements covered:** FR-6, both bullets and the "no stale instruction survives" scenario.
+- **Final status:** **PASS**. 3 attempts, 3 review verdicts.
+
+## 3. Summary — all 8 tasks complete (2026-10-05)
+
+| Task | Commit | Attempts | Review verdicts |
+|---|---|---|---|
+| T-1 intake contract | `81762fa` | 2 | 2 |
+| T-2 generated Trader ID | `b55f95b` | 3 | 4 |
+| T-3 duplicate gate on create | `2e730f2` | 2 | 3 |
+| T-4 template v4 + import validation | `d238645` | 2 | 3 |
+| T-5 import duplicates | `05d468f`, plus the reopen `b6e8853` | 3 | 4 |
+| T-6 admin form | `e5b9cd9` | 3 | 3 |
+| T-7 import page | `7fc6d31` | 2 | 2 |
+| T-8 baseline docs | this commit | 3 | 3 |
+
+**Budget, final:**
+- About **8,916 LOC** changed in backend and frontend (`git diff --stat 1bf27d0 -- backend frontend`: +8,060 / −856), plus the PRD and TRD edits.
+- **24 review verdicts**, within the re-baselined ~9,500 LOC / ~26.
+
+**Declared gaps and accepted limits** (design §9):
+- Real-MySQL concurrency is not covered by tests. Leader probes are recorded instead: 25/25 distinct IDs, and the collision shape.
+- The concurrent-create check-then-create race.
+- More than 50 strong candidates cannot be confirmed.
+- The uncompressed import preview can exceed 6 MB; gzip covers it for browsers.
+- Legacy actors with no contact fields re-import as weak duplicates (D-3).
+
+**Open items for archive** (none blocks merge):
+1. **ADR-NNN** number allocation (4 citations).
+2. **PRD L29 RBAC drift:** Staff is credited with importing and editing, but every `/admin/actors*` route is Admin-only. Pre-existing; needs a product decision.
+3. **UX copy follow-ups:** the import "To create" chip versus the button count; "No rows are eligible … upload again" when rows could be ticked; the acknowledgement dialog firing for unticked held `GRANTED` rows.
+4. **Untested branches:** an unconfirmed held `GRANTED` row in commit mode; the over-cap checkbox falsifier; falsifier 5's commit form.
+5. **House-wide:** the 375 px dialog gutter; `DialogFooter` losing focus while loading; `useDialogFocusTrap` not restoring focus on close.
+6. **Process:** the T-2 3rd-round escalation was missed, and four of the FAIL sources were Leader-authored (the T-1 closure gap, the T-2 design edit, the T-5 brief omission, the T-8 design under-scope). This is Kaizen input.

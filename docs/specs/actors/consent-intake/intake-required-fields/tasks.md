@@ -240,7 +240,7 @@
       Review: `full`.
       Done when: an admin can confirm individual flagged rows and only those are created, both layouts carry the control, captures exist at three widths plus the boundary, and all three falsifiers were shown red.
 
-- [ ] **T-8** Baseline documents  (deps: T-5, T-6)
+- [x] **T-8** Baseline documents  (deps: T-5, T-6)
       Scope (design §4.7, DD-6):
       - `docs/prd.md`: the required set and the generated Trader ID.
       - `docs/trd/trd.md`:
