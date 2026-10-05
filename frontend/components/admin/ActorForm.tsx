@@ -134,8 +134,6 @@ interface FormValues {
   marketLocation: string;
   gpsLatitude: string;
   gpsLongitude: string;
-  gpsAltitude: string;
-  gpsAccuracy: string;
   capacityTons: string;
   technicalSupport: string;
   phone: string;
@@ -200,8 +198,6 @@ function toFormValues(actor?: AdminActor): FormValues {
       marketLocation: '',
       gpsLatitude: '',
       gpsLongitude: '',
-      gpsAltitude: '',
-      gpsAccuracy: '',
       capacityTons: '',
       technicalSupport: '',
       phone: '',
@@ -227,8 +223,6 @@ function toFormValues(actor?: AdminActor): FormValues {
     marketLocation: actor.marketLocation ?? '',
     gpsLatitude: actor.gpsLatitude?.toString() ?? '',
     gpsLongitude: actor.gpsLongitude?.toString() ?? '',
-    gpsAltitude: actor.gpsAltitude?.toString() ?? '',
-    gpsAccuracy: actor.gpsAccuracy?.toString() ?? '',
     capacityTons: actor.capacityTons?.toString() ?? '',
     technicalSupport: actor.technicalSupport ?? '',
     phone: actor.phone ?? '',
@@ -518,8 +512,6 @@ function buildDto(
     email: values.email.trim() || null,
     gpsLatitude: values.gpsLatitude.trim() ? Number(values.gpsLatitude) : null,
     gpsLongitude: values.gpsLongitude.trim() ? Number(values.gpsLongitude) : null,
-    gpsAltitude: values.gpsAltitude.trim() ? Number(values.gpsAltitude) : null,
-    gpsAccuracy: values.gpsAccuracy.trim() ? Number(values.gpsAccuracy) : null,
     crops: values.crops,
   };
 }
@@ -1046,8 +1038,6 @@ export default function ActorForm({
               {renderInput('marketLocation', 'Market location')}
               {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
               {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
-              {renderInput('gpsAltitude', 'GPS altitude', 'number')}
-              {renderInput('gpsAccuracy', 'GPS accuracy', 'number')}
             </div>
             {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
                 cell would cap the map at ~1/3 card width on lg. Mounted

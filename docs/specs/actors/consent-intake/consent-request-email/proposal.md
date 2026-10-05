@@ -157,7 +157,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
 
 ### REMOVED Requirements
 
-- Importing an actor's **Registration Source**: an import is always `TEAM_MANAGED`. GPS Altitude and Accuracy can no longer be imported, but stay editable on the form (D-11).
+- Importing an actor's **Registration Source**: an import is always `TEAM_MANAGED`. GPS Altitude and Accuracy can no longer be imported. *Since 2026-10-05 (D-19, chunk 1) they are no longer on the form either.*
 
 ## 10. Approach Options
 
@@ -239,7 +239,7 @@ Applicable lessons:
 | ~~OQ-1~~ | **Decided (D-15 to D-18, chunk 1 `requirements.md`, 2026-10-02):** Trader ID is auto-generated on every admin path, never a client input, and duplicate detection on the actor's identity (email/phone strong, name/GPS weak) replaces it as the dedupe key. | — |
 | ~~OQ-2~~ | **Decided (D-13, 2026-10-02):** the consent columns are kept, all optional. | — |
 | ~~OQ-3~~ | **Decided (D-10, 2026-10-02):** the upload is available on **edit** too, with the same component as create. | — |
-| ~~OQ-4~~ | **Decided (D-11, 2026-10-02):** GPS Altitude and Accuracy **stay on the admin form**. Only the template drops them, and the DB columns stay. | — |
+| ~~OQ-4~~ | ~~**Decided (D-11, 2026-10-02):** GPS Altitude and Accuracy **stay on the admin form**.~~ *Superseded 2026-10-05 by D-19 (chunk 1): removed from the form too.* Only the template drops them, and the DB columns stay. | — |
 | ~~OQ-5~~ | **Decided (D-12, 2026-10-02, on the Leader's recommendation):** a cross-actor evidence **export is deferred**. The per-actor panel (admin-only) meets D-9. | — |
 | OQ-6 | Should Legal see the adapted wording (the three edits above) before release? | **Yes**, as a courtesy review of the diff only. It does not block specify. |
 

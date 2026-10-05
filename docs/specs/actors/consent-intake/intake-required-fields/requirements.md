@@ -20,6 +20,7 @@
 | D-16 | Duplicate detection replaces Trader ID as the safeguard against duplicate actors. |
 | D-17 | **A strong match** (same email or same phone as an existing actor, or as an earlier row of the same workbook) means the actor is **not created automatically**. The admin is shown the match and asked. If they confirm "not a duplicate", it is created; otherwise it is not. |
 | D-18 | **A weak match** (same name, or GPS within the proximity box, only) means the actor **is created**, with a visible warning naming the match. |
+| D-19 | *(2026-10-05, product owner, after testing.)* **GPS Altitude and GPS Accuracy are removed from the admin actor form, on both create and edit.** The form stops sending them, so an edit never overwrites stored values. The DB columns and the API fields stay. This supersedes D-11. **Accepted consequence:** values already stored stay in the database but can no longer be seen or corrected anywhere in the admin UI, except in the actor's history snapshots. |
 
 ## 1. Summary
 
@@ -107,7 +108,7 @@ The spec advances PRD In Scope item 4 (team-managed intake), and it is the field
   - **Scenario: v3 is rejected.** GIVEN a v3 workbook, WHEN uploaded, THEN the whole file is rejected as a stale template, naming the version expected.
   - **Scenario: GRANTED row without provenance.** GIVEN a v4 row with Consent Status `GRANTED` and a blank Consent Method, WHEN previewed, THEN the row fails with today's provenance reason, unchanged.
   - **Scenario: the published file matches the code.** GIVEN the committed `frontend/public/templates/actor-import-template.xlsx`, WHEN the generator is re-run, THEN the output is byte-identical.
-- **PII/RBAC impact:** None. GPS Altitude and Accuracy stay on the admin form and in the database (D-11).
+- **PII/RBAC impact:** None. GPS Altitude and Accuracy stay on the admin form and in the database (D-11). *Superseded 2026-10-05 by D-19: removed from the admin form as well (create and edit). The DB columns stay, and the API still accepts the fields.*
 
 ### FR-6: Baseline documents state the contract
 

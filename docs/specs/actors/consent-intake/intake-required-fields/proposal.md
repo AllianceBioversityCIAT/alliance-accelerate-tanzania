@@ -27,7 +27,7 @@ The decisions and the current-behavior evidence come from the sibling proposal, 
 | O-1 | Admin create, admin edit and import require: **Trader Name, Trader Type, Region, Contact Person, ≥1 crop, Capacity (tonnes), Phone, Email**. This is the self-registration set (`RegistrationPayloadDto`). |
 | O-2 | **Trader ID** is system-generated, and duplicate detection replaces it as the duplicate safeguard (resolved in specify: requirements.md D-15 to D-18). |
 | O-3 | The import template moves to **v4**. It drops GPS Altitude, GPS Accuracy and Registration Source, and an import is always `TEAM_MANAGED`. The consent columns stay optional, with the `GRANTED` provenance gate unchanged (D-13). The workbook is regenerated with `npm run generate:template`, never hand-edited. |
-| O-4 | GPS Altitude and Accuracy stay on the admin form and in the DB (D-11). |
+| O-4 | ~~GPS Altitude and Accuracy stay on the admin form and in the DB (D-11).~~ *Superseded 2026-10-05 by D-19 (requirements.md): removed from the form on create and edit. The DB columns stay.* |
 | O-5 | Backend DTOs, `ActorForm.validate`, import row validation and the template's Instructions sheet agree, and one test pins the shared set so the paths cannot drift again. |
 | O-6 | `docs/prd.md` and `docs/trd/trd.md` state the unified rule. *(The import runbook originally named here exists only in the archive, so requirements.md FR-6 was amended 2026-10-02.)* |
 

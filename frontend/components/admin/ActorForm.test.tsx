@@ -537,14 +537,12 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
     expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(39.0);
   });
 
-  it('FR-5: the four GPS inputs are still present, labelled, and independently validated', async () => {
+  it('FR-5: the latitude/longitude GPS inputs are still present, labelled, and independently validated', async () => {
     const user = userEvent.setup();
     renderForm();
 
     expect(screen.getByLabelText(/gps latitude/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/gps longitude/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gps altitude/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gps accuracy/i)).toBeInTheDocument();
 
     // Existing range validation (FR-5 sc. 2) still fires unchanged — a
     // latitude-only submission is valid here (C-2), so only the
@@ -555,6 +553,39 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
 
     expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-90 and 90/i);
     expect(createActor).not.toHaveBeenCalled();
+  });
+
+  // D-19 (2026-10-05) — GPS altitude/accuracy removed from the admin form on
+  // both create and edit. Falsifier: re-add either input and this redlines.
+  it('D-19: GPS altitude/accuracy inputs are not rendered on create', () => {
+    renderForm({ mode: 'create' });
+
+    expect(screen.queryByLabelText(/gps altitude/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/gps accuracy/i)).not.toBeInTheDocument();
+  });
+
+  it('D-19: GPS altitude/accuracy inputs are not rendered on edit', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    expect(screen.queryByLabelText(/gps altitude/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/gps accuracy/i)).not.toBeInTheDocument();
+  });
+
+  it('D-19: editing an actor with stored GPS altitude/accuracy sends a PATCH payload with neither key (an omitted key preserves the stored value; null would wipe it)', async () => {
+    const actorWithGpsExtras: AdminActor = {
+      ...ADMIN_ACTOR,
+      gpsAltitude: 1400,
+      gpsAccuracy: 5,
+    };
+    jest.mocked(updateActor).mockResolvedValue(actorWithGpsExtras);
+    renderForm({ mode: 'edit', initialValues: actorWithGpsExtras });
+
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto).not.toHaveProperty('gpsAltitude');
+    expect(dto).not.toHaveProperty('gpsAccuracy');
   });
 });
 

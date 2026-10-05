@@ -805,3 +805,26 @@
 - **Leader-inline fix confirmed:** Reviewer **PASS**. The Leader's byte diff against the attempt-3 diff shows only the two citation lines differing.
 - **Final gates** (Leader, quiet tree): backend 1416 / exit 0, build and eslint clean; frontend 1842 / exit 0, tsc, lint and build clean; FR-6 grep 0.
 - **validation-report.md §13:** ARCHIVE-READY.
+
+## 5. Post-validation change D-19 (2026-10-05, product owner, during manual testing)
+
+- **Request:** "quitar GPS altitude y GPS accuracy del form de crear nuevo actor". The product owner then chose create **and** edit (AskUserQuestion).
+- **Spec edits (Leader):**
+  - requirements.md: a new D-19 row (it supersedes D-11) and a note on FR-5.
+  - proposal.md: O-4.
+  - design.md: the §5 row.
+  - Sibling proposal: the REMOVED line and OQ-4.
+  - TRD :94.
+- **Implementer:** `akili-implementer` (sonnet), effort medium.
+  - Removed the inputs, the form keys, the `toFormValues` mapping and the `buildDto` keys. The keys are dropped entirely, never sent as `null`, so a PATCH keeps the stored values.
+  - Backend untouched.
+  - 3 new tests. Falsifiers: re-adding an input turns red, and sending `gpsAltitude: null` in `buildDto` turns red.
+- **Evidence re-run (Leader):** **VERIFIED**. Frontend 120 / 1845; tsc and lint clean. The build was deferred while `next dev` served the manual test, and is run before commit (below).
+- **Reviewer:** `akili-reviewer` (opus), **PASS**.
+  - `buildScalarData` writes only the keys present, so stored values survive.
+  - No leftover readers of the removed fields.
+  - The docs are consistent.
+- **Advisory:**
+  - A-1: record that stored values become invisible in the admin UI (only history snapshots show them). **Added to D-19 by the Leader.**
+  - A-2: style only (strikethrough on the FR-5 note).
+  - A-3: `AdminActorUpdateInput` still allows `null` for both fields.
