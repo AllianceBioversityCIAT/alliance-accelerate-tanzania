@@ -15,7 +15,7 @@
 
 | # | Spec Path | Depends on | Parallel-safe | Status |
 |---|---|---|---|---|
-| 1 | `actors/consent-intake/intake-required-fields` | none | no | active |
+| 1 | `actors/consent-intake/intake-required-fields` | none | no | done (archived 2026-10-05 → `archive/2026-10-05-actors--consent-intake--intake-required-fields/`) |
 | 2 | `actors/consent-intake/consent-request-email` | `actors/consent-intake/intake-required-fields` | no | pending |
 
 Both children edit `frontend/components/admin/ActorForm.tsx` and `backend/src/actors/actor-import.service.ts`, so neither is parallel-safe with the other. Child 1 goes first because it settles the field rules child 2 builds on.
