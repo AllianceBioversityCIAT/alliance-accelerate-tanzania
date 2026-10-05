@@ -1204,7 +1204,10 @@ describe('ActorImportService', () => {
         validRow({ traderName: 'Row Twelve' }), // duplicate of Row Five
         validRow({ traderName: 'Bad Row', region: 'Atlantis' }), // failed
         validRow({
-          traderName: 'Weak Match',
+          // Matches nothing (unique phone/email, no name/GPS overlap) — a
+          // plain create row, named for what it actually is (it was
+          // mislabeled 'Weak Match' though it triggers no weak match).
+          traderName: 'Plain Create',
           phone: '0700000077',
           email: 'weak@example.org',
         }),
@@ -1386,6 +1389,28 @@ describe('ActorImportService', () => {
 
         expect(report.rows[1].outcome).toBe('failed');
         expect(report.rows[1].errors?.[0].field).toBe('consentStatus');
+      });
+
+      it('commit: an UNCONFIRMED held GRANTED row with valid provenance stays possible-duplicate, not failed for acknowledgement, and carries no acknowledgement warning (W-4, falsifier: delete the held/continue branch in applyConsentGate)', async () => {
+        const rows = [
+          validRow({ traderName: 'Row Five' }),
+          validRow({
+            traderName: 'Row Twelve',
+            consentStatus: 'GRANTED',
+            consentMethod: 'SIGNED_FORM',
+            consentObtainedAt: '2026-01-01',
+          }),
+        ];
+        const b64 = await buildWorkbook(rows);
+
+        // commit mode, no duplicateConfirmations at all — the row stays held.
+        const report = await service.run(commitDto(b64), 'sub-1');
+
+        expect(report.rows[1].outcome).toBe('possible-duplicate');
+        expect(report.rows[1].warnings ?? []).not.toEqual(
+          expect.arrayContaining([expect.stringMatching(/acknowledgement/i)]),
+        );
+        expect(report.totals).toMatchObject({ created: 1, possibleDuplicate: 1, failed: 0 });
       });
 
       it('a held row that the consent gate then fails still counts as an in-file match source for a later row (KZ-007)', async () => {

@@ -23,7 +23,7 @@ import {
 } from './actor-audit.service';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
-import { missingIntakeFields } from '../common/intake-contract';
+import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
 import {
   allocateTraderIds,
   isTraderIdCollisionError,
@@ -344,22 +344,28 @@ export class ActorsAdminService {
         // merging) would leave the actor missing something the required set
         // demands — never merely because the actor already existed
         // incomplete (FR-1 scenario 3's BUT clause).
-        const missingFields = missingIntakeFields(
-          {
-            contactPerson: before.contactPerson,
-            capacityTons: before.capacityTons,
-            phone: before.phone,
-            email: before.email,
-            cropsCount: before.crops.length,
-          },
-          {
-            contactPerson: dto.contactPerson,
-            capacityTons: dto.capacityTons,
-            phone: dto.phone,
-            email: dto.email,
-            crops: dto.crops,
-          },
-        );
+        const missingFields = [
+          ...missingIdentityFields(
+            { traderName: before.traderName, traderType: before.traderType, region: before.region },
+            { traderName: dto.traderName, traderType: dto.traderType, region: dto.region },
+          ),
+          ...missingIntakeFields(
+            {
+              contactPerson: before.contactPerson,
+              capacityTons: before.capacityTons,
+              phone: before.phone,
+              email: before.email,
+              cropsCount: before.crops.length,
+            },
+            {
+              contactPerson: dto.contactPerson,
+              capacityTons: dto.capacityTons,
+              phone: dto.phone,
+              email: dto.email,
+              crops: dto.crops,
+            },
+          ),
+        ];
         if (missingFields.length > 0) {
           throw new BadRequestException({
             statusCode: 400,

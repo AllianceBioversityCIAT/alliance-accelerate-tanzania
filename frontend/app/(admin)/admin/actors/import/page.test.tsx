@@ -475,6 +475,25 @@ describe('ActorImportPage — commit count derivation (T-7 rework)', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/skipped/i)).not.toBeInTheDocument();
   });
+
+  // F-4 (NFR-4): the count changes on every row tick, so it must be
+  // announced through a polite live region, not just shown visually.
+  it('announces the creatable count through a polite live region, updated as rows are ticked', async () => {
+    resolveByMode(PREVIEW_REPORT_WITH_DUPES, COMMIT_REPORT);
+
+    await renderReady();
+    await selectFile();
+
+    expect(await screen.findByText(/review and confirm/i)).toBeInTheDocument();
+
+    const countRegion = screen.getByText(/1 actor will be created/i);
+    expect(countRegion).toHaveAttribute('aria-live', 'polite');
+    expect(countRegion.closest('[role="status"]')).not.toBeNull();
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /row 3\)/i })[0]);
+
+    expect(screen.getByText(/2 actors will be created/i)).toHaveAttribute('aria-live', 'polite');
+  });
 });
 
 // ── Acknowledgement gating ───────────────────────────────────────────────────

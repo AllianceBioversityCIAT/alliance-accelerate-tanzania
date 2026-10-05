@@ -702,7 +702,8 @@ export default function ActorImportPage() {
               />
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted">
+                {/* F-4 (NFR-4): this count changes on every row tick — announce it. */}
+                <p role="status" aria-live="polite" className="text-sm text-muted">
                   {creatableCount === 0
                     ? 'No rows are eligible to import. Fix the file and upload again.'
                     : `${creatableCount} actor${creatableCount === 1 ? '' : 's'} will be created. Possible duplicates you have not confirmed and failed rows are not imported.`}

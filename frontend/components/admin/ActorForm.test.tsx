@@ -458,6 +458,17 @@ describe('ActorForm — required intake set (T-6, FR-1, NFR-1 frontend half)', (
     expect(getFieldError(/email/i)?.textContent).toMatch(/191 characters or fewer/i);
     expect(createActor).not.toHaveBeenCalled();
   });
+
+  // W-1 — the required-set loop in `validate()` runs identically in edit
+  // mode (FR-1's edit scenario): it is not gated on `mode === 'create'`.
+  it('rejects an edit with Email cleared, same as a create', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/email/i)?.textContent).toMatch(/required/i);
+    expect(updateActor).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1190,6 +1201,26 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
     // attribute each live in their own nested <span>, so each is asserted as
     // its own exact leaf match rather than one compound string.
     expect(within(dialog).getByText('email address')).toBeInTheDocument();
+  });
+
+  // W-8 (NFR-4) — the candidate count is announced to assistive tech, not
+  // only shown visually.
+  it('announces the candidate count via a polite live region (W-8)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    const liveRegion = within(dialog).getByText(/1 possible duplicate found/i);
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
   });
 
   it('resubmits with confirmedNotDuplicateOf carrying the shown candidate\'s id when confirmed (falsifier 2)', async () => {

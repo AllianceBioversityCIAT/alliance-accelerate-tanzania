@@ -133,4 +133,39 @@ describe('NewActorPage — weak-duplicate informational dialog (FR-3)', () => {
     await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors'));
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
   });
+
+  // W-8 (NFR-4) — announced via aria-live; focus starts on OK; Escape acts as OK.
+  it('announces the match count via a polite live region', async () => {
+    render(<NewActorPage />);
+
+    await screen.findByText(/simulate create \(with warnings\)/i);
+    fireEvent.click(screen.getByText(/simulate create \(with warnings\)/i));
+
+    await screen.findByRole('dialog');
+    const liveRegion = screen.getByText(/1 similar actor found/i);
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('focuses the OK button on open', async () => {
+    render(<NewActorPage />);
+
+    await screen.findByText(/simulate create \(with warnings\)/i);
+    fireEvent.click(screen.getByText(/simulate create \(with warnings\)/i));
+
+    const okButton = await screen.findByRole('button', { name: /^ok$/i });
+    await waitFor(() => expect(okButton).toHaveFocus());
+  });
+
+  it('Escape acts as OK — redirects and closes the dialog', async () => {
+    render(<NewActorPage />);
+
+    await screen.findByText(/simulate create \(with warnings\)/i);
+    fireEvent.click(screen.getByText(/simulate create \(with warnings\)/i));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors'));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  });
 });

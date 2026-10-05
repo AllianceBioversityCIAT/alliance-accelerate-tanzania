@@ -134,3 +134,40 @@ export function missingIntakeFields(
 
   return missing;
 }
+
+/**
+ * W-3 — the identity scalars (`traderName`, `traderType`, `region`) are
+ * required on create via `ActorCreateDto`'s decorators, but `AdminActorUpdateDto`
+ * wraps every field in `@IsOptional()`, which also waves through an explicit
+ * `null` — one that then reached Prisma's `NOT NULL` column as an unhandled
+ * 500. This merged-state check closes that gap on edit (FR-1 "edit is
+ * rejected until filled"), mirroring {@link missingIntakeFields}'s rule.
+ */
+export const IDENTITY_REQUIRED_FIELDS = ['traderName', 'traderType', 'region'] as const;
+export type IdentityRequiredField = (typeof IDENTITY_REQUIRED_FIELDS)[number];
+
+export interface IdentityRequiredStoredState {
+  traderName: string | null | undefined;
+  traderType: string | null | undefined;
+  region: string | null | undefined;
+}
+
+export interface IdentityRequiredPatch {
+  traderName?: string | null;
+  traderType?: string | null;
+  region?: string | null;
+}
+
+export function missingIdentityFields(
+  stored: IdentityRequiredStoredState,
+  patch: IdentityRequiredPatch,
+): IdentityRequiredField[] {
+  const missing: IdentityRequiredField[] = [];
+  for (const field of IDENTITY_REQUIRED_FIELDS) {
+    const effective = patch[field] !== undefined ? patch[field] : stored[field];
+    if (isBlankScalar(effective)) {
+      missing.push(field);
+    }
+  }
+  return missing;
+}

@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/actors/consent-intake/intake-required-fields/`
 - Parent Spec: `actors/consent-intake` ([`family.md`](../family.md)), chunk 1 of 2
-- Status: Draft
+- Status: Implemented and validated (2026-10-05)
 - Author / Date: AKILI (Leader) on behalf of Daniela Gómez, 2026-10-02
 - Depth: **Standard**. Raised from the proposal's Lite on 2026-10-02, when duplicate detection and the generated Trader ID were added to scope.
 - Approval Mode: gated
@@ -45,6 +45,7 @@ The spec advances PRD In Scope item 4 (team-managed intake), and it is the field
 ### FR-1: The same required set on every intake path
 
 - **Description:** Admin create, admin edit and import MUST reject an actor that lacks any field of the required set. They MUST use the same field-level messages the self-registration path uses for the same omission. Self-registration's rules are the reference and MUST NOT change.
+- *Amended 2026-10-05 (validation remediation, recording the execution-time interpretation from `execution.md` T-1):* "the same field-level messages" binds where a self-registration counterpart exists for the same omission — that is, **admin create** and **import**. A **PATCH** (edit) merged-state omission has no self-registration counterpart, since self-registration has no edit path, so edit keeps its own `<field> is required` message rather than mirroring self-registration's wording.
 - **Rationale / Source:** D-6. Today's mismatch is in sibling proposal §3: Contact Person, crops, Capacity, Phone and Email are required on self-registration and optional on the admin form and the import.
 - **Acceptance criteria:**
   - **Scenario: admin create without a phone.** GIVEN an admin fills the *New actor* form with every field except Phone, WHEN they submit, THEN the form shows "required" on Phone and no actor is created. AND IT MUST be rejected by the API too: a direct `POST` without `phone` returns `400` naming `phone`, so a client that skips validation cannot bypass the rule.

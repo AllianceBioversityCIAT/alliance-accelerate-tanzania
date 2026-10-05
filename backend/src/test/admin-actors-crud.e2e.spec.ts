@@ -968,6 +968,23 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .send({ region: 'Dodoma' })
         .expect(404);
     });
+
+    // W-3 — the identity scalars are required on create via DTO decorators,
+    // but PartialType's @IsOptional() waves an explicit null through them;
+    // that null used to reach Prisma's NOT NULL column as an unhandled 500.
+    it.each(['traderName', 'traderType', 'region'])(
+      'rejects %s set to null with a field-level 400, not a 500',
+      async (field) => {
+        const res = await request(app.getHttpServer())
+          .patch('/api/v1/admin/actors/actor-granted-1')
+          .set(admin)
+          .send({ [field]: null })
+          .expect(400);
+
+        const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+        expect(fields).toContain(field);
+      },
+    );
   });
 
   describe('DELETE /api/v1/admin/actors/:id', () => {

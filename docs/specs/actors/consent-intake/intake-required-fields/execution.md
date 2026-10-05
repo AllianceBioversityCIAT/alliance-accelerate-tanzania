@@ -11,7 +11,7 @@
 | Implementer | `.claude/agents/akili-implementer.md` (`sonnet`) |
 | Reviewer | `.claude/agents/akili-reviewer.md` (`opus`, read-only), so author ≠ auditor |
 | Approval Mode | gated |
-| Budget (tripwire) | 8 tasks · ~1,800 LOC · ~13 review rounds (`tasks.md` Document Control) |
+| Budget (tripwire) | 8 tasks · ~1,800 LOC · ~13 review rounds (`tasks.md` Document Control). *2026-10-05: superseded twice. See* Budget re-baseline — after T-5 *(~9,500 / ~26) and §3* Summary *(actual 8,916 / 24).* |
 
 ## 2. Task Execution History
 
@@ -736,7 +736,7 @@
 - The concurrent-create check-then-create race.
 - More than 50 strong candidates cannot be confirmed.
 - The uncompressed import preview can exceed 6 MB; gzip covers it for browsers.
-- Legacy actors with no contact fields re-import as weak duplicates (D-3).
+- Legacy actors with no contact fields re-import as weak duplicates (D-3). *This is design DD-5 item 2, not §9; corrected 2026-10-05.*
 
 **Open items for archive** (none blocks merge):
 1. **ADR-NNN** number allocation (4 citations).
@@ -745,3 +745,63 @@
 4. **Untested branches:** an unconfirmed held `GRANTED` row in commit mode; the over-cap checkbox falsifier; falsifier 5's commit form.
 5. **House-wide:** the 375 px dialog gutter; `DialogFooter` losing focus while loading; `useDialogFocusTrap` not restoring focus on close.
 6. **Process:** the T-2 3rd-round escalation was missed, and four of the FAIL sources were Leader-authored (the T-1 closure gap, the T-2 design edit, the T-5 brief omission, the T-8 design under-scope). This is Kaizen input.
+
+## 4. Validation remediation (2026-10-05)
+
+- **Trigger:** `validation-report.md` found 4 FAIL and 21 WARN.
+- **Product-owner decision: option 1, fix everything.**
+- **RBAC ruling (product owner):** correct the PRD and TRD so that only **Admin** creates, edits and imports actors. The code already enforces this: every `/admin/actors*` route is `@Roles('Admin')`. This is a documentation correction, not a code change.
+- **Split into two independent work units.** The file sets are disjoint and the docs unit runs no build, so they run in parallel:
+  - **R-1 (code + tests):** F-4, W-3, W-4, W-1, W-8, and the "Weak Match" fixture rename.
+  - **R-2 (docs):** F-1, F-2, F-3, the RBAC correction (PRD :29, US-4, TRD :241, and any other Staff-write claim), plus C-4, C-6, C-7, C-8, C-9, C-11, C-12, W-facts-1, and the C-14 statuses.
+- Each unit goes through Implementer, then the Leader's re-run, then a Reviewer.
+
+**R-1 (code + tests) — PASS** (2026-10-05)
+- **Implementer:** `akili-implementer` (sonnet).
+- **Changes:**
+  - F-4: the import create-count line is now a polite live region, with a test.
+  - W-3: `missingIdentityFields` makes `PATCH` with `traderName`, `traderType` or `region` set to `null` a 400. Three e2e tests.
+  - W-4: a spec for an unconfirmed held `GRANTED` row in commit mode.
+  - W-1: an edit-mode form test.
+  - W-8: `aria-live` and focus tests for both dialogs.
+  - The `'Weak Match'` fixture renamed.
+- **Implementer verification:** all falsifiers red, then restored.
+- **Evidence re-run (Leader, inline):** **VERIFIED**. Backend 86 / 1416, frontend 120 / 1842; builds, tsc and lint clean.
+- **Reviewer:** **PASS**.
+- **Advisory:**
+  - The set-equality spec could spread `IDENTITY_REQUIRED_FIELDS`.
+  - The live region re-reads its whole sentence.
+  - Two long comments.
+  - Whitespace-only identity values pass on create and edit alike. This is consistent.
+
+**R-2 (docs) — FAIL** (2026-10-05)
+- **What was right:** all 13 edited sentences hold against the code, and F-1, F-2 and F-3 are closed.
+- **Issues:**
+  1. PRD US-5 ("authorized staff … view full actor profiles including PII") contradicts the new PRD :29 and TRD §8 wording. Viewing falls outside the ruling, so it **goes to the product owner** rather than being rewritten silently.
+  2. The TRD C4 L1 box "Staff / Admin … manages actors, imports, exports" still credits Staff.
+  3. C-9 and C-12 were half closed in `execution.md`. **Fixed inline by the Leader** in `execution.md`, the Leader's own ledger.
+- **Advisory:**
+  - TRD QA-3 has stale paths.
+  - PRD US-7 still credits Staff with export.
+  - The TRD :170 wording "same as" should be "while".
+  - Add a §4.3 pointer to the DD-3 amendment.
+- **Next:** R-2 attempt 2 covers issue 2 and the advisories, plus US-5 as the product owner decides.
+- **Product-owner ruling (2026-10-05), US-5: "Corregir a solo Admin".** Only Admin views full actor profiles with PII, which matches the code. Staff has no special actor permissions.
+
+**R-2 attempt 2 — FAIL** (2026-10-05)
+- **Resolved:** US-5 now reads Admin; the C4 box now reads Admin, without export; C-9 and C-12 closed. The out-of-list fixes at PRD :39 and :81 and TRD :203 were judged in scope (same defect class).
+- **FAIL:** the TRD §8 Staff definition (:241) says Staff passes "only" `@Roles('Staff')` routes. `GET /api/v1/auth/me` is guarded by `JwtAuthGuard` only, so any authenticated Staff caller passes it (`roles.guard.ts`: no `@Roles` means any authenticated caller passes).
+- **Advisory:** the TRD `ExportModule` row and the §5 "CSV export" bullet still describe the cancelled export as live.
+- **Next:** attempt 3, the last allowed attempt.
+
+## HALT: R-2 (validation remediation, docs) — 3 attempts used (2026-10-05)
+
+- **Attempt 3** fixed the attempt-2 FAIL: the TRD §8 Staff definition now covers the `JwtAuthGuard`-only `GET /auth/me`, and every other controller was checked. It also correctly marked `ExportModule` and the §5 export bullet as not live.
+- **The Reviewer still found FAIL:** both new sentences cite "**§203**", which is not a TRD section. It is a working-file line number of the §4 "removed rows" note. **Remediation:** change "§203" to "§4" in 2 places.
+- **Tree state:** clean apart from this remediation's own approved and in-review edits (R-1 PASS, R-2 attempts 1–3). The Leader does **not** restore anything: the edits are correct apart from this 2-token citation.
+- **Leader's root-cause hypothesis:** each attempt's own advisory additions introduced the next defect: the "same as" wording, the export rows, the line-number citation. The remediation loop kept widening scope through advisories.
+- **Escalated to the product owner.**
+- **Product-owner decision (2026-10-05): option 1, a Leader-inline fix** (the Implementer ladder's rung-5 fallback, approved explicitly). The Leader changed "§203" to "§4 removed-rows note" in TRD :57 and :217. `grep -n "§20[0-9]" docs/trd/trd.md` now returns 0. A Reviewer confirmation follows.
+- **Leader-inline fix confirmed:** Reviewer **PASS**. The Leader's byte diff against the attempt-3 diff shows only the two citation lines differing.
+- **Final gates** (Leader, quiet tree): backend 1416 / exit 0, build and eslint clean; frontend 1842 / exit 0, tsc, lint and build clean; FR-6 grep 0.
+- **validation-report.md §13:** ARCHIVE-READY.

@@ -79,7 +79,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
 | O-7 | **Evidence is permanent.** One `ConsentRequest` row records: who sent it and when, the address it went to, the consent edition and a hash of its text, the expiry, the response and when it was given, the respondent's identity fields, IP and user agent. It is never deleted, including when the actor is deleted, because the consent text says CIAT may retain consent records. The actor's activity trail gains *consent requested* and *consent accepted/declined* entries. |
 | O-8 | **Admins can show it to an auditor.** The actor's page shows a **Consent evidence** panel: every request with its status (pending / accepted / declined / expired / superseded), the respondent's details, the exact consent edition, and any uploaded document, which downloads through a short-lived link. |
 | O-9 | **Manual create and edit** offer an optional upload of a consent obtained out of band (PDF/JPG/PNG, ≤10 MB). The file goes to a private, encrypted S3 bucket and is recorded as `SIGNED_FORM` evidence. The existing acknowledgement gate still applies, because an uploaded file is still the admin's assertion. |
-| O-10 | **Same required fields everywhere.** Admin create, admin edit and import require exactly what self-registration requires: Trader Name, Trader Type, Region, Contact Person, ≥1 crop, Capacity, Phone, Email. Trader ID stays required on the admin paths; see OQ-1. |
+| O-10 | **Same required fields everywhere.** Admin create, admin edit and import require exactly what self-registration requires: Trader Name, Trader Type, Region, Contact Person, ≥1 crop, Capacity, Phone, Email. *(Amended 2026-10-05, validation remediation: Trader ID is **not** part of this required set — D-15 (chunk 1 `requirements.md`) made it system-generated, never an input, on every admin path. See OQ-1, decided.)* |
 | O-11 | **Import template v4** drops the three columns in D-5 and keeps the optional consent columns (D-13). Imported actors are always `TEAM_MANAGED`. The workbook is regenerated, never hand-edited. |
 
 ## 5. Scope
@@ -151,7 +151,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
 
 ### MODIFIED Requirements
 
-- Admin create, edit and import require Contact Person, ≥1 crop, Capacity, Phone and Email, in addition to today's set.
+- Admin create, edit and import require Contact Person, ≥1 crop, Capacity, Phone and Email. *(Amended 2026-10-05: this no longer reads as those five fields layered onto an unchanged Trader-ID rule. Per D-15, Trader ID is now system-generated on every admin path and is never a client input, so it sits outside the required set entirely.)*
 - The import template moves to v4 without the D-5 columns. A v3 workbook is rejected as stale, which is the existing behavior.
 - A second route to `GRANTED` that bypasses the admin acknowledgement gate is introduced. It is valid because the actor is the one consenting (ADR-017).
 
@@ -236,7 +236,7 @@ Applicable lessons:
 
 | # | Question | Recommended default |
 |---|---|---|
-| OQ-1 | **Trader ID:** keep it required on the admin create form and the import, or auto-generate it as self-registration does? It is the import's duplicate key. | **Keep it required.** It is the team's own dataset identifier and the dedupe key. |
+| ~~OQ-1~~ | **Decided (D-15 to D-18, chunk 1 `requirements.md`, 2026-10-02):** Trader ID is auto-generated on every admin path, never a client input, and duplicate detection on the actor's identity (email/phone strong, name/GPS weak) replaces it as the dedupe key. | — |
 | ~~OQ-2~~ | **Decided (D-13, 2026-10-02):** the consent columns are kept, all optional. | — |
 | ~~OQ-3~~ | **Decided (D-10, 2026-10-02):** the upload is available on **edit** too, with the same component as create. | — |
 | ~~OQ-4~~ | **Decided (D-11, 2026-10-02):** GPS Altitude and Accuracy **stay on the admin form**. Only the template drops them, and the DB columns stay. | — |

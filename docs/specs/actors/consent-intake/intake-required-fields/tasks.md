@@ -337,7 +337,7 @@ Every row has an owner. The one gap is FR-2's real-database concurrency, declare
 
 ## 6. PR strategy
 
-About 1,800 LOC is well above the ~400 single-PR line. The recommendation is **two PRs from this branch, merged together**: the contracts change in lockstep (design §3, *Deploy coupling*), so neither ships alone.
+About 1,800 LOC is well above the ~400 single-PR line. *(Amended 2026-10-05, validation remediation: the original estimate was superseded during execution — the re-baseline after T-5 put it at ~9,500 LOC / ~26 review rounds (execution.md *Budget re-baseline*), and the actual final figure is **~8,916 LOC / 24 review verdicts** across all 8 tasks (execution.md §3 *Summary*). The conclusion below is unaffected — it was already an underestimate of how far over the single-PR line this change sits.)* The recommendation is **two PRs from this branch, merged together**: the contracts change in lockstep (design §3, *Deploy coupling*), so neither ships alone.
 
 | PR | Tasks | Review first | Out of scope |
 |---|---|---|---|
