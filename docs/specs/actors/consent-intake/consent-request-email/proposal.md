@@ -18,7 +18,7 @@
 | Branch | `feature/atp-84-consent-request-email` (from `main` @ `609a752`) |
 | **Depends on** | `actors/consent-intake/intake-required-fields` |
 | **Parallel-safe** | no — it shares `ActorForm.tsx` and `actor-import.service.ts` with chunk 1. Against other branches it is clear: no unmerged branch touches `backend/src/actors`, `backend/src/registrations`, `ActorForm.tsx` or the template (checked 2026-10-02: `enhancement/actor-multiple-types` has no commits ahead of `main`; `origin/infra/data-auth-public-app-url` touches only `infra/scripts/**`) |
-| Suggested depth | **Full**. It adds a new public surface class (an unauthenticated write that moves an actor to `GRANTED`), a new evidence entity, new infrastructure (an S3 bucket), and constitutional amendments (PRD, TRD, ADR-017). |
+| Suggested depth | **Full**. It adds a new public surface class (an unauthenticated write that moves an actor to `GRANTED`), a new evidence entity, new infrastructure (an S3 bucket), and constitutional amendments (PRD, TRD, ADR-NNN). |
 
 ### Decisions already taken (product owner, 2026-10-02)
 
@@ -104,7 +104,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
   - A new `ConsentDocumentsBucket` env var. All commands run under `--profile IBD-DEV`.
 - **Docs**
   - PRD: a new item/US/AC for consent requests, and the required-field change.
-  - TRD: data model, API surface, a QA scenario for the token endpoint, and **ADR-017**.
+  - TRD: data model, API surface, a QA scenario for the token endpoint, and **ADR-NNN**.
   - `docs/infrastructure.md`: the new bucket.
   - ~~The import runbook~~: none exists outside the archive (chunk 1 requirements.md FR-6, amended 2026-10-02).
 
@@ -153,7 +153,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
 
 - Admin create, edit and import require Contact Person, ≥1 crop, Capacity, Phone and Email. *(Amended 2026-10-05: this no longer reads as those five fields layered onto an unchanged Trader-ID rule. Per D-15, Trader ID is now system-generated on every admin path and is never a client input, so it sits outside the required set entirely.)*
 - The import template moves to v4 without the D-5 columns. A v3 workbook is rejected as stale, which is the existing behavior.
-- A second route to `GRANTED` that bypasses the admin acknowledgement gate is introduced. It is valid because the actor is the one consenting (ADR-017).
+- A second route to `GRANTED` that bypasses the admin acknowledgement gate is introduced. It is valid because the actor is the one consenting (ADR-NNN).
 
 ### REMOVED Requirements
 
@@ -205,7 +205,7 @@ Remove the manual consent chase for team-managed actors and make their consent *
 | Order | Chunk | Contents | Depth | Depends on |
 |---|---|---|---|---|
 | 1 | `actors/consent-intake/intake-required-fields` | O-10 + O-11, plus the generated Trader ID and duplicate detection added in specify (D-15 to D-18 there) | ~~Lite~~ **Standard** | none |
-| 2 | `actors/consent-intake/consent-request-email` | O-1…O-9 (evidence model, email + public page, upload + S3, evidence panel, ADR-017) | Full | chunk 1 (both edit `ActorForm` and the import service) |
+| 2 | `actors/consent-intake/consent-request-email` | O-1…O-9 (evidence model, email + public page, upload + S3, evidence panel, ADR-NNN) | Full | chunk 1 (both edit `ActorForm` and the import service) |
 
 Chunk 1 is small, ships value at once, and removes the field-rule churn from the high-risk chunk. A single spec also works if you prefer one PR; the cost is a larger review.
 
@@ -223,7 +223,7 @@ Chunk 1 is small, ships value at once, and removes the field-rule churn from the
 | R-6 | **Uploaded files are unscanned PII** (scans carry signatures). | Private bucket, admin-only short-lived GET, content-type and size allowlist, no inline rendering (`Content-Disposition: attachment`). Malware scanning is recorded as accepted risk. |
 | R-7 | **Unified required fields break existing rows on edit**: an admin editing an old actor without a phone must now add one. | Acceptable under D-3 (test data). Stated in the PRD change. |
 | R-8 | **The analytics shell on `(public)`** could record the URL. | The token lives in the fragment and is stripped before GA4 can mount. Whether GA4 records the fragment is `UNVERIFIED — confirm at source` during specify. |
-| R-9 | **Bypassing the admin acknowledgement gate** is a deliberate constitutional change. | ADR-017, with a Reviewer on every baseline-touching task (CLAUDE.md, blast-radius rule). |
+| R-9 | **Bypassing the admin acknowledgement gate** is a deliberate constitutional change. | ADR-NNN, with a Reviewer on every baseline-touching task (CLAUDE.md, blast-radius rule). |
 
 Applicable lessons:
 - **KZ-001**: close coverage at clause level.

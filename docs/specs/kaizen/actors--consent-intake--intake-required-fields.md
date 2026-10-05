@@ -90,7 +90,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | `.agents/leader.md` (append under *Applying a correction*) |
 | Edit | **Remediation briefs carry no `[advisory-grade]` edits to constitutional baselines.** From attempt 2 onward, and in any validation-remediation brief, a baseline-doc brief fixes only the named FAIL lines; advisories are recorded, not dispatched. Every advisory sentence added to a baseline is new FAIL surface, and it consumed the 3-attempt ceiling here (KZ-actors--consent-intake--intake-required-fields-1). |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-05) |
 
 ### P2
 
@@ -100,7 +100,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | methodology |
 | Edit | `/akili-execute` Step 2.2 *Brief contract*, clause (d): add "On a rework attempt ≥ 2, or on a remediation brief targeting a constitutional baseline, the brief carries no `[advisory-grade]` additions to that baseline; record the advisories instead. An advisory sentence written into a baseline is audited as new content, and here it produced every subsequent FAIL and a HALT." |
 | Severity | High |
-| Status | pending |
+| Status | upstreamed (2026-10-05, `docs/specs/kaizen/upstream-2026-10-05.md`) |
 
 ### P3
 
@@ -110,7 +110,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | `frontend/CLAUDE.md` (admin shell patterns) |
 | Edit | **Every scroll container is also a containing block.** Give any `overflow-auto`/`overflow-y-auto` pane `relative`. Otherwise absolutely positioned descendants, `sr-only` live regions included, anchor to `<body>` and stretch the document into a second scrollbar. The admin `<main>` is the precedent (`app/(admin)/layout.tsx`, guarded by `layout.test.tsx`). jsdom cannot see this; measure `documentElement.scrollHeight` in a browser. |
 | Severity | Medium |
-| Status | pending |
+| Status | applied (2026-10-05) |
 
 ### P4
 
@@ -120,7 +120,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | KZ-011 |
 | Edit | Add source `actors/consent-intake/intake-required-fields`, recurrence ×5. Execute-time design edits and briefs authored by the Leader are part of the untrue-spec surface too: the T-2 array-only `meta.target` was refuted by a real-engine probe, and the T-8 design under-scoped the API section that the requirement named. **Probe the engine or re-read the requirement before writing an execute-time design edit.** |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-05) |
 
 ### P5
 
@@ -130,7 +130,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | KZ-008 |
 | Edit | Add source `actors/consent-intake/intake-required-fields`, recurrence ×9. An Implementer reported adding a test assertion to a file that `git status` showed unchanged, and a Reviewer PASSed a TRD row that validation found false. **The Leader checks the claimed file in the diff before relaying a completion report.** |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-05) |
 
 ### P6
 
@@ -140,7 +140,7 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | KZ-001 |
 | Edit | Add source `actors/consent-intake/intake-required-fields`, recurrence ×4. A clause with no owner (FR-1 "same field-level messages") was found at T-1's review. An NFR-4 clause recorded covered in `execution.md` had no code, and only the independent coverage validator found it. |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-05) |
 
 ### P7
 
@@ -150,4 +150,4 @@ Two further defects passed task review and were caught only later: the T-5 order
 | Target | `docs/trd/trd.md` |
 | Edit | Allocate the number for the ADR already written as **`ADR-NNN`**: "duplicate detection on identity replaces the Trader-ID natural key as the duplicate guard". It supersedes no existing ADR. Sweep all 4 citations (the §3 `Trader_id` row, the §3 ActorSequence paragraph, the §12.5 index row, and QA-9). Then sweep `docs/specs/actors/consent-intake/consent-request-email/proposal.md`'s 5 "ADR-017" mentions if the allocated number takes 017. Run the unmerged-branch check first (CLAUDE.md *Concurrency protocol*, corollary). |
 | Severity | Medium |
-| Status | pending |
+| Status | applied (2026-10-05, allocated ADR-017; proposal.md's 5 pre-allocated "ADR-017" mentions reset to ADR-NNN, since that number is now taken) |

@@ -204,3 +204,5 @@ Flipping a task to `[x]` early does not merely lose evidence — it removes the 
 ## Applying a correction — both directions (KZ-004)
 
 **Never work the site list a finding hands you.** Grep the superseded value across every spec document before declaring an amendment applied, and in the same change mark as resolved every document that *quotes* the corrected figure — correcting a sibling falsifies anything citing it.
+
+**Remediation briefs carry no `[advisory-grade]` edits to constitutional baselines.** From attempt 2 onward, and in any validation-remediation brief, a baseline-doc brief fixes only the named FAIL lines; advisories are recorded, not dispatched. Every advisory sentence added to a baseline is new FAIL surface, and it consumed the 3-attempt ceiling here (KZ-actors--consent-intake--intake-required-fields-1).
