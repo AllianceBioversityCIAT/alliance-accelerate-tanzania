@@ -22,6 +22,7 @@
 /profile?id=              Actor profile page — full contact block (contactPerson, position,
                            phone, email, marketLocation) shown only for a GRANTED actor;
                            404 for a non-consented or unknown id. Never NEVER_PUBLIC_FIELDS.
+                           (The consent-link preview at /consent/ is a separate surface.)
 /map                      Seed Maps — interactive geospatial view + filters
 /dashboard                Discovery Dashboard — KPIs + filtered actor view, with a CSV
                            download of the current view (public columns only: traderName,
@@ -56,11 +57,19 @@
                            form", three sub-headings) satisfying an obligation the contact
                            form's own acknowledgement makes. Ships with Legal's unfilled
                            fields — see the note below the block.
+/consent/                 Consent response page for a team-managed actor, opened from an emailed
+                           link. Its own route group, `(consent)`, whose layout is Header + main +
+                           Footer only: no consent banner and no analytics mount, so the token
+                           page is outside GA4 by placement, and it is `noindex`. The one-time
+                           token rides in the URL fragment (`/consent/#t=…`); the page reads it
+                           and strips it from the address bar at once, keeping it in memory only,
+                           so a refresh lands on a "open the link from your email again" state.
+                           Trailing slash, as the static export requires.
 /admin                    Admin/Staff console — a route PREFIX, not a page: there is
                           no /admin index. The brand mark links to /admin/actors.
-  /admin/actors           Actor management table (CRUD)
-  /admin/actors/new       Create actor (validated form)
-  /admin/actors/edit?id=  Edit actor (validated form). Query param, never a [param]
+  /admin/actors           Actor management table (CRUD), bulk consent-request send, queue banner
+  /admin/actors/new       Create actor (validated form), then the send-consent prompt
+  /admin/actors/edit?id=  Edit actor (validated form), consent evidence panel, send/resend. Query param, never a [param]
                           segment — the static export forbids dynamic segments
                           (frontend/CLAUDE.md), and the tree contains none.
   /admin/actors/import    CSV bulk import
@@ -135,6 +144,11 @@
 | Import | Admin | Dropzone, column-mapping preview, validation summary, result report. |
 | Admin Registrations Queue | Admin | Dense, URL-synced table (cards on mobile) of self-registration submissions — reference, applicant, type, region, submitted date, duplicate count, status; segmented by `PENDING_REVIEW` / `APPROVED` / `REJECTED` only. |
 | Admin Registration Detail | Admin | Reference code header, full submitted payload — every field on it is copied to the actor record on approval and becomes publicly visible, since approval sets `consentStatus: GRANTED` (`actors/public-profile-disclosure` FR-4); no per-field marking, one table-wide caption, duplicate-candidate warnings (per-candidate dismissal), consent record with an explicit timezone, a derived activity trail, and the approve/reject decision panel. No payload editing, no bulk actions. |
+| Consent Response | Public (actor, by link) | Reached at `/consent/#t=…`. States: `loading` (skeleton), `ready`, `no-token` (fragment already stripped), `dead-end`, `throttled`, `error`, `done-accepted`, `done-declined`. `ready` shows the organisation, the record that will be published (`ConsentRecordPreview`), the scroll-gated consent text and, to accept, four required respondent fields (name, position, email, phone) plus the acceptance checkbox; **Decline** needs neither and asks a confirm step. The dead-end state is one fixed page for every dead link and names the data-protection contact; it shows no actor or organisation. The heading takes focus when the state changes. |
+| Send Consent Dialog | Admin | `SendConsentDialog`: preview (how many will be sent, and a count per skip reason) → confirm → progress (`aria-live="polite"`, sent / failed / remaining) → result with **Retry failed**. Opened from three places: the bulk action bar on Admin → Actors (a selection, or **Select all N matching** to target the current filters; below `lg` a **Select page** control stands in for the table's header checkbox), the **Send consent request / Resend** button on the edit page (disabled with the reason when the actor is ineligible), and the import result's call to action. |
+| Consent Queue Banner | Admin | On Admin → Actors only. Shown when any request is still queued (**Resume sending**) or failed (**Retry failed**), e.g. after the tab was closed mid-run; renders nothing when both counts are zero or the read fails, so it never blocks the list. |
+| Send Consent Prompt | Admin | One dialog after creating an actor: the duplicate warnings (when any) and the question to send a consent request, defaulting to **Send**. The question appears only when the created actor is not already `GRANTED` and has an email; otherwise the dialog shows the warnings alone, or the page navigates as before. |
+| Consent Evidence Panel | Admin | On the edit page: every consent request for the actor, newest first, with a status badge (queued, sending, sent, failed, accepted, declined, superseded, expired), UTC times with the qualifier, the edition and a **Read exact text** action, the respondent's answer, and the uploaded consent documents (download; attach with `ConsentDocumentField`). The respondent's IP address and user agent are shown here and nowhere public. |
 | Users | Admin | User list, role assignment. |
 | Login | All | Cognito hosted/embedded sign-in. |
 | Forgot password | Staff / Admin | Self-service password reset request, via Cognito: step 1 collects an email and requests a reset code (neutral, enumeration-safe notice either way); step 2 collects the code plus a new password (email pre-filled, editable) and confirms the reset, then routes to `/login?reset=success`. Accessible error region (`role="alert"`, `aria-live="assertive"`) on failure; no code or password ever placed in a URL. |
@@ -269,7 +283,7 @@ The GSAP-side mirror (`DURATION`, `EASE`, `REVEAL`, `COUNT_UP` in `frontend/lib/
 
 ## 8. Component Inventory
 
-Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **Profile contact section** (`ProfileContact` — always-rendered `<dl>`, em-dash for an unsupplied value; supersedes the deleted always-locked PII block/restricted chip, `actors/public-profile-disclosure` FR-6) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6).
+Buttons (primary/secondary/ghost/danger) · Input/Select/Textarea with label + error slot · Search bar · Filter chip + filter panel · Pagination control · Stat/metric card · Actor card · Data table (sortable, row actions) · Profile header · **Profile contact section** (`ProfileContact` — always-rendered `<dl>`, em-dash for an unsupplied value; supersedes the deleted always-locked PII block/restricted chip, `actors/public-profile-disclosure` FR-6) · Map canvas + marker + popup · Crop legend · CSV dropzone · Import result table · Toast/notification · Role badge · Auth form · Empty state · Loading skeleton · **Consent banner** (the fixed bottom overlay bar of §6) · **Consent-request components:** `ConsentTextScrollGate` (the scroll-gated consent text and acceptance checkbox, shared by the registration form's `ConsentPolicyDisclosure` and the consent page) · `ConsentRecordPreview` (a `<dl>` over the public-detail keys headed "Information that will be published", em-dash for an empty field) · `ConsentEvidencePanel` · `ConsentDocumentField` (file input with type and size checks, immediate in the panel, deferred until after create on the create form, disabled with an explanation when document storage is unavailable) · `SendConsentDialog` · `ConsentQueueBanner` · `SendConsentPrompt`. The consent page also uses `RespondentFields`, `ConsentResponseForm` and `ConsentDeadEnd`.
 
 > Prefer **shadcn/ui** primitives styled with the tokens above; build domain components (Actor card, Profile contact section, Map popup, Import result) on top.
 

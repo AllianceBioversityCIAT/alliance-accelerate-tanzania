@@ -992,3 +992,58 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 
 - **Leader correction before the brief:** `tasks.md` T-12 said ADR-NNN would be "allocated now". Root `CLAUDE.md` § Concurrency protocol allocates ADR numbers at apply time on the default branch, never from a spec branch, and chunk 1 used a placeholder. T-12 therefore writes `ADR-NNN` (candidate ADR-018). Unmerged-branch check, 2026-10-06: every branch tops out at ADR-017.
 - **Budget re-baseline (standing authorization):** LOC through T-11 is 16,985 (backend, frontend and infra, excluding lockfiles and specs) against the ~16,000 projection. The new projection is **~17,700**, with T-12 and T-13 docs at about 700. Review verdicts so far: 27, recounted per task (T-1 2, T-2 1, T-3 3, T-4 3, T-5 6 including the doc re-check, T-6 2, T-7 3, T-8 1, T-9 2, T-10 1, T-11 3). The projection is **~31**.
+
+#### Attempt 1 — **FAIL** (both Reviewers)
+
+**Files changed:** `docs/prd.md`, `docs/trd/trd.md`, `docs/ux-ui/design.md`, `docs/infrastructure.md` (104 insertions, 24 deletions). This is documentation only.
+
+**Sweeps (re-run by the Leader):**
+- Sweep 1, the falsifier hit: TRD §4 `GET /actors/:id` "the only public path that does". It is amended; the remaining hits are scoped or false positives.
+- Sweep 2: "eight kinds" became "nine kinds", and "Four tables" was amended.
+- `ADR-NNN` appears 5 times, and `ADR-018` appears only inside the placeholder note.
+
+**Reviewer (completeness / consistency): FAIL.**
+1. TRD §8 **Roles** still says `Public` is "(anonymous, read-only; …", while the same diff calls `POST consent/respond` an unauthenticated write. Violated: FR-17 scenario 1.
+2. TRD §2 says "Frontend mirrors these as route groups: `(public)` …, `(admin)` …" and omits `(consent)`, whose placement is a security property. Violated: FR-17 scenario 1.
+
+**Reviewer (facts vs code): FAIL.** More than 60 claims were checked. The false ones:
+1. TRD §3.2 lists `respondentIp` and `respondentUserAgent` "on an Accept". `consent-public.service.ts` writes them on every answer, Decline included. PRD AC-9's Decline clause reads "no respondent identity is stored".
+2. QA-14 cites `consent-public.e2e.spec.ts` for the 32 KB cap and the `recipientEmail` / `requestedBy*` value sweep. The cap is tested in `lambda-handler.e2e.spec.ts` and `payload-cap.config.spec.ts`; the sweep lives in `pii-boundary.spec.ts`.
+3. "20 requests per 60 s per caller" appears in TRD §4, §8 and QA-14. The limiter is per caller **per route** (`consent-throttle.guard.ts`; the library keys on class, handler and tracker).
+
+**Advisories (recorded, not dispatched, per KZ-actors--consent-intake--intake-required-fields-1):**
+- QA-1 could carry the same carve-out as QA-2.
+- PRD §5 Out of Scope says "record-level audit history UI".
+- D-21 could be named in the TRD §4 preview row.
+- UX §4's "heading takes focus" applies only to message and terminal states.
+- The comment in `infra/20-backend/template.yaml` saying "No ListBucket" is now wrong (T-7 territory).
+- **T-14:** if the A-1 fallback triggers, `docs/infrastructure.md` §2's `s3:prefix` sentence must be amended too.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the same Implementer. Only the five named FAIL lines were fixed and no other baseline sentence was added (KZ-actors--consent-intake--intake-required-fields-1).
+
+**Files changed (this attempt):** `docs/trd/trd.md` and `docs/prd.md`.
+1. §8 Roles: `Public` reads public data, plus the token-bearer read and answer.
+2. §2: the `(consent)` route group is listed.
+3. §3.2 and AC-9: IP and user agent are recorded on any answer; name, position, email and phone only on an Accept.
+4. QA-14: the citations now point at `lambda-handler.e2e.spec.ts` and `payload-cap.config.spec.ts` for the cap, and at `pii-boundary.spec.ts` for the sweep.
+5. The throttle is "per caller, per route" in §4, §8 and QA-14.
+
+**Sweeps after:** the same hit sets as attempt 1, all scoped or false positives.
+
+**Leader checks (inline, primary source):**
+- `lambda-handler.e2e.spec.ts` describe "Consent-link payload cap … T-5 NFR-4" asserts `413` on `POST /api/v1/consent/respond`.
+- `payload-cap.config.ts`: `REGISTRATIONS_PAYLOAD_CAP_BYTES = 32 * 1024`, so the "32 KB" figure is traced.
+
+**Reviewer (rework): PASS.** All five fixes match their primary source. The delta contains nothing else. No new contradiction.
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-17: the PRD, TRD, UX and infrastructure parts, including scenario 1 for the baselines.
+- NFR-9: the personal-data inventory.
+
+**Open for apply time:** `ADR-NNN` (candidate ADR-018) appears in five places in the TRD and is replaced when the number is allocated on the default branch.
+
+- **Final verification:** VERIFIED (doc sweeps re-run by the Leader).
