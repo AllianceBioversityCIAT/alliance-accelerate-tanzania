@@ -383,3 +383,12 @@ No dispatch or token production logic changed.
 - A DB error after a successful send gives a `500`, recovered by the stale sweep.
 
 - **Final verification:** VERIFIED.
+
+## Run continuation — 2026-10-06
+
+**Standing authorization (product owner, 2026-10-06):** "Continúa con el resto de las tareas, sin parar. Ajusta el presupuesto cuando sea necesario, y solo para si necesitas que tome una decisión."
+
+From here on:
+- Continue gates auto-pass after a PASS.
+- Budget re-baselines are recorded, not asked.
+- The run stops only for a product decision, a HALT, or a Pivot.

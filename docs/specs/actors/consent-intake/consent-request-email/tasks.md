@@ -196,7 +196,7 @@ T-1…T-13 ─► T-14
     - All tests green and falsifiers executed red.
     - P-9 remains owned by T-14, recorded in `execution.md`.
 
-- [ ] **T-5 Public view and respond, throttle, and the PII release gate** (deps: T-4)
+- [~] **T-5 Public view and respond, throttle, and the PII release gate** (deps: T-4)
   - **Size:** L (~1,300 LOC) · **Effort:** `max` · **Skills:** `nestjs-expert`, `tdd`, `api-design-principles`
   - **Traces:**
     - FR-1 (an old request renders its own edition)
