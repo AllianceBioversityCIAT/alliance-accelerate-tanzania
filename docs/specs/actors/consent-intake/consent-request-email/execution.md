@@ -149,3 +149,11 @@
 6. The "three occurrences" wording is consistent: the third is the excluded `Signature:`.
 
 - **Final verification:** VERIFIED.
+
+#### T-2 continue gate — decision recorded (2026-10-05)
+
+- **Product owner:** fix the shared `acceptanceStatement` inside T-3 as its first step. It becomes per edition, and the v1.0 hash is pinned.
+- **Execute-time spec edits:**
+  - `design.md` §7.2: the file shape and the pinned-hash bullet.
+  - `tasks.md` T-3: a first-step scope item.
+- **Carry:** T-3's Reviewer brief lists "conformance to `design.md` §7.2 as amended 2026-10-05" and "§5.7 rule 4 as amended 2026-10-05".

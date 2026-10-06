@@ -106,7 +106,7 @@ T-1…T-13 ─► T-14
   - **Review:** `checklist` — content task; the test is the gate.
   - **Done when:** the `.docx` sha256 matches P-18; the falsifiers have been executed red; the backend suite is green.
 
-- [ ] **T-3 Eligibility, preview, enqueue and supersession** (deps: T-1, T-2)
+- [~] **T-3 Eligibility, preview, enqueue and supersession** (deps: T-1, T-2)
   - **Size:** L (~1,300 LOC) · **Effort:** `xhigh` · **Skills:** `nestjs-expert`, `tdd`, `api-design-principles`
   - **Traces:**
     - FR-2 (all scenarios, including the BUT on bulk skipping a decliner and the AND MUST API enforcement)
@@ -123,6 +123,7 @@ T-1…T-13 ─► T-14
     - Hooks inside `update` (consent status or email in the diff), `bulkSetConsent`, `remove` and `bulkDelete`.
     - `ConsentRequestsService.preview` / `enqueue` and the admin routes `POST preview` and `POST /admin/consent-requests`.
     - Module wiring: `ActorsModule` imports the supersession module; the new module re-provides the audit and resolver services.
+    - **First step: edition shape fix (design §7.2 as amended 2026-10-05).** Move `acceptanceStatement` into each edition in `admin-consent-editions.json`, and update the loader and `admin-consent-policy.spec.ts` so the digest covers it. Pin the literal v1.0 `editionHash`. Correct the false comment in `canonicalAdminConsentEditionPayload`. This lands before any code stores an `editionHash`.
     - **D-24 (design §5.7 rule 4):** in `ActorsAdminService.update` and `bulkSetConsent`, a re-grant of a stored-`EMAIL_LINK` actor takes method, date and reference from the request, never the link-era values.
   - **Tests:**
     - The five-reason matrix fixture: one actor per reason.

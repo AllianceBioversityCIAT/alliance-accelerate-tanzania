@@ -340,11 +340,12 @@ The body is built with `renderEmailHtml`:
 
 ### 7.2 Edition registry (FR-1)
 
-- **File.** `admin-consent-editions.json` holds `{ editions: [{ version, issuedAt, sections[{ heading, body, bulletPoints? }] }], acceptanceStatement }`. It mirrors `consent-policy.editions.json`'s shape (P-8).
+- **File.** `admin-consent-editions.json` holds `{ editions: [{ version, issuedAt, sections[{ heading, body }], acceptanceStatement }] }`. **`acceptanceStatement` is per edition** (amended 2026-10-05, T-2 Reviewer advisory 1, product owner). A top-level shared statement, the `consent-policy.editions.json` shape, would let a later edit change an older edition's text and hash, breaking FR-1.
 - **Loader.** The loader freezes it.
 - **Hash.** It computes `editionHash = sha256(JSON.stringify({ version, sections, acceptanceStatement }))`.
 - **Tests.**
-  - The full-version-sequence pin and a body digest (the `consent-policy.spec.ts` pattern) guard append-only.
+  - The full-version-sequence pin and a body digest (the `consent-policy.spec.ts` pattern) guard append-only. The digest covers each edition's `acceptanceStatement`.
+  - **The literal v1.0 `editionHash` is pinned** in a test, so any change to the canonical serialization reddens before a stored hash can be invalidated.
   - The verbatim test reconstructs plain text from the edition, reverses the three substitutions, normalizes only whitespace and bullet glyphs, and compares to `__fixtures__/legal-admin-consent-v1.0.txt` (the `textutil` extract of the `.docx`, sha256 `80fe083f…a9ba1c7`, P-18).
   - A **negative-word assertion** checks that no edition text contains `/\bsign(ing|ature|ed)?\b/i` (B-14). The extract has three such occurrences, all replaced by the substitutions.
 
