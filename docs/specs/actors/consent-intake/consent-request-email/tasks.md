@@ -106,7 +106,7 @@ T-1…T-13 ─► T-14
   - **Review:** `checklist` — content task; the test is the gate.
   - **Done when:** the `.docx` sha256 matches P-18; the falsifiers have been executed red; the backend suite is green.
 
-- [~] **T-3 Eligibility, preview, enqueue and supersession** (deps: T-1, T-2)
+- [x] **T-3 Eligibility, preview, enqueue and supersession** (deps: T-1, T-2)
   - **Size:** L (~1,300 LOC) · **Effort:** `xhigh` · **Skills:** `nestjs-expert`, `tdd`, `api-design-principles`
   - **Traces:**
     - FR-2 (all scenarios, including the BUT on bulk skipping a decliner and the AND MUST API enforcement)

@@ -157,3 +157,101 @@
   - `design.md` §7.2: the file shape and the pinned-hash bullet.
   - `tasks.md` T-3: a first-step scope item.
 - **Carry:** T-3's Reviewer brief lists "conformance to `design.md` §7.2 as amended 2026-10-05" and "§5.7 rule 4 as amended 2026-10-05".
+
+### T-3 — Eligibility, preview, enqueue and supersession — in progress
+
+- **Leader choices:**
+  - Skills: `nestjs-expert`, `tdd`, `api-design-principles`.
+  - Effort: `xhigh`.
+  - Review: two lens Reviewers, A on risk / constraint interaction and B on API / wiring.
+
+#### Attempt 1 — **FAIL** (both Reviewers, same issue)
+
+**Files changed**
+- **New:**
+  - `consent-requests/{consent-eligibility,consent-supersession.service,consent-supersession.module,consent-requests.service,admin-consent-requests.controller,consent-requests.module}.ts`, with specs for the eligibility, supersession and requests services
+  - `consent-requests/dto/consent-request-send.dto.ts`
+  - `actors/admin-actor-where.util.ts`
+  - `test/support/consent-request.mock.ts`
+  - `test/admin-consent-requests.e2e.spec.ts`
+- **Modified:**
+  - `admin-consent-editions.json`, `admin-consent-policy.ts` and its spec: the per-edition `acceptanceStatement`, and the v1.0 hash pinned at `0a2d028028794882ef6cfaf8997c03c0f07d131b304641594f8654696def3fbe`
+  - `actors-admin.service.ts` (hooks and D-24) and its spec
+  - `actors.module.ts`
+  - `app.module.ts`
+  - `test/admin-actors-crud.e2e.spec.ts` and `test/admin-actors.e2e.spec.ts` (mock extension)
+
+**Implementer verification:**
+- 92 suites / 1496 tests.
+- Lint, build and `tsc` clean.
+- 6 falsifiers executed red.
+
+**Evidence re-run (Leader):** **VERIFIED**, with one flake recorded.
+- Run 1: 1 failure in `registrations-throttle.e2e.spec.ts`. T-3 does not touch that suite.
+- That suite alone: 2/2 green with `--forceExit`. The open handle at exit predates this task.
+- Run 2, full suite: 92 suites / 1496 tests green.
+
+**Reviewer A (risk), FAIL — verbatim issue:**
+
+> `ConsentRequestSendDto` accepts `scope: 'single'` with any target — up to 1000 ids or a `filter` target that can match every actor. With `single`, `evaluateConsentEligibility` skips neither `declined` nor `pending_request`, and `enqueue` supersedes every eligible actor's pending request. So one direct `POST /admin/consent-requests` with `{target:{kind:'filter',filter:{}},scope:'single'}` re-asks every decliner and supersedes every open link across the registry. The decliner skip (D-21) and the pending block become client-side only.
+>
+> **Violated Rule:** requirements.md FR-2 scenario "a single send re-asks a decliner": "BUT a bulk send MUST skip it" + "AND IT MUST be enforced by the API". design.md §5.2 step 1: "For `single` it first calls `supersedePendingFor(tx, [actorId])`" (a single actor).
+>
+> **Remediation:** Server-enforce that `scope: 'single'` requires `kind: 'ids'` with exactly one id (a DTO validator — `@ValidateIf` on scope + `ArrayMaxSize(1)` — or a service-level `BadRequestException`). Add e2e tests showing a 400 for `single` with 2 ids and with a filter target, executed red first.
+
+**Reviewer B (API), FAIL:** the same issue. Its remediation asks for a 400 in the standard `details` envelope unless `target.kind === 'ids' && ids.length === 1`, and for e2e tests on `single` + filter and `single` + 2 ids, where the second case is the falsifier.
+
+**Advisories (A and B):**
+1. The pending set is defined twice, in `isPending` and in the supersession `OR`.
+2. The "drop FAILED" red came from the FAILED eligibility unit test and the `OR` shape pin, not from the double-enqueue fixture `tasks.md` names, which uses QUEUED.
+3. **Concurrent double-enqueue:** `evaluateTarget` runs outside the transaction with no lock, so two concurrent bulk enqueues can create two QUEUED rows for one actor. This is a design gap, to be routed to the product owner.
+4. Unknown ids are excluded from `total` without a `notFound` count.
+5. `{ kind: 'filter' }` without a `filter` object resolves to all actors, matching `adminList`'s semantics; there is no `@IsDefined`.
+6. The withdrawal fixture checks the `updateMany` call rather than the resulting request status, and its fixture differs from `tasks.md`'s wording.
+7. The e2e filter test hard-codes `total: 3` and its `matchesActorWhere` ignores `registrationSource` / `consentMethod`.
+8. Reviewer A confirmed that `isConsentProvenanceSatisfied(null, …)` guarantees a batch date on bulk unlock, which settles B's unverified question.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the attempt-1 Implementer, whose context survived. Both FAIL reports were copied verbatim. Effort was raised to `max`.
+
+**Files changed (this attempt):**
+- `consent-requests.service.ts`: `assertScopeTargetConsistency` is the first statement in both `preview` and `enqueue`, and throws a standard-envelope `400` with `details[field='scope']`.
+- `consent-requests.service.spec.ts`: `it.each` covering both routes × (filter target, 2 ids), plus the accepting 1-id case.
+- `test/admin-consent-requests.e2e.spec.ts`: 400s on both routes, the enqueue rejection asserts 0 rows created, and 1 id returns 200/201.
+
+**Red run:** with the guard calls removed, the 4 new tests failed on status (`expected 400, got 200/201`).
+
+**Falsifier:** guard calls deleted → the same 4 tests went red. After the revert, the e2e suite was 18/18 green.
+
+**Implementer verification:** 92 suites / 1507 tests. Lint, build and `tsc` clean.
+
+**Evidence re-run (Leader): VERIFIED.** 92 suites / 1507 tests. Lint, build and `tsc` OK.
+
+**Reviewer (rework; override (e)): PASS.**
+- The guard runs before any read or write on both routes.
+- It covers a filter target, more than one id, missing `ids`, and duplicate ids.
+- `bulk` is unaffected.
+- No global exception filter exists, so the envelope reaches the client unchanged.
+- The tests use eligible seed actors, so they would fail without the guard.
+- No regression in the delta.
+
+**Leader-inline after PASS (comment-only, no logic):** three ~20-line "REWORK (attempt 2)" comment blocks were cut to one line each. This applies the user's standing preference that comments match the change size; the history lives in the commit message. Re-run after the edit: 65 targeted tests green; eslint and `tsc` OK.
+
+**Execute-time spec edit:** `design.md` §5.1 (the `single` ⇒ exactly one id rule) and §6 (the 400s on both routes), per Reviewer advisory 1. It records the contract that ships and does not change any requirement's meaning. **Carry:** the next Reviewer brief (T-4).
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-2: all scenarios, including the BUT and the API enforcement.
+- FR-3: resend supersedes (server side).
+- FR-4: *all matching* and *filter changed* (server side).
+- FR-5: ids target (server side).
+- FR-10: D-24.
+- FR-12: all three scenarios. The AND on a later Accept is completed in T-5.
+
+**Open items routed to the product owner at the T-3 continue gate:**
+- **Concurrent double-enqueue (attempt-1 advisory 3).** Eligibility is evaluated outside the enqueue transaction with no lock. Two simultaneous bulk sends for the same actor (a double click, two tabs) can create two QUEUED rows, so the actor gets two emails. This is spec-caused: FR-4's "none sent twice" intent.
+- **Unknown ids.** They are excluded from `total` with no `notFound` count. This is recorded for T-9's UI.
+
+- **Final verification:** VERIFIED.

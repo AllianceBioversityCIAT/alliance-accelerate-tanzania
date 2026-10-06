@@ -9,6 +9,7 @@ import {
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
+import { buildAdminActorWhere } from './admin-actor-where.util';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
@@ -34,6 +35,7 @@ import {
 } from './trader-id.util';
 import { IntakeDuplicateService } from './intake-duplicate.service';
 import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
+import { ConsentSupersessionService } from '../consent-requests/consent-supersession.service';
 
 /**
  * T-2 — Admin-only actor operations service (FR-1, FR-3, FR-4, FR-5, NFR-4).
@@ -129,6 +131,9 @@ export class ActorsAdminService {
     private readonly actorAuditService: ActorAuditService,
     private readonly actingAdminResolver: ActingAdminResolver,
     private readonly intakeDuplicateService: IntakeDuplicateService,
+    // T-3 (consent-request-email, design.md §5.5) — superseding pending
+    // consent requests from inside this service's own transactions.
+    private readonly consentSupersessionService: ConsentSupersessionService,
   ) {}
 
   /**
@@ -142,20 +147,10 @@ export class ActorsAdminService {
     const page = q.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(q.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
-    const where: Prisma.ActorWhereInput = {
-      ...(q.region ? { region: q.region } : {}),
-      ...(q.traderType ? { traderType: q.traderType } : {}),
-      ...(q.consentStatus
-        ? { consentStatus: q.consentStatus as ConsentStatus }
-        : {}),
-      // T-8 — AND-composed with the filters above; this is FR-9's enumeration
-      // mechanism (`consentStatus=GRANTED&consentMethod=NOT_RECORDED` finds
-      // the legacy unevidenced set).
-      ...(q.registrationSource
-        ? { registrationSource: q.registrationSource }
-        : {}),
-      ...(q.consentMethod ? { consentMethod: q.consentMethod } : {}),
-    };
+    // T-3 (consent-request-email, P-30) — extracted to `buildAdminActorWhere`
+    // so a consent-request "all matching" filter target uses the EXACT same
+    // predicate this list does (design.md §5.1).
+    const where: Prisma.ActorWhereInput = buildAdminActorWhere(q);
 
     const [rows, total] = await Promise.all([
       this.prisma.actor.findMany({
@@ -397,20 +392,43 @@ export class ActorsAdminService {
         // acknowledged check above and of the provenance check below.
         this.enforceConsentMethodRules(before, dto);
 
+        // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a re-grant of a
+        // stored-EMAIL_LINK actor (status moving INTO GRANTED; rule 2 above
+        // already guarantees the effective method here is admin-assertable,
+        // never EMAIL_LINK) does NOT inherit the link's `consentObtainedAt`/
+        // `consentReference`. The provenance check below must see those two
+        // fields as absent on `before`, not as the stored link-era values —
+        // otherwise an admin who supplies only a new method (and omits the
+        // date) would silently pass with the OLD date still attached.
+        const isLinkReGrant =
+          before.consentStatus !== ConsentStatus.GRANTED &&
+          before.consentMethod === ConsentMethod.EMAIL_LINK &&
+          (dto.consentStatus ?? before.consentStatus) === ConsentStatus.GRANTED;
+        const provenanceBefore = isLinkReGrant
+          ? { ...before, consentObtainedAt: null, consentReference: null }
+          : before;
+
         // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
         // STORED row loaded above (design.md §4.1's concurrency assumption:
         // read-then-decide inside this same transaction). Independent of the
         // `acknowledged` check above (DD-2) — both must pass.
-        if (!isConsentProvenanceSatisfied(before, dto)) {
-          const effectiveMethod = dto.consentMethod ?? before.consentMethod;
+        if (!isConsentProvenanceSatisfied(provenanceBefore, dto)) {
+          const effectiveMethod = dto.consentMethod ?? provenanceBefore.consentMethod;
           const effectiveObtainedAt =
             dto.consentObtainedAt !== undefined
               ? dto.consentObtainedAt
-              : (before.consentObtainedAt ?? null);
+              : (provenanceBefore.consentObtainedAt ?? null);
           throw this.buildProvenanceError(effectiveMethod, effectiveObtainedAt);
         }
 
-        const updateData = this.buildScalarData(dto);
+        // D-24 — "consentReference is written from the payload, or null when
+        // omitted": a link re-grant must never silently keep the stored
+        // link-era reference just because the admin didn't resend it.
+        const dtoForWrite = isLinkReGrant
+          ? { ...dto, consentReference: dto.consentReference ?? null }
+          : dto;
+
+        const updateData = this.buildScalarData(dtoForWrite);
         if (Object.keys(updateData).length > 0) {
           await tx.actor.update({
             where: { id },
@@ -444,6 +462,16 @@ export class ActorsAdminService {
           dto.acknowledged,
         );
 
+        // FR-12/D-20 (design.md §5.5) — a consentStatus or email VALUE
+        // change supersedes any pending consent request for this actor,
+        // inside this SAME transaction.
+        if (
+          adminBefore.consentStatus !== adminAfter.consentStatus ||
+          adminBefore.email !== adminAfter.email
+        ) {
+          await this.consentSupersessionService.supersedePendingFor(tx, [id]);
+        }
+
         return adminAfter;
       });
     } catch (err) {
@@ -474,6 +502,9 @@ export class ActorsAdminService {
 
       const adminActor = toAdminActor(actor);
       await this.actorAuditService.logDelete(tx, adminActor, acting);
+      // FR-12/D-20 (design.md §5.5) — always, BEFORE the delete: a deleted
+      // actor's pending consent requests must become dead links too.
+      await this.consentSupersessionService.supersedePendingFor(tx, [id]);
       await tx.actor.delete({ where: { id } });
     });
 
@@ -619,21 +650,45 @@ export class ActorsAdminService {
           for (const row of existing) {
             // DD-9 (design.md §5.7) — a row already GRANTED through
             // EMAIL_LINK is the actor's own evidence; it is left untouched
-            // regardless of the batch's values (rule 3). A NON-GRANTED row
-            // whose stored method is EMAIL_LINK (e.g. it was later set
-            // DENIED by an admin) counts as MISSING a method — it is never
-            // "preserved" with a label that claims the actor's own act, and
-            // the batch's assertable method fills it instead (RB-2).
+            // regardless of the batch's values (rule 3).
             const isGrantedEmailLink =
               row.consentStatus === ConsentStatus.GRANTED &&
               row.consentMethod === ConsentMethod.EMAIL_LINK;
-            const missingMethod =
-              !isGrantedEmailLink &&
-              (row.consentMethod === ConsentMethod.NOT_RECORDED ||
-                row.consentMethod === ConsentMethod.EMAIL_LINK);
-            const missingDate = !isGrantedEmailLink && row.consentObtainedAt === null;
+            if (isGrantedEmailLink) {
+              preservedIds.push(row.id);
+              continue;
+            }
 
-            if (isGrantedEmailLink || (!missingMethod && !missingDate)) {
+            // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a
+            // NON-GRANTED row whose stored method is EMAIL_LINK (e.g. it was
+            // later set DENIED by an admin) takes the BATCH's method, date,
+            // AND reference (or null) — never a field-by-field fill, and
+            // never "preserved" with a label that claims the actor's own
+            // act (RB-2). The link-era evidence must not survive under an
+            // admin-asserted method, even when this row already carries its
+            // own (link-era) date/reference.
+            const isLinkRow = row.consentMethod === ConsentMethod.EMAIL_LINK;
+            if (isLinkRow) {
+              const patch: ConsentFillPatch = {
+                consentMethod: consentMethod as ConsentMethod,
+                consentObtainedAt: consentObtainedAt as string,
+                consentReference: consentReference ?? null,
+              };
+              patches.set(row.id, patch);
+              const key = Object.keys(patch).sort().join(',');
+              const group = fillGroups.get(key);
+              if (group) {
+                group.ids.push(row.id);
+              } else {
+                fillGroups.set(key, { ids: [row.id], patch });
+              }
+              continue;
+            }
+
+            const missingMethod = row.consentMethod === ConsentMethod.NOT_RECORDED;
+            const missingDate = row.consentObtainedAt === null;
+
+            if (!missingMethod && !missingDate) {
               preservedIds.push(row.id);
               continue;
             }
@@ -699,6 +754,10 @@ export class ActorsAdminService {
             data: { consentStatus: status as ConsentStatus },
           });
         }
+
+        // FR-12/D-20 (design.md §5.5) — ALWAYS, for every id applied
+        // (locking and unlocking both change `consentStatus`).
+        await this.consentSupersessionService.supersedePendingFor(tx, foundIds);
       }
 
       return {
@@ -746,6 +805,9 @@ export class ActorsAdminService {
       if (foundIds.length > 0) {
         const rows = existing.map((row) => toAdminActor(row));
         await this.actorAuditService.logBulkDelete(tx, rows, acting);
+
+        // FR-12/D-20 (design.md §5.5) — always, before the delete.
+        await this.consentSupersessionService.supersedePendingFor(tx, foundIds);
 
         await tx.actor.deleteMany({
           where: { id: { in: foundIds } },

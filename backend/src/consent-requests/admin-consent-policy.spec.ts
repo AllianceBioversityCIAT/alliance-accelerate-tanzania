@@ -16,7 +16,6 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  ADMIN_CONSENT_ACCEPTANCE_STATEMENT,
   ADMIN_CONSENT_EDITIONS,
   AdminConsentEdition,
   CURRENT_ADMIN_CONSENT_VERSION,
@@ -70,14 +69,13 @@ function toNormalizedLines(text: string): string[] {
  * Reconstructs the full plain-text document (in order) from an edition,
  * reversing the three substitutions first (on the WHOLE concatenated text,
  * so a reversed phrase can never straddle a line split), then flattening
- * every section's heading + body into normalized lines.
+ * every section's heading + body, plus the edition's OWN
+ * `acceptanceStatement` (T-3, design.md §7.2 as amended 2026-10-05 — it is
+ * per-edition, not shared), into normalized lines.
  */
-function reconstructEditionLines(
-  edition: AdminConsentEdition,
-  acceptanceStatement: string,
-): string[] {
+function reconstructEditionLines(edition: AdminConsentEdition): string[] {
   const sectionTexts = edition.sections.map((section) => `${section.heading}\n${section.body}`);
-  let fullText = [...sectionTexts, acceptanceStatement].join('\n');
+  let fullText = [...sectionTexts, edition.acceptanceStatement].join('\n');
 
   for (const { edition: editionWording, original } of SUBSTITUTIONS) {
     fullText = fullText.split(editionWording).join(original);
@@ -98,15 +96,18 @@ function fixtureLines(): string[] {
 }
 
 /**
- * SHA-256 over every heading + body of every edition, in order (mirrors
- * `consent-policy.spec.ts`'s `bodyDigest`). A changed, dropped, or reordered
- * clause — or an appended section — moves it; this is this task's digest
- * falsifier ("Add a section to v1.0. The digest goes red.").
+ * SHA-256 over every heading + body + `acceptanceStatement` of every
+ * edition, in order (mirrors `consent-policy.spec.ts`'s `bodyDigest`). A
+ * changed, dropped, or reordered clause — or an appended section — moves it;
+ * this is this task's digest falsifier ("Add a section to v1.0. The digest
+ * goes red."). `acceptanceStatement` is included (T-3, amended 2026-10-05)
+ * so an edit to it also reddens this pin, not just the verbatim test.
  */
 function allEditionsDigest(): string {
   const parts = ADMIN_CONSENT_EDITIONS.flatMap((edition) => [
     edition.version,
     ...edition.sections.map((section) => [section.heading, section.body]),
+    edition.acceptanceStatement,
   ]);
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
@@ -122,7 +123,7 @@ function allEditionsDigest(): string {
  * against the new registry (or copy the value from this test's failure
  * output), in the same commit as the text change.
  */
-const RECORDED_EDITIONS_DIGEST = '684d4f96f03f89ee137206b3a7e86b692c84932df382e6981ba76081a6edef88';
+const RECORDED_EDITIONS_DIGEST = '5aa42f417c564cb04b7b42ab44135fc4ef4cfddeaac21cb1b0320b34813abff3';
 
 describe('admin-consent-editions.json verbatim pin (FR-1 "verbatim text" scenario)', () => {
   it(
@@ -130,10 +131,7 @@ describe('admin-consent-editions.json verbatim pin (FR-1 "verbatim text" scenari
       'extract, line for line, in document order, excluding the signature block',
     () => {
       const currentEdition = ADMIN_CONSENT_EDITIONS[ADMIN_CONSENT_EDITIONS.length - 1];
-      const reconstructed = reconstructEditionLines(
-        currentEdition,
-        ADMIN_CONSENT_ACCEPTANCE_STATEMENT,
-      );
+      const reconstructed = reconstructEditionLines(currentEdition);
 
       expect(reconstructed).toEqual(fixtureLines());
     },
@@ -144,11 +142,10 @@ describe('negative-word assertion (FR-1 "MUST NOT contain the word signing or si
   const SIGN_WORD = /\bsign(ing|ature|ed)?\b/i;
 
   it('contains no sign/signing/signature/signed anywhere in any edition\'s text', () => {
-    const allText = ADMIN_CONSENT_EDITIONS.flatMap((edition) =>
-      edition.sections.flatMap((section) => [section.heading, section.body]),
-    )
-      .concat([ADMIN_CONSENT_ACCEPTANCE_STATEMENT])
-      .join('\n');
+    const allText = ADMIN_CONSENT_EDITIONS.flatMap((edition) => [
+      ...edition.sections.flatMap((section) => [section.heading, section.body]),
+      edition.acceptanceStatement,
+    ]).join('\n');
 
     expect(SIGN_WORD.test(allText)).toBe(false);
   });
@@ -215,11 +212,13 @@ describe('findAdminConsentEdition / getAdminConsentEdition (FR-1 "old request ke
       version: 'v1.0',
       issuedAt: '2026-01-01',
       sections: [{ heading: 'Old heading', body: 'Old body' }],
+      acceptanceStatement: 'Old acceptance statement',
     },
     {
       version: 'v1.1',
       issuedAt: '2026-06-01',
       sections: [{ heading: 'New heading', body: 'New body' }],
+      acceptanceStatement: 'New acceptance statement',
     },
   ];
 
@@ -242,11 +241,13 @@ describe('editionHash (design.md §7.2 — sha256({ version, sections, acceptanc
     version: 'v1.0',
     issuedAt: '2026-01-01',
     sections: [{ heading: 'H', body: 'B' }],
+    acceptanceStatement: 'Accept A',
   };
   const EDITION_B: AdminConsentEdition = {
     version: 'v1.1',
     issuedAt: '2026-06-01',
     sections: [{ heading: 'H2', body: 'B2' }],
+    acceptanceStatement: 'Accept B',
   };
 
   it('is stable: hashing the same edition twice yields the same hash', () => {
@@ -268,5 +269,27 @@ describe('editionHash (design.md §7.2 — sha256({ version, sections, acceptanc
 
   it('returns undefined for an unknown version', () => {
     expect(getAdminConsentEditionHash('v99.0-never-issued')).toBeUndefined();
+  });
+
+  it('changes when only acceptanceStatement changes, holding version and sections fixed (T-3 — the digest must cover it)', () => {
+    const withDifferentStatement: AdminConsentEdition = {
+      ...EDITION_A,
+      acceptanceStatement: 'A completely different acceptance statement',
+    };
+    expect(computeAdminConsentEditionHash(EDITION_A)).not.toBe(
+      computeAdminConsentEditionHash(withDifferentStatement),
+    );
+  });
+
+  /**
+   * T-3 (design.md §7.2, "The literal v1.0 editionHash is pinned") — any
+   * change to the canonical serialization (field order, included fields, the
+   * edition's own text) reddens this BEFORE a stored `ConsentRequest.editionHash`
+   * could silently mismatch what the registry would recompute.
+   */
+  it('pins the literal v1.0 editionHash', () => {
+    expect(getAdminConsentEditionHash('v1.0')).toBe(
+      '0a2d028028794882ef6cfaf8997c03c0f07d131b304641594f8654696def3fbe',
+    );
   });
 });

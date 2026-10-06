@@ -141,6 +141,8 @@ The migration is additive (two `CREATE TABLE`s plus two enum `ALTER`s that only 
 - **`declined`** applies only when `scope = 'bulk'`.
 - **`scope = 'single'`.** A pending request is not a skip: enqueue supersedes it (FR-3 resend).
 
+**`scope: 'single'` requires `{ kind: 'ids', ids: [exactly one] }`.** Any other target with `single` is a `400` naming `scope`, on both routes, before any read (added 2026-10-05 during T-3 rework; it enforces FR-2's "AND IT MUST be enforced by the API").
+
 `preview` and `enqueue` both resolve the target **server-side**. The target is either:
 - `{ kind: 'ids', ids ≤ 1000 }`. The 1,000 cap matches the import row cap.
 - `{ kind: 'filter', filter }`. The filter takes the five `AdminActorListQueryDto` filter fields.
@@ -307,8 +309,8 @@ All routes are under `/api/v1`. Admin routes use `@UseGuards(JwtAuthGuard, Roles
 |---|---|---|
 | `POST consent/view` | Public, throttled | `{ token }` → `200 { organization, record: PublicActorDetail, edition, expiresAt }` · `404` uniform · `429` |
 | `POST consent/respond` | Public, throttled | `{ token, decision: 'ACCEPT'\|'DECLINE', respondent?, accepted? }` → `200 { decision }` · `400` field details · `404` uniform · `429` |
-| `POST admin/consent-requests/preview` | Admin | `{ target, scope: 'single'\|'bulk' }` → `{ total, toSend, skipped: Record<reason, number> }` |
-| `POST admin/consent-requests` | Admin | same body → `201 { batchId, queued, skipped }` |
+| `POST admin/consent-requests/preview` | Admin | `{ target, scope: 'single'\|'bulk' }` → `{ total, toSend, skipped: Record<reason, number> }` · `400` field details (validation; `scope`/target mismatch) |
+| `POST admin/consent-requests` | Admin | same body → `201 { batchId, queued, skipped }` · `400` as preview |
 | `POST admin/consent-requests/dispatch` | Admin | `{ batchId? }` → `{ sent, failed, remaining }` |
 | `POST admin/consent-requests/retry` | Admin | `{ batchId? }` → `{ queued }` |
 | `GET admin/consent-requests/queue` | Admin | → `{ queued, failed }` |

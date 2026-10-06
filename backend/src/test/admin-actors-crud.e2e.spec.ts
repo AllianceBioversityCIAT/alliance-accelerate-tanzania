@@ -20,6 +20,7 @@ import {
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { createActorSequenceMock } from './support/actor-sequence.mock';
 import { validEmailOfLength } from './support/actor-input.fixture';
+import { createConsentRequestMock } from './support/consent-request.mock';
 
 /**
  * T-6 — End-to-end tests for Admin single-actor CRUD + audit history
@@ -611,7 +612,22 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   const actorSequence = createActorSequenceMock();
   const { $executeRaw, $queryRaw } = actorSequence;
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
+  // T-3 (consent-request-email, design.md §5.5) — `ConsentSupersessionService`
+  // is now wired into `update`/`bulkSetConsent`/`remove`/`bulkDelete` and
+  // reaches `tx.consentRequest.updateMany` inside the SAME transaction; this
+  // suite does not exercise consent-request behaviour itself, so a plain
+  // in-memory delegate (no seeded rows) just needs to not crash.
+  const consentRequestMock = createConsentRequestMock();
+
+  const tx = {
+    actor,
+    cropsOnActors,
+    crop,
+    actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
+    $executeRaw,
+    $queryRaw,
+  };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -627,6 +643,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     actorSeq = 0;
     auditSeq = 0;
     actorSequence.reset();
+    consentRequestMock.reset();
 
     for (const actorRow of actors) {
       const names = (
@@ -649,6 +666,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropsOnActors,
     crop,
     actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
     $transaction,
     $executeRaw,
     $queryRaw,

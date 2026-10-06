@@ -27,6 +27,13 @@ export interface AdminConsentEdition {
   version: string;
   issuedAt: string;
   sections: readonly AdminConsentSection[];
+  /**
+   * T-3 (design.md §7.2, amended 2026-10-05) — PER EDITION, not
+   * registry-wide. A shared, top-level statement would let editing it
+   * change an already-issued edition's text and hash, breaking FR-1's "an
+   * old request keeps its text". Each edition carries its own copy.
+   */
+  acceptanceStatement: string;
 }
 
 /**
@@ -35,15 +42,6 @@ export interface AdminConsentEdition {
  * (mirrors `consent-policy.ts`'s `CONSENT_POLICY_EDITIONS_SOURCE` split).
  */
 const ADMIN_CONSENT_EDITIONS_SOURCE: AdminConsentEdition[] = EDITIONS_SOURCE.editions;
-
-/**
- * The acceptance statement — Legal's closing confirmatory sentence (not part
- * of any section's `body`; see the JSON generation note in this task's
- * report for why it was extracted out of the `Consent` section, mirroring
- * how `consent-policy.ts`'s `CONSENT_ACCEPTANCE_STATEMENT` is carried
- * separately from its own `Consent` section body).
- */
-export const ADMIN_CONSENT_ACCEPTANCE_STATEMENT: string = EDITIONS_SOURCE.acceptanceStatement;
 
 /**
  * The append-only registry — OLDEST FIRST — frozen at every level (array,
@@ -101,18 +99,20 @@ export function getAdminConsentEdition(version: string): AdminConsentEdition | u
 
 /**
  * The canonical serialization an edition's `editionHash` is computed over
- * (design.md §7.2: `sha256(JSON.stringify({ version, sections,
- * acceptanceStatement })`). `acceptanceStatement` is the REGISTRY-WIDE
- * {@link ADMIN_CONSENT_ACCEPTANCE_STATEMENT}, not a per-edition field — it is
- * included in every edition's hash input so a (hypothetical, append-only)
- * change to it would also be visible in the hash of editions issued after
- * that change, without requiring a second per-edition copy of the field.
+ * (design.md §7.2, amended 2026-10-05: `sha256(JSON.stringify({ version,
+ * sections, acceptanceStatement }))`). **Correction (T-3):** a prior
+ * revision of this comment claimed `acceptanceStatement` was registry-wide
+ * and shared across editions — that was false even when the field lived at
+ * the top of the JSON file, because a shared value edited later would have
+ * silently changed every already-issued edition's hash. `acceptanceStatement`
+ * is THIS edition's own field (`AdminConsentEdition.acceptanceStatement`),
+ * so the hash only moves when THIS edition's own text changes.
  */
 function canonicalAdminConsentEditionPayload(edition: AdminConsentEdition): string {
   return JSON.stringify({
     version: edition.version,
     sections: edition.sections,
-    acceptanceStatement: ADMIN_CONSENT_ACCEPTANCE_STATEMENT,
+    acceptanceStatement: edition.acceptanceStatement,
   });
 }
 
