@@ -95,6 +95,12 @@ export interface ActorsTableProps {
   onEdit?: (actor: AdminActor) => void;
   /** Optional callback for auth failures during row delete. */
   onAuthFailure?: () => void;
+  /**
+   * Replaces the "N actors selected" line — the page passes "All N matching
+   * actors selected" in all-matching mode, where the page's own count (the
+   * visible rows) would contradict the target. Omitted = the row count.
+   */
+  selectionSummary?: string;
   /** Optional row click handler (e.g. open detail/edit in a future task). */
   onRowClick?: (actor: AdminActor) => void;
 }
@@ -520,6 +526,7 @@ export function ActorsTable({
   onDelete,
   onEdit,
   onAuthFailure,
+  selectionSummary,
   onRowClick,
 }: ActorsTableProps) {
   const allSelected = actors.length > 0 && actors.every((a) => selectedIds.has(a.id));
@@ -572,9 +579,10 @@ export function ActorsTable({
         aria-live="polite"
         aria-atomic="true"
       >
-        {selectedCount === 0
-          ? 'No actors selected'
-          : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`}
+        {selectionSummary ??
+          (selectedCount === 0
+            ? 'No actors selected'
+            : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`)}
       </div>
 
       {/* ── Desktop table (lg+) ───────────────────────────────────────────── */}

@@ -244,6 +244,16 @@ describe('ActorsTable — rendering', () => {
 
     expect(screen.getByText(/1 actor selected/i)).toBeInTheDocument();
   });
+
+  it('selectionSummary replaces the row count (all-matching mode must not contradict the target)', () => {
+    renderTable({
+      selectedIds: new Set([ACTOR_A.id]),
+      selectionSummary: 'All 140 matching actors selected',
+    });
+
+    expect(screen.getByText('All 140 matching actors selected')).toBeInTheDocument();
+    expect(screen.queryByText(/1 actor selected/i)).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

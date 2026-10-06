@@ -742,3 +742,95 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 2. **The public profile labels a southern latitude "° N"** (`ProfileLocation.tsx`; e.g. `-3.3869° N` for Tanzania). The consent preview copies it.
 
 - **Final verification:** VERIFIED.
+
+### T-9 — Bulk send from Admin → Actors — in progress
+
+- **Leader choices:**
+  - Skills: `frontend-design`, `shadcn-ui`, `vercel-react-best-practices`, `react-doctor`.
+  - Effort: `high`.
+  - Review: one Reviewer, with a visual check.
+
+#### Attempt 1 — **FAIL**
+
+**Files changed**
+- **New:**
+  - `lib/api/consent-requests-admin.ts` and its test
+  - `lib/admin/useConsentDispatch.ts` and its test
+  - `components/admin/{SendConsentDialog,ConsentQueueBanner,ConsentSelectionStrip}.tsx` and their tests
+- **Modified:**
+  - `BulkActionBar.tsx` and its test
+  - `DialogFooter.tsx` (optional `cancelLabel` and `hideConfirm`)
+  - `app/(admin)/admin/actors/page.tsx` and its test
+  - `lib/content/consent-requests.ts`
+
+**Falsifiers (executed red):**
+- Filter mode sending ids → the filter-target test.
+- The loop stopping early → 11 tests.
+- A skip-reason key removed → `tsc` TS2741.
+
+**Leader follow-up before review:** `react-doctor`, which the Implementer had not run, reported 3 "ref mutated during render" errors and a `transition-all`. The Implementer fixed them; `react-doctor` now reports 0 errors and 5 warnings.
+
+**Evidence re-run (Leader): VERIFIED.** 128 suites / 1929 tests. `tsc` and build OK.
+
+**Leader-accepted deviation (standing authorization):** in all-matching mode, Unlock, Lock and Delete are disabled with a hint, because they act on ids only and would otherwise apply to just the visible rows while the bar reads "All N matching". The Reviewer confirmed it does not regress anything outside that mode.
+
+**Reviewer: FAIL.** Verbatim:
+
+> The "one in flight" guard (`runningRef`) is local to each `useConsentDispatch` instance, and the actors page creates two: one in `ConsentQueueBanner`, one in `SendConsentDialog`. Nothing coordinates them, so a tab can have two dispatch calls in flight at once.
+> - **Resume while sending:** while the banner's Resume sending loop runs, the Send consent request button stays enabled (its `disabled` only tracks `dialogLoading`), so an admin can confirm a new batch and run both loops together.
+> - **Close mid-run:** closing the dialog mid-run lets the orphaned in-flight call finish, while `closeSendDialog` bumps `queueRefreshKey` and the banner immediately offers Resume sending, so a second call can start beside the first.
+> - **False stall error:** in the first case the banner loop (no `batchId`) also drains the dialog's batch; the dialog's steps then report `sent+failed = 0` with `remaining > 0`, and after `MAX_STALLED_STEPS` the dialog shows "Sending stopped making progress" though sending is going fine.
+>
+> No test drives two instances. **Violated Rule:** design.md §5.2 ("One dispatch at a time per tab keeps the load to one Lambda concurrency slot of the 5 reserved (P-10)"); requirements.md FR-4 *closing the tab*. **Remediation:** a single dispatch owner on the page (lift `useConsentDispatch` into `ActorsView` or a context and pass state and actions to both the banner and the dialog), or have the banner report `running`, disable Send while it is true, and disable the banner while the dialog is mounted. Add a page test: start Resume, try to open or confirm a send, and assert `mockDispatch` never has two pending calls.
+
+**Advisories:**
+- The deviation is OK.
+- No stale-ref bug.
+- `transition-[width]` is acceptable.
+- **A contradictory count in all-matching mode:** "All 140 matching" in the bar and strip versus "25 actors selected" from `ActorsTable`.
+- The error-copy fallback shows `Error.message`.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the same Implementer, with the FAIL copied verbatim. Effort was raised to `xhigh`.
+
+**Files changed (this attempt):**
+- `lib/admin/useConsentDispatch.ts`: `reset()`, guarded so it does nothing while a loop runs, and the exported `ConsentDispatch` type.
+- `components/admin/{SendConsentDialog,ConsentQueueBanner}.tsx` and their tests: both take the page-owned dispatch as a prop.
+- `BulkActionBar.tsx`: a `sendDisabled` prop.
+- `ActorsTable.tsx` and its test: an optional `selectionSummary` prop, so the all-matching count no longer contradicts the bar.
+- `app/(admin)/admin/actors/page.tsx` and its test: one `useConsentDispatch` owned by `ActorsView`.
+- `lib/content/consent-requests.ts`: the close copy now says sending continues.
+
+**Tests:**
+- Resume while sending: Send is disabled and no preview or enqueue call happens.
+- Close mid-run: the loop stays visible in the banner, Resume is absent, and at most one dispatch call is ever pending (checked by holding the calls open).
+- The obsolete dialog test "closing stops the loop" was deleted; its behaviour is now intentionally the opposite.
+
+**Falsifier:** the banner given its own hook again → both page tests red (`Received element is not disabled`, and the running banner missing). After the revert, the page suite was 43/43.
+
+**Implementer verification:** 128 suites / 1932 tests. `tsc` clean, lint 0 errors, build OK. `react-doctor` reports 0 errors and 5 warnings: 2 complexity warnings in the new components and 3 in T-8 files.
+
+**Captures:** the banner and the progress dialog were re-captured at 375, 768 and 1440. `scrollWidth` equals `clientWidth` in every state.
+
+**Evidence re-run (Leader): VERIFIED.** 128 suites / 1932 tests. `tsc` and build OK.
+
+**Reviewer (rework; override (e)): PASS.** There is one dispatch owner per page. The guard is page-wide. `reset()` cannot clear a running loop. Both new tests are real. The deleted test was legitimately obsolete. The `selectionSummary` prop is minimal and safe for T-11.
+
+**Leader-inline after PASS (comment-only):** the stale "Any loop in flight stops" comment in `SendConsentDialog` was corrected (Reviewer advisory 1).
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-2: the skip breakdown in the UI.
+- FR-4: all scenarios.
+- FR-6: the UI loop.
+- NFR-10: axe and captures.
+
+**ADVISORY (recorded):**
+- Escape or a backdrop click during `enqueuing` still closes the dialog. The shared guard keeps two dispatch calls from coexisting; the worst case is counters shown on a second dialog.
+- The `dispatch` object is new on every render.
+- Test 1's max-pending check cannot fail while Send is disabled; the disabled check is what catches the defect.
+- Two complexity warnings remain.
+
+- **Final verification:** VERIFIED.

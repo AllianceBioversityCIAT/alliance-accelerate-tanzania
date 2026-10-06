@@ -118,6 +118,24 @@ jest.mock('@/lib/api/actors-admin', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Mock @/lib/api/consent-requests-admin (T-9 — bulk consent send + queue banner)
+// ---------------------------------------------------------------------------
+
+const mockPreviewConsent = jest.fn();
+const mockEnqueueConsent = jest.fn();
+const mockDispatchConsent = jest.fn();
+const mockRetryConsent = jest.fn();
+const mockGetConsentQueue = jest.fn();
+
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  previewConsentRequests: (...args: unknown[]) => mockPreviewConsent(...args),
+  enqueueConsentRequests: (...args: unknown[]) => mockEnqueueConsent(...args),
+  dispatchConsentRequests: (...args: unknown[]) => mockDispatchConsent(...args),
+  retryConsentRequests: (...args: unknown[]) => mockRetryConsent(...args),
+  getConsentQueue: (...args: unknown[]) => mockGetConsentQueue(...args),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock AuthFailureError (keep real class behaviour for instanceof checks)
 // ---------------------------------------------------------------------------
 
@@ -292,6 +310,8 @@ function selectActorByName(name: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // T-9 — the queue banner reads on mount; an empty queue renders nothing.
+  mockGetConsentQueue.mockResolvedValue({ queued: 0, failed: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -940,5 +960,233 @@ describe('ActorsPage — accessibility (T-8 Source/Consent columns + filters)', 
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — bulk consent send (T-9, FR-4)
+// ---------------------------------------------------------------------------
+
+describe('ActorsPage — bulk consent send (T-9)', () => {
+  const PREVIEW = {
+    total: 140,
+    toSend: 120,
+    skipped: { no_email: 0, granted: 10, pending_request: 10, declined: 0 },
+  };
+
+  /** 140 actors match across 6 pages; only the two fixtures are on screen. */
+  async function populateWithMatches(total = 140) {
+    mockGetSession.mockResolvedValue(FAKE_SESSION);
+    mockAdminListActors.mockResolvedValue({ ...LIST_RESULT, total });
+    renderPage();
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: /loading actors/i })).not.toBeInTheDocument(),
+    );
+  }
+
+  it('a filter target sends { kind: "filter", filter: <URL filters> } — never the selected ids', async () => {
+    setSearchParams('region=Arusha&consentStatus=UNKNOWN');
+    mockPreviewConsent.mockResolvedValue(PREVIEW);
+    await populateWithMatches();
+
+    // Select the whole page, then escalate to all matching.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all actors on this page/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+    expect(screen.getByText(/all 140 matching actors are selected/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /send consent request/i }));
+
+    await waitFor(() => expect(mockPreviewConsent).toHaveBeenCalledTimes(1));
+    expect(mockPreviewConsent).toHaveBeenCalledWith(
+      { target: { kind: 'filter', filter: { region: 'Arusha', consentStatus: 'UNKNOWN' } }, scope: 'bulk' },
+      TOKEN,
+    );
+  });
+
+  it('selected rows send { kind: "ids", ids }', async () => {
+    setSearchParams('');
+    mockPreviewConsent.mockResolvedValue({ ...PREVIEW, total: 1, toSend: 1, skipped: { no_email: 0, granted: 0, pending_request: 0, declined: 0 } });
+    await populatePage();
+
+    selectActorByName(ACTOR_B.traderName);
+    fireEvent.click(screen.getByRole('button', { name: /send consent request/i }));
+
+    await waitFor(() => expect(mockPreviewConsent).toHaveBeenCalledTimes(1));
+    expect(mockPreviewConsent).toHaveBeenCalledWith(
+      { target: { kind: 'ids', ids: [ACTOR_B.id] }, scope: 'bulk' },
+      TOKEN,
+    );
+  });
+
+  it('disables Unlock/Lock/Delete in all-matching mode (they act on ids only)', async () => {
+    setSearchParams('');
+    await populateWithMatches();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all actors on this page/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+
+    const toolbar = screen.getByRole('toolbar', { name: /bulk actor actions/i });
+    expect(within(toolbar).getByText(/all 140 matching actors selected/i)).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Unlock' })).toBeDisabled();
+    expect(within(toolbar).getByRole('button', { name: 'Lock' })).toBeDisabled();
+    expect(within(toolbar).getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(within(toolbar).getByRole('button', { name: /send consent request/i })).toBeEnabled();
+  });
+
+  it('the card view can reach select-all-matching through the Select page control', async () => {
+    setSearchParams('');
+    await populateWithMatches();
+
+    // The header checkbox lives in the `hidden lg:block` table; below lg the
+    // Select page button is the route (jsdom has no layout, so both exist in
+    // the DOM — this asserts the control is wired, the capture asserts it shows).
+    fireEvent.click(screen.getByRole('button', { name: 'Select page' }));
+    expect(screen.getByText(/all 2 actors on this page are selected/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+    expect(screen.getByText(/all 140 matching actors are selected/i)).toBeInTheDocument();
+  });
+
+  it('does not offer select-all-matching when every match is already on the page', async () => {
+    setSearchParams('');
+    await populatePage(); // total 2, page 2
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select page' }));
+    expect(screen.queryByRole('button', { name: /select all .* matching/i })).not.toBeInTheDocument();
+  });
+
+  it('toggling a row leaves all-matching mode', async () => {
+    setSearchParams('');
+    await populateWithMatches();
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all actors on this page/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+
+    // Toggling any single row leaves the mode.
+    selectActorByName(ACTOR_A.traderName);
+    expect(screen.queryByText(/all 140 matching actors are selected/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the queue banner when requests are queued, and resumes without a batchId', async () => {
+    setSearchParams('');
+    mockGetConsentQueue.mockResolvedValue({ queued: 80, failed: 0 });
+    mockDispatchConsent.mockResolvedValueOnce({ sent: 50, failed: 0, remaining: 30 });
+    mockDispatchConsent.mockResolvedValueOnce({ sent: 30, failed: 0, remaining: 0 });
+    await populatePage();
+
+    expect(await screen.findByText(/consent requests are queued and not yet sent/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /resume sending/i }));
+
+    await waitFor(() => expect(mockDispatchConsent).toHaveBeenCalledTimes(2));
+    expect(mockDispatchConsent).toHaveBeenNthCalledWith(1, {}, TOKEN);
+  });
+
+  it('shows no banner when the queue is empty', async () => {
+    setSearchParams('');
+    await populatePage();
+    await waitFor(() => expect(mockGetConsentQueue).toHaveBeenCalled());
+    expect(screen.queryByRole('region', { name: /consent request queue/i })).not.toBeInTheDocument();
+  });
+
+  // ── One dispatch owner per page (design.md §5.2, P-10) ─────────────────────
+
+  /** Tracks how many dispatch calls are pending at once; each call is released by hand. */
+  function holdDispatch() {
+    const pendingResolvers: Array<(v: unknown) => void> = [];
+    let pending = 0;
+    let maxPending = 0;
+    mockDispatchConsent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending += 1;
+          maxPending = Math.max(maxPending, pending);
+          pendingResolvers.push((v) => {
+            pending -= 1;
+            resolve(v);
+          });
+        }),
+    );
+    return {
+      release: async (v: unknown) => {
+        await act(async () => {
+          pendingResolvers.shift()?.(v);
+        });
+      },
+      maxPending: () => maxPending,
+      pending: () => pending,
+    };
+  }
+
+  const EMPTY_SKIPPED = { no_email: 0, granted: 0, pending_request: 0, declined: 0 };
+
+  it('while the banner Resume loop runs, Send consent request is disabled and two dispatch calls never coexist', async () => {
+    setSearchParams('');
+    mockGetConsentQueue.mockResolvedValue({ queued: 80, failed: 0 });
+    const held = holdDispatch();
+    await populatePage();
+
+    fireEvent.click(await screen.findByRole('button', { name: /resume sending/i }));
+    await waitFor(() => expect(mockDispatchConsent).toHaveBeenCalledTimes(1));
+
+    selectActorByName(ACTOR_A.traderName);
+    const send = screen.getByRole('button', { name: /send consent request/i });
+    expect(send).toBeDisabled();
+    fireEvent.click(send); // a disabled button cannot open the dialog
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockPreviewConsent).not.toHaveBeenCalled();
+    expect(mockEnqueueConsent).not.toHaveBeenCalled();
+
+    await held.release({ sent: 40, failed: 0, remaining: 40 });
+    await waitFor(() => expect(mockDispatchConsent).toHaveBeenCalledTimes(2));
+    expect(held.pending()).toBe(1);
+    await held.release({ sent: 40, failed: 0, remaining: 0 });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /send consent request/i })).toBeEnabled());
+    expect(held.maxPending()).toBe(1);
+  });
+
+  it('closing the dialog mid-run keeps ONE loop going (shown in the banner) and never starts a second beside the in-flight call', async () => {
+    setSearchParams('');
+    mockGetConsentQueue.mockResolvedValue({ queued: 0, failed: 0 });
+    mockPreviewConsent.mockResolvedValue({ total: 1, toSend: 1, skipped: EMPTY_SKIPPED });
+    mockEnqueueConsent.mockResolvedValue({ batchId: 'b1', queued: 3, skipped: EMPTY_SKIPPED });
+    const held = holdDispatch();
+    await populatePage();
+
+    selectActorByName(ACTOR_A.traderName);
+    fireEvent.click(screen.getByRole('button', { name: /send consent request/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Send 1 request' }));
+    await screen.findAllByText(/remaining 3/i); // dialog progress + the banner behind it
+    expect(mockDispatchConsent).toHaveBeenCalledTimes(1);
+
+    // The queue now reports the batch as queued — what the banner would offer to resume.
+    mockGetConsentQueue.mockResolvedValue({ queued: 3, failed: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // The loop is still running, visible in the banner; Resume is not offered.
+    expect(await screen.findByText(/sending consent requests… sent 0/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /resume sending/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send consent request/i })).toBeDisabled();
+    expect(mockDispatchConsent).toHaveBeenCalledTimes(1);
+
+    // The in-flight call finishes and the SAME loop continues with the batch id.
+    await held.release({ sent: 1, failed: 0, remaining: 2 });
+    await waitFor(() => expect(mockDispatchConsent).toHaveBeenCalledTimes(2));
+    expect(mockDispatchConsent).toHaveBeenNthCalledWith(2, { batchId: 'b1' }, TOKEN);
+    await held.release({ sent: 2, failed: 0, remaining: 0 });
+    await waitFor(() => expect(screen.getByRole('button', { name: /send consent request/i })).toBeEnabled());
+    expect(held.maxPending()).toBe(1);
+  });
+
+  it('all-matching mode replaces the table count with "All N matching actors selected"', async () => {
+    setSearchParams('');
+    await populateWithMatches();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all actors on this page/i }));
+    expect(screen.getAllByText('2 actors selected')).toHaveLength(2); // bar + table
+
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+    expect(screen.queryAllByText('2 actors selected')).toHaveLength(0);
+    expect(screen.getAllByText('All 140 matching actors selected')).toHaveLength(2);
   });
 });

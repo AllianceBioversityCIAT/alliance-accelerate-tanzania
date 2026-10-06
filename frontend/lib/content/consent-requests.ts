@@ -8,6 +8,11 @@
  * edition, which is only returned for a valid link.
  */
 
+import type {
+  ConsentRequestEvidenceStatus,
+  ConsentSkipReason,
+} from '@/lib/api/consent-requests-admin';
+
 export const DATA_PROTECTION_CONTACT = {
   name: 'Sylvia Kalemera',
   email: 'S.Kalemera@cgiar.org',
@@ -103,3 +108,68 @@ export const RESPONDENT_FIELDS: ReadonlyArray<{
     required: 'Enter your telephone number.',
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Admin: consent-request vocabulary (T-9)
+// ---------------------------------------------------------------------------
+//
+// Total `Record`s, the `registration-status.ts` pattern: a new backend
+// reason or status becomes a COMPILE error here, not a value that falls
+// through to a blank label at runtime.
+
+/** FR-2 — one label per skip reason, in the order the breakdown lists them. */
+export const CONSENT_SKIP_REASON_LABEL: Record<ConsentSkipReason, string> = {
+  no_email: 'No email address on file',
+  granted: 'Consent already granted',
+  pending_request: 'A request is already pending',
+  declined: 'Declined their last request',
+};
+
+/** Skip reasons in display order (the `Record`'s key order). */
+export const CONSENT_SKIP_REASONS = Object.keys(
+  CONSENT_SKIP_REASON_LABEL,
+) as ConsentSkipReason[];
+
+/** Label for every stored request status plus the derived `EXPIRED`. */
+export const CONSENT_REQUEST_STATUS_LABEL: Record<ConsentRequestEvidenceStatus, string> = {
+  QUEUED: 'Queued',
+  SENDING: 'Sending',
+  SENT: 'Sent',
+  FAILED: 'Failed',
+  ACCEPTED: 'Accepted',
+  DECLINED: 'Declined',
+  SUPERSEDED: 'Replaced',
+  EXPIRED: 'Expired',
+};
+
+/** Badge pairing — same token pairs as `registration-status.ts` (no `/NN` modifiers). */
+export const CONSENT_REQUEST_STATUS_BADGE_CLASSES: Record<ConsentRequestEvidenceStatus, string> = {
+  QUEUED: 'bg-border text-muted',
+  SENDING: 'bg-primary-soft text-primary',
+  SENT: 'bg-primary-soft text-primary',
+  FAILED: 'bg-danger-soft text-danger',
+  ACCEPTED: 'bg-highlight-tint text-success',
+  DECLINED: 'bg-danger-soft text-danger',
+  SUPERSEDED: 'bg-border text-muted',
+  EXPIRED: 'bg-surface-alt text-warning',
+};
+
+/** Copy for the bulk send dialog and the resume banner. */
+export const BULK_SEND_COPY = {
+  actionLabel: 'Send consent request',
+  dialogTitle: 'Send consent requests',
+  previewing: 'Checking who can be sent a request…',
+  previewFailed: 'We could not check the selection. Nothing was sent.',
+  nothingEligibleTitle: 'Nobody in this selection can be sent a request',
+  skippedHeading: 'Skipped, by reason',
+  sendProgressTitle: 'Sending consent requests',
+  resultTitle: 'Consent requests sent',
+  retryFailed: 'Retry failed',
+  closeLater:
+    'You can close this window: sending continues and its progress stays on the Actors page. Unsent requests stay queued and can be resumed.',
+  stalled:
+    'Sending stopped making progress. Unsent requests stay queued; resume from Actors in a moment.',
+  sendFailed: 'Sending stopped because of an error. Unsent requests stay queued and can be resumed.',
+  bannerResume: 'Resume sending',
+  bannerRetry: 'Retry failed',
+} as const;
