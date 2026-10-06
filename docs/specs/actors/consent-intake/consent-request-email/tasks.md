@@ -369,7 +369,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
     - `out/consent/index.html` exists after build.
     - Captures attached.
 
-- [ ] **T-9 Bulk send from Admin → Actors** (deps: T-4)
+- [~] **T-9 Bulk send from Admin → Actors** (deps: T-4)
   - **Size:** L (~1,000 LOC) · **Effort:** `high` · **Skills:** `frontend-design`, `shadcn-ui`, `vercel-react-best-practices`, `react-doctor`
   - **Traces:**
     - FR-2 (skip breakdown shown by reason)
