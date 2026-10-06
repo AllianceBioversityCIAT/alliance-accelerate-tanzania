@@ -106,6 +106,16 @@ describe('SendConsentPrompt — confirmation (C-17, FR-3)', () => {
     expect(screen.getByRole('button', { name: /continue to actors/i })).toBeInTheDocument();
   });
 
+  it('a dispatch that errors keeps the resume guidance AND shows the error as detail', async () => {
+    mockDispatch.mockRejectedValue(new Error('Mail service unreachable'));
+    render(<Harness />);
+    fireEvent.click(sendButton());
+
+    const status = screen.getByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent(/resume it from actors/i));
+    expect(status).toHaveTextContent('Mail service unreachable');
+  });
+
   it('Not now sends nothing and navigates', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: /not now/i }));

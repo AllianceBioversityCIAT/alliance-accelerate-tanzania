@@ -1304,3 +1304,22 @@ Everything else was confirmed:
 - The unheld-run output is now pasted.
 
 **Process note:** this entry's heading said PASS before the re-check returned its verdict. The verdict confirmed it, but the order was wrong.
+
+### R-E — Send Consent Prompt keeps its guidance on a dispatch error (R-D advisory 4) — **PASS**
+
+**Product owner request (2026-10-06):** "corrige el aviso menor".
+
+**Change:**
+- `frontend/components/admin/SendConsentPrompt.tsx`: in `finished-with-problem`, the prompt always renders the guidance: `notSentFailed` when `failed > 0`, otherwise `notSent`. Before this change, `dispatch.state.error` replaced the guidance. The error now follows as a muted `text-xs` detail, inside the same `role="status"` region.
+- `SendConsentPrompt.test.tsx`: new case "a dispatch that errors keeps the resume guidance AND shows the error as detail". It drives the real `useConsentDispatch` hook; only the API is mocked.
+
+**Evidence:**
+- Implementer falsifier: reverting the component turns the new test red (1 failed, 11 passed).
+- Frontend: 131 suites / 2017 tests pass; lint and build OK.
+- Leader non-author re-run: `SendConsentPrompt` 12/12.
+
+**Reviewer: PASS.** No blocking findings.
+
+**Advisories (not applied):**
+- On the stalled and `sendFailed` paths, the canned hook text repeats the "resume from Actors" instruction.
+- `failed > 0` together with an error cannot occur for a single send.

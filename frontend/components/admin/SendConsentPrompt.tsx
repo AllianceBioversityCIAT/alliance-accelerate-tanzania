@@ -184,10 +184,12 @@ export function SendConsentPrompt({
               )}
               {phase === 'not-queued' && <span className="text-muted">{skipNote}</span>}
               {phase === 'finished-with-problem' && (
-                <span className="text-danger">
-                  {dispatch.state.error ??
-                    (dispatch.state.failed > 0 ? SINGLE_SEND_COPY.notSentFailed : SINGLE_SEND_COPY.notSent)}
-                </span>
+                <>
+                  <span className="text-danger">
+                    {dispatch.state.failed > 0 ? SINGLE_SEND_COPY.notSentFailed : SINGLE_SEND_COPY.notSent}
+                  </span>
+                  {dispatch.state.error && <span className="mt-1 block text-xs text-muted">{dispatch.state.error}</span>}
+                </>
               )}
               {error && <span className="text-danger">{error}</span>}
             </div>
