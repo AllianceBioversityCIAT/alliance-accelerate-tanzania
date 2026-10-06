@@ -432,7 +432,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Review:** `checklist` — UI wiring over reviewed APIs.
   - **Done when:** frontend gates green; captures attached.
 
-- [ ] **T-11 Evidence panel, document field, history labels and method lists** (deps: T-6, T-7, T-1)
+- [~] **T-11 Evidence panel, document field, history labels and method lists** (deps: T-6, T-7, T-1)
   - **Size:** L (~1,000 LOC) · **Effort:** `high` · **Skills:** `frontend-design`, `tailwind-design-system`, `react-doctor`
   - **Traces:**
     - FR-14 (all scenarios)
