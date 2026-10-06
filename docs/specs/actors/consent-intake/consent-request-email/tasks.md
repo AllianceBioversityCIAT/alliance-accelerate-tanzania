@@ -258,6 +258,7 @@ T-1…T-13 ─► T-14
     - `GET admin/consent-editions/:version`.
     - `audit-entry.serializer.ts` handles the three new actions.
     - §5.8's two immutability tests.
+    - **D-26 backend (design §5.7a, added 2026-10-06):** `AdminActorUpdateDto.expectedUpdatedAt` (optional ISO). `ActorsAdminService.update` locks the actor row first (`FOR UPDATE`), then returns `409` when the expected version differs from the stored `updatedAt`. Tests: matching version → 200 unchanged behaviour; stale version → 409 and nothing written; absent → today's behaviour; a respond committed after load makes the admin save conflict. Falsifier: skip the comparison → the stale-version test goes red.
     - QA-3 coverage for every admin route this module adds (Staff → `403`, anonymous → `401`) via the T-5 derived gate fixtures.
   - **Tests:**
     - Delete an actor with 2 requests and 1 document: the evidence and the history are still returned.
@@ -446,6 +447,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
     - `ActorsTable`: total `Record` labels and the test derived from the union.
     - `ActorForm`: `EMAIL_LINK` read-only; date and reference frozen while `GRANTED` by link; select swap when the status differs from the stored one.
     - The actors filter gains `EMAIL_LINK`.
+    - **D-26 frontend:** `ActorForm` edit mode always sends `expectedUpdatedAt` (the loaded record's `updatedAt`). On a `409` it shows an accessible notice, "This actor changed since you opened it — reload to see the latest", with a Reload action, and does not lose the admin's typed values silently. Test: a mocked 409 shows the notice; the PATCH body carries `expectedUpdatedAt`.
   - **Tests:**
     - The auditor walk-through fixture renders sender, time, address, edition, respondent and IP.
     - Empty state.

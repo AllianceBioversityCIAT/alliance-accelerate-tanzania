@@ -285,6 +285,14 @@ The rule is server-side, so it works for any client. The form does its part too:
 | `actors/page.tsx` filter options | Gain `EMAIL_LINK`. |
 | `AcknowledgeDialog.tsx` provenance options | Stay assertable-only. |
 
+### 5.7a Stale-form protection (D-26, added 2026-10-06)
+
+- `AdminActorUpdateDto` gains an optional `expectedUpdatedAt` (ISO instant). The frontend always sends it: the `updatedAt` of the record the form loaded.
+- `ActorsAdminService.update` locks the actor row **first** inside its transaction (`SELECT … FOR UPDATE`, the D-25 pattern). It then reads `before`. When `expectedUpdatedAt` is present and differs from `before.updatedAt` (compared as instants), it throws `409` with `{ statusCode: 409, error: 'Conflict', message, details: [{ field: 'expectedUpdatedAt', message }] }`. Nothing is written.
+- `respond` writes the actor through Prisma, which bumps `updatedAt` (`@updatedAt`). An answer arriving after the form loaded therefore always conflicts.
+- **The field is optional on the server** so existing callers and suites keep working. Only the admin form sends it, and the frontend task makes it always present.
+- The lock also closes the read-then-write window between `respond` and an admin save (T-1 advisory B3).
+
 ### 5.8 Evidence immutability gate (FR-13, B-7)
 
 Two tests own FR-13's "written only by" clause.

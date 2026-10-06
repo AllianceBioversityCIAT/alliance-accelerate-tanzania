@@ -392,3 +392,13 @@ From here on:
 - Continue gates auto-pass after a PASS.
 - Budget re-baselines are recorded, not asked.
 - The run stops only for a product decision, a HALT, or a Pivot.
+
+#### Decision during T-5 (2026-10-06): D-26
+
+- **Product owner:** use optimistic version control for admin edits.
+- **Why it came up:** the T-1 advisory B3 race is wider than a race. The admin form always re-sends `consentStatus`, so a form opened before the actor accepted silently reverts the actor when saved.
+- **Execute-time spec edits:**
+  - `requirements.md`: the D-26 row and a scenario under FR-10.
+  - `design.md`: new §5.7a.
+  - `tasks.md`: T-6 takes the backend half (it does not conflict with T-5's files); T-11 takes the frontend half.
+- **Carry:** the T-6 and T-11 Reviewer briefs.
