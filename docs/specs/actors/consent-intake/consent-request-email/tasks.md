@@ -330,7 +330,7 @@ T-1…T-13 ─► T-14
 
 Every task here also attaches a **rendered capture** (headless Chromium over CDP) at 375 / 768 / 1440 px of each new state, for the HITL pause. jsdom cannot evaluate layout (NFR-10 gap). Production fonts must be loaded, and no-overflow is measured, never inferred from class names.
 
-- [ ] **T-8 Public consent page** (deps: T-5)
+- [~] **T-8 Public consent page** (deps: T-5)
   - **Size:** L (~1,100 LOC) · **Effort:** `high` · **Skills:** `frontend-design`, `tailwind-design-system`, `vercel-react-best-practices`, `react-doctor`
   - **Traces:**
     - FR-9 (all scenarios incl. the BUT no edit; the scroll gate; token leaves the address bar; refresh)
