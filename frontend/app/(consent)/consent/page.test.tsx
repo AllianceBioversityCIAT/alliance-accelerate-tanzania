@@ -220,7 +220,7 @@ describe('ready state (FR-9)', () => {
     expect(within(dl).getByText('Amina Juma')).toBeInTheDocument();
     expect(within(dl).getByText('+255700000000')).toBeInTheDocument();
     expect(within(dl).getByText('amina@kilimo.example')).toBeInTheDocument();
-    expect(within(dl).getByText('-3.3869° N, 36.6830° E')).toBeInTheDocument();
+    expect(within(dl).getByText('3.3869° S, 36.6830° E')).toBeInTheDocument();
     expect(within(dl).getByText('Sorghum, Groundnut')).toBeInTheDocument();
     expect(within(dl).getAllByText('—').length).toBeGreaterThanOrEqual(3);
     // No input lives in the preview.

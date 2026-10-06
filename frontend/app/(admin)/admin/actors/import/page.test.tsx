@@ -880,6 +880,41 @@ describe('ActorImportPage — consent request CTA', () => {
     expect(calls[calls.length - 1].target.ids).not.toContain('dup-ghost');
   });
 
+  it('keeps the offer reachable, without a count, when the eligibility preview fails (FR-5 MUST offer)', async () => {
+    mockPreview.mockRejectedValue(new Error('preview down'));
+    await commitTo(MIXED_COMMIT);
+
+    expect(
+      await screen.findByText('Send consent requests to the actors created by this import'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^send consent request$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/to the \d+ actors? created/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the offer when the preview succeeds with nothing eligible (toSend 0)', async () => {
+    mockPreview.mockResolvedValue({
+      total: 12,
+      toSend: 0,
+      skipped: { no_email: 12, granted: 0, pending_request: 0, declined: 0 },
+    });
+    await commitTo(MIXED_COMMIT);
+    await waitFor(() => expect(mockPreview).toHaveBeenCalled());
+    // The update lands inside waitFor's act scope; this await is only a backstop.
+    await mockPreview.mock.results[0].value;
+    expect(screen.queryByText(/created by this import/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^send consent request$/i })).not.toBeInTheDocument();
+  });
+
+  it('still shows no offer when a failed preview coincides with nothing created', async () => {
+    mockPreview.mockRejectedValue(new Error('preview down'));
+    await commitTo({
+      mode: 'commit',
+      totals: { rows: 1, toCreate: 1, created: 0, possibleDuplicate: 0, failed: 1, warnings: 0 },
+      rows: [{ rowNumber: 2, traderId: null, traderName: 'Bad row', outcome: 'failed' }],
+    });
+    expect(screen.queryByText(/created by this import/i)).not.toBeInTheDocument();
+  });
+
   it('shows no CTA when nothing was created, and never calls preview', async () => {
     const NONE_CREATED: ImportReport = {
       mode: 'commit',

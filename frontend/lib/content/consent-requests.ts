@@ -190,8 +190,15 @@ export const SINGLE_SEND_COPY = {
   continueToActors: 'Continue to actors',
   tryAgain: 'Try again',
   notSent: 'The consent request was recorded but could not be sent. It stays queued; resume it from Actors.',
+  notSentFailed: 'The consent request could not be sent. Retry it from Actors.',
+  sentConfirmation: (email: string) => `Consent request sent to ${email}.`,
+  notQueued: (reasons: string[]) =>
+    reasons.length > 0
+      ? `No consent request was sent: ${reasons.join('; ')}.`
+      : 'No consent request was sent.',
   importCta: (n: number) =>
     `Send consent requests to the ${n} ${n === 1 ? 'actor' : 'actors'} created by this import`,
+  importCtaNoCount: 'Send consent requests to the actors created by this import',
 } as const;
 
 /** FR-3 — a request in one of these states means a send is already in flight or out (button reads Resend). */

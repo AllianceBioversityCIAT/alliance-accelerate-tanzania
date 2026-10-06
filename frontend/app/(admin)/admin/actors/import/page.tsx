@@ -593,7 +593,7 @@ export default function ActorImportPage() {
       ? report.rows.flatMap((row) => (row.outcome === 'created' && row.actorId ? [row.actorId] : []))
       : [];
   const createdIdsKey = createdActorIds.join(',');
-  const [consentOffer, setConsentOffer] = useState<{ key: string; toSend: number } | null>(null);
+  const [consentOffer, setConsentOffer] = useState<{ key: string; toSend: number | null } | null>(null);
   const [consentOpen, setConsentOpen] = useState(false);
 
   useEffect(() => {
@@ -605,14 +605,17 @@ export default function ActorImportPage() {
       })
       .catch((caught: unknown) => {
         if (caught instanceof AuthFailureError) handleAuthFailure();
-        // Any other failure just leaves the optional CTA out.
+        // Eligibility unknown: keep the offer, without a count (FR-5).
+        else if (!cancelled) setConsentOffer({ key: createdIdsKey, toSend: null });
       });
     return () => {
       cancelled = true;
     };
   }, [token, createdIdsKey, handleAuthFailure]);
 
-  const offerCount = consentOffer?.key === createdIdsKey ? consentOffer.toSend : 0;
+  const currentOffer = consentOffer?.key === createdIdsKey ? consentOffer : null;
+  const offerCount = currentOffer?.toSend ?? 0;
+  const showOffer = currentOffer !== null && (currentOffer.toSend === null || currentOffer.toSend > 0);
 
   const resultSummary = report
     ? `${report.totals.created} created, ${report.totals.possibleDuplicate} possible duplicate${pluralSuffix(report.totals.possibleDuplicate)}, ${report.totals.failed} failed.`
@@ -872,9 +875,9 @@ export default function ActorImportPage() {
 
           <ImportPreviewTable rows={report.rows} showTraderId />
 
-          {offerCount > 0 && (
+          {showOffer && (
             <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-alt px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-fg">{SINGLE_SEND_COPY.importCta(offerCount)}</p>
+              <p className="text-sm text-fg">{currentOffer?.toSend === null ? SINGLE_SEND_COPY.importCtaNoCount : SINGLE_SEND_COPY.importCta(offerCount)}</p>
               <Button variant="secondary" onClick={() => setConsentOpen(true)}>
                 {SINGLE_SEND_COPY.send}
               </Button>

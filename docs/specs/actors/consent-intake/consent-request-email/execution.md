@@ -1144,3 +1144,36 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 **Advisory:**
 - Add `mockReset` in `afterEach` in the token spec.
 - Retag the token spec header from T-4 to R-B / C-59.
+
+### R-A — Frontend remediation (C-17, C-150, V-1, C-36) — **PASS** (attempt 3)
+
+**Product owner decisions applied:**
+- FR-3: a confirmation after the post-create send.
+- The GPS hemisphere fix in both components.
+
+**Files changed:**
+- `components/admin/SendConsentPrompt.tsx` and its test (new): a `sent` confirmation state with a focused "Continue to actors"; `queued 0` states the skip reason; the FAILED copy says Retry; `aria-disabled` plus guards stop a double send and keep focus; jest-axe on every state.
+- `lib/geo/coordinates.ts`: a pure `formatHemisphericPair` helper and its tests.
+- `ConsentRecordPreview.tsx` and `ProfileLocation.tsx` now use the helper; the profile and consent tests were updated to the S-labelled strings.
+- `import/page.tsx` and its test: the offer stays, without a count, on a failed preview.
+- `new/page.test.tsx`
+- `lib/content/consent-requests.ts`
+
+**Attempt history:**
+1. Reviewer **FAIL**: no test for a successful preview with `toSend: 0`.
+2. The test was added, but the Leader's non-author re-run found it **flaky**: about half of 11 runs hit the 5 s timeout. That **MISMATCH** is an implicit FAIL.
+3. The test was made deterministic (no `act`).
+
+**Leader verification:**
+- 8/8 consecutive suite passes.
+- The falsifier (`|| true`) reddens line 904's `not.toBeInTheDocument()`: an assertion, not a timeout.
+- Frontend 131 suites / 2016 tests; `tsc` and build OK.
+
+**Reviewer re-check: PASS.** The test is sound: the update lands inside `waitFor`'s act scope. The Reviewer corrected the comment's rationale.
+
+**Leader-inline after PASS (comment-only):** the test comment now gives the correct rationale.
+
+**Advisory:**
+- The `busy` guard reads a value from the last render; a ref would be sturdier.
+- A one-frame focus gap needs a browser check.
+- A capital "A" mid-sentence in the not-queued note.

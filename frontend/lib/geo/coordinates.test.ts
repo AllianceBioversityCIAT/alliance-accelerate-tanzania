@@ -13,6 +13,7 @@ import {
   formatCoordinate,
   parseCoordinatePair,
   isSamePoint,
+  formatHemisphericPair,
 } from './coordinates';
 
 // ---------------------------------------------------------------------------
@@ -159,5 +160,31 @@ describe('isSamePoint — the redraw guard (DD-4)', () => {
     // lng matches exactly (39.28 === 39.28); only lat differs (-6.8 vs -6.9).
     // A single-axis (lng-only) comparator would wrongly report true here.
     expect(isSamePoint({ lat: -6.8, lng: 39.28 }, '-6.9', '39.28')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatHemisphericPair — validation V-1 (the sign is the hemisphere)
+// ---------------------------------------------------------------------------
+
+describe('formatHemisphericPair — absolute value plus N/S and E/W', () => {
+  it('NE quadrant: positive lat and lng read N and E', () => {
+    expect(formatHemisphericPair(10.5, 20.25)).toBe('10.5000° N, 20.2500° E');
+  });
+
+  it('SE quadrant (Tanzania): a negative latitude reads S, never "-… N"', () => {
+    expect(formatHemisphericPair(-3.3869, 36.683)).toBe('3.3869° S, 36.6830° E');
+  });
+
+  it('NW quadrant: a negative longitude reads W', () => {
+    expect(formatHemisphericPair(51.5, -0.1278)).toBe('51.5000° N, 0.1278° W');
+  });
+
+  it('SW quadrant: both negative read S and W', () => {
+    expect(formatHemisphericPair(-33.9, -70.65)).toBe('33.9000° S, 70.6500° W');
+  });
+
+  it('zero is on the equator / prime meridian and reads N and E', () => {
+    expect(formatHemisphericPair(0, 0)).toBe('0.0000° N, 0.0000° E');
   });
 });

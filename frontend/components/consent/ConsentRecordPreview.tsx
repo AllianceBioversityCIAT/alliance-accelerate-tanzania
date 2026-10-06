@@ -11,6 +11,7 @@
  */
 
 import type { PublicActorDetail } from '@/lib/api/actors';
+import { formatHemisphericPair } from '@/lib/geo/coordinates';
 import { CROPS } from '@/lib/content/crops';
 import { roleLabel } from '@/lib/content/roles';
 import { CONSENT_PAGE_COPY } from '@/lib/content/consent-requests';
@@ -23,7 +24,7 @@ function cropList(crops: PublicActorDetail['crops']): string {
 }
 
 function formatGps(gps: PublicActorDetail['gps']): string {
-  return gps ? `${gps.lat.toFixed(4)}° N, ${gps.long.toFixed(4)}° E` : DASH;
+  return gps ? formatHemisphericPair(gps.lat, gps.long) : DASH;
 }
 
 export default function ConsentRecordPreview({ record }: { record: PublicActorDetail }) {

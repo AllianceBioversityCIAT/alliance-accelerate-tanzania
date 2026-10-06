@@ -10,7 +10,10 @@
  * has an email to send to; the primary action defaults to Send.
  *
  *   Not now → nothing is sent; `onDone()` (the page navigates).
- *   Send    → enqueue (`single`, one id) → the page's dispatch loop → `onDone()`.
+ *   Send    → enqueue (`single`, one id) → the page's dispatch loop → a brief
+ *             confirmation ("Consent request sent to <email>.") → Continue →
+ *             `onDone()`. A skipped actor (`queued === 0`) or a failed send says
+ *             so in the same dialog; nothing navigates silently (C-17).
  *
  * With no question to ask (a `GRANTED` create, or no email) it degrades to
  * the warnings-only informational dialog with a single OK.
@@ -21,7 +24,12 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AuthFailureError } from '@/lib/api/client';
 import type { AdminActorCreateResult } from '@/lib/api/actors-admin';
 import { enqueueConsentRequests } from '@/lib/api/consent-requests-admin';
-import { BULK_SEND_COPY, SINGLE_SEND_COPY } from '@/lib/content/consent-requests';
+import {
+  BULK_SEND_COPY,
+  CONSENT_SKIP_REASONS,
+  CONSENT_SKIP_REASON_LABEL,
+  SINGLE_SEND_COPY,
+} from '@/lib/content/consent-requests';
 import type { ConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
 import { matchedOnLabel } from '@/components/admin/DuplicateConfirmDialog';
@@ -38,7 +46,7 @@ export interface SendConsentPromptProps {
   notice?: string;
 }
 
-type Phase = 'ask' | 'sending' | 'finished-with-problem';
+type Phase = 'ask' | 'sending' | 'sent' | 'not-queued' | 'finished-with-problem';
 
 const BUTTON_BASE = [
   'rounded-md px-4 py-2 text-sm font-medium transition-colors',
@@ -63,16 +71,22 @@ export function SendConsentPrompt({
   const askToSend = actor.consentStatus !== 'GRANTED' && !!actor.email; // B-13 gate
   const [phase, setPhase] = useState<Phase>('ask');
   const [error, setError] = useState<string | undefined>();
+  const [skipNote, setSkipNote] = useState<string | undefined>();
 
   const busy = phase === 'sending';
+  const inQuestion = phase === 'ask' || phase === 'sending';
   const { dialogRef, onKeyDown } = useDialogFocusTrap<HTMLDivElement>(busy ? () => undefined : onDone);
 
+  // Focus the current state's primary action on open and on every state change
+  // except `sending`, where focus stays on the (aria-disabled) Send button.
   useEffect(() => {
+    if (phase === 'sending') return;
     const id = requestAnimationFrame(() => primaryRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [phase]);
 
   const handleSend = useCallback(async () => {
+    if (busy) return;
     setPhase('sending');
     setError(undefined);
     dispatch.reset();
@@ -82,10 +96,14 @@ export function SendConsentPrompt({
         token,
       );
       if (result.queued === 0) {
-        onDone();
+        const reasons = CONSENT_SKIP_REASONS.filter((r) => result.skipped[r] > 0).map(
+          (r) => CONSENT_SKIP_REASON_LABEL[r],
+        );
+        setSkipNote(SINGLE_SEND_COPY.notQueued(reasons));
+        setPhase('not-queued');
         return;
       }
-      // The effect below navigates once the loop settles cleanly.
+      // The effect below confirms once the loop settles cleanly.
       await dispatch.start({ batchId: result.batchId, initialRemaining: result.queued });
     } catch (caught: unknown) {
       if (caught instanceof AuthFailureError) {
@@ -95,16 +113,15 @@ export function SendConsentPrompt({
       setError(caught instanceof Error && caught.message ? caught.message : BULK_SEND_COPY.sendFailed);
       setPhase('ask');
     }
-  }, [actor.id, token, dispatch, onDone, onAuthFailure]);
+  }, [actor.id, busy, token, dispatch, onAuthFailure]);
 
   // The dispatch loop reports step failures through its own state, not by throwing.
   const dispatchProblem = dispatch.state.phase === 'error' || dispatch.state.failed > 0;
   const dispatchPhase = dispatch.state.phase;
   useEffect(() => {
     if (!busy || (dispatchPhase !== 'done' && dispatchPhase !== 'error')) return;
-    if (dispatchProblem) setPhase('finished-with-problem');
-    else onDone();
-  }, [busy, dispatchPhase, dispatchProblem, onDone]);
+    setPhase(dispatchProblem ? 'finished-with-problem' : 'sent');
+  }, [busy, dispatchPhase, dispatchProblem]);
 
   return (
     <>
@@ -154,12 +171,23 @@ export function SendConsentPrompt({
 
         {askToSend && (
           <div className={warnings.length > 0 ? 'mt-5 border-t border-border pt-4' : 'mt-4'}>
-            <p className="text-sm font-semibold text-fg">{SINGLE_SEND_COPY.promptQuestion(actor.email ?? '')}</p>
-            <p className="mt-1 text-xs text-muted">{SINGLE_SEND_COPY.promptHint}</p>
+            {inQuestion && (
+              <>
+                <p className="text-sm font-semibold text-fg">{SINGLE_SEND_COPY.promptQuestion(actor.email ?? '')}</p>
+                <p className="mt-1 text-xs text-muted">{SINGLE_SEND_COPY.promptHint}</p>
+              </>
+            )}
             <div role="status" aria-live="polite" className="mt-2 text-sm">
               {busy && <span className="text-muted">{SINGLE_SEND_COPY.sending}</span>}
+              {phase === 'sent' && (
+                <span className="font-medium text-success">{SINGLE_SEND_COPY.sentConfirmation(actor.email ?? '')}</span>
+              )}
+              {phase === 'not-queued' && <span className="text-muted">{skipNote}</span>}
               {phase === 'finished-with-problem' && (
-                <span className="text-danger">{dispatch.state.error ?? SINGLE_SEND_COPY.notSent}</span>
+                <span className="text-danger">
+                  {dispatch.state.error ??
+                    (dispatch.state.failed > 0 ? SINGLE_SEND_COPY.notSentFailed : SINGLE_SEND_COPY.notSent)}
+                </span>
               )}
               {error && <span className="text-danger">{error}</span>}
             </div>
@@ -167,13 +195,13 @@ export function SendConsentPrompt({
         )}
 
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          {askToSend && phase !== 'finished-with-problem' ? (
+          {askToSend && inQuestion ? (
             <>
               <button
                 type="button"
-                onClick={onDone}
-                disabled={busy}
-                className={`${BUTTON_BASE} border border-border bg-surface text-fg hover:bg-surface-alt`}
+                onClick={busy ? undefined : onDone}
+                aria-disabled={busy || undefined}
+                className={`${BUTTON_BASE} border border-border bg-surface text-fg hover:bg-surface-alt aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
               >
                 {SINGLE_SEND_COPY.notNow}
               </button>
@@ -181,8 +209,8 @@ export function SendConsentPrompt({
                 ref={primaryRef}
                 type="button"
                 onClick={() => void handleSend()}
-                disabled={busy}
-                className={`${BUTTON_BASE} bg-primary text-primary-fg hover:bg-primary-hover`}
+                aria-disabled={busy || undefined}
+                className={`${BUTTON_BASE} bg-primary text-primary-fg hover:bg-primary-hover aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
               >
                 {error ? SINGLE_SEND_COPY.tryAgain : SINGLE_SEND_COPY.sendLabel}
               </button>
@@ -194,7 +222,7 @@ export function SendConsentPrompt({
               onClick={onDone}
               className={`${BUTTON_BASE} bg-primary text-primary-fg hover:bg-primary-hover`}
             >
-              {phase === 'finished-with-problem' ? SINGLE_SEND_COPY.continueToActors : 'OK'}
+              {phase === 'ask' ? 'OK' : SINGLE_SEND_COPY.continueToActors}
             </button>
           )}
         </div>

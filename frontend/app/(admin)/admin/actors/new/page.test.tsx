@@ -263,9 +263,10 @@ describe('NewActorPage — SendConsentPrompt (FR-3, T-10)', () => {
     expect(mockDispatch).not.toHaveBeenCalled();
   });
 
-  it('Send enqueues scope single with exactly the created id, dispatches, then navigates', async () => {
+  it('Send enqueues scope single with exactly the created id, dispatches, confirms, then navigates on Continue', async () => {
     await create(/simulate create \(unknown, email\)$/i);
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /continue to actors/i }));
     await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors'));
     expect(mockEnqueue).toHaveBeenCalledWith(
       { target: { kind: 'ids', ids: ['actor-new-003'] }, scope: 'single' },
