@@ -404,7 +404,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Review:** `full`.
   - **Done when:** frontend gates green; captures attached.
 
-- [ ] **T-10 Single send: actor page action, post-create prompt, import offer** (deps: T-9)
+- [~] **T-10 Single send: actor page action, post-create prompt, import offer** (deps: T-9)
   - **Size:** M (~700 LOC) · **Effort:** `medium` · **Skills:** `frontend-design`, `react-doctor`
   - **Traces:**
     - FR-3 (edit-page action disabled with a reason; Resend; post-create prompt — AND MUST NOT when `GRANTED`; weak-duplicate + prompt)
