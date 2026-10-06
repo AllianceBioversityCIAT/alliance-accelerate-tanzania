@@ -834,3 +834,59 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - Two complexity warnings remain.
 
 - **Final verification:** VERIFIED.
+
+### T-10 — Single send: actor page action, post-create prompt, import offer — **PASS** (attempt 1/3), 2026-10-06
+
+- **Leader choices:**
+  - Skills: `frontend-design`, `react-doctor`.
+  - Effort: `medium`.
+  - Review: one Reviewer. This was not a skip: override (b) applies because the shared `SendConsentDialog` contract changed.
+- **Requirements covered:**
+  - FR-3: the edit-page action with its reason, Resend, the post-create prompt with its AND MUST NOT when `GRANTED`, and warnings plus prompt.
+  - FR-5: all scenarios, including the BUT on this commit's actors only.
+  - FR-2: a single send re-asks a decliner (UI).
+
+**Files changed**
+- **New:**
+  - `components/admin/SendConsentAction.tsx`
+  - `components/admin/SendConsentPrompt.tsx`
+- **Modified:**
+  - `SendConsentDialog.tsx`: an optional `scope`, default `'bulk'`.
+  - `lib/api/consent-requests-admin.ts`: evidence types and `getActorConsentEvidence`.
+  - `lib/content/consent-requests.ts`
+  - The `new`, `edit` and `import` pages and their tests. `DuplicateWarningInfoDialog` is replaced by the prompt.
+
+**Falsifiers (executed red, then reverted):**
+
+| Mutation | Red |
+|---|---|
+| The `GRANTED` gate dropped (the red run) | 2 new-page tests |
+| All rows' ids passed to the CTA | 2 import tests (extra `failed-ghost`, `dup-ghost`) |
+
+**Implementer verification:**
+- 128 suites / 1946 tests.
+- `tsc`, lint (0 errors) and build OK.
+- `react-doctor` reports 0 errors.
+- Captures at 375 and 1440 with no horizontal overflow. The `GRANTED`-create prompt was not captured, because the form's `GRANTED` path needs a method; unit tests cover it.
+
+**Evidence re-run (Leader): VERIFIED.** 128 suites / 1946 tests. `tsc` and build OK.
+
+**Reviewer: PASS.**
+- The `GRANTED` gate sits at both the page and the prompt.
+- A single send uses exactly one id.
+- "Resend" from evidence is consistent with the backend's pending set.
+- Import ids come from `created` rows only.
+- The `scope` prop is backward compatible.
+- Each page has one dispatch owner.
+- The evidence types mirror the backend.
+
+**Runtime events:** none.
+
+**ADVISORY (recorded):**
+1. **An unowned clause, routed to pre-archive validation:** FR-3 says "Choosing Send sends one request **and confirms it**". On a clean send the prompt navigates without a confirmation message, and the actors list has no flash mechanism. Design §7.3 says "defaults to Send, and then navigates".
+2. `queued === 0` navigates silently.
+3. The `notSent` copy says "resume" when the row is `FAILED`, where the action is Retry.
+4. Prompt focus drops to `<body>` while sending, and does not move to "Continue to actors".
+5. The import CTA count goes stale after a send, and a failed preview hides the CTA.
+
+- **Final verification:** VERIFIED.

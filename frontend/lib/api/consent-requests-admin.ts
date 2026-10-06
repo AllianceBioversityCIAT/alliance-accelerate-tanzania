@@ -134,3 +134,55 @@ export function retryConsentRequests(
 export function getConsentQueue(token: string): Promise<ConsentRequestQueueSummary> {
   return apiFetch<ConsentRequestQueueSummary>(`${BASE}/queue`, { method: 'GET', token });
 }
+
+// ── Evidence (read) ──────────────────────────────────────────────────────────
+
+/** Mirrors `ConsentRequestEvidence` in `consent-evidence.service.ts`. */
+export interface ConsentRequestEvidence {
+  id: string;
+  actorId: string;
+  status: ConsentRequestEvidenceStatus;
+  recipientEmail: string;
+  editionVersion: string;
+  editionHash: string;
+  requestedBySub: string;
+  requestedByEmail: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  expiresAt: string | null;
+  failureReason: string | null;
+  respondedAt: string | null;
+  respondentName: string | null;
+  respondentPosition: string | null;
+  respondentEmail: string | null;
+  respondentPhone: string | null;
+  respondentIp: string | null;
+  respondentUserAgent: string | null;
+  supersededAt: string | null;
+}
+
+/** Mirrors `ConsentDocumentEvidence`. */
+export interface ConsentDocumentEvidence {
+  id: string;
+  actorId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBySub: string;
+  uploadedByEmail: string | null;
+  createdAt: string;
+  storedAt: string | null;
+}
+
+export interface ConsentEvidence {
+  requests: ConsentRequestEvidence[];
+  documents: ConsentDocumentEvidence[];
+}
+
+/** `GET /admin/actors/:id/consent-evidence` — requests + documents, newest first. */
+export function getActorConsentEvidence(actorId: string, token: string): Promise<ConsentEvidence> {
+  return apiFetch<ConsentEvidence>(`/api/v1/admin/actors/${encodeURIComponent(actorId)}/consent-evidence`, {
+    method: 'GET',
+    token,
+  });
+}

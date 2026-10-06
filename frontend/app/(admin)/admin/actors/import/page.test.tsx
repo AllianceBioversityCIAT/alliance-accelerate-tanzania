@@ -76,6 +76,15 @@ jest.mock('@/lib/api/client', () => {
   return { AuthFailureError, ApiError };
 });
 
+const mockPreview = jest.fn();
+const mockEnqueue = jest.fn();
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  previewConsentRequests: (...args: unknown[]) => mockPreview(...args),
+  enqueueConsentRequests: (...args: unknown[]) => mockEnqueue(...args),
+  dispatchConsentRequests: jest.fn(),
+  retryConsentRequests: jest.fn(),
+}));
+
 import ActorImportPage from './page';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import type { ImportReport } from '@/lib/api/actors-admin';
@@ -259,6 +268,8 @@ beforeEach(() => {
   // between tests.
   mockImportActors.mockReset();
   mockGetSession.mockReset();
+  mockPreview.mockReset();
+  mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: { no_email: 0, granted: 0, pending_request: 0, declined: 0 } });
 });
 
 /** importActors resolver keyed by mode so call order never causes leaks. */
@@ -807,5 +818,76 @@ describe('ActorImportPage — auth failure', () => {
     await renderReady();
     await selectFile();
     await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/login'));
+  });
+});
+
+// ── FR-5 — consent-request CTA after a commit (T-10) ─────────────────────────
+
+describe('ActorImportPage — consent request CTA', () => {
+  // 12 created (2 of them GRANTED, which preview skips) + a failed row and a
+  // possible-duplicate row whose ids must NOT reach the target.
+  const createdRows = Array.from({ length: 12 }, (_, i) => ({
+    rowNumber: i + 2,
+    traderId: `TZ-${i}`,
+    traderName: `Created ${i}`,
+    outcome: 'created' as const,
+    actorId: `created-${i}`,
+  }));
+  const MIXED_COMMIT: ImportReport = {
+    mode: 'commit',
+    totals: { rows: 14, toCreate: 12, created: 12, possibleDuplicate: 1, failed: 1, warnings: 0 },
+    rows: [
+      ...createdRows,
+      { rowNumber: 14, traderId: null, traderName: 'Bad row', outcome: 'failed', actorId: 'failed-ghost' },
+      { rowNumber: 15, traderId: null, traderName: 'Dup row', outcome: 'possible-duplicate', actorId: 'dup-ghost' },
+    ],
+  };
+
+  async function commitTo(report: ImportReport) {
+    resolveByMode(PREVIEW_REPORT, report);
+    await renderReady();
+    await selectFile();
+    fireEvent.click(await screen.findByRole('button', { name: /import 1 actor/i }));
+    await screen.findByText(/import complete/i);
+  }
+
+  it('counts from preview (12 created, 2 GRANTED -> 10) and targets exactly the created rows', async () => {
+    mockPreview.mockResolvedValue({
+      total: 12,
+      toSend: 10,
+      skipped: { no_email: 0, granted: 2, pending_request: 0, declined: 0 },
+    });
+    await commitTo(MIXED_COMMIT);
+
+    expect(
+      await screen.findByText('Send consent requests to the 10 actors created by this import'),
+    ).toBeInTheDocument();
+    expect(mockPreview).toHaveBeenCalledWith(
+      { target: { kind: 'ids', ids: createdRows.map((r) => r.actorId) }, scope: 'bulk' },
+      TOKEN,
+    );
+  });
+
+  it('opens the bulk dialog with the created ids only (no failed or duplicate rows)', async () => {
+    await commitTo(MIXED_COMMIT);
+    fireEvent.click(await screen.findByRole('button', { name: /^send consent request$/i }));
+    await screen.findByRole('dialog');
+    const calls = mockPreview.mock.calls.map((c) => c[0]);
+    const ids = createdRows.map((r) => r.actorId);
+    expect(calls.every((c) => c.scope === 'bulk' && c.target.kind === 'ids')).toBe(true);
+    expect(calls[calls.length - 1].target.ids).toEqual(ids);
+    expect(calls[calls.length - 1].target.ids).not.toContain('failed-ghost');
+    expect(calls[calls.length - 1].target.ids).not.toContain('dup-ghost');
+  });
+
+  it('shows no CTA when nothing was created, and never calls preview', async () => {
+    const NONE_CREATED: ImportReport = {
+      mode: 'commit',
+      totals: { rows: 1, toCreate: 1, created: 0, possibleDuplicate: 0, failed: 1, warnings: 0 },
+      rows: [{ rowNumber: 2, traderId: null, traderName: 'Bad row', outcome: 'failed' }],
+    };
+    await commitTo(NONE_CREATED);
+    expect(screen.queryByText(/created by this import/i)).not.toBeInTheDocument();
+    expect(mockPreview).not.toHaveBeenCalled();
   });
 });

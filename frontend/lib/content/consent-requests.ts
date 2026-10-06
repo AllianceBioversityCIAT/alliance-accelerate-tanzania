@@ -173,3 +173,31 @@ export const BULK_SEND_COPY = {
   bannerResume: 'Resume sending',
   bannerRetry: 'Retry failed',
 } as const;
+
+/** Copy for the single-actor send (edit page, post-create prompt, import CTA). */
+export const SINGLE_SEND_COPY = {
+  send: 'Send consent request',
+  resend: 'Resend consent request',
+  dialogTitle: 'Send consent request',
+  resultTitle: 'Consent request sent',
+  checkFailed: 'Could not check whether a consent request can be sent.',
+  promptTitle: 'Actor created',
+  promptQuestion: (email: string) => `Send a consent request to ${email}?`,
+  promptHint: 'The actor gets one email with a private link to accept or decline publication.',
+  sendLabel: 'Send',
+  notNow: 'Not now',
+  sending: 'Sending the consent request…',
+  continueToActors: 'Continue to actors',
+  tryAgain: 'Try again',
+  notSent: 'The consent request was recorded but could not be sent. It stays queued; resume it from Actors.',
+  importCta: (n: number) =>
+    `Send consent requests to the ${n} ${n === 1 ? 'actor' : 'actors'} created by this import`,
+} as const;
+
+/** FR-3 — a request in one of these states means a send is already in flight or out (button reads Resend). */
+export const PENDING_REQUEST_STATUSES: ReadonlySet<ConsentRequestEvidenceStatus> = new Set([
+  'QUEUED',
+  'SENDING',
+  'FAILED',
+  'SENT',
+]);

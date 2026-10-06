@@ -38,6 +38,7 @@ import {
 } from '@/lib/api/consent-requests-admin';
 import {
   BULK_SEND_COPY,
+  SINGLE_SEND_COPY,
   CONSENT_SKIP_REASONS,
   CONSENT_SKIP_REASON_LABEL,
 } from '@/lib/content/consent-requests';
@@ -50,6 +51,8 @@ import { DialogFooter } from '@/components/admin/DialogFooter';
 // ---------------------------------------------------------------------------
 
 export interface SendConsentDialogProps {
+  /** `'single'` (exactly one id) for the actor page and post-create prompt; default `'bulk'`. */
+  scope?: 'single' | 'bulk';
   /** `{ kind: 'ids' }` for selected rows or `{ kind: 'filter' }` for "all matching". */
   target: ConsentRequestTarget;
   /** How many actors the admin believed they had targeted — drives the neutral "changed" note. */
@@ -118,6 +121,7 @@ function Tally({
 // ---------------------------------------------------------------------------
 
 export function SendConsentDialog({
+  scope = 'bulk',
   target,
   expectedCount,
   token,
@@ -146,7 +150,7 @@ export function SendConsentDialog({
 
   useEffect(() => {
     let cancelled = false;
-    previewConsentRequests({ target: targetRef.current, scope: 'bulk' }, token)
+    previewConsentRequests({ target: targetRef.current, scope }, token)
       .then((preview) => {
         if (!cancelled) setStage({ name: 'confirm', preview });
       })
@@ -164,7 +168,7 @@ export function SendConsentDialog({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, scope]);
 
   // ── Move focus to the heading whenever the step changes ──────────────────
 
@@ -181,7 +185,7 @@ export function SendConsentDialog({
       setStage({ name: 'enqueuing', preview });
       dispatch.reset(); // drop a previous run's counts before this one starts
       try {
-        const result = await enqueueConsentRequests({ target: targetRef.current, scope: 'bulk' }, token);
+        const result = await enqueueConsentRequests({ target: targetRef.current, scope }, token);
         setStage({ name: 'sending', batchId: result.batchId, queued: result.queued, skipped: result.skipped });
         if (result.queued > 0) {
           await dispatch.start({ batchId: result.batchId, initialRemaining: result.queued });
@@ -198,12 +202,13 @@ export function SendConsentDialog({
         });
       }
     },
-    [token, dispatch],
+    [token, dispatch, scope],
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  let title: string = BULK_SEND_COPY.dialogTitle;
+  const single = scope === 'single';
+  let title: string = single ? SINGLE_SEND_COPY.dialogTitle : BULK_SEND_COPY.dialogTitle;
   let description = '';
   let body: React.ReactNode = null;
   let footer: React.ReactNode = null;
@@ -309,7 +314,7 @@ export function SendConsentDialog({
         />
       );
     } else {
-      title = BULK_SEND_COPY.resultTitle;
+      title = single ? SINGLE_SEND_COPY.resultTitle : BULK_SEND_COPY.resultTitle;
       const halted = dispatchPhase === 'error';
       description = halted
         ? 'Sending stopped before every request went out.'

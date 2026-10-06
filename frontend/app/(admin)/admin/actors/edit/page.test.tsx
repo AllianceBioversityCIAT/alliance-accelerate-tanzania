@@ -103,6 +103,18 @@ jest.mock('@/lib/api/actors-admin', () => {
   };
 });
 
+const mockPreview = jest.fn();
+const mockEvidence = jest.fn();
+const mockEnqueue = jest.fn();
+const mockDispatch = jest.fn();
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  previewConsentRequests: (...args: unknown[]) => mockPreview(...args),
+  getActorConsentEvidence: (...args: unknown[]) => mockEvidence(...args),
+  enqueueConsentRequests: (...args: unknown[]) => mockEnqueue(...args),
+  dispatchConsentRequests: (...args: unknown[]) => mockDispatch(...args),
+  retryConsentRequests: jest.fn(),
+}));
+
 import EditActorPage from './page';
 import type { AdminActor } from '@/lib/api/actors-admin';
 
@@ -161,6 +173,77 @@ const ACTOR_B = buildActor({
   region: 'Dodoma',
 });
 
+const SKIPS_NONE = { no_email: 0, granted: 0, pending_request: 0, declined: 0 };
+
+describe('EditActorPage — Send consent request (FR-3, T-10)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetActorHistory.mockResolvedValue({ data: [], page: 1, pageSize: 20, total: 0 });
+    mockSearchParams = new URLSearchParams({ id: 'actor-a' });
+    mockAdminGetActor.mockResolvedValue(ACTOR_A);
+    mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: SKIPS_NONE });
+    mockEvidence.mockResolvedValue({ requests: [], documents: [] });
+    mockEnqueue.mockResolvedValue({ batchId: 'b1', queued: 1, skipped: SKIPS_NONE });
+    mockDispatch.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+  });
+
+  it('offers "Send consent request" when eligible and posts scope single with exactly one id', async () => {
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAttribute('aria-disabled', 'false');
+    expect(mockPreview).toHaveBeenCalledWith(
+      { target: { kind: 'ids', ids: ['actor-a'] }, scope: 'single' },
+      TOKEN,
+    );
+
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByRole('button', { name: /send 1 request/i }));
+
+    await waitFor(() =>
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        { target: { kind: 'ids', ids: ['actor-a'] }, scope: 'single' },
+        TOKEN,
+      ),
+    );
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalledWith({ batchId: 'b1' }, TOKEN));
+  });
+
+  it('is disabled with the FR-2 reason when the actor has no email', async () => {
+    mockPreview.mockResolvedValue({ total: 1, toSend: 0, skipped: { ...SKIPS_NONE, no_email: 1 } });
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAccessibleDescription('No email address on file');
+    fireEvent.click(button);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('is disabled with the reason when consent is already granted', async () => {
+    mockPreview.mockResolvedValue({ total: 1, toSend: 0, skipped: { ...SKIPS_NONE, granted: 1 } });
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAccessibleDescription('Consent already granted');
+  });
+
+  it('reads "Resend consent request" when a pending request exists', async () => {
+    mockEvidence.mockResolvedValue({ requests: [{ id: 'r1', status: 'SENT' }], documents: [] });
+    render(<EditActorPage />);
+    expect(await screen.findByRole('button', { name: 'Resend consent request' })).toBeInTheDocument();
+  });
+
+  it('keeps "Send" when the only request is EXPIRED or DECLINED', async () => {
+    mockEvidence.mockResolvedValue({
+      requests: [
+        { id: 'r1', status: 'EXPIRED' },
+        { id: 'r2', status: 'DECLINED' },
+      ],
+      documents: [],
+    });
+    render(<EditActorPage />);
+    expect(await screen.findByRole('button', { name: 'Send consent request' })).toBeInTheDocument();
+  });
+});
+
 describe('EditActorPage — cross-actor identity on a searchParams-only navigation (R-1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -170,6 +253,8 @@ describe('EditActorPage — cross-actor identity on a searchParams-only navigati
       Promise.resolve(id === 'actor-a' ? ACTOR_A : ACTOR_B),
     );
     mockUpdateActor.mockResolvedValue(ACTOR_B);
+    mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: SKIPS_NONE });
+    mockEvidence.mockResolvedValue({ requests: [], documents: [] });
   });
 
   it('remounts the form and targets the newly-resolved actor after id changes without unmounting the route', async () => {

@@ -29,6 +29,8 @@ import { AuthFailureError } from '@/lib/api/client';
 
 import ActorForm from '@/components/admin/ActorForm';
 import { ActorHistoryPanel } from '@/components/admin/ActorHistoryPanel';
+import { SendConsentAction } from '@/components/admin/SendConsentAction';
+import { useConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import Button from '@/components/ui/Button';
 import Skeleton from '@/components/ui/Skeleton';
 
@@ -140,6 +142,9 @@ function EditActorView() {
     router.push('/login');
   }, [router]);
 
+  // The ONE consent dispatch owner on this page (design.md §5.2, P-10).
+  const consentDispatch = useConsentDispatch({ token: token ?? '', onAuthFailure: handleAuthFailure });
+
   if (loading) {
     return <EditFallback />;
   }
@@ -177,9 +182,18 @@ function EditActorView() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-extrabold text-fg">Edit actor</h1>
-        <p className="mt-1 text-sm text-muted">{actor.traderName}</p>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-extrabold text-fg">Edit actor</h1>
+          <p className="mt-1 text-sm text-muted">{actor.traderName}</p>
+        </div>
+        <SendConsentAction
+          key={actor.id}
+          actorId={actor.id}
+          token={token}
+          dispatch={consentDispatch}
+          onAuthFailure={handleAuthFailure}
+        />
       </div>
 
       {/*

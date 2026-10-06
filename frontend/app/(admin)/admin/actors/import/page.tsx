@@ -39,6 +39,10 @@ import { ApiError, AuthFailureError } from '@/lib/api/client';
 
 import { ImportPreviewTable } from '@/components/admin/ImportPreviewTable';
 import { AcknowledgeDialog } from '@/components/admin/AcknowledgeDialog';
+import { SendConsentDialog } from '@/components/admin/SendConsentDialog';
+import { previewConsentRequests } from '@/lib/api/consent-requests-admin';
+import { SINGLE_SEND_COPY } from '@/lib/content/consent-requests';
+import { useConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import Button from '@/components/ui/Button';
 
 // ---------------------------------------------------------------------------
@@ -434,6 +438,9 @@ export default function ActorImportPage() {
     router.push('/login');
   }, [router]);
 
+  // The ONE consent dispatch owner on this page (design.md §5.2, P-10).
+  const consentDispatch = useConsentDispatch({ token: token ?? '', onAuthFailure: handleAuthFailure });
+
   // ── Resolve token on mount (mirrors the actors console) ───────────────────
 
   useEffect(() => {
@@ -577,6 +584,35 @@ export default function ActorImportPage() {
   useEffect(() => {
     inFlightRef.current = inFlight;
   }, [inFlight]);
+
+  // ── FR-5 — offer consent requests to THIS import's actors only ───────────
+  // Only `created` rows carry an `actorId`; failed / possible-duplicate rows
+  // were never written, so they never enter the target.
+  const createdActorIds =
+    report && phase === 'result'
+      ? report.rows.flatMap((row) => (row.outcome === 'created' && row.actorId ? [row.actorId] : []))
+      : [];
+  const createdIdsKey = createdActorIds.join(',');
+  const [consentOffer, setConsentOffer] = useState<{ key: string; toSend: number } | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+
+  useEffect(() => {
+    if (!token || createdIdsKey === '') return;
+    let cancelled = false;
+    previewConsentRequests({ target: { kind: 'ids', ids: createdIdsKey.split(',') }, scope: 'bulk' }, token)
+      .then((preview) => {
+        if (!cancelled) setConsentOffer({ key: createdIdsKey, toSend: preview.toSend });
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof AuthFailureError) handleAuthFailure();
+        // Any other failure just leaves the optional CTA out.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, createdIdsKey, handleAuthFailure]);
+
+  const offerCount = consentOffer?.key === createdIdsKey ? consentOffer.toSend : 0;
 
   const resultSummary = report
     ? `${report.totals.created} created, ${report.totals.possibleDuplicate} possible duplicate${pluralSuffix(report.totals.possibleDuplicate)}, ${report.totals.failed} failed.`
@@ -836,6 +872,15 @@ export default function ActorImportPage() {
 
           <ImportPreviewTable rows={report.rows} showTraderId />
 
+          {offerCount > 0 && (
+            <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-alt px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-fg">{SINGLE_SEND_COPY.importCta(offerCount)}</p>
+              <Button variant="secondary" onClick={() => setConsentOpen(true)}>
+                {SINGLE_SEND_COPY.send}
+              </Button>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button variant="primary" href="/admin/actors">
               Back to actors
@@ -853,6 +898,18 @@ export default function ActorImportPage() {
             </button>
           </div>
         </section>
+      )}
+
+      {consentOpen && token && (
+        <SendConsentDialog
+          scope="bulk"
+          target={{ kind: 'ids', ids: createdActorIds }}
+          expectedCount={createdActorIds.length}
+          token={token}
+          dispatch={consentDispatch}
+          onClose={() => setConsentOpen(false)}
+          onAuthFailure={handleAuthFailure}
+        />
       )}
 
       {/* ── Consent acknowledgement gate (FR-6) ──────────────────────────── */}
