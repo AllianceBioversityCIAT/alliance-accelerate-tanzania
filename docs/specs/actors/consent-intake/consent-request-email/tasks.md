@@ -474,7 +474,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 
 ## PR 3 — Baselines and live proof
 
-- [ ] **T-12 Baseline documents: PRD, TRD, UX design, infrastructure** (deps: T-5, T-6, T-7)
+- [~] **T-12 Baseline documents: PRD, TRD, UX design, infrastructure** (deps: T-5, T-6, T-7)
   - **Size:** M (~450 LOC docs) · **Effort:** `high` · **Skills:** `software-architect`, `product-manager-toolkit`, `cognitive-doc-design`
   - **Traces:**
     - FR-17 (PRD, TRD, UX, infra; *no constitutional sentence left false* for the TRD/PRD part)
@@ -489,7 +489,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
       - §4 every new route;
       - §8 the token-bearer disclosure and the actor-originated route to `GRANTED`;
       - §13 QA-14 (token endpoints);
-      - §12.5 **ADR-NNN**, allocated now after `git log --oneline --all -20 -- docs/trd/trd.md` (candidate ADR-018), amending TRD §4's "only public path" sentence and ADR-013's consequence scope;
+      - §12.5 **ADR-NNN**, written with the placeholder `ADR-NNN` and "candidate ADR-018" noted, because root `CLAUDE.md` allocates ADR numbers at apply time on the default branch, never from a spec branch (the chunk 1 precedent). It amends TRD §4's "only public path" sentence and ADR-013's consequence scope. *(Corrected 2026-10-06 by the Leader: this line first said "allocated now".)* Check: `git log --oneline --all -20 -- docs/trd/trd.md` shows no branch past ADR-017;
       - ADR-015's subject inventory gains a ninth kind;
       - §12.1/§12.2 diagrams gain the bucket and the consent arrow.
     - **UX design:** the `/consent` route in §2, the screens in §4, the components in §8.
@@ -500,7 +500,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Disqualifier:** a sweep pattern that finds 0 hits on the pre-change TRD, since it cannot see the sentence it exists for.
   - **Consumers:** every archived spec citing TRD `§n` (numbers are not renumbered, ADR-009).
   - **Review:** `full` — constitutional baseline.
-  - **Done when:** the sweeps are pasted with dispositions; ADR-NNN is allocated with the unmerged-branch check recorded.
+  - **Done when:** the sweeps are pasted with dispositions; ADR-NNN is written as a placeholder (candidate ADR-018) with the unmerged-branch check recorded.
 
 - [ ] **T-13 Constitution guides: root and backend mirrors** (deps: T-12)
   - **Size:** S (~120 LOC docs) · **Effort:** `high` · **Skills:** `cognitive-doc-design`

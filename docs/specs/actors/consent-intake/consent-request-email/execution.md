@@ -987,3 +987,8 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 **ADVISORY (recorded):** the "uploading" and "attached" messages are announced only through `aria-live`, not through the input's description. No test asserts that the error id is removed once a valid file clears the error. Attempt 1's advisories stand.
 
 - **Final verification:** VERIFIED.
+
+### T-12 — Baseline documents — in progress
+
+- **Leader correction before the brief:** `tasks.md` T-12 said ADR-NNN would be "allocated now". Root `CLAUDE.md` § Concurrency protocol allocates ADR numbers at apply time on the default branch, never from a spec branch, and chunk 1 used a placeholder. T-12 therefore writes `ADR-NNN` (candidate ADR-018). Unmerged-branch check, 2026-10-06: every branch tops out at ADR-017.
+- **Budget re-baseline (standing authorization):** LOC through T-11 is 16,985 (backend, frontend and infra, excluding lockfiles and specs) against the ~16,000 projection. The new projection is **~17,700**, with T-12 and T-13 docs at about 700. Review verdicts so far: 30. The projection is **~34**.
