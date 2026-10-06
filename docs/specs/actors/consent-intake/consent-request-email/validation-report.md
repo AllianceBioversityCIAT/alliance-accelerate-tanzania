@@ -1,5 +1,15 @@
 # Validation Report — Consent request by email for team-managed actors
 
+> **Re-validation (2026-10-06, after R-A…R-D, `73f7d46`): no FAIL remains. Archive is blocked by T-14 only.**
+> - Every FAIL below is closed: R-A (code), R-B (tests), R-C and R-D (documents, the IAM fallback, a resume test, and a real-MySQL NFR-5 probe).
+> - The three parallel validators re-ran: coverage PASS; consistency and facts FAIL on one blocking contradiction (FR-10) and the `ListBucket` condition. Both were fixed in R-D, which passed review. Details are in `execution.md` § "Re-validation after R-C" and § R-D.
+> - Gates at `73f7d46`: backend 1752 tests; frontend 2016 tests; lint, build, `validate.sh` and the infra script tests green.
+> - **Open:** T-14, the live run on DEV, which needs the product owner: deploy-role S3 permissions, migrations, and steps 1–5, including the live 422 on a never-uploaded document. One advisory is also open: the `SendConsentPrompt` error copy when dispatch sets an error.
+>
+> The original report follows unchanged as the record of the first validation.
+
+---
+
 > **Verdict: NOT ARCHIVE-READY.** The code is sound and every gate is green. What blocks archive:
 > - **2 behaviours not implemented**: the FR-3 send confirmation, and FR-15's `SIGNED_FORM` wording.
 > - **1 new display defect**: the consent preview labels a southern latitude "° N".
