@@ -684,3 +684,61 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - The service header comment does not mention the head step.
 
 - **Final verification:** VERIFIED.
+
+### T-8 — Public consent page — **PASS** (attempt 1/3), 2026-10-06
+
+- **Leader choices:**
+  - Skills: `frontend-design`, `tailwind-design-system`, `vercel-react-best-practices`, `react-doctor`.
+  - Effort: `high`.
+  - Review: one Reviewer, with a visual check of the captures.
+- **Requirements covered:**
+  - FR-9: all scenarios.
+  - FR-10: UI.
+  - FR-11: the page shows no record on a miss.
+  - NFR-10: axe and captures.
+  - NFR-11.
+
+**Files changed**
+- **New:**
+  - `app/(consent)/layout.tsx` and its test
+  - `app/(consent)/consent/page.tsx` and its test
+  - `components/consent/{ConsentRecordPreview,RespondentFields,ConsentResponseForm,ConsentDeadEnd,ConsentRichText}.tsx`
+  - `components/register/ConsentTextScrollGate.tsx`
+  - `lib/api/consent-public.ts` and its test
+  - `lib/content/consent-requests.ts`
+- **Modified:** `components/register/ConsentPolicyDisclosure.tsx`, which now delegates to the gate.
+
+**Falsifiers (executed red, then reverted):**
+
+| Mutation | Red |
+|---|---|
+| Page moved to `(public)` (the red run) | Layout test: provider, banner and GA rendered |
+| `view` called before `replaceState` | Ordering test: `Expected < 1, Received 2` |
+| The gate's `disabled` stripped | 6 tests |
+
+**Implementer verification:**
+- 123 suites / 1877 tests.
+- Lint clean on new files; `tsc` clean.
+- Build is static; `out/consent/index.html` exists with the noindex meta and no gtag.
+- `react-doctor` reports no issues.
+
+**Captures:** headless Chromium over CDP, API intercepted, fonts awaited. Ready, dead-end and done-accepted states at 375, 768 and 1440. `scrollWidth` equals `clientWidth` in all 9 cells, and the address bar reads `/consent/` after load. Kept in the scratchpad, `t8-captures/`, not in the repo.
+
+**Evidence re-run (Leader): VERIFIED.** 123 suites / 1877 tests; `tsc`; build; `out/consent/index.html`; 0 gtag hits.
+
+**Reviewer (checklist plus visual): PASS.** No analytics, the strip happens before `view`, and every §7.3 state is present with no-token kept distinct from dead-end. The dead-end shows no record. The preview has public keys only. The respondent fields are never pre-filled. The gate extraction is behaviour-preserving. Tokens are clean. The captures are legible, with nothing clipped.
+
+**Runtime events:** none.
+
+**ADVISORY (recorded):**
+- The gate's progress copy says "end of the policy"; on `/consent/` the document is the "Consent for Publication".
+- Loading is a text line, not the skeleton §7.3 names.
+- The shared gate lives in `components/register/`.
+- No captures of the field-error and decline-confirm states.
+- The client edition type has no `issuedAt`, mirroring the backend.
+
+**Pre-existing defects found (out of scope, follow-ups for the product owner):**
+1. **`/register` renders the consent-policy version as "vv1.0".** The gate prefixes `v` to a version that already starts with `v` (`ConsentPolicyDisclosure` at HEAD: `v{policy.version}`). The consent page strips one.
+2. **The public profile labels a southern latitude "° N"** (`ProfileLocation.tsx`; e.g. `-3.3869° N` for Tanzania). The consent preview copies it.
+
+- **Final verification:** VERIFIED.
