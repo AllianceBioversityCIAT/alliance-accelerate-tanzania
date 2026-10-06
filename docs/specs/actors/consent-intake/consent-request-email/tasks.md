@@ -246,7 +246,7 @@ T-1…T-13 ─► T-14
     - The P-14 pin is green on a real-handler event.
     - The full backend suite, build and lint are green.
 
-- [~] **T-6 Evidence read, edition text, audit kinds and the immutability gate** (deps: T-3, T-4)
+- [x] **T-6 Evidence read, edition text, audit kinds and the immutability gate** (deps: T-3, T-4)
   - **Size:** M (~700 LOC) · **Effort:** `high` · **Skills:** `nestjs-expert`, `tdd`
   - **Traces:**
     - FR-13 (retention — *deleted actor*; *no edit path* — AND MUST be shown by a test)
@@ -277,7 +277,7 @@ T-1…T-13 ─► T-14
   - **Review:** `full`.
   - **Done when:** all tests green, falsifiers executed red.
 
-- [ ] **T-7 Consent documents: bucket, IAM, storage port and routes** (deps: T-1)
+- [~] **T-7 Consent documents: bucket, IAM, storage port and routes** (deps: T-1)
   - **Size:** L (~1,100 LOC) · **Effort:** `xhigh` · **Skills:** `aws-serverless`, `nestjs-expert`, `tdd`
   - **Traces:**
     - FR-13 (*document uploaded* trail entry)

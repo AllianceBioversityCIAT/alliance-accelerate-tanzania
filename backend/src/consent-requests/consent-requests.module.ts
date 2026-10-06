@@ -4,6 +4,7 @@ import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { ActorAuditService } from '../actors/actor-audit.service';
 import { MailModule } from '../mail/mail.module';
 import { ConsentSupersessionModule } from './consent-supersession.module';
+import { ConsentEvidenceService } from './consent-evidence.service';
 import { ConsentRequestsService } from './consent-requests.service';
 import { AdminConsentRequestsController } from './admin-consent-requests.controller';
 import { ConsentPublicController } from './consent-public.controller';
@@ -45,6 +46,7 @@ import { ConsentThrottleGuard } from './consent-throttle.guard';
   providers: [
     ConsentRequestsService,
     ConsentPublicService,
+    ConsentEvidenceService,
     ConsentThrottleGuard,
     ActingAdminResolver,
     ActorAuditService,

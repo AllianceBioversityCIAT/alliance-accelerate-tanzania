@@ -94,6 +94,31 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
     }),
   };
 
+  // T-6 — the history read (`actorAuditLog.findMany`/`count`, newest first,
+  // no actor lookup) and the stored-document read behind the evidence route.
+  Object.assign(actorAuditLog, {
+    findMany: jest.fn(async (args: { where: { actorId: string }; take?: number }) =>
+      auditLogRows
+        .filter((r) => r.actorId === args.where.actorId)
+        .sort((a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime())
+        .slice(0, args.take),
+    ),
+    count: jest.fn(async (args: { where: { actorId: string } }) =>
+      auditLogRows.filter((r) => r.actorId === args.where.actorId).length,
+    ),
+  });
+  let documentRows: Array<Record<string, unknown>> = [];
+  const consentDocument = {
+    findMany: jest.fn(async (args: { where: { actorId: string; status?: string }; select?: Record<string, boolean> }) => {
+      const matches = documentRows
+        .filter((r) => r.actorId === args.where.actorId && (!args.where.status || r.status === args.where.status))
+        .sort((a, b) => (b.createdAt as Date).getTime() - (a.createdAt as Date).getTime());
+      if (!args.select) return matches;
+      const keys = Object.keys(args.select).filter((k) => args.select![k]);
+      return matches.map((r) => Object.fromEntries(keys.map((k) => [k, r[k]])));
+    }),
+  };
+
   const tx = { actor, consentRequest: consentRequestMock.consentRequest, actorAuditLog, $queryRaw };
   const $transaction = jest.fn(async (cb: any) => cb(tx));
 
@@ -101,12 +126,17 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
     actors = initialActors.map((a) => ({ ...a }));
     consentRequestMock.reset();
     auditLogRows.length = 0;
+    documentRows = [];
   };
 
   return {
     actor,
     consentRequest: consentRequestMock.consentRequest,
     actorAuditLog,
+    consentDocument,
+    seedDocuments: (rows: Array<Record<string, unknown>>) => {
+      documentRows = rows;
+    },
     $queryRaw,
     $transaction,
     reset,
@@ -531,6 +561,128 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
         .expect(200);
 
       expect(res.body).toEqual({ queued: 2, failed: 0 });
+    });
+  });
+
+  // T-6 — FR-13 (retention), FR-14 (walk-through data, derived EXPIRED), NFR-9.
+  describe('GET /api/v1/admin/actors/:id/consent-evidence and /consent-editions/:version', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const GONE_ACTOR = 'a-deleted'; // present in NO actor table row: a deleted actor
+
+    function seedRequest(overrides: Record<string, unknown>) {
+      return prismaMock.consentRequest.createMany({
+        data: [
+          {
+            actorId: GONE_ACTOR,
+            traderId: 'T-GONE',
+            traderName: 'Deleted Actor Ltd',
+            batchId: 'b1',
+            recipientEmail: 'gone@example.com',
+            editionVersion: 'v1.0',
+            editionHash: 'f'.repeat(64),
+            requestedBySub: 'admin-sub',
+            requestedByEmail: 'admin@example.com',
+            tokenHash: 'e'.repeat(64),
+            ...overrides,
+          } as never,
+        ],
+      });
+    }
+
+    it('returns 401 anonymous and 403 Staff on both routes', async () => {
+      for (const path of [`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`, '/api/v1/admin/consent-editions/v1.0']) {
+        await request(app.getHttpServer()).get(path).expect(401);
+        await request(app.getHttpServer()).get(path).set(staff).expect(403);
+        await request(app.getHttpServer()).get(path).set(pub).expect(403);
+      }
+    });
+
+    it('a deleted actor with 2 requests and 1 document still returns its evidence AND its history', async () => {
+      const now = Date.now();
+      await seedRequest({ id: 'req-old', status: 'ACCEPTED', createdAt: new Date(now - 40 * DAY), sentAt: new Date(now - 40 * DAY), respondedAt: new Date(now - 39 * DAY), respondentName: 'Neema' });
+      await seedRequest({ id: 'req-new', status: 'SENT', createdAt: new Date(now - 1 * DAY), sentAt: new Date(now - 1 * DAY), expiresAt: new Date(now + 29 * DAY) });
+      prismaMock.seedDocuments([
+        { id: 'doc-1', actorId: GONE_ACTOR, status: 'STORED', traderId: 'T-GONE', traderName: 'x', fileName: 'consent.pdf', contentType: 'application/pdf', sizeBytes: 2048, storageKey: 'stored/a-deleted/doc-1', uploadedBySub: 'admin-sub', uploadedByEmail: 'admin@example.com', createdAt: new Date(now - 2 * DAY), storedAt: new Date(now - 2 * DAY) },
+        { id: 'doc-pending', actorId: GONE_ACTOR, status: 'PENDING', traderId: 'T-GONE', traderName: 'x', fileName: 'half.pdf', contentType: 'application/pdf', sizeBytes: 1, storageKey: 'incoming/doc-pending', uploadedBySub: 'admin-sub', uploadedByEmail: null, createdAt: new Date(now - 1 * DAY), storedAt: null },
+      ]);
+      prismaMock.getAuditLogRows().push({
+        id: 'audit-del', actorId: GONE_ACTOR, traderId: 'T-GONE', traderName: 'Deleted Actor Ltd', action: 'DELETE',
+        actingSub: 'admin-sub', actingEmail: 'admin@example.com', changes: { kind: 'snapshot', values: {} },
+        acknowledged: null, duplicateConfirmation: null, createdAt: new Date(now),
+      });
+
+      const evidence = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`)
+        .set(admin)
+        .expect(200);
+      expect(evidence.body.requests.map((r: { id: string }) => r.id)).toEqual(['req-new', 'req-old']); // newest first
+      expect(evidence.body.documents.map((d: { id: string }) => d.id)).toEqual(['doc-1']); // PENDING never listed
+      expect(evidence.body.requests[1].respondentName).toBe('Neema');
+
+      const history = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${GONE_ACTOR}/history`)
+        .set(admin)
+        .expect(200);
+      expect(history.body.data.map((e: { id: string }) => e.id)).toEqual(['audit-del']);
+    });
+
+    it('the response key set contains no tokenHash (nor storageKey), at any depth', async () => {
+      await seedRequest({ id: 'req-1', status: 'SENT', createdAt: new Date(), sentAt: new Date(), expiresAt: new Date(Date.now() + DAY) });
+      prismaMock.seedDocuments([
+        { id: 'doc-1', actorId: GONE_ACTOR, status: 'STORED', traderId: 'T', traderName: 'x', fileName: 'c.pdf', contentType: 'application/pdf', sizeBytes: 1, storageKey: 'stored/k', uploadedBySub: 's', uploadedByEmail: null, createdAt: new Date(), storedAt: new Date() },
+      ]);
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`)
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.requests).toHaveLength(1);
+      expect(Object.keys(res.body.requests[0]).sort()).toEqual(
+        [
+          'actorId', 'createdAt', 'editionHash', 'editionVersion', 'expiresAt', 'failureReason', 'id',
+          'recipientEmail', 'requestedByEmail', 'requestedBySub', 'respondedAt', 'respondentEmail',
+          'respondentIp', 'respondentName', 'respondentPhone', 'respondentPosition', 'respondentUserAgent',
+          'sentAt', 'status', 'supersededAt',
+        ].sort(),
+      );
+      expect(Object.keys(res.body.documents[0]).sort()).toEqual(
+        ['actorId', 'contentType', 'createdAt', 'fileName', 'id', 'sizeBytes', 'storedAt', 'uploadedByEmail', 'uploadedBySub'].sort(),
+      );
+      expect(res.text).not.toContain('tokenHash');
+      expect(res.text).not.toContain('e'.repeat(64)); // the stored hash value
+      expect(res.text).not.toContain('stored/k');
+    });
+
+    it('a 31-day-old SENT row reads EXPIRED; a fresh SENT row stays SENT', async () => {
+      const now = Date.now();
+      await seedRequest({ id: 'req-expired', status: 'SENT', createdAt: new Date(now - 31 * DAY), sentAt: new Date(now - 31 * DAY), expiresAt: new Date(now - 1 * DAY) });
+      await seedRequest({ id: 'req-fresh', status: 'SENT', createdAt: new Date(now - 1 * DAY), sentAt: new Date(now - 1 * DAY), expiresAt: new Date(now + 29 * DAY) });
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`)
+        .set(admin)
+        .expect(200);
+      const byId = Object.fromEntries(res.body.requests.map((r: { id: string; status: string }) => [r.id, r.status]));
+      expect(byId).toEqual({ 'req-expired': 'EXPIRED', 'req-fresh': 'SENT' });
+    });
+
+    it('an actor with no evidence returns two empty lists (the panel states "no evidence yet")', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/a-eligible-1/consent-evidence')
+        .set(admin)
+        .expect(200);
+      expect(res.body).toEqual({ requests: [], documents: [] });
+    });
+
+    it('GET /consent-editions/:version returns the exact edition text, and 404 for an unknown version', async () => {
+      const res = await request(app.getHttpServer()).get('/api/v1/admin/consent-editions/v1.0').set(admin).expect(200);
+      expect(res.body).toEqual(JSON.parse(JSON.stringify(CURRENT_ADMIN_CONSENT_EDITION)));
+      expect(Object.keys(res.body).sort()).toEqual(['acceptanceStatement', 'issuedAt', 'sections', 'version']);
+      await request(app.getHttpServer()).get('/api/v1/admin/consent-editions/v9.9').set(admin).expect(404);
+    });
+
+    it('the two evidence routes do not shadow each other: :id/history and :id/consent-evidence both resolve', async () => {
+      await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/history`).set(admin).expect(200);
+      await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`).set(admin).expect(200);
     });
   });
 });

@@ -36,8 +36,14 @@ export function createActorSequenceMock() {
     },
   );
 
-  const $queryRaw = jest.fn(async (strings: TemplateStringsArray) => {
-    const sql = strings.join('?');
+  const $queryRaw = jest.fn(async (strings: TemplateStringsArray | { sql: string }) => {
+    // Tagged-template call (`$queryRaw\`…\``) or a `Prisma.sql` object (D-26's lock).
+    const sql = Array.isArray(strings) ? strings.join('?') : (strings as { sql: string }).sql;
+    // D-26 — `ActorsAdminService.update`'s first transaction statement is the
+    // locking `SELECT … FOR UPDATE`; its result is unused by the service.
+    if (sql.includes('FROM Actor') && sql.includes('FOR UPDATE')) {
+      return [];
+    }
     if (!sql.includes('@newActorSeq')) {
       throw new Error(`Fake $queryRaw: unrecognized SQL: ${sql}`);
     }

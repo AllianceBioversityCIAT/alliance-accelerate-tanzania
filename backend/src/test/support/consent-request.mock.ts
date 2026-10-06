@@ -120,8 +120,37 @@ export function createConsentRequestMock(initial: ConsentRequestMockRow[] = []) 
   }
 
   const consentRequest = {
-    findMany: jest.fn(async (args: { where?: WhereClause } = {}) =>
-      rows.filter((r) => matchesClause(r, args.where ?? {})),
+    // T-6 — honours `orderBy` (createdAt/id, either direction) and `select`,
+    // so the evidence route's ordering and key set are exercised through the
+    // delegate and not just asserted on the call arguments.
+    findMany: jest.fn(
+      async (
+        args: {
+          where?: WhereClause;
+          orderBy?: Array<Record<string, 'asc' | 'desc'>>;
+          select?: Record<string, boolean>;
+        } = {},
+      ) => {
+        let matches = rows.filter((r) => matchesClause(r, args.where ?? {}));
+        for (const order of [...(args.orderBy ?? [])].reverse()) {
+          const [key, dir] = Object.entries(order)[0];
+          const sign = dir === 'desc' ? -1 : 1;
+          matches = [...matches].sort((a, b) => {
+            const av = (a as unknown as Record<string, unknown>)[key];
+            const bv = (b as unknown as Record<string, unknown>)[key];
+            const an = av instanceof Date ? av.getTime() : (av as string);
+            const bn = bv instanceof Date ? bv.getTime() : (bv as string);
+            return an < bn ? -sign : an > bn ? sign : 0;
+          });
+        }
+        if (args.select) {
+          const keys = Object.keys(args.select).filter((k) => args.select![k]);
+          return matches.map((r) =>
+            Object.fromEntries(keys.map((k) => [k, (r as unknown as Record<string, unknown>)[k]])),
+          );
+        }
+        return matches;
+      },
     ),
     // T-4 — the claim-loop selection: the OLDEST matching row (createdAt
     // ascending), mirroring `orderBy: { createdAt: 'asc' }`.

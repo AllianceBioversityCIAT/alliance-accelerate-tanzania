@@ -2624,7 +2624,7 @@ describe(
  *
  * Admin entries are leak assertions aimed at everyone who is not an Admin:
  * anonymous → `401` (exact, so a `@UseGuards` order inversion is caught),
- * Staff → `403`, both bodies swept. T-6 adds its admin routes' entries here.
+ * Staff → `403`, both bodies swept. T-6 added its two admin read routes' entries.
  *
  * Its own app, its own throttler storage: one request per public route, well
  * under the limit, and no counter shared with any other describe.
@@ -2803,6 +2803,17 @@ describe(
       [routeKey('GET', '/api/v1/admin/consent-requests/queue')]: adminEntry(
         'get',
         '/api/v1/admin/consent-requests/queue',
+      ),
+      // T-6 — the two read routes this module added (FR-14). Admin-only: the
+      // evidence body legitimately carries respondent PII, so the leak
+      // assertion is aimed at everyone who is not an Admin.
+      [routeKey('GET', '/api/v1/admin/actors/:id/consent-evidence')]: adminEntry(
+        'get',
+        '/api/v1/admin/actors/any-actor/consent-evidence',
+      ),
+      [routeKey('GET', '/api/v1/admin/consent-editions/:version')]: adminEntry(
+        'get',
+        '/api/v1/admin/consent-editions/v1.0',
       ),
     };
 

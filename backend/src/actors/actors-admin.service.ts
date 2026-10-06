@@ -328,12 +328,39 @@ export class ActorsAdminService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // D-26 (design.md §5.7a) — the FIRST statement in this transaction:
+        // lock the actor row before ANY read. Under InnoDB REPEATABLE READ a
+        // plain read taken before the lock fixes a stale snapshot that the
+        // locking read below would not refresh, so `before` must come after
+        // it. The same lock-first order as `respond` and enqueue (D-25), so
+        // the three cannot deadlock. The result is unused: a missing actor
+        // surfaces as the 404 on the `before` read.
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id, updatedAt FROM Actor WHERE id = ${id} FOR UPDATE`,
+        );
+
         const before = await tx.actor.findUnique({
           where: { id },
           include: CROPS_INCLUDE,
         });
         if (!before) {
           throw new NotFoundException(`Actor ${id} not found`);
+        }
+
+        // D-26 — stale-form protection. Compared as instants (never as
+        // strings), and only when the caller sent a version at all.
+        if (
+          dto.expectedUpdatedAt !== undefined &&
+          new Date(dto.expectedUpdatedAt).getTime() !== before.updatedAt.getTime()
+        ) {
+          const message =
+            'This record changed after you opened it. Reload the page and review the current values before saving again.';
+          throw new ConflictException({
+            statusCode: 409,
+            error: 'Conflict',
+            message,
+            details: [{ field: 'expectedUpdatedAt', message }],
+          });
         }
 
         // FR-1/NFR-1 — the merged-state required-set check (design.md §4.4,

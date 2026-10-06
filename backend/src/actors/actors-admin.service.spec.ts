@@ -1071,6 +1071,125 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actor.update).not.toHaveBeenCalled();
     }
 
+    // D-26 (consent-request-email, design.md §5.7a; FR-10 "a stale admin form
+    // cannot undo the actor's answer").
+    describe('expectedUpdatedAt — stale-form protection (D-26)', () => {
+      const LOADED_AT = new Date('2026-01-02T00:00:00Z');
+
+      function arrange(storedUpdatedAt: Date) {
+        const before = fixtureActor({ traderName: 'Old Name', updatedAt: storedUpdatedAt });
+        const after = fixtureActor({ traderName: 'New Name', updatedAt: new Date() });
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      }
+
+      it('a matching version proceeds exactly as an absent one (compared as instants, not strings)', async () => {
+        arrange(LOADED_AT);
+
+        const res = await service.update(
+          'actor-1',
+          // A different textual form of the SAME instant.
+          { traderName: 'New Name', expectedUpdatedAt: '2026-01-02T02:00:00.000+02:00' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(res.traderName).toBe('New Name');
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          // `expectedUpdatedAt` is a guard, never a column.
+          data: { traderName: 'New Name' },
+        });
+      });
+
+      it('a stale version is refused with 409 + field details and nothing is written', async () => {
+        arrange(new Date('2026-01-02T00:00:05Z'));
+
+        let caught: unknown;
+        try {
+          await service.update(
+            'actor-1',
+            { traderName: 'New Name', expectedUpdatedAt: LOADED_AT.toISOString() } as AdminActorUpdateDto,
+            ACTING_SUB,
+          );
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const body = (caught as ConflictException).getResponse() as Record<string, unknown>;
+        expect(body).toMatchObject({
+          statusCode: 409,
+          error: 'Conflict',
+          details: [{ field: 'expectedUpdatedAt', message: expect.any(String) }],
+        });
+        expect(typeof body.message).toBe('string');
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+        expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+        expect(prisma.consentRequest.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('a respond committed after the form loaded (updatedAt bumped) makes the admin save conflict', async () => {
+        // The actor answered via the link: Prisma's @updatedAt moved forward.
+        arrange(new Date('2026-01-03T09:30:00Z'));
+
+        await expect(
+          service.update(
+            'actor-1',
+            { consentStatus: ConsentStatus.DENIED, expectedUpdatedAt: LOADED_AT.toISOString() } as AdminActorUpdateDto,
+            ACTING_SUB,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+      });
+
+      it('an absent version keeps today\'s behaviour even when the stored row is "newer"', async () => {
+        arrange(new Date('2030-01-01T00:00:00Z'));
+
+        const res = await service.update(
+          'actor-1',
+          { traderName: 'New Name' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(res.traderName).toBe('New Name');
+        expect(prisma.actor.update).toHaveBeenCalledTimes(1);
+      });
+
+      it('the row lock is the FIRST statement in the transaction, before any read', async () => {
+        const order: string[] = [];
+        const realQueryRaw = prisma.$queryRaw.getMockImplementation();
+        prisma.$queryRaw.mockImplementation(async (arg: never) => {
+          const sql = Array.isArray(arg) ? (arg as string[]).join('?') : (arg as { sql: string }).sql;
+          order.push(sql.includes('FOR UPDATE') ? 'lock' : 'other-raw');
+          return realQueryRaw ? realQueryRaw(arg) : [];
+        });
+        let reads = 0;
+        prisma.actor.findUnique.mockImplementation(async () => {
+          order.push('read');
+          reads += 1;
+          return fixtureActor({ updatedAt: LOADED_AT });
+        });
+        prisma.actor.update.mockResolvedValue(fixtureActor({ updatedAt: LOADED_AT }));
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update('actor-1', { traderName: 'New Name' } as AdminActorUpdateDto, ACTING_SUB);
+
+        expect(reads).toBeGreaterThan(0);
+        expect(order[0]).toBe('lock');
+        const lockCall = prisma.$queryRaw.mock.calls.find((c) =>
+          (c[0] as { sql?: string }).sql?.includes('FOR UPDATE'),
+        );
+        expect((lockCall?.[0] as { sql: string }).sql).toMatch(
+          /^SELECT id, updatedAt FROM Actor WHERE id = \? FOR UPDATE$/,
+        );
+        expect((lockCall?.[0] as { values: unknown[] }).values).toEqual(['actor-1']);
+      });
+    });
+
     it('applies only submitted scalar fields and records a diff audit', async () => {
       const before = fixtureActor({
         traderName: 'Old Name',

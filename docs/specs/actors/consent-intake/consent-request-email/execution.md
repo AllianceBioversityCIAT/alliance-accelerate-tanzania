@@ -530,3 +530,73 @@ From here on:
 - **Forward pointer to T-6 (D-26):** the admin update's actor lock must be the transaction's **first** statement (§5.7a), the same InnoDB snapshot rule.
 
 - **Final verification:** VERIFIED.
+
+### T-6 — Evidence read, edition text, audit kinds and the immutability gate — **PASS** (attempt 1/3), 2026-10-06
+
+- **Leader choices:**
+  - Skills: `nestjs-expert`, `tdd`.
+  - Effort: `xhigh`, raised from `high` because the task now carries D-26.
+  - Review: two lens Reviewers.
+- **Requirements covered:**
+  - FR-13: retention for a deleted actor; no edit path, with its AND test.
+  - FR-14: server side.
+  - FR-10: the D-26 stale-form scenario.
+  - NFR-9.
+  - The requirements defect-class row "respond is the only `EMAIL_LINK` writer".
+  - QA-3 for the new routes.
+
+**Files changed**
+- **New:**
+  - `consent-requests/consent-evidence.service.ts` and its spec
+  - `actors/audit-entry.serializer.spec.ts`
+  - `test/consent-evidence-immutability.spec.ts`
+- **Modified:**
+  - `admin-consent-requests.controller.ts`: the prefix moved from `admin/consent-requests` to `admin`; every existing path is unchanged; the evidence and editions routes are added.
+  - `consent-requests.module.ts`
+  - `actors-admin.service.ts` (D-26: lock first, then a 409 on a stale `expectedUpdatedAt`) and its spec
+  - `dto/admin-actor-update.dto.ts` and the DTO spec
+  - `test/admin-actors-crud.e2e.spec.ts`
+  - `test/admin-consent-requests.e2e.spec.ts`
+  - `test/pii-boundary.spec.ts`
+  - `test/support/{actor-sequence,consent-request}.mock.ts`
+
+**Implementer verification:** 98 suites / 1686 tests. Lint, build and `tsc` clean.
+
+**Falsifiers (executed red):**
+
+| Mutation | Red |
+|---|---|
+| A scratch `consentRequest.update` | The owners tests |
+| `tokenHash` in the evidence select | The key-set tests |
+| `ACCEPTED` in the supersede `where` | The terminal tests |
+| A scratch `EMAIL_LINK` actor write | The single-writer sweep |
+| The D-26 comparison always false | The stale-version and respond-after-load tests |
+| A read placed before the lock | The order test |
+| A broken `EXPIRED` threshold | Its tests |
+| The PII fixtures removed | Totality |
+
+**Evidence re-run (Leader): VERIFIED.** 98 suites / 1686 tests. Lint, build and `tsc` OK.
+
+**Reviewers**
+
+| Lens | Verdict | Summary |
+|---|---|---|
+| A — D-26 / gates | **PASS** | The lock is the first transaction statement; the order test asserts `order[0] === 'lock'` directly. The 409 envelope matches §5.7a verbatim and nothing is written on conflict. The existing rule order is unchanged after the lock. The owner allowlist matches §5.8 as amended. Both sweeps fail closed against their scratch probes. |
+| B — API / evidence | **PASS** | The prefix change keeps all five existing paths, with no collisions with any `admin/*` or `users` controller. The evidence response carries every FR-14 field, with no `tokenHash` or `storageKey`. `EXPIRED` uses the same `<= now` boundary as the public path. The PII fixtures cover both new routes. The mock changes make no suite vacuous. |
+
+**Runtime events:** none.
+
+**ADVISORY (recorded, not dispatched):**
+1. The `EMAIL_LINK` single-writer sweep matches write syntax only. Indirection is invisible to it: a local variable, a helper return, a shorthand property, or `ConsentMethod['EMAIL_LINK']`. A fail-closed rewrite would flag every non-comparison reference.
+2. `claimAndSendOne`'s claim and result writes are not exercised against answered rows; the static check covers them.
+3. Nothing pins that only `dispatch` calls its private helpers.
+4. `expectedUpdatedAt: null` gives a spurious 409. `@IsOptional` lets `null` through, and the code checks `!== undefined`.
+5. A crops-only PATCH does not bump `Actor.updatedAt`, so a concurrent crops-only API edit goes undetected. The form always re-sends scalars, so the gap is limited to non-form callers.
+6. The order test records only two delegates.
+7. "`respond` bumps `updatedAt`" relies on Prisma's `@updatedAt`; nothing tests it.
+8. The mock's lock predicate is broader than D-26 needs.
+9. Evidence and the live link differ on a `SENT` row with a null `expiresAt`. No writer produces that state.
+
+**For T-11:** the evidence field list is in `consent-evidence.service.ts`, `ConsentRequestEvidence` / `ConsentDocumentEvidence`.
+
+- **Final verification:** VERIFIED.

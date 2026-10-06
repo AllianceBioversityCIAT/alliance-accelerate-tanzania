@@ -926,6 +926,47 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.email).toBe('director@example.com');
     });
 
+    // D-26 (consent-request-email, design.md §5.7a) — over the real pipe + filter.
+    it('D-26: accepts a matching expectedUpdatedAt, then 409s the same version once the row moved on, writing nothing', async () => {
+      const loadedAt = '2026-01-01T00:00:00.000Z'; // fixtureActor().updatedAt
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: loadedAt })
+        .expect(200);
+
+      // The first save bumped updatedAt; a second form still holding `loadedAt` is stale.
+      const stale = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Mbeya', expectedUpdatedAt: loadedAt })
+        .expect(409);
+
+      expect(stale.body).toMatchObject({
+        statusCode: 409,
+        error: 'Conflict',
+        details: [{ field: 'expectedUpdatedAt' }],
+      });
+
+      const current = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .expect(200);
+      expect(current.body.region).toBe('Dodoma');
+    });
+
+    it('D-26: a malformed expectedUpdatedAt is a field-level 400', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: 'not-a-date' })
+        .expect(400);
+      expect((res.body.details as { field: string }[]).map((d) => d.field)).toContain(
+        'expectedUpdatedAt',
+      );
+    });
+
     it('replaces crop assignments when crops is supplied', async () => {
       const res = await request(app.getHttpServer())
         .patch('/api/v1/admin/actors/actor-granted-1')

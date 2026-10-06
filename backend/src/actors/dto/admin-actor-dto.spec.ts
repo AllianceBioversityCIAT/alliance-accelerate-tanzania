@@ -303,3 +303,26 @@ describe('ActorHistoryQueryDto', () => {
     expect(dto.pageSize).toBe(100);
   });
 });
+
+// D-26 (consent-request-email, design.md §5.7a) — optional stale-form guard.
+describe('AdminActorUpdateDto.expectedUpdatedAt (D-26)', () => {
+  it('is optional: an update without it passes', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, { traderName: 'X' });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it('accepts an ISO-8601 instant', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      expectedUpdatedAt: '2026-10-06T08:15:30.123Z',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it.each(['yesterday', '2026-13-45T00:00:00Z', 12345, ''])(
+    'rejects %p',
+    async (value) => {
+      const dto = plainToInstance(AdminActorUpdateDto, { expectedUpdatedAt: value });
+      expect(await invalidProps(dto)).toContain('expectedUpdatedAt');
+    },
+  );
+});

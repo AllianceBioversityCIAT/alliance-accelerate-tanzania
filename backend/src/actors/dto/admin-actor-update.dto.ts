@@ -1,4 +1,4 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 import { ConsentMethod } from '@prisma/client';
 import { AdminActorCreateDto } from './admin-actor-create.dto';
@@ -38,4 +38,15 @@ export class AdminActorUpdateDto extends PartialType(AdminActorCreateDto) {
   @IsOptional()
   @IsIn(Object.values(ConsentMethod))
   consentMethod?: ConsentMethod;
+
+  /**
+   * D-26 (consent-request-email, design.md §5.7a) — the `updatedAt` of the
+   * record the form loaded. When present and different from the stored value
+   * (compared as instants), the update is refused with `409` and nothing is
+   * written. Optional on the server so existing callers keep working; never a
+   * persisted column (`SCALAR_FIELDS` does not list it).
+   */
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  expectedUpdatedAt?: string;
 }
