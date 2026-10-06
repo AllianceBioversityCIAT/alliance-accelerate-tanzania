@@ -26,6 +26,7 @@ import type { AdminActorCreateResult } from '@/lib/api/actors-admin';
 import { enqueueConsentRequests } from '@/lib/api/consent-requests-admin';
 import {
   BULK_SEND_COPY,
+  CONSENT_FAILURE_REASON_LABEL,
   CONSENT_SKIP_REASONS,
   CONSENT_SKIP_REASON_LABEL,
   SINGLE_SEND_COPY,
@@ -186,8 +187,17 @@ export function SendConsentPrompt({
               {phase === 'finished-with-problem' && (
                 <>
                   <span className="text-danger">
-                    {dispatch.state.failed > 0 ? SINGLE_SEND_COPY.notSentFailed : SINGLE_SEND_COPY.notSent}
+                    {dispatch.state.failed > 0
+                      ? dispatch.state.failures.length > 0
+                        ? SINGLE_SEND_COPY.notSentFailed
+                        : `${SINGLE_SEND_COPY.notSentFailed} ${SINGLE_SEND_COPY.notSentFailedRetry}`
+                      : SINGLE_SEND_COPY.notSent}
                   </span>
+                  {dispatch.state.failures.map((f) => (
+                    <span key={f.actorId} className="mt-1 block text-xs text-muted">
+                      {CONSENT_FAILURE_REASON_LABEL[f.reason]}
+                    </span>
+                  ))}
                   {dispatch.state.error && <span className="mt-1 block text-xs text-muted">{dispatch.state.error}</span>}
                 </>
               )}

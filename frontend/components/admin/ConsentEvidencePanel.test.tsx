@@ -118,6 +118,20 @@ describe('ConsentEvidencePanel — the auditor walk-through (FR-14)', () => {
     expect(text.getByText('Mozilla/5.0 (Test)')).toBeInTheDocument(); // UA
   });
 
+  it.each([
+    ['transport_rejected', /could not be delivered/i],
+    ['stale_claim', /may already have arrived/i],
+    ['timeout', /did not answer in time/i],
+  ])('shows a human label, not the raw code, for failureReason %s', async (code, label) => {
+    mockEvidence.mockResolvedValue({
+      requests: [{ ...EXPIRED, status: 'FAILED' as const, failureReason: code }],
+      documents: [],
+    });
+    renderPanel();
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.queryByText(code)).not.toBeInTheDocument();
+  });
+
   it('lists requests in the order the API returns them (newest first) and then the documents', async () => {
     renderPanel();
     await screen.findByText('Accepted');

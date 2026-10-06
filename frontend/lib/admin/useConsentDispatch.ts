@@ -26,6 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthFailureError } from '@/lib/api/client';
 import {
   dispatchConsentRequests,
+  type ConsentDispatchFailure,
   retryConsentRequests,
 } from '@/lib/api/consent-requests-admin';
 import { BULK_SEND_COPY } from '@/lib/content/consent-requests';
@@ -38,11 +39,13 @@ export interface ConsentDispatchState {
   sent: number;
   /** Failures of the CURRENT run only — a retried row leaves this count. */
   failed: number;
+  /** Which actors failed, and why — the current run only, deduped by actor. */
+  failures: ConsentDispatchFailure[];
   remaining: number;
   error?: string;
 }
 
-const IDLE: ConsentDispatchState = { phase: 'idle', sent: 0, failed: 0, remaining: 0 };
+const IDLE: ConsentDispatchState = { phase: 'idle', sent: 0, failed: 0, failures: [], remaining: 0 };
 
 export interface UseConsentDispatchOptions {
   token: string;
@@ -76,8 +79,9 @@ export function useConsentDispatch({ token, onAuthFailure }: UseConsentDispatchO
     async (batchId: string | undefined, startRemaining: number, baseSent: number) => {
       let sent = baseSent;
       let failed = 0;
+      let failures: ConsentDispatchFailure[] = [];
       let stalled = 0;
-      setState({ phase: 'running', sent, failed, remaining: startRemaining });
+      setState({ phase: 'running', sent, failed, failures, remaining: startRemaining });
 
       for (;;) {
         if (!mountedRef.current) return;
@@ -86,8 +90,10 @@ export function useConsentDispatch({ token, onAuthFailure }: UseConsentDispatchO
 
         sent += step.sent;
         failed += step.failed;
+        const fresh = (step.failures ?? []).filter((f) => !failures.some((g) => g.actorId === f.actorId));
+        if (fresh.length > 0) failures = [...failures, ...fresh];
         if (step.remaining === 0) {
-          setState({ phase: 'done', sent, failed, remaining: 0 });
+          setState({ phase: 'done', sent, failed, failures, remaining: 0 });
           return;
         }
 
@@ -97,12 +103,13 @@ export function useConsentDispatch({ token, onAuthFailure }: UseConsentDispatchO
             phase: 'error',
             sent,
             failed,
+            failures,
             remaining: step.remaining,
             error: BULK_SEND_COPY.stalled,
           });
           return;
         }
-        setState({ phase: 'running', sent, failed, remaining: step.remaining });
+        setState({ phase: 'running', sent, failed, failures, remaining: step.remaining });
       }
     },
     [token],
@@ -144,7 +151,7 @@ export function useConsentDispatch({ token, onAuthFailure }: UseConsentDispatchO
         const { queued } = await retryConsentRequests(opts.batchId ? { batchId: opts.batchId } : {}, token);
         if (!mountedRef.current) return;
         if (queued === 0) {
-          setState((prev) => ({ ...prev, phase: 'done', failed: 0, remaining: 0 }));
+          setState((prev) => ({ ...prev, phase: 'done', failed: 0, failures: [], remaining: 0 }));
           return;
         }
         await drive(opts.batchId, queued, stateSentRef.current);

@@ -306,7 +306,7 @@ describe('FR-13 evidence immutability gate (design.md §5.8)', () => {
         new ActorAuditService(),
         { sendConsentRequest } as never,
       );
-      expect(await service.dispatch({})).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(await service.dispatch({})).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       await expectAllWritesCountedZero(mock); // the stale-claim sweep ran, and matched nothing
       expect(sendConsentRequest).not.toHaveBeenCalled();
       expect(JSON.stringify(mock.getRows())).toBe(before);

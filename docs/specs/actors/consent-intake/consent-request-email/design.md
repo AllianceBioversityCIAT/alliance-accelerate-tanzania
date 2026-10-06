@@ -172,12 +172,12 @@ A filter target uses `buildAdminActorWhere(q)`, a pure function **extracted** fr
    - the send, bounded by `MAIL_SEND_TIMEOUT_MS` (3 s) **plus** `MAIL_LOCK_WAIT_TIMEOUT_MS` (0.2 s), which `mail-timing.ts` declares additive;
    - the result transaction, ≤ 0.5 s.
 
-   The worst case is 7.5 + 0.3 + 3.2 + 0.5 = **11.5 s**. That is within NFR-6's 12 s and under `Timeout: 15` (P-9, P-10). Dispatch returns `{ sent, failed, remaining }`.
+   The worst case is 7.5 + 0.3 + 3.2 + 0.5 = **11.5 s**. That is within NFR-6's 12 s and under `Timeout: 15` (P-9, P-10). Dispatch returns `{ sent, failed, remaining, failures: [{ actorId, traderName, reason }] }` (`reason`: `transport_rejected` | `timeout`; only this call's FAILED rows, no address).
 3. **Stale claim.** A `SENDING` row older than 2 minutes has an unknown outcome: the mail may or may not have left. It is marked `FAILED/stale_claim`, by a compare-and-set on `SENDING`, and **never auto-resent**. Retry is the admin's explicit act (FR-6: no silent double send).
 4. **Retry** `{ batchId? }` moves `FAILED → QUEUED` (all batches when omitted) and clears `tokenHash`. Eligibility is re-checked at claim (step 2.3). A resent email carries a new token, and any earlier link for that row dies.
 5. **Queue summary** `GET` returns `{ queued, failed }` across all batches, for the resume banner (FR-4 scenario "closing the tab").
 
-The browser loop (`useConsentDispatch`) calls dispatch until `remaining = 0`, showing `sent / failed / remaining`. One dispatch at a time per tab keeps the load to one Lambda concurrency slot of the 5 reserved (P-10).
+The browser loop (`useConsentDispatch`) calls dispatch until `remaining = 0`, showing `sent / failed / remaining`, and the result lists each failed actor by name with a reason sentence from `failures` (never the address). Retry resends to the same address; correcting an address supersedes the failed request, so a wrong address needs a new request. One dispatch at a time per tab keeps the load to one Lambda concurrency slot of the 5 reserved (P-10).
 
 ### 5.3 Token (NFR-1, FR-8)
 
@@ -325,7 +325,7 @@ All routes are under `/api/v1`. Admin routes use `@UseGuards(JwtAuthGuard, Roles
 | `POST consent/respond` | Public, throttled | `{ token, decision: 'ACCEPT'\|'DECLINE', respondent?, accepted? }` → `200 { decision }` · `400` field details · `404` uniform · `429` |
 | `POST admin/consent-requests/preview` | Admin | `{ target, scope: 'single'\|'bulk' }` → `{ total, toSend, skipped: Record<reason, number> }` · `400` field details (validation; `scope`/target mismatch) |
 | `POST admin/consent-requests` | Admin | same body → `201 { batchId, queued, skipped }` · `400` as preview |
-| `POST admin/consent-requests/dispatch` | Admin | `{ batchId? }` → `{ sent, failed, remaining }` |
+| `POST admin/consent-requests/dispatch` | Admin | `{ batchId? }` → `{ sent, failed, remaining, failures: [{ actorId, traderName, reason }] }` (`reason`: `transport_rejected` | `timeout`; only this call's FAILED rows, no address) |
 | `POST admin/consent-requests/retry` | Admin | `{ batchId? }` → `{ queued }` |
 | `GET admin/consent-requests/queue` | Admin | → `{ queued, failed }` |
 | `GET admin/consent-editions/:version` | Admin | → the edition text (for the panel's "read exact text") |
@@ -397,14 +397,14 @@ The body is built with `renderEmailHtml`:
 **Admin** (tokens only, existing primitives):
 - **Bulk send.** `BulkActionBar` gains `onSendConsent`. The actors page gains a **"Select all N matching"** strip when the whole page is selected. It is reachable in the card view too, through a "Select page" control below `lg`, since the header checkbox exists only in the table (P-24).
 
-  `SendConsentDialog` runs preview → confirm → progress (`aria-live="polite"`) → result. The result offers `Retry failed`. It is built on `DialogFooter` and `useDialogFocusTrap`, like `ConfirmDialog`.
+  `SendConsentDialog` runs preview → confirm → progress (`aria-live="polite"`) → result. The result lists each failed actor by name with a reason sentence (`CONSENT_FAILURE_REASON_LABEL`, from the dispatch response's `failures`, accumulated by `useConsentDispatch` and deduped by actor) and offers `Retry failed`. The single-send prompt shows the same sentence. `ConsentEvidencePanel` maps a stored `failureReason` through the same labels. It is built on `DialogFooter` and `useDialogFocusTrap`, like `ConfirmDialog`.
 
   The target is `{ kind: 'ids' }` or `{ kind: 'filter', filter: current URL filters }`.
 - **Queue banner.** `ConsentQueueBanner` sits on Admin → Actors. It reads `queue` and offers Resume / Retry when either count is above 0.
 - **Post-create prompt.** `SendConsentPrompt` on `new/page.tsx` replaces the bare navigate. It shows the duplicate warnings (when any) and the send question in one dialog and defaults to **Send**. The dialog then confirms in place, and nothing navigates silently (FR-3):
   - **Clean send:** "Consent request sent to <email>." with a focused **Continue to actors**.
   - **Queued 0:** the skip reason ("No consent request was sent: …") with Continue.
-  - **Failure:** an enqueue error keeps the question open with a **Try again** button; a dispatch failure says the request could not be sent: if it stays queued, it says to resume it from Actors; if it failed, it says to Retry it from Actors. Continue follows.
+  - **Failure:** an enqueue error keeps the question open with a **Try again** button; a dispatch failure says the request could not be sent: if it stays queued, it says to resume it from Actors; if it failed, it shows the reason sentence for the failure (a wrong address needs a corrected address and a new request; Retry resends to the same address), and the generic "Retry it from Actors" appears only when the response gave no reason. Continue follows.
   - **Not now:** navigates without sending. **Gate (B-13):** the send question renders only when the create result's `consentStatus !== 'GRANTED'`. A `GRANTED` create shows the warnings alone, or navigates as today. If a document was attached, the upload runs first. `ActorForm` itself is unchanged in its success path (P-25).
 - **Edit page.** It gains **Send consent request / Resend**, disabled with the FR-2 reason, and `ConsentEvidencePanel` with status badges from `lib/content/consent-requests.ts` (the total-`Record` pattern of `registration-status.ts`).
   - Times show in UTC with the qualifier, the `ConsentRecordCard` convention.

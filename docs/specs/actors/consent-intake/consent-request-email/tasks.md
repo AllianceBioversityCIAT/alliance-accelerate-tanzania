@@ -153,7 +153,7 @@ T-1…T-13 ─► T-14
   - **Traces:**
     - FR-4 (failure retryable; closing the tab, BUT none lost or twice — server)
     - FR-6 (both scenarios)
-    - FR-7 (all three scenarios, including the AND MUST NOT on the subject)
+    - FR-7 (the three message scenarios, including the AND MUST NOT on the subject; the fourth, a failed send naming the actor, was added by R-F)
     - FR-8 (validity window minted)
     - FR-13 (*consent requested* trail entry)
     - NFR-1 (minting, storage, no log)
@@ -558,7 +558,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 | FR-4 filter changed | T-3 |
 | FR-5 eligible-only count · nothing created · BUT only this commit · the preview fails (offer without a count) | T-10 (T-3 preview; failed-preview fallback: R-A) |
 | FR-6 crash · concurrent tabs | T-4 |
-| FR-7 fixed subject + AND MUST NOT · fragment link · no token in logs | T-4 (send), T-5 (respond logs) |
+| FR-7 fixed subject + AND MUST NOT · fragment link · no token in logs · a failed send names the actor and why + AND MUST NOT | T-4 (send), T-5 (respond logs); failed-send result: R-F (server T-4 contract, UI T-9/T-10) |
 | FR-8 30-day window minted | T-4 |
 | FR-8 day 30 vs 31 · used + AND no second change | T-5 |
 | FR-9 public set (incl. GPS as-if-granted) · identity required + AND API · decline needs nothing | T-5 (server), T-8 (UI) |

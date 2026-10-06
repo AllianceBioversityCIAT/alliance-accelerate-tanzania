@@ -60,10 +60,21 @@ export interface ConsentRequestEnqueueResult {
   skipped: Record<ConsentSkipReason, number>;
 }
 
+/** Why a send THIS call attempted failed — coarse and non-PII (never the address or raw error). */
+export type ConsentDispatchFailureReason = 'transport_rejected' | 'timeout';
+
+export interface ConsentDispatchFailure {
+  actorId: string;
+  traderName: string;
+  reason: ConsentDispatchFailureReason;
+}
+
 export interface ConsentRequestDispatchResult {
   sent: number;
   failed: number;
   remaining: number;
+  /** Rows THIS call marked FAILED (not stale-claim sweeps); `failed === failures.length`. */
+  failures: ConsentDispatchFailure[];
 }
 
 export interface ConsentRequestRetryResult {
@@ -246,6 +257,7 @@ export class ConsentRequestsService {
 
     let sent = 0;
     let failed = 0;
+    const failures: ConsentDispatchFailure[] = [];
 
     for (;;) {
       if (Date.now() - startedAt >= DISPATCH_CLAIM_BUDGET_MS) {
@@ -262,9 +274,9 @@ export class ConsentRequestsService {
         break;
       }
 
-      const outcome = await this.claimAndSendOne(next);
+      const outcome = await this.claimAndSendOne(next, failures);
       if (outcome === 'sent') sent += 1;
-      if (outcome === 'failed') failed += 1;
+      if (outcome === 'failed') failed += 1; // its entry was pushed to `failures`
       // 'claimed-by-other' and 'superseded' are neither — the row moved
       // under us (another dispatch call, a resend, or an admin edit) and is
       // left exactly as that other write left it.
@@ -281,7 +293,7 @@ export class ConsentRequestsService {
       `consent-request dispatch batchId=${batchId ?? 'all'} sent=${sent} failed=${failed} remaining=${remaining} elapsedMs=${elapsedMs}`,
     );
 
-    return { sent, failed, remaining };
+    return { sent, failed, remaining, failures };
   }
 
   /**
@@ -293,6 +305,7 @@ export class ConsentRequestsService {
    */
   private async claimAndSendOne(
     row: DispatchRow,
+    failures: ConsentDispatchFailure[],
   ): Promise<'sent' | 'failed' | 'superseded' | 'claimed-by-other'> {
     const claimedAt = new Date();
     const token = generateConsentToken();
@@ -341,13 +354,16 @@ export class ConsentRequestsService {
     try {
       await this.mailService.sendConsentRequest(row.recipientEmail, token, row.traderName);
     } catch (err) {
+      const reason = classifyDispatchFailure(err);
       const updated = await this.prisma.consentRequest.updateMany({
         where: { id: row.id, status: ConsentRequestStatus.SENDING },
-        data: { status: ConsentRequestStatus.FAILED, failureReason: classifyDispatchFailure(err) },
+        data: { status: ConsentRequestStatus.FAILED, failureReason: reason },
       });
       // count === 0 — an admin superseded this row while the send was in
       // flight. It stays SUPERSEDED; the failure is simply not recorded.
-      return updated.count === 1 ? 'failed' : 'superseded';
+      if (updated.count === 0) return 'superseded';
+      failures.push({ actorId: row.actorId, traderName: row.traderName, reason });
+      return 'failed';
     }
 
     const sentAt = new Date();
@@ -535,7 +551,7 @@ export class ConsentRequestsService {
  * reason too: a transport error's own `message` can carry the recipient
  * address, so it is NEVER persisted — only this coarse classification is).
  */
-function classifyDispatchFailure(err: unknown): string {
+function classifyDispatchFailure(err: unknown): ConsentDispatchFailureReason {
   const name = err instanceof Error ? err.name : '';
   return /timeout/i.test(name) ? 'timeout' : 'transport_rejected';
 }

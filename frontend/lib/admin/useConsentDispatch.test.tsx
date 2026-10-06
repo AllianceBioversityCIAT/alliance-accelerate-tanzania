@@ -42,7 +42,56 @@ describe('useConsentDispatch', () => {
 
     expect(mockDispatch).toHaveBeenCalledTimes(3);
     expect(mockDispatch).toHaveBeenCalledWith({ batchId: 'b1' }, TOKEN);
-    expect(result.current.state).toEqual({ phase: 'done', sent: 29, failed: 2, remaining: 0 });
+    expect(result.current.state).toEqual({ phase: 'done', sent: 29, failed: 2, failures: [], remaining: 0 });
+  });
+
+  it('accumulates failures across steps, deduped by actor, and clears them when Retry succeeds', async () => {
+    const a = { actorId: 'a1', traderName: 'Actor One', reason: 'transport_rejected' as const };
+    const b = { actorId: 'a2', traderName: 'Actor Two', reason: 'timeout' as const };
+    mockDispatch
+      .mockResolvedValueOnce({ sent: 0, failed: 1, remaining: 1, failures: [a] })
+      .mockResolvedValueOnce({ sent: 0, failed: 2, remaining: 0, failures: [a, b] });
+    const { result } = renderHook(() => useConsentDispatch({ token: TOKEN }));
+
+    await act(async () => {
+      await result.current.start({ batchId: 'b1', initialRemaining: 3 });
+    });
+    expect(result.current.state.failures).toEqual([a, b]);
+
+    mockRetry.mockResolvedValueOnce({ queued: 2 });
+    mockDispatch.mockResolvedValueOnce({ sent: 2, failed: 0, remaining: 0, failures: [] });
+    await act(async () => {
+      await result.current.retryFailed({ batchId: 'b1' });
+    });
+    expect(result.current.state.failures).toEqual([]);
+  });
+
+  it('a row that fails again on Retry is listed once, with the new reason', async () => {
+    mockDispatch.mockResolvedValueOnce({
+      sent: 0,
+      failed: 1,
+      remaining: 0,
+      failures: [{ actorId: 'a1', traderName: 'Actor One', reason: 'transport_rejected' }],
+    });
+    const { result } = renderHook(() => useConsentDispatch({ token: TOKEN }));
+    await act(async () => {
+      await result.current.start({ batchId: 'b1', initialRemaining: 1 });
+    });
+
+    mockRetry.mockResolvedValueOnce({ queued: 1 });
+    mockDispatch.mockResolvedValueOnce({
+      sent: 0,
+      failed: 1,
+      remaining: 0,
+      failures: [{ actorId: 'a1', traderName: 'Actor One', reason: 'timeout' }],
+    });
+    await act(async () => {
+      await result.current.retryFailed({ batchId: 'b1' });
+    });
+
+    expect(result.current.state.failures).toEqual([
+      { actorId: 'a1', traderName: 'Actor One', reason: 'timeout' },
+    ]);
   });
 
   it('omits batchId when resuming across all batches', async () => {
@@ -121,7 +170,7 @@ describe('useConsentDispatch', () => {
 
     expect(mockRetry).toHaveBeenCalledWith({ batchId: 'b1' }, TOKEN);
     expect(mockRetry.mock.invocationCallOrder[0]).toBeLessThan(mockDispatch.mock.invocationCallOrder[1]);
-    expect(result.current.state).toEqual({ phase: 'done', sent: 49, failed: 1, remaining: 0 });
+    expect(result.current.state).toEqual({ phase: 'done', sent: 49, failed: 1, failures: [], remaining: 0 });
   });
 
   it('a retry that re-queues nothing settles with no dispatch', async () => {

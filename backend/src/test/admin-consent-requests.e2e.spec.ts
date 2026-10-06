@@ -532,7 +532,7 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
         .send({ batchId })
         .expect(200);
 
-      expect(res.body).toEqual({ sent: 1, failed: 0, remaining: 0 });
+      expect(res.body).toEqual({ sent: 1, failed: 0, remaining: 0, failures: [] });
       expect(mailServiceMock.sendConsentRequest).toHaveBeenCalledTimes(1);
       const [to, token] = mailServiceMock.sendConsentRequest.mock.calls[0];
       expect(to).toBe('e1@example.com');
@@ -569,7 +569,10 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
         .set(admin)
         .send({ batchId })
         .expect(200);
-      expect(dispatchRes.body).toEqual({ sent: 0, failed: 1, remaining: 0 });
+      expect(dispatchRes.body).toMatchObject({ sent: 0, failed: 1, remaining: 0 });
+      expect(dispatchRes.body.failures).toEqual([
+        { actorId: 'a-eligible-2', traderName: expect.any(String), reason: 'transport_rejected' },
+      ]);
 
       const failedRow = prismaMock.getConsentRequestRows().find((r) => r.actorId === 'a-eligible-2');
       expect(failedRow?.status).toBe('FAILED');

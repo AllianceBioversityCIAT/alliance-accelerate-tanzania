@@ -81,10 +81,21 @@ export interface ConsentRequestEnqueueResult {
   skipped: ConsentSkipCounts;
 }
 
+/** Mirrors `ConsentDispatchFailureReason` on the backend (non-PII, coarse). */
+export type ConsentDispatchFailureReason = 'transport_rejected' | 'timeout';
+
+export interface ConsentDispatchFailure {
+  actorId: string;
+  traderName: string;
+  reason: ConsentDispatchFailureReason;
+}
+
 export interface ConsentRequestDispatchResult {
   sent: number;
   failed: number;
   remaining: number;
+  /** The rows this step marked FAILED; `failed === failures.length`. */
+  failures: ConsentDispatchFailure[];
 }
 
 export interface ConsentRequestRetryResult {

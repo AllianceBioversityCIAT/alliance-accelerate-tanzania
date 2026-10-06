@@ -9,6 +9,7 @@
  */
 
 import type {
+  ConsentDispatchFailureReason,
   ConsentRequestEvidenceStatus,
   ConsentSkipReason,
 } from '@/lib/api/consent-requests-admin';
@@ -154,6 +155,24 @@ export const CONSENT_REQUEST_STATUS_BADGE_CLASSES: Record<ConsentRequestEvidence
   EXPIRED: 'bg-surface-alt text-warning',
 };
 
+/**
+ * What an admin should do about a failed send, by the reason code. Retry
+ * resends to the SAME address: correcting the address supersedes the failed
+ * request, so the fix for a wrong address is a new request, not Retry.
+ */
+export const CONSENT_FAILURE_REASON_LABEL: Record<ConsentDispatchFailureReason | 'stale_claim', string> = {
+  transport_rejected:
+    'The message could not be delivered. If the email address is wrong, correct it on the actor and send a new consent request (Retry resends to the same address). If many failed at once, the mail service may be unavailable.',
+  timeout:
+    'The mail service did not answer in time; the email may still have arrived. Retry only if the actor did not receive it.',
+  stale_claim:
+    'Sending was interrupted; the email may already have arrived. Retry only if the actor did not receive it.',
+};
+
+/** Label for a stored `failureReason`; falls back to the raw code only for a code this map does not know. */
+export const consentFailureReasonLabel = (reason: string): string =>
+  (CONSENT_FAILURE_REASON_LABEL as Record<string, string>)[reason] ?? reason;
+
 /** Copy for the bulk send dialog and the resume banner. */
 export const BULK_SEND_COPY = {
   actionLabel: 'Send consent request',
@@ -165,6 +184,7 @@ export const BULK_SEND_COPY = {
   sendProgressTitle: 'Sending consent requests',
   resultTitle: 'Consent requests sent',
   retryFailed: 'Retry failed',
+  failuresHeading: 'Actors that failed',
   closeLater:
     'You can close this window: sending continues and its progress stays on the Actors page. Unsent requests stay queued and can be resumed.',
   stalled:
@@ -190,7 +210,8 @@ export const SINGLE_SEND_COPY = {
   continueToActors: 'Continue to actors',
   tryAgain: 'Try again',
   notSent: 'The consent request was recorded but could not be sent. It stays queued; resume it from Actors.',
-  notSentFailed: 'The consent request could not be sent. Retry it from Actors.',
+  notSentFailed: 'The consent request could not be sent.',
+  notSentFailedRetry: 'Retry it from Actors.',
   sentConfirmation: (email: string) => `Consent request sent to ${email}.`,
   notQueued: (reasons: string[]) =>
     reasons.length > 0

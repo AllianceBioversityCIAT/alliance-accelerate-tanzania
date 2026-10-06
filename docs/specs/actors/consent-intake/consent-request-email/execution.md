@@ -1323,3 +1323,47 @@ Everything else was confirmed:
 **Advisories (not applied):**
 - On the stalled and `sendFailed` paths, the canned hook text repeats the "resume from Actors" instruction.
 - `failed > 0` together with an error cannot occur for a single send.
+
+### R-F — The send result names each failed actor and why — **PASS** (attempt 3)
+
+**Product owner finding (local testing, 2026-10-06):**
+- A bulk send to a non-existent address ended `FAILED` / `transport_rejected`.
+- The dialog showed only "Failed: 1", with no actor and no reason.
+
+**Change:**
+- **Backend.** `dispatch` returns `failures: [{ actorId, traderName, reason }]` for the rows this call marked `FAILED`.
+  - `traderName` comes from the request snapshot.
+  - It never carries the address or the raw error text.
+  - Stale-claim sweeps and superseded rows are excluded.
+- **Frontend.**
+  - `useConsentDispatch` accumulates the failures. It dedupes by actor, resets per run, and clears on a successful Retry.
+  - `SendConsentDialog` lists "Actors that failed" with a reason sentence for each.
+  - `SendConsentPrompt` shows the reason sentence.
+  - `ConsentEvidencePanel` uses the same labels instead of the raw code.
+- **Labels:**
+  - `transport_rejected`: correct the address on the actor and send a **new** request, because Retry resends to the same address; a mass failure may mean the mail service is down.
+  - `timeout` and `stale_claim`: the email may already have arrived, so Retry only if it was not received.
+- **Docs:**
+  - FR-7 gains the scenario "a failed send names the actor and why" (AND MUST NOT show the address or the raw error).
+  - Its coverage row is owned by R-F.
+  - Updated: spec design §5.2, the API table and §7.3; TRD dispatch shape; UX §4 dialog and prompt rows.
+
+**Attempt history:**
+1. **Reviewer FAIL.**
+   - The advice "correct it, then use Retry" was wrong: an email edit supersedes the `FAILED` row, so Retry sends nothing and the dialog then reads as a success.
+   - Advisories: no `stale_claim` label; `transport_rejected` overclaimed the cause; the superseded-mid-send path was untested; the heading could contradict the tally; tests were missing; FR-7 had no acceptance clause.
+2. **Implementer rework** (effort raised to high): every item applied.
+   - Falsifier: moving `failures.push` above `count === 0` reddens the new test.
+   - Backend 1754 tests; frontend 2023; lint and tsc clean.
+   - **Reviewer FAIL** on closure: the new FR-7 scenario had no owner in `tasks.md`, and spec design §7.3 and UX §4 still said "Retry it from Actors" for FAILED.
+3. **Leader-authored (docs and copy only):**
+   - `tasks.md` T-4 traces and the FR-7 coverage row;
+   - spec design §7.3 and UX §4: the reason sentence, with the generic Retry text only when no reason came back;
+   - the `timeout` label names the double-send risk.
+
+   **Reviewer re-check: PASS.** The Leader then added the `timeout` case to the `ConsentEvidencePanel` label test (Reviewer advisory 2).
+
+**Leader gates (quiet tree):**
+- Frontend: full suite 131 suites / 2024 tests pass; tsc clean.
+- Backend: `src/consent-requests` 119/119 (backend code unchanged since attempt 2's full run of 1754).
+- Builds: not run, because the product owner's dev servers were running. They run before the next commit that changes code paths, or in CI.

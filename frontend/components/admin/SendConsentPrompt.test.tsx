@@ -106,6 +106,19 @@ describe('SendConsentPrompt — confirmation (C-17, FR-3)', () => {
     expect(screen.getByRole('button', { name: /continue to actors/i })).toBeInTheDocument();
   });
 
+  it('a failed send shows why, in the status region', async () => {
+    mockDispatch.mockResolvedValue({
+      sent: 0,
+      failed: 1,
+      remaining: 0,
+      failures: [{ actorId: 'a1', traderName: 'Actor', reason: 'transport_rejected' }],
+    });
+    render(<Harness />);
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/could not be delivered/i));
+  });
+
   it('a dispatch that errors keeps the resume guidance AND shows the error as detail', async () => {
     mockDispatch.mockRejectedValue(new Error('Mail service unreachable'));
     render(<Harness />);

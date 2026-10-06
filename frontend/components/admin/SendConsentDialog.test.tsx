@@ -186,6 +186,27 @@ describe('SendConsentDialog — progress and result', () => {
     expect(screen.queryByRole('button', { name: 'Retry failed' })).not.toBeInTheDocument();
   });
 
+  it('lists each failed actor by name with a human reason under the Failed tally', async () => {
+    mockDispatch.mockResolvedValueOnce({
+      sent: 48,
+      failed: 2,
+      remaining: 0,
+      failures: [
+        { actorId: 'a1', traderName: 'Mbeya Seeds Ltd', reason: 'transport_rejected' },
+        { actorId: 'a2', traderName: 'Arusha Agro', reason: 'timeout' },
+      ],
+    });
+    renderDialog();
+    await confirmed();
+    fireEvent.click(screen.getByRole('button', { name: 'Send 50 requests' }));
+
+    const list = await screen.findByRole('list');
+    expect(list).toHaveTextContent('Mbeya Seeds Ltd');
+    expect(list).toHaveTextContent(/could not be delivered/i);
+    expect(list).toHaveTextContent('Arusha Agro');
+    expect(list).toHaveTextContent(/did not answer in time/i);
+  });
+
   it('offers no Retry failed when nothing failed', async () => {
     mockDispatch.mockResolvedValueOnce({ sent: 50, failed: 0, remaining: 0 });
     renderDialog();

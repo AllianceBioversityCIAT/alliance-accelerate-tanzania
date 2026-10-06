@@ -197,6 +197,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
   - **Scenario: fixed subject.** GIVEN any two requests for different actors, WHEN their messages are built, THEN their subjects are byte-identical. AND IT MUST NOT contain the trader name, the address, the token, or the request id.
   - **Scenario: the link carries the token only in the fragment.** GIVEN a built message, WHEN its link is parsed, THEN the token appears only after `#`, and the path and query carry no token or identifier.
   - **Scenario: no token in logs.** GIVEN a send succeeds or fails, WHEN the backend logs it, THEN no log line contains the token or the recipient address.
+  - **Scenario: a failed send names the actor and why.** GIVEN a send fails, WHEN the admin sees the result, THEN it names each failed actor with a human reason sentence. AND IT MUST NOT show the recipient address or the raw error text.
 - **PII/RBAC impact:** The body names the organization and goes only to that actor's address. The subject goes to Slack and so carries nothing identifying.
 
 ### FR-8: The link

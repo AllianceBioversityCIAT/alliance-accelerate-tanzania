@@ -559,7 +559,7 @@ describe('ConsentRequestsService', () => {
 
       const result = await service.dispatch({});
 
-      expect(result).toEqual({ sent: 1, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 1, failed: 0, remaining: 0, failures: [] });
       expect(mailService.sendConsentRequest).toHaveBeenCalledTimes(1);
       const [to, token, orgName] = (mailService.sendConsentRequest as jest.Mock).mock.calls[0];
       expect(to).toBe('a1@example.com');
@@ -594,13 +594,30 @@ describe('ConsentRequestsService', () => {
       expect(auditedRow).toMatchObject({ id: 'req-1', actorId: 'a1' });
     });
 
+    it('a timeout throw is reported with reason "timeout"', async () => {
+      const err = new Error('took too long to reach 10.0.0.1');
+      err.name = 'TimeoutError';
+      (mailService.sendConsentRequest as jest.Mock).mockRejectedValueOnce(err);
+      const { prisma } = buildDispatchHarness([ELIGIBLE_ACTOR], [queuedRow({})]);
+
+      const result = await buildService(prisma).dispatch({});
+
+      expect(result.failures).toEqual([{ actorId: 'a1', traderName: 'Actor One', reason: 'timeout' }]);
+    });
+
     it('a transport throw gives FAILED with a non-PII code; retry then requeues it, clearing tokenHash', async () => {
       (mailService.sendConsentRequest as jest.Mock).mockRejectedValueOnce(new Error('ECONNREFUSED 10.0.0.1'));
       const { prisma, getRows } = buildDispatchHarness([ELIGIBLE_ACTOR], [queuedRow({})]);
       const service = buildService(prisma);
 
       const result = await service.dispatch({});
-      expect(result).toEqual({ sent: 0, failed: 1, remaining: 0 });
+      expect(result).toEqual({
+        sent: 0,
+        failed: 1,
+        remaining: 0,
+        failures: [{ actorId: 'a1', traderName: 'Actor One', reason: 'transport_rejected' }],
+      });
+      expect(JSON.stringify(result.failures)).not.toMatch(/@|ECONNREFUSED|10\.0\.0\.1/);
 
       const failedRow = getRows()[0];
       expect(failedRow.status).toBe('FAILED');
@@ -623,7 +640,7 @@ describe('ConsentRequestsService', () => {
 
       const result = await service.dispatch({});
 
-      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
       expect(getRows()[0].status).toBe('SUPERSEDED');
     });
@@ -637,7 +654,7 @@ describe('ConsentRequestsService', () => {
 
       const result = await service.dispatch({});
 
-      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
       expect(actorAuditService.logConsentRequested).not.toHaveBeenCalled();
       expect(getRows()[0].status).toBe('SUPERSEDED');
@@ -649,7 +666,7 @@ describe('ConsentRequestsService', () => {
 
       const result = await service.dispatch({});
 
-      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
       expect(actorAuditService.logConsentRequested).not.toHaveBeenCalled();
       expect(getRows()[0].status).toBe('SUPERSEDED');
@@ -694,7 +711,7 @@ describe('ConsentRequestsService', () => {
       const result = await service.dispatch({});
 
       expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
-      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       const row = getRows()[0];
       expect(row.status).toBe('FAILED');
       expect(row.failureReason).toBe('stale_claim');
@@ -718,9 +735,25 @@ describe('ConsentRequestsService', () => {
 
       const result = await service.dispatch({});
 
-      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
       expect(getRows()[0].status).toBe('SUPERSEDED');
       expect(actorAuditService.logConsentRequested).not.toHaveBeenCalled();
+    });
+
+    it('a send that THROWS after the row was superseded mid-send reports no failure (falsifier: failures.push above the count check)', async () => {
+      const { prisma, getRows } = buildDispatchHarness([ELIGIBLE_ACTOR], [queuedRow({})]);
+      (mailService.sendConsentRequest as jest.Mock).mockImplementationOnce(async () => {
+        await prisma.consentRequest.updateMany({
+          where: { id: 'req-1', status: 'SENDING' },
+          data: { status: 'SUPERSEDED', supersededAt: new Date() },
+        });
+        throw new Error('broker down');
+      });
+
+      const result = await buildService(prisma).dispatch({});
+
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0, failures: [] });
+      expect(getRows()[0].status).toBe('SUPERSEDED');
     });
 
     it(

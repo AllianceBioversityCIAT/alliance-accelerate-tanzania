@@ -41,6 +41,7 @@ import {
   SINGLE_SEND_COPY,
   CONSENT_SKIP_REASONS,
   CONSENT_SKIP_REASON_LABEL,
+  CONSENT_FAILURE_REASON_LABEL,
 } from '@/lib/content/consent-requests';
 import type { ConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import { useDialogFocusTrap } from '@/lib/admin/useDialogFocusTrap';
@@ -285,7 +286,7 @@ export function SendConsentDialog({
     );
   } else {
     // stage.name === 'sending' — progress, then result, driven by the hook.
-    const { sent, failed, remaining, error } = dispatch.state;
+    const { sent, failed, failures, remaining, error } = dispatch.state;
     const skippedTotal = sumSkipped(stage.skipped);
     const running = dispatchPhase === 'running' || (dispatchPhase === 'idle' && stage.queued > 0);
     const settled = sent + failed;
@@ -330,6 +331,19 @@ export function SendConsentDialog({
               <Tally label="Failed" value={failed} tone={failed > 0 ? 'text-danger' : 'text-fg'} />
             </dl>
           </div>
+          {failures.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-fg">{BULK_SEND_COPY.failuresHeading}</h3>
+              <ul className="mt-2 divide-y divide-border rounded-md border border-border text-sm">
+                {failures.map((f) => (
+                  <li key={f.actorId} className="px-3 py-2">
+                    <p className="font-medium text-fg">{f.traderName}</p>
+                    <p className="text-xs text-muted">{CONSENT_FAILURE_REASON_LABEL[f.reason]}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {halted && remaining > 0 && (
             <p className="mt-3 text-sm text-muted">
               {remaining} {plural(remaining, 'request stays', 'requests stay')} queued and can be resumed from Actors.

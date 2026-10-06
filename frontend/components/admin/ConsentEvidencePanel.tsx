@@ -40,6 +40,7 @@ import {
   CONSENT_REQUEST_STATUS_BADGE_CLASSES,
   CONSENT_REQUEST_STATUS_LABEL,
   EVIDENCE_PANEL_COPY,
+  consentFailureReasonLabel,
 } from '@/lib/content/consent-requests';
 import Skeleton from '@/components/ui/Skeleton';
 import { ConsentDocumentField } from '@/components/admin/ConsentDocumentField';
@@ -185,7 +186,7 @@ function RequestCard({ request, editionOpen, editionState, onToggleEdition }: Re
             {editionOpen ? EVIDENCE_PANEL_COPY.hideText : EVIDENCE_PANEL_COPY.readText}
           </button>
         </Row>
-        {request.failureReason && <Row label="Failure">{request.failureReason}</Row>}
+        {request.failureReason && <Row label="Failure">{consentFailureReasonLabel(request.failureReason)}</Row>}
       </dl>
 
       <div id={textId} className="mt-3 empty:hidden">
