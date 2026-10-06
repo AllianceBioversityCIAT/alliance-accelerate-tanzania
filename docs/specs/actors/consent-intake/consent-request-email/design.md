@@ -438,8 +438,8 @@ Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-sur
 **`ConsentDocumentsBucketPolicy`** denies `aws:SecureTransport=false`.
 
 **`ConsentDocumentsLogBucket`** (R-G)
-- `BucketName !Sub "${AWS::StackName}-consent-docs-logs-${AWS::AccountId}"`; all four Block Public Access settings; `BucketOwnerEnforced`; `AES256` (log delivery does not support SSE-KMS); no versioning.
-- One lifecycle rule expiring objects after 365 d.
+- `BucketName !Sub "${AWS::StackName}-consent-docs-logs-${AWS::AccountId}"`; all four Block Public Access settings; `BucketOwnerEnforced`; `AES256` (log delivery does not support SSE-KMS); versioning on (S6252), with noncurrent versions expiring 1 day after the 365-day expiry. Versioning here clears the scanner rule; it is not a tamper-protection control (a deleted log object is gone after about a day).
+- One lifecycle rule expiring objects after 365 d and noncurrent versions 1 d later.
 - `Retain` + `Retain`; the same two tags.
 - `ConsentDocumentsLogBucketPolicy`: allow `logging.s3.amazonaws.com` `s3:PutObject` on `<logbucket>/access/*` with `aws:SourceArn` = the documents bucket ARN and `aws:SourceAccount` = `${AWS::AccountId}`; plus the same TLS-only deny.
 - The `ApiFunction` role has no statement on it.

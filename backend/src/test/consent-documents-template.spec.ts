@@ -157,13 +157,17 @@ describe('infra/20-backend ConsentDocumentsLogBucket (S3 access logging, S6258)'
     expect(logProps.BucketEncryption.ServerSideEncryptionConfiguration).toEqual([
       { ServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
     ]);
-    expect(logProps.VersioningConfiguration).toBeUndefined();
+    expect(logProps.VersioningConfiguration).toEqual({ Status: 'Enabled' });
   });
 
   it('expires logs after 365 days with a single rule', () => {
     const rules = logProps.LifecycleConfiguration.Rules as Node[];
     expect(rules).toHaveLength(1);
-    expect(rules[0]).toMatchObject({ Status: 'Enabled', ExpirationInDays: 365 });
+    expect(rules[0]).toMatchObject({
+      Status: 'Enabled',
+      ExpirationInDays: 365,
+      NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+    });
   });
 
   it('policy lets only the S3 logging service put access/* for this bucket and account, and denies non-TLS', () => {

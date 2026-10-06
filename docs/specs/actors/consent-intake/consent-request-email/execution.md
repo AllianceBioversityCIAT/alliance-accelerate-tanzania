@@ -1429,3 +1429,30 @@ Everything else was confirmed:
 - `SendConsentDialog` `:311` and `:335` text-only `role="status"`, if SonarCloud lists them.
 - TRD §8 `:264` names only the docs bucket; it defers to `infrastructure.md` §2.
 - Log delivery is proven only by T-14 step 2.
+
+### R-H — SonarCloud follow-up: S6252 on the log bucket — **PASS** (attempt 1, Leader-authored)
+
+**Trigger:** the re-analysis at `e765ad9` left the gate at:
+- security B: cloudformation S6252, "disabling versioning" on `ConsentDocumentsLogBucket`;
+- S3358 and S6551 at `consent-public.fixture.ts:82`.
+
+Reliability is now A. Ten items remain open: these three, plus the eight accepted R-G items.
+
+**Change:**
+- **`ConsentDocumentsLogBucket`:**
+  - `VersioningConfiguration: Enabled`;
+  - the single lifecycle rule adds `NoncurrentVersionExpiration: 1 day` next to `ExpirationInDays: 365`;
+  - the template test pins both.
+  - This supersedes the R-G entry's "no versioning".
+- **Fixture:** the nested ternary is replaced by a `sweepString` helper. Output is the same for every `NEVER_PUBLIC_FIELDS` value type.
+- **Docs:** `docs/infrastructure.md` §2 and design §7.4 are updated. Design now states that versioning here clears the scanner rule and is not a tamper-protection control.
+
+**Reviewer: PASS.**
+- The lifecycle is valid (the docs bucket uses the same pattern).
+- Expired-object delete markers are cleaned by S3 because the rule sets `Days`. About a year's worth of zero-byte markers is carried, which is negligible.
+- Versioning does not block access-log delivery.
+
+**Gates:**
+- `validate.sh` green;
+- backend 103 suites / 1759 tests;
+- eslint and tsc clean.

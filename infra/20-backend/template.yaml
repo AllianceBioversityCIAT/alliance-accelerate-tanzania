@@ -310,11 +310,15 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
       LifecycleConfiguration:
         Rules:
           - Id: expire-access-logs
             Status: Enabled
             ExpirationInDays: 365
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
       Tags:
         - Key: project
           Value: accelerate-tz
