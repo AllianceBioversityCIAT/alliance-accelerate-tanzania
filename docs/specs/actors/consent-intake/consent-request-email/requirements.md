@@ -36,6 +36,7 @@ D-1…D-14 are inherited from `proposal.md` §1 unchanged. D-1 (Legal approved c
 | D-21 | **Bulk sending skips an actor whose latest request was declined.** A single-actor send can still re-ask that actor deliberately. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 | D-22 | **The consent method recorded on accept is a new value, `EMAIL_LINK`.** It is not the existing `EMAIL`, because `EMAIL` already means "an admin asserts consent came by email". Reusing it would mix evidenced and asserted consent under one value. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 | D-24 | **An admin re-grant of an actor who accepted by link does not inherit the link's date or reference.** The admin supplies the consent date. The link-era `consentReference` is cleared unless the admin enters a new one. Otherwise an admin-asserted method would sit beside the actor's own evidence (mixed provenance). | Confirmed — Daniela Gómez, 2026-10-05 (T-1 continue gate; raised by both T-1 Reviewers) |
+| D-25 | **Two simultaneous sends for the same actor create one request, not two.** Enqueue locks the targeted actor rows and evaluates eligibility inside its own transaction. | Confirmed — Daniela Gómez, 2026-10-05 (T-3 continue gate; raised by both T-3 Reviewers) |
 | D-23 | **Every link that cannot be answered shows the same dead-end page**, whether it is unknown, expired, already used, superseded, or its actor was deleted. The page never says which case applies. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 
 ## 2. Glossary

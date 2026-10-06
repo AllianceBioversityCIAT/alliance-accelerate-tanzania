@@ -151,7 +151,7 @@ A filter target uses `buildAdminActorWhere(q)`, a pure function **extracted** fr
 
 ### 5.2 Persist, then dispatch (FR-6, NFR-6)
 
-1. **Enqueue.** One transaction creates `QUEUED` rows (`createMany`, P-29) for every eligible actor, snapshotting `recipientEmail`, `traderId`, `traderName`, edition and hash. For `single` it first calls `supersedePendingFor(tx, [actorId])`. It returns `{ batchId, queued, skipped: { reason → count } }`.
+1. **Enqueue.** *(D-25, amended 2026-10-05.)* The transaction first locks the targeted `Actor` rows (`SELECT … FOR UPDATE` through parameterized `$queryRaw`, the `ActorSequence` precedent). It then evaluates eligibility **inside** the transaction, so a concurrent enqueue for the same actor waits and then sees the first one's pending row. That same transaction creates `QUEUED` rows (`createMany`, P-29) for every eligible actor, snapshotting `recipientEmail`, `traderId`, `traderName`, edition and hash. For `single` it first calls `supersedePendingFor(tx, [actorId])`. It returns `{ batchId, queued, skipped: { reason → count } }`.
 2. **Dispatch** `{ batchId? }` loops until the **time budget (7.5 s)** is spent or nothing is left. The budget is checked **before the claim** (RB-4), so no row is ever claimed after it. One loop pass:
    1. Selects the next `QUEUED` id.
    2. **Claims** it with a compare-and-set `updateMany(id, status=QUEUED) → SENDING, claimedAt, attempts+1` (P-29). A count of 0 means another tab claimed it, or it was superseded, so the row is skipped (FR-6 scenario 2).
@@ -487,6 +487,8 @@ No other DD removes shipped behaviour. The supersession hook adds writes, and th
 | 14 | ~11,300 (prod ~4,500 · tests ~6,800); the sum of the `tasks.md` per-task estimates | ~20 (14 first passes + ~6 reworks, by chunk 1's rate) |
 
 `/akili-execute` escalates to the user if actuals exceed any figure by more than 25 %.
+
+*Re-baselined at the T-3 continue gate (2026-10-05, product owner):* review rounds run at about 2 per critical task, because two lens Reviewers are spawned in parallel on T-1, T-3, T-4, T-5 and T-7. The accepted ceiling is about **30** verdicts. LOC was at +33 % for T-1…T-3 (3,513 against 2,650); the total budget of ~11,300 still stands.
 
 ## 11. Premise Ledger
 

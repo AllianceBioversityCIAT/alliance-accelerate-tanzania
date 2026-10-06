@@ -148,7 +148,7 @@ T-1…T-13 ─► T-14
   - **Review:** `full` — it adds writes to four existing transactions.
   - **Done when:** all tests green, falsifiers executed red, the backend suite green.
 
-- [ ] **T-4 Dispatch, token, email, retry and the queue** (deps: T-3)
+- [~] **T-4 Dispatch, token, email, retry and the queue** (deps: T-3)
   - **Size:** L (~1,200 LOC) · **Effort:** `xhigh` · **Skills:** `nestjs-expert`, `tdd`, `error-handling-patterns`
   - **Traces:**
     - FR-4 (failure retryable; closing the tab, BUT none lost or twice — server)
@@ -166,6 +166,7 @@ T-1…T-13 ─► T-14
     - `retry`, `queue`.
     - `consent-request.template.ts` and `MailService.sendConsentRequest`.
     - The `CONSENT_REQUESTED` audit row, written from the snapshot `traderId`.
+    - **D-25 (added at the T-3 continue gate):** `ConsentRequestsService.enqueue` locks the targeted actor rows (`SELECT … FOR UPDATE`, parameterized) and evaluates eligibility inside its transaction (design §5.2 step 1, amended).
   - **Tests:**
     - A delayed fake transport (2.9 s per send) with a fake clock: the step stops claiming after 7.5 s and returns ≤ 11.5 s.
     - Two concurrent dispatches over one batch: each row is sent once.
@@ -173,6 +174,7 @@ T-1…T-13 ─► T-14
     - A transport throw gives `FAILED`; retry then requeues it.
     - A stale `SENDING` row becomes `FAILED/stale_claim` and is not resent.
     - Eligibility failure at claim gives `SUPERSEDED`.
+    - D-25: two concurrent bulk enqueues for the same eligible actor produce exactly one QUEUED row. The harness must interleave the two calls with deferred promises around the lock. A unit test also pins that the lock query runs inside the transaction, before the eligibility read.
     - The subject is byte-identical across two actors and contains no name, address or id.
     - The link puts the token only after `#`.
     - A `Logger` spy across dispatch captures neither the token nor the address.

@@ -255,3 +255,13 @@
 - **Unknown ids.** They are excluded from `total` with no `notFound` count. This is recorded for T-9's UI.
 
 - **Final verification:** VERIFIED.
+
+#### T-3 continue gate — decisions recorded (2026-10-05)
+
+- **D-25 (product owner):** the server-side lock goes into T-4 (concurrent double enqueue).
+- **Budget re-baseline (product owner):** continue with two Reviewers on critical tasks. The accepted ceiling is about 30 verdicts. LOC is at +33 % for T-1…T-3, and the total of ~11,300 still stands.
+- **Execute-time spec edits:**
+  - `requirements.md`: D-24's row is unchanged; D-25 is added.
+  - `design.md`: §5.2 step 1 (the lock) and §10 (the re-baseline note).
+  - `tasks.md` T-4: scope and tests.
+- **Carry:** T-4's Reviewer brief covers design §5.1/§6 (amended in T-3) and §5.2 step 1 (amended here).
