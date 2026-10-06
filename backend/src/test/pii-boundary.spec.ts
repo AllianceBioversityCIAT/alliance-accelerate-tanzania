@@ -31,6 +31,18 @@ import { MailService } from '../mail/mail.service';
 import { CONSENT_POLICY_VERSION } from '../registrations/consent-policy';
 import { REGISTRATIONS_THROTTLE_LIMIT } from '../registrations/registrations-throttle.guard';
 import { RegistrationsModule } from '../registrations/registrations.module';
+import { ConsentRequestsModule } from '../consent-requests/consent-requests.module';
+import { hashConsentToken } from '../consent-requests/consent-token.util';
+import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import {
+  CONSENT_ACTOR_2_ID,
+  CONSENT_NEVER_PUBLIC_VALUES,
+  neverPublicValues,
+  buildConsentPublicHarness,
+  consentActorFixture,
+  consentRowFixture,
+  consentTokenFor,
+} from './support/consent-public.fixture';
 import { AdminRecipientResolver } from '../contact/admin-recipient.resolver';
 import { CONTACT_CATEGORIES } from '../contact/contact-categories';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -2585,5 +2597,285 @@ describe(
         expectContactResponseAndLogsClean(res);
       },
     );
+  },
+);
+
+/**
+ * `actors/consent-intake/consent-request-email` T-5 (DD-7, NFR-3) — the
+ * derived PII release gate for `ConsentRequestsModule`: the two PUBLIC,
+ * token-bearer routes (`POST /consent/view`, `POST /consent/respond`) AND
+ * every admin route the module registers.
+ *
+ * It follows the registrations gate's contract above, copied rather than
+ * re-derived: routes come from {@link getRegisteredRoutes} against the
+ * MODULE (Nest's own decorator metadata, no booted app), `FIXTURE_MAP` has
+ * its own entries, and a bidirectional totality `it` fails BY NAME for a route
+ * with no fixture (a new public route cannot escape the gate) and for a
+ * fixture matching no route (rot).
+ *
+ * **The vacuity guard (KZ-002).** A public entry must return 200 FIRST and
+ * its `assertLive` must find the body non-trivial BEFORE the key/value sweep
+ * runs: a PII sweep over a 404 body, because the route did not exist or the
+ * fixture token missed, passes with nothing proven. The sweep scans by KEY
+ * (`NEVER_PUBLIC_FIELDS`, `tokenHash`, every `respondent*` column) and by
+ * VALUE (the actor's never-public values, the respondent's evidence values,
+ * the raw token) — the actor fixture is `UNKNOWN`, so its contact block IS
+ * legitimately in the view body (FR-9) while its never-public values are not.
+ *
+ * Admin entries are leak assertions aimed at everyone who is not an Admin:
+ * anonymous → `401` (exact, so a `@UseGuards` order inversion is caught),
+ * Staff → `403`, both bodies swept. T-6 adds its admin routes' entries here.
+ *
+ * Its own app, its own throttler storage: one request per public route, well
+ * under the limit, and no counter shared with any other describe.
+ */
+const CONSENT_GATE_VIEW_TOKEN = consentTokenFor('gate-view');
+const CONSENT_GATE_RESPOND_TOKEN = consentTokenFor('gate-respond');
+// A third token, answered INSIDE the non-vacuity test itself, so that test never depends on test order.
+const CONSENT_GATE_ORDER_TOKEN = consentTokenFor('gate-order');
+const CONSENT_GATE_RESPONDENT = {
+  name: 'Gate Respondent Do-Not-Leak',
+  position: 'Gate Position Do-Not-Leak',
+  email: 'gate-respondent-do-not-leak@evidence.example',
+  phone: '+255 799 000 111',
+};
+
+const CONSENT_FORBIDDEN_KEYS: readonly string[] = [
+  ...NEVER_PUBLIC_FIELDS,
+  'tokenHash',
+  'token',
+  'respondentName',
+  'respondentPosition',
+  'respondentEmail',
+  'respondentPhone',
+  'respondentIp',
+  'respondentUserAgent',
+  'requestedBySub',
+  'requestedByEmail',
+  'recipientEmail',
+];
+
+const CONSENT_LEAKABLE_VALUES: readonly string[] = [
+  // One value per NEVER_PUBLIC_FIELDS member, derived (and asserted non-null) in the fixture.
+  ...CONSENT_NEVER_PUBLIC_VALUES,
+  CONSENT_GATE_VIEW_TOKEN,
+  CONSENT_GATE_RESPOND_TOKEN,
+  // The stored `tokenHash` values (NFR-1, NFR-3): never returned, by key OR by value.
+  hashConsentToken(CONSENT_GATE_VIEW_TOKEN),
+  hashConsentToken(CONSENT_GATE_RESPOND_TOKEN),
+  // Accept overwrites `consentReference` with the request id — sweep that post-accept value too.
+  consentRowFixture(CONSENT_GATE_RESPOND_TOKEN).id,
+  CONSENT_GATE_RESPONDENT.name,
+  CONSENT_GATE_RESPONDENT.position,
+  CONSENT_GATE_RESPONDENT.email,
+  CONSENT_GATE_RESPONDENT.phone,
+  'admin@example.org', // requestedByEmail on the request fixtures
+];
+
+function expectConsentResponseClean(res: request.Response): void {
+  expectNoPiiKeys(res.body, CONSENT_FORBIDDEN_KEYS);
+  for (const value of CONSENT_LEAKABLE_VALUES) {
+    expect(res.text).not.toContain(value);
+  }
+}
+
+describe(
+  'PII boundary (HTTP e2e) — consent-requests module (actors/consent-intake/consent-request-email T-5, release gate: DD-7, NFR-3)',
+  () => {
+    let app: NestExpressApplication;
+    let routes: RegisteredRoute[];
+    let harness: ReturnType<typeof buildConsentPublicHarness>;
+
+    beforeAll(async () => {
+      // TWO actors: `view` previews actor 1; every Accept in this gate targets
+      // actor 2, so an Accept can never change what `view` previews (the
+      // by-value sweep would otherwise sweep values the actor no longer holds).
+      harness = buildConsentPublicHarness(
+        [consentActorFixture(), consentActorFixture({ id: CONSENT_ACTOR_2_ID, traderId: 'TZ-CONSENT-0043' })],
+        [
+          consentRowFixture(CONSENT_GATE_VIEW_TOKEN),
+          consentRowFixture(CONSENT_GATE_RESPOND_TOKEN, { actorId: CONSENT_ACTOR_2_ID }),
+          consentRowFixture(CONSENT_GATE_ORDER_TOKEN, { actorId: CONSENT_ACTOR_2_ID }),
+        ],
+      );
+      const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(PrismaService)
+        .useValue(harness.prisma as unknown as PrismaService)
+        .overrideProvider(MailService)
+        .useValue({ sendConsentRequest: jest.fn().mockResolvedValue(undefined) } as unknown as MailService)
+        .overrideProvider(ActingAdminResolver)
+        .useValue({ resolve: jest.fn().mockResolvedValue('admin@example.org') })
+        .overrideGuard(JwtAuthGuard)
+        .useValue(new TestJwtAuthGuard())
+        .compile();
+
+      app = moduleRef.createNestApplication<NestExpressApplication>();
+      app.setGlobalPrefix('api/v1');
+      app.useGlobalPipes(createValidationPipe());
+      configurePayloadCap(app);
+      configureBodyParser(app);
+      await app.init();
+
+      routes = getRegisteredRoutes(ConsentRequestsModule, 'api/v1');
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    it('discovers the module routes — guards against the derivation silently returning nothing, which would make every test below vacuous', () => {
+      expect(routes.length).toBeGreaterThan(0);
+      expect(routes.map((r) => routeKey(r.method, r.path))).toEqual(
+        expect.arrayContaining([
+          routeKey('POST', '/api/v1/consent/view'),
+          routeKey('POST', '/api/v1/consent/respond'),
+        ]),
+      );
+    });
+
+    type ConsentFixtureEntry =
+      | { access: 'public'; send: () => request.Test; assertLive: (res: request.Response) => void }
+      | { access: 'admin'; sendAnonymous: () => request.Test; sendStaff: () => request.Test };
+
+    const adminEntry = (
+      method: 'get' | 'post',
+      path: string,
+      body: Record<string, unknown> = {},
+    ): ConsentFixtureEntry => ({
+      access: 'admin',
+      sendAnonymous: () => {
+        const r = request(app.getHttpServer())[method](path);
+        return method === 'post' ? r.send(body) : r;
+      },
+      sendStaff: () => {
+        const r = request(app.getHttpServer())[method](path).set('Authorization', 'Bearer staff-token');
+        return method === 'post' ? r.send(body) : r;
+      },
+    });
+
+    // The sender-to-key binding is NOT enforced by the map's shape: re-read each
+    // key against its closure's literal URL (the registrations gate's contract).
+    const FIXTURE_MAP: Record<string, ConsentFixtureEntry> = {
+      [routeKey('POST', '/api/v1/consent/view')]: {
+        access: 'public',
+        send: () => request(app.getHttpServer()).post('/api/v1/consent/view').send({ token: CONSENT_GATE_VIEW_TOKEN }),
+        assertLive: (res) => {
+          // The vacuity guard: a real record body, so the sweep below has something to scan.
+          expect(res.body.organization).toContain('Consent Fixture Agro Ltd'); // contains, not equals: a value leaked INTO it must reach the sweep, not trip this guard first
+          expect(res.body.record.contactPerson).toBe('Neema Mushi');
+          expect(res.body.record.gps).not.toBeNull();
+          expect(res.body.edition.sections.length).toBeGreaterThan(0);
+        },
+      },
+      [routeKey('POST', '/api/v1/consent/respond')]: {
+        access: 'public',
+        send: () =>
+          request(app.getHttpServer())
+            .post('/api/v1/consent/respond')
+            .send({
+              token: CONSENT_GATE_RESPOND_TOKEN,
+              decision: 'ACCEPT',
+              respondent: CONSENT_GATE_RESPONDENT,
+              accepted: true,
+            }),
+        assertLive: (res) => {
+          expect(res.body).toEqual({ decision: 'ACCEPT' });
+        },
+      },
+      [routeKey('POST', '/api/v1/admin/consent-requests/preview')]: adminEntry(
+        'post',
+        '/api/v1/admin/consent-requests/preview',
+        { target: { kind: 'ids', ids: ['a'] }, scope: 'single' },
+      ),
+      [routeKey('POST', '/api/v1/admin/consent-requests')]: adminEntry(
+        'post',
+        '/api/v1/admin/consent-requests',
+        { target: { kind: 'ids', ids: ['a'] }, scope: 'single' },
+      ),
+      [routeKey('POST', '/api/v1/admin/consent-requests/dispatch')]: adminEntry(
+        'post',
+        '/api/v1/admin/consent-requests/dispatch',
+      ),
+      [routeKey('POST', '/api/v1/admin/consent-requests/retry')]: adminEntry(
+        'post',
+        '/api/v1/admin/consent-requests/retry',
+      ),
+      [routeKey('GET', '/api/v1/admin/consent-requests/queue')]: adminEntry(
+        'get',
+        '/api/v1/admin/consent-requests/queue',
+      ),
+    };
+
+    it(
+      'FIXTURE_MAP has EXACTLY one entry per route ConsentRequestsModule registers, on ANY controller — ' +
+        'a route added with no entry fails HERE, by name (NFR-3, DD-7)',
+      () => {
+        const derivedKeys = routes.map((r) => routeKey(r.method, r.path)).sort();
+        expect(Object.keys(FIXTURE_MAP).sort()).toEqual(derivedKeys);
+      },
+    );
+
+    it(
+      "every discovered route's response is PII-clean — public routes assert 200 and a live body " +
+        'BEFORE the sweep (the vacuity guard); admin routes assert 401 anonymous / 403 Staff',
+      async () => {
+        for (const route of routes) {
+          const key = routeKey(route.method, route.path);
+          const entry = FIXTURE_MAP[key];
+          if (!entry) {
+            throw new Error(`no FIXTURE_MAP entry for ${key} — the totality test above should have caught this first.`);
+          }
+          if (entry.access === 'public') {
+            const res = await entry.send();
+            // 200 FIRST: a sweep over a 404 body proves nothing.
+            expect(res.status).toBe(200);
+            entry.assertLive(res);
+            expectConsentResponseClean(res);
+          } else {
+            const anonymous = await entry.sendAnonymous();
+            expect(anonymous.status).toBe(401);
+            expectConsentResponseClean(anonymous);
+            const staff = await entry.sendStaff();
+            expect(staff.status).toBe(403);
+            expectConsentResponseClean(staff);
+          }
+        }
+      },
+    );
+
+    it('the value sweep is not vacuous: every NEVER_PUBLIC_FIELDS member has a NON-NULL value on the LIVE viewed actor at sweep time, each is in the sweep list, and none is in the view body', async () => {
+      // Answer an Accept first, in THIS test, so it holds whatever order the tests ran in:
+      // it must leave the viewed actor untouched.
+      const accepted = await request(app.getHttpServer())
+        .post('/api/v1/consent/respond')
+        .send({ token: CONSENT_GATE_ORDER_TOKEN, decision: 'ACCEPT', respondent: CONSENT_GATE_RESPONDENT, accepted: true });
+      expect(accepted.status).toBe(200);
+      expect(harness.getActor(CONSENT_ACTOR_2_ID)?.consentMethod).toBe('EMAIL_LINK'); // the Accept really landed, on actor 2
+
+      // The values the swept actor REALLY holds right now (read from the harness, not the pristine fixture).
+      const live = harness.getActor()!;
+      for (const field of NEVER_PUBLIC_FIELDS) {
+        expect(live[field]).not.toBeNull();
+        expect(live[field]).not.toBeUndefined();
+      }
+      const values = neverPublicValues(live);
+      expect(values).toEqual(neverPublicValues(consentActorFixture())); // still its fixture provenance
+      expect(values).toHaveLength(NEVER_PUBLIC_FIELDS.length);
+      expect(new Set(values).size).toBe(values.length); // distinct, so a hit names one field
+      for (const value of values) {
+        expect(CONSENT_LEAKABLE_VALUES).toContain(value);
+      }
+      // The raw tokens' hashes are swept too (NFR-1).
+      expect(CONSENT_LEAKABLE_VALUES).toContain(hashConsentToken(CONSENT_GATE_VIEW_TOKEN));
+      expect(CONSENT_LEAKABLE_VALUES).toContain(hashConsentToken(CONSENT_GATE_RESPOND_TOKEN));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/consent/view')
+        .send({ token: CONSENT_GATE_VIEW_TOKEN });
+      expect(res.status).toBe(200);
+      expect(res.body.record.contactPerson).toBe('Neema Mushi'); // a live body, not a miss
+      for (const value of values) expect(res.text).not.toContain(value);
+      for (const field of NEVER_PUBLIC_FIELDS) expect(Object.keys(res.body.record)).not.toContain(field);
+    });
   },
 );

@@ -6,6 +6,9 @@ import { MailModule } from '../mail/mail.module';
 import { ConsentSupersessionModule } from './consent-supersession.module';
 import { ConsentRequestsService } from './consent-requests.service';
 import { AdminConsentRequestsController } from './admin-consent-requests.controller';
+import { ConsentPublicController } from './consent-public.controller';
+import { ConsentPublicService } from './consent-public.service';
+import { ConsentThrottleGuard } from './consent-throttle.guard';
 
 /**
  * T-3 — `ConsentRequestsModule` (design.md §3, §5.5). Registered in
@@ -28,11 +31,24 @@ import { AdminConsentRequestsController } from './admin-consent-requests.control
  * `logConsentRequested` (the `CONSENT_REQUESTED` row) — it was wired in at
  * T-3 ahead of this, per design.md §5.5's module-wiring note, so this task
  * needs no further module edit for it.
+ *
+ * T-5 — `ConsentPublicController` (the two public, token-bearer routes) and
+ * `ConsentPublicService` join, with `ConsentThrottleGuard` listed as a
+ * provider the way `RegistrationsModule` lists its throttle guard. This
+ * module still does NOT call `ThrottlerModule.forRoot` (P-31): the single
+ * global registration lives in `RegistrationsModule` (the `ContactModule`
+ * precedent), and a second one would create competing tokens.
  */
 @Module({
   imports: [PrismaModule, ConsentSupersessionModule, MailModule],
-  controllers: [AdminConsentRequestsController],
-  providers: [ConsentRequestsService, ActingAdminResolver, ActorAuditService],
+  controllers: [AdminConsentRequestsController, ConsentPublicController],
+  providers: [
+    ConsentRequestsService,
+    ConsentPublicService,
+    ConsentThrottleGuard,
+    ActingAdminResolver,
+    ActorAuditService,
+  ],
   exports: [ConsentRequestsService],
 })
 export class ConsentRequestsModule {}

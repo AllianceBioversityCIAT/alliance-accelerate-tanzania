@@ -1078,6 +1078,90 @@ describe('ActorAuditService', () => {
     });
   });
 
+  // actors/consent-intake/consent-request-email T-5 — pins every field
+  // `logConsentResponded` writes (the sentinel author, the diff-over-consent-
+  // fields envelope, the request id), the same way `logConsentRequested` is
+  // pinned above.
+  describe('logConsentResponded', () => {
+    const request = {
+      id: 'consent-req-7',
+      actorId: 'actor-9',
+      traderId: 'TZ-SEED-0099',
+      traderName: 'Snapshot Trader Name At Enqueue',
+    };
+    const before = {
+      consentStatus: 'UNKNOWN',
+      consentMethod: 'NOT_RECORDED',
+      consentObtainedAt: null,
+      consentReference: null,
+    };
+    const obtainedAt = new Date('2026-10-06T10:00:00.000Z');
+    const acceptedAfter = {
+      consentStatus: 'GRANTED',
+      consentMethod: 'EMAIL_LINK',
+      consentObtainedAt: obtainedAt,
+      consentReference: 'consent-req-7',
+    };
+
+    async function run(after: typeof acceptedAfter | typeof before) {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      await service.logConsentResponded(tx, { request, before, after });
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      return (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+    }
+
+    it('is authored by the SENTINEL consent-link with a null email, action CONSENT_RESPONDED', async () => {
+      const data = await run(acceptedAfter);
+      expect(data.action).toBe(ActorAuditAction.CONSENT_RESPONDED);
+      expect(data.actingSub).toBe('consent-link');
+      expect(data.actingEmail).toBeNull();
+    });
+
+    it('takes actorId/traderId/traderName from the REQUEST snapshot', async () => {
+      const data = await run(acceptedAfter);
+      expect(data).toMatchObject({
+        actorId: request.actorId,
+        traderId: request.traderId,
+        traderName: request.traderName,
+      });
+    });
+
+    it('an accept diffs all four consent fields (ISO date) and carries the request id', async () => {
+      const data = await run(acceptedAfter);
+      expect(data.changes).toEqual({
+        kind: 'diff',
+        requestId: 'consent-req-7',
+        fields: {
+          consentStatus: { from: 'UNKNOWN', to: 'GRANTED' },
+          consentMethod: { from: 'NOT_RECORDED', to: 'EMAIL_LINK' },
+          consentObtainedAt: { from: null, to: '2026-10-06T10:00:00.000Z' },
+          consentReference: { from: null, to: 'consent-req-7' },
+        },
+      });
+    });
+
+    it('a decline names consentStatus ALONE (method, date and reference unchanged)', async () => {
+      const data = await run({ ...before, consentStatus: 'DENIED' });
+      const changes = data.changes as { fields: Record<string, unknown> };
+      expect(Object.keys(changes.fields)).toEqual(['consentStatus']);
+    });
+
+    it('never carries a respondent field, an address or a token', async () => {
+      const data = await run(acceptedAfter);
+      expect(JSON.stringify(data)).not.toMatch(/respondent|token|email@|userAgent|ip"/i);
+    });
+
+    it('writes inside the caller-supplied tx only', async () => {
+      const tx = mockTx();
+      const otherTx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      otherTx.actorAuditLog.create = jest.fn();
+      await service.logConsentResponded(tx, { request, before, after: acceptedAfter });
+      expect(otherTx.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('toAuditEntry', () => {
     it('passes changes through and formats createdAt as ISO string', () => {
       const createdAt = new Date('2026-07-09T12:34:56Z');

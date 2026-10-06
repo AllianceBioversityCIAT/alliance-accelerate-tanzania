@@ -196,7 +196,7 @@ T-1…T-13 ─► T-14
     - All tests green and falsifiers executed red.
     - P-9 remains owned by T-14, recorded in `execution.md`.
 
-- [~] **T-5 Public view and respond, throttle, and the PII release gate** (deps: T-4)
+- [x] **T-5 Public view and respond, throttle, and the PII release gate** (deps: T-4)
   - **Size:** L (~1,300 LOC) · **Effort:** `max` · **Skills:** `nestjs-expert`, `tdd`, `api-design-principles`
   - **Traces:**
     - FR-1 (an old request renders its own edition)
@@ -259,6 +259,7 @@ T-1…T-13 ─► T-14
     - `audit-entry.serializer.ts` handles the three new actions.
     - §5.8's two immutability tests.
     - **D-26 backend (design §5.7a, added 2026-10-06):** `AdminActorUpdateDto.expectedUpdatedAt` (optional ISO). `ActorsAdminService.update` locks the actor row first (`FOR UPDATE`), then returns `409` when the expected version differs from the stored `updatedAt`. Tests: matching version → 200 unchanged behaviour; stale version → 409 and nothing written; absent → today's behaviour; a respond committed after load makes the admin save conflict. Falsifier: skip the comparison → the stale-version test goes red.
+    - **`EMAIL_LINK` single-writer gate (routed from T-5 review, 2026-10-06):** a static sweep over `backend/src/**/*.ts` (excluding specs) asserting that the only production site writing `ConsentMethod.EMAIL_LINK` into an `Actor` is `ConsentPublicService.respond` (the requirements defect-class row). Falsifier: add an `EMAIL_LINK` write in a scratch file → the sweep goes red.
     - QA-3 coverage for every admin route this module adds (Staff → `403`, anonymous → `401`) via the T-5 derived gate fixtures.
   - **Tests:**
     - Delete an actor with 2 requests and 1 document: the evidence and the history are still returned.

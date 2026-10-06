@@ -36,8 +36,8 @@ Send dialog ──POST preview──────────► ConsentRequestsS
 Actor browser                                                                              (Slack: fixed subject only)
 /consent/#t=… ─strip fragment─►
             ──POST /consent/view────► ConsentPublicService.view   → uniform 404 | {org, record(publicDetail), edition}
-            ──POST /consent/respond─► ConsentPublicService.respond → $transaction:
-                                         CAS request open→ACCEPTED|DECLINED · Actor consent update · audit (sentinel)
+            ──POST /consent/respond─► ConsentPublicService.respond → route actorId (outside tx) → $transaction:
+                                         lock Actor FOR UPDATE (first) · CAS request open→ACCEPTED|DECLINED · Actor consent update · audit (sentinel)
 Admin edit page
   evidence panel ──GET evidence─────► list requests + documents
   attach doc ──POST upload-url──────► presigned POST (incoming/<docId>, ≤10 MB, exact type, 5 min)
@@ -200,13 +200,16 @@ The browser loop (`useConsentDispatch`) calls dispatch until `remaining = 0`, sh
   Any miss throws the single `buildConsentLinkNotFoundError()`, whose body is fixed.
 - **`respond { token, decision, respondent?, accepted? }`.** DTO validation of the **non-token** fields runs first. A `400` can only name `decision`, `respondent.*` or `accepted`, never `token`, so it reveals nothing about the token. `ACCEPT` requires `respondent` (name, position, email, phone, with the intake-contract bounds) and `accepted === true`. `DECLINE` ignores both.
 
-  Then a single `$transaction` runs:
+  **Routing read (outside the transaction).** Resolve the request's `actorId` by `tokenHash` with a plain read **before** the transaction opens. No row gives the uniform miss. This read is routing only; the CAS re-validates everything. `ConsentRequest.actorId` is written only at enqueue, so a stale answer can cause a miss but never a write to the wrong actor.
+
+  Then a single `$transaction` runs. *(Amended 2026-10-06 twice: lock order, then lock-first, T-5 attempts 2–3.)*
+  0. **Lock — the transaction's first statement.** `SELECT id, consentStatus, consentMethod, consentObtainedAt, consentReference FROM Actor WHERE id = ? FOR UPDATE`, parameterized. It must come first: under InnoDB REPEATABLE READ the snapshot is fixed at the first non-locking read, so any plain read before the lock would make later reads stale. It takes the same order as enqueue (D-25) and the admin update (D-26), actor first, so they cannot deadlock. No row means the actor was deleted: uniform miss, nothing written.
   1. **CAS.** `updateMany({ tokenHash, status: SENT, expiresAt > now }) → ACCEPTED|DECLINED` with the respondent fields, `respondedAt`, IP and UA. A count of 0 gives the uniform miss (NFR-5).
-  2. **Actor check.** It re-reads the actor. If the actor is gone (a deletion race), it throws the uniform miss and the transaction rolls back.
+  2. **`before` from the locked row.** The audit's `from` values and the decline's `after` come from step 0's row. There is no separate plain re-read of the actor.
   3. **Actor update.**
      - `ACCEPT` sets `consentStatus=GRANTED, consentMethod=EMAIL_LINK, consentObtainedAt=respondedAt, consentReference=request.id`.
      - `DECLINE` sets `consentStatus=DENIED` only.
-  4. **Audit.** It writes `logConsentResponded`, with `actingSub = 'consent-link'` and `actingEmail = null`. The diff covers the consent fields, and the request id goes in the snapshot (DD-6).
+  4. **Audit.** It writes `logConsentResponded`, with `actingSub = 'consent-link'` and `actingEmail = null`. The diff covers the consent fields, and `requestId` goes in `changes` (DD-6). A Decline on an already-`DENIED` actor still writes the row, because the answer is itself the event; this is a deliberate exception to "an empty diff writes no row".
 
   The response is `200 { decision }` and nothing else.
 - **IP address.** It is `req.ip`, as `lookupRegistration` already uses. serverless-http sets `req.ip` from `requestContext.http.sourceIp` (P-14, confirmed). It is stored nullable as defence in depth, so a missing IP degrades the evidence rather than failing the response.

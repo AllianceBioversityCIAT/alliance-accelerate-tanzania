@@ -402,3 +402,131 @@ From here on:
   - `design.md`: new §5.7a.
   - `tasks.md`: T-6 takes the backend half (it does not conflict with T-5's files); T-11 takes the frontend half.
 - **Carry:** the T-6 and T-11 Reviewer briefs.
+
+### T-5 — Public view and respond, throttle, and the PII release gate — in progress
+
+- **Leader choices:**
+  - Skills: `nestjs-expert`, `tdd`, `api-design-principles`.
+  - Effort: `max`.
+  - Review: three lens Reviewers (security, PII, concurrency).
+
+#### Attempt 1 — **FAIL** (PII lens; security **PASS**; concurrency **PASS**)
+
+**Files changed**
+- **New:**
+  - `consent-requests/consent-public.{controller,service}.ts` and the service spec
+  - `consent-requests/consent-throttle.guard.ts`
+  - `consent-requests/dto/consent-public.dto.ts`
+  - `test/consent-public.e2e.spec.ts`
+  - `test/support/consent-public.fixture.ts`
+- **Modified:**
+  - `consent-requests.module.ts`
+  - `actor-audit.service.ts` and its spec (`logConsentResponded`)
+  - `test/pii-boundary.spec.ts` (the derived gate over `ConsentRequestsModule`)
+  - `test/lambda-handler.e2e.spec.ts`
+  - `test/support/consent-request.mock.ts`
+  - `common/payload-cap.config.ts` and its spec (`/api/v1/consent` capped at 32 KB, added by the Leader under NFR-4 before review)
+
+**Implementer verification:** 95 suites / 1637 tests. Lint, build and `tsc` clean. 16 falsifiers plus the payload-cap falsifier executed red.
+
+**Evidence re-run (Leader): VERIFIED.** 95 suites / 1637 tests. Lint, build and `tsc` OK.
+
+**PII Reviewer: FAIL.** Verbatim:
+1. "The value sweep covers only `traderId`, `technicalSupport` and `gpsAltitude` (`'526'`). The other five never-public fields are never searched for by value: `consentObtainedAt` and `consentReference` are `null` on the fixture; `consentMethod` (`NOT_RECORDED`), `registrationSource` (`TEAM_MANAGED`) and `gpsAccuracy` (`7`) are populated but not in `CONSENT_NEVER_PUBLIC_VALUES`. The non-vacuity test only checks `Object.keys(fixture)).toContain(field)`, so a key holding `null` passes." Violated: T-5 Tests, the Disqualifier (KZ-002), NFR-3, QA-1. Remediation: give those fields distinctive non-null values; add every never-public value to the sweep list, derived from `NEVER_PUBLIC_FIELDS`; assert each value is non-null; re-seed the actor after the gate's Accept, or sweep the post-accept `consentReference`.
+2. "The `tokenHash` *value* (`hashConsentToken(token)`) is never swept on the gate's public routes." Violated: NFR-3, NFR-1. Remediation: add both tokens' hashes to `CONSENT_LEAKABLE_VALUES`.
+
+**Security Reviewer: PASS.** Advisories:
+- A1: lock-order inversion between respond (request, then actor) and enqueue / D-26 (actor, then request) can deadlock and return a `500`.
+- The `@Throttle` override is unproven while the limits are equal (20/60).
+- The P-14 pin sits on `respond` rather than `view` (stronger in substance; this is the recorded deviation).
+- Prisma validation errors could log arguments.
+- A small timing difference on the actor-deleted miss.
+
+**Concurrency Reviewer: PASS.** The race is structurally real: serialized calls would time out. `rollback: false` is sound. The actor is written through Prisma, so `@updatedAt` advances (D-26). Advisories:
+- A1: the same lock order.
+- A2: the actor read is non-locking, so the audit `from` values could be stale.
+- A3: a Decline on an actor already `DENIED` writes an empty-diff row.
+- No test enforces "respond is the only writer of `EMAIL_LINK`".
+
+**Leader decisions (standing authorization; technical, no product impact):**
+- **Lock order:** respond locks the actor row first (design §5.4 step 0, amended). This fixes A1 and A2.
+- **A3:** keep the empty-diff Decline row as an event record (design §5.4 step 4, documented).
+- **Wording:** design §5.4 now says `requestId` goes in `changes`, not "the snapshot".
+- **The "respond is the only `EMAIL_LINK` writer" gate:** routed to T-6 (`tasks.md` T-6 scope). Nobody owned it.
+
+#### Attempt 2 — **FAIL** (single rework Reviewer)
+
+**Files changed:**
+- `consent-public.service.ts`: the lock comes first.
+- `consent-public.service.spec.ts`: lock-order tests.
+- `test/support/consent-public.fixture.ts`: all 8 never-public values are non-null and the sweep list is derived.
+- `test/pii-boundary.spec.ts`: the sweep and the non-vacuity test were rewritten.
+- `test/consent-public.e2e.spec.ts`
+- `test/lambda-handler.e2e.spec.ts`: a `$queryRaw` stub.
+
+**Implementer verification:** 95 suites / 1640 tests, green. Falsifiers: a null fixture value, three leaked values, a leaked token hash, and the lock moved after the CAS, all executed red. One transient failure of the registrations 429 test occurred during a mutation run; it did not reproduce.
+
+**Evidence re-run (Leader): VERIFIED.** 95 suites / 1640 tests. Lint, build and `tsc` OK.
+
+**Reviewer: FAIL.** Verbatim:
+1. "The audit `from` values can be stale after a concurrent admin change. In `consent-public.service.ts:193`, the plain `findUnique({ tokenHash })` is the transaction's first ordinary (non-locking) read. Under InnoDB REPEATABLE READ (MySQL's default, and `$transaction` sets no isolation level), that first read fixes a snapshot; every later ordinary read sees it, including the `before` read at line 241. Only the `FOR UPDATE` itself sees the latest row. If an admin consent update (D-26) commits between line 193 and the lock, `before` still returns the pre-admin values, so the audit row's `from` is wrong, and for a Decline so is the `after` it builds. The comment at line 239 claims the opposite." Violated: design §5.4 step 0/2 (amended 2026-10-06); the `backend/CLAUDE.md` Audit rule. Remediation: read `before` with a locking read (have the lock return the fields), or run the transaction at READ COMMITTED; correct the comment.
+2. "The non-vacuity test (`pii-boundary.spec.ts:2838`) is still vacuous for `consentMethod`, `consentObtainedAt` and `consentReference`. Every test in that describe shares one harness from `beforeAll`; the gate test's respond Accept has already set that actor to `EMAIL_LINK`, `respondedAt` and the request id. The test sweeps the original fixture values, which the live actor no longer holds. The gate covers these three only because `view` happens to run before `respond`, an order nothing pins." Violated: tasks.md T-5 / attempt-1 FAIL item 1; KZ-002; NFR-3. Remediation: point `CONSENT_GATE_RESPOND_TOKEN` at a second actor so an Accept can never change the actor `view` previews, or sweep `neverPublicValues(<live actor>)` taken from the harness.
+
+**Advisory:** check whether the enqueue and D-26 paths have a plain read before their lock. Enqueue was corroborated live by the T-4 probe. D-26 is not written yet, so the T-6 brief must carry "the lock is the transaction's first statement".
+
+#### Attempt 3 — code **PASS**; one Leader-owned spec drift fixed and re-checked
+
+**Rework brief:** delivered by message to the same Implementer (the final attempt). The Leader chose the remediation: the routing read moves outside the transaction, the lock is the first statement, and `before` is built from the locked row. The respond token now uses a second actor.
+
+**Files changed (this attempt):**
+- `consent-public.service.ts`
+- `consent-public.service.spec.ts`: a global call-order test, and a test that `before` comes from the locked row.
+- `test/support/consent-public.fixture.ts`
+- `test/consent-public.e2e.spec.ts`: deletion between routing and the lock gives the uniform miss; a post-CAS failure rolls everything back.
+- `test/lambda-handler.e2e.spec.ts`
+- `test/pii-boundary.spec.ts`: the second actor; the non-vacuity test answers its own Accept and sweeps the live viewed actor.
+
+**Falsifiers:**
+
+| Mutation | Red assertion |
+|---|---|
+| Routing read moved back inside the transaction | Order test: `Expected "consentRequest.findUnique", Received "$transaction"` |
+| `before.consentStatus` hardcoded | Locked-row test: `Expected "DENIED", Received "UNKNOWN"` |
+| Both tokens on actor 1 | Non-vacuity guard: `Expected "EMAIL_LINK", Received "NOT_RECORDED"` |
+
+**Implementer verification:** 95 suites / 1642 tests. Lint, build and `tsc` clean.
+
+**Evidence re-run (Leader): VERIFIED.** 95 suites / 1642 tests. Lint, build and `tsc` OK.
+
+**Leader probe, real local MySQL 8:** Docker had stopped overnight; I restarted `accelerate-mysql` (the local environment is disposable). A `$queryRaw` row returns enum columns as `string` and `DateTime` columns as `Date`, so building `before` from the raw locked row is type-faithful. The probe was a throwaway file, deleted afterwards.
+
+**Reviewer: code verified correct on all three points.** The verdict was **FAIL** only because `design.md` §5.4 still described the attempt-2 order. The Leader had chosen the attempt-3 remediation without amending the spec, which is a Leader-owned defect, not Implementer work.
+
+**Resolution:**
+- The Leader amended §5.4: the routing read is outside the transaction, the lock is the first statement selecting the four consent fields, and `before` comes from the locked row.
+- The same Reviewer re-checked the doc diff alone: **PASS**. Every step matches `respond`, and §5.7a does not contradict it.
+- The §3 overview diagram was aligned as well (Reviewer advisory).
+- This closes the attempt without a 4th Implementer attempt. The 3-attempt ceiling bounds Implementer rework, and none was owed. The run continued without stopping under the standing authorization; the path is recorded here for audit.
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-1: an old request renders its own edition.
+- FR-3: the AND that R1's link is dead.
+- FR-8: day 30 vs 31; used, and its AND.
+- FR-9: server parts, including GPS as-if-granted.
+- FR-10: accept publishes, decline, race, respondent contact differs, the sentinel trail.
+- FR-11.
+- FR-12: the AND that a later Accept does not grant.
+- NFR-1 (respond side), NFR-2, NFR-3, NFR-4 (throttle plus the 32 KB cap), NFR-5 (the race; real-MySQL contention remains the declared gap).
+
+**ADVISORY (recorded):**
+- The order test watches a fixed list of methods; a proxy recording every `tx` call would be stricter.
+- A stale comment at `pii-boundary.spec.ts:2666`.
+- The `@Throttle` override is unproven while its figures equal the global ones.
+- Prisma validation errors could log arguments (NFR-1 residual).
+- A timing difference on the actor-deleted miss.
+- The registrations 429 test flaked transiently again. It predates T-5 (first seen in T-3).
+- **Forward pointer to T-6 (D-26):** the admin update's actor lock must be the transaction's **first** statement (§5.7a), the same InnoDB snapshot rule.
+
+- **Final verification:** VERIFIED.

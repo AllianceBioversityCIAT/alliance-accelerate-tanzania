@@ -10,6 +10,12 @@
  * T-4 adds `findFirst` (claim selection, oldest-`createdAt`-first) and
  * `count` (the `queue` summary), and `matchesClause` gains `lt` (the
  * stale-claim sweep's `claimedAt: { lt }`).
+ *
+ * T-5 adds `findUnique` (by `tokenHash` or `id`, the two unique keys the
+ * public view/respond path reads by) and `snapshot()`/`restore()` so a
+ * harness `$transaction` can ROLL BACK this delegate's rows when its callback
+ * throws — the property `respond`'s actor-deleted-mid-transaction case
+ * depends on (design.md §5.4 step 2).
  */
 
 export interface ConsentRequestMockRow {
@@ -124,6 +130,18 @@ export function createConsentRequestMock(initial: ConsentRequestMockRow[] = []) 
       if (matches.length === 0) return null;
       return matches.reduce((oldest, r) => (r.createdAt < oldest.createdAt ? r : oldest));
     }),
+    // T-5 — `findUnique` by either unique key the public path reads by.
+    findUnique: jest.fn(async (args: { where: { tokenHash?: string; id?: string } }) => {
+      const { tokenHash, id } = args.where;
+      if (tokenHash === undefined && id === undefined) return null;
+      return (
+        rows.find(
+          (r) =>
+            (tokenHash === undefined || r.tokenHash === tokenHash) &&
+            (id === undefined || r.id === id),
+        ) ?? null
+      );
+    }),
     // T-4 — the `queue` summary (`{ queued, failed }`).
     count: jest.fn(async (args: { where?: WhereClause } = {}) =>
       rows.filter((r) => matchesClause(r, args.where ?? {})).length,
@@ -154,6 +172,11 @@ export function createConsentRequestMock(initial: ConsentRequestMockRow[] = []) 
   return {
     consentRequest,
     getRows: (): ConsentRequestMockRow[] => rows,
+    /** T-5 — a deep-enough copy for a harness `$transaction` to roll back to. */
+    snapshot: (): ConsentRequestMockRow[] => rows.map((r) => ({ ...r })),
+    restore: (saved: ConsentRequestMockRow[]): void => {
+      rows = saved.map((r) => ({ ...r }));
+    },
     reset: (): void => {
       rows = initial.map((r) => ({ ...r }));
       seq = 0;
