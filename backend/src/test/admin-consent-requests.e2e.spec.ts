@@ -19,6 +19,7 @@ import {
   CURRENT_ADMIN_CONSENT_EDITION,
   computeAdminConsentEditionHash,
 } from '../consent-requests/admin-consent-policy';
+import { MailService } from '../mail/mail.service';
 
 /**
  * T-3 — End-to-end tests for `POST /api/v1/admin/consent-requests/preview`
@@ -69,22 +70,48 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
     findMany: jest.fn(async (args: { where?: Record<string, any>; select?: any }) =>
       actors.filter((a) => matchesActorWhere(a, args?.where)),
     ),
+    // T-4 — the claim-time eligibility recheck (`dispatch`'s own actor read).
+    findUnique: jest.fn(async (args: { where: { id: string } }) =>
+      actors.find((a) => a.id === args.where.id) ?? null,
+    ),
   };
 
-  const tx = { actor, consentRequest: consentRequestMock.consentRequest };
+  // T-4 (D-25) — a no-op lock: this harness runs every test sequentially
+  // (no concurrent enqueue here, that is `consent-requests.service.spec.ts`'s
+  // job with a controllable deferred mock), so the row-lock query only needs
+  // to exist, never to actually block.
+  const $queryRaw = jest.fn(async () => []);
+
+  // T-4 — `dispatch`'s result-write transaction also writes a
+  // `CONSENT_REQUESTED` audit row via `ActorAuditService.logConsentRequested`
+  // (`tx.actorAuditLog.create`). Minimal stub: records calls, returns them.
+  const auditLogRows: Array<Record<string, unknown>> = [];
+  const actorAuditLog = {
+    create: jest.fn(async (args: { data: Record<string, unknown> }) => {
+      const row = { id: `audit-${auditLogRows.length + 1}`, ...args.data };
+      auditLogRows.push(row);
+      return row;
+    }),
+  };
+
+  const tx = { actor, consentRequest: consentRequestMock.consentRequest, actorAuditLog, $queryRaw };
   const $transaction = jest.fn(async (cb: any) => cb(tx));
 
   const reset = () => {
     actors = initialActors.map((a) => ({ ...a }));
     consentRequestMock.reset();
+    auditLogRows.length = 0;
   };
 
   return {
     actor,
     consentRequest: consentRequestMock.consentRequest,
+    actorAuditLog,
+    $queryRaw,
     $transaction,
     reset,
     getConsentRequestRows: consentRequestMock.getRows,
+    getAuditLogRows: () => auditLogRows,
   };
 }
 
@@ -120,6 +147,7 @@ const pub = { Authorization: 'Bearer public-token' };
 describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
   let app: INestApplication;
   let prismaMock: ReturnType<typeof buildPrismaMock>;
+  let mailServiceMock: { sendConsentRequest: jest.Mock };
 
   const INITIAL_ACTORS: MockActor[] = [
     fixtureActor({ id: 'a-no-email', traderId: 'T1', traderName: 'No Email', email: null, region: 'Arusha' }),
@@ -130,6 +158,7 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
 
   beforeAll(async () => {
     prismaMock = buildPrismaMock(INITIAL_ACTORS);
+    mailServiceMock = { sendConsentRequest: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -140,6 +169,8 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
       .useValue(new TestJwtAuthGuard())
       .overrideProvider(ActingAdminResolver)
       .useValue({ resolve: jest.fn().mockResolvedValue('admin@example.com') })
+      .overrideProvider(MailService)
+      .useValue(mailServiceMock)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -150,6 +181,7 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
 
   beforeEach(() => {
     prismaMock.reset();
+    mailServiceMock.sendConsentRequest.mockClear();
   });
 
   afterAll(async () => {
@@ -392,6 +424,113 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
 
         expect(res.body.queued).toBe(1);
       });
+    });
+  });
+
+  // T-4 — dispatch / retry / queue (design.md §5.2 steps 2-5, §6).
+  describe('POST /api/v1/admin/consent-requests/dispatch', () => {
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).post('/api/v1/admin/consent-requests/dispatch').send({}).expect(401);
+    });
+
+    it('returns 403 with a Staff token', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests/dispatch')
+        .set(staff)
+        .send({})
+        .expect(403);
+    });
+
+    it('sends every QUEUED row for the given batch, mints a tokenHash, and writes a CONSENT_REQUESTED audit row', async () => {
+      const enqueueRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests')
+        .set(admin)
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
+        .expect(201);
+      const { batchId } = enqueueRes.body;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests/dispatch')
+        .set(admin)
+        .send({ batchId })
+        .expect(200);
+
+      expect(res.body).toEqual({ sent: 1, failed: 0, remaining: 0 });
+      expect(mailServiceMock.sendConsentRequest).toHaveBeenCalledTimes(1);
+      const [to, token] = mailServiceMock.sendConsentRequest.mock.calls[0];
+      expect(to).toBe('e1@example.com');
+      expect(typeof token).toBe('string');
+
+      const rows = prismaMock.getConsentRequestRows();
+      const sentRow = rows.find((r) => r.actorId === 'a-eligible-1');
+      expect(sentRow).toMatchObject({ status: 'SENT' });
+      expect(sentRow?.tokenHash).toBeTruthy();
+      expect(sentRow?.sentAt).toBeInstanceOf(Date);
+      expect(sentRow?.expiresAt).toBeInstanceOf(Date);
+
+      const auditRows = prismaMock.getAuditLogRows();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toMatchObject({
+        action: 'CONSENT_REQUESTED',
+        actorId: 'a-eligible-1',
+        actingSub: 'admin-sub',
+      });
+    });
+
+    it('a transport failure leaves the row FAILED with a non-PII reason, and retry requeues it', async () => {
+      mailServiceMock.sendConsentRequest.mockRejectedValueOnce(new Error('ECONNREFUSED x.x.x.x'));
+
+      const enqueueRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests')
+        .set(admin)
+        .send({ target: { kind: 'ids', ids: ['a-eligible-2'] }, scope: 'bulk' })
+        .expect(201);
+      const { batchId } = enqueueRes.body;
+
+      const dispatchRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests/dispatch')
+        .set(admin)
+        .send({ batchId })
+        .expect(200);
+      expect(dispatchRes.body).toEqual({ sent: 0, failed: 1, remaining: 0 });
+
+      const failedRow = prismaMock.getConsentRequestRows().find((r) => r.actorId === 'a-eligible-2');
+      expect(failedRow?.status).toBe('FAILED');
+      expect(failedRow?.failureReason).toBe('transport_rejected');
+      // Never the raw transport error text — it can carry an address.
+      expect(failedRow?.failureReason).not.toMatch(/ECONNREFUSED|x\.x\.x\.x/);
+
+      const retryRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests/retry')
+        .set(admin)
+        .send({ batchId })
+        .expect(200);
+      expect(retryRes.body).toEqual({ queued: 1 });
+
+      const requeued = prismaMock.getConsentRequestRows().find((r) => r.actorId === 'a-eligible-2');
+      expect(requeued?.status).toBe('QUEUED');
+      expect(requeued?.tokenHash).toBeNull();
+    });
+  });
+
+  describe('GET /api/v1/admin/consent-requests/queue', () => {
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).get('/api/v1/admin/consent-requests/queue').expect(401);
+    });
+
+    it('reports queued and failed counts across all batches', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/consent-requests')
+        .set(admin)
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1', 'a-eligible-2'] }, scope: 'bulk' })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/consent-requests/queue')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body).toEqual({ queued: 2, failed: 0 });
     });
   });
 });

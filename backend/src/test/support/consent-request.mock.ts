@@ -6,6 +6,10 @@
  * `ConsentRequestsService` issue: `findMany` by `actorId.in`, `createMany`,
  * and `updateMany` with an `actorId.in` + `OR[{status.in}, {status, expiresAt.gt}]`
  * where clause.
+ *
+ * T-4 adds `findFirst` (claim selection, oldest-`createdAt`-first) and
+ * `count` (the `queue` summary), and `matchesClause` gains `lt` (the
+ * stale-claim sweep's `claimedAt: { lt }`).
  */
 
 export interface ConsentRequestMockRow {
@@ -55,6 +59,12 @@ function matchesClause(row: Record<string, unknown>, clause: WhereClause): boole
         const valueTime = (value instanceof Date ? value : new Date(value as string)).getTime();
         const gtTime = (condObj.gt as Date).getTime();
         return valueTime > gtTime;
+      }
+      if ('lt' in condObj) {
+        if (value == null) return false;
+        const valueTime = (value instanceof Date ? value : new Date(value as string)).getTime();
+        const ltTime = (condObj.lt as Date).getTime();
+        return valueTime < ltTime;
       }
       return false;
     }
@@ -107,17 +117,33 @@ export function createConsentRequestMock(initial: ConsentRequestMockRow[] = []) 
     findMany: jest.fn(async (args: { where?: WhereClause } = {}) =>
       rows.filter((r) => matchesClause(r, args.where ?? {})),
     ),
+    // T-4 — the claim-loop selection: the OLDEST matching row (createdAt
+    // ascending), mirroring `orderBy: { createdAt: 'asc' }`.
+    findFirst: jest.fn(async (args: { where?: WhereClause } = {}) => {
+      const matches = rows.filter((r) => matchesClause(r, args.where ?? {}));
+      if (matches.length === 0) return null;
+      return matches.reduce((oldest, r) => (r.createdAt < oldest.createdAt ? r : oldest));
+    }),
+    // T-4 — the `queue` summary (`{ queued, failed }`).
+    count: jest.fn(async (args: { where?: WhereClause } = {}) =>
+      rows.filter((r) => matchesClause(r, args.where ?? {})).length,
+    ),
     createMany: jest.fn(async (args: { data: Array<Partial<ConsentRequestMockRow>> }) => {
       const created = args.data.map((d) => defaultRow({ id: nextId(), ...d }));
       rows.push(...created);
       return { count: created.length };
     }),
-    updateMany: jest.fn(async (args: { where?: WhereClause; data: Partial<ConsentRequestMockRow> }) => {
+    updateMany: jest.fn(async (args: { where?: WhereClause; data: Partial<ConsentRequestMockRow> & { attempts?: { increment: number } } }) => {
       let count = 0;
       rows = rows.map((r) => {
         if (matchesClause(r, args.where ?? {})) {
           count += 1;
-          return { ...r, ...args.data };
+          const { attempts, ...rest } = args.data;
+          const next: ConsentRequestMockRow = { ...r, ...(rest as Partial<ConsentRequestMockRow>) };
+          if (attempts && typeof attempts.increment === 'number') {
+            next.attempts = r.attempts + attempts.increment;
+          }
+          return next;
         }
         return r;
       });

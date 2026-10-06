@@ -148,7 +148,7 @@ T-1…T-13 ─► T-14
   - **Review:** `full` — it adds writes to four existing transactions.
   - **Done when:** all tests green, falsifiers executed red, the backend suite green.
 
-- [~] **T-4 Dispatch, token, email, retry and the queue** (deps: T-3)
+- [x] **T-4 Dispatch, token, email, retry and the queue** (deps: T-3)
   - **Size:** L (~1,200 LOC) · **Effort:** `xhigh` · **Skills:** `nestjs-expert`, `tdd`, `error-handling-patterns`
   - **Traces:**
     - FR-4 (failure retryable; closing the tab, BUT none lost or twice — server)

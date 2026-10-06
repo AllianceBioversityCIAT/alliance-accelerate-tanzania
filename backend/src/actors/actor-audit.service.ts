@@ -18,6 +18,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ActorAuditAction,
   ActorAuditLog,
+  ConsentRequest,
   Prisma,
   Registration,
 } from '@prisma/client';
@@ -523,6 +524,44 @@ export class ActorAuditService {
             traderName,
             reason: registration.rejectionReason ?? null,
           },
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-4 — record a
+   * `CONSENT_REQUESTED` audit entry (FR-13, design.md §5.2 step 2.6, §7.1).
+   *
+   * The acting identity is the admin who originally ENQUEUED the request —
+   * snapshotted onto the `ConsentRequest` row at enqueue time
+   * (`requestedBySub`/`requestedByEmail`) — never whichever admin (or none)
+   * happens to be driving the dispatch step that actually sends it: a queue
+   * is commonly resumed by a different admin, or by the resume banner with
+   * no admin "doing" anything new, and crediting that resumer as the sender
+   * would misattribute who actually asked. `changes` is a minimal snapshot
+   * naming only the request id and the address it was sent to — the data an
+   * auditor needs to correlate this trail entry with the Consent evidence
+   * panel (T-6), nothing more.
+   */
+  async logConsentRequested(
+    tx: Prisma.TransactionClient,
+    request: Pick<
+      ConsentRequest,
+      'id' | 'actorId' | 'traderId' | 'traderName' | 'recipientEmail' | 'requestedBySub' | 'requestedByEmail'
+    >,
+  ): Promise<ActorAuditLog> {
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: request.actorId,
+        traderId: request.traderId,
+        traderName: request.traderName,
+        action: ActorAuditAction.CONSENT_REQUESTED,
+        actingSub: request.requestedBySub,
+        actingEmail: request.requestedByEmail ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: { requestId: request.id, recipientEmail: request.recipientEmail },
         } as unknown as Prisma.InputJsonValue,
       },
     });

@@ -983,6 +983,101 @@ describe('ActorAuditService', () => {
     });
   });
 
+  // actors/consent-intake/consent-request-email T-4 (rework, attempt 2,
+  // Reviewer B issue 2) — `logConsentRequested`'s row shape was previously
+  // asserted nowhere: neither here, nor in `consent-requests.service.spec.ts`
+  // (which only checks `action`/`actorId`/`actingSub` through the e2e/unit
+  // dispatch tests), nor in `admin-consent-requests.e2e.spec.ts` (same
+  // partial shape). This block pins every field the method writes.
+  describe('logConsentRequested', () => {
+    const request = {
+      id: 'consent-req-1',
+      actorId: 'actor-9',
+      // Deliberately DIFFERENT from `acting`/`fixtureActor()`'s own values —
+      // this is the whole point of the method (FR-13, design.md §5.2 step
+      // 2.6): the row's identity and trader fields come from the
+      // CONSENT REQUEST's own snapshot (taken at enqueue), never from the
+      // actor table or from whichever admin happens to be driving dispatch.
+      traderId: 'TZ-SEED-0099',
+      traderName: 'Snapshot Trader Name At Enqueue',
+      recipientEmail: 'snapshot-recipient@example.com',
+      requestedBySub: 'requesting-admin-sub',
+      requestedByEmail: 'requesting-admin@example.com',
+    };
+
+    it('writes actorId/traderId/traderName from the REQUEST row (not the actor), action CONSENT_REQUESTED', async () => {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logConsentRequested(tx, request);
+
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+
+      expect(data).toMatchObject({
+        actorId: request.actorId,
+        traderId: request.traderId,
+        traderName: request.traderName,
+        action: ActorAuditAction.CONSENT_REQUESTED,
+      });
+    });
+
+    it('credits the REQUESTING admin (requestedBySub/requestedByEmail), never a different "acting" identity', async () => {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logConsentRequested(tx, request);
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+      expect(data.actingSub).toBe(request.requestedBySub);
+      expect(data.actingEmail).toBe(request.requestedByEmail);
+      // Falsifier-adjacent sanity: this must NOT be the generic fixture's
+      // `acting` identity, proving the method reads off the row, not a
+      // caller-supplied acting admin.
+      expect(data.actingSub).not.toBe(acting.sub);
+    });
+
+    it('falls back to null actingEmail when the request row has none', async () => {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logConsentRequested(tx, { ...request, requestedByEmail: null });
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+      expect(data.actingEmail).toBeNull();
+    });
+
+    it('`changes` is EXACTLY { requestId, recipientEmail } — a snapshot envelope, no token, no extra fields', async () => {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+
+      await service.logConsentRequested(tx, request);
+
+      const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+      const changes = data.changes as { kind: string; values: Record<string, unknown> };
+
+      expect(changes.kind).toBe('snapshot');
+      expect(changes.values).toEqual({
+        requestId: request.id,
+        recipientEmail: request.recipientEmail,
+      });
+      expect(Object.keys(changes.values)).toEqual(['requestId', 'recipientEmail']);
+      expect(JSON.stringify(changes)).not.toMatch(/token/i);
+    });
+
+    it('writes inside the caller-supplied tx, never a separate transaction', async () => {
+      const tx = mockTx();
+      const otherTx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      otherTx.actorAuditLog.create = jest.fn();
+
+      await service.logConsentRequested(tx, request);
+
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      expect(otherTx.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('toAuditEntry', () => {
     it('passes changes through and formats createdAt as ISO string', () => {
       const createdAt = new Date('2026-07-09T12:34:56Z');

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { ActorAuditService } from '../actors/actor-audit.service';
+import { MailModule } from '../mail/mail.module';
 import { ConsentSupersessionModule } from './consent-supersession.module';
 import { ConsentRequestsService } from './consent-requests.service';
 import { AdminConsentRequestsController } from './admin-consent-requests.controller';
@@ -20,13 +21,16 @@ import { AdminConsentRequestsController } from './admin-consent-requests.control
  * imports it, and neither module imports the other, so no cycle and no
  * `forwardRef` is ever needed.
  *
- * `ActorAuditService` is not yet called from this module's own code (T-3
- * writes no `CONSENT_REQUESTED` audit row — that is `dispatch`'s job, T-4)
- * but is wired in now per design.md §5.5's module-wiring note, so T-4 needs
- * no further module edit to use it.
+ * T-4 — `MailModule` is imported explicitly (the `RegistrationsModule`/
+ * `ContactModule`/`UsersModule` precedent — `MailModule` is NOT global) so
+ * `ConsentRequestsService.dispatch` can inject `MailService`.
+ * `ActorAuditService`'s first caller is now `dispatch`'s
+ * `logConsentRequested` (the `CONSENT_REQUESTED` row) — it was wired in at
+ * T-3 ahead of this, per design.md §5.5's module-wiring note, so this task
+ * needs no further module edit for it.
  */
 @Module({
-  imports: [PrismaModule, ConsentSupersessionModule],
+  imports: [PrismaModule, ConsentSupersessionModule, MailModule],
   controllers: [AdminConsentRequestsController],
   providers: [ConsentRequestsService, ActingAdminResolver, ActorAuditService],
   exports: [ConsentRequestsService],

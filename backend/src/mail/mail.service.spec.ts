@@ -261,6 +261,16 @@ describe('MailService — transport selection (NFR-10, the Disqualifying clause)
       expect(channel.publish).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('actors/consent-intake/consent-request-email T-4 — the same distinction holds for sendConsentRequest', async () => {
+    setTransport('no-op');
+    await new MailService().sendConsentRequest('actor@example.org', 'tok-1', 'Organization One');
+    expect(channel.publish).toHaveBeenCalledTimes(0);
+
+    setTransport('microservice');
+    await new MailService().sendConsentRequest('actor@example.org', 'tok-1', 'Organization One');
+    expect(channel.publish).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('MailService — logging never carries PII, codes, or body text (NFR-8, DC-14)', () => {
@@ -324,6 +334,28 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
     // must be present, unlike the address.
     expect(emitted).toContain(reference);
   });
+
+  it(
+    'actors/consent-intake/consent-request-email T-4 (NFR-1) — emits attempt + outcome lines ' +
+      'for kind=consent-request, with reference=n/a, never the token or the recipient address',
+    async () => {
+      const service = new MailService();
+      const email = 'respondent-secret@example.org';
+      const token = 'super-secret-consent-token-value';
+
+      await service.sendConsentRequest(email, token, 'Organization Alpha');
+
+      const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
+      expect(totalCalls).toBeGreaterThan(0);
+
+      const emitted = emittedText();
+      expect(emitted).not.toContain(email);
+      expect(emitted).not.toContain(token);
+      expect(emitted).toContain('kind=consent-request');
+      expect(emitted).toContain('reference=n/a');
+      expect(emitted).toContain('status=sent');
+    },
+  );
 
   it(
     'admin/registration-review-queue A-55 — emits attempt + outcome lines for kind=approval ' +

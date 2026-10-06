@@ -265,3 +265,121 @@
   - `design.md`: §5.2 step 1 (the lock) and §10 (the re-baseline note).
   - `tasks.md` T-4: scope and tests.
 - **Carry:** T-4's Reviewer brief covers design §5.1/§6 (amended in T-3) and §5.2 step 1 (amended here).
+
+### T-4 — Dispatch, token, email, retry and the queue — in progress
+
+- **Leader choices:**
+  - Skills: `nestjs-expert`, `tdd`, `error-handling-patterns`.
+  - Effort: `xhigh`.
+  - Review: two lens Reviewers, A on concurrency / security and B on mail / API.
+
+#### Attempt 1 — **FAIL** (both Reviewers)
+
+**Files changed**
+- **New:**
+  - `consent-requests/consent-token.util.ts`
+  - `consent-requests/dto/consent-request-batch.dto.ts`
+  - `mail/templates/consent-request.template.ts` and its spec
+- **Modified:**
+  - `consent-requests.service.ts` (`dispatch`, `retry`, `queue`, the D-25 lock) and its spec
+  - `admin-consent-requests.controller.ts`
+  - `consent-requests.module.ts`
+  - `actor-audit.service.ts` (`logConsentRequested`)
+  - `mail.service.ts` and its spec
+  - `test/support/consent-request.mock.ts`
+  - `test/admin-consent-requests.e2e.spec.ts`
+
+**Implementer verification:** 93 suites / 1533 tests. Lint, build and `tsc` clean. Five falsifiers executed red. The budget test observed sent=3, remaining=2 at 8,700 ms of fake time.
+
+**Evidence re-run (Leader): VERIFIED.** 93 suites / 1533 tests. Lint, build and `tsc` OK.
+
+**Reviewer A (concurrency / security): FAIL.** Verbatim issues:
+1. "NFR-1's own test clauses are not covered — no test asserts the token is 32 bytes or that the stored column equals `sha256(token)`; the dispatch test only checks `tokenHash` is truthy and `!== token`. Storing sha1, a truncated hash, or 16 random bytes would all stay green." Violated: NFR-1; T-4 traces NFR-1. Remediation: assert `row.tokenHash === createHash('sha256').update(token).digest('hex')` and `Buffer.from(token,'base64url').length === 32`; add a falsifier run (change the hash algorithm → red).
+2. "T-4's mandated Red run is absent from the evidence: the concurrency test red on 'sent once' with the claim CAS removed. tasks.md also requires 'the fake transport defers its resolution'; the dispatch concurrency test uses `mockResolvedValue(undefined)` with no guard proving the two calls interleave — if serialized it would still pass (one dispatch sends all 4)." Violated: T-4 Red run, Disqualifier, Done-when. Remediation: make the transport deferred, add a vacuity guard (e.g. `r1.sent ≥ 1 && r2.sent ≥ 1`, or ≥ 1 claim `updateMany` count 0), then execute and record the claim-CAS-removed red run.
+3. "D-25's falsifier is nominal. The mock's gates ARE the lock, so 'drop the lock' reddens on `queryRawCalls === 0`, not on 'two rows'. Whether MySQL `FOR UPDATE` actually blocks under Prisma's interactive transaction (with the read-view timing above) is unevaluable here and undeclared." Violated: D-25; KZ-002 / KZ-013 option B. Remediation: record an explicit UNEVALUABLE-in-unit gap with an owner (a local or dev MySQL probe running two concurrent `enqueue`s for one actor), and record that the lock must stay the first statement in the transaction.
+
+**Reviewer B (mail / API): FAIL.** Verbatim issues:
+1. "The email never states the site address as wording. The intro reads '…publish information about ${organizationName} on the ACCELERATE Tanzania Registry.' with no address; in the HTML part the URL appears only inside the button's `href`." Violated: FR-7 Content ("on the ACCELERATE Tanzania Registry (site address)"); design §7.1. Remediation: interpolate `getPublicAppBaseUrl()` into the intro (text and HTML), and extend the template spec to assert the paragraph contains the base URL outside the link.
+2. "A false coverage claim: `consent-requests.service.spec.ts` says 'its own unit tests cover `logConsentRequested`'s row shape' — `actor-audit.service.spec.ts` has no such test; the e2e checks only `action`, `actorId`, `actingSub`. Nothing pins `traderId`/`traderName` from the snapshot, `actingEmail`, or `changes = { requestId, recipientEmail }` with no token." Violated: T-4 Scope; FR-13; `backend/CLAUDE.md` Audit. Remediation: add a unit test for `logConsentRequested` asserting every field, and remove or correct the false comment.
+
+**Advisories:**
+- A `timeout` classification by `err.name` regex is fragile under minification.
+- `retry` does not clear `failureReason`.
+- `batchId` could use `@IsUUID`.
+- `retry` has no 401/403 test and `queue` has no 403 test.
+- Long docblocks.
+- An explicit ≤ 11.5 s assertion.
+- A DB error after a successful send aborts the loop with a 500 (recovered by the stale sweep).
+- `failureReason 'timeout'` covers both cases.
+- §5.8's owners now live in private helpers.
+
+**Execute-time spec edit:** `design.md` §5.8's write-site table now names `dispatch`'s private helpers. This is a wording fix, not a change in meaning. Carry: T-4 attempt 2's Reviewer and T-6.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the attempt-1 Implementer. All five FAIL items were copied verbatim. Effort was raised to `max`.
+
+**Files changed (this attempt):**
+- `mail/templates/consent-request.template.ts`: the intro now names the site address (`getPublicAppBaseUrl()`).
+- Its spec: the link extraction targets the "Review and respond" line, and a new test asserts the site address appears before the first `<a href`.
+- `actors/actor-audit.service.spec.ts`: 5 `logConsentRequested` tests covering every field (snapshot trader fields, requesting-admin identity, null-email fallback, `changes` exactly `{ requestId, recipientEmail }`).
+- `consent-requests.service.spec.ts`:
+  - NFR-1 asserts a 32-byte token and `tokenHash === sha256(token)`.
+  - A deferred real-timer transport with a vacuity guard (`r1.sent ≥ 1 && r2.sent ≥ 1`) and a wall-clock overlap check.
+  - A `findFirst`-barrier single-row race test.
+  - The false coverage comment was corrected.
+
+No dispatch or token production logic changed.
+
+**Falsifiers (executed red, then reverted):**
+
+| Mutation | Red assertion |
+|---|---|
+| sha256 → sha1 | The hash assertion |
+| `randomBytes(16)` | The 32-byte assertion |
+| Claim compare-and-set without `status` (**the mandated red run**) | The 4-row test got 5 sends; the single-row race got 2 (expected 1) |
+| Intro without the address | The site-address test |
+| Wrong `actingSub` plus a leaked `token` key | 2 of the 5 audit tests |
+
+**D-25 live corroboration** (a throwaway probe, **not committed**, run by the author and deleted afterwards):
+- **Shape:** the real `ConsentRequestsService` and a real `PrismaClient` against the local `accelerate-mysql` (MySQL 8). One eligible actor was seeded, then two concurrent `enqueue({ kind: 'ids', ids: [actor] }, 'bulk')` calls ran.
+- **With the lock:** 4/4 runs left exactly 1 QUEUED row; the other call saw `pending_request`.
+- **Without the lock** (the call commented out, then restored): 5/5 runs left 2 QUEUED rows.
+- **Restored:** 1 row.
+- Seeded rows were cleaned up (0 left).
+- The unit test remains a simulated-lock regression guard: it checks the call exists and its order, and the lock-first ordering is pinned by the spec's ordering test. **The lock must remain the first statement of the enqueue transaction** (design §5.2 step 1, note added).
+
+**Implementer verification:** 93 suites / 1540 tests. Lint, build and `tsc` clean.
+
+**Evidence re-run (Leader): VERIFIED.** 93 suites / 1540 tests. Lint, build and `tsc` OK. No probe file remains in the tree.
+
+**Reviewer (rework; override (e)): PASS.** All five issues are closed by assertions that would go red. The interleaving is structurally proven: a sequential run would hang on the `findFirst` barrier, so it cannot pass vacuously. The A/B probe discharges A-3. There is no production regression.
+
+**Leader-inline after PASS (comment-only):** three test comments that overclaimed were corrected. The D-25 test is now labelled a simulated lock that points to this probe, and the stale `Buffer.byteLength` wording is fixed. Re-run: 26/26 tests in the spec; lint OK.
+
+**Execute-time spec edit:** design §5.2 step 1 gains the lock-first and deadlock note. Carry: T-5's Reviewer.
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-4: retryable; closing the tab (server side).
+- FR-6: both scenarios.
+- FR-7: all three scenarios.
+- FR-8: the 30-day window.
+- FR-13: the consent-requested trail.
+- NFR-1: the send side.
+- NFR-6: unit level. Live throughput remains P-9, owned by T-14.
+- NFR-7.
+- D-25.
+
+**ADVISORY (recorded):**
+- A vacuous test: "writes inside the caller-supplied tx".
+- Overlapping bulk locks rely on InnoDB primary-key ordering (now noted in the design).
+- `retry` does not clear `failureReason`.
+- `@IsUUID` on `batchId`.
+- `retry` has no 401/403 test and `queue` has no 403 test.
+- The `timeout` classification by `err.name` regex.
+- Long docblocks in the controller and the audit service.
+- A DB error after a successful send gives a `500`, recovered by the stale sweep.
+
+- **Final verification:** VERIFIED.

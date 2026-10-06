@@ -151,7 +151,7 @@ A filter target uses `buildAdminActorWhere(q)`, a pure function **extracted** fr
 
 ### 5.2 Persist, then dispatch (FR-6, NFR-6)
 
-1. **Enqueue.** *(D-25, amended 2026-10-05.)* The transaction first locks the targeted `Actor` rows (`SELECT … FOR UPDATE` through parameterized `$queryRaw`, the `ActorSequence` precedent). It then evaluates eligibility **inside** the transaction, so a concurrent enqueue for the same actor waits and then sees the first one's pending row. That same transaction creates `QUEUED` rows (`createMany`, P-29) for every eligible actor, snapshotting `recipientEmail`, `traderId`, `traderName`, edition and hash. For `single` it first calls `supersedePendingFor(tx, [actorId])`. It returns `{ batchId, queued, skipped: { reason → count } }`.
+1. **Enqueue.** *(D-25, amended 2026-10-05.)* The transaction first locks the targeted `Actor` rows (`SELECT … FOR UPDATE` through parameterized `$queryRaw`, the `ActorSequence` precedent). It then evaluates eligibility **inside** the transaction, so a concurrent enqueue for the same actor waits and then sees the first one's pending row. The lock must stay the **first statement** in the transaction: InnoDB opens the read view at the first plain read, so the eligibility read has to come after `FOR UPDATE` returns. Overlapping bulk sets rely on InnoDB taking row locks in primary-key order; a deadlock would surface as a `500`, and the admin can retry. That same transaction creates `QUEUED` rows (`createMany`, P-29) for every eligible actor, snapshotting `recipientEmail`, `traderId`, `traderName`, edition and hash. For `single` it first calls `supersedePendingFor(tx, [actorId])`. It returns `{ batchId, queued, skipped: { reason → count } }`.
 2. **Dispatch** `{ batchId? }` loops until the **time budget (7.5 s)** is spent or nothing is left. The budget is checked **before the claim** (RB-4), so no row is ever claimed after it. One loop pass:
    1. Selects the next `QUEUED` id.
    2. **Claims** it with a compare-and-set `updateMany(id, status=QUEUED) → SENDING, claimedAt, attempts+1` (P-29). A count of 0 means another tab claimed it, or it was superseded, so the row is skipped (FR-6 scenario 2).
@@ -293,7 +293,7 @@ Two tests own FR-13's "written only by" clause.
 
    | Method | Writes |
    |---|---|
-   | `ConsentRequestsService.dispatch` | claim, claim-time supersede (step 2.3), result, and the stale-claim sweep (step 3, run at the start of each dispatch call) |
+   | `ConsentRequestsService.dispatch`, including its private helpers (`claimAndSendOne`, `sweepStaleClaims`) | claim, claim-time supersede (step 2.3), result, and the stale-claim sweep (step 3, run at the start of each dispatch call) |
    | `ConsentRequestsService.retry` | `FAILED → QUEUED` |
    | `ConsentSupersessionService.supersedePendingFor` | every supersede outside dispatch; `enqueue` (single scope) calls it inside its own transaction rather than writing directly (RB-5) |
    | `ConsentPublicService.respond` | the answer |

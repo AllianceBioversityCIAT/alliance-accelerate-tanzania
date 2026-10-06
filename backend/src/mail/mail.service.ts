@@ -44,6 +44,7 @@ import { buildApprovalMessage } from './templates/approval.template';
 import { buildRejectionMessage } from './templates/rejection.template';
 import { buildInvitationMessage } from './templates/invitation.template';
 import { buildAdminResetMessage } from './templates/admin-reset.template';
+import { buildConsentRequestMessage } from './templates/consent-request.template';
 import {
   buildNewRegistrationMessage,
   NewRegistrationNoticeData,
@@ -136,6 +137,18 @@ export class MailService {
    */
   async sendNewRegistrationNotice(to: string[], data: NewRegistrationNoticeData): Promise<void> {
     await this.dispatch('new-registration', buildNewRegistrationMessage(to, data));
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-4 — FR-7: send the
+   * consent-request email. `token` is the RAW (unhashed) value — it lives
+   * only in `ConsentRequestsService.dispatch`'s call stack and this message
+   * body, never logged (NFR-1: {@link dispatch}'s log lines below carry only
+   * `kind` and `reference`, and this call leaves `reference` undefined — see
+   * `consent-request.template.ts`'s docblock).
+   */
+  async sendConsentRequest(to: string, token: string, organizationName: string): Promise<void> {
+    await this.dispatch('consent-request', buildConsentRequestMessage(to, organizationName, token));
   }
 
   /**
