@@ -24,6 +24,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 
 import { AcknowledgeDialog } from './AcknowledgeDialog';
 import { DuplicateConfirmDialog } from './DuplicateConfirmDialog';
+import { ConsentDocumentField } from './ConsentDocumentField';
 import Button from '../ui/Button';
 import { SearchableSelect } from '../ui/SearchableSelect';
 
@@ -43,12 +44,14 @@ import {
   type AdminActor,
   type AdminActorCreateInput,
   type AdminActorCreateResult,
+  type AdminActorUpdateInput,
   type ConsentMethod,
   type DuplicateCandidate,
   type DuplicateConflictBody,
   type RegistrationSource,
 } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
+import { ACTOR_FORM_CONSENT_COPY } from '@/lib/content/consent-requests';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -83,7 +86,7 @@ const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }
  * (`app/(admin)/admin/actors/page.tsx` `CONSENT_METHOD_OPTIONS`) so the same
  * enum reads identically everywhere in the admin console. `NOT_RECORDED` is
  * listed deliberately (it is the schema default, not an "unset" sentinel) —
- * the select has no separate blank option, see `renderConsentMethodSelect`.
+ * the select has no separate blank option — except the transient empty "Select…" shown after an `EMAIL_LINK` status swap (see `renderConsentMethodSelect`).
  */
 const CONSENT_METHOD_OPTIONS: { value: ConsentMethod; label: string }[] = [
   { value: 'NOT_RECORDED', label: 'Not recorded' },
@@ -150,10 +153,10 @@ interface FormValues {
   /**
    * T-9 (FR-6 closure) — mirrors the backend `RegistrationSource` enum.
    * Non-nullable with a schema default (`TEAM_MANAGED`) — always a real
-   * value, never a blank sentinel, exactly like `consentMethod` below.
+   * value, never a blank sentinel, exactly like `consentMethod` below (the one exception: `consentMethod` is '' after an `EMAIL_LINK` status swap, until the admin chooses).
    */
   registrationSource: string;
-  /** T-9 (FR-2) — mirrors the backend `ConsentMethod` enum; always a real value, never a blank sentinel. */
+  /** T-9 (FR-2) — mirrors the backend `ConsentMethod` enum; always a real value, except '' after an `EMAIL_LINK` status swap until the admin chooses. */
   consentMethod: string;
   /** T-9 (FR-2) — `YYYY-MM-DD`, the native shape of `<input type="date">`; empty string when unset. */
   consentObtainedAt: string;
@@ -172,9 +175,27 @@ export interface ActorFormProps {
    * dialog before redirecting. Called with no argument on Cancel, which has
    * no actor to report.
    */
-  onSuccess: (actor?: AdminActorCreateResult | AdminActor) => void;
+  onSuccess: (actor?: AdminActorCreateResult | AdminActor, extras?: ActorFormSuccessExtras) => void;
   onAuthFailure: () => void;
+  /**
+   * D-26 — called when the admin chooses "Reload" on the stale-form notice.
+   * The edit page re-reads the actor and remounts the form; without it the
+   * form falls back to a full page reload.
+   */
+  onReload?: () => void;
 }
+
+/**
+ * Passed to `onSuccess` after a CREATE. The form only HOLDS the optional
+ * consent document; the page uploads it once the actor exists (FR-15), so a
+ * rejected create can never leave an upload behind.
+ */
+export interface ActorFormSuccessExtras {
+  documentFile: File | null;
+}
+
+/** The submit body: the create shape plus D-26's edit-only `expectedUpdatedAt`. */
+type SubmitDto = AdminActorCreateInput & Pick<AdminActorUpdateInput, 'expectedUpdatedAt'>;
 
 interface FieldErrorDetail {
   field: string;
@@ -482,18 +503,78 @@ function validate(
   return errors;
 }
 
+/**
+ * FR-10 / design §5.7 — the stored consent was given by the actor's own act
+ * (`EMAIL_LINK`). Admins can never assert that method, so while it stands the
+ * form shows it read-only instead of an assertable select.
+ */
+function isStoredEmailLink(mode: 'create' | 'edit', initialValues?: AdminActor): boolean {
+  return mode === 'edit' && initialValues?.consentMethod === 'EMAIL_LINK';
+}
+
+/**
+ * Rule 3 (frozen evidence): `GRANTED` by link with the status unchanged. The
+ * method, date and reference are the actor's evidence and render read-only.
+ */
+function isLinkEvidenceFrozen(
+  mode: 'create' | 'edit',
+  values: FormValues,
+  initialValues?: AdminActor,
+): boolean {
+  return (
+    isStoredEmailLink(mode, initialValues) &&
+    initialValues?.consentStatus === 'GRANTED' &&
+    values.consentStatus === initialValues.consentStatus
+  );
+}
+
+/**
+ * Select swap (design §5.7, rules 2 and 4): while the status equals the stored
+ * one the stored link evidence stands; when it differs the assertable method
+ * select comes back EMPTY. A re-grant must carry its own method, date and
+ * reference — the link-era date and reference are cleared so they cannot ride
+ * along under an admin method (D-24).
+ */
+function applyConsentStatusChange(prev: FormValues, status: string, initial: AdminActor): FormValues {
+  const next = { ...prev, consentStatus: status };
+  if (initial.consentMethod !== 'EMAIL_LINK') return next;
+  const baseline = toFormValues(initial);
+  if (status === initial.consentStatus) {
+    return {
+      ...next,
+      consentMethod: baseline.consentMethod,
+      consentObtainedAt: baseline.consentObtainedAt,
+      consentReference: baseline.consentReference,
+    };
+  }
+  if (status === 'GRANTED') {
+    return { ...next, consentMethod: '', consentObtainedAt: '', consentReference: '' };
+  }
+  return {
+    ...next,
+    consentMethod: '',
+    consentObtainedAt: baseline.consentObtainedAt,
+    consentReference: baseline.consentReference,
+  };
+}
+
 function buildDto(
   values: FormValues,
   mode: 'create' | 'edit',
   initialValues?: AdminActor,
-): AdminActorCreateInput {
+): SubmitDto {
   return {
+    // D-26 — edit ALWAYS names the version the form loaded, so a save made on
+    // top of a newer actor (e.g. the actor just answered by link) is refused.
+    ...(mode === 'edit' && initialValues ? { expectedUpdatedAt: initialValues.updatedAt } : {}),
     traderName: values.traderName.trim(),
     region: values.region,
     traderType: values.traderType,
     consentStatus: values.consentStatus as 'GRANTED' | 'DENIED' | 'UNKNOWN',
     registrationSource: values.registrationSource as RegistrationSource,
-    consentMethod: values.consentMethod as ConsentMethod,
+    // An emptied select (swap while the stored method is EMAIL_LINK, status not GRANTED)
+    // re-sends the stored value unchanged — rule 1 only refuses a CHANGE to it.
+    consentMethod: (values.consentMethod || initialValues?.consentMethod) as ConsentMethod,
     consentObtainedAt: resolveConsentObtainedAt(values, mode, initialValues),
     // C-3/E-1 carry-forward: '' and null are NOT the same to isSameValue() in
     // consent-provenance.policy.ts. Keep the trim()||null idiom so a legacy
@@ -539,6 +620,16 @@ function hasDuplicateCandidates(body: unknown): body is DuplicateConflictBody {
     typeof body === 'object' &&
     body !== null &&
     Array.isArray((body as Partial<DuplicateConflictBody>).duplicateCandidates)
+  );
+}
+
+/** D-26 — the 409 whose `details` name `expectedUpdatedAt`: the actor changed since the form loaded. */
+function isStaleFormConflict(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 409 &&
+    Array.isArray(err.details) &&
+    err.details.some((d) => (d as Partial<FieldErrorDetail>)?.field === 'expectedUpdatedAt')
   );
 }
 
@@ -617,6 +708,14 @@ function inputClasses(error?: boolean): string {
   ].join(' ');
 }
 
+/** Read-only twin of `inputClasses`: same geometry, the alt surface marks it as not editable. */
+function readOnlyInputClasses(): string {
+  return [
+    'block w-full rounded-md border border-border bg-surface-alt px-3 py-2 text-sm text-fg',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+  ].join(' ');
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -627,13 +726,18 @@ export default function ActorForm({
   token,
   onSuccess,
   onAuthFailure,
+  onReload,
 }: ActorFormProps) {
   const [values, setValues] = useState<FormValues>(() => toFormValues(initialValues));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showAck, setShowAck] = useState(false);
-  const [pendingDto, setPendingDto] = useState<AdminActorCreateInput | null>(null);
+  const [pendingDto, setPendingDto] = useState<SubmitDto | null>(null);
+  // FR-15 — create mode only: the chosen consent document, held until the actor exists.
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  // D-26 — the last save was refused because the actor changed since this form loaded.
+  const [stale, setStale] = useState(false);
 
   // ── Duplicate gate (T-6, FR-3) ───────────────────────────────────────────
   // Unconfirmed strong candidates from the most recent 409, or `null` when
@@ -651,7 +755,7 @@ export default function ActorForm({
   // resubmitting with only the latest round's ids would drop an earlier
   // confirmation and loop (forward pointer, T-3 execution.md: confirm A,
   // 409 names B, confirm B must resubmit {A, B}).
-  const pendingDuplicateDtoRef = useRef<AdminActorCreateInput | null>(null);
+  const pendingDuplicateDtoRef = useRef<SubmitDto | null>(null);
   const confirmedActorIdsRef = useRef<Set<string>>(new Set());
 
   const baseId = useId();
@@ -659,7 +763,11 @@ export default function ActorForm({
   const fieldId = useCallback((field: keyof FormValues) => `${baseId}-${field}`, [baseId]);
 
   const setField = useCallback(<K extends keyof FormValues>(field: K, value: FormValues[K]) => {
-    setValues((prev) => ({ ...prev, [field]: value }));
+    setValues((prev) =>
+      field === 'consentStatus' && initialValues
+        ? applyConsentStatusChange(prev, value as string, initialValues)
+        : { ...prev, [field]: value },
+    );
     setErrors((prev) => {
       if (!prev[field]) return prev;
       const next = { ...prev };
@@ -667,7 +775,7 @@ export default function ActorForm({
       return next;
     });
     setFormError(null);
-  }, []);
+  }, [initialValues]);
 
   const toggleCrop = useCallback((crop: string) => {
     setValues((prev) => {
@@ -685,7 +793,7 @@ export default function ActorForm({
   }, []);
 
   const doSubmit = useCallback(
-    async (dto: AdminActorCreateInput) => {
+    async (dto: SubmitDto) => {
       setLoading(true);
       setFormError(null);
       setErrors({});
@@ -695,7 +803,7 @@ export default function ActorForm({
           const created = await createActor(dto, token);
           setDuplicateCandidates(null);
           pendingDuplicateDtoRef.current = null;
-          onSuccess(created);
+          onSuccess(created, { documentFile });
         } else {
           if (!initialValues) throw new Error('Missing actor id for update.');
           const updated = await updateActor(initialValues.id, dto, token);
@@ -717,6 +825,13 @@ export default function ActorForm({
           return;
         }
 
+        // D-26 — keep every typed value; the admin chooses when to reload.
+        if (mode === 'edit' && isStaleFormConflict(err)) {
+          setStale(true);
+          setLoading(false);
+          return;
+        }
+
         const mapped = mapApiError(err);
         if (mapped.formError) {
           setFormError(mapped.formError);
@@ -725,7 +840,7 @@ export default function ActorForm({
         setLoading(false);
       }
     },
-    [mode, initialValues, token, onSuccess, onAuthFailure],
+    [mode, initialValues, token, documentFile, onSuccess, onAuthFailure],
   );
 
   const handleDuplicateConfirm = useCallback(() => {
@@ -736,7 +851,7 @@ export default function ActorForm({
       confirmedActorIdsRef.current.add(candidate.actorId);
     }
 
-    const dtoWithConfirmation: AdminActorCreateInput = {
+    const dtoWithConfirmation: SubmitDto = {
       ...pendingDto,
       confirmedNotDuplicateOf: Array.from(confirmedActorIdsRef.current),
     };
@@ -931,12 +1046,32 @@ export default function ActorForm({
    * `renderSelect`: that helper always prepends a blank "—" option meaning
    * "unset". `NOT_RECORDED` already IS the schema default / "unset" value
    * for this enum, so a second blank option would be a redundant, ambiguous
+   * (the one deliberate exception is the empty "Select…" after an EMAIL_LINK status swap, below)
    * second way to express the same state (and one that fails `@IsIn` server-
    * side if ever submitted, since `''` is not a member of `ConsentMethod`).
    */
   const renderConsentMethodSelect = () => {
     const id = fieldId('consentMethod');
     const error = errors.consentMethod;
+    // Design §5.7: while the stored method is EMAIL_LINK and the status is
+    // unchanged, a <select> with no matching option would submit a wrong value
+    // — show it read-only instead; `buildDto` re-sends the stored value.
+    if (isStoredEmailLink(mode, initialValues) && values.consentStatus === initialValues?.consentStatus) {
+      return (
+        <Field id={id} label="Consent method" hint={ACTOR_FORM_CONSENT_COPY.emailLinkMethodHint}>
+          <input
+            id={id}
+            type="text"
+            value={ACTOR_FORM_CONSENT_COPY.emailLinkMethod}
+            readOnly
+            aria-readonly="true"
+            className={readOnlyInputClasses()}
+          />
+        </Field>
+      );
+    }
+    // After the swap the select comes back EMPTY (rule 2 / D-24): the admin must choose.
+    const swapped = isStoredEmailLink(mode, initialValues);
     return (
       <Field id={id} label="Consent method" error={error} hint="Required when publishing (Granted)">
         <select
@@ -948,12 +1083,34 @@ export default function ActorForm({
           aria-describedby={error ? `${id}-error` : undefined}
           className={inputClasses(!!error)}
         >
+          {swapped && <option value="">Select…</option>}
           {CONSENT_METHOD_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
         </select>
+      </Field>
+    );
+  };
+
+  /**
+   * Rule 3 — the consent date and reference of a record `GRANTED` by link are
+   * frozen evidence: rendered read-only, with the way out stated.
+   */
+  const renderFrozenInput = (field: 'consentObtainedAt' | 'consentReference', label: string, type: 'text' | 'date') => {
+    const id = fieldId(field);
+    return (
+      <Field id={id} label={label} hint={ACTOR_FORM_CONSENT_COPY.frozenDateHint}>
+        <input
+          id={id}
+          type={type}
+          value={values[field]}
+          readOnly
+          aria-readonly="true"
+          placeholder="—"
+          className={readOnlyInputClasses()}
+        />
       </Field>
     );
   };
@@ -993,6 +1150,23 @@ export default function ActorForm({
   return (
     <>
       <form onSubmit={handleSubmit} className="flex flex-col gap-6" noValidate>
+        {/* D-26 — stale form: typed values stay put; Reload is the admin's call. */}
+        {stale && (
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded-md border border-danger bg-danger-soft px-4 py-3 text-sm text-danger sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>{ACTOR_FORM_CONSENT_COPY.staleNotice}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => (onReload ? onReload() : window.location.reload())}
+            >
+              {ACTOR_FORM_CONSENT_COPY.reload}
+            </Button>
+          </div>
+        )}
+
         {/* Top-level form error */}
         {formError && (
           <div
@@ -1142,15 +1316,32 @@ export default function ActorForm({
               {renderRegistrationSourceSelect()}
               {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
               {renderConsentMethodSelect()}
-              {renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
-              {renderInput(
-                'consentReference',
-                'Consent reference',
-                'text',
-                false,
-                'Optional — e.g. document ID or email thread',
-              )}
+              {isLinkEvidenceFrozen(mode, values, initialValues)
+                ? renderFrozenInput('consentObtainedAt', 'Consent obtained on', 'date')
+                : renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
+              {isLinkEvidenceFrozen(mode, values, initialValues)
+                ? renderFrozenInput('consentReference', 'Consent reference', 'text')
+                : renderInput(
+                    'consentReference',
+                    'Consent reference',
+                    'text',
+                    false,
+                    'Optional — e.g. document ID or email thread',
+                  )}
             </div>
+            {/* FR-15 — held here, uploaded by the page after the actor exists. */}
+            {mode === 'create' && (
+              <div className="mt-4">
+                <ConsentDocumentField
+                  mode="deferred"
+                  token={token}
+                  onAuthFailure={onAuthFailure}
+                  file={documentFile}
+                  onFileChange={setDocumentFile}
+                  disabled={loading}
+                />
+              </div>
+            )}
           </fieldset>
         </div>
 

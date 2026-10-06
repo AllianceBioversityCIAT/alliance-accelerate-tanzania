@@ -40,6 +40,8 @@ export interface ActorHistoryPanelProps {
 interface DiffChanges {
   kind: 'diff';
   fields: Record<string, { from: unknown; to: unknown }>;
+  /** `CONSENT_RESPONDED` — the consent request the actor answered. */
+  requestId?: string;
 }
 
 interface SnapshotChanges {
@@ -98,7 +100,14 @@ const actionBadgeClasses: Record<AuditEntry['action'], string> = {
   IMPORT: 'bg-primary-soft text-primary',
   REGISTRATION_APPROVE: 'bg-highlight-tint text-success',
   REGISTRATION_REJECT: 'bg-danger-soft text-danger',
+  CONSENT_REQUESTED: 'bg-primary-soft text-primary',
+  CONSENT_RESPONDED: 'bg-highlight-tint text-success',
+  CONSENT_DOCUMENT_UPLOADED: 'bg-surface-alt text-warning',
 };
+
+/** `actingSub` of an entry written by the actor's own consent response (FR-13), not an admin. */
+const CONSENT_LINK_ACTING_SUB = 'consent-link';
+const CONSENT_LINK_LABEL = 'Consent link (actor)';
 
 function actionLabel(action: AuditEntry['action']): string {
   return action.replace(/_/g, ' ');
@@ -142,6 +151,12 @@ function DiffDetails({ changes }: { changes: DiffChanges }) {
 
   return (
     <dl className="mt-2 space-y-1">
+      {changes.requestId && (
+        <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 text-sm">
+          <dt className="font-medium text-muted">Consent request</dt>
+          <dd className="break-all text-fg">{changes.requestId}</dd>
+        </div>
+      )}
       {fields.map(([field, delta]) => (
         <div key={field} className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 text-sm">
           <dt className="font-medium text-muted">{field}</dt>
@@ -181,6 +196,12 @@ function SnapshotDetails({
       break;
     case 'REGISTRATION_APPROVE':
       summary = 'Approved — actor published';
+      break;
+    case 'CONSENT_REQUESTED':
+      summary = 'Consent request sent — details';
+      break;
+    case 'CONSENT_DOCUMENT_UPLOADED':
+      summary = 'Consent document attached — details';
       break;
     default:
       summary = 'Snapshot';
@@ -262,7 +283,8 @@ function DuplicateConfirmationList({
 }
 
 function HistoryEntry({ entry }: { entry: AuditEntry }) {
-  const actorLabel = entry.actingEmail ?? entry.actingSub;
+  const actorLabel =
+    entry.actingSub === CONSENT_LINK_ACTING_SUB ? CONSENT_LINK_LABEL : (entry.actingEmail ?? entry.actingSub);
 
   return (
     <article

@@ -772,6 +772,19 @@ describe('ActorsPage — registration-source and consent-method filters (T-8, FR
     expect(screen.getByLabelText('Consent method')).toBeInTheDocument();
   });
 
+  it('offers "Email link (actor)" as a Consent method filter and passes EMAIL_LINK to adminListActors (T-11)', async () => {
+    setSearchParams('consentMethod=EMAIL_LINK');
+    await populatePage();
+
+    const select = screen.getByLabelText('Consent method') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.textContent)).toContain('Email link (actor)');
+    expect(select).toHaveValue('EMAIL_LINK');
+    expect(mockAdminListActors).toHaveBeenCalledWith(
+      expect.objectContaining({ consentMethod: 'EMAIL_LINK' }),
+      TOKEN,
+    );
+  });
+
   it('reads registrationSource and consentMethod from the URL on mount and passes them to adminListActors', async () => {
     setSearchParams('registrationSource=SELF_REGISTERED&consentMethod=EMAIL');
     await populatePage();

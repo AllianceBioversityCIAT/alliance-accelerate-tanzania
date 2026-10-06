@@ -34,6 +34,8 @@ export interface SendConsentPromptProps {
   /** Navigate onward; called after Not now / OK / a finished send. */
   onDone: () => void;
   onAuthFailure: () => void;
+  /** Extra outcome of the create to disclose, e.g. "document not attached" (T-11). */
+  notice?: string;
 }
 
 type Phase = 'ask' | 'sending' | 'finished-with-problem';
@@ -50,6 +52,7 @@ export function SendConsentPrompt({
   dispatch,
   onDone,
   onAuthFailure,
+  notice,
 }: Readonly<SendConsentPromptProps>) {
   const uid = useId();
   const titleId = `${uid}-title`;
@@ -124,6 +127,12 @@ export function SendConsentPrompt({
         <p id={descId} className="mt-2 text-sm text-muted">
           Created {actor.traderId}.{warnings.length > 0 ? ' Similar actors:' : ''}
         </p>
+
+        {notice && (
+          <p role="alert" className="mt-3 rounded-md border border-danger bg-danger-soft p-3 text-sm text-danger">
+            {notice}
+          </p>
+        )}
 
         {warnings.length > 0 && (
           <>

@@ -49,6 +49,16 @@ jest.mock('@/lib/api/actors-admin', () => ({
   updateActor: jest.fn(),
 }));
 
+// T-11 — the create form embeds `ConsentDocumentField`, which asks the API
+// whether uploads are configured. `uploadConsentDocument` is mocked ONLY so a
+// test can assert the form never attempts an upload itself (the page does,
+// after the actor exists).
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  ...jest.requireActual('@/lib/api/consent-requests-admin'),
+  getConsentDocumentStatus: jest.fn(),
+  uploadConsentDocument: jest.fn(),
+}));
+
 /**
  * Recording stub for CoordinatePicker (T-5), mirroring the mock shape
  * CoordinatePicker.test.tsx uses for its own Leaflet shell: capture every
@@ -79,6 +89,7 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import ActorForm from './ActorForm';
 import { FRONTEND_INTAKE_REQUIRED_FIELDS } from '@/lib/content/intake-required-fields';
 import { createActor, updateActor } from '@/lib/api/actors-admin';
+import { getConsentDocumentStatus, uploadConsentDocument } from '@/lib/api/consent-requests-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import type { AdminActor, AdminActorCreateResult, DuplicateCandidate } from '@/lib/api/actors-admin';
 
@@ -223,6 +234,7 @@ function getFieldError(name: RegExp) {
 beforeEach(() => {
   jest.resetAllMocks();
   receivedCoordinatePickerProps = null;
+  jest.mocked(getConsentDocumentStatus).mockResolvedValue({ enabled: true });
   process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
 });
 
@@ -1427,7 +1439,7 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
     await fillRequiredFields(user);
     submitForm();
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(weakResult));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(weakResult, { documentFile: null }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
@@ -1454,5 +1466,222 @@ describe('ActorForm — success flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// T-11 — EMAIL_LINK evidence, the select swap, and D-26 (design §5.7, §5.7a)
+// ---------------------------------------------------------------------------
+
+/** GRANTED through the emailed link: the actor's own act, evidence frozen (rule 3). */
+const LINK_GRANTED_ACTOR: AdminActor = {
+  ...ADMIN_ACTOR,
+  consentStatus: 'GRANTED',
+  consentMethod: 'EMAIL_LINK',
+  consentObtainedAt: '2026-10-01T09:30:00.000Z',
+  consentReference: 'req-123',
+};
+
+/** The link-era record after an admin set it to DENIED: method still EMAIL_LINK, evidence not frozen. */
+const LINK_DENIED_ACTOR: AdminActor = { ...LINK_GRANTED_ACTOR, consentStatus: 'DENIED' };
+
+describe('ActorForm — an EMAIL_LINK actor (FR-10, design §5.7)', () => {
+  it('shows the method read-only as "Email link (actor)", with no select, and re-sends the stored value', async () => {
+    jest.mocked(updateActor).mockResolvedValue(LINK_GRANTED_ACTOR);
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    const method = screen.getByLabelText('Consent method');
+    expect(method).toHaveValue('Email link (actor)');
+    expect(method).toHaveAttribute('readonly');
+    expect(method.tagName).toBe('INPUT');
+
+    submitForm();
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto).toMatchObject({
+      consentStatus: 'GRANTED',
+      consentMethod: 'EMAIL_LINK',
+      // Verbatim stored instant — never rebuilt through the Tanzania-midnight helper.
+      consentObtainedAt: '2026-10-01T09:30:00.000Z',
+      consentReference: 'req-123',
+    });
+  });
+
+  it('renders the consent date and reference read-only while GRANTED by link (frozen evidence, rule 3)', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    expect(screen.getByLabelText('Consent obtained on')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Consent reference')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).toHaveValue('req-123');
+  });
+
+  it('swaps back to an EMPTY assertable select, without EMAIL_LINK, when the status changes', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+
+    const select = screen.getByLabelText('Consent method') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    expect(select.value).toBe('');
+    const options = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value);
+    expect(options).not.toContain('EMAIL_LINK');
+    expect(options).toEqual(['', 'NOT_RECORDED', 'PORTAL_CHECKBOX', 'SIGNED_FORM', 'EMAIL', 'VERBAL_FIELD']);
+    // Date and reference are editable again.
+    expect(screen.getByLabelText('Consent obtained on')).not.toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
+  });
+
+  it('clears the link-era date and reference on a re-grant so they cannot ride under an admin method (D-24)', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('');
+    expect(screen.getByLabelText('Consent reference')).toHaveValue('');
+  });
+
+  it('refuses a re-grant that picks no method, naming the field', async () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    submitForm();
+
+    expect(await screen.findByText('Select how consent was obtained before granting consent.')).toBeInTheDocument();
+    expect(updateActor).not.toHaveBeenCalled();
+  });
+
+  it('restores the stored link evidence when the status is put back', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('Email link (actor)');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('2026-10-01');
+  });
+
+  it('re-sends the stored EMAIL_LINK when the status changes to a non-GRANTED value with no method chosen', async () => {
+    jest.mocked(updateActor).mockResolvedValue(LINK_DENIED_ACTOR);
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(updateActor).mock.calls[0][1]).toMatchObject({
+      consentStatus: 'DENIED',
+      consentMethod: 'EMAIL_LINK',
+    });
+  });
+
+  it('has no axe violations for an EMAIL_LINK actor (NFR-10)', async () => {
+    const { container } = renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe('ActorForm — stale-form protection (D-26, design §5.7a)', () => {
+  it('always sends expectedUpdatedAt — the loaded record\'s updatedAt — on an edit save', async () => {
+    jest.mocked(updateActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(updateActor).mock.calls[0][1]).toHaveProperty('expectedUpdatedAt', ADMIN_ACTOR.updatedAt);
+  });
+
+  it('never sends expectedUpdatedAt on a create', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(createActor).mock.calls[0][0]).not.toHaveProperty('expectedUpdatedAt');
+  });
+
+  it('shows an accessible notice with a Reload action on a 409 naming expectedUpdatedAt, keeping the typed values', async () => {
+    jest.mocked(updateActor).mockRejectedValue(
+      new ApiError(409, 'The actor changed since the form was loaded', [
+        { field: 'expectedUpdatedAt', message: 'The actor changed since the form was loaded' },
+      ]),
+    );
+    const onReload = jest.fn();
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR, onReload });
+
+    fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'Typed By The Admin' } });
+    submitForm();
+
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('This actor changed since you opened it — reload to see the latest');
+    // Nothing the admin typed is lost silently.
+    expect(screen.getByLabelText(/trader name/i)).toHaveValue('Typed By The Admin');
+
+    fireEvent.click(within(notice).getByRole('button', { name: 'Reload' }));
+    expect(onReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat an unrelated 409 as a stale form', async () => {
+    jest.mocked(updateActor).mockRejectedValue(new ApiError(409, 'Some other conflict'));
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    submitForm();
+
+    expect(await screen.findByText('Some other conflict')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ActorForm — the optional consent document on create (FR-15)', () => {
+  const pdf = () => new File(['%PDF-1.4'], 'consent.pdf', { type: 'application/pdf' });
+
+  it('offers the document field on create, and not on edit (the evidence panel owns it there)', async () => {
+    const { unmount } = renderForm();
+    await waitFor(() => expect(screen.getByLabelText(/consent document/i)).toBeEnabled());
+    unmount();
+
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+    expect(screen.queryByLabelText(/consent document/i)).not.toBeInTheDocument();
+  });
+
+  it('hands the held file to onSuccess ONLY after the create resolves, and never uploads itself', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    const { onSuccess } = renderForm();
+    const file = pdf();
+
+    fireEvent.change(await screen.findByLabelText(/consent document/i), { target: { files: [file] } });
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(CREATE_RESULT, { documentFile: file }));
+    expect(uploadConsentDocument).not.toHaveBeenCalled();
+  });
+
+  it('a rejected create leaves no upload attempt and reports no file upward; the file survives for the resubmit', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValueOnce(new ApiError(500, 'Server error'));
+    const { onSuccess } = renderForm();
+    const file = pdf();
+
+    fireEvent.change(await screen.findByLabelText(/consent document/i), { target: { files: [file] } });
+    await fillRequiredFields(user);
+    submitForm();
+
+    expect(await screen.findByText('Server error')).toBeInTheDocument();
+    expect(uploadConsentDocument).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    // Still held: fixing and resubmitting yields at most ONE document.
+    expect(screen.getByText('Selected: consent.pdf')).toBeInTheDocument();
+
+    jest.mocked(createActor).mockResolvedValueOnce(CREATE_RESULT);
+    submitForm();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess).toHaveBeenCalledWith(CREATE_RESULT, { documentFile: file });
   });
 });

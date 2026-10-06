@@ -29,6 +29,7 @@ import { AuthFailureError } from '@/lib/api/client';
 
 import ActorForm from '@/components/admin/ActorForm';
 import { ActorHistoryPanel } from '@/components/admin/ActorHistoryPanel';
+import { ConsentEvidencePanel } from '@/components/admin/ConsentEvidencePanel';
 import { SendConsentAction } from '@/components/admin/SendConsentAction';
 import { useConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import Button from '@/components/ui/Button';
@@ -138,6 +139,25 @@ function EditActorView() {
     router.push('/admin/actors');
   }, [router]);
 
+  // D-26 — "Reload" on the stale-form notice: re-read the actor. The form is
+  // keyed on `updatedAt`, so it remounts against the fresh record; the panels
+  // below remount through `reloadNonce` so they show the same moment.
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const handleReload = useCallback(async () => {
+    if (!id || !token) return;
+    try {
+      const fresh = await adminGetActor(id, token);
+      setActor(fresh);
+      setReloadNonce((n) => n + 1);
+    } catch (err) {
+      if (err instanceof AuthFailureError) {
+        router.push('/login');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Failed to reload actor.');
+    }
+  }, [id, token, router]);
+
   const handleAuthFailure = useCallback(() => {
     router.push('/login');
   }, [router]);
@@ -208,15 +228,23 @@ function EditActorView() {
         so the lazy initializer re-runs against B's data.
       */}
       <ActorForm
-        key={actor.id}
+        key={`${actor.id}:${actor.updatedAt}`}
         mode="edit"
         initialValues={actor}
         token={token}
         onSuccess={handleSuccess}
         onAuthFailure={handleAuthFailure}
+        onReload={() => void handleReload()}
       />
 
-      <ActorHistoryPanel actorId={actor.id} token={token} />
+      <ConsentEvidencePanel
+        key={`evidence:${actor.id}:${reloadNonce}`}
+        actorId={actor.id}
+        token={token}
+        onAuthFailure={handleAuthFailure}
+      />
+
+      <ActorHistoryPanel key={`history:${actor.id}:${reloadNonce}`} actorId={actor.id} token={token} />
     </div>
   );
 }

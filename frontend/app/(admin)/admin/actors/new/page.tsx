@@ -19,8 +19,11 @@ import { useRouter } from 'next/navigation';
 
 import { getSession } from '@/lib/auth/auth-client';
 import type { AdminActor, AdminActorCreateResult } from '@/lib/api/actors-admin';
+import { AuthFailureError } from '@/lib/api/client';
+import { uploadConsentDocument } from '@/lib/api/consent-requests-admin';
+import { DOCUMENT_FIELD_COPY } from '@/lib/content/consent-requests';
 
-import ActorForm from '@/components/admin/ActorForm';
+import ActorForm, { type ActorFormSuccessExtras } from '@/components/admin/ActorForm';
 import { SendConsentPrompt } from '@/components/admin/SendConsentPrompt';
 import { useConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import Skeleton from '@/components/ui/Skeleton';
@@ -49,6 +52,9 @@ export default function NewActorPage() {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [created, setCreated] = useState<AdminActorCreateResult | null>(null);
+  // FR-15 — set when the actor exists but its optional document could not be attached.
+  const [documentNotice, setDocumentNotice] = useState<string | undefined>();
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,18 +84,40 @@ export default function NewActorPage() {
   const consentDispatch = useConsentDispatch({ token: token ?? '', onAuthFailure: handleAuthFailure });
 
   const handleSuccess = useCallback(
-    (actor?: AdminActorCreateResult | AdminActor) => {
-      // Prompt when there are warnings to disclose or (B-13) a consent request to offer.
+    async (actor?: AdminActorCreateResult | AdminActor, extras?: ActorFormSuccessExtras) => {
       const result = actor && 'duplicateWarnings' in actor ? actor : null;
+
+      // FR-15 — the document is uploaded only now that the actor EXISTS, and
+      // before the send prompt so the prompt can disclose a failure. If it
+      // fails the actor stays created: say so and point at the actor page.
+      let notice: string | undefined;
+      if (result && extras?.documentFile && token) {
+        setUploading(true);
+        try {
+          await uploadConsentDocument(result.id, extras.documentFile, token);
+        } catch (caught: unknown) {
+          if (caught instanceof AuthFailureError) {
+            router.push('/login');
+            return;
+          }
+          notice = DOCUMENT_FIELD_COPY.createFailedAfterActor;
+        } finally {
+          setUploading(false);
+        }
+      }
+
+      // Prompt when there are warnings to disclose, a failed document to
+      // disclose, or (B-13) a consent request to offer.
       const hasWarnings = (result?.duplicateWarnings?.length ?? 0) > 0;
       const canAsk = !!result && result.consentStatus !== 'GRANTED' && !!result.email;
-      if (result && (hasWarnings || canAsk)) {
+      if (result && (hasWarnings || canAsk || notice)) {
+        setDocumentNotice(notice);
         setCreated(result);
         return;
       }
       router.push('/admin/actors');
     },
-    [router],
+    [router, token],
   );
 
   const handlePromptDone = useCallback(() => {
@@ -115,9 +143,15 @@ export default function NewActorPage() {
       <ActorForm
         mode="create"
         token={token}
-        onSuccess={handleSuccess}
+        onSuccess={(actor, extras) => void handleSuccess(actor, extras)}
         onAuthFailure={handleAuthFailure}
       />
+
+      {uploading && (
+        <p role="status" className="mt-4 text-sm text-muted">
+          {DOCUMENT_FIELD_COPY.uploading}
+        </p>
+      )}
 
       {created && (
         <SendConsentPrompt
@@ -126,6 +160,7 @@ export default function NewActorPage() {
           dispatch={consentDispatch}
           onDone={handlePromptDone}
           onAuthFailure={handleAuthFailure}
+          notice={documentNotice}
         />
       )}
     </div>

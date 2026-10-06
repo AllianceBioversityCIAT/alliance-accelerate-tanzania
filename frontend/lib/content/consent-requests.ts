@@ -201,3 +201,62 @@ export const PENDING_REQUEST_STATUSES: ReadonlySet<ConsentRequestEvidenceStatus>
   'FAILED',
   'SENT',
 ]);
+
+/** Copy for the Consent evidence panel on the actor edit page (FR-14, FR-16). */
+export const EVIDENCE_PANEL_COPY = {
+  heading: 'Consent evidence',
+  intro: 'Every consent request and document for this actor, newest first. Times are shown in UTC.',
+  loading: 'Loading consent evidence…',
+  loadFailed: 'We could not load the consent evidence.',
+  retry: 'Try again',
+  empty: 'No consent evidence yet.',
+  requestsHeading: 'Consent requests',
+  documentsHeading: 'Consent documents',
+  noRequests: 'No consent requests have been sent.',
+  noDocuments: 'No consent documents have been attached.',
+  respondedHeading: 'Answered by',
+  respondedTimeNote: 'Server time when the response was received.',
+  readText: 'Read exact text',
+  hideText: 'Hide text',
+  textLoading: 'Loading the text…',
+  textFailed: 'We could not load the edition text.',
+  download: 'Download',
+  downloading: 'Preparing…',
+  downloadFailed: 'We could not prepare the download. Try again.',
+  notSentYet: 'Not sent yet',
+  unknownSender: 'Unknown',
+  none: '—',
+} as const;
+
+/** Copy for `ConsentDocumentField` (FR-15). */
+export const DOCUMENT_FIELD_COPY = {
+  label: 'Consent document',
+  optional: 'Optional',
+  hint: 'PDF, JPG or PNG, up to 10 MB. It is stored as evidence and does not change the consent status.',
+  deferredHint: 'It is uploaded right after the actor is created.',
+  unavailable:
+    'Document uploads are unavailable here: storage is not configured for this environment.',
+  checking: 'Checking whether uploads are available…',
+  statusFailed: 'We could not check whether uploads are available.',
+  typeRejected: 'Choose a PDF, JPG or PNG file.',
+  sizeRejected: 'The file is larger than 10 MB. Choose a smaller file.',
+  emptyRejected: 'The file is empty. Choose another file.',
+  chosen: (name: string) => `Selected: ${name}`,
+  remove: 'Remove',
+  uploading: 'Uploading…',
+  uploaded: (name: string) => `${name} attached.`,
+  uploadFailed: 'The document could not be uploaded. Try again.',
+  attach: 'Attach a document',
+  createFailedAfterActor:
+    'The actor was created, but the document was not attached. Attach it from the actor page.',
+} as const;
+
+/** FR-10 / D-26 — edit-form copy for the email-link evidence and the stale-form notice. */
+export const ACTOR_FORM_CONSENT_COPY = {
+  emailLinkMethod: 'Email link (actor)',
+  emailLinkMethodHint:
+    'Recorded when the actor accepted through the emailed link. Change the status to correct it.',
+  frozenDateHint: 'Recorded from the actor’s response. Change the status to correct it.',
+  staleNotice: 'This actor changed since you opened it — reload to see the latest',
+  reload: 'Reload',
+} as const;

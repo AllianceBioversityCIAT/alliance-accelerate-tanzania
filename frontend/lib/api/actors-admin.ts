@@ -40,12 +40,18 @@ export type RegistrationSource = 'TEAM_MANAGED' | 'SELF_REGISTERED';
  * every actor whose provenance has never been set, including legacy `GRANTED`
  * rows the migration deliberately left unevidenced (FR-9).
  */
-export type ConsentMethod =
-  | 'NOT_RECORDED'
-  | 'PORTAL_CHECKBOX'
-  | 'SIGNED_FORM'
-  | 'EMAIL'
-  | 'VERBAL_FIELD';
+export const CONSENT_METHODS = [
+  'NOT_RECORDED',
+  'PORTAL_CHECKBOX',
+  'SIGNED_FORM',
+  'EMAIL',
+  'VERBAL_FIELD',
+  // The ACTOR's own act through the emailed link (D-22): written only by the
+  // consent-response path, never assertable by an admin (design §5.7).
+  'EMAIL_LINK',
+] as const;
+
+export type ConsentMethod = (typeof CONSENT_METHODS)[number];
 
 /**
  * Full Admin actor response shape returned by `GET /api/v1/admin/actors`.
@@ -267,7 +273,11 @@ export interface AuditEntry {
     | 'BULK_DELETE'
     | 'IMPORT'
     | 'REGISTRATION_APPROVE'
-    | 'REGISTRATION_REJECT';
+    | 'REGISTRATION_REJECT'
+    | 'CONSENT_REQUESTED'
+    | 'CONSENT_RESPONDED'
+    | 'CONSENT_DOCUMENT_UPLOADED';
+  /** `'consent-link'` is the sentinel for an entry written by the actor's own response (FR-13). */
   actingSub: string;
   actingEmail: string | null;
   changes: unknown;
@@ -345,7 +355,14 @@ export interface AdminActorCreateInput {
  *
  * Every field is optional; only submitted fields are applied by the backend.
  */
-export type AdminActorUpdateInput = Partial<AdminActorCreateInput>;
+export type AdminActorUpdateInput = Partial<AdminActorCreateInput> & {
+  /**
+   * D-26 — the `updatedAt` of the record the form loaded. The server refuses
+   * the save with `409` (`details[field='expectedUpdatedAt']`) when the actor
+   * changed since. Mirrors `AdminActorUpdateDto.expectedUpdatedAt`.
+   */
+  expectedUpdatedAt?: string;
+};
 
 /** Query parameters for `getActorHistory` (mirrors `ActorHistoryQueryDto`). */
 export interface ActorHistoryQuery {

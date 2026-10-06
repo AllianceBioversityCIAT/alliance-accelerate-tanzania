@@ -82,10 +82,18 @@ const GRANTED_WITH_EMAIL_AND_WARNINGS = {
   duplicateWarnings: WITH_WARNINGS_RESULT.duplicateWarnings,
 };
 
+const DOCUMENT_FILE = new File(['%PDF-1.4'], 'consent.pdf', { type: 'application/pdf' });
+
 jest.mock('@/components/admin/ActorForm', () => ({
   __esModule: true,
-  default: ({ onSuccess }: { onSuccess: (actor?: unknown) => void }) => (
+  default: ({ onSuccess }: { onSuccess: (actor?: unknown, extras?: unknown) => void }) => (
     <div>
+      <button type="button" onClick={() => onSuccess(UNKNOWN_WITH_EMAIL, { documentFile: DOCUMENT_FILE })}>
+        Simulate create (unknown, email, document)
+      </button>
+      <button type="button" onClick={() => onSuccess(GRANTED_WITH_EMAIL, { documentFile: DOCUMENT_FILE })}>
+        Simulate create (granted, document)
+      </button>
       <button type="button" onClick={() => onSuccess(UNKNOWN_WITH_EMAIL)}>
         Simulate create (unknown, email)
       </button>
@@ -114,7 +122,9 @@ jest.mock('@/components/admin/ActorForm', () => ({
 
 const mockEnqueue = jest.fn();
 const mockDispatch = jest.fn();
+const mockUpload = jest.fn();
 jest.mock('@/lib/api/consent-requests-admin', () => ({
+  uploadConsentDocument: (...args: unknown[]) => mockUpload(...args),
   enqueueConsentRequests: (...args: unknown[]) => mockEnqueue(...args),
   dispatchConsentRequests: (...args: unknown[]) => mockDispatch(...args),
   retryConsentRequests: jest.fn(),
@@ -134,6 +144,7 @@ beforeEach(() => {
     skipped: { no_email: 0, granted: 0, pending_request: 0, declined: 0 },
   });
   mockDispatch.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+  mockUpload.mockResolvedValue({ id: 'doc-1' });
 });
 
 // ---------------------------------------------------------------------------
@@ -269,5 +280,69 @@ describe('NewActorPage — SendConsentPrompt (FR-3, T-10)', () => {
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
     expect(await screen.findByRole('button', { name: /continue to actors/i })).toBeInTheDocument();
     expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewActorPage — the optional consent document (FR-15, T-11)', () => {
+  it('uploads the held file for the CREATED actor, BEFORE the send prompt appears', async () => {
+    let finishUpload: (v: unknown) => void = () => undefined;
+    mockUpload.mockReturnValue(new Promise((resolve) => (finishUpload = resolve)));
+    render(<NewActorPage />);
+
+    fireEvent.click(await screen.findByText(/simulate create \(unknown, email, document\)/i));
+
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledWith('actor-new-003', DOCUMENT_FILE, 'test-access-token'));
+    // Still uploading: no prompt yet, no navigation, and the status is announced.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Uploading');
+    expect(mockRouterPush).not.toHaveBeenCalled();
+
+    finishUpload({ id: 'doc-1' });
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Send a consent request to kilimo@example.com?');
+    expect(dialog).not.toHaveTextContent(/not attached/i);
+  });
+
+  it('a GRANTED create with a document uploads, then navigates as today', async () => {
+    render(<NewActorPage />);
+    fireEvent.click(await screen.findByText(/simulate create \(granted, document\)/i));
+
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors'));
+    expect(mockUpload).toHaveBeenCalledWith('actor-new-005', DOCUMENT_FILE, 'test-access-token');
+  });
+
+  it('attempts no upload when no document was chosen', async () => {
+    render(<NewActorPage />);
+    fireEvent.click(await screen.findByText(/simulate create \(unknown, email\)$/i));
+    await screen.findByRole('dialog');
+    expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it('when the upload fails the actor still exists: says the document was not attached, and does not navigate away silently', async () => {
+    mockUpload.mockRejectedValue(new Error('storage down'));
+    render(<NewActorPage />);
+
+    fireEvent.click(await screen.findByText(/simulate create \(granted, document\)/i));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The actor was created, but the document was not attached. Attach it from the actor page.',
+    );
+    expect(dialog).toHaveTextContent('TM-2026-0014');
+    expect(mockRouterPush).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^ok$/i }));
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/admin/actors'));
+  });
+
+  it('a failed upload still offers the consent send question, alongside the notice', async () => {
+    mockUpload.mockRejectedValue(new Error('storage down'));
+    render(<NewActorPage />);
+
+    fireEvent.click(await screen.findByText(/simulate create \(unknown, email, document\)/i));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('document was not attached');
+    expect(dialog).toHaveTextContent('Send a consent request to kilimo@example.com?');
   });
 });

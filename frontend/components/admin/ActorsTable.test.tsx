@@ -20,6 +20,7 @@
 const mockDeleteActor = jest.fn();
 
 jest.mock('@/lib/api/actors-admin', () => ({
+  ...jest.requireActual('@/lib/api/actors-admin'),
   deleteActor: (...args: unknown[]) => mockDeleteActor(...args),
 }));
 
@@ -64,7 +65,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 import { ActorsTable } from './ActorsTable';
-import type { AdminActor } from '@/lib/api/actors-admin';
+import { CONSENT_METHODS, type AdminActor, type ConsentMethod } from '@/lib/api/actors-admin';
 
 // Extend jest-dom expect with the jest-axe matcher (NFR-5).
 expect.extend(toHaveNoViolations);
@@ -401,20 +402,26 @@ describe('ActorsTable — Consent column (status + method caption)', () => {
     expect(caption).not.toHaveClass('text-muted');
   });
 
-  it('renders every consent-method label from the backend enum', () => {
-    const methods: AdminActor['consentMethod'][] = [
-      'NOT_RECORDED',
-      'PORTAL_CHECKBOX',
-      'SIGNED_FORM',
-      'EMAIL',
-      'VERBAL_FIELD',
-    ];
-    const labels = ['Not recorded', 'Portal checkbox', 'Signed form', 'Email', 'Verbal (field)'];
+  it('renders every consent-method label, iterating the ConsentMethod union itself', () => {
+    // The expected labels are a literal `Record<ConsentMethod, string>`: a new
+    // union member is a compile error HERE (tsc), and — because the loop below
+    // walks `CONSENT_METHODS`, the array the union is derived from — a runtime
+    // failure too if the table renders it as the fallback "Not recorded".
+    // Never hand-list the methods again (S-3).
+    const EXPECTED_LABEL: Record<ConsentMethod, string> = {
+      NOT_RECORDED: 'Not recorded',
+      PORTAL_CHECKBOX: 'Portal checkbox',
+      SIGNED_FORM: 'Signed form',
+      EMAIL: 'Email',
+      VERBAL_FIELD: 'Verbal (field)',
+      EMAIL_LINK: 'Email link (actor)',
+    };
 
-    methods.forEach((method, i) => {
-      // Matched by prefix, not exact text: ACTOR_A is GRANTED, so the
-      // NOT_RECORDED iteration renders the FR-9-flagged, qualifier-suffixed
-      // caption ("Not recorded — no evidence") rather than the bare label.
+    for (const method of CONSENT_METHODS) {
+      // `startsWith`, not equality: ACTOR_A is GRANTED, so NOT_RECORDED renders
+      // the FR-9-flagged "Not recorded — no evidence". `Email` also prefixes
+      // `Email link (actor)`, hence the exact-or-qualified comparison.
+      const label = EXPECTED_LABEL[method];
       const { unmount } = render(
         <ActorsTable
           actors={[{ ...ACTOR_A, consentMethod: method }]}
@@ -426,10 +433,19 @@ describe('ActorsTable — Consent column (status + method caption)', () => {
         />,
       );
       expect(
-        screen.getAllByText((text) => text.startsWith(labels[i])).length,
+        screen.getAllByText((text) => text === label || text === `${label} — no evidence`).length,
       ).toBeGreaterThan(0);
       unmount();
-    });
+    }
+  });
+
+  it('labels an EMAIL_LINK actor "Email link (actor)" — never the "Not recorded" fallback (T-11)', () => {
+    renderTable({ actors: [{ ...ACTOR_A, consentMethod: 'EMAIL_LINK' }] });
+
+    const table = getTable();
+    const caption = within(table).getByText('Email link (actor)');
+    expect(caption).toHaveClass('text-muted');
+    expect(within(table).queryByText(/not recorded/i)).not.toBeInTheDocument();
   });
 
   it('differentiates the flagged caption by text, not just color (WCAG 1.4.1, FR-9 fold-in)', () => {

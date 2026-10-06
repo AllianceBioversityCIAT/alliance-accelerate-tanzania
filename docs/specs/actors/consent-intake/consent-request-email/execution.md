@@ -890,3 +890,100 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 5. The import CTA count goes stale after a send, and a failed preview hides the CTA.
 
 - **Final verification:** VERIFIED.
+
+### T-11 — Evidence panel, document field, history labels and method lists — in progress
+
+- **Leader choices:**
+  - Skills: `frontend-design`, `tailwind-design-system`, `react-doctor`.
+  - Effort: `high`.
+  - Review: two lens Reviewers, A on form and consent rules and B on evidence and upload plus a visual check.
+
+#### Attempt 1 — **FAIL** (B); A **PASS**
+
+**Files changed**
+- **New:**
+  - `components/admin/ConsentEvidencePanel.tsx` and its test
+  - `components/admin/ConsentDocumentField.tsx` and its test
+- **Modified:**
+  - `ActorForm.tsx`: read-only `EMAIL_LINK`, frozen date and reference, the select swap with the D-24 clear, `expectedUpdatedAt`, the 409 notice, and the held document file.
+  - `ActorsTable.tsx`: a total label/class `Record`; the test iterates `CONSENT_METHODS`.
+  - `ActorHistoryPanel.tsx`: the 3 new actions and "Consent link (actor)".
+  - `SendConsentPrompt.tsx`: an optional `notice`.
+  - The `new`, `edit` and `actors` pages.
+  - `lib/api/actors-admin.ts`: the `CONSENT_METHODS` runtime array, `EMAIL_LINK`, and the audit action union.
+  - `lib/api/consent-requests-admin.ts`
+  - `lib/content/consent-requests.ts`
+  - The tests for each.
+
+**Red run:** the derived-union `ActorsTable` test was red against the old switch, which rendered "Not recorded".
+
+**Falsifiers (executed red, then reverted):**
+
+| Mutation | Red |
+|---|---|
+| The `EMAIL_LINK` label removed | `tsc` TS2741 plus 2 Jest tests |
+| Upload before the create resolves | The create-fails tests |
+| The date left editable | The frozen-evidence test |
+| `expectedUpdatedAt` not sent | The form test and the edit-page 409 test |
+| Reload made a no-op | The reload test |
+
+**Implementer verification:** 130 suites / 1997 tests. `tsc`, lint (0 errors), build and `react-doctor` (0 errors) clean.
+
+**Evidence re-run (Leader): VERIFIED.** 130 suites / 1997 tests. `tsc` and build OK.
+
+**Reviewer A (form and consent rules): PASS.** Every stored-state × status combination was traced through `buildDto` against `enforceConsentMethodRules`, D-24 and provenance: no spurious `400` and nothing forbidden is submittable. D-26 is wired: `admin-actor.serializer` emits `updatedAt`. The method lists and history labels conform.
+
+**Reviewer B (evidence and upload): FAIL.** Verbatim:
+
+> In `ConsentDocumentField`, the type/size rejection message is not linked to the input. `aria-describedby` points at `messageId`, which is the `role="status"` div holding the availability, uploading and attached messages. The error is rendered in a separate `<p role="alert">` that has no id, so it is outside the input's accessible description. With storage enabled, `aria-invalid="true"` refers to an empty description; a screen-reader user who comes back to the field hears "invalid" with no reason. The rejection test checks `aria-invalid` and the alert text, but not the accessible description, so it stays green.
+>
+> **Violated Rule:** `requirements.md` FR-15 scenario "wrong type or size… rejects it with a field error"; `frontend/CLAUDE.md` § API client conventions ("forms map … to inline field errors via `aria-describedby`") and § Admin shell ("WCAG 2.1 AA … error association").
+>
+> **Remediation:** Give the error `<p>` its own id (e.g. `${uid}-error`) and add it to `aria-describedby` when `errorMessage` is set. In the 12 MB / `.docx` test, add `expect(input).toHaveAccessibleDescription(/larger than 10 MB|PDF, JPG or PNG/)`, and confirm it goes red before the fix.
+
+**Advisories, A and B (recorded):**
+- `onSuccess` gained an `extras` argument (a P-25 drift: the form still never uploads).
+- The failed-upload notice says "from the actor page" but navigates to the list.
+- The history panel does not refresh after an immediate upload.
+- Focus is lost while an upload runs.
+- `consent-evidence` is fetched twice per edit-page load.
+- No client-side check on file names over 255 characters.
+- No test of the re-grant PATCH body.
+- No test of the stored DENIED plus `EMAIL_LINK` case.
+- Stale comments in `ActorForm` ("no separate blank option", "never a blank sentinel"), and the history test's `ALL_EIGHT_ACTIONS` now holds 11 actions.
+- `SendConsentAction` is not re-keyed on Reload.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the same Implementer, with the FAIL copied verbatim.
+
+**Files changed (this attempt):**
+- `ConsentDocumentField.tsx`: the error `<p>` gets its own id, and `aria-describedby` = the hint, plus the status (only when shown), plus the error (when shown).
+- Its test: the 12 MB, `.docx` and storage-refusal tests assert the accessible description.
+- Comment-only corrections in `ActorForm.tsx`.
+- `ALL_EIGHT_ACTIONS` renamed to `ALL_ACTIONS`.
+- `ConsentEvidencePanel.tsx`: the formatter hoisted to module scope. The output is identical.
+
+**Red run:** on the existing code, 3 failed and 7 passed ("Expected element to have accessible description"). After the fix: 10/10.
+
+**Falsifier:** the old `describedby` → the same 3 red; restored → 10/10.
+
+**Implementer verification:** 130 suites / 1997 tests. `tsc`, lint (0 errors), build and `react-doctor` (0 errors) clean.
+
+**Evidence re-run (Leader): VERIFIED.** 130 suites / 1997 tests. `tsc` and build OK.
+
+**Reviewer (rework; override (e)): PASS.** The error id is present whenever `errorMessage` is set, covering both the rejection and the upload error. The old wiring provably fails the new assertions. The comment edits are accurate. The formatter output is unchanged.
+
+**Runtime events:** none.
+
+**Requirements covered:**
+- FR-14: all.
+- FR-15: UI.
+- FR-16: the download action.
+- FR-13: trail labels.
+- FR-10: form, including frozen evidence, the select swap and D-26.
+- NFR-10: axe and captures (`t11-captures`, 22 scenarios, no horizontal overflow).
+
+**ADVISORY (recorded):** the "uploading" and "attached" messages are announced only through `aria-live`, not through the input's description. No test asserts that the error id is removed once a valid file clears the error. Attempt 1's advisories stand.
+
+- **Final verification:** VERIFIED.

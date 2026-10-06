@@ -115,6 +115,7 @@ const CONSENT_METHOD_OPTIONS: { value: AdminActorListQuery['consentMethod']; lab
   { value: 'SIGNED_FORM',     label: 'Signed form' },
   { value: 'EMAIL',           label: 'Email' },
   { value: 'VERBAL_FIELD',    label: 'Verbal (field)' },
+  { value: 'EMAIL_LINK',      label: 'Email link (actor)' },
 ];
 
 // ---------------------------------------------------------------------------
