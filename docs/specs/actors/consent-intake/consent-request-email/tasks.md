@@ -246,7 +246,7 @@ T-1…T-13 ─► T-14
     - The P-14 pin is green on a real-handler event.
     - The full backend suite, build and lint are green.
 
-- [ ] **T-6 Evidence read, edition text, audit kinds and the immutability gate** (deps: T-3, T-4)
+- [~] **T-6 Evidence read, edition text, audit kinds and the immutability gate** (deps: T-3, T-4)
   - **Size:** M (~700 LOC) · **Effort:** `high` · **Skills:** `nestjs-expert`, `tdd`
   - **Traces:**
     - FR-13 (retention — *deleted actor*; *no edit path* — AND MUST be shown by a test)

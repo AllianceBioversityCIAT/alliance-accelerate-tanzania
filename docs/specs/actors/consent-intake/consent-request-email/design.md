@@ -501,6 +501,8 @@ No other DD removes shipped behaviour. The supersession hook adds writes, and th
 
 *Re-baselined at the T-3 continue gate (2026-10-05, product owner):* review rounds run at about 2 per critical task, because two lens Reviewers are spawned in parallel on T-1, T-3, T-4, T-5 and T-7. The accepted ceiling is about **30** verdicts. LOC was at +33 % for T-1…T-3 (3,513 against 2,650); the total budget of ~11,300 still stands.
 
+*Re-baselined again after T-5 (2026-10-06, under the standing authorization):* actuals for T-1…T-5 are 7,248 LOC against 5,150 planned (+41 %) and 15 review verdicts. Projected totals are **~16,000 LOC** and **~40 verdicts**. The overrun comes from the security tasks' evidence: falsifier suites, live probes and three-lens review. Production code is a minority of the delta.
+
 ## 11. Premise Ledger
 
 **Count:** 32 premises: 30 verified (2 of them refuted at the source and the design corrected: P-13, P-16), 2 `UNVERIFIED`. One is High Impact (P-9, live broker throughput); one is Low and moot (P-27). P-18's citation is verified; its Legal-approval half stays `user-stated`.
