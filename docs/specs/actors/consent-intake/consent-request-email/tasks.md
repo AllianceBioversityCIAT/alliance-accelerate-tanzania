@@ -502,7 +502,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Review:** `full` — constitutional baseline.
   - **Done when:** the sweeps are pasted with dispositions; ADR-NNN is written as a placeholder (candidate ADR-018) with the unmerged-branch check recorded.
 
-- [~] **T-13 Constitution guides: root and backend mirrors** (deps: T-12)
+- [x] **T-13 Constitution guides: root and backend mirrors** (deps: T-12)
   - **Size:** S (~120 LOC docs) · **Effort:** `high` · **Skills:** `cognitive-doc-design`
   - **Traces:** FR-17 (root guides; *mirrors in lockstep*; *no constitutional sentence left false* for guides) · design DD-13
   - **Scope:** amend the PII hard constraint in `CLAUDE.md`, `AGENTS.md`, `backend/CLAUDE.md` and `backend/AGENTS.md`. It must name the token-bearer read as a third, single-actor disclosure path (non-`GRANTED`, the public-detail set, never `NEVER_PUBLIC_FIELDS`). Add the `consent-requests` module notes to `backend/CLAUDE.md`: the second `pii-boundary` derived gate, the sentinel `actingSub`, `EMAIL_LINK` never admin-assertable, and the bucket env var.

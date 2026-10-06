@@ -1047,3 +1047,60 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 **Open for apply time:** `ADR-NNN` (candidate ADR-018) appears in five places in the TRD and is replaced when the number is allocated on the default branch.
 
 - **Final verification:** VERIFIED (doc sweeps re-run by the Leader).
+
+### T-13 — Constitution guides — in progress
+
+- **Leader choices:**
+  - Skills: `cognitive-doc-design`.
+  - Effort: `high`.
+- **Leader scope decision (standing authorization):** the `.agents/{implementer,leader,reviewer,tester}.md` personas restated the PII rule this spec made false, so their PII lines are amended inside T-13 (FR-17 "no constitutional sentence left false"). The Implementer found them.
+- **Leader wording correction (pre-review):** the first `CLAUDE.md`/`AGENTS.md` draft said a `GRANTED` actor's contact block is public on "the detail read and the token-bearer read". The token read serves non-`GRANTED` actors only, so the sentence was restored to "detail read" and the third path is stated separately.
+
+#### Attempt 1 — **FAIL**
+
+**Files changed:**
+- `CLAUDE.md`, `AGENTS.md`: the PII bullet gains the third single-actor path, "respond is the only GRANTED without acknowledgement", and "`EMAIL_LINK` is never admin-assertable".
+- `backend/CLAUDE.md`: a token-bearer bullet and a new § Consent-requests module.
+- `backend/AGENTS.md`: rule 3 extended and a new rule 9.
+- `.agents/{implementer,leader,reviewer,tester}.md`: the exception clause.
+
+**Sweeps before and after, with dispositions:** recorded in the Implementer report. The bullet-only lockstep check shows only pre-existing wording differences.
+
+**Falsifier:** the amended `CLAUDE.md` paired with `AGENTS.md` at HEAD → "token-bearer" appears 0 times in the old bullet.
+
+**Leader re-check:** the amendment is present in all 8 files.
+
+**Reviewer: FAIL.** Verbatim:
+
+> `backend/CLAUDE.md` (§ Consent-requests module, `EMAIL_LINK` bullet) and `backend/AGENTS.md` item 9(c) both say "admin DTOs/import use `ADMIN_ASSERTABLE_CONSENT_METHODS`". That is only partly true. Create, bulk and import use the subset (`actor-create.dto.ts`, `bulk-consent.dto.ts`, `template-columns.ts`). `AdminActorUpdateDto` deliberately redeclares `@IsIn(Object.values(ConsentMethod))`, the full enum including `EMAIL_LINK`. The real rule is enforced in `ActorsAdminService.update` rules 1–3, which can see the stored value. As written, the guide invites a future agent to "fix" the update DTO by narrowing it; per that DTO's own comment, that would return 400 on every save of an actor already at `EMAIL_LINK`.
+>
+> **Violated Rule:** FR-17 ("no constitutional sentence left false"); `tasks.md` T-1 scope; `design.md` §5.7 and DD-9.
+>
+> **Remediation:** reword the bullet in both backend files the same way: "create/bulk/import validate against `ADMIN_ASSERTABLE_CONSENT_METHODS` (`common/consent-methods.ts`); the update DTO keeps the full enum on purpose and `ActorsAdminService.update` rules 1–3 refuse any assertion of, or move into, `EMAIL_LINK`; only `ConsentPublicService.respond` writes it." Then re-run the bullet-only lockstep comparison on the backend pair.
+
+**Advisories (recorded):**
+- "Single-use token" is loose: `view` does not consume the token; only `respond` does.
+- **`tester.md` QA-2:** "gps is null for them" now sits after the `/consent/view` exception, but `view` shows GPS (it projects as if granted), so a Tester could write a failing assertion. **Follow-up for archive.**
+- **Two additions beyond the T-13 text, accepted by the Leader as true and traceable** (DD-9, §5.7a, DD-13): the lock-first bullet, and "`EMAIL_LINK` is never admin-assertable" in the root bullet.
+
+#### Attempt 2 — **PASS**
+
+**Rework brief:** delivered by message to the same Implementer. Only the named line was fixed.
+
+**Files changed (this attempt):** the `EMAIL_LINK` bullet in `backend/CLAUDE.md` § Consent-requests module and in `backend/AGENTS.md` item 9(c), identical in both:
+
+> create/bulk/import validate against `ADMIN_ASSERTABLE_CONSENT_METHODS` (`common/consent-methods.ts`); `AdminActorUpdateDto` keeps the full enum on purpose, and `ActorsAdminService.update` rules 1–3 refuse any assertion of, or move into, `EMAIL_LINK`; only `ConsentPublicService.respond` writes it.
+
+**Leader re-check:** the sentence is present in both files, and the old "admin DTOs/import use" phrasing appears nowhere in the guides or personas. The delta is 16 lines.
+
+**Reviewer (rework; the same Reviewer re-checked the delta): PASS.** Every clause matches the code. The backend pair is in lockstep. Nothing else changed.
+
+**Runtime events:** none.
+
+**Requirements covered:** FR-17, the root and backend guides: mirrors in lockstep, no constitutional sentence left false. The personas are included under the Leader's scope decision.
+
+**Follow-ups recorded for archive:**
+- `.agents/tester.md` QA-2: "gps is null for them" sits next to the `/consent/view` exception, where GPS is shown.
+- "Single-use token" wording: `view` does not consume the token.
+
+- **Final verification:** VERIFIED.
