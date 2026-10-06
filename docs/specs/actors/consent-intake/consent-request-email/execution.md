@@ -1104,3 +1104,21 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - "Single-use token" wording: `view` does not consume the token.
 
 - **Final verification:** VERIFIED.
+
+## Validation remediation — 2026-10-06
+
+`validation-report.md` (`f3fef14`) was **NOT archive-ready**.
+
+**Product owner decisions:**
+- FR-3: **show a confirmation** after the post-create send.
+- FR-15: **amend the text.** The stored document row is the out-of-band evidence; there is no `SIGNED_FORM` field.
+- GPS hemisphere: **fix both** `ConsentRecordPreview` and the pre-existing `ProfileLocation`.
+- **Fix everything** (R-1 … R-6).
+
+**Plan:**
+- **R-A (frontend):** C-17, V-1 (both components), C-36, C-150.
+- **R-B (backend tests):** C-47, C-55, C-59, C-73.
+- R-A and R-B run in parallel; they touch disjoint packages and dependency trees.
+- **R-C (documents)** after them: V-2 … V-9, the §8 WARNs, the FR-15 amendment, C-143, C-34, the §3 tree, the `execution.md` headers and Document Control, `tester.md` QA-2, and the template and service comments.
+- **R-6:** the T-14 scope additions were applied by the Leader in `tasks.md` T-14 steps 4–5.
+- Then re-validation.

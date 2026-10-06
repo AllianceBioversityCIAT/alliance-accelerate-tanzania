@@ -523,7 +523,8 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
     1. **Throughput.** Send to 20 test actors whose emails are controlled. Record the per-dispatch `sent` and `elapsedMs` from the logs. **Decision rule:** if throughput is below 1.1 sends/s, escalate to proposal option A2 rather than ship (design R-4).
     2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. **Also (T-7 review A-1, added 2026-10-06):** with the deployed role, confirm a document id whose upload never happened. Expect `422`. A `500` means S3 returned `403`: the `s3:prefix`-conditioned `ListBucket` does not apply to `HeadObject`'s implicit check. The predefined fallback is an unconditioned `s3:ListBucket` on the bucket ARN, which exposes key names to the Lambda role only. It needs a design §7.4 amendment, a template-test change, and an amendment to `docs/infrastructure.md` §2's `s3:prefix` sentence (T-12 review, 2026-10-06). Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
     3. **One real request.** Accept it, then confirm the actor on `/directory` and `/profile`. Reopen the link and get the dead-end page.
-    4. Review the T-8…T-11 captures.
+    4. Review the T-8…T-11 captures. *(Validation R-6, 2026-10-06:)* commit or paste the captures as durable evidence, add 768 px for the T-10 states, and capture T-8's field-error and decline-confirm states.
+    5. *(Validation R-6, C-116:)* with a real presigned POST, try a file over 10 MB and a file with a mismatched `Content-Type`. Expect both refused by S3.
   - **Falsifier:**
     - The download is retried after the expiry, and must fail.
     - The link is reopened after accepting, and must give the dead-end page.
