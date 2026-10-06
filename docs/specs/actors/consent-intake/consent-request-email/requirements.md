@@ -28,7 +28,7 @@ The spec advances PRD In Scope items 4 and 5, and it closes the "consent-request
 
 ### Decisions inherited and added
 
-D-1…D-14 are inherited from `proposal.md` §1 unchanged. D-1 (Legal approved click-to-consent) and D-8 (identity fields, minimal wording changes) are recorded **on the product owner's statement**.
+D-1…D-9, D-13 and D-14 are inherited from `proposal.md` §1 unchanged. D-10 and D-12 come from the proposal's open-questions table, and D-11 there is superseded by chunk 1's D-19. D-1 (Legal approved click-to-consent) and D-8 (identity fields, minimal wording changes) are recorded **on the product owner's statement**.
 
 | # | Decision (specify, 2026-10-05) | Status |
 |---|---|---|
@@ -36,7 +36,7 @@ D-1…D-14 are inherited from `proposal.md` §1 unchanged. D-1 (Legal approved c
 | D-21 | **Bulk sending skips an actor whose latest request was declined.** A single-actor send can still re-ask that actor deliberately. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 | D-22 | **The consent method recorded on accept is a new value, `EMAIL_LINK`.** It is not the existing `EMAIL`, because `EMAIL` already means "an admin asserts consent came by email". Reusing it would mix evidenced and asserted consent under one value. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 | D-24 | **An admin re-grant of an actor who accepted by link does not inherit the link's date or reference.** The admin supplies the consent date. The link-era `consentReference` is cleared unless the admin enters a new one. Otherwise an admin-asserted method would sit beside the actor's own evidence (mixed provenance). | Confirmed — Daniela Gómez, 2026-10-05 (T-1 continue gate; raised by both T-1 Reviewers) |
-| D-25 | **Two simultaneous sends for the same actor create one request, not two.** Enqueue locks the targeted actor rows and evaluates eligibility inside its own transaction. | Confirmed — Daniela Gómez, 2026-10-05 (T-3 continue gate; raised by both T-3 Reviewers) |
+| D-25 | **Two simultaneous `bulk` sends for the same actor create one request, not two.** Enqueue locks the targeted actor rows and evaluates eligibility inside its own transaction. For `single` scope, the second send waits for the lock and then supersedes the first, as any resend does (FR-3). | Confirmed — Daniela Gómez, 2026-10-05 (T-3 continue gate; raised by both T-3 Reviewers) |
 | D-26 | **An admin edit made from a stale form is refused, not applied.** The edit carries the version (`updatedAt`) the admin loaded. If the actor changed since, for example because the actor accepted by link, the save returns `409` and the form asks the admin to reload. It protects every concurrent edit, not only consent. | Confirmed — Daniela Gómez, 2026-10-06 (raised from T-1 Reviewer advisory B3, widened by the Leader) |
 | D-23 | **Every link that cannot be answered shows the same dead-end page**, whether it is unknown, expired, already used, superseded, or its actor was deleted. The page never says which case applies. | Confirmed — Daniela Gómez, 2026-10-05 (Phase 1 gate) |
 
@@ -56,7 +56,7 @@ D-1…D-14 are inherited from `proposal.md` §1 unchanged. D-1 (Legal approved c
 
 ## 3. System Context & Scope
 
-Each line on current behaviour carries its evidence. The full citations are in `design.md` § Premise Ledger.
+Each line on current behaviour carries its evidence. The full citations are in `design.md` § Premise Ledger. *Verified at `342390a`, before this spec; several rows are superseded by it (see tasks).*
 
 | Today | Evidence |
 |---|---|
@@ -156,6 +156,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
   - **Scenario: all matching filters.** GIVEN 140 actors match `consentStatus=UNKNOWN&region=Arusha` across 6 pages, WHEN the admin chooses *all matching* and confirms, THEN requests are created for every eligible one of the 140, not only the 25 on screen.
   - **Scenario: nothing eligible.** GIVEN every targeted actor is ineligible, WHEN the confirm step shows, THEN the send action is unavailable and the skip breakdown is shown.
   - **Scenario: a failure is visible and retryable.** GIVEN the mail transport rejects 3 of 50 sends, WHEN the run ends, THEN the result reads 47 sent, 3 failed, and offers **Retry failed**. A retry sends only those 3.
+  - **Stale claim.** A row left in `SENDING` for over 2 minutes is marked failed and is never resent automatically. Only an explicit admin **Retry** requeues it, and that may send a second email if the first had in fact been delivered (design R-10, accepted).
   - **Scenario: closing the tab mid-run.** GIVEN a run is interrupted after 20 of 100, WHEN the admin returns to Admin → Actors, THEN the 80 unsent requests are still recorded as queued, and the admin can resume them. BUT none of them MUST be lost or sent twice.
   - **Scenario: the filter changed under the admin.** GIVEN the confirm step counted 140, WHEN an actor stops matching before confirming, THEN the send uses the server's evaluation at confirm time and the result reports the actual counts.
 - **PII/RBAC impact:** Admin only. Counts and reasons carry no contact values.
@@ -317,7 +318,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 
 - **Description:**
   - **Where.** The create and edit forms MUST offer an optional upload of one consent document. Accepted types are PDF, JPG and PNG, at most 10 MB.
-  - **Storage.** The file is stored in private, encrypted storage and recorded as `SIGNED_FORM` evidence for the actor.
+  - **Storage.** The file is stored in private, encrypted storage. The stored `ConsentDocument` row is the out-of-band evidence, listed in the Consent evidence panel. Uploading changes no consent field.
   - **No gate bypass.** Uploading MUST NOT by itself change `consentStatus`, method or date. The existing acknowledgement gate still governs any move to `GRANTED`, because the file is still the admin's assertion (O-9).
   - **Unconfigured storage.** Where storage is not configured (the local stack), the field states that uploads are unavailable rather than failing on submit.
 - **Rationale / Source:** O-9, D-7, D-10.
@@ -362,7 +363,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 | NFR-5 | **Exactly one response per link.** The answer is a compare-and-set on the open state inside one transaction with the actor update and the audit row. Zero affected rows means the dead-end response. | Test with two concurrent responds on the in-memory harness: one success, one miss. **Declared gap:** real-MySQL row contention is not exercised (the e2e harness mocks Prisma), the same gap chunk 1 declared. |
 | NFR-6 | **Dispatch fits the Lambda budget.** Each dispatch step stops starting new sends after a time budget that leaves headroom under `Timeout: 15`. A step never exceeds 12 s wall time. A 1,000-actor campaign completes from the UI. | Unit test with a delayed fake transport: the step returns within the design's worst case (budget 7.5 s + pre-send DB 0.3 s + one send bound 3.2 s + result write 0.5 s = 11.5 s, design §5.2). Throughput on the real broker is measured at execute time (design premise ledger, `UNVERIFIED`). |
 | NFR-7 | **Slack-safe subject.** The consent-request subject is one constant. No identifier of any kind. | Template test (FR-7). |
-| NFR-8 | **Storage security.** The bucket has all four Block Public Access settings, default encryption, `BucketOwnerEnforced`, a TLS-only policy, and versioning. The Lambda can only put and get objects under that bucket's document prefix. Upload links last ≤ 5 min and enforce type and ≤ 10 MB. Download links last ≤ 5 min with `Content-Disposition: attachment`. No `*` resources. | `validate.sh` + template assertions (design); `run-tests.sh` stays green (no account id literal); a presign unit test pins expiry, conditions and disposition. **Declared gap:** the live IAM and bucket behaviour have no automated gate (mocked SDK). The substitute is one real upload and download on DEV after deploy. |
+| NFR-8 | **Storage security.** The bucket has all four Block Public Access settings, default encryption, `BucketOwnerEnforced`, a TLS-only policy, and versioning. The Lambda's grants are scoped to that bucket: put, get and delete on `incoming/*`; put and get on `stored/*`; and `ListBucket` conditioned on the `incoming/*` prefix (design §7.4). No delete on `stored/`. Upload links last ≤ 5 min and enforce type and ≤ 10 MB. Download links last ≤ 5 min with `Content-Disposition: attachment`. No `*` resources. | `validate.sh` + template assertions (design); `run-tests.sh` stays green (no account id literal); a presign unit test pins expiry, conditions and disposition. **Declared gap:** the live IAM and bucket behaviour have no automated gate (mocked SDK). The substitute is one real upload and download on DEV after deploy. |
 | NFR-9 | **Immutability and retention.** Evidence rows have no foreign key cascade from `Actor`. Answered rows are never updated. Personal data in them (respondent identity, IP, user agent, the address used) is listed in the TRD inventory with "retained for compliance" as its stated policy. | FR-13 tests; TRD sweep in FR-17. |
 | NFR-10 | **Accessibility.** The public page, the bulk confirm and result, the post-create prompt and the evidence panel meet WCAG 2.1 AA. That means labelled fields, errors via `aria-describedby`, `aria-live` for progress and results, focus-trapped dialogs, and keyboard operation. | `jest-axe` + component tests; rendered capture at 375/768/1440 at the HITL pause (no automated layout gate). |
 | NFR-11 | **No token reaches analytics.** The consent page is structurally outside the analytics mount, so GA4 never loads on it, whatever GA4 does with fragments. | Test: the consent route's layout tree contains no `GoogleAnalytics`. Mutation: rendering the page under `(public)` reddens it. |
@@ -422,7 +423,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 | # | Question | Recommended default |
 |---|---|---|
 | OQ-6 | Should Legal see the three adapted sentences before release? | Yes, as a courtesy diff. It does not block execution. |
-| OQ-7 | Confirm D-20…D-23 above. | As written. |
+| OQ-7 | Confirm D-20…D-26 above. Confirmed (see the Status column). | As written. |
 | OQ-8 | Should the post-create prompt also appear after **edit**, when an admin adds the first email? | No. The edit page's **Send consent request** action covers it. |
 
 ## 11. Requirement ID Index

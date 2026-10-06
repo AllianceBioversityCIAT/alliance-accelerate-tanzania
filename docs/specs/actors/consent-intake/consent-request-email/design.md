@@ -22,7 +22,7 @@ The public page lives in a **new route group, `(consent)`**, that never mounts a
 
 Admin write paths that change consent or email **supersede** pending requests inside their existing transactions (D-20). `EMAIL_LINK` is excluded from every admin-assertable method list, so only the actor's response can write it.
 
-**Budget (tripwire, §10):** 14 tasks · ~11,300 LOC (≈ 40 % production, 60 % tests) · ~20 review rounds. *Re-baselined from ~9,800 at decomposition: the judgment-day fixes added the immutability gate, the frozen-evidence rules and the method-list walk.*
+**Budget (§10):** planned 14 tasks · ~11,300 LOC · ~20 review rounds; actual ~17,400 LOC added and 35 review verdicts as of R-A/R-B.
 
 ## 2. Architecture Overview
 
@@ -42,7 +42,7 @@ Admin edit page
   evidence panel ──GET evidence─────► list requests + documents
   attach doc ──POST upload-url──────► presigned POST (incoming/<docId>, ≤10 MB, exact type, 5 min)
              ──POST to S3 directly─────────────────────────────────────────────────► S3 private bucket
-             ──POST confirm─────────► HeadObject → CopyObject incoming→stored → DeleteObject → STORED + audit
+             ──POST confirm─────────► HeadObject → CopyObject incoming→stored → one tx (claim STORED + audit) → DeleteObject incoming
   download ──GET download-url───────► presigned GET (stored/<docId>, 5 min, attachment)
 ```
 
@@ -60,26 +60,30 @@ backend/
     consent-token.util.ts                                mint 32-byte token, sha256
     consent-eligibility.ts                               pure FR-2 rule
     consent-requests.service.ts                          preview, enqueue, dispatch, retry, evidence
+    consent-evidence.service.ts                          evidence read for the admin panel
     consent-supersession.module.ts / .service.ts         supersedePendingFor (exported; imported by ActorsModule and ConsentRequestsModule)
     consent-public.service.ts                            view, respond
     consent-public.controller.ts                         POST consent/view, POST consent/respond (throttled, public)
     consent-throttle.guard.ts                            ThrottlerGuard subclass
     admin-consent-requests.controller.ts                 admin routes (§6)
     consent-documents.service.ts                         presign, confirm, download
-    document-storage.ts                                  S3 port + adapter; "unconfigured" when env absent
+    document-storage.ts                                  S3 port
+    s3-document-storage.ts · unconfigured-document-storage.ts · document-storage.factory.ts   adapters; "unconfigured" when env absent
     dto/ …
   src/mail/templates/consent-request.template.ts         fixed subject; email-layout blocks
   src/mail/mail.service.ts                               + sendConsentRequest
   src/common/consent-methods.ts                          ADMIN_ASSERTABLE_CONSENT_METHODS
+  src/actors/admin-actor-where.util.ts                   buildAdminActorWhere (§5.1)
   src/actors/{actors-admin.service,actor-import.service}.ts, dto/{actor-create,bulk-consent}.dto.ts, common/template-columns.ts
   src/actors/actor-audit.service.ts                      + logConsentRequested / logConsentResponded / logConsentDocumentUploaded
   src/test/pii-boundary.spec.ts                          + derived gate over ConsentRequestsModule
 frontend/
   app/(consent)/layout.tsx                               Header + main + Footer; NO ConsentProvider/GoogleAnalytics
   app/(consent)/consent/page.tsx                         token from fragment → strip → view/respond
-  components/consent/{ConsentRecordPreview,RespondentFields,ConsentResponseForm,ConsentDeadEnd}.tsx
+  components/consent/{ConsentRecordPreview,RespondentFields,ConsentResponseForm,ConsentDeadEnd,ConsentRichText}.tsx
+  lib/geo/coordinates.ts                                 shared helper (consent preview GPS labels)
   components/register/ConsentTextScrollGate.tsx          extracted presentational gate (shared with ConsentPolicyDisclosure)
-  components/admin/{SendConsentDialog,SendConsentPrompt,ConsentQueueBanner,ConsentEvidencePanel,ConsentDocumentField}.tsx
+  components/admin/{SendConsentDialog,SendConsentPrompt,SendConsentAction,ConsentSelectionStrip,ConsentQueueBanner,ConsentEvidencePanel,ConsentDocumentField}.tsx
   lib/admin/useConsentDispatch.ts                        dispatch loop
   lib/api/{consent-public,consent-requests-admin}.ts
   lib/content/consent-requests.ts                        status labels, skip-reason copy
@@ -115,7 +119,7 @@ Indexes: `(actorId, createdAt)`, `(status, batchId)`, unique `tokenHash`.
 
 | Field | Notes |
 |---|---|
-| `id` (cuid), `actorId` (plain string, no relation), `traderId` + `traderName` snapshot taken at `upload-url` | The snapshot feeds the confirm-time audit row, even if the actor was deleted in between (P-28). Confirm still stores the document, because evidence is retained. |
+| `id` (`randomUUID()`, set in `consent-documents.service.ts` `createUploadUrl`), `actorId` (plain string, no relation), `traderId` + `traderName` snapshot taken at `upload-url` | The snapshot feeds the confirm-time audit row, even if the actor was deleted in between (P-28). Confirm still stores the document, because evidence is retained. |
 | `status` | `PENDING` (presigned, not confirmed) · `STORED`. Only `STORED` is listed. |
 | `fileName` (255), `contentType` (`application/pdf` · `image/jpeg` · `image/png`), `sizeBytes` | Declared at presign. Verified at confirm by `HeadObject`. |
 | `storageKey` | `incoming/<id>` until confirmed, then `stored/<actorId>/<id>`. |
@@ -125,7 +129,7 @@ Indexes: `(actorId, createdAt)`, `(status, batchId)`, unique `tokenHash`.
 
 | Enum | Change | Consumers walked (DD-9) |
 |---|---|---|
-| `ConsentMethod` | + `EMAIL_LINK` | See DD-9 and §5.7. Admin **create**, bulk, import and template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. **Update** accepts the full set, but enforces the three §5.7 rules: no change to `EMAIL_LINK`, no transition into `GRANTED` with it, and `EMAIL_LINK` evidence frozen while `GRANTED`. The list filter and every display use the full set. The frontend hand-coded lists are walked in §5.7 (P-15). |
+| `ConsentMethod` | + `EMAIL_LINK` | See DD-9 and §5.7. Admin **create**, bulk, import and template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. **Update** accepts the full set, but enforces the four §5.7 rules: no change to `EMAIL_LINK`, no transition into `GRANTED` with it, `EMAIL_LINK` evidence frozen while `GRANTED`, and a re-grant that does not inherit link evidence. The list filter and every display use the full set. The frontend hand-coded lists are walked in §5.7 (P-15). |
 | `ActorAuditAction` | + `CONSENT_REQUESTED`, `CONSENT_RESPONDED`, `CONSENT_DOCUMENT_UPLOADED` | `actor-audit.service.ts`, `audit-entry.serializer.ts`, frontend `AuditEntry['action']` union, and `ActorHistoryPanel`'s total `actionBadgeClasses` Record (the build fails if any is missed). |
 | `ConsentRequestStatus`, `ConsentDocumentStatus` | new | Only this module. |
 
@@ -154,18 +158,17 @@ A filter target uses `buildAdminActorWhere(q)`, a pure function **extracted** fr
 1. **Enqueue.** *(D-25, amended 2026-10-05.)* The transaction first locks the targeted `Actor` rows (`SELECT … FOR UPDATE` through parameterized `$queryRaw`, the `ActorSequence` precedent). It then evaluates eligibility **inside** the transaction, so a concurrent enqueue for the same actor waits and then sees the first one's pending row. The lock must stay the **first statement** in the transaction: InnoDB opens the read view at the first plain read, so the eligibility read has to come after `FOR UPDATE` returns. Overlapping bulk sets rely on InnoDB taking row locks in primary-key order; a deadlock would surface as a `500`, and the admin can retry. That same transaction creates `QUEUED` rows (`createMany`, P-29) for every eligible actor, snapshotting `recipientEmail`, `traderId`, `traderName`, edition and hash. For `single` it first calls `supersedePendingFor(tx, [actorId])`. It returns `{ batchId, queued, skipped: { reason → count } }`.
 2. **Dispatch** `{ batchId? }` loops until the **time budget (7.5 s)** is spent or nothing is left. The budget is checked **before the claim** (RB-4), so no row is ever claimed after it. One loop pass:
    1. Selects the next `QUEUED` id.
-   2. **Claims** it with a compare-and-set `updateMany(id, status=QUEUED) → SENDING, claimedAt, attempts+1` (P-29). A count of 0 means another tab claimed it, or it was superseded, so the row is skipped (FR-6 scenario 2).
-   3. **Re-checks eligibility at claim time** (B-3): the actor exists, is not `GRANTED`, and `actor.email === recipientEmail`. If not, it sets `SUPERSEDED` and sends nothing.
-   4. Mints the token and stores `tokenHash`.
-   5. Calls `MailService.sendConsentRequest`.
-   6. **Result write is also a compare-and-set** on `status = SENDING` (B-2).
+   2. **Claims** it with a compare-and-set `updateMany(id, status=QUEUED) → SENDING, claimedAt, attempts+1, tokenHash` (P-29). The token is minted just before and stored in this one write. A count of 0 means another tab claimed it, or it was superseded, so the row is skipped (FR-6 scenario 2).
+   3. **Re-checks eligibility at claim time** (B-3): the actor exists, is not `GRANTED`, and `actor.email === recipientEmail`. If not, it sets `SUPERSEDED` and sends nothing. The token was already minted in step 2, so a row superseded here keeps a `tokenHash`; it is unusable, because lookup requires `SENT`.
+   4. Calls `MailService.sendConsentRequest`.
+   5. **Result write is also a compare-and-set** on `status = SENDING` (B-2).
       - On success: `→ SENT, sentAt, expiresAt` plus a `CONSENT_REQUESTED` audit row, in one transaction.
       - On a throw: `→ FAILED` with a code.
 
       A count of 0 means an admin superseded the row mid-send. It stays `SUPERSEDED`, so the emailed link is dead (lookup requires `SENT`), and no audit row is written.
 
    **Timing.** No row is claimed after 7.5 s. The last pass then costs:
-   - the pre-send database steps (select, claim, actor re-read, `tokenHash` write), ≤ 0.3 s;
+   - the pre-send database steps (select, claim with `tokenHash`, claim-time actor read), ≤ 0.3 s;
    - the send, bounded by `MAIL_SEND_TIMEOUT_MS` (3 s) **plus** `MAIL_LOCK_WAIT_TIMEOUT_MS` (0.2 s), which `mail-timing.ts` declares additive;
    - the result transaction, ≤ 0.5 s.
 
@@ -267,7 +270,7 @@ New dependencies: `@aws-sdk/client-s3`, `@aws-sdk/s3-presigned-post`, `@aws-sdk/
 
 **Update rule** (C-3, P-16 contradicted). `ActorForm.buildDto` **always** re-sends `consentMethod`, edit included, and `AdminActorUpdateDto` is `PartialType(AdminActorCreateDto)`. Narrowing the update DTO would therefore make **every** save of an `EMAIL_LINK` actor a `400`. Instead:
 - The update DTO validates against the **full** set; `AdminActorUpdateDto` overrides the inherited `@IsIn`.
-- `ActorsAdminService.update` refuses three cases with a `400` naming the offending field:
+- `ActorsAdminService.update` refuses four cases with a `400` naming the offending field:
   1. a **change to** `EMAIL_LINK` (stored ≠ `EMAIL_LINK` and payload = `EMAIL_LINK`);
   2. **any transition into `GRANTED` whose effective method is `EMAIL_LINK`** (RB-2). Example: an actor that accepted by link, was later set to `DENIED` by an admin, and is now being re-granted by an admin. That re-grant is the admin's assertion, so it must carry an admin-assertable method, never a label that claims the actor's own act.
   3. **Evidence frozen while `GRANTED` by link** (FB-2, confirmed by the product owner 2026-10-05). When the stored status is `GRANTED` and the stored method is `EMAIL_LINK`, and the status stays `GRANTED`, any **value change** to `consentMethod`, `consentObtainedAt` or `consentReference` is refused. Those values are the actor's evidence (`respondedAt`, the request id). The only way to correct such a record is a status change: `DENIED` breaks the chain, and a later re-grant falls under rule 2.
@@ -373,7 +376,7 @@ The body is built with `renderEmailHtml`:
 
   | State | Shown when | Shows |
   |---|---|---|
-  | `loading` | `view` is in flight | Skeleton |
+  | `loading` | `view` is in flight | A text status line |
   | `ready` | `view` returned an open link | Preview + text + form |
   | `no-token` | Refreshed after the fragment was stripped | Copy: "Open the link from your email again" |
   | `dead-end` | `404` | Fixed copy + data-protection contact (FR-11) |
@@ -397,7 +400,11 @@ The body is built with `renderEmailHtml`:
 
   The target is `{ kind: 'ids' }` or `{ kind: 'filter', filter: current URL filters }`.
 - **Queue banner.** `ConsentQueueBanner` sits on Admin → Actors. It reads `queue` and offers Resume / Retry when either count is above 0.
-- **Post-create prompt.** `SendConsentPrompt` on `new/page.tsx` replaces the bare navigate. It shows the duplicate warnings (when any) and the send question in one dialog, defaults to **Send**, and then navigates. **Gate (B-13):** the send question renders only when the create result's `consentStatus !== 'GRANTED'`. A `GRANTED` create shows the warnings alone, or navigates as today. If a document was attached, the upload runs first. `ActorForm` itself is unchanged in its success path (P-25).
+- **Post-create prompt.** `SendConsentPrompt` on `new/page.tsx` replaces the bare navigate. It shows the duplicate warnings (when any) and the send question in one dialog and defaults to **Send**. The dialog then confirms in place, and nothing navigates silently (FR-3):
+  - **Clean send:** "Consent request sent to <email>." with a focused **Continue to actors**.
+  - **Queued 0:** the skip reason ("No consent request was sent: …") with Continue.
+  - **Failure:** an enqueue error keeps the question open with a **Try again** button; a dispatch failure says the request could not be sent and where to retry it, with Continue.
+  - **Not now:** navigates without sending. **Gate (B-13):** the send question renders only when the create result's `consentStatus !== 'GRANTED'`. A `GRANTED` create shows the warnings alone, or navigates as today. If a document was attached, the upload runs first. `ActorForm` itself is unchanged in its success path (P-25).
 - **Edit page.** It gains **Send consent request / Resend**, disabled with the FR-2 reason, and `ConsentEvidencePanel` with status badges from `lib/content/consent-requests.ts` (the total-`Record` pattern of `registration-status.ts`).
   - Times show in UTC with the qualifier, the `ConsentRecordCard` convention.
   - "Read exact text" opens the edition through `admin/consent-editions/:version`.
@@ -430,9 +437,10 @@ Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-sur
 
 **`ApiFunction`**
 - `Environment.Variables` gains `CONSENT_DOCUMENTS_BUCKET: !Ref ConsentDocumentsBucket`.
-- `Policies` gains one statement:
+- `Policies` gains three statements:
   - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on `${Bucket.Arn}/incoming/*`;
-  - `s3:PutObject` and `s3:GetObject` on `${Bucket.Arn}/stored/*`.
+  - `s3:PutObject` and `s3:GetObject` on `${Bucket.Arn}/stored/*`;
+  - `s3:ListBucket`, conditioned on `s3:prefix` (below).
 
   `CopyObject` needs `GetObject` on the source and `PutObject` on the destination.
   - **Listing, `incoming/` only** *(amended 2026-10-06 during T-7)*. `s3:ListBucket` on the bucket ARN, with the condition `s3:prefix` = `incoming/*` (`StringLike`). Without a list permission, S3 answers `HeadObject` on a missing key with `403`, not `404`, so a never-completed upload would make `confirm` return `500` instead of `422`. The grant is scoped to the prefix whose keys the API already chooses.
@@ -463,7 +471,7 @@ Every command uses `--profile IBD-DEV`.
 | **DD-6** | **Sentinel `actingSub = 'consent-link'`** for actor-originated audit rows, with `actingEmail = null` and the request id in `changes`. It is the first non-admin identity, declared in the TRD. | Nullable `actingSub` (a migration that widens every audit consumer's contract). | FR-13 |
 | **DD-7** | **New module, with its own derived PII gate.** `pii-boundary.spec.ts` gains `getRegisteredRoutes(ConsentRequestsModule, 'api/v1')` with its own fixture map and totality check over **public and admin** routes. | Registering the controllers in `RegistrationsModule` to inherit its gate (couples two domains to keep one test file simple). | NFR-3 |
 | **DD-8** | **Presigned POST plus confirm-and-promote** (`incoming/` → `stored/`). The POST policy enforces size; presigned PUT cannot enforce a maximum. The lifecycle rule cleans orphans. | Presigned PUT (no size bound); base64 through the API (6 MB Lambda limit). | FR-15, NFR-8 |
-| **DD-9** | **No admin can assert `EMAIL_LINK`.** Create, bulk, import and the template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. Update accepts the full set, so the form's unchanged re-send passes. It refuses a change to `EMAIL_LINK`, any transition into `GRANTED` with it, and any edit of `EMAIL_LINK` evidence while `GRANTED` (§5.7 rules 1–3; C-3, RB-2, FB-2). The list filter and displays keep the full set. | Accept it everywhere (an admin could forge evidenced consent). | FR-10, D-22 |
+| **DD-9** | **No admin can assert `EMAIL_LINK`.** Create, bulk, import and the template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. Update accepts the full set, so the form's unchanged re-send passes. It refuses a change to `EMAIL_LINK`, any transition into `GRANTED` with it, and any edit of `EMAIL_LINK` evidence while `GRANTED` (§5.7 rules 1–4; C-3, RB-2, FB-2, D-24). The list filter and displays keep the full set. | Accept it everywhere (an admin could forge evidenced consent). | FR-10, D-22 |
 | **DD-10** | **Supersession inside existing admin transactions** (§5.5). | A respond-time check comparing the actor's current state (racier and harder to explain to an auditor). | FR-12 |
 | **DD-11** | **Respond reuses `toPublicDetail`** for the preview, so the page can never show more than the public profile would after accept. | A bespoke projection (a second allowlist to keep in sync). | FR-9, NFR-3 |
 | **DD-12** | **`Retain` on the documents bucket.** | `Delete` (a teardown would destroy compliance evidence). | NFR-9 |
@@ -479,9 +487,9 @@ No other DD removes shipped behaviour. The supersession hook adds writes, and th
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R-1 | An unauthenticated write moves an actor to `GRANTED`. | 256-bit token, hash at rest, single use, 30 d, CAS, uniform miss, throttle, derived PII gate, QA scenario (FR-17); effort `max` on T-5. |
+| R-1 | An unauthenticated write moves an actor to `GRANTED`. | 256-bit token, hash at rest, answerable once (only `respond` consumes it; `view` can be repeated until answered or expired), 30 d, CAS, uniform miss, throttle, derived PII gate, QA scenario (FR-17); effort `max` on T-5. |
 | R-2 | Contact data is shown to a forwarded-link holder. `email-layout.ts`'s `link()` block also prints the full URL as visible text, fragment included (A-9). | Accepted (proposal R-2). The disclosure is limited to the `toPublicDetail` set. The visible URL opens no new channel, because the button carries the same URL. It is kept for clients that strip links. |
-| R-4 | Broker throughput is unknown. | DD-1 time budget. T-14 measures; below ~1 send/s, escalate to A2 (`ConsentRequest` rows are already the durable queue). |
+| R-4 | Broker throughput is unknown. | DD-1 time budget. T-14 measures; below 1.1 sends/s, escalate to A2 (`ConsentRequest` rows are already the durable queue). |
 | R-6 | Unscanned PII uploads. | Private bucket, attachment-only, 5-min links; malware scanning is an accepted risk. |
 | R-10 | A timeout that still delivered becomes `FAILED`. A retry sends a second email, and the first link dies. | Accepted. The dead-end copy tells the actor to use the latest email (ADR-015's own timeout-but-delivered observation). |
 | R-11 | Per-container throttle under 5 reserved concurrency (not distributed). | Same accepted posture as registrations (ADR-010). Token entropy, not the throttle, is the security control. |
@@ -495,15 +503,20 @@ No other DD removes shipped behaviour. The supersession hook adds writes, and th
 
 **Budget (Step 2.4).** The proposal's depth is Full; the design matches it.
 
-| Tasks | LOC | Review rounds |
-|---|---|---|
-| 14 | ~11,300 (prod ~4,500 · tests ~6,800); the sum of the `tasks.md` per-task estimates | ~20 (14 first passes + ~6 reworks, by chunk 1's rate) |
+| | Tasks | LOC | Review verdicts |
+|---|---|---|---|
+| Planned | 14 | ~11,300 (prod ~4,500 · tests ~6,800); the sum of the `tasks.md` per-task estimates | ~20 (14 first passes + ~6 reworks, by chunk 1's rate) |
+| Actual | 13 of 14 closed (T-14 is the live check) | ~17,400 added (`git diff --shortstat 72e8cca..HEAD -- backend/src backend/prisma frontend/app frontend/components frontend/lib infra`) | 35 as of R-A/R-B (32 in T-1…T-13; R-A 2, R-B 1 — the Leader's R-A attempt-2 MISMATCH is a re-run, not a verdict); later verdicts are in `execution.md` |
 
-`/akili-execute` escalates to the user if actuals exceed any figure by more than 25 %.
+`/akili-execute` escalates to the user if actuals exceed any figure by more than 25 %. The overrun was accepted at each re-baseline below.
 
-*Re-baselined at the T-3 continue gate (2026-10-05, product owner):* review rounds run at about 2 per critical task, because two lens Reviewers are spawned in parallel on T-1, T-3, T-4, T-5 and T-7. The accepted ceiling is about **30** verdicts. LOC was at +33 % for T-1…T-3 (3,513 against 2,650); the total budget of ~11,300 still stands.
+*History:* the ~11,300 plan was re-baselined from ~9,800 at decomposition, when the judgment-day fixes added the immutability gate, the frozen-evidence rules and the method-list walk.
 
-*Re-baselined again after T-5 (2026-10-06, under the standing authorization):* actuals for T-1…T-5 are 7,248 LOC against 5,150 planned (+41 %) and 15 review verdicts. Projected totals are **~16,000 LOC** and **~40 verdicts**. The overrun comes from the security tasks' evidence: falsifier suites, live probes and three-lens review. Production code is a minority of the delta.
+*Re-baselined at the T-3 continue gate (2026-10-05, product owner):* review rounds run at about 2 per critical task, because two lens Reviewers are spawned in parallel on T-1, T-3, T-4, T-5 and T-7. The accepted ceiling was about **30** verdicts. LOC was at +33 % for T-1…T-3 (3,513 against 2,650).
+
+*Re-baselined again after T-5 (2026-10-06, under the standing authorization):* actuals for T-1…T-5 are 7,248 LOC against 5,150 planned (+41 %) and 15 review verdicts. The projection then was ~16,000 LOC and ~40 verdicts. The overrun comes from the security tasks' evidence: falsifier suites, live probes and three-lens review. Production code is a minority of the delta.
+
+*Third re-baseline (~17,700 LOC, ~31 verdicts) was recorded in `execution.md` only. The Actual row above is the measured close-out.*
 
 ## 11. Premise Ledger
 
@@ -519,7 +532,7 @@ No other DD removes shipped behaviour. The supersession hook adds writes, and th
 - `shared-state`: admin transactions, `ConsentPolicyDisclosure`, the audit enum;
 - `consumer`: `ConsentMethod`, including the frontend hand-coded lists in §5.7; `ActorAuditAction`; the `AuditEntry` union; the PII gate route set.
 
-All rows below were verified at `342390a` unless they are marked `UNVERIFIED`.
+All rows below were verified at `342390a`, before this spec; several rows are superseded by it (see `tasks.md`). Rows marked `UNVERIFIED` were not verified.
 
 | # | Claim | Class | Citation (as run) | Verified at | If false | Settled by |
 |---|---|---|---|---|---|---|

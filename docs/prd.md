@@ -51,7 +51,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 5. **Access Control & Data Protection** — RBAC (`Public` / `Staff` / `Admin`) with PII field-level protection.
 6. **Data Import** — `.xlsx` workbook bulk import (create-only) for initial seeding and ongoing partner-profile onboarding. *(Read "Data Import/Export", and promised "filtered CSV export that enforces data-protection rules", until 2026-09-21. The export half is now Out of Scope below; ATP-53 is closed as cancelled.)*
 7. **Public Self-Registration** — an anonymous applicant submits an organisation's own details through a public form, verifies their email address, and accepts a versioned consent policy; the submission is stored with no public read path for any field until an Admin approves or rejects it. Runs alongside the team-managed intake in item 4, not in place of it.
-8. **Consent Requests by Email** — an `Admin` requests consent from team-managed actors by email (one actor, a selection, or every actor matching the current filters, including right after create or import). The actor answers on a single-use link valid for 30 days; the request, the exact text shown and the answer are retained as evidence, and an `Admin` can upload a signed consent document against an actor.
+8. **Consent Requests by Email** — an `Admin` requests consent from team-managed actors by email (one actor, a selection, or every actor matching the current filters, including right after create or import). The actor answers on a link valid for 30 days that can be answered once; the request, the exact text shown and the answer are retained as evidence, and an `Admin` can upload a signed consent document against an actor.
 
 ### Out of Scope (v1)
 - Multi-country support (Tanzania only).

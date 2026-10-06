@@ -469,8 +469,9 @@ Resources:
             # actors/consent-intake/consent-request-email T-7 (NFR-8): the API can
             # only touch objects under the two document prefixes of THIS bucket.
             # CopyObject needs GetObject on the source and PutObject on the
-            # destination. No ListBucket, no DeleteObject on stored/ (evidence
-            # is never deleted by the API), and never a `*` action or resource.
+            # destination. ListBucket is granted separately below, scoped to
+            # incoming/. No DeleteObject on stored/ (evidence is never deleted
+            # by the API), and never a `*` action or resource.
             - Effect: Allow
               Action:
                 - s3:PutObject

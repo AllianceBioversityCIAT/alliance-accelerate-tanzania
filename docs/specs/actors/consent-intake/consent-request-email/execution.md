@@ -7,10 +7,10 @@
 | Spec | `actors/consent-intake/consent-request-email` (chunk 2 of `actors/consent-intake`) |
 | Branch | `feature/atp-84-consent-request-flow` |
 | Started | 2026-10-05 |
-| Approval Mode | gated: the continue gate stops after every task |
+| Approval Mode | gated: the continue gate stops after every task, until the 2026-10-06 standing authorization (see *Run continuation*), which let gates auto-pass after a PASS |
 | Leader | Claude Code session, `opus` (T1) |
 | Implementer / Reviewer | `.claude/agents/akili-implementer` (T2) / `.claude/agents/akili-reviewer` (T3) — author ≠ auditor enforced by the wrappers |
-| Budget (design §10) | 14 tasks · ~11,300 LOC · ~20 review rounds. Escalate above +25 %. |
+| Budget (design §10) | Planned 14 tasks · ~11,300 LOC · ~20 review rounds; actual ~17,400 LOC added and 35 review verdicts as of R-A/R-B. Escalate above +25 %; the re-baselines are history in design §10. |
 | Local environment | Native route. MySQL 8 is the `accelerate-mysql` container on `localhost:3306` (the pre-check passed 2026-10-05: Node v26.10.0, port open), so it is the migration rehearsal target. |
 
 ## Task Execution History
@@ -158,7 +158,7 @@
   - `tasks.md` T-3: a first-step scope item.
 - **Carry:** T-3's Reviewer brief lists "conformance to `design.md` §7.2 as amended 2026-10-05" and "§5.7 rule 4 as amended 2026-10-05".
 
-### T-3 — Eligibility, preview, enqueue and supersession — in progress
+### T-3 — Eligibility, preview, enqueue and supersession — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `nestjs-expert`, `tdd`, `api-design-principles`.
@@ -266,7 +266,7 @@
   - `tasks.md` T-4: scope and tests.
 - **Carry:** T-4's Reviewer brief covers design §5.1/§6 (amended in T-3) and §5.2 step 1 (amended here).
 
-### T-4 — Dispatch, token, email, retry and the queue — in progress
+### T-4 — Dispatch, token, email, retry and the queue — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `nestjs-expert`, `tdd`, `error-handling-patterns`.
@@ -403,7 +403,7 @@ From here on:
   - `tasks.md`: T-6 takes the backend half (it does not conflict with T-5's files); T-11 takes the frontend half.
 - **Carry:** the T-6 and T-11 Reviewer briefs.
 
-### T-5 — Public view and respond, throttle, and the PII release gate — in progress
+### T-5 — Public view and respond, throttle, and the PII release gate — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `nestjs-expert`, `tdd`, `api-design-principles`.
@@ -743,7 +743,7 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 
 - **Final verification:** VERIFIED.
 
-### T-9 — Bulk send from Admin → Actors — in progress
+### T-9 — Bulk send from Admin → Actors — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `frontend-design`, `shadcn-ui`, `vercel-react-best-practices`, `react-doctor`.
@@ -891,7 +891,7 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 
 - **Final verification:** VERIFIED.
 
-### T-11 — Evidence panel, document field, history labels and method lists — in progress
+### T-11 — Evidence panel, document field, history labels and method lists — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `frontend-design`, `tailwind-design-system`, `react-doctor`.
@@ -988,7 +988,7 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 
 - **Final verification:** VERIFIED.
 
-### T-12 — Baseline documents — in progress
+### T-12 — Baseline documents — in progress (closed: PASS, see below)
 
 - **Leader correction before the brief:** `tasks.md` T-12 said ADR-NNN would be "allocated now". Root `CLAUDE.md` § Concurrency protocol allocates ADR numbers at apply time on the default branch, never from a spec branch, and chunk 1 used a placeholder. T-12 therefore writes `ADR-NNN` (candidate ADR-018). Unmerged-branch check, 2026-10-06: every branch tops out at ADR-017.
 - **Budget re-baseline (standing authorization):** LOC through T-11 is 16,985 (backend, frontend and infra, excluding lockfiles and specs) against the ~16,000 projection. The new projection is **~17,700**, with T-12 and T-13 docs at about 700. Review verdicts so far: 27, recounted per task (T-1 2, T-2 1, T-3 3, T-4 3, T-5 6 including the doc re-check, T-6 2, T-7 3, T-8 1, T-9 2, T-10 1, T-11 3). The projection is **~31**.
@@ -1048,7 +1048,7 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 
 - **Final verification:** VERIFIED (doc sweeps re-run by the Leader).
 
-### T-13 — Constitution guides — in progress
+### T-13 — Constitution guides — in progress (closed: PASS, see below)
 
 - **Leader choices:**
   - Skills: `cognitive-doc-design`.
@@ -1177,3 +1177,27 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - The `busy` guard reads a value from the last render; a ref would be sturdier.
 - A one-frame focus gap needs a browser check.
 - A capital "A" mid-sentence in the not-queued note.
+
+### R-C — Documentation drift sweep (validation remediation) — **PASS** (attempt 1 FAIL, Leader-inline correction, re-check PASS)
+
+**Files changed (docs and comments only; no behaviour change):**
+- Spec: `requirements.md` (D-1…D-14 provenance, D-25 scoped to `bulk`, stale-claim scenario, FR-15 amended per the product owner — the `ConsentDocument` row is the evidence, no `SIGNED_FORM` write, NFR-8 grants as built, OQ-7 range), `design.md`, `tasks.md`, `execution.md` Document Control.
+- Baselines: `docs/prd.md` (link answerable once, not "single-use"), `docs/trd/trd.md` (respond transaction order; ADR-NNN check line), `docs/ux-ui/design.md` (`loading` is a text status line).
+- Guides: `CLAUDE.md`, `AGENTS.md`, `backend/CLAUDE.md`, `backend/AGENTS.md`, `.agents/{implementer,leader,reviewer,tester}.md` (the token-bearer read can be repeated until answered; only `respond` consumes it).
+- Comments: the `ConsentPublicService.respond` docblock (deleted actor → uniform miss before any write; `before` from the locked row), the `infra/20-backend/template.yaml` IAM comment (`ListBucket` scoped to `incoming/`).
+
+**Attempt history:**
+1. Reviewer **FAIL** (one blocking issue): the budget statements said 36 review verdicts, but `execution.md` records 35. The error was the Leader's: the brief counted the R-A attempt-2 MISMATCH, which is a Leader re-run and not a verdict.
+2. **Leader-inline correction:** all four statements (`design.md` §1 and the §10 Actual row, the `tasks.md` header, `execution.md` Document Control) now say 35 as of R-A/R-B, with the breakdown in §10. A grep for "36 review" or "36 (32" returns 0.
+
+**Reviewer re-check: PASS.** 35 = T-1…T-11 27 + T-12 3 + T-13 2 + R-A 2 + R-B 1, each traced to its line in this file; the edit stayed inside the four statements.
+
+**Verdicts in this cycle (not in the "as of R-A/R-B" figure):** R-C FAIL, R-C PASS.
+
+**Advisory (non-blocking, carried to re-validation):**
+- DD-9 cites rules 1–4 but describes three.
+- The `lib/geo` tree line reads as if the file were new.
+- The §7.3 dispatch-failure wording.
+- FR-4's absolute "BUT none … sent twice" sits beside the accepted R-10 Retry risk.
+- The UX Send Consent Prompt row is incomplete.
+- The ~17,400 LOC figure is reported, not recomputed.

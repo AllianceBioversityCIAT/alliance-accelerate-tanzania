@@ -34,12 +34,13 @@
  * **`respond`** is ONE transaction (NFR-5). (0) lock the actor row
  * (`SELECT … FOR UPDATE`, the transaction's FIRST statement; the
  * `tokenHash → actorId` routing read happens before it opens) before touching the request row, the same order as
- * enqueue and the admin update, so no two can deadlock; (1) compare-and-set the request
+ * enqueue and the admin update, so no two can deadlock; a deleted actor means
+ * the uniform miss and nothing written; (1) compare-and-set the request
  * out of `SENT` — `where` names `status: SENT` and an unexpired `expiresAt`,
  * so an answered row can never match (§5.8: no write's status set contains
  * `ACCEPTED`/`DECLINED`) and two concurrent answers yield exactly one count
- * of 1; (2) re-read the actor — gone means the uniform miss and a full
- * rollback; (3) update the actor — Accept sets `GRANTED / EMAIL_LINK /
+ * of 1; (2) take `before` from the locked row (no second read of the
+ * actor); (3) update the actor — Accept sets `GRANTED / EMAIL_LINK /
  * respondedAt / request id`, Decline sets `DENIED` only; the respondent's
  * email and phone are evidence on the request row and are NEVER written to
  * the actor; (4) write the sentinel-authored audit row. Any throw rolls all

@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/actors/consent-intake/consent-request-email/`
 - Traces: [`requirements.md`](requirements.md) FR-1…FR-17, NFR-1…NFR-11 · [`design.md`](design.md) §2–§11 · [`judgment.md`](judgment.md) (APPROVED)
-- Budget (design §10, re-baselined at decomposition): **14 tasks · ~11,300 LOC (the sum of the per-task estimates below) · ~20 review rounds.** Execution escalates if any figure is exceeded by more than 25 %.
+- Budget (design §10): planned **14 tasks · ~11,300 LOC (the sum of the per-task estimates below) · ~20 review rounds**; actual ~17,400 LOC added and 35 review verdicts as of R-A/R-B. Re-baselines are history in design §10.
 - Commits: `[SPEC:actors/consent-intake/consent-request-email] <message>`. Every AWS command uses `--profile IBD-DEV`.
 
 ## How to read a task
@@ -56,7 +56,7 @@ T-1…T-13 ─► T-14
   - **Scope:**
     - Prisma: `ConsentRequest` and `ConsentDocument` (no FK to `Actor`), `ConsentRequestStatus`, `ConsentDocumentStatus`, `ConsentMethod.EMAIL_LINK`, and the three new `ActorAuditAction` values. One additive migration, with the emitted SQL inspected before apply (backend/CLAUDE.md).
     - `common/consent-methods.ts` `ADMIN_ASSERTABLE_CONSENT_METHODS`. Wire it into the create DTO, `bulk-consent.dto.ts`, the import parser and `template-columns.ts`. `AdminActorUpdateDto` redeclares `@IsOptional() @IsIn(FULL)` on `consentMethod`.
-    - `ActorsAdminService.update` rules 1–3. `bulkSetConsent`: a non-`GRANTED` `EMAIL_LINK` row counts as missing a method; an already-`GRANTED` `EMAIL_LINK` row is left untouched.
+    - `ActorsAdminService.update` rules 1–4. `bulkSetConsent`: a non-`GRANTED` `EMAIL_LINK` row counts as missing a method; an already-`GRANTED` `EMAIL_LINK` row is left untouched.
   - **Tests:**
     - The DTOs reject `EMAIL_LINK` on create, bulk and import.
     - Update accepts an unchanged `EMAIL_LINK` re-send (capacity-only edit).
@@ -214,7 +214,7 @@ T-1…T-13 ─► T-14
       - The token is declared with `@Allow()` only.
       - The miss body is uniform.
       - The preview is `toPublicDetail({ ...actor, consentStatus: GRANTED })`, loaded with `CROPS_INCLUDE`.
-      - The respond transaction: compare-and-set, actor re-read, actor update, sentinel audit.
+      - The respond transaction (design §5.4): a routing read of `actorId` by `tokenHash` outside the transaction, then lock-first (`SELECT … FOR UPDATE` on the actor), the compare-and-set, `before` taken from the locked row (no separate actor re-read), the actor update, and the sentinel audit.
     - `pii-boundary.spec.ts`: a derived gate over `ConsentRequestsModule`, with its own fixture map and a totality check over its public and admin routes.
     - A `lambda-handler.e2e.spec.ts` case for `POST consent/view` that pins P-14 (`sourceIp`).
   - **Tests:**
@@ -289,13 +289,13 @@ T-1…T-13 ─► T-14
     - `infra/20-backend/template.yaml`:
       - `ConsentDocumentsBucket` (named `${AWS::StackName}-consent-docs-${AWS::AccountId}`), with the four Block Public Access settings, `BucketOwnerEnforced`, `AES256`, versioning, one lifecycle rule on `incoming/` (1 d / 1 d noncurrent / abort multipart 1 d), CORS `POST` from `AllowedOrigin` (+ legacy), `Retain`, and tags;
       - a TLS-only bucket policy;
-      - the IAM statement (incoming/ put, get, delete; stored/ put, get);
+      - the IAM, three statements: `incoming/*` put, get, delete; `stored/*` put, get; and `ListBucket` on the bucket ARN, conditioned on `s3:prefix` `incoming/*` (design §7.4);
       - the `CONSENT_DOCUMENTS_BUCKET` env var.
     - Backend:
       - the S3 SDK dependencies;
       - `DocumentStorage` (S3 and unconfigured adapters);
       - `ConsentDocumentsService`;
-      - the routes `status`, `upload-url`, `confirm` (idempotent, `HeadObject` check, copy, delete, `STORED`, audit from the snapshot) and `download-url`.
+      - the routes `status`, `upload-url`, `confirm` (idempotent; order per design §5.6: `HeadObject` check, copy, one transaction claiming `STORED` with the audit from the snapshot, then delete `incoming/`) and `download-url`.
   - **Tests:**
     - The presign unit test pins key `incoming/<id>`, `content-length-range 1..10485760`, exact `Content-Type`, and 300 s.
     - The download presign pins 300 s and `attachment`.
