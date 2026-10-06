@@ -277,7 +277,7 @@ T-1…T-13 ─► T-14
   - **Review:** `full`.
   - **Done when:** all tests green, falsifiers executed red.
 
-- [~] **T-7 Consent documents: bucket, IAM, storage port and routes** (deps: T-1)
+- [x] **T-7 Consent documents: bucket, IAM, storage port and routes** (deps: T-1)
   - **Size:** L (~1,100 LOC) · **Effort:** `xhigh` · **Skills:** `aws-serverless`, `nestjs-expert`, `tdd`
   - **Traces:**
     - FR-13 (*document uploaded* trail entry)
@@ -521,7 +521,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Traces:** NFR-6 / P-9 (throughput), NFR-8 (live IAM and bucket gap), FR-16 (live expiry), FR-10 (one real accept end to end), NFR-10 (the captures reviewed at the HITL pause)
   - **Scope:** with the product owner present, every AWS command with `--profile IBD-DEV`:
     1. **Throughput.** Send to 20 test actors whose emails are controlled. Record the per-dispatch `sent` and `elapsedMs` from the logs. **Decision rule:** if throughput is below 1.1 sends/s, escalate to proposal option A2 rather than ship (design R-4).
-    2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
+    2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. **Also (T-7 review A-1, added 2026-10-06):** with the deployed role, confirm a document id whose upload never happened. Expect `422`. A `500` means S3 returned `403`: the `s3:prefix`-conditioned `ListBucket` does not apply to `HeadObject`'s implicit check. The predefined fallback is an unconditioned `s3:ListBucket` on the bucket ARN, which exposes key names to the Lambda role only. It needs a design §7.4 amendment and a template-test change. Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
     3. **One real request.** Accept it, then confirm the actor on `/directory` and `/profile`. Reopen the link and get the dead-end page.
     4. Review the T-8…T-11 captures.
   - **Falsifier:**

@@ -1078,6 +1078,60 @@ describe('ActorAuditService', () => {
     });
   });
 
+  // actors/consent-intake/consent-request-email T-7 — `logConsentDocumentUploaded`
+  // (FR-13 "document uploaded" trail entry). Identity columns come from the
+  // DOCUMENT's own upload-url snapshot (P-28); the author is the confirming admin.
+  describe('logConsentDocumentUploaded', () => {
+    const document = {
+      id: 'consent-doc-1',
+      actorId: 'actor-9',
+      traderId: 'TZ-SEED-0099',
+      traderName: 'Snapshot Trader Name At Upload',
+      fileName: 'signed-form.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 2048,
+    };
+    const confirming = { sub: 'confirming-admin-sub', email: 'confirming@example.com' };
+
+    async function run(acting: ActingAdmin = confirming) {
+      const tx = mockTx();
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({});
+      await service.logConsentDocumentUploaded(tx, { document, acting });
+      expect(tx.actorAuditLog.create).toHaveBeenCalledTimes(1);
+      return (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as Record<string, unknown>;
+    }
+
+    it('writes actorId/traderId/traderName from the DOCUMENT snapshot, action CONSENT_DOCUMENT_UPLOADED', async () => {
+      const data = await run();
+      expect(data).toMatchObject({
+        actorId: document.actorId,
+        traderId: document.traderId,
+        traderName: document.traderName,
+        action: ActorAuditAction.CONSENT_DOCUMENT_UPLOADED,
+      });
+    });
+
+    it('credits the confirming admin; a missing email becomes null', async () => {
+      const data = await run();
+      expect(data.actingSub).toBe(confirming.sub);
+      expect(data.actingEmail).toBe(confirming.email);
+      expect((await run({ sub: 'x' })).actingEmail).toBeNull();
+    });
+
+    it('`changes` is EXACTLY a snapshot of { documentId, fileName, contentType, sizeBytes }', async () => {
+      const data = await run();
+      const changes = data.changes as { kind: string; values: Record<string, unknown> };
+      expect(changes.kind).toBe('snapshot');
+      expect(changes.values).toEqual({
+        documentId: document.id,
+        fileName: document.fileName,
+        contentType: document.contentType,
+        sizeBytes: document.sizeBytes,
+      });
+      expect(Object.keys(changes.values)).toEqual(['documentId', 'fileName', 'contentType', 'sizeBytes']);
+    });
+  });
+
   // actors/consent-intake/consent-request-email T-5 — pins every field
   // `logConsentResponded` writes (the sentinel author, the diff-over-consent-
   // fields envelope, the request id), the same way `logConsentRequested` is

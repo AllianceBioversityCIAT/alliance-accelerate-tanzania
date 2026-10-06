@@ -241,7 +241,7 @@ Import is create-only and never touches an existing actor, so it has no hook. Re
 |---|---|
 | `GET …/consent-documents/status` | Returns `{ enabled }`. |
 | `POST upload-url` | Validates type and size (≤ 10 485 760 bytes). Creates a `PENDING` row and returns a presigned **POST** for key `incoming/<id>` with conditions `content-length-range 1..10485760`, `Content-Type` equal to the declared type, the exact key, and `expires 300 s`. Unconfigured → `503`. |
-| `POST …/:docId/confirm` | Runs `HeadObject` and compares size and type with the declared values; a mismatch deletes the object and returns `422`. Then `CopyObject` to `stored/<actorId>/<id>`, `DeleteObject` on `incoming/`, sets `STORED`, and writes the `CONSENT_DOCUMENT_UPLOADED` audit row from the document's `traderId`/`traderName` snapshot (P-28). That works even if the actor was deleted after `upload-url`, and the evidence is kept. Idempotent: a second confirm on a `STORED` row returns it. |
+| `POST …/:docId/confirm` | *(Order amended 2026-10-06 during T-7.)* Runs `HeadObject` and compares size and type with the declared values; a mismatch or a missing object deletes what exists and returns `422`. Then `CopyObject` to `stored/<actorId>/<id>`. Then **one transaction** claims `PENDING → STORED` by compare-and-set and writes the `CONSENT_DOCUMENT_UPLOADED` audit row from the document's `traderId`/`traderName` snapshot (P-28); only the claim winner audits. Then `DeleteObject` on `incoming/`; a failure there is logged, and the lifecycle rule removes the object. This order means a `STORED` row never exists without its stored object, and a failure before commit is retryable. It works even if the actor was deleted after `upload-url`, and the evidence is kept. Idempotent: a second confirm, or a concurrent loser whose head or copy fails, re-reads the row and returns it when it is already `STORED`. |
 | `GET download-url` | Presigned GET on `stored/…`, expires 300 s, with `ResponseContentDisposition: attachment; filename="<sanitized>"`. |
 
 An unconfirmed object expires through **one** bucket lifecycle rule on `incoming/`: current versions after 1 day, noncurrent versions after 1 day, plus `AbortIncompleteMultipartUpload` after 1 day. S3 already removes expired delete markers automatically when a `Days` expiration is set, so no separate `ExpiredObjectDeleteMarker` rule is added. `ExpiredObjectDeleteMarker` cannot share a rule with `Days`, and a separate rule would be redundant (B-21 → RB-3, FB-7). A `PENDING` row is never listed (FR-15 scenario 3).
@@ -434,7 +434,9 @@ Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-sur
   - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on `${Bucket.Arn}/incoming/*`;
   - `s3:PutObject` and `s3:GetObject` on `${Bucket.Arn}/stored/*`.
 
-  `CopyObject` needs `GetObject` on the source and `PutObject` on the destination. There is no `*`, no `ListBucket` and no `DeleteObject` on `stored/`.
+  `CopyObject` needs `GetObject` on the source and `PutObject` on the destination.
+  - **Listing, `incoming/` only** *(amended 2026-10-06 during T-7)*. `s3:ListBucket` on the bucket ARN, with the condition `s3:prefix` = `incoming/*` (`StringLike`). Without a list permission, S3 answers `HeadObject` on a missing key with `403`, not `404`, so a never-completed upload would make `confirm` return `500` instead of `422`. The grant is scoped to the prefix whose keys the API already chooses.
+  - There is no `*`, no unscoped `ListBucket`, and no `DeleteObject` on `stored/`.
 
 **Deploy path.** `20-backend` ships on every merge to `main` (P-21), so the bucket appears on the first merge. `teardown.sh` is left unchanged: `Retain` means the bucket outlives the stack. The infrastructure doc records the bucket and its manual-cleanup note (KZ-auth-2: enumerate the paths).
 

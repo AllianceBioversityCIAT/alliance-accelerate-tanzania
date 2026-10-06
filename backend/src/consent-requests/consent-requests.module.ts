@@ -4,7 +4,10 @@ import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { ActorAuditService } from '../actors/actor-audit.service';
 import { MailModule } from '../mail/mail.module';
 import { ConsentSupersessionModule } from './consent-supersession.module';
+import { ConsentDocumentsService } from './consent-documents.service';
 import { ConsentEvidenceService } from './consent-evidence.service';
+import { DOCUMENT_STORAGE } from './document-storage';
+import { createDocumentStorage } from './document-storage.factory';
 import { ConsentRequestsService } from './consent-requests.service';
 import { AdminConsentRequestsController } from './admin-consent-requests.controller';
 import { ConsentPublicController } from './consent-public.controller';
@@ -39,6 +42,10 @@ import { ConsentThrottleGuard } from './consent-throttle.guard';
  * module still does NOT call `ThrottlerModule.forRoot` (P-31): the single
  * global registration lives in `RegistrationsModule` (the `ContactModule`
  * precedent), and a second one would create competing tokens.
+ *
+ * T-7 — `ConsentDocumentsService` and the `DOCUMENT_STORAGE` port join; the
+ * factory picks the S3 or unconfigured adapter from `CONSENT_DOCUMENTS_BUCKET`
+ * once, at module init (design.md §5.6).
  */
 @Module({
   imports: [PrismaModule, ConsentSupersessionModule, MailModule],
@@ -47,6 +54,8 @@ import { ConsentThrottleGuard } from './consent-throttle.guard';
     ConsentRequestsService,
     ConsentPublicService,
     ConsentEvidenceService,
+    ConsentDocumentsService,
+    { provide: DOCUMENT_STORAGE, useFactory: () => createDocumentStorage() },
     ConsentThrottleGuard,
     ActingAdminResolver,
     ActorAuditService,

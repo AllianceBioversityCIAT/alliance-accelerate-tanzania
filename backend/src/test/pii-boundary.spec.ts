@@ -2811,6 +2811,26 @@ describe(
         'get',
         '/api/v1/admin/actors/any-actor/consent-evidence',
       ),
+      // T-7 — the four consent-document routes (FR-15, FR-16). Admin-only; the
+      // storage adapter is the unconfigured one here (no bucket env), and the
+      // guards reject before it is ever reached.
+      [routeKey('GET', '/api/v1/admin/consent-documents/status')]: adminEntry(
+        'get',
+        '/api/v1/admin/consent-documents/status',
+      ),
+      [routeKey('POST', '/api/v1/admin/actors/:id/consent-documents/upload-url')]: adminEntry(
+        'post',
+        '/api/v1/admin/actors/any-actor/consent-documents/upload-url',
+        { fileName: 'c.pdf', contentType: 'application/pdf', sizeBytes: 10 },
+      ),
+      [routeKey('POST', '/api/v1/admin/consent-documents/:docId/confirm')]: adminEntry(
+        'post',
+        '/api/v1/admin/consent-documents/any-doc/confirm',
+      ),
+      [routeKey('GET', '/api/v1/admin/consent-documents/:docId/download-url')]: adminEntry(
+        'get',
+        '/api/v1/admin/consent-documents/any-doc/download-url',
+      ),
       [routeKey('GET', '/api/v1/admin/consent-editions/:version')]: adminEntry(
         'get',
         '/api/v1/admin/consent-editions/v1.0',

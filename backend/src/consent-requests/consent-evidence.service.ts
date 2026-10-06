@@ -86,7 +86,8 @@ const REQUEST_SELECT = {
   supersededAt: true,
 } as const;
 
-const DOCUMENT_SELECT = {
+/** Exported for `ConsentDocumentsService`: confirm returns the same projection the evidence list does (never `storageKey`). */
+export const DOCUMENT_SELECT = {
   id: true,
   actorId: true,
   fileName: true,
@@ -99,6 +100,30 @@ const DOCUMENT_SELECT = {
 } as const;
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
+
+export function toConsentDocumentEvidence(row: {
+  id: string;
+  actorId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBySub: string;
+  uploadedByEmail: string | null;
+  createdAt: Date;
+  storedAt: Date | null;
+}): ConsentDocumentEvidence {
+  return {
+    id: row.id,
+    actorId: row.actorId,
+    fileName: row.fileName,
+    contentType: row.contentType,
+    sizeBytes: row.sizeBytes,
+    uploadedBySub: row.uploadedBySub,
+    uploadedByEmail: row.uploadedByEmail,
+    createdAt: row.createdAt.toISOString(),
+    storedAt: iso(row.storedAt),
+  };
+}
 
 @Injectable()
 export class ConsentEvidenceService {
@@ -147,17 +172,7 @@ export class ConsentEvidenceService {
         respondentUserAgent: row.respondentUserAgent,
         supersededAt: iso(row.supersededAt),
       })),
-      documents: documents.map((row) => ({
-        id: row.id,
-        actorId: row.actorId,
-        fileName: row.fileName,
-        contentType: row.contentType,
-        sizeBytes: row.sizeBytes,
-        uploadedBySub: row.uploadedBySub,
-        uploadedByEmail: row.uploadedByEmail,
-        createdAt: row.createdAt.toISOString(),
-        storedAt: iso(row.storedAt),
-      })),
+      documents: documents.map(toConsentDocumentEvidence),
     };
   }
 }

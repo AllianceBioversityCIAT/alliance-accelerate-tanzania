@@ -20,6 +20,7 @@ import {
   computeAdminConsentEditionHash,
 } from '../consent-requests/admin-consent-policy';
 import { MailService } from '../mail/mail.service';
+import { DOCUMENT_STORAGE } from '../consent-requests/document-storage';
 
 /**
  * T-3 — End-to-end tests for `POST /api/v1/admin/consent-requests/preview`
@@ -74,6 +75,10 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
     findUnique: jest.fn(async (args: { where: { id: string } }) =>
       actors.find((a) => a.id === args.where.id) ?? null,
     ),
+    // T-7 — the document routes must never write the Actor ("no gate bypass",
+    // FR-15); these spies are how the e2e proves it.
+    update: jest.fn(async () => { throw new Error('actor.update must not be called'); }),
+    updateMany: jest.fn(async () => { throw new Error('actor.updateMany must not be called'); }),
   };
 
   // T-4 (D-25) — a no-op lock: this harness runs every test sequentially
@@ -117,9 +122,28 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
       const keys = Object.keys(args.select).filter((k) => args.select![k]);
       return matches.map((r) => Object.fromEntries(keys.map((k) => [k, r[k]])));
     }),
+    // T-7 — the document routes' reads and writes.
+    create: jest.fn(async (args: { data: Record<string, unknown> }) => {
+      const row = { createdAt: new Date(), storedAt: null, ...args.data };
+      documentRows.push(row);
+      return row;
+    }),
+    findUnique: jest.fn(async (args: { where: { id: string }; select?: Record<string, boolean> }) => {
+      const row = documentRows.find((r) => r.id === args.where.id);
+      if (!row) return null;
+      if (!args.select) return row;
+      const keys = Object.keys(args.select).filter((k) => args.select![k]);
+      return Object.fromEntries(keys.map((k) => [k, row[k]]));
+    }),
+    updateMany: jest.fn(async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      const row = documentRows.find((r) => Object.entries(args.where).every(([k, v]) => r[k] === v));
+      if (!row) return { count: 0 };
+      Object.assign(row, args.data);
+      return { count: 1 };
+    }),
   };
 
-  const tx = { actor, consentRequest: consentRequestMock.consentRequest, actorAuditLog, $queryRaw };
+  const tx = { actor, consentRequest: consentRequestMock.consentRequest, consentDocument, actorAuditLog, $queryRaw };
   const $transaction = jest.fn(async (cb: any) => cb(tx));
 
   const reset = () => {
@@ -137,6 +161,7 @@ function buildPrismaMock(initialActors: MockActor[], initialRequests: ConsentReq
     seedDocuments: (rows: Array<Record<string, unknown>>) => {
       documentRows = rows;
     },
+    getDocumentRows: () => documentRows,
     $queryRaw,
     $transaction,
     reset,
@@ -178,6 +203,15 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
   let app: INestApplication;
   let prismaMock: ReturnType<typeof buildPrismaMock>;
   let mailServiceMock: { sendConsentRequest: jest.Mock };
+  // T-7 — a fake storage adapter; `enabled` is flipped per test for the unconfigured case.
+  const storageMock = {
+    enabled: true,
+    presignUpload: jest.fn(),
+    head: jest.fn(),
+    copy: jest.fn(),
+    remove: jest.fn(),
+    presignDownload: jest.fn(),
+  };
 
   const INITIAL_ACTORS: MockActor[] = [
     fixtureActor({ id: 'a-no-email', traderId: 'T1', traderName: 'No Email', email: null, region: 'Arusha' }),
@@ -201,6 +235,8 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
       .useValue({ resolve: jest.fn().mockResolvedValue('admin@example.com') })
       .overrideProvider(MailService)
       .useValue(mailServiceMock)
+      .overrideProvider(DOCUMENT_STORAGE)
+      .useValue(storageMock)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -212,6 +248,17 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
   beforeEach(() => {
     prismaMock.reset();
     mailServiceMock.sendConsentRequest.mockClear();
+    storageMock.enabled = true;
+    storageMock.presignUpload.mockReset().mockImplementation(async ({ key }: { key: string }) => ({
+      url: 'https://bucket.example/',
+      fields: { key },
+    }));
+    storageMock.head.mockReset();
+    storageMock.copy.mockReset().mockResolvedValue(undefined);
+    storageMock.remove.mockReset().mockResolvedValue(undefined);
+    storageMock.presignDownload.mockReset().mockResolvedValue({ url: 'https://bucket.example/get', expiresAt: 'x' });
+    prismaMock.actor.update.mockClear();
+    prismaMock.actor.updateMany.mockClear();
   });
 
   afterAll(async () => {
@@ -683,6 +730,124 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
     it('the two evidence routes do not shadow each other: :id/history and :id/consent-evidence both resolve', async () => {
       await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/history`).set(admin).expect(200);
       await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`).set(admin).expect(200);
+    });
+  });
+
+  // T-7 — consent documents (FR-13 trail, FR-15, FR-16; design.md §5.6, §6).
+  describe('consent documents', () => {
+    const UPLOAD = '/api/v1/admin/actors/a-eligible-1/consent-documents/upload-url';
+    const body = { fileName: 'consent.pdf', contentType: 'application/pdf', sizeBytes: 2_097_152 };
+
+    it('Staff gets 403 and anonymous 401 on all four routes', async () => {
+      const calls: Array<[string, string]> = [
+        ['get', '/api/v1/admin/consent-documents/status'],
+        ['post', UPLOAD],
+        ['post', '/api/v1/admin/consent-documents/doc-1/confirm'],
+        ['get', '/api/v1/admin/consent-documents/doc-1/download-url'],
+      ];
+      for (const [method, path] of calls) {
+        const anon = (request(app.getHttpServer()) as any)[method](path);
+        await (method === 'post' ? anon.send(body) : anon).expect(401);
+        const staffReq = (request(app.getHttpServer()) as any)[method](path).set(staff);
+        await (method === 'post' ? staffReq.send(body) : staffReq).expect(403);
+      }
+      expect(prismaMock.getDocumentRows()).toHaveLength(0);
+      expect(storageMock.presignUpload).not.toHaveBeenCalled();
+    });
+
+    it('status reports enabled=true, and enabled=false when storage is unconfigured; upload-url then 503s', async () => {
+      const on = await request(app.getHttpServer()).get('/api/v1/admin/consent-documents/status').set(admin).expect(200);
+      expect(on.body).toEqual({ enabled: true });
+
+      storageMock.enabled = false;
+      const off = await request(app.getHttpServer()).get('/api/v1/admin/consent-documents/status').set(admin).expect(200);
+      expect(off.body).toEqual({ enabled: false });
+      await request(app.getHttpServer()).post(UPLOAD).set(admin).send(body).expect(503);
+      expect(prismaMock.getDocumentRows()).toHaveLength(0);
+    });
+
+    it('upload-url validates type, size and name (400) and 404s for an unknown actor', async () => {
+      for (const bad of [
+        { ...body, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+        { ...body, sizeBytes: 10_485_761 },
+        { ...body, sizeBytes: 0 },
+        { ...body, fileName: '' },
+        { contentType: 'application/pdf' },
+      ]) {
+        await request(app.getHttpServer()).post(UPLOAD).set(admin).send(bad).expect(400);
+      }
+      await request(app.getHttpServer())
+        .post('/api/v1/admin/actors/nobody/consent-documents/upload-url')
+        .set(admin)
+        .send(body)
+        .expect(404);
+      expect(prismaMock.getDocumentRows()).toHaveLength(0);
+    });
+
+    it('full flow: upload-url, confirm, evidence lists it, download-url; the actor is never written and the PENDING row is not listed before confirm', async () => {
+      const up = await request(app.getHttpServer()).post(UPLOAD).set(admin).send(body).expect(201);
+      const id = up.body.documentId as string;
+      expect(up.body.fields.key).toBe(`incoming/${id}`);
+
+      // PENDING: never listed as evidence, and no download.
+      const before = await request(app.getHttpServer()).get('/api/v1/admin/actors/a-eligible-1/consent-evidence').set(admin).expect(200);
+      expect(before.body.documents).toEqual([]);
+      await request(app.getHttpServer()).get(`/api/v1/admin/consent-documents/${id}/download-url`).set(admin).expect(404);
+
+      storageMock.head.mockResolvedValue({ sizeBytes: 2_097_152, contentType: 'application/pdf' });
+      const confirmed = await request(app.getHttpServer()).post(`/api/v1/admin/consent-documents/${id}/confirm`).set(admin).expect(200);
+      expect(confirmed.body).toMatchObject({ id, actorId: 'a-eligible-1', fileName: 'consent.pdf', sizeBytes: 2_097_152 });
+      expect(confirmed.body).not.toHaveProperty('storageKey');
+      expect(storageMock.copy).toHaveBeenCalledWith(`incoming/${id}`, `stored/a-eligible-1/${id}`);
+
+      const after = await request(app.getHttpServer()).get('/api/v1/admin/actors/a-eligible-1/consent-evidence').set(admin).expect(200);
+      expect(after.body.documents.map((d: { id: string }) => d.id)).toEqual([id]);
+
+      const dl = await request(app.getHttpServer()).get(`/api/v1/admin/consent-documents/${id}/download-url`).set(admin).expect(200);
+      expect(dl.body).toEqual({ url: 'https://bucket.example/get', expiresAt: 'x' });
+      expect(storageMock.presignDownload).toHaveBeenCalledWith({ key: `stored/a-eligible-1/${id}`, fileName: 'consent.pdf' });
+
+      // The trail entry, authored by the confirming admin; the actor row untouched.
+      const audit = prismaMock.getAuditLogRows().filter((r) => r.action === 'CONSENT_DOCUMENT_UPLOADED');
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ actorId: 'a-eligible-1', traderId: 'T3', actingSub: 'admin-sub' });
+      expect(prismaMock.actor.update).not.toHaveBeenCalled();
+      expect(prismaMock.actor.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('confirm with a size/type mismatch is 422, deletes the object and lists nothing; a second confirm is idempotent after success', async () => {
+      const up = await request(app.getHttpServer()).post(UPLOAD).set(admin).send({ ...body, sizeBytes: 1_048_576 }).expect(201);
+      const id = up.body.documentId as string;
+
+      storageMock.head.mockResolvedValue({ sizeBytes: 12_582_912, contentType: 'image/png' });
+      await request(app.getHttpServer()).post(`/api/v1/admin/consent-documents/${id}/confirm`).set(admin).expect(422);
+      expect(storageMock.remove).toHaveBeenCalledWith(`incoming/${id}`);
+      expect(prismaMock.getAuditLogRows().filter((r) => r.action === 'CONSENT_DOCUMENT_UPLOADED')).toHaveLength(0);
+
+      const ok = await request(app.getHttpServer()).post(UPLOAD).set(admin).send(body).expect(201);
+      storageMock.head.mockResolvedValue({ sizeBytes: 2_097_152, contentType: 'application/pdf' });
+      const first = await request(app.getHttpServer()).post(`/api/v1/admin/consent-documents/${ok.body.documentId}/confirm`).set(admin).expect(200);
+      const second = await request(app.getHttpServer()).post(`/api/v1/admin/consent-documents/${ok.body.documentId}/confirm`).set(admin).expect(200);
+      expect(second.body).toEqual(first.body);
+      expect(prismaMock.getAuditLogRows().filter((r) => r.action === 'CONSENT_DOCUMENT_UPLOADED')).toHaveLength(1);
+    });
+
+    it('confirm still stores the document after the actor is deleted (snapshot traderId in the trail)', async () => {
+      const up = await request(app.getHttpServer()).post(UPLOAD).set(admin).send(body).expect(201);
+      // The actor goes away between upload-url and confirm.
+      prismaMock.actor.findUnique.mockImplementation(async () => null);
+      try {
+        storageMock.head.mockResolvedValue({ sizeBytes: 2_097_152, contentType: 'application/pdf' });
+
+        await request(app.getHttpServer()).post(`/api/v1/admin/consent-documents/${up.body.documentId}/confirm`).set(admin).expect(200);
+
+        const audit = prismaMock.getAuditLogRows().find((r) => r.action === 'CONSENT_DOCUMENT_UPLOADED');
+        expect(audit).toMatchObject({ actorId: 'a-eligible-1', traderId: 'T3', traderName: 'Eligible One' });
+      } finally {
+        prismaMock.actor.findUnique.mockImplementation(async (args: { where: { id: string } }) =>
+          INITIAL_ACTORS.find((a) => a.id === args.where.id) ?? null,
+        );
+      }
     });
   });
 });

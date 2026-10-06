@@ -47,7 +47,13 @@ import {
   ConsentRequestRetryResult,
   ConsentRequestsService,
 } from './consent-requests.service';
-import { ConsentEvidence, ConsentEvidenceService } from './consent-evidence.service';
+import {
+  ConsentDocumentEvidence,
+  ConsentEvidence,
+  ConsentEvidenceService,
+} from './consent-evidence.service';
+import { ConsentDocumentsService, ConsentDocumentUploadUrl } from './consent-documents.service';
+import { ConsentDocumentUploadUrlDto } from './dto/consent-document-upload-url.dto';
 import { AdminConsentEdition, getAdminConsentEdition } from './admin-consent-policy';
 import { ConsentRequestSendDto } from './dto/consent-request-send.dto';
 import { ConsentRequestBatchDto } from './dto/consent-request-batch.dto';
@@ -64,6 +70,7 @@ export class AdminConsentRequestsController {
   constructor(
     private readonly consentRequestsService: ConsentRequestsService,
     private readonly consentEvidenceService: ConsentEvidenceService,
+    private readonly consentDocumentsService: ConsentDocumentsService,
   ) {}
 
   /** `POST /api/v1/admin/consent-requests/preview` — no writes (design.md §5.1). */
@@ -121,5 +128,41 @@ export class AdminConsentRequestsController {
       throw new NotFoundException(`Consent edition ${version} not found`);
     }
     return edition;
+  }
+
+  /** `GET /api/v1/admin/consent-documents/status` — `{ enabled }`; false on the local stack (FR-15). */
+  @Get('consent-documents/status')
+  documentStatus(): { enabled: boolean } {
+    return this.consentDocumentsService.status();
+  }
+
+  /**
+   * `POST /api/v1/admin/actors/:id/consent-documents/upload-url` — creates a
+   * PENDING document and returns a presigned POST (design.md §5.6). Creates a
+   * row, so Nest's default `201`. `404` unknown actor, `503` unconfigured.
+   */
+  @Post('actors/:id/consent-documents/upload-url')
+  uploadUrl(
+    @Param('id') id: string,
+    @Body() dto: ConsentDocumentUploadUrlDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConsentDocumentUploadUrl> {
+    return this.consentDocumentsService.createUploadUrl(id, dto, user);
+  }
+
+  /** `POST /api/v1/admin/consent-documents/:docId/confirm` — verify, promote, trail; idempotent. `422` on mismatch. */
+  @Post('consent-documents/:docId/confirm')
+  @HttpCode(200)
+  confirmDocument(
+    @Param('docId') docId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ConsentDocumentEvidence> {
+    return this.consentDocumentsService.confirm(docId, user);
+  }
+
+  /** `GET /api/v1/admin/consent-documents/:docId/download-url` — 5-minute attachment link, STORED documents only (FR-16). */
+  @Get('consent-documents/:docId/download-url')
+  downloadUrl(@Param('docId') docId: string): Promise<{ url: string; expiresAt: string }> {
+    return this.consentDocumentsService.downloadUrl(docId);
   }
 }

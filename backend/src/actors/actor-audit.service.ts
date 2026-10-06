@@ -18,6 +18,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ActorAuditAction,
   ActorAuditLog,
+  ConsentDocument,
   ConsentRequest,
   Prisma,
   Registration,
@@ -637,6 +638,50 @@ export class ActorAuditService {
           kind: 'diff',
           fields,
           requestId: input.request.id,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-7 — record a
+   * `CONSENT_DOCUMENT_UPLOADED` audit entry (FR-13, design.md §5.6).
+   *
+   * Written at CONFIRM, never at `upload-url`, so a half-uploaded file leaves
+   * no trail entry. `actorId` / `traderId` / `traderName` come from the
+   * document row's own upload-time snapshot (P-28), so the entry is still
+   * written when the actor was deleted between `upload-url` and `confirm`.
+   * The author is the admin who CONFIRMED. `changes` names the document and
+   * its declared file facts only; it never touches the actor's consent fields,
+   * because an upload does not change them (FR-15 "no gate bypass").
+   */
+  async logConsentDocumentUploaded(
+    tx: Prisma.TransactionClient,
+    input: {
+      document: Pick<
+        ConsentDocument,
+        'id' | 'actorId' | 'traderId' | 'traderName' | 'fileName' | 'contentType' | 'sizeBytes'
+      >;
+      acting: ActingAdmin;
+    },
+  ): Promise<ActorAuditLog> {
+    const { document, acting } = input;
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: document.actorId,
+        traderId: document.traderId,
+        traderName: document.traderName,
+        action: ActorAuditAction.CONSENT_DOCUMENT_UPLOADED,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: {
+            documentId: document.id,
+            fileName: document.fileName,
+            contentType: document.contentType,
+            sizeBytes: document.sizeBytes,
+          },
         } as unknown as Prisma.InputJsonValue,
       },
     });

@@ -600,3 +600,87 @@ From here on:
 **For T-11:** the evidence field list is in `consent-evidence.service.ts`, `ConsentRequestEvidence` / `ConsentDocumentEvidence`.
 
 - **Final verification:** VERIFIED.
+
+### T-7 — Consent documents: bucket, IAM, storage port and routes — **PASS** (attempt 1/3 plus a Leader-ordered follow-up), 2026-10-06
+
+- **Leader choices:**
+  - Skills: `aws-serverless`, `nestjs-expert`, `tdd`.
+  - Effort: `xhigh`.
+  - Review: two lens Reviewers (infra / security, service / API), then one delta Reviewer.
+- **Requirements covered:**
+  - FR-13: the document-uploaded trail.
+  - FR-15: server side.
+  - FR-16: expiry and role.
+  - NFR-8: template and pins. Live behaviour is owned by T-14.
+
+**Files changed**
+- `infra/20-backend/template.yaml`: `ConsentDocumentsBucket` (all four Block Public Access settings, `BucketOwnerEnforced`, AES256, versioning, one lifecycle rule on `incoming/`, `POST` CORS, `Retain`, tags), a TLS-only bucket policy, the `CONSENT_DOCUMENTS_BUCKET` env var, and IAM:
+  - one statement for put/get/delete on `incoming/*`;
+  - one for put/get on `stored/*`;
+  - and, from the follow-up, `ListBucket` conditioned on `s3:prefix incoming/*`.
+- Backend:
+  - `document-storage.ts`, `s3-document-storage.ts`, `unconfigured-document-storage.ts`, `document-storage.factory.ts`, `consent-documents.service.ts`, `dto/consent-document-upload-url.dto.ts`, with specs;
+  - `admin-consent-requests.controller.ts` (4 routes);
+  - `consent-requests.module.ts`;
+  - `actor-audit.service.ts` (`logConsentDocumentUploaded`) and its spec;
+  - `consent-evidence.service.ts` (exports the document mapper);
+  - `test/consent-documents-template.spec.ts`;
+  - the e2e and PII gate fixtures.
+- `backend/package.json` and the lockfile: the S3 client, presigned-post and request-presigner packages, plus `js-yaml` and its types as devDependencies.
+
+**Red run:** the presign and download pins were observed red against a stub (empty conditions, a 3600 s expiry). The service tests were written alongside the code; their falsifiers below are the evidence.
+
+**Falsifiers (executed red, then reverted):**
+
+| Mutation | Red |
+|---|---|
+| A 20 MB length condition | The presign pin |
+| `attachment` dropped | The download pin |
+| The `HeadObject` comparison skipped | 4 mismatch tests |
+| `s3:*` added | 3 template tests |
+| `Resource: "*"` added | 4 template tests |
+| *Follow-up:* the `ListBucket` condition dropped | 3 template tests |
+| *Follow-up:* the loser's re-read removed | The concurrent-loser test |
+
+**Implementer and Leader verification:**
+- Attempt 1: 102 suites / 1738 tests.
+- After the follow-up: 102 suites / 1743 tests (run with `--forceExit`; the Jest open-handle notice predates this task).
+- Lint, build and `tsc` OK.
+- `AWS_PROFILE=IBD-DEV ./infra/scripts/validate.sh` (it runs `sam validate --lint`):
+
+  ```
+  ==> Validation summary
+      PASS  10-data-auth
+      PASS  20-backend
+      PASS  30-frontend
+  ==> All templates valid.
+  ```
+- `./infra/scripts/tests/run-tests.sh`: 51 cases, all passed (the account-id scan is green).
+
+**Evidence re-run (Leader): VERIFIED**, both before and after the follow-up.
+
+**Reviewers**
+
+| Lens | Verdict | Summary |
+|---|---|---|
+| Infra / security | **PASS** | The bucket matches §7.4 exactly. IAM is least privilege; the split into two statements is needed so `stored/` gets no delete. The presign conditions are exact. The filename sanitizer blocks header injection. No account-id literal. No new deploy parameter. The bucket name is 51 characters. |
+| Service / API | **PASS** | The confirm order (head → copy → transaction claim plus audit → delete) is safer than the original design. The compare-and-set gives one audit row. The real signed policy is decoded in the tests. No `storageKey` leaks. |
+| Follow-up delta | **PASS** | `ListBucket` is on the bucket ARN only with the prefix condition. A `403` stays an error. The loser fallback is correct. §5.6 matches the code. |
+
+**Leader-ordered follow-up (both lens Reviewers' advisory 1, which this spec caused):** without `s3:ListBucket`, a `HeadObject` on a missing key returns `403`, so `confirm` would return `500` in production instead of `422`. Fixed with design amendments 2026-10-06:
+- §5.6: the confirm order and concurrent-loser behaviour.
+- §7.4: the prefix-scoped `ListBucket`.
+
+Also: the concurrent loser now re-reads and returns the STORED evidence, and the e2e override is restored in `finally`.
+
+**Runtime events:** none.
+
+**ADVISORY / risks (recorded):**
+- **A-1, owned by T-14 (added to its step 2):** S3 may not apply the `s3:prefix` condition to `HeadObject`'s implicit list check. The live test expects `422` for a missing upload; the fallback is defined there.
+- **First-merge risk:** `20-backend` deploys on every merge to `main`, and the deploy role's S3 permissions are unknown. No policy in the repo mentions `CreateBucket`. If a bucket call is denied after create, `Retain` leaves an orphan, and the next deploy fails with "already exists". **Check the deploy role before merging.** T-12 adds the recovery note to `docs/infrastructure.md`.
+- Non-ASCII filenames download as `_`.
+- Document ids are `randomUUID()`, not cuid; either fits.
+- One transient failure of `contact-no-writes.e2e.spec.ts` at its 20 s timeout while other processes were running. It passed alone and in the full suite.
+- The service header comment does not mention the head step.
+
+- **Final verification:** VERIFIED.

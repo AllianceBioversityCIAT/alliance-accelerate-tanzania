@@ -203,6 +203,89 @@ Resources:
         ExcludePunctuation: true
 
   # ════════════════════════════════════════════════════════════════════════════
+  # actors/consent-intake/consent-request-email T-7 - consent documents bucket
+  # (design.md §5.6, §7.4; NFR-8, FR-15, FR-16). Private, encrypted, versioned
+  # evidence storage for uploaded signed consent forms (unscanned PII).
+  #
+  # The browser POSTs straight to `incoming/<id>` with a presigned policy that
+  # bounds size and type (DD-8); the API then verifies and promotes the object
+  # to `stored/<actorId>/<id>`. ONE lifecycle rule on `incoming/` removes
+  # anything never confirmed after a day; `stored/` has no expiry. S3 removes
+  # expired delete markers on its own once a `Days` expiration is set, so no
+  # separate ExpiredObjectDeleteMarker rule is declared.
+  #
+  # Retain + Retain (DD-12): this holds compliance evidence, so a stack
+  # teardown or a replacement must never empty or delete it. teardown.sh is
+  # unchanged - the bucket outlives the stack and is cleaned up by hand.
+  # The name uses the AccountId pseudo-parameter, never a literal (P-20).
+  # ════════════════════════════════════════════════════════════════════════════
+  ConsentDocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-consent-docs-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-unconfirmed-incoming
+            Status: Enabled
+            Prefix: incoming/
+            ExpirationInDays: 1
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      # The browser's direct POST is cross-origin to the bucket host (P-32).
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods:
+              - POST
+            AllowedOrigins: !If
+              - HasLegacyAllowedOrigin
+              - [!Ref AllowedOrigin, !Ref LegacyAllowedOrigin]
+              - [!Ref AllowedOrigin]
+            AllowedHeaders:
+              - "*"
+            MaxAge: 600
+      Tags:
+        - Key: project
+          Value: accelerate-tz
+        - Key: environment
+          Value: dev
+
+  ConsentDocumentsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConsentDocumentsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ConsentDocumentsBucket.Arn
+              - !Sub "${ConsentDocumentsBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+  # ════════════════════════════════════════════════════════════════════════════
   # T-3 - NestJS Lambda (FR-3, FR-7, NFR-2; DD-2, DD-4)
   # ════════════════════════════════════════════════════════════════════════════
   # One Lambda wrapping the whole NestJS app (dist/lambda.handler, serverless-http).
@@ -319,6 +402,10 @@ Resources:
           # SES and with it the constraint, leaving an address chosen by a
           # dead technical reason. This value replaces it by decision.
           CONTACT_FALLBACK_RECIPIENT: Justus.Ochieng@cgiar.org
+          # actors/consent-intake/consent-request-email T-7 (design.md §5.6):
+          # selects the S3 document adapter. Absent (the local stack) means the
+          # unconfigured adapter, so uploads report "unavailable".
+          CONSENT_DOCUMENTS_BUCKET: !Ref ConsentDocumentsBucket
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically. This scoped
         # statement adds GetSecretValue limited to the ONE data-auth secret.
@@ -379,6 +466,33 @@ Resources:
                 - "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${PoolId}"
                 - PoolId: !ImportValue
                     Fn::Sub: "${DataAuthStackName}-UserPoolId"
+            # actors/consent-intake/consent-request-email T-7 (NFR-8): the API can
+            # only touch objects under the two document prefixes of THIS bucket.
+            # CopyObject needs GetObject on the source and PutObject on the
+            # destination. No ListBucket, no DeleteObject on stored/ (evidence
+            # is never deleted by the API), and never a `*` action or resource.
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+                - s3:DeleteObject
+              Resource: !Sub "${ConsentDocumentsBucket.Arn}/incoming/*"
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub "${ConsentDocumentsBucket.Arn}/stored/*"
+            # Listing, incoming/ only. Without s3:ListBucket, S3 answers HeadObject
+            # on a MISSING key with 403 instead of 404, so a never-completed
+            # upload would make confirm return 500 rather than 422. Granted on
+            # the bucket ARN (not /*), scoped to the prefix whose keys the API
+            # chooses; there is no unscoped ListBucket.
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt ConsentDocumentsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix: incoming/*
       Events:
         # Explicit methods (NOT `ANY`) so that OPTIONS matches NO route and API
         # Gateway's CorsConfiguration auto-answers CORS preflight with 204. With a
