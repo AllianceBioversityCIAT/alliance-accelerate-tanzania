@@ -398,6 +398,35 @@ describe('Public consent-link routes (HTTP e2e, in-memory Prisma)', () => {
       expect(harness.getRequests().find((r) => r.tokenHash === hashConsentToken(T_OPEN))?.status).toBe('DECLINED');
     });
 
+    it('C-73 — a Decline does the same as an Accept: ONE consent-link audit row, and respondedAt, IP and user agent on the request row, identity null (FR-10)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/consent/respond')
+        .set('User-Agent', 'ConsentFixtureBrowser/1.0')
+        .send({ token: T_OPEN, decision: 'DECLINE', respondent: RESPONDENT })
+        .expect(200);
+
+      const rows = harness.getAuditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        action: 'CONSENT_RESPONDED',
+        actingSub: 'consent-link',
+        actingEmail: null,
+        actorId: CONSENT_ACTOR_ID,
+      });
+      const row = harness.getRequests().find((r) => r.tokenHash === hashConsentToken(T_OPEN))!;
+      expect((rows[0].changes as { requestId: string }).requestId).toBe(row.id);
+      expect(row.status).toBe('DECLINED');
+      expect(row.respondedAt).toBeInstanceOf(Date);
+      expect(row.respondentUserAgent).toBe('ConsentFixtureBrowser/1.0');
+      expect(row.respondentIp).toMatch(/127\.0\.0\.1|::1/);
+      expect([row.respondentName, row.respondentPosition, row.respondentEmail, row.respondentPhone]).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ]);
+    });
+
     it('stores no respondent identity even if one is sent with a Decline', async () => {
       await respond({ token: T_OPEN, decision: 'DECLINE', respondent: RESPONDENT }).expect(200);
       const row = harness.getRequests().find((r) => r.tokenHash === hashConsentToken(T_OPEN))!;

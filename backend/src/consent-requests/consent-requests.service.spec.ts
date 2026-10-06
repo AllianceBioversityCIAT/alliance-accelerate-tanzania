@@ -628,6 +628,61 @@ describe('ConsentRequestsService', () => {
       expect(getRows()[0].status).toBe('SUPERSEDED');
     });
 
+    it("FR-7 / C-47 — an actor whose email changed after enqueue gives SUPERSEDED: no send, no audit (the row's recipientEmail is no longer the actor's email)", async () => {
+      const { prisma, getRows } = buildDispatchHarness(
+        [{ id: 'a1', consentStatus: ConsentStatus.UNKNOWN, email: 'changed@example.com' }],
+        [queuedRow({ recipientEmail: 'a1@example.com' })],
+      );
+      const service = buildService(prisma);
+
+      const result = await service.dispatch({});
+
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
+      expect(actorAuditService.logConsentRequested).not.toHaveBeenCalled();
+      expect(getRows()[0].status).toBe('SUPERSEDED');
+    });
+
+    it('FR-7 / C-47 — an actor deleted after enqueue gives SUPERSEDED: no send, no audit', async () => {
+      const { prisma, getRows } = buildDispatchHarness([], [queuedRow({})]);
+      const service = buildService(prisma);
+
+      const result = await service.dispatch({});
+
+      expect(result).toEqual({ sent: 0, failed: 0, remaining: 0 });
+      expect(mailService.sendConsentRequest).not.toHaveBeenCalled();
+      expect(actorAuditService.logConsentRequested).not.toHaveBeenCalled();
+      expect(getRows()[0].status).toBe('SUPERSEDED');
+    });
+
+    it('FR-8 / C-55 — a dispatched row expires exactly 30 days after it was sent', async () => {
+      const { prisma, getRows } = buildDispatchHarness([ELIGIBLE_ACTOR], [queuedRow({})]);
+      const service = buildService(prisma);
+
+      await service.dispatch({});
+
+      const row = getRows()[0];
+      expect(row.status).toBe('SENT');
+      expect((row.expiresAt as Date).getTime() - (row.sentAt as Date).getTime()).toBe(2_592_000_000);
+    });
+
+    it('FR-8 / C-59 — dispatch, retry, dispatch mints a different token and a different hash each time', async () => {
+      (mailService.sendConsentRequest as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+      const { prisma, getRows } = buildDispatchHarness([ELIGIBLE_ACTOR], [queuedRow({})]);
+      const service = buildService(prisma);
+
+      await service.dispatch({}); // first mint: transport fails, row FAILED
+      const firstToken = (mailService.sendConsentRequest as jest.Mock).mock.calls[0][1] as string;
+      await service.retry({});
+      await service.dispatch({}); // second mint, same row
+      const secondToken = (mailService.sendConsentRequest as jest.Mock).mock.calls[1][1] as string;
+
+      expect(getRows()[0].status).toBe('SENT');
+      expect(secondToken).not.toBe(firstToken);
+      expect(getRows()[0].tokenHash).toBe(createHash('sha256').update(secondToken).digest('hex'));
+      expect(getRows()[0].tokenHash).not.toBe(createHash('sha256').update(firstToken).digest('hex'));
+    });
+
     it('a stale SENDING row (claimed > 2 minutes ago) becomes FAILED/stale_claim and is never resent', async () => {
       const staleClaimedAt = new Date(Date.now() - 3 * 60 * 1000);
       const { prisma, getRows } = buildDispatchHarness(

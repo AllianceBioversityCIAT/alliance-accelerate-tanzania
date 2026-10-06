@@ -1122,3 +1122,25 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - **R-C (documents)** after them: V-2 … V-9, the §8 WARNs, the FR-15 amendment, C-143, C-34, the §3 tree, the `execution.md` headers and Document Control, `tester.md` QA-2, and the template and service comments.
 - **R-6:** the T-14 scope additions were applied by the Leader in `tasks.md` T-14 steps 4–5.
 - Then re-validation.
+
+### R-B — Backend test gaps (C-47, C-55, C-59, C-73) — **PASS** (attempt 1), 2026-10-06
+
+**Files changed:** three spec files only, no production code.
+- `consent-requests.service.spec.ts`: 4 tests.
+- `consent-token.util.spec.ts`: new, 3 tests.
+- `test/consent-public.e2e.spec.ts`: 1 test.
+
+**Falsifiers (each reddened only its own test, then reverted):**
+- The email check forced true → C-47(a) red.
+- The actor-exists check inverted → C-47(b) red.
+- 30 days changed to 7 → C-55 red.
+- A deterministic generator → 4 tests red (C-59).
+- The audit skipped on Decline → C-73 red.
+
+**Evidence re-run (Leader): VERIFIED.** Backend 103 suites / 1751 tests; lint and `tsc` OK.
+
+**Reviewer: PASS.** Each test discriminates. The `crypto` mock is not vacuous, because the token-equals-base64url-of-the-mocked-bytes assertion pins the entropy source. C-73 asserts the sentinel audit row, `requestId`, and null identity fields.
+
+**Advisory:**
+- Add `mockReset` in `afterEach` in the token spec.
+- Retag the token spec header from T-4 to R-B / C-59.
