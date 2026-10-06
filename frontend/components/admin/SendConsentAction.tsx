@@ -94,9 +94,9 @@ export function SendConsentAction({
 
   if (failed) {
     return (
-      <p role="status" className="text-sm text-muted">
+      <output className="block text-sm text-muted">
         {SINGLE_SEND_COPY.checkFailed}
-      </p>
+      </output>
     );
   }
   if (!availability) return null;

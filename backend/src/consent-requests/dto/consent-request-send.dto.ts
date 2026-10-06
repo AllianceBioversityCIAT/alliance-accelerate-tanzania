@@ -38,7 +38,7 @@ export class ConsentRequestFilterDto {
   traderType?: string;
 
   @IsOptional()
-  @IsIn(CONSENT_STATUSES as readonly string[])
+  @IsIn(CONSENT_STATUSES)
   consentStatus?: string;
 
   @IsOptional()

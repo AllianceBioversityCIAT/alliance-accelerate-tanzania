@@ -42,7 +42,7 @@ export default function RespondentFields({
   errors,
   disabled = false,
   onChange,
-}: RespondentFieldsProps) {
+}: Readonly<RespondentFieldsProps>) {
   const baseId = useId();
 
   return (

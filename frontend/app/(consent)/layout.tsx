@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function ConsentLayout({ children }: { children: React.ReactNode }) {
+export default function ConsentLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="flex min-h-screen flex-col">
       <Header />

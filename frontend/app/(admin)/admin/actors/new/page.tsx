@@ -148,9 +148,9 @@ export default function NewActorPage() {
       />
 
       {uploading && (
-        <p role="status" className="mt-4 text-sm text-muted">
+        <output className="mt-4 block text-sm text-muted">
           {DOCUMENT_FIELD_COPY.uploading}
-        </p>
+        </output>
       )}
 
       {created && (

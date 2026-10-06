@@ -77,10 +77,10 @@ export default function ConsentTextScrollGate({
   error,
   disabled = false,
   renderBody,
-}: ConsentTextScrollGateProps) {
+}: Readonly<ConsentTextScrollGateProps>) {
   const [reachedEnd, setReachedEnd] = useState(false);
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLElement | null>(null);
 
   const baseId = useId();
   const headingId = `${baseId}-heading`;
@@ -120,9 +120,10 @@ export default function ConsentTextScrollGate({
   }, [sections, evaluateScrollPosition]);
 
   const totalSections = sections?.length ?? 0;
+  const sectionsLabel = `${totalSections} section${totalSections === 1 ? '' : 's'}`;
   const progressText = reachedEnd
-    ? `You have reached the end of the policy (${totalSections} section${totalSections === 1 ? '' : 's'}).`
-    : `Keep scrolling — ${totalSections} section${totalSections === 1 ? '' : 's'} to review before you can accept.`;
+    ? `You have reached the end of the policy (${sectionsLabel}).`
+    : `Keep scrolling — ${sectionsLabel} to review before you can accept.`;
 
   const describedBy = [progressId, error ? errorId : ''].filter(Boolean).join(' ') || undefined;
 
@@ -136,10 +137,9 @@ export default function ConsentTextScrollGate({
 
       {/* The focusable scroll region: keyboard users Tab to it and reach the
           end with Arrow/Page/End. */}
-      <div
+      <section
         ref={scrollRef}
         tabIndex={0}
-        role="region"
         aria-labelledby={headingId}
         onScroll={handleScroll}
         className={[
@@ -182,7 +182,7 @@ export default function ConsentTextScrollGate({
             )}
           </section>
         ))}
-      </div>
+      </section>
 
       <p id={progressId} aria-live="polite" className="text-xs text-muted">
         {progressText}

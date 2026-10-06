@@ -1367,3 +1367,65 @@ Everything else was confirmed:
 - Frontend: full suite 131 suites / 2024 tests pass; tsc clean.
 - Backend: `src/consent-requests` 119/119 (backend code unchanged since attempt 2's full run of 1754).
 - Builds: not run, because the product owner's dev servers were running. They run before the next commit that changes code paths, or in CI.
+
+### R-G — SonarCloud quality gate on PR #88 — **PASS** (attempt 2)
+
+**Trigger:** the PR #88 quality gate was red on two metrics:
+- **Security C:** S6258, the consent bucket had no access logging.
+- **Reliability D:** S2871, `.sort()` with no compare function.
+
+60 non-gating maintainability and accessibility items were also open. The product owner chose:
+- **Option A:** S3 server access logging only, with no in-app download audit;
+- fix the `.sort()`;
+- fix whatever style items can be fixed without changing behaviour.
+
+**Change (two Implementers in parallel; backend+infra and frontend on disjoint files):**
+- **Infra:**
+  - `ConsentDocumentsLogBucket` (`${StackName}-consent-docs-logs-${AccountId}`, 56 chars): Retain, all four Block Public Access settings, `BucketOwnerEnforced`, SSE-S3, a 365-day expiry, no versioning.
+  - Its policy: an allow for `logging.s3.amazonaws.com` `PutObject` on `access/*`, conditioned on SourceArn (the docs bucket) and SourceAccount; plus the TLS-only deny.
+  - `LoggingConfiguration` (`access/`) on the docs bucket.
+  - The Lambda role has no access to the log bucket, and the template test pins that.
+  - `docs/infrastructure.md` §2 lists `s3:PutBucketLogging` for the deploy role.
+  - Also updated: design §7.4, NFR-8, and T-14 step 2 (a live check that log objects appear).
+- **Backend:**
+  - `localeCompare` on both `Object.keys(...).sort()` calls;
+  - 11 e2e tests now assert `res.status` explicitly (S2699);
+  - `update` is split into `assertNotStale`, `assertRequiredFieldsPresent` and `assertConsentProvenance`, with the bodies moved verbatim;
+  - unnecessary casts removed; an optional chain; the `ActorWithCrops` and `FrozenValue` aliases; fixture stringification.
+- **Frontend:**
+  - `SendConsentDialog` and `SendConsentPrompt` refactored into pure view builders and stateless subcomponents (S3776);
+  - nested ternaries replaced by helpers or maps;
+  - `role="status"` becomes `<output class="block">` where the content is text-only;
+  - `role="region"` becomes a named `<section>`;
+  - `Readonly` props;
+  - `ConsentRichText` keys use content plus an occurrence count;
+  - `RegExp.exec`.
+- **Left as accepted:**
+  - `role="dialog"` and its `onKeyDown` (the six existing admin dialogs use the same pattern; `<dialog>` changes modal behaviour);
+  - `tabIndex` on the scroll regions (needed for keyboard scrolling);
+  - `role="group"` on the decline-confirm panel (not a set of form controls);
+  - `role="status"` wrapping a `<dl>`.
+
+**Concurrency note:** the backend Implementer ran `git stash` and `git stash pop` once while the frontend Implementer was active. The pop restored the tree, and the Leader verified it intact afterwards: full gates green, and the frontend diff present.
+
+**Attempt history:**
+1. **Reviewer FAIL**, one blocking item: four `<output>`s on `/consent/` wrapped a `<p>`, which is invalid (`<output>` takes phrasing content only; WCAG 4.1.1). The Reviewer could not diff against the base.
+2. **Leader-inline:**
+   - those four `<p>` became `<span class="block">`;
+   - base copies and the unified diff were supplied to the Reviewer.
+
+   **Reviewer re-check: PASS.** Confirmed against the base:
+   - hook order and effect deps are unchanged in both components;
+   - every stage and phase renders the same text, aria and focus;
+   - `update` has the same lock-first order and check conditions, with the helper bodies verbatim;
+   - all 11 e2e assertions are present.
+
+**Leader gates (quiet tree):**
+- Frontend 131 suites / 2024 tests, tsc, lint and build.
+- Backend 103 suites / 1759 tests, eslint and build.
+- `validate.sh` and the infra script tests.
+
+**Advisory (open):**
+- `SendConsentDialog` `:311` and `:335` text-only `role="status"`, if SonarCloud lists them.
+- TRD §8 `:264` names only the docs bucket; it defers to `infrastructure.md` §2.
+- Log delivery is proven only by T-14 step 2.

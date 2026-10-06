@@ -17,7 +17,7 @@ export class ConsentDocumentUploadUrlDto {
   @Length(1, 255)
   fileName!: string;
 
-  @IsIn(CONSENT_DOCUMENT_CONTENT_TYPES as readonly string[])
+  @IsIn(CONSENT_DOCUMENT_CONTENT_TYPES)
   contentType!: ConsentDocumentContentType;
 
   @IsInt()

@@ -41,7 +41,7 @@ function parseBlocks(body: string): Block[] {
       current = null;
       continue;
     }
-    const bullet = line.match(/^\s*-\s+(.*)$/);
+    const bullet = /^\s*-\s+(.*)$/.exec(line);
     if (bullet) {
       if (current?.kind === 'list') current.items.push(bullet[1]);
       else {
@@ -58,18 +58,38 @@ function parseBlocks(body: string): Block[] {
   return blocks;
 }
 
-export default function ConsentRichText({ body }: { body: string }) {
+/** Pairs each entry with a key from its content plus its repeat count, so duplicates stay distinct. */
+function withKeys<T>(entries: T[], contentOf: (entry: T) => string): { key: string; entry: T }[] {
+  const seen = new Map<string, number>();
+  return entries.map((entry) => {
+    const content = contentOf(entry);
+    const n = seen.get(content) ?? 0;
+    seen.set(content, n + 1);
+    return { key: `${content}#${n}`, entry };
+  });
+}
+
+const blockContent = (block: Block): string =>
+  block.kind === 'list' ? `ul:${block.items.join('\n')}` : `p:${block.lines.join('\n')}`;
+
+function ListBlock({ items }: Readonly<{ items: string[] }>) {
+  return (
+    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
+      {withKeys(items, (item) => item).map(({ key, entry }) => (
+        <li key={key}>{renderInline(entry)}</li>
+      ))}
+    </ul>
+  );
+}
+
+export default function ConsentRichText({ body }: Readonly<{ body: string }>) {
   return (
     <>
-      {parseBlocks(body).map((block, i) =>
+      {withKeys(parseBlocks(body), blockContent).map(({ key, entry: block }) =>
         block.kind === 'list' ? (
-          <ul key={i} className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
-            {block.items.map((item, j) => (
-              <li key={j}>{renderInline(item)}</li>
-            ))}
-          </ul>
+          <ListBlock key={key} items={block.items} />
         ) : (
-          <p key={i} className="mt-2 whitespace-pre-line text-sm text-muted first:mt-1">
+          <p key={key} className="mt-2 whitespace-pre-line text-sm text-muted first:mt-1">
             {renderInline(block.lines.join('\n'))}
           </p>
         ),

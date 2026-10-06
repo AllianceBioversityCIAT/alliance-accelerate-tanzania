@@ -44,6 +44,13 @@ const ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 
 type Availability = 'checking' | 'enabled' | 'disabled' | 'error';
 
+const AVAILABILITY_MESSAGE: Record<Availability, string | null> = {
+  checking: DOCUMENT_FIELD_COPY.checking,
+  enabled: null,
+  disabled: DOCUMENT_FIELD_COPY.unavailable,
+  error: DOCUMENT_FIELD_COPY.statusFailed,
+};
+
 interface CommonProps {
   token: string;
   onAuthFailure: () => void;
@@ -150,14 +157,7 @@ export function ConsentDocumentField(props: Readonly<ConsentDocumentFieldProps>)
   const formDisabled = props.mode === 'deferred' && !!props.disabled;
   const inputDisabled = availability !== 'enabled' || uploading || formDisabled;
 
-  const availabilityMessage =
-    availability === 'checking'
-      ? DOCUMENT_FIELD_COPY.checking
-      : availability === 'disabled'
-        ? DOCUMENT_FIELD_COPY.unavailable
-        : availability === 'error'
-          ? DOCUMENT_FIELD_COPY.statusFailed
-          : null;
+  const availabilityMessage = AVAILABILITY_MESSAGE[availability];
   const errorMessage = rejection ?? uploadError;
 
   return (

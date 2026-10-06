@@ -204,6 +204,11 @@ const TRADER_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
 // Helpers
 // ---------------------------------------------------------------------------
 
+function defaultSelectionSummary(selectedCount: number): string {
+  if (selectedCount === 0) return 'No actors selected';
+  return `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`;
+}
+
 function consentBadgeClasses(status: string): string {
   switch (status) {
     case 'GRANTED':
@@ -596,10 +601,7 @@ export function ActorsTable({
         aria-live="polite"
         aria-atomic="true"
       >
-        {selectionSummary ??
-          (selectedCount === 0
-            ? 'No actors selected'
-            : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`)}
+        {selectionSummary ?? defaultSelectionSummary(selectedCount)}
       </div>
 
       {/* ── Desktop table (lg+) ───────────────────────────────────────────── */}

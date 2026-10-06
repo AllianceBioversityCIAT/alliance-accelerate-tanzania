@@ -74,7 +74,7 @@ export class ConsentRespondDto {
   @Allow()
   token?: unknown;
 
-  @IsIn(CONSENT_DECISIONS as readonly string[])
+  @IsIn(CONSENT_DECISIONS)
   decision!: ConsentDecision;
 
   @ValidateIf(isAccept)

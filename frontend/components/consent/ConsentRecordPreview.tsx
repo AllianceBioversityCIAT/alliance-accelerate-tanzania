@@ -27,7 +27,7 @@ function formatGps(gps: PublicActorDetail['gps']): string {
   return gps ? formatHemisphericPair(gps.lat, gps.long) : DASH;
 }
 
-export default function ConsentRecordPreview({ record }: { record: PublicActorDetail }) {
+export default function ConsentRecordPreview({ record }: Readonly<{ record: PublicActorDetail }>) {
   const rows: ReadonlyArray<{ label: string; value: string; mono?: boolean }> = [
     { label: 'Organization', value: record.traderName || DASH },
     { label: 'Type', value: record.traderType ? roleLabel(record.traderType) : DASH },

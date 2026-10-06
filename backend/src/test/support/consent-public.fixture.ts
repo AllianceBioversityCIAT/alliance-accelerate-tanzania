@@ -79,7 +79,7 @@ export function neverPublicValues(actor: Record<string, unknown>): string[] {
     if (value === null || value === undefined) {
       throw new Error(`fixture actor has no value for never-public field "${field}" — its value sweep would be vacuous`);
     }
-    return value instanceof Date ? value.toISOString() : String(value);
+    return value instanceof Date ? value.toISOString() : typeof value === 'object' ? JSON.stringify(value) : String(value);
   });
 }
 

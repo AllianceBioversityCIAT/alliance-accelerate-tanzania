@@ -57,7 +57,7 @@ function takeTokenFromHash(): string | null {
   const hash = window.location.hash;
   if (hash) window.history.replaceState(null, '', '/consent/');
   const token = new URLSearchParams(hash.replace(/^#/, '')).get('t');
-  return token ? token : null;
+  return token || null;
 }
 
 /** Maps the API's `details[]` (`respondent.position`, `accepted`) to form errors. */
@@ -72,7 +72,7 @@ function mapDetails(details: unknown): ConsentServerErrors | null {
       any = true;
       continue;
     }
-    const match = field.match(/^respondent\.(name|position|email|phone)$/);
+    const match = /^respondent\.(name|position|email|phone)$/.exec(field);
     if (match) {
       const key = match[1] as 'name' | 'position' | 'email' | 'phone';
       const def = RESPONDENT_FIELDS.find((f) => f.key === key);
@@ -165,12 +165,13 @@ export default function ConsentPage() {
             : { kind: 'done-declined' },
         );
       } catch (err) {
+        const fieldErrors = err instanceof ApiError && err.status === 400 ? mapDetails(err.details) : null;
         if (err instanceof ApiError && err.status === 404) {
           setPhase({ kind: 'dead-end' });
         } else if (err instanceof ApiError && err.status === 429) {
           setSubmitError(CONSENT_PAGE_COPY.submitThrottled);
-        } else if (err instanceof ApiError && err.status === 400 && mapDetails(err.details)) {
-          setServerErrors(mapDetails(err.details) as ConsentServerErrors);
+        } else if (fieldErrors) {
+          setServerErrors(fieldErrors);
         } else {
           setSubmitError(CONSENT_PAGE_COPY.submitFailed);
         }
@@ -207,15 +208,15 @@ export default function ConsentPage() {
       </h1>
 
       {phase.kind === 'loading' && (
-        <p role="status" className="mt-6 text-sm text-muted">
+        <output className="mt-6 block text-sm text-muted">
           {CONSENT_PAGE_COPY.loading}
-        </p>
+        </output>
       )}
 
       {phase.kind === 'no-token' && (
-        <div role="status" className={`mt-6 ${panelClass}`}>
-          <p className="max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.noTokenBody}</p>
-        </div>
+        <output className={`mt-6 block ${panelClass}`}>
+          <span className="block max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.noTokenBody}</span>
+        </output>
       )}
 
       {phase.kind === 'dead-end' && (
@@ -225,12 +226,12 @@ export default function ConsentPage() {
       )}
 
       {phase.kind === 'throttled' && (
-        <div role="status" className={`mt-6 ${panelClass}`}>
-          <p className="max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.throttledBody}</p>
+        <output className={`mt-6 block ${panelClass}`}>
+          <span className="block max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.throttledBody}</span>
           <button type="button" onClick={() => load(phase.token)} className={actionClass}>
             {CONSENT_PAGE_COPY.retry}
           </button>
-        </div>
+        </output>
       )}
 
       {phase.kind === 'error' && (
@@ -243,21 +244,21 @@ export default function ConsentPage() {
       )}
 
       {phase.kind === 'done-accepted' && (
-        <div role="status" className={`mt-6 ${panelClass}`}>
-          <p className="max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.acceptedBody}</p>
+        <output className={`mt-6 block ${panelClass}`}>
+          <span className="block max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.acceptedBody}</span>
           <Link
             href={`/profile?id=${encodeURIComponent(phase.recordId)}`}
             className={`${actionClass} no-underline`}
           >
             {CONSENT_PAGE_COPY.acceptedLink}
           </Link>
-        </div>
+        </output>
       )}
 
       {phase.kind === 'done-declined' && (
-        <div role="status" className={`mt-6 ${panelClass}`}>
-          <p className="max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.declinedBody}</p>
-        </div>
+        <output className={`mt-6 block ${panelClass}`}>
+          <span className="block max-w-prose text-sm text-fg">{CONSENT_PAGE_COPY.declinedBody}</span>
+        </output>
       )}
 
       {phase.kind === 'ready' && (

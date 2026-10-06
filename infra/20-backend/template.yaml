@@ -261,6 +261,10 @@ Resources:
             AllowedHeaders:
               - "*"
             MaxAge: 600
+      # S3 server access logging (Sonar S6258): audit trail of reads of the evidence.
+      LoggingConfiguration:
+        DestinationBucketName: !Ref ConsentDocumentsLogBucket
+        LogFilePrefix: access/
       Tags:
         - Key: project
           Value: accelerate-tz
@@ -281,6 +285,67 @@ Resources:
             Resource:
               - !GetAtt ConsentDocumentsBucket.Arn
               - !Sub "${ConsentDocumentsBucket.Arn}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+  # Access-log destination for ConsentDocumentsBucket. AES256 only: S3 log
+  # delivery cannot write to an SSE-KMS bucket. Retain like the source bucket.
+  # The Lambda role has no grant here.
+  ConsentDocumentsLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-consent-docs-logs-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-access-logs
+            Status: Enabled
+            ExpirationInDays: 365
+      Tags:
+        - Key: project
+          Value: accelerate-tz
+        - Key: environment
+          Value: dev
+
+  ConsentDocumentsLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConsentDocumentsLogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowS3ServerAccessLogDelivery
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${ConsentDocumentsLogBucket.Arn}/access/*"
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !GetAtt ConsentDocumentsBucket.Arn
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ConsentDocumentsLogBucket.Arn
+              - !Sub "${ConsentDocumentsLogBucket.Arn}/*"
             Condition:
               Bool:
                 "aws:SecureTransport": "false"

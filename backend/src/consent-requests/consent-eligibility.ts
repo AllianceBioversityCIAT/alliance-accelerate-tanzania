@@ -108,7 +108,7 @@ export function evaluateConsentEligibility(
     }
 
     const latest = latestRequest(requests);
-    if (latest && latest.status === 'DECLINED') {
+    if (latest?.status === 'DECLINED') {
       return 'declined';
     }
   }

@@ -92,6 +92,10 @@ const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
 } satisfies Prisma.ActorInclude;
 
+type FrozenValue = string | Date | null | undefined;
+
+type ActorWithCrops = Prisma.ActorGetPayload<{ include: typeof CROPS_INCLUDE }>;
+
 /**
  * Scalar Actor fields that can be supplied by the Admin create/update DTOs.
  * `id`, `createdAt`, `updatedAt` are row metadata and never accepted from the
@@ -347,21 +351,7 @@ export class ActorsAdminService {
           throw new NotFoundException(`Actor ${id} not found`);
         }
 
-        // D-26 — stale-form protection. Compared as instants (never as
-        // strings), and only when the caller sent a version at all.
-        if (
-          dto.expectedUpdatedAt !== undefined &&
-          new Date(dto.expectedUpdatedAt).getTime() !== before.updatedAt.getTime()
-        ) {
-          const message =
-            'This record changed after you opened it. Reload the page and review the current values before saving again.';
-          throw new ConflictException({
-            statusCode: 409,
-            error: 'Conflict',
-            message,
-            details: [{ field: 'expectedUpdatedAt', message }],
-          });
-        }
+        this.assertNotStale(dto, before);
 
         // FR-1/NFR-1 — the merged-state required-set check (design.md §4.4,
         // intake-contract.ts): a field absent from the PATCH keeps the
@@ -369,39 +359,7 @@ export class ActorsAdminService {
         // merging) would leave the actor missing something the required set
         // demands — never merely because the actor already existed
         // incomplete (FR-1 scenario 3's BUT clause).
-        const missingFields = [
-          ...missingIdentityFields(
-            { traderName: before.traderName, traderType: before.traderType, region: before.region },
-            { traderName: dto.traderName, traderType: dto.traderType, region: dto.region },
-          ),
-          ...missingIntakeFields(
-            {
-              contactPerson: before.contactPerson,
-              capacityTons: before.capacityTons,
-              phone: before.phone,
-              email: before.email,
-              cropsCount: before.crops.length,
-            },
-            {
-              contactPerson: dto.contactPerson,
-              capacityTons: dto.capacityTons,
-              phone: dto.phone,
-              email: dto.email,
-              crops: dto.crops,
-            },
-          ),
-        ];
-        if (missingFields.length > 0) {
-          throw new BadRequestException({
-            statusCode: 400,
-            error: 'Bad Request',
-            message: 'Missing required field(s)',
-            details: missingFields.map((field) => ({
-              field,
-              message: `${field} is required`,
-            })),
-          });
-        }
+        this.assertRequiredFieldsPresent(before, dto);
 
         if (
           dto.consentStatus === ConsentStatus.GRANTED &&
@@ -419,41 +377,7 @@ export class ActorsAdminService {
         // acknowledged check above and of the provenance check below.
         this.enforceConsentMethodRules(before, dto);
 
-        // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a re-grant of a
-        // stored-EMAIL_LINK actor (status moving INTO GRANTED; rule 2 above
-        // already guarantees the effective method here is admin-assertable,
-        // never EMAIL_LINK) does NOT inherit the link's `consentObtainedAt`/
-        // `consentReference`. The provenance check below must see those two
-        // fields as absent on `before`, not as the stored link-era values —
-        // otherwise an admin who supplies only a new method (and omits the
-        // date) would silently pass with the OLD date still attached.
-        const isLinkReGrant =
-          before.consentStatus !== ConsentStatus.GRANTED &&
-          before.consentMethod === ConsentMethod.EMAIL_LINK &&
-          (dto.consentStatus ?? before.consentStatus) === ConsentStatus.GRANTED;
-        const provenanceBefore = isLinkReGrant
-          ? { ...before, consentObtainedAt: null, consentReference: null }
-          : before;
-
-        // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
-        // STORED row loaded above (design.md §4.1's concurrency assumption:
-        // read-then-decide inside this same transaction). Independent of the
-        // `acknowledged` check above (DD-2) — both must pass.
-        if (!isConsentProvenanceSatisfied(provenanceBefore, dto)) {
-          const effectiveMethod = dto.consentMethod ?? provenanceBefore.consentMethod;
-          const effectiveObtainedAt =
-            dto.consentObtainedAt !== undefined
-              ? dto.consentObtainedAt
-              : (provenanceBefore.consentObtainedAt ?? null);
-          throw this.buildProvenanceError(effectiveMethod, effectiveObtainedAt);
-        }
-
-        // D-24 — "consentReference is written from the payload, or null when
-        // omitted": a link re-grant must never silently keep the stored
-        // link-era reference just because the admin didn't resend it.
-        const dtoForWrite = isLinkReGrant
-          ? { ...dto, consentReference: dto.consentReference ?? null }
-          : dto;
+        const dtoForWrite = this.assertConsentProvenance(before, dto);
 
         const updateData = this.buildScalarData(dtoForWrite);
         if (Object.keys(updateData).length > 0) {
@@ -504,6 +428,107 @@ export class ActorsAdminService {
     } catch (err) {
       throw this.mapPrismaError(err);
     }
+  }
+
+  /** D-26 stale-form guard of {@link update}; throws the 409 when `expectedUpdatedAt` is behind. */
+  private assertNotStale(dto: AdminActorUpdateDto, before: { updatedAt: Date }): void {
+    // D-26 — stale-form protection. Compared as instants (never as
+    // strings), and only when the caller sent a version at all.
+    if (
+      dto.expectedUpdatedAt !== undefined &&
+      new Date(dto.expectedUpdatedAt).getTime() !== before.updatedAt.getTime()
+    ) {
+      const message =
+        'This record changed after you opened it. Reload the page and review the current values before saving again.';
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message,
+        details: [{ field: 'expectedUpdatedAt', message }],
+      });
+    }
+  }
+
+  /** FR-1/NFR-1 merged-state required-set check of {@link update}; throws the 400. */
+  private assertRequiredFieldsPresent(before: ActorWithCrops, dto: AdminActorUpdateDto): void {
+    const missingFields = [
+      ...missingIdentityFields(
+        { traderName: before.traderName, traderType: before.traderType, region: before.region },
+        { traderName: dto.traderName, traderType: dto.traderType, region: dto.region },
+      ),
+      ...missingIntakeFields(
+        {
+          contactPerson: before.contactPerson,
+          capacityTons: before.capacityTons,
+          phone: before.phone,
+          email: before.email,
+          cropsCount: before.crops.length,
+        },
+        {
+          contactPerson: dto.contactPerson,
+          capacityTons: dto.capacityTons,
+          phone: dto.phone,
+          email: dto.email,
+          crops: dto.crops,
+        },
+      ),
+    ];
+    if (missingFields.length > 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Missing required field(s)',
+        details: missingFields.map((field) => ({
+          field,
+          message: `${field} is required`,
+        })),
+      });
+    }
+  }
+
+  /**
+   * Consent-provenance step of {@link update} (D-24, FR-3/NFR-7): throws when the
+   * invariant fails, and returns the DTO to write (a link re-grant clears the
+   * stored link-era reference).
+   */
+  private assertConsentProvenance(before: ActorWithCrops, dto: AdminActorUpdateDto): AdminActorUpdateDto {
+    // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a re-grant of a
+    // stored-EMAIL_LINK actor (status moving INTO GRANTED; rule 2 above
+    // already guarantees the effective method here is admin-assertable,
+    // never EMAIL_LINK) does NOT inherit the link's `consentObtainedAt`/
+    // `consentReference`. The provenance check below must see those two
+    // fields as absent on `before`, not as the stored link-era values —
+    // otherwise an admin who supplies only a new method (and omits the
+    // date) would silently pass with the OLD date still attached.
+    const isLinkReGrant =
+      before.consentStatus !== ConsentStatus.GRANTED &&
+      before.consentMethod === ConsentMethod.EMAIL_LINK &&
+      (dto.consentStatus ?? before.consentStatus) === ConsentStatus.GRANTED;
+    const provenanceBefore = isLinkReGrant
+      ? { ...before, consentObtainedAt: null, consentReference: null }
+      : before;
+
+    // FR-3/NFR-7 — the shared provenance invariant, evaluated against the
+    // STORED row loaded above (design.md §4.1's concurrency assumption:
+    // read-then-decide inside this same transaction). Independent of the
+    // `acknowledged` check above (DD-2) — both must pass.
+    if (!isConsentProvenanceSatisfied(provenanceBefore, dto)) {
+      const effectiveMethod = dto.consentMethod ?? provenanceBefore.consentMethod;
+      const effectiveObtainedAt =
+        dto.consentObtainedAt !== undefined
+          ? dto.consentObtainedAt
+          : (provenanceBefore.consentObtainedAt ?? null);
+      throw this.buildProvenanceError(effectiveMethod, effectiveObtainedAt);
+    }
+
+    // D-24 — "consentReference is written from the payload, or null when
+    // omitted": a link re-grant must never silently keep the stored
+    // link-era reference just because the admin didn't resend it.
+    const dtoForWrite = isLinkReGrant
+      ? { ...dto, consentReference: dto.consentReference ?? null }
+      : dto;
+
+    return dtoForWrite;
   }
 
   /**
@@ -697,12 +722,12 @@ export class ActorsAdminService {
             const isLinkRow = row.consentMethod === ConsentMethod.EMAIL_LINK;
             if (isLinkRow) {
               const patch: ConsentFillPatch = {
-                consentMethod: consentMethod as ConsentMethod,
-                consentObtainedAt: consentObtainedAt as string,
+                consentMethod,
+                consentObtainedAt,
                 consentReference: consentReference ?? null,
               };
               patches.set(row.id, patch);
-              const key = Object.keys(patch).sort().join(',');
+              const key = Object.keys(patch).sort((a, b) => a.localeCompare(b)).join(',');
               const group = fillGroups.get(key);
               if (group) {
                 group.ids.push(row.id);
@@ -737,7 +762,7 @@ export class ActorsAdminService {
 
             patches.set(row.id, patch);
 
-            const key = Object.keys(patch).sort().join(',');
+            const key = Object.keys(patch).sort((a, b) => a.localeCompare(b)).join(',');
             const group = fillGroups.get(key);
             if (group) {
               group.ids.push(row.id);
@@ -919,8 +944,8 @@ export class ActorsAdminService {
     if (wasGrantedByLink && effectiveStatus === ConsentStatus.GRANTED) {
       const frozen: Array<{
         field: 'consentMethod' | 'consentObtainedAt' | 'consentReference';
-        submitted: string | Date | null | undefined;
-        stored: string | Date | null | undefined;
+        submitted: FrozenValue;
+        stored: FrozenValue;
       }> = [
         { field: 'consentMethod', submitted: dto.consentMethod, stored: storedMethod },
         {

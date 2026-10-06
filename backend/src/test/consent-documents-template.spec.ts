@@ -40,6 +40,8 @@ const template = yaml.load(readFileSync(TEMPLATE_PATH, 'utf8'), { schema: CFN_SC
 const resources = template.Resources as Node;
 const bucket = resources.ConsentDocumentsBucket as Node;
 const bucketProps = bucket.Properties as Node;
+const logBucket = resources.ConsentDocumentsLogBucket as Node;
+const logProps = logBucket.Properties as Node;
 const apiFunction = resources.ApiFunction.Properties as Node;
 
 /** Every IAM statement of ApiFunction, flattened across `Policies` entries. */
@@ -129,6 +131,67 @@ describe('infra/20-backend ConsentDocumentsBucketPolicy', () => {
       { 'Fn::GetAtt': 'ConsentDocumentsBucket.Arn' },
       { 'Fn::Sub': '${ConsentDocumentsBucket.Arn}/*' },
     ]);
+  });
+});
+
+describe('infra/20-backend ConsentDocumentsLogBucket (S3 access logging, S6258)', () => {
+  it('the documents bucket logs to it under access/', () => {
+    expect(bucketProps.LoggingConfiguration).toEqual({
+      DestinationBucketName: { Ref: 'ConsentDocumentsLogBucket' },
+      LogFilePrefix: 'access/',
+    });
+  });
+
+  it('is retained, named from pseudo-parameters, private, BucketOwnerEnforced and AES256 (no KMS)', () => {
+    expect(logBucket.DeletionPolicy).toBe('Retain');
+    expect(logBucket.UpdateReplacePolicy).toBe('Retain');
+    expect(logProps.BucketName).toEqual({ 'Fn::Sub': '${AWS::StackName}-consent-docs-logs-${AWS::AccountId}' });
+    expect(JSON.stringify(logBucket)).not.toMatch(/\d{12}/);
+    expect(logProps.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+    expect(logProps.OwnershipControls).toEqual({ Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] });
+    expect(logProps.BucketEncryption.ServerSideEncryptionConfiguration).toEqual([
+      { ServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
+    ]);
+    expect(logProps.VersioningConfiguration).toBeUndefined();
+  });
+
+  it('expires logs after 365 days with a single rule', () => {
+    const rules = logProps.LifecycleConfiguration.Rules as Node[];
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ Status: 'Enabled', ExpirationInDays: 365 });
+  });
+
+  it('policy lets only the S3 logging service put access/* for this bucket and account, and denies non-TLS', () => {
+    const policy = resources.ConsentDocumentsLogBucketPolicy.Properties as Node;
+    expect(policy.Bucket).toEqual({ Ref: 'ConsentDocumentsLogBucket' });
+    const sts = policy.PolicyDocument.Statement as Node[];
+    expect(sts).toHaveLength(2);
+    const allow = sts.find((st) => st.Effect === 'Allow')!;
+    expect(allow).toEqual({
+      Sid: 'AllowS3ServerAccessLogDelivery',
+      Effect: 'Allow',
+      Principal: { Service: 'logging.s3.amazonaws.com' },
+      Action: 's3:PutObject',
+      Resource: { 'Fn::Sub': '${ConsentDocumentsLogBucket.Arn}/access/*' },
+      Condition: {
+        ArnLike: { 'aws:SourceArn': { 'Fn::GetAtt': 'ConsentDocumentsBucket.Arn' } },
+        StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } },
+      },
+    });
+    expect(sts.find((st) => st.Effect === 'Deny')).toMatchObject({
+      Principal: '*',
+      Action: 's3:*',
+      Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+    });
+  });
+
+  it('the ApiFunction role has no statement on the log bucket', () => {
+    expect(statements.filter((st) => JSON.stringify(st).includes('ConsentDocumentsLogBucket'))).toHaveLength(0);
   });
 });
 

@@ -108,9 +108,9 @@ interface EditionState {
 function EditionText({ state }: Readonly<{ state: EditionState | undefined }>) {
   if (!state || state.status === 'loading') {
     return (
-      <p role="status" className="text-sm text-muted">
+      <output className="block text-sm text-muted">
         {EVIDENCE_PANEL_COPY.textLoading}
-      </p>
+      </output>
     );
   }
   if (state.status === 'failed' || !state.edition) {
@@ -122,10 +122,9 @@ function EditionText({ state }: Readonly<{ state: EditionState | undefined }>) {
   }
   const { edition } = state;
   return (
-    <div
+    <section
       // Keyboard-reachable scroll region; `relative` per the scroll-container rule.
       tabIndex={0}
-      role="region"
       aria-label={`Consent text, edition ${edition.version}`}
       className="relative max-h-64 overflow-y-auto rounded-md border border-border bg-surface-alt p-3 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
@@ -136,7 +135,7 @@ function EditionText({ state }: Readonly<{ state: EditionState | undefined }>) {
         </section>
       ))}
       <p className="mt-3 border-t border-border pt-3 font-medium">{edition.acceptanceStatement}</p>
-    </div>
+    </section>
   );
 }
 

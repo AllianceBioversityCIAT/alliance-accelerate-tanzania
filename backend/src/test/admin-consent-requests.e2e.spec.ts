@@ -267,26 +267,26 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
 
   describe('POST /api/v1/admin/consent-requests/preview', () => {
     it('returns 401 without a token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/preview')
-        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
-        .expect(401);
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' });
+      expect(res.status).toBe(401);
     });
 
     it('returns 403 with a Staff token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/preview')
         .set(staff)
-        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
-        .expect(403);
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' });
+      expect(res.status).toBe(403);
     });
 
     it('returns 403 with a Public token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/preview')
         .set(pub)
-        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
-        .expect(403);
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' });
+      expect(res.status).toBe(403);
     });
 
     it('returns 200 with total/toSend/skipped for an ids target, bulk scope', async () => {
@@ -323,20 +323,20 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
     });
 
     it('rejects a target with neither ids nor filter populated for its own kind — 400', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/preview')
         .set(admin)
-        .send({ target: { kind: 'ids' }, scope: 'bulk' })
-        .expect(400);
+        .send({ target: { kind: 'ids' }, scope: 'bulk' });
+      expect(res.status).toBe(400);
     });
 
     it('rejects an ids array over 1000 entries — 400', async () => {
       const ids = Array.from({ length: 1001 }, (_, i) => `actor-${i}`);
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/preview')
         .set(admin)
-        .send({ target: { kind: 'ids', ids }, scope: 'bulk' })
-        .expect(400);
+        .send({ target: { kind: 'ids', ids }, scope: 'bulk' });
+      expect(res.status).toBe(400);
     });
 
     // FR-2: `scope: 'single'` accepts exactly one id; anything wider is a 400.
@@ -369,29 +369,29 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
       });
 
       it('accepts scope "single" with exactly 1 id — 200', async () => {
-        await request(app.getHttpServer())
+        const res = await request(app.getHttpServer())
           .post('/api/v1/admin/consent-requests/preview')
           .set(admin)
-          .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'single' })
-          .expect(200);
+          .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'single' });
+        expect(res.status).toBe(200);
       });
     });
   });
 
   describe('POST /api/v1/admin/consent-requests', () => {
     it('returns 401 without a token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests')
-        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
-        .expect(401);
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' });
+      expect(res.status).toBe(401);
     });
 
     it('returns 403 with a Staff token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests')
         .set(staff)
-        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' })
-        .expect(403);
+        .send({ target: { kind: 'ids', ids: ['a-eligible-1'] }, scope: 'bulk' });
+      expect(res.status).toBe(403);
     });
 
     it('enqueues QUEUED rows for every eligible actor and returns 201', async () => {
@@ -507,15 +507,16 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
   // T-4 — dispatch / retry / queue (design.md §5.2 steps 2-5, §6).
   describe('POST /api/v1/admin/consent-requests/dispatch', () => {
     it('returns 401 without a token', async () => {
-      await request(app.getHttpServer()).post('/api/v1/admin/consent-requests/dispatch').send({}).expect(401);
+      const res = await request(app.getHttpServer()).post('/api/v1/admin/consent-requests/dispatch').send({});
+      expect(res.status).toBe(401);
     });
 
     it('returns 403 with a Staff token', async () => {
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/v1/admin/consent-requests/dispatch')
         .set(staff)
-        .send({})
-        .expect(403);
+        .send({});
+      expect(res.status).toBe(403);
     });
 
     it('sends every QUEUED row for the given batch, mints a tokenHash, and writes a CONSENT_REQUESTED audit row', async () => {
@@ -731,8 +732,10 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
     });
 
     it('the two evidence routes do not shadow each other: :id/history and :id/consent-evidence both resolve', async () => {
-      await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/history`).set(admin).expect(200);
-      await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`).set(admin).expect(200);
+      const res1 = await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/history`).set(admin);
+      expect(res1.status).toBe(200);
+      const res2 = await request(app.getHttpServer()).get(`/api/v1/admin/actors/${GONE_ACTOR}/consent-evidence`).set(admin);
+      expect(res2.status).toBe(200);
     });
   });
 

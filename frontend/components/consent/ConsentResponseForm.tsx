@@ -68,7 +68,7 @@ export default function ConsentResponseForm({
   serverErrors,
   onAccept,
   onDecline,
-}: ConsentResponseFormProps) {
+}: Readonly<ConsentResponseFormProps>) {
   const [values, setValues] = useState<RespondentValues>(EMPTY_VALUES);
   const [checked, setChecked] = useState(false);
   const [errors, setErrors] = useState<RespondentErrors>({});

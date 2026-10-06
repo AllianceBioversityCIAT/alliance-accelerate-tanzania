@@ -66,9 +66,8 @@ export function BulkActionBar({
 }: BulkActionBarProps) {
   if (selectedCount === 0) return null;
 
-  const countLabel = allMatching
-    ? `All ${matchingTotal} matching actors selected`
-    : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`;
+  const selectedLabel = `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`;
+  const countLabel = allMatching ? `All ${matchingTotal} matching actors selected` : selectedLabel;
   const rowActionsDisabled = loading || allMatching;
 
   return (

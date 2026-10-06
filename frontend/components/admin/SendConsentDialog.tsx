@@ -118,6 +118,246 @@ function Tally({
 }
 
 // ---------------------------------------------------------------------------
+// Views — one pure builder per stage; the component keeps every hook.
+// ---------------------------------------------------------------------------
+
+interface View {
+  title: string;
+  description: string;
+  body: React.ReactNode;
+  footer: React.ReactNode;
+}
+
+interface ViewContext {
+  single: boolean;
+  target: ConsentRequestTarget;
+  expectedCount: number;
+  dispatch: ConsentDispatch;
+  errorId: string;
+  onClose: () => void;
+  onConfirm: (preview: ConsentRequestPreviewResult) => Promise<void>;
+}
+
+function SelectionNote({
+  preview,
+  target,
+  expectedCount,
+}: Readonly<{ preview: ConsentRequestPreviewResult; target: ConsentRequestTarget; expectedCount: number }>) {
+  if (preview.total === expectedCount) return null;
+  const missing = expectedCount - preview.total;
+  if (target.kind === 'ids' && missing > 0) {
+    return (
+      <p className="mt-3 text-sm text-muted">
+        {missing} selected {plural(missing, 'actor no longer exists', 'actors no longer exist')}.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-3 text-sm text-muted">
+      The selection changed: {expectedCount} {plural(expectedCount, 'actor', 'actors')} when you selected,{' '}
+      {preview.total} now.
+    </p>
+  );
+}
+
+function ConfirmBody({
+  preview,
+  target,
+  expectedCount,
+}: Readonly<{ preview: ConsentRequestPreviewResult; target: ConsentRequestTarget; expectedCount: number }>) {
+  const skippedTotal = sumSkipped(preview.skipped);
+  return (
+    <>
+      <p className="mt-4 text-sm text-fg">
+        <span className="font-display text-3xl font-extrabold text-fg">{preview.toSend}</span>{' '}
+        to send
+        <span className="text-muted">
+          {' '}
+          of {preview.total} {plural(preview.total, 'actor', 'actors')} targeted
+        </span>
+      </p>
+      {preview.toSend === 0 && (
+        <output className="mt-3 block rounded-md bg-surface-alt px-3 py-2 text-sm text-fg">
+          {BULK_SEND_COPY.nothingEligibleTitle}
+          {preview.total === 0 ? '.' : ` — all ${skippedTotal} ${plural(skippedTotal, 'is', 'are')} skipped for the reasons below.`}
+        </output>
+      )}
+      <SelectionNote preview={preview} target={target} expectedCount={expectedCount} />
+      <SkipBreakdown skipped={preview.skipped} />
+    </>
+  );
+}
+
+function confirmView(
+  stage: Extract<Stage, { preview: ConsentRequestPreviewResult }>,
+  ctx: ViewContext,
+): View {
+  const { preview } = stage;
+  const nothing = preview.toSend === 0;
+  const busy = stage.name === 'enqueuing';
+  return {
+    title: ctx.single ? SINGLE_SEND_COPY.dialogTitle : BULK_SEND_COPY.dialogTitle,
+    description: nothing
+      ? 'No request will be sent for this selection.'
+      : `Each eligible actor receives one email with a private link. Confirm to send.`,
+    body: <ConfirmBody preview={preview} target={ctx.target} expectedCount={ctx.expectedCount} />,
+    footer: (
+      <DialogFooter
+        error={stage.name === 'enqueue-error' ? stage.message : undefined}
+        errorId={ctx.errorId}
+        onCancel={ctx.onClose}
+        loading={busy}
+        onConfirm={() => void ctx.onConfirm(preview)}
+        confirmDisabled={nothing || busy}
+        confirmLabel={`Send ${preview.toSend} ${plural(preview.toSend, 'request', 'requests')}`}
+        tone="primary"
+      />
+    ),
+  };
+}
+
+function resultDescription(halted: boolean, failed: number): string {
+  if (halted) return 'Sending stopped before every request went out.';
+  if (failed > 0) return 'Some requests could not be sent. You can retry only those.';
+  return 'Every queued request was handled.';
+}
+
+function ResultBody({
+  dispatch,
+  skipped,
+  halted,
+}: Readonly<{ dispatch: ConsentDispatch; skipped: ConsentSkipCounts; halted: boolean }>) {
+  const { sent, failed, failures, remaining } = dispatch.state;
+  return (
+    <>
+      <div role="status" aria-live="polite">
+        <dl className="mt-4 grid grid-cols-3 gap-2">
+          <Tally label="Sent" value={sent} tone="text-success" />
+          <Tally label="Skipped" value={sumSkipped(skipped)} />
+          <Tally label="Failed" value={failed} tone={failed > 0 ? 'text-danger' : 'text-fg'} />
+        </dl>
+      </div>
+      {failures.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-semibold text-fg">{BULK_SEND_COPY.failuresHeading}</h3>
+          <ul className="mt-2 divide-y divide-border rounded-md border border-border text-sm">
+            {failures.map((f) => (
+              <li key={f.actorId} className="px-3 py-2">
+                <p className="font-medium text-fg">{f.traderName}</p>
+                <p className="text-xs text-muted">{CONSENT_FAILURE_REASON_LABEL[f.reason]}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {halted && remaining > 0 && (
+        <p className="mt-3 text-sm text-muted">
+          {remaining} {plural(remaining, 'request stays', 'requests stay')} queued and can be resumed from Actors.
+        </p>
+      )}
+      <SkipBreakdown skipped={skipped} />
+    </>
+  );
+}
+
+function resultFooter(
+  batchId: string,
+  halted: boolean,
+  ctx: ViewContext,
+): React.ReactNode {
+  const { failed, error } = ctx.dispatch.state;
+  if (failed === 0) {
+    return (
+      <DialogFooter
+        error={halted ? error : undefined}
+        errorId={ctx.errorId}
+        onCancel={ctx.onClose}
+        hideConfirm
+        cancelLabel="Close"
+      />
+    );
+  }
+  return (
+    <DialogFooter
+      error={halted ? error : undefined}
+      errorId={ctx.errorId}
+      onCancel={ctx.onClose}
+      onConfirm={() => void ctx.dispatch.retryFailed({ batchId })}
+      confirmDisabled={false}
+      confirmLabel={BULK_SEND_COPY.retryFailed}
+      cancelLabel="Close"
+      tone="primary"
+    />
+  );
+}
+
+function sendingView(stage: Extract<Stage, { name: 'sending' }>, ctx: ViewContext): View {
+  // progress, then result, driven by the hook.
+  const { sent, failed, remaining, phase } = ctx.dispatch.state;
+  const running = phase === 'running' || (phase === 'idle' && stage.queued > 0);
+
+  if (running) {
+    const settled = sent + failed;
+    const planned = settled + remaining;
+    const pct = planned === 0 ? 100 : Math.round((settled / planned) * 100);
+    return {
+      title: BULK_SEND_COPY.sendProgressTitle,
+      description: BULK_SEND_COPY.closeLater,
+      body: (
+        <div className="mt-4">
+          <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-surface-alt">
+            <div className="h-2 rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+          </div>
+          <p role="status" aria-live="polite" aria-atomic="true" className="mt-3 text-sm text-fg">
+            Sent {sent} · Failed {failed} · Remaining {remaining}
+          </p>
+        </div>
+      ),
+      footer: <DialogFooter errorId={ctx.errorId} onCancel={ctx.onClose} hideConfirm cancelLabel="Close" />,
+    };
+  }
+
+  const halted = phase === 'error';
+  return {
+    title: ctx.single ? SINGLE_SEND_COPY.resultTitle : BULK_SEND_COPY.resultTitle,
+    description: resultDescription(halted, failed),
+    body: <ResultBody dispatch={ctx.dispatch} skipped={stage.skipped} halted={halted} />,
+    footer: resultFooter(stage.batchId, halted, ctx),
+  };
+}
+
+function buildView(stage: Stage, ctx: ViewContext): View {
+  switch (stage.name) {
+    case 'previewing':
+      return {
+        title: ctx.single ? SINGLE_SEND_COPY.dialogTitle : BULK_SEND_COPY.dialogTitle,
+        description: BULK_SEND_COPY.previewing,
+        body: <div role="status" aria-live="polite" className="mt-4 text-sm text-muted">{BULK_SEND_COPY.previewing}</div>,
+        footer: <DialogFooter errorId={ctx.errorId} onCancel={ctx.onClose} hideConfirm />,
+      };
+    case 'preview-error':
+      return {
+        title: ctx.single ? SINGLE_SEND_COPY.dialogTitle : BULK_SEND_COPY.dialogTitle,
+        description: 'The selection could not be checked.',
+        body: null,
+        footer: (
+          <DialogFooter
+            error={stage.message}
+            errorId={ctx.errorId}
+            onCancel={ctx.onClose}
+            hideConfirm
+            cancelLabel="Close"
+          />
+        ),
+      };
+    case 'sending':
+      return sendingView(stage, ctx);
+    default:
+      return confirmView(stage, ctx);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -208,173 +448,15 @@ export function SendConsentDialog({
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const single = scope === 'single';
-  let title: string = single ? SINGLE_SEND_COPY.dialogTitle : BULK_SEND_COPY.dialogTitle;
-  let description = '';
-  let body: React.ReactNode = null;
-  let footer: React.ReactNode = null;
-
-  if (stage.name === 'previewing') {
-    description = BULK_SEND_COPY.previewing;
-    body = <div role="status" aria-live="polite" className="mt-4 text-sm text-muted">{BULK_SEND_COPY.previewing}</div>;
-    footer = (
-      <DialogFooter errorId={errorId} onCancel={onClose} hideConfirm />
-    );
-  } else if (stage.name === 'preview-error') {
-    description = 'The selection could not be checked.';
-    footer = (
-      <DialogFooter
-        error={stage.message}
-        errorId={errorId}
-        onCancel={onClose}
-        hideConfirm
-        cancelLabel="Close"
-      />
-    );
-  } else if (stage.name === 'confirm' || stage.name === 'enqueuing' || stage.name === 'enqueue-error') {
-    const { preview } = stage;
-    const skippedTotal = sumSkipped(preview.skipped);
-    const nothing = preview.toSend === 0;
-    const changed = preview.total !== expectedCount;
-    const missing = expectedCount - preview.total;
-
-    description = nothing
-      ? 'No request will be sent for this selection.'
-      : `Each eligible actor receives one email with a private link. Confirm to send.`;
-    body = (
-      <>
-        <p className="mt-4 text-sm text-fg">
-          <span className="font-display text-3xl font-extrabold text-fg">{preview.toSend}</span>{' '}
-          to send
-          <span className="text-muted">
-            {' '}
-            of {preview.total} {plural(preview.total, 'actor', 'actors')} targeted
-          </span>
-        </p>
-        {nothing && (
-          <p role="status" className="mt-3 rounded-md bg-surface-alt px-3 py-2 text-sm text-fg">
-            {BULK_SEND_COPY.nothingEligibleTitle}
-            {preview.total === 0 ? '.' : ` — all ${skippedTotal} ${plural(skippedTotal, 'is', 'are')} skipped for the reasons below.`}
-          </p>
-        )}
-        {changed &&
-          (target.kind === 'ids' && missing > 0 ? (
-            <p className="mt-3 text-sm text-muted">
-              {missing} selected {plural(missing, 'actor no longer exists', 'actors no longer exist')}.
-            </p>
-          ) : (
-            <p className="mt-3 text-sm text-muted">
-              The selection changed: {expectedCount} {plural(expectedCount, 'actor', 'actors')} when you selected,{' '}
-              {preview.total} now.
-            </p>
-          ))}
-        <SkipBreakdown skipped={preview.skipped} />
-      </>
-    );
-    const busy = stage.name === 'enqueuing';
-    footer = (
-      <DialogFooter
-        error={stage.name === 'enqueue-error' ? stage.message : undefined}
-        errorId={errorId}
-        onCancel={onClose}
-        loading={busy}
-        onConfirm={() => void handleConfirm(preview)}
-        confirmDisabled={nothing || busy}
-        confirmLabel={`Send ${preview.toSend} ${plural(preview.toSend, 'request', 'requests')}`}
-        tone="primary"
-      />
-    );
-  } else {
-    // stage.name === 'sending' — progress, then result, driven by the hook.
-    const { sent, failed, failures, remaining, error } = dispatch.state;
-    const skippedTotal = sumSkipped(stage.skipped);
-    const running = dispatchPhase === 'running' || (dispatchPhase === 'idle' && stage.queued > 0);
-    const settled = sent + failed;
-    const planned = settled + remaining;
-    const pct = planned === 0 ? 100 : Math.round((settled / planned) * 100);
-
-    if (running) {
-      title = BULK_SEND_COPY.sendProgressTitle;
-      description = BULK_SEND_COPY.closeLater;
-      body = (
-        <div className="mt-4">
-          <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-full bg-surface-alt">
-            <div className="h-2 rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
-          </div>
-          <p role="status" aria-live="polite" aria-atomic="true" className="mt-3 text-sm text-fg">
-            Sent {sent} · Failed {failed} · Remaining {remaining}
-          </p>
-        </div>
-      );
-      footer = (
-        <DialogFooter
-          errorId={errorId}
-          onCancel={onClose}
-          hideConfirm
-          cancelLabel="Close"
-        />
-      );
-    } else {
-      title = single ? SINGLE_SEND_COPY.resultTitle : BULK_SEND_COPY.resultTitle;
-      const halted = dispatchPhase === 'error';
-      description = halted
-        ? 'Sending stopped before every request went out.'
-        : failed > 0
-          ? 'Some requests could not be sent. You can retry only those.'
-          : 'Every queued request was handled.';
-      body = (
-        <>
-          <div role="status" aria-live="polite">
-            <dl className="mt-4 grid grid-cols-3 gap-2">
-              <Tally label="Sent" value={sent} tone="text-success" />
-              <Tally label="Skipped" value={skippedTotal} />
-              <Tally label="Failed" value={failed} tone={failed > 0 ? 'text-danger' : 'text-fg'} />
-            </dl>
-          </div>
-          {failures.length > 0 && (
-            <div className="mt-4">
-              <h3 className="text-sm font-semibold text-fg">{BULK_SEND_COPY.failuresHeading}</h3>
-              <ul className="mt-2 divide-y divide-border rounded-md border border-border text-sm">
-                {failures.map((f) => (
-                  <li key={f.actorId} className="px-3 py-2">
-                    <p className="font-medium text-fg">{f.traderName}</p>
-                    <p className="text-xs text-muted">{CONSENT_FAILURE_REASON_LABEL[f.reason]}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {halted && remaining > 0 && (
-            <p className="mt-3 text-sm text-muted">
-              {remaining} {plural(remaining, 'request stays', 'requests stay')} queued and can be resumed from Actors.
-            </p>
-          )}
-          <SkipBreakdown skipped={stage.skipped} />
-        </>
-      );
-      footer =
-        failed === 0 ? (
-          <DialogFooter
-            error={halted ? error : undefined}
-            errorId={errorId}
-            onCancel={onClose}
-            hideConfirm
-            cancelLabel="Close"
-          />
-        ) : (
-          <DialogFooter
-            error={halted ? error : undefined}
-            errorId={errorId}
-            onCancel={onClose}
-            onConfirm={() => void dispatch.retryFailed({ batchId: stage.batchId })}
-            confirmDisabled={false}
-            confirmLabel={BULK_SEND_COPY.retryFailed}
-            cancelLabel="Close"
-            tone="primary"
-          />
-        );
-    }
-  }
+  const { title, description, body, footer } = buildView(stage, {
+    single: scope === 'single',
+    target,
+    expectedCount,
+    dispatch,
+    errorId,
+    onClose,
+    onConfirm: handleConfirm,
+  });
 
   return (
     <>

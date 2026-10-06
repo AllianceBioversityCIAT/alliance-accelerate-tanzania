@@ -432,9 +432,17 @@ Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-sur
   - `AllowedHeaders ['*']`;
   - `MaxAge 600`.
 - `DeletionPolicy: Retain` + `UpdateReplacePolicy: Retain`. It holds compliance evidence, so a stack teardown must never empty it silently.
+- `LoggingConfiguration`: S3 server access logging to `ConsentDocumentsLogBucket`, `LogFilePrefix access/` (Sonar S6258).
 - Tags: the same two as `FrontendBucket`.
 
 **`ConsentDocumentsBucketPolicy`** denies `aws:SecureTransport=false`.
+
+**`ConsentDocumentsLogBucket`** (R-G)
+- `BucketName !Sub "${AWS::StackName}-consent-docs-logs-${AWS::AccountId}"`; all four Block Public Access settings; `BucketOwnerEnforced`; `AES256` (log delivery does not support SSE-KMS); no versioning.
+- One lifecycle rule expiring objects after 365 d.
+- `Retain` + `Retain`; the same two tags.
+- `ConsentDocumentsLogBucketPolicy`: allow `logging.s3.amazonaws.com` `s3:PutObject` on `<logbucket>/access/*` with `aws:SourceArn` = the documents bucket ARN and `aws:SourceAccount` = `${AWS::AccountId}`; plus the same TLS-only deny.
+- The `ApiFunction` role has no statement on it.
 
 **`ApiFunction`**
 - `Environment.Variables` gains `CONSENT_DOCUMENTS_BUCKET: !Ref ConsentDocumentsBucket`.
