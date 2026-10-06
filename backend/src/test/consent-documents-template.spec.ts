@@ -161,33 +161,27 @@ describe('infra/20-backend ApiFunction access to the documents bucket', () => {
     });
   });
 
-  it('grants s3:ListBucket on the bucket ARN only (not /*), conditioned to the incoming/ prefix, so HeadObject on a missing key answers 404 rather than 403', () => {
+  it('grants an unconditioned s3:ListBucket on the bucket ARN only (not /*): HeadObject carries no s3:prefix, so a condition would turn a missing key into 403', () => {
     expect(listStatements[0]).toEqual({
       Effect: 'Allow',
       Action: 's3:ListBucket',
       Resource: { 'Fn::GetAtt': 'ConsentDocumentsBucket.Arn' },
-      Condition: { StringLike: { 's3:prefix': 'incoming/*' } },
     });
   });
 
-  it('has no wildcard action, no wildcard resource, no unscoped ListBucket and no DeleteObject on stored/', () => {
+  it('has no wildcard action, no wildcard resource and no DeleteObject on stored/', () => {
     for (const st of bucketStatements) {
-      for (const action of actionsOf(st)) {
-        expect(action).not.toContain('*');
-        if (action === 's3:ListBucket') {
-          expect(st.Condition?.StringLike?.['s3:prefix']).toBe('incoming/*');
-        }
-      }
+      for (const action of actionsOf(st)) expect(action).not.toContain('*');
       expect(JSON.stringify(st.Resource)).not.toBe('"*"');
     }
     const stored = objectStatements.find((st) => JSON.stringify(st.Resource).includes('/stored/'))!;
     expect(actionsOf(stored)).not.toContain('s3:DeleteObject');
   });
 
-  it('no ListBucket statement on ApiFunction is unconditioned', () => {
+  it('exactly one ListBucket statement on ApiFunction, on the bucket ARN', () => {
     const lists = statements.filter((st) => actionsOf(st).includes('s3:ListBucket'));
     expect(lists).toHaveLength(1);
-    for (const st of lists) expect(st.Condition).toBeDefined();
+    expect(lists[0].Resource).toEqual({ 'Fn::GetAtt': 'ConsentDocumentsBucket.Arn' });
   });
 
   it('no statement anywhere on ApiFunction grants an s3 action on a bare "*" resource or an s3:* action', () => {

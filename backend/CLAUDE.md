@@ -30,7 +30,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 - **Second derived gate:** `src/test/pii-boundary.spec.ts` derives routes from `getRegisteredRoutes(ConsentRequestsModule, 'api/v1')`; `FIXTURE_MAP` must hold exactly one entry per registered route (a new route without a fixture fails the gate).
 - **Sentinel author:** consent-link responses are audited with `actingSub = 'consent-link'` (`CONSENT_LINK_ACTING_SUB`, `actors/actor-audit.service.ts`) — never a client-sent identity.
-- **`EMAIL_LINK` is never admin-assertable:** create/bulk/import validate against `ADMIN_ASSERTABLE_CONSENT_METHODS` (`common/consent-methods.ts`); `AdminActorUpdateDto` keeps the full enum on purpose, and `ActorsAdminService.update` rules 1–3 refuse any assertion of, or move into, `EMAIL_LINK`; only `ConsentPublicService.respond` writes it.
+- **`EMAIL_LINK` is never admin-assertable:** create/bulk/import validate against `ADMIN_ASSERTABLE_CONSENT_METHODS` (`common/consent-methods.ts`); `AdminActorUpdateDto` keeps the full enum on purpose, and `ActorsAdminService.update` rules 1–4 refuse any assertion of, or move into, `EMAIL_LINK` (rule 4: a re-grant does not inherit link evidence, D-24); only `ConsentPublicService.respond` writes it.
 - **Lock-first:** enqueue, admin update and respond each take `SELECT … FOR UPDATE` on the Actor row as the transaction's FIRST statement (InnoDB REPEATABLE READ fixes its snapshot at the first read). Do not read before the lock.
 - **`CONSENT_DOCUMENTS_BUCKET`:** selects S3 document storage; absent (local stack) selects `UnconfiguredDocumentStorage` — uploads disabled.
 

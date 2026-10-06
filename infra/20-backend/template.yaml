@@ -469,8 +469,7 @@ Resources:
             # actors/consent-intake/consent-request-email T-7 (NFR-8): the API can
             # only touch objects under the two document prefixes of THIS bucket.
             # CopyObject needs GetObject on the source and PutObject on the
-            # destination. ListBucket is granted separately below, scoped to
-            # incoming/. No DeleteObject on stored/ (evidence is never deleted
+            # destination. ListBucket is granted separately below. No DeleteObject on stored/ (evidence is never deleted
             # by the API), and never a `*` action or resource.
             - Effect: Allow
               Action:
@@ -483,17 +482,14 @@ Resources:
                 - s3:PutObject
                 - s3:GetObject
               Resource: !Sub "${ConsentDocumentsBucket.Arn}/stored/*"
-            # Listing, incoming/ only. Without s3:ListBucket, S3 answers HeadObject
-            # on a MISSING key with 403 instead of 404, so a never-completed
-            # upload would make confirm return 500 rather than 422. Granted on
-            # the bucket ARN (not /*), scoped to the prefix whose keys the API
-            # chooses; there is no unscoped ListBucket.
+            # Listing. Without s3:ListBucket, S3 answers HeadObject on a MISSING
+            # key with 403 instead of 404 (confirm would return 500, not 422).
+            # HeadObject carries no s3:prefix, so a prefix condition never
+            # matches: unconditioned, on the bucket ARN (not /*). Key names are
+            # exposed to this role only, which already reads stored/.
             - Effect: Allow
               Action: s3:ListBucket
               Resource: !GetAtt ConsentDocumentsBucket.Arn
-              Condition:
-                StringLike:
-                  s3:prefix: incoming/*
       Events:
         # Explicit methods (NOT `ANY`) so that OPTIONS matches NO route and API
         # Gateway's CorsConfiguration auto-answers CORS preflight with 204. With a

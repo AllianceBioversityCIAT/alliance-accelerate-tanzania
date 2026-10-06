@@ -102,7 +102,7 @@ describe('S3DocumentStorage object operations', () => {
     await expect(storage.head('incoming/x')).rejects.toThrow();
   });
 
-  it('a 403 from HeadObject is a real error, never "missing" (the role needs s3:ListBucket on incoming/* for S3 to answer 404)', async () => {
+  it('a 403 from HeadObject is a real error, never "missing" (the role needs s3:ListBucket on the bucket for S3 to answer 404)', async () => {
     s3Mock.on(HeadObjectCommand).rejects(
       new S3ServiceException({ name: 'Forbidden', $fault: 'client', $metadata: { httpStatusCode: 403 } }),
     );

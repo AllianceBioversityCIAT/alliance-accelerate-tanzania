@@ -87,7 +87,7 @@ export class S3DocumentStorage implements DocumentStorage {
 
 /**
  * ONLY a genuine miss counts as "not found". A 403 must stay an error: it
- * means the role lacks `s3:ListBucket` on `incoming/*` (S3 hides a missing key
+ * means the role lacks `s3:ListBucket` on the bucket (S3 hides a missing key
  * behind 403 without it) or is otherwise misconfigured, and silently mapping
  * it to "missing" would turn an IAM defect into a misleading 422.
  */

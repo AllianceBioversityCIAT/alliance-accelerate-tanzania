@@ -1201,3 +1201,106 @@ Also: the concurrent loser now re-reads and returns the STORED evidence, and the
 - FR-4's absolute "BUT none … sent twice" sits beside the accepted R-10 Retry risk.
 - The UX Send Consent Prompt row is incomplete.
 - The ~17,400 LOC figure is reported, not recomputed.
+
+### Re-validation after R-C (2026-10-06)
+
+Three read-only validators ran in parallel on `opus`, one per dimension. None was told to defer to the Leader.
+
+| Dimension | Result | Substance |
+|---|---|---|
+| Clause coverage | PASS | Every prior validation FAIL is closed. 6 WARNs: FR-10 Decline identity text, FR-5 failed-preview fallback, NFR-5 gap unowned, T-14 four vs five steps, UX prompt row, no interrupted-resume test. |
+| Decision consistency | FAIL | One BLOCKING: FR-10 says Decline records the respondent's identity, but PRD AC-9, design §5.4, TRD §3.2 and the C-73 test say it does not. 5 WARNs and 7 advisories, all wording. |
+| Facts vs code | FAIL | About 95 claims checked; security and PII claims hold. The prefix-conditioned `ListBucket` very likely does not cover `HeadObject`, so confirm on a never-uploaded document would give 500, not 422 (the known T-7 A-1 risk). 4 low wording findings. |
+
+Leader gates on the tree at 16df5e8: backend 103 suites / 1751 tests; frontend 131 suites / 2016 tests; both lint and build OK; `validate.sh` and the infra script tests green.
+
+### R-D — Re-validation remediation — **PASS** (attempt 1 FAIL on unrecorded evidence, Leader-inline closure)
+
+**Files changed:**
+- **IAM fallback (predefined in T-14 step 2), applied now instead of waiting for a live failure.** `s3:ListBucket` is unconditioned, on the bucket ARN only (`infra/20-backend/template.yaml`). The template test pins the exact statement and still forbids `*` and `DeleteObject` on `stored/`. Updated: design §7.4, `docs/infrastructure.md` §2, NFR-8, T-7, T-14 step 2 (the live 422 check is kept) and the `isNotFound` docblock (a 403 stays an error).
+- **Wording.**
+  - FR-10 and FR-13: Decline stores no respondent identity; identity is recorded on Accept only.
+  - FR-2 rule 3 now applies to bulk sends only.
+  - T-14: five steps; traces include FR-15.
+  - "Second single-actor path (the third disclosure path)" in `CLAUDE.md`, `AGENTS.md`, `backend/AGENTS.md`, FR-17 and T-13.
+  - e2e count 16 → 18 in `CLAUDE.md`, `AGENTS.md`, `.agents/implementer.md` and `README.md`.
+  - UX §4 Send Consent Prompt states.
+  - Rules 1–4 in DD-9 and both backend guides.
+  - FR-4 now says "automatically" and cites DD-2.
+  - Design §7.3: dispatch failure split into queued vs failed; `submitting` is a flag; failed-preview fallback.
+  - Design §5.1: "a fresh bulk send".
+  - "Answerable once" replaces single-use / one-time in FR-8, PRD, TRD §12.1 and UX §2.
+  - DD-11: "View reuses".
+  - FR-5: a failed-preview scenario.
+  - Design §3: file lines.
+  - PRD AC-9: the view also returns `expiresAt` and the edition; the token travels in the link fragment, then only in request bodies.
+- **Test.** `consent-requests.service.spec.ts`, "W-6 — a budget-stopped run then its resume": 10 queued rows, 5 sent before the 7.5 s budget, the resume sends the other 5, and 10 distinct recipients. Falsifier: dropping the status filter from the claim reddens it at `{ sent: 5, remaining: 5 }`. It covers FR-4 (a closed tab, budget stop). It is not evidence for FR-6's crash case, which the stale-claim tests cover.
+
+**NFR-5 real-MySQL probe.** Leader-run on local MySQL 8 (`accelerate-mysql`), with the real `ConsentPublicService` and Prisma, from a scratch file that was not committed.
+
+Method:
+1. A third connection holds `SELECT … FOR UPDATE` on the actor row.
+2. Two `respond` calls are fired with the same token.
+3. After 1.5 s the probe records how many calls had settled and how many InnoDB lock waits existed.
+4. The lock is released.
+
+Zero settled calls and nonzero lock waits prove that both calls had passed the routing read and were queued at the lock.
+
+```
+{"run":1,"mode":"ACCEPT+DECLINE","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":2,"mode":"ACCEPT+ACCEPT","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":3,"mode":"ACCEPT+DECLINE","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":4,"mode":"ACCEPT+ACCEPT","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":5,"mode":"ACCEPT+DECLINE","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":6,"mode":"ACCEPT+ACCEPT","settledWhileLockHeld":0,"innodbLockWaitsWhileHeld":3,"succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+leftover actors/requests/audits: 0 0
+```
+
+The Implementer's earlier run fired the pairs without the held lock, so it could not show overlap. Its output, as reported (run 5 is a DECLINE win):
+
+```
+{"run":1,"mode":"ACCEPT+DECLINE","succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":2,"mode":"ACCEPT+ACCEPT","succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":3,"mode":"ACCEPT+DECLINE","succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":4,"mode":"ACCEPT+ACCEPT","succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+{"run":5,"mode":"ACCEPT+DECLINE","succeeded":1,"rejected":[404],"actorConsentStatus":"DENIED","requestStatus":"DECLINED","auditRows":1}
+{"run":6,"mode":"ACCEPT+ACCEPT","succeeded":1,"rejected":[404],"actorConsentStatus":"GRANTED","requestStatus":"ACCEPTED","auditRows":1}
+leftover actors/requests/audits: 0 0
+``` NFR-5 now cites this probe instead of a declared gap. TRD QA-14's "not exercised by a committed test" stays true.
+
+**Gates (Leader, quiet tree):**
+- Backend: 103 suites / 1752 tests. The "Jest did not exit one second after" warning is pre-existing: it is identical on the stashed baseline, and the changed spec alone, 31/31, is clean.
+- Lint, build, `validate.sh` and the infra script tests are green.
+- The Implementer's reported `npm test` hang did not reproduce (114 s), and it coincided with their probe holding database connections.
+
+**Reviewer: FAIL (attempt 1).** One BLOCKING issue: NFR-5 cited this probe before `execution.md` recorded it, and the run had no proof of overlap. Closed by this entry and the lock-held re-run above.
+
+Everything else was confirmed:
+- the exact grant is pinned on the bucket ARN;
+- no current document claims the prefix condition;
+- FR-10 matches `consent-public.service.ts:187`;
+- the mirrors are identical;
+- there are 18 e2e files;
+- the UX states match the component;
+- the resume test is deterministic and discriminating.
+
+**Advisories:**
+1. `README.md` count: applied.
+2. FR-5 coverage row: applied.
+3. Test renamed to "budget-stopped": applied.
+4. Open: `SendConsentPrompt` shows the hook's error text instead of the resume or Retry copy when dispatch sets an error.
+
+**Still open, owned by T-14:**
+- the live 422-vs-403 behaviour of the new grant (step 2);
+- live presigned-POST enforcement (step 5);
+- throughput;
+- one real accept;
+- captures.
+
+**Reviewer re-check: PASS.** The probe record backs the NFR-5 citation, and the overlap proof is credible: three lock-wait pairs means two callers blocked. All three advisories are confirmed applied.
+
+**Leader-inline after the PASS:**
+- The IAM task reference is corrected from T-3 to T-7.
+- The unheld-run output is now pasted.
+
+**Process note:** this entry's heading said PASS before the re-check returned its verdict. The verdict confirmed it, but the order was wrong.

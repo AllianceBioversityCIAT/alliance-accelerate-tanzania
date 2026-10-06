@@ -121,7 +121,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 - **Description:** A request MAY be sent only to an **eligible actor**. Every send surface MUST apply the same rule and report each skipped actor with exactly one reason. An actor is eligible when all of these hold:
   1. It has an email.
   2. Its `consentStatus` is not `GRANTED` (D-3: no re-consent campaign).
-  3. It has no **pending request**.
+  3. **Bulk sends only:** it has no pending request. A single send supersedes it (FR-3).
   4. **Bulk sends only:** its latest request was not declined (D-21).
 - **Rationale / Source:** O-1, D-3, D-21.
 - **Acceptance criteria:**
@@ -156,8 +156,8 @@ Each line on current behaviour carries its evidence. The full citations are in `
   - **Scenario: all matching filters.** GIVEN 140 actors match `consentStatus=UNKNOWN&region=Arusha` across 6 pages, WHEN the admin chooses *all matching* and confirms, THEN requests are created for every eligible one of the 140, not only the 25 on screen.
   - **Scenario: nothing eligible.** GIVEN every targeted actor is ineligible, WHEN the confirm step shows, THEN the send action is unavailable and the skip breakdown is shown.
   - **Scenario: a failure is visible and retryable.** GIVEN the mail transport rejects 3 of 50 sends, WHEN the run ends, THEN the result reads 47 sent, 3 failed, and offers **Retry failed**. A retry sends only those 3.
-  - **Stale claim.** A row left in `SENDING` for over 2 minutes is marked failed and is never resent automatically. Only an explicit admin **Retry** requeues it, and that may send a second email if the first had in fact been delivered (design R-10, accepted).
-  - **Scenario: closing the tab mid-run.** GIVEN a run is interrupted after 20 of 100, WHEN the admin returns to Admin → Actors, THEN the 80 unsent requests are still recorded as queued, and the admin can resume them. BUT none of them MUST be lost or sent twice.
+  - **Stale claim.** A row left in `SENDING` for over 2 minutes is marked failed and is never resent automatically. Only an explicit admin **Retry** requeues it, and that may send a second email if the first had in fact been delivered (design DD-2; the double-send risk is R-10, accepted).
+  - **Scenario: closing the tab mid-run.** GIVEN a run is interrupted after 20 of 100, WHEN the admin returns to Admin → Actors, THEN the 80 unsent requests are still recorded as queued, and the admin can resume them. BUT none of them MUST be lost or sent twice automatically (a stale claim follows the rule above, DD-2/R-10).
   - **Scenario: the filter changed under the admin.** GIVEN the confirm step counted 140, WHEN an actor stops matching before confirming, THEN the send uses the server's evaluation at confirm time and the result reports the actual counts.
 - **PII/RBAC impact:** Admin only. Counts and reasons carry no contact values.
 
@@ -168,6 +168,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 - **Acceptance criteria:**
   - **Scenario: offer counts eligible actors only.** GIVEN a commit created 12 actors, 2 of them imported as `GRANTED`, WHEN the result shows, THEN the offer names 10.
   - **Scenario: nothing created.** GIVEN a commit created 0 actors, WHEN the result shows, THEN no offer appears.
+  - **Scenario: the preview fails.** GIVEN the eligibility preview call fails, WHEN the result shows, THEN the offer stays, without a count (`importCtaNoCount`).
   - BUT the offer MUST NOT target any actor the import did not create in this commit.
 - **PII/RBAC impact:** Admin only.
 
@@ -202,7 +203,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 
 - **Description:**
   - **Validity.** A link MUST be valid for **30 days** from sending (D-2) and only for a request that is still open.
-  - **Single use.** Answering consumes it.
+  - **Answerable once.** Answering consumes it (only `respond` does; `view` can repeat until answered or expired).
   - **Supersession.** A resend (FR-3) or an admin change to the actor's consent status or email (FR-12) supersedes it.
   - **Secrecy.** The token MUST NOT be derivable from anything else the system exposes.
 - **Rationale / Source:** O-6, D-2, D-20; proposal §11 *Token design*.
@@ -243,7 +244,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
     - record the respondent's identity, the edition and hash, the server time, the IP address and the user agent;
     - set the actor's `consentStatus = GRANTED`, `consentMethod = EMAIL_LINK` (D-22), `consentObtainedAt` = that server time, and `consentReference` = the request's id;
     - write a *consent accepted* entry to the actor's activity trail.
-  - **Decline** does the same with `consentStatus = DENIED`, and leaves method, date and reference unchanged.
+  - **Decline**, in the same atomic step, marks the request declined and records the edition and hash, server time, IP and user agent. No respondent identity is stored. It sets `DENIED` and leaves method, date and reference unchanged.
   - The respondent's email and telephone are **evidence only** and MUST NOT overwrite the actor's record.
   - The response is final for that link.
 - **Rationale / Source:** O-6, O-7, D-9, D-22.
@@ -287,7 +288,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
     - the expiry;
     - the status: queued, being sent, sent, failed, accepted, declined, superseded, or expired (derived);
     - the response time;
-    - the respondent's identity, IP and user agent.
+    - the respondent's identity (Accept only), IP and user agent.
   - **Immutability.** Once a request is answered, its record MUST NOT change.
   - **Retention.** Requests and consent documents MUST survive the deletion of their actor (the consent text says CIAT may retain consent records).
   - **Activity trail.** The trail gains *consent requested*, *consent accepted* or *consent declined*, and *consent document uploaded* entries. Entries made by the actor's own response identify the consent link as their author, not an admin.
@@ -345,7 +346,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
   - **TRD.** It MUST gain §2 (the module), §3 (the evidence entities and the personal-data inventory), §4 (every new route), §8 (the token-bearer disclosure and the second route to `GRANTED`), §13 (a QA scenario for the token endpoints), and **ADR-NNN**. ADR-NNN is allocated at apply time; ADR-018 is the candidate, after checking unmerged branches.
   - **UX design.** `docs/ux-ui/design.md` MUST gain the `/consent` route (§2), the screens (§4), and the components (§8).
   - **Infrastructure.** `docs/infrastructure.md` MUST gain the bucket (§2) and its teardown and local implications.
-  - **Root guides.** Root `CLAUDE.md` and `AGENTS.md`, plus `backend/CLAUDE.md` and `backend/AGENTS.md`, MUST amend the PII hard constraint so it names the token-bearer read as a third, single-actor disclosure path.
+  - **Root guides.** Root `CLAUDE.md` and `AGENTS.md`, plus `backend/CLAUDE.md` and `backend/AGENTS.md`, MUST amend the PII hard constraint so it names the token-bearer read as a second single-actor path (the third disclosure path, after the list and detail reads).
 - **Rationale / Source:** CLAUDE.md *Reviewer dispatch is decided by blast radius*; KZ-006; KZ-015.
 - **Acceptance criteria:**
   - **Scenario: no constitutional sentence is left false.** GIVEN the change is complete, WHEN the root and backend guides and the TRD are searched for every statement that the contact block is public "only" on `GET /api/v1/actors/:id` or "only for a `GRANTED` actor", THEN each hit is amended or explicitly scoped. Archived specs are frozen and excluded.
@@ -360,10 +361,10 @@ Each line on current behaviour carries its evidence. The full citations are in `
 | NFR-2 | **Uniform miss.** The six dead-end cases (FR-11) produce the same status and a byte-identical body, on both the read and the respond endpoints. | Test over all six on both endpoints. Mutation: a distinct message for "expired" reddens it. |
 | NFR-3 | **Public PII boundary.** The token read returns exactly the public-detail key set and zero `NEVER_PUBLIC_FIELDS` by key and value. The respond endpoint echoes no respondent field and no actor field. The new public routes are **derived** into `pii-boundary.spec.ts`'s totality check, not hand-listed. | Extended `pii-boundary.spec.ts`. Mutations: adding `traderId` to the read reddens it; a new public route without a fixture reddens the totality check. |
 | NFR-4 | **Abuse bounds.** The public endpoints are throttled per caller, like `RegistrationsThrottleGuard`. Above the limit the caller gets `429`, which reveals nothing about the token. | Test: request N+1 within the window → `429`. |
-| NFR-5 | **Exactly one response per link.** The answer is a compare-and-set on the open state inside one transaction with the actor update and the audit row. Zero affected rows means the dead-end response. | Test with two concurrent responds on the in-memory harness: one success, one miss. **Declared gap:** real-MySQL row contention is not exercised (the e2e harness mocks Prisma), the same gap chunk 1 declared. |
+| NFR-5 | **Exactly one response per link.** The answer is a compare-and-set on the open state inside one transaction with the actor update and the audit row. Zero affected rows means the dead-end response. | Test with two concurrent responds on the in-memory harness: one success, one miss. The automated test runs on the e2e harness, which mocks Prisma. Real-MySQL contention was probed once against local MySQL 8 during validation (R-D, 2026-10-06; 6 pairs held behind a third connection's actor-row lock, one winner each — see `execution.md`); it is not a standing gate. |
 | NFR-6 | **Dispatch fits the Lambda budget.** Each dispatch step stops starting new sends after a time budget that leaves headroom under `Timeout: 15`. A step never exceeds 12 s wall time. A 1,000-actor campaign completes from the UI. | Unit test with a delayed fake transport: the step returns within the design's worst case (budget 7.5 s + pre-send DB 0.3 s + one send bound 3.2 s + result write 0.5 s = 11.5 s, design §5.2). Throughput on the real broker is measured at execute time (design premise ledger, `UNVERIFIED`). |
 | NFR-7 | **Slack-safe subject.** The consent-request subject is one constant. No identifier of any kind. | Template test (FR-7). |
-| NFR-8 | **Storage security.** The bucket has all four Block Public Access settings, default encryption, `BucketOwnerEnforced`, a TLS-only policy, and versioning. The Lambda's grants are scoped to that bucket: put, get and delete on `incoming/*`; put and get on `stored/*`; and `ListBucket` conditioned on the `incoming/*` prefix (design §7.4). No delete on `stored/`. Upload links last ≤ 5 min and enforce type and ≤ 10 MB. Download links last ≤ 5 min with `Content-Disposition: attachment`. No `*` resources. | `validate.sh` + template assertions (design); `run-tests.sh` stays green (no account id literal); a presign unit test pins expiry, conditions and disposition. **Declared gap:** the live IAM and bucket behaviour have no automated gate (mocked SDK). The substitute is one real upload and download on DEV after deploy. |
+| NFR-8 | **Storage security.** The bucket has all four Block Public Access settings, default encryption, `BucketOwnerEnforced`, a TLS-only policy, and versioning. The Lambda's grants are scoped to that bucket: put, get and delete on `incoming/*`; put and get on `stored/*`; and an unconditioned `ListBucket` on the bucket ARN (design §7.4). No delete on `stored/`. Upload links last ≤ 5 min and enforce type and ≤ 10 MB. Download links last ≤ 5 min with `Content-Disposition: attachment`. No `*` resources. | `validate.sh` + template assertions (design); `run-tests.sh` stays green (no account id literal); a presign unit test pins expiry, conditions and disposition. **Declared gap:** the live IAM and bucket behaviour have no automated gate (mocked SDK). The substitute is one real upload and download on DEV after deploy. |
 | NFR-9 | **Immutability and retention.** Evidence rows have no foreign key cascade from `Actor`. Answered rows are never updated. Personal data in them (respondent identity, IP, user agent, the address used) is listed in the TRD inventory with "retained for compliance" as its stated policy. | FR-13 tests; TRD sweep in FR-17. |
 | NFR-10 | **Accessibility.** The public page, the bulk confirm and result, the post-create prompt and the evidence panel meet WCAG 2.1 AA. That means labelled fields, errors via `aria-describedby`, `aria-live` for progress and results, focus-trapped dialogs, and keyboard operation. | `jest-axe` + component tests; rendered capture at 375/768/1440 at the HITL pause (no automated layout gate). |
 | NFR-11 | **No token reaches analytics.** The consent page is structurally outside the analytics mount, so GA4 never loads on it, whatever GA4 does with fragments. | Test: the consent route's layout tree contains no `GoogleAnalytics`. Mutation: rendering the page under `(public)` reddens it. |
@@ -376,7 +377,7 @@ Each line on current behaviour carries its evidence. The full citations are in `
 | A miss distinguishable from another miss | NFR-2 byte-identity test |
 | Non-public field on the token read | Extended `pii-boundary.spec.ts` (NFR-3) |
 | A new public route escapes the release gate | Derived totality check (NFR-3) |
-| Double response or race | NFR-5 test. **Declared gap** on real MySQL. |
+| Double response or race | NFR-5 test, plus the one-off R-D probe on local MySQL. |
 | Stale link re-grants after an admin withdrawal | FR-12 tests on edit and bulk-lock paths |
 | Admin `GRANTED` gate weakened while adding the actor path | Existing provenance and acknowledgement tests stay green; a test that the respond path is the only caller writing `EMAIL_LINK`; and tests that admin edit and bulk unlock cannot produce `GRANTED` with `EMAIL_LINK` (RB-2: an `EMAIL_LINK` → `DENIED` → `GRANTED` re-grant), and tests that link evidence on a `GRANTED` actor cannot be edited (FB-2) or relabelled by bulk unlock (FB-1) |
 | A bulk run sends twice or loses requests | FR-6 tests (claimed-dispatch ordering) |

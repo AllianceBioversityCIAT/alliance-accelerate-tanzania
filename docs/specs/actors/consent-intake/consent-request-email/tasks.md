@@ -289,7 +289,7 @@ T-1…T-13 ─► T-14
     - `infra/20-backend/template.yaml`:
       - `ConsentDocumentsBucket` (named `${AWS::StackName}-consent-docs-${AWS::AccountId}`), with the four Block Public Access settings, `BucketOwnerEnforced`, `AES256`, versioning, one lifecycle rule on `incoming/` (1 d / 1 d noncurrent / abort multipart 1 d), CORS `POST` from `AllowedOrigin` (+ legacy), `Retain`, and tags;
       - a TLS-only bucket policy;
-      - the IAM, three statements: `incoming/*` put, get, delete; `stored/*` put, get; and `ListBucket` on the bucket ARN, conditioned on `s3:prefix` `incoming/*` (design §7.4);
+      - the IAM, three statements: `incoming/*` put, get, delete; `stored/*` put, get; and an unconditioned `ListBucket` on the bucket ARN (design §7.4, R-D);
       - the `CONSENT_DOCUMENTS_BUCKET` env var.
     - Backend:
       - the S3 SDK dependencies;
@@ -505,7 +505,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 - [x] **T-13 Constitution guides: root and backend mirrors** (deps: T-12)
   - **Size:** S (~120 LOC docs) · **Effort:** `high` · **Skills:** `cognitive-doc-design`
   - **Traces:** FR-17 (root guides; *mirrors in lockstep*; *no constitutional sentence left false* for guides) · design DD-13
-  - **Scope:** amend the PII hard constraint in `CLAUDE.md`, `AGENTS.md`, `backend/CLAUDE.md` and `backend/AGENTS.md`. It must name the token-bearer read as a third, single-actor disclosure path (non-`GRANTED`, the public-detail set, never `NEVER_PUBLIC_FIELDS`). Add the `consent-requests` module notes to `backend/CLAUDE.md`: the second `pii-boundary` derived gate, the sentinel `actingSub`, `EMAIL_LINK` never admin-assertable, and the bucket env var.
+  - **Scope:** amend the PII hard constraint in `CLAUDE.md`, `AGENTS.md`, `backend/CLAUDE.md` and `backend/AGENTS.md`. It must name the token-bearer read as a second single-actor path (the third disclosure path, after the list and detail reads) (non-`GRANTED`, the public-detail set, never `NEVER_PUBLIC_FIELDS`). Add the `consent-requests` module notes to `backend/CLAUDE.md`: the second `pii-boundary` derived gate, the sentinel `actingSub`, `EMAIL_LINK` never admin-assertable, and the bucket env var.
   - **Tests (sweep):**
     - `grep -nE "only on the single-actor|GRANTED. actor.s full contact|never on any list" CLAUDE.md AGENTS.md backend/CLAUDE.md backend/AGENTS.md`: every hit amended.
     - `diff <(sed -n '/Hard constraints/,/## /p' CLAUDE.md) <(sed -n '/Hard constraints/,/## /p' AGENTS.md)` shows the same PII bullet in both.
@@ -518,10 +518,10 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 
 - [ ] **T-14 Live verification on DEV (HITL)** (deps: T-1…T-13, after deploy)
   - **Size:** S (~0 LOC; evidence only) · **Effort:** `high` · **Skills:** `aws-serverless`, `systematic-debugging`
-  - **Traces:** NFR-6 / P-9 (throughput), NFR-8 (live IAM and bucket gap), FR-16 (live expiry), FR-10 (one real accept end to end), NFR-10 (the captures reviewed at the HITL pause)
+  - **Traces:** NFR-6 / P-9 (throughput), NFR-8 (live IAM and bucket gap), FR-16 (live expiry), FR-15 (C-116: live presigned-POST size and type enforcement), FR-10 (one real accept end to end), NFR-10 (the captures reviewed at the HITL pause)
   - **Scope:** with the product owner present, every AWS command with `--profile IBD-DEV`:
     1. **Throughput.** Send to 20 test actors whose emails are controlled. Record the per-dispatch `sent` and `elapsedMs` from the logs. **Decision rule:** if throughput is below 1.1 sends/s, escalate to proposal option A2 rather than ship (design R-4).
-    2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. **Also (T-7 review A-1, added 2026-10-06):** with the deployed role, confirm a document id whose upload never happened. Expect `422`. A `500` means S3 returned `403`: the `s3:prefix`-conditioned `ListBucket` does not apply to `HeadObject`'s implicit check. The predefined fallback is an unconditioned `s3:ListBucket` on the bucket ARN, which exposes key names to the Lambda role only. It needs a design §7.4 amendment, a template-test change, and an amendment to `docs/infrastructure.md` §2's `s3:prefix` sentence (T-12 review, 2026-10-06). Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
+    2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. **Also (T-7 review A-1, added 2026-10-06):** with the deployed role, confirm a document id whose upload never happened. Expect `422`. The fallback (an unconditioned `s3:ListBucket` on the bucket ARN) is **already applied** (R-D, 2026-10-06; design §7.4, the template test and `docs/infrastructure.md` §2 are amended), because `HeadObject` carries no `s3:prefix`. A `500` here would mean a different IAM defect. Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
     3. **One real request.** Accept it, then confirm the actor on `/directory` and `/profile`. Reopen the link and get the dead-end page.
     4. Review the T-8…T-11 captures. *(Validation R-6, 2026-10-06:)* commit or paste the captures as durable evidence, add 768 px for the T-10 states, and capture T-8's field-error and decline-confirm states.
     5. *(Validation R-6, C-116:)* with a real presigned POST, try a file over 10 MB and a file with a mismatched `Content-Type`. Expect both refused by S3.
@@ -535,7 +535,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
     - Any step run on a non-`IBD-DEV` profile.
   - **Consumers:** none.
   - **Review:** `checklist` — evidence audit of `execution.md`.
-  - **Done when:** all four steps' outputs are pasted in `execution.md`, and P-9 is settled (confirmed, or escalated).
+  - **Done when:** all five steps' outputs are pasted in `execution.md`, and P-9 is settled (confirmed, or escalated).
 
 ---
 
@@ -556,7 +556,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 | FR-4 failure retryable | T-4, T-9 |
 | FR-4 closing the tab · BUT none lost or twice | T-4, T-9 |
 | FR-4 filter changed | T-3 |
-| FR-5 eligible-only count · nothing created · BUT only this commit | T-10 (T-3 preview) |
+| FR-5 eligible-only count · nothing created · BUT only this commit · the preview fails (offer without a count) | T-10 (T-3 preview; failed-preview fallback: R-A) |
 | FR-6 crash · concurrent tabs | T-4 |
 | FR-7 fixed subject + AND MUST NOT · fragment link · no token in logs | T-4 (send), T-5 (respond logs) |
 | FR-8 30-day window minted | T-4 |
@@ -573,7 +573,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 | FR-13 immutability · deleted actor · AND MUST test | T-6 |
 | FR-13 trail entries: requested / responded (sentinel) / document | T-4 / T-5 / T-7; labels T-11 |
 | FR-14 walk-through · empty · expired derived | T-6 (server), T-11 (UI) |
-| FR-15 storage · no gate bypass · unconfigured (server) · AND storage enforces · never completes | T-7 |
+| FR-15 storage · no gate bypass · unconfigured (server) · AND storage enforces · never completes | T-7, T-14 (live) |
 | FR-15 create with document + AND consent fields unchanged | T-7 (server), T-11 (UI) |
 | FR-15 wrong type/size (client) · create fails → one document · unconfigured (UI) | T-11 |
 | FR-16 link expiry | T-7 (pin), T-14 (live) |
@@ -582,7 +582,7 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 | FR-17 PRD/TRD/UX/infra · sentence sweep (baselines) | T-12 |
 | FR-17 root and backend guides · mirrors in lockstep · sentence sweep (guides) | T-13 |
 | NFR-1 | T-4, T-5 |
-| NFR-2, NFR-3, NFR-4, NFR-5 | T-5 |
+| NFR-2, NFR-3, NFR-4, NFR-5 | T-5 (NFR-5 real-MySQL: R-D probe, `execution.md`) |
 | NFR-6 | T-4 (unit), T-14 (live) |
 | NFR-7 | T-4 |
 | NFR-8 | T-7 (template + pins), T-14 (live) |

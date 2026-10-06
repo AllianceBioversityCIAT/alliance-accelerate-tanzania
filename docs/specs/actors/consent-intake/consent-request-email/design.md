@@ -59,7 +59,7 @@ backend/
     __fixtures__/legal-admin-consent-v1.0.txt            committed .docx extract (FR-1 verbatim test)
     consent-token.util.ts                                mint 32-byte token, sha256
     consent-eligibility.ts                               pure FR-2 rule
-    consent-requests.service.ts                          preview, enqueue, dispatch, retry, evidence
+    consent-requests.service.ts                          preview, enqueue, dispatch, retry, queue
     consent-evidence.service.ts                          evidence read for the admin panel
     consent-supersession.module.ts / .service.ts         supersedePendingFor (exported; imported by ActorsModule and ConsentRequestsModule)
     consent-public.service.ts                            view, respond
@@ -81,7 +81,7 @@ frontend/
   app/(consent)/layout.tsx                               Header + main + Footer; NO ConsentProvider/GoogleAnalytics
   app/(consent)/consent/page.tsx                         token from fragment → strip → view/respond
   components/consent/{ConsentRecordPreview,RespondentFields,ConsentResponseForm,ConsentDeadEnd,ConsentRichText}.tsx
-  lib/geo/coordinates.ts                                 shared helper (consent preview GPS labels)
+  lib/geo/coordinates.ts                                 (existing; shared helper added) consent preview GPS labels
   components/register/ConsentTextScrollGate.tsx          extracted presentational gate (shared with ConsentPolicyDisclosure)
   components/admin/{SendConsentDialog,SendConsentPrompt,SendConsentAction,ConsentSelectionStrip,ConsentQueueBanner,ConsentEvidencePanel,ConsentDocumentField}.tsx
   lib/admin/useConsentDispatch.ts                        dispatch loop
@@ -141,7 +141,7 @@ The migration is additive (two `CREATE TABLE`s plus two enum `ALTER`s that only 
 
 `consent-eligibility.ts` is a pure function over the actor and its requests. Its outcome is one of `eligible · no_email · granted · pending_request · declined`.
 
-- **Pending request** (the blocking set, B-4) is any request in `QUEUED`, `SENDING` or `FAILED`, or in `SENT` with `expiresAt > now`. Counting the first three stops two enqueues before dispatch from duplicating emails. A `FAILED` row is resumed with **Retry**, never by a fresh send.
+- **Pending request** (the blocking set, B-4) is any request in `QUEUED`, `SENDING` or `FAILED`, or in `SENT` with `expiresAt > now`. Counting the first three stops two enqueues before dispatch from duplicating emails. A `FAILED` row is resumed with **Retry**, never by a fresh bulk send.
 - **`declined`** applies only when `scope = 'bulk'`.
 - **`scope = 'single'`.** A pending request is not a skip: enqueue supersedes it (FR-3 resend).
 
@@ -207,7 +207,7 @@ The browser loop (`useConsentDispatch`) calls dispatch until `remaining = 0`, sh
 
   Then a single `$transaction` runs. *(Amended 2026-10-06 twice: lock order, then lock-first, T-5 attempts 2–3.)*
   0. **Lock — the transaction's first statement.** `SELECT id, consentStatus, consentMethod, consentObtainedAt, consentReference FROM Actor WHERE id = ? FOR UPDATE`, parameterized. It must come first: under InnoDB REPEATABLE READ the snapshot is fixed at the first non-locking read, so any plain read before the lock would make later reads stale. It takes the same order as enqueue (D-25) and the admin update (D-26), actor first, so they cannot deadlock. No row means the actor was deleted: uniform miss, nothing written.
-  1. **CAS.** `updateMany({ tokenHash, status: SENT, expiresAt > now }) → ACCEPTED|DECLINED` with the respondent fields, `respondedAt`, IP and UA. A count of 0 gives the uniform miss (NFR-5).
+  1. **CAS.** `updateMany({ tokenHash, status: SENT, expiresAt > now }) → ACCEPTED|DECLINED` with the respondent fields (ACCEPT only), `respondedAt`, IP and UA. A count of 0 gives the uniform miss (NFR-5).
   2. **`before` from the locked row.** The audit's `from` values and the decline's `after` come from step 0's row. There is no separate plain re-read of the actor.
   3. **Actor update.**
      - `ACCEPT` sets `consentStatus=GRANTED, consentMethod=EMAIL_LINK, consentObtainedAt=respondedAt, consentReference=request.id`.
@@ -381,9 +381,10 @@ The body is built with `renderEmailHtml`:
   | `no-token` | Refreshed after the fragment was stripped | Copy: "Open the link from your email again" |
   | `dead-end` | `404` | Fixed copy + data-protection contact (FR-11) |
   | `throttled` | `429` | Retry later |
-  | `submitting` | A response is being sent | Disabled controls |
   | `done-accepted` / `done-declined` | The response was recorded | Confirmation; the accepted variant names the public profile path |
   | `error` | Network failure | Retry |
+
+  `submitting` is a flag inside `ready` (disabled controls while a response is sent), not a phase of its own (`app/(consent)/consent/page.tsx`).
 
 - **Components:**
   - `ConsentRecordPreview` is a `<dl>` over the public-detail keys, labelled "Information that will be published", with em-dash for empty fields (design.md §1 principle 3).
@@ -403,14 +404,14 @@ The body is built with `renderEmailHtml`:
 - **Post-create prompt.** `SendConsentPrompt` on `new/page.tsx` replaces the bare navigate. It shows the duplicate warnings (when any) and the send question in one dialog and defaults to **Send**. The dialog then confirms in place, and nothing navigates silently (FR-3):
   - **Clean send:** "Consent request sent to <email>." with a focused **Continue to actors**.
   - **Queued 0:** the skip reason ("No consent request was sent: …") with Continue.
-  - **Failure:** an enqueue error keeps the question open with a **Try again** button; a dispatch failure says the request could not be sent and where to retry it, with Continue.
+  - **Failure:** an enqueue error keeps the question open with a **Try again** button; a dispatch failure says the request could not be sent: if it stays queued, it says to resume it from Actors; if it failed, it says to Retry it from Actors. Continue follows.
   - **Not now:** navigates without sending. **Gate (B-13):** the send question renders only when the create result's `consentStatus !== 'GRANTED'`. A `GRANTED` create shows the warnings alone, or navigates as today. If a document was attached, the upload runs first. `ActorForm` itself is unchanged in its success path (P-25).
 - **Edit page.** It gains **Send consent request / Resend**, disabled with the FR-2 reason, and `ConsentEvidencePanel` with status badges from `lib/content/consent-requests.ts` (the total-`Record` pattern of `registration-status.ts`).
   - Times show in UTC with the qualifier, the `ConsentRecordCard` convention.
   - "Read exact text" opens the edition through `admin/consent-editions/:version`.
   - Attaching a document from the panel uses `ConsentDocumentField`.
 - **`ConsentDocumentField`.** It is a file input with type and size checks. It is the same component on the create form (deferred upload after create) and in the evidence panel (immediate). It is disabled with an explanation when `status.enabled` is false.
-- **Import result.** The result gains the CTA. It is the eligible count from `preview({ kind:'ids', ids: createdActorIds }, 'bulk')`, then the same dialog.
+- **Import result.** The result gains the CTA. It is the eligible count from `preview({ kind:'ids', ids: createdActorIds }, 'bulk')`, then the same dialog. If the preview fails, the offer stays without a count (`importCtaNoCount`).
 - **History panel.** `ActorHistoryPanel` gains the three actions and renders `consent-link` as "Consent link (actor)".
 
 Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-surface-alt text-warning` / `bg-highlight-tint` / `bg-danger-soft` conventions, never `/NN` modifiers.
@@ -440,11 +441,11 @@ Design tokens: §7 of `docs/ux-ui/design.md` only. Status badges use the `bg-sur
 - `Policies` gains three statements:
   - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on `${Bucket.Arn}/incoming/*`;
   - `s3:PutObject` and `s3:GetObject` on `${Bucket.Arn}/stored/*`;
-  - `s3:ListBucket`, conditioned on `s3:prefix` (below).
+  - `s3:ListBucket`, unconditioned, on the bucket ARN (below).
 
   `CopyObject` needs `GetObject` on the source and `PutObject` on the destination.
-  - **Listing, `incoming/` only** *(amended 2026-10-06 during T-7)*. `s3:ListBucket` on the bucket ARN, with the condition `s3:prefix` = `incoming/*` (`StringLike`). Without a list permission, S3 answers `HeadObject` on a missing key with `403`, not `404`, so a never-completed upload would make `confirm` return `500` instead of `422`. The grant is scoped to the prefix whose keys the API already chooses.
-  - There is no `*`, no unscoped `ListBucket`, and no `DeleteObject` on `stored/`.
+  - **Listing** *(amended 2026-10-06 during T-7; re-amended 2026-10-06, R-D)*. `s3:ListBucket` on the bucket ARN, **unconditioned**. Without a list permission, S3 answers `HeadObject` on a missing key with `403`, not `404`, so a never-completed upload would make `confirm` return `500` instead of `422`. The first version conditioned the grant on `s3:prefix` = `incoming/*`; a `HeadObject` request carries no `s3:prefix` key, so that condition would not match and the `403` would remain. The cost is that key names are visible to the Lambda role, which already reads `stored/`.
+  - There is no `*` and no `DeleteObject` on `stored/`.
 
 **Deploy path.** `20-backend` ships on every merge to `main` (P-21), so the bucket appears on the first merge. `teardown.sh` is left unchanged: `Retain` means the bucket outlives the stack. The infrastructure doc records the bucket and its manual-cleanup note (KZ-auth-2: enumerate the paths).
 
@@ -471,9 +472,9 @@ Every command uses `--profile IBD-DEV`.
 | **DD-6** | **Sentinel `actingSub = 'consent-link'`** for actor-originated audit rows, with `actingEmail = null` and the request id in `changes`. It is the first non-admin identity, declared in the TRD. | Nullable `actingSub` (a migration that widens every audit consumer's contract). | FR-13 |
 | **DD-7** | **New module, with its own derived PII gate.** `pii-boundary.spec.ts` gains `getRegisteredRoutes(ConsentRequestsModule, 'api/v1')` with its own fixture map and totality check over **public and admin** routes. | Registering the controllers in `RegistrationsModule` to inherit its gate (couples two domains to keep one test file simple). | NFR-3 |
 | **DD-8** | **Presigned POST plus confirm-and-promote** (`incoming/` → `stored/`). The POST policy enforces size; presigned PUT cannot enforce a maximum. The lifecycle rule cleans orphans. | Presigned PUT (no size bound); base64 through the API (6 MB Lambda limit). | FR-15, NFR-8 |
-| **DD-9** | **No admin can assert `EMAIL_LINK`.** Create, bulk, import and the template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. Update accepts the full set, so the form's unchanged re-send passes. It refuses a change to `EMAIL_LINK`, any transition into `GRANTED` with it, and any edit of `EMAIL_LINK` evidence while `GRANTED` (§5.7 rules 1–4; C-3, RB-2, FB-2, D-24). The list filter and displays keep the full set. | Accept it everywhere (an admin could forge evidenced consent). | FR-10, D-22 |
+| **DD-9** | **No admin can assert `EMAIL_LINK`.** Create, bulk, import and the template use `ADMIN_ASSERTABLE_CONSENT_METHODS`. Update accepts the full set, so the form's unchanged re-send passes. It refuses a change to `EMAIL_LINK`, any transition into `GRANTED` with it, any edit of `EMAIL_LINK` evidence while `GRANTED`, and a re-grant that does not inherit link evidence (rule 4) (§5.7 rules 1–4; C-3, RB-2, FB-2, D-24). The list filter and displays keep the full set. | Accept it everywhere (an admin could forge evidenced consent). | FR-10, D-22 |
 | **DD-10** | **Supersession inside existing admin transactions** (§5.5). | A respond-time check comparing the actor's current state (racier and harder to explain to an auditor). | FR-12 |
-| **DD-11** | **Respond reuses `toPublicDetail`** for the preview, so the page can never show more than the public profile would after accept. | A bespoke projection (a second allowlist to keep in sync). | FR-9, NFR-3 |
+| **DD-11** | **View reuses `toPublicDetail`** for the preview, so the page can never show more than the public profile would after accept. | A bespoke projection (a second allowlist to keep in sync). | FR-9, NFR-3 |
 | **DD-12** | **`Retain` on the documents bucket.** | `Delete` (a teardown would destroy compliance evidence). | NFR-9 |
 | **DD-13** | **ADR-NNN** (candidate **ADR-018**, allocated at apply time after `git log --all -- docs/trd/trd.md`). It records three things: the actor-originated route to `GRANTED` that bypasses the admin acknowledgement; the token-bearer disclosure of a non-`GRANTED` actor's public-detail set; and the FK-less retained evidence. It **amends** the "the only public path that does" sentence in TRD §4's `GET /api/v1/actors/:id` row, and the matching scope of ADR-013's consequence text (A-8). It extends rather than supersedes ADR-004 and ADR-012. | — | FR-17 |
 

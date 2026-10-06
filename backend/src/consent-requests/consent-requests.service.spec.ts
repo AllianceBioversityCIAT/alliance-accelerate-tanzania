@@ -937,6 +937,53 @@ describe('ConsentRequestsService', () => {
       }
     }, 20000);
 
+    it('W-6 — a budget-stopped run then its resume sends each of 10 rows exactly once (10 distinct recipients, no repeat)', async () => {
+      jest.useFakeTimers();
+      try {
+        const actors = Array.from({ length: 10 }, (_, i) => ({
+          id: `a${i + 1}`,
+          consentStatus: ConsentStatus.UNKNOWN,
+          email: `a${i + 1}@example.com`,
+        }));
+        const requests = actors.map((a, i) =>
+          queuedRowFor(a.id, `req-${i + 1}`, new Date(Date.UTC(2026, 0, 1, 0, 0, i)), a.email as string),
+        );
+        const consentRequestMock = createConsentRequestMock(requests);
+        const actor = {
+          findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+            const found = actors.find((a) => a.id === where.id);
+            return found ? { consentStatus: found.consentStatus, email: found.email } : null;
+          }),
+        };
+        const $transaction = jest.fn(async (cb: (tx: unknown) => unknown) =>
+          cb({ consentRequest: consentRequestMock.consentRequest, actorAuditLog: { create: jest.fn() } }),
+        );
+        const prisma = { actor, consentRequest: consentRequestMock.consentRequest, $transaction };
+        const service = buildService(prisma);
+
+        // Run 1: 1.6 s per send, so the 7.5 s budget ends it after 5 sends.
+        (mailService.sendConsentRequest as jest.Mock).mockImplementation(
+          () => new Promise((resolve) => setTimeout(resolve, 1600)),
+        );
+        const run1 = service.dispatch({});
+        await jest.advanceTimersByTimeAsync(10000);
+        const first = await run1;
+        expect(first).toMatchObject({ sent: 5, remaining: 5 });
+
+        // Run 2 (the resume): instant sends; only the 5 still QUEUED are claimed.
+        (mailService.sendConsentRequest as jest.Mock).mockImplementation(async () => undefined);
+        const second = await service.dispatch({});
+        expect(second).toMatchObject({ sent: 5, remaining: 0 });
+
+        const recipients = (mailService.sendConsentRequest as jest.Mock).mock.calls.map((c) => c[0]);
+        expect(recipients).toHaveLength(10);
+        expect(new Set(recipients).size).toBe(10);
+        expect(consentRequestMock.getRows().every((r) => r.status === 'SENT')).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    }, 20000);
+
     function queuedRowFor(
       actorId: string,
       id: string,
