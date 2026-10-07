@@ -42,6 +42,10 @@ enum ConsentMethod {
   SIGNED_FORM
   EMAIL
   VERBAL_FIELD
+  // actors/consent-intake/consent-request-email T-1 — written ONLY by the
+  // actor's own response to a consent-request link (ConsentPublicService
+  // .respond, T-5). No admin write path may assert it (DD-9, design.md §5.7).
+  EMAIL_LINK
 }
 
 model Actor {
@@ -104,26 +108,32 @@ enum ActorAuditAction {
   IMPORT
   REGISTRATION_APPROVE
   REGISTRATION_REJECT
+  // actors/consent-intake/consent-request-email T-1 — written by
+  // ConsentRequestsService.dispatch (T-4), ConsentPublicService.respond
+  // (T-5, sentinel actingSub), and ConsentDocumentsService.confirm (T-7).
+  CONSENT_REQUESTED
+  CONSENT_RESPONDED
+  CONSENT_DOCUMENT_UPLOADED
 }
 
 model ActorAuditLog {
-  id           String           @id @default(cuid())
+  id                    String           @id @default(cuid())
   // Plain string — deliberately NO relation/FK so rows survive actor deletion.
-  actorId      String
+  actorId               String
   // Identity snapshot so history stays meaningful after deletion.
-  traderId     String
-  traderName   String
-  action       ActorAuditAction
-  actingSub    String
-  actingEmail  String?
-  changes      Json
-  acknowledged Boolean?
+  traderId              String
+  traderName            String
+  action                ActorAuditAction
+  actingSub             String
+  actingEmail           String?
+  changes               Json
+  acknowledged          Boolean?
   // T-3 — snapshot of the strong candidates the admin confirmed were NOT
   // duplicates (design.md §2, FR-3). Null when the create had none to
   // confirm. A separate column, not a `changes` key, because the history
   // renderer's `isSnapshot` branches on the `changes` shape (P-12).
   duplicateConfirmation Json?
-  createdAt    DateTime         @default(now())
+  createdAt             DateTime         @default(now())
 
   @@index([actorId, createdAt])
 }
@@ -341,4 +351,100 @@ model RegistrationLookupAttempt {
   attempts    Int      @default(0)
 
   @@id([ip, reference, windowStart])
+}
+
+// actors/consent-intake/consent-request-email, T-1 (design.md §4, FR-13).
+// `QUEUED`/`SENDING`/`FAILED`/`SENT` are dispatch-lifecycle states;
+// `ACCEPTED`/`DECLINED` are terminal, actor-written answers;
+// `SUPERSEDED` is an admin write or a resend invalidating this row.
+// `EXPIRED` is NOT a stored value — it is derived (`SENT` + `expiresAt` in
+// the past) so no job or cron is needed (design.md §4.1).
+enum ConsentRequestStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  ACCEPTED
+  DECLINED
+  SUPERSEDED
+}
+
+// T-1 (design.md §4.2). `PENDING` is a presigned-but-unconfirmed upload;
+// only `STORED` is ever listed as evidence.
+enum ConsentDocumentStatus {
+  PENDING
+  STORED
+}
+
+// T-1 (design.md §4.1, FR-13). One row per attempt to obtain one actor's
+// consent by email. Deliberately NO relation/FK on `actorId` — mirrors
+// `ActorAuditLog.actorId` and `Registration.publishedActorId` — so the row
+// (and its evidentiary value) survives the actor's deletion (NFR-9).
+// `traderId`/`traderName` are a snapshot taken at enqueue, both because
+// `ActorAuditLog.traderId` is NOT NULL (so a post-deletion audit row still
+// needs one, P-28) and because the evidence should read as it did when the
+// request was sent, not as the actor is named today.
+model ConsentRequest {
+  id                  String               @id @default(cuid())
+  actorId             String
+  traderId            String
+  traderName          String               @db.VarChar(200)
+  status              ConsentRequestStatus @default(QUEUED)
+  // Groups every row created by one enqueue call, for dispatch and result
+  // counts (design.md §5.2).
+  batchId             String
+  // The actor's email AT ENQUEUE — the request is sent to this address even
+  // if the actor's email is later edited (which supersedes this row instead,
+  // FR-12).
+  recipientEmail      String               @db.VarChar(191)
+  editionVersion      String               @db.VarChar(32)
+  editionHash         String               @db.Char(64)
+  requestedBySub      String
+  requestedByEmail    String?
+  createdAt           DateTime             @default(now())
+  claimedAt           DateTime?
+  sentAt              DateTime?
+  // `expiresAt = sentAt + 30 days` (design.md §5.2 step 2.4).
+  expiresAt           DateTime?
+  // A non-PII code (`transport_rejected`, `timeout`, `stale_claim`) — never a
+  // transport error message, which could carry an address (FR-7, NFR-1).
+  failureReason       String?              @db.VarChar(64)
+  attempts            Int                  @default(0)
+  // SHA-256 of the raw token. The raw token itself is NEVER stored or
+  // returned by any route (NFR-1).
+  tokenHash           String?              @unique @db.Char(64)
+  respondedAt         DateTime?
+  respondentName      String?              @db.VarChar(120)
+  respondentPosition  String?              @db.VarChar(120)
+  respondentEmail     String?              @db.VarChar(191)
+  respondentPhone     String?              @db.VarChar(40)
+  respondentIp        String?              @db.VarChar(45)
+  respondentUserAgent String?              @db.VarChar(512)
+  supersededAt        DateTime?
+
+  @@index([actorId, createdAt])
+  @@index([status, batchId])
+}
+
+// T-1 (design.md §4.2, FR-15). One row per uploaded consent document. Same
+// FK-less, snapshot-identity shape as {@link ConsentRequest}, for the same
+// retention reason (NFR-9, P-28).
+model ConsentDocument {
+  id              String                @id @default(cuid())
+  actorId         String
+  traderId        String
+  traderName      String                @db.VarChar(200)
+  status          ConsentDocumentStatus @default(PENDING)
+  fileName        String                @db.VarChar(255)
+  contentType     String                @db.VarChar(64)
+  sizeBytes       Int
+  // `incoming/<id>` until confirmed, then `stored/<actorId>/<id>`
+  // (design.md §5.6).
+  storageKey      String                @db.VarChar(512)
+  uploadedBySub   String
+  uploadedByEmail String?
+  createdAt       DateTime              @default(now())
+  storedAt        DateTime?
+
+  @@index([actorId, createdAt])
 }

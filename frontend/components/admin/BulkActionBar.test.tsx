@@ -17,6 +17,7 @@ import { BulkActionBar } from './BulkActionBar';
 const onUnlock = jest.fn();
 const onLock = jest.fn();
 const onDelete = jest.fn();
+const onSendConsent = jest.fn();
 
 function renderBar(props: Partial<React.ComponentProps<typeof BulkActionBar>> = {}) {
   return render(
@@ -25,6 +26,7 @@ function renderBar(props: Partial<React.ComponentProps<typeof BulkActionBar>> = 
       onUnlock={onUnlock}
       onLock={onLock}
       onDelete={onDelete}
+      onSendConsent={onSendConsent}
       {...props}
     />,
   );
@@ -77,5 +79,27 @@ describe('BulkActionBar — interactions', () => {
     expect(screen.getByRole('button', { name: 'Unlock' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Lock' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  });
+});
+
+describe('BulkActionBar — send consent request (T-9)', () => {
+  it('renders Send consent request and calls onSendConsent', () => {
+    renderBar({ selectedCount: 2 });
+    fireEvent.click(screen.getByRole('button', { name: 'Send consent request' }));
+    expect(onSendConsent).toHaveBeenCalledTimes(1);
+  });
+
+  it('is disabled while loading', () => {
+    renderBar({ selectedCount: 2, loading: true });
+    expect(screen.getByRole('button', { name: 'Send consent request' })).toBeDisabled();
+  });
+
+  it('in all-matching mode shows the matching count, keeps Send enabled, disables the row-scoped actions', () => {
+    renderBar({ selectedCount: 25, allMatching: true, matchingTotal: 140 });
+    expect(screen.getByText('All 140 matching actors selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send consent request' })).toBeEnabled();
+    for (const name of ['Unlock', 'Lock', 'Delete']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
   });
 });

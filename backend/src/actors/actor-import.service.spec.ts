@@ -1519,6 +1519,21 @@ describe('ActorImportService', () => {
       expect(fields).toEqual(['consentMethod']);
     });
 
+    // T-1 (consent-request-email, DD-9) — the import parser's allowed-value
+    // check is the SAME CONSENT_METHOD_VALUES the template dropdown and
+    // generator use (`template-columns.ts`), now the admin-assertable
+    // subset: EMAIL_LINK is written only by an actor's own response to a
+    // consent-request link, never importable.
+    it('rejects EMAIL_LINK as a consentMethod cell — only the actor\'s own response can record it (DD-9)', async () => {
+      const b64 = await buildWorkbook([validRow({ consentMethod: 'EMAIL_LINK' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      const fields = (report.rows[0].errors ?? []).map((e) => e.field);
+      expect(fields).toEqual(['consentMethod']);
+    });
+
     it.each([
       { label: 'a date-only cell', input: '2026-02-20', expected: '2026-02-20T00:00:00.000Z' },
       // Excel serial 46023 = 2026-01-01 (epoch 1899-12-30).

@@ -14,6 +14,7 @@ import { Transform } from 'class-transformer';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
 
 /**
  * T-3 — Validated write DTO for creating an Actor (NFR-4).
@@ -35,7 +36,13 @@ const SEX_VALUES = ['M', 'F', 'Other'] as const;
 const CONSENT_VALUES = Object.values(ConsentStatus);
 /** T-3 — enum membership derived from the Prisma-generated types (NFR-3, design.md §4.3). */
 const REGISTRATION_SOURCE_VALUES = Object.values(RegistrationSource);
-const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
+/**
+ * T-1 (consent-request-email, DD-9) — create validates against the
+ * admin-assertable subset, not the full enum: `EMAIL_LINK` can only be
+ * written by the actor's own response to a consent-request link, never
+ * asserted on create. See `common/consent-methods.ts`.
+ */
+const CONSENT_METHOD_VALUES = ADMIN_ASSERTABLE_CONSENT_METHODS;
 
 export class ActorCreateDto {
   // `traderId` is system-assigned (`trader-id.util.ts`, FR-2); a client-sent value is stripped by the global pipe's `whitelist`, not declared here.

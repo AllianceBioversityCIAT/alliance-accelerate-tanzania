@@ -18,6 +18,7 @@ import { ActorHistoryQueryDto } from './dto/actor-history-query.dto';
 import { buildTraderId } from './trader-id.util';
 import { IntakeDuplicateService } from './intake-duplicate.service';
 import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
+import { ConsentSupersessionService } from '../consent-requests/consent-supersession.service';
 
 /**
  * T-5 — ActorsAdminService unit tests with a MOCKED PrismaService (no DB).
@@ -160,6 +161,11 @@ interface MockPrisma {
     findMany: jest.Mock;
     count: jest.Mock;
   };
+  // T-3 (consent-request-email) — the supersession hook's own writes, over
+  // the SAME mocked `tx`, so a hook that forgets to call it is visible here.
+  consentRequest: {
+    updateMany: jest.Mock;
+  };
   $transaction: jest.Mock;
   $executeRaw: jest.Mock;
   $queryRaw: jest.Mock;
@@ -187,6 +193,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
   let actorAuditService: ActorAuditService;
   let actingAdminResolver: ActingAdminResolver;
   let intakeDuplicateService: IntakeDuplicateService;
+  let consentSupersessionService: ConsentSupersessionService;
   let prisma: MockPrisma;
 
   beforeEach(() => {
@@ -218,6 +225,9 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
+      consentRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       $executeRaw,
       $queryRaw,
       // Pass the same mocked prisma object back into the callback so tx.*
@@ -237,12 +247,16 @@ describe('ActorsAdminService (mocked Prisma)', () => {
     intakeDuplicateService = new IntakeDuplicateService(
       prisma as unknown as never,
     );
+    // T-3 — the REAL ConsentSupersessionService over the same mocked `tx`,
+    // same reasoning as `actorAuditService`/`intakeDuplicateService` above.
+    consentSupersessionService = new ConsentSupersessionService();
 
     service = new ActorsAdminService(
       prisma as unknown as never,
       actorAuditService,
       actingAdminResolver,
       intakeDuplicateService,
+      consentSupersessionService,
     );
   });
 
@@ -1057,6 +1071,125 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actor.update).not.toHaveBeenCalled();
     }
 
+    // D-26 (consent-request-email, design.md §5.7a; FR-10 "a stale admin form
+    // cannot undo the actor's answer").
+    describe('expectedUpdatedAt — stale-form protection (D-26)', () => {
+      const LOADED_AT = new Date('2026-01-02T00:00:00Z');
+
+      function arrange(storedUpdatedAt: Date) {
+        const before = fixtureActor({ traderName: 'Old Name', updatedAt: storedUpdatedAt });
+        const after = fixtureActor({ traderName: 'New Name', updatedAt: new Date() });
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+      }
+
+      it('a matching version proceeds exactly as an absent one (compared as instants, not strings)', async () => {
+        arrange(LOADED_AT);
+
+        const res = await service.update(
+          'actor-1',
+          // A different textual form of the SAME instant.
+          { traderName: 'New Name', expectedUpdatedAt: '2026-01-02T02:00:00.000+02:00' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(res.traderName).toBe('New Name');
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          // `expectedUpdatedAt` is a guard, never a column.
+          data: { traderName: 'New Name' },
+        });
+      });
+
+      it('a stale version is refused with 409 + field details and nothing is written', async () => {
+        arrange(new Date('2026-01-02T00:00:05Z'));
+
+        let caught: unknown;
+        try {
+          await service.update(
+            'actor-1',
+            { traderName: 'New Name', expectedUpdatedAt: LOADED_AT.toISOString() } as AdminActorUpdateDto,
+            ACTING_SUB,
+          );
+        } catch (err) {
+          caught = err;
+        }
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        const body = (caught as ConflictException).getResponse() as Record<string, unknown>;
+        expect(body).toMatchObject({
+          statusCode: 409,
+          error: 'Conflict',
+          details: [{ field: 'expectedUpdatedAt', message: expect.any(String) }],
+        });
+        expect(typeof body.message).toBe('string');
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+        expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+        expect(prisma.consentRequest.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('a respond committed after the form loaded (updatedAt bumped) makes the admin save conflict', async () => {
+        // The actor answered via the link: Prisma's @updatedAt moved forward.
+        arrange(new Date('2026-01-03T09:30:00Z'));
+
+        await expect(
+          service.update(
+            'actor-1',
+            { consentStatus: ConsentStatus.DENIED, expectedUpdatedAt: LOADED_AT.toISOString() } as AdminActorUpdateDto,
+            ACTING_SUB,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+      });
+
+      it('an absent version keeps today\'s behaviour even when the stored row is "newer"', async () => {
+        arrange(new Date('2030-01-01T00:00:00Z'));
+
+        const res = await service.update(
+          'actor-1',
+          { traderName: 'New Name' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(res.traderName).toBe('New Name');
+        expect(prisma.actor.update).toHaveBeenCalledTimes(1);
+      });
+
+      it('the row lock is the FIRST statement in the transaction, before any read', async () => {
+        const order: string[] = [];
+        const realQueryRaw = prisma.$queryRaw.getMockImplementation();
+        prisma.$queryRaw.mockImplementation(async (arg: never) => {
+          const sql = Array.isArray(arg) ? (arg as string[]).join('?') : (arg as { sql: string }).sql;
+          order.push(sql.includes('FOR UPDATE') ? 'lock' : 'other-raw');
+          return realQueryRaw ? realQueryRaw(arg) : [];
+        });
+        let reads = 0;
+        prisma.actor.findUnique.mockImplementation(async () => {
+          order.push('read');
+          reads += 1;
+          return fixtureActor({ updatedAt: LOADED_AT });
+        });
+        prisma.actor.update.mockResolvedValue(fixtureActor({ updatedAt: LOADED_AT }));
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update('actor-1', { traderName: 'New Name' } as AdminActorUpdateDto, ACTING_SUB);
+
+        expect(reads).toBeGreaterThan(0);
+        expect(order[0]).toBe('lock');
+        const lockCall = prisma.$queryRaw.mock.calls.find((c) =>
+          (c[0] as { sql?: string }).sql?.includes('FOR UPDATE'),
+        );
+        expect((lockCall?.[0] as { sql: string }).sql).toMatch(
+          /^SELECT id, updatedAt FROM Actor WHERE id = \? FOR UPDATE$/,
+        );
+        expect((lockCall?.[0] as { values: unknown[] }).values).toEqual(['actor-1']);
+      });
+    });
+
     it('applies only submitted scalar fields and records a diff audit', async () => {
       const before = fixtureActor({
         traderName: 'Old Name',
@@ -1288,6 +1421,267 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
     });
 
+    // T-1 (consent-request-email, DD-9, design.md §5.7) — no admin write may
+    // assert or move an actor into EMAIL_LINK, and a GRANTED-by-link actor's
+    // evidence is frozen while it stays GRANTED.
+    describe('EMAIL_LINK admin-assertable rules (DD-9, design.md §5.7)', () => {
+      const GRANTED_BY_LINK_OBTAINED_AT = new Date('2026-02-01T00:00:00Z');
+
+      function grantedByLinkActor(overrides: Partial<Record<string, unknown>> = {}) {
+        return fixtureActor({
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.EMAIL_LINK,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT,
+          consentReference: 'consent-req-1',
+          ...overrides,
+        });
+      }
+
+      it('accepts an unchanged EMAIL_LINK re-send with a capacity-only edit (capacity-only edit passes)', async () => {
+        const before = grantedByLinkActor({ capacityTons: 1000 });
+        const after = grantedByLinkActor({ capacityTons: 1500 });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT.toISOString() as never,
+          consentReference: 'consent-req-1',
+          capacityTons: 1500,
+        } as AdminActorUpdateDto;
+
+        const res = await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+        expect(res.capacityTons).toBe(1500);
+      });
+
+      // Falsifier 1 (tasks.md T-1) — a direct assertion of EMAIL_LINK on an
+      // actor not already carrying it.
+      it('rejects a change TO EMAIL_LINK (rule 1)', async () => {
+        const before = fixtureActor({
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+        });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'consentMethod');
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      // Falsifier 2 (tasks.md T-1) — EMAIL_LINK -> DENIED -> GRANTED re-grant.
+      // The stored method is STILL EMAIL_LINK (an admin lock never clears
+      // it), so rule 1 alone does not fire here; rule 2 is what must catch
+      // the re-grant.
+      it('rejects an EMAIL_LINK -> DENIED -> GRANTED re-grant (rule 2)', async () => {
+        const before = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED });
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.GRANTED,
+          acknowledged: true,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'consentMethod');
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      // Falsifier 3 (tasks.md T-1) — a date/reference/method edit on a
+      // GRANTED + EMAIL_LINK actor, status unchanged.
+      it.each([
+        { field: 'consentMethod', value: ConsentMethod.SIGNED_FORM },
+        { field: 'consentObtainedAt', value: '2026-03-01T00:00:00.000Z' },
+        { field: 'consentReference', value: 'DOC-999' },
+      ])('rejects a $field change on a GRANTED + EMAIL_LINK actor (rule 3)', async ({ field, value }) => {
+        const before = grantedByLinkActor();
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto = {
+          consentStatus: ConsentStatus.GRANTED,
+          [field]: value,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, field);
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+    });
+
+    // T-3 — D-24 (design.md §5.7 rule 4, amended 2026-10-05): a re-grant of
+    // a stored-EMAIL_LINK actor must NOT inherit the link's evidence.
+    describe('D-24 — a re-grant does not inherit link evidence (design.md §5.7 rule 4)', () => {
+      const LINK_OBTAINED_AT = new Date('2026-02-01T00:00:00Z');
+
+      function deniedLinkActor(overrides: Partial<Record<string, unknown>> = {}) {
+        return fixtureActor({
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL_LINK,
+          consentObtainedAt: LINK_OBTAINED_AT,
+          consentReference: 'consent-req-1',
+          ...overrides,
+        });
+      }
+
+      // Falsifier — "fall back to the stored date on a D-24 re-grant": if
+      // `update` used `before.consentObtainedAt` as the fallback instead of
+      // treating it as absent, this would wrongly return 200.
+      it('rejects a re-grant with no consentObtainedAt — 400 naming consentObtainedAt', async () => {
+        const before = deniedLinkActor();
+        prisma.actor.findUnique.mockResolvedValue(before);
+
+        const dto = {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          acknowledged: true,
+        } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, 'consentObtainedAt');
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+      });
+
+      it('a re-grant with a date and no reference writes consentReference as null (never the stored link-era reference)', async () => {
+        const before = deniedLinkActor();
+        const after = fixtureActor({
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: new Date('2026-10-05T00:00:00Z'),
+          consentReference: null,
+        });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto = {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: '2026-10-05T00:00:00.000Z',
+          acknowledged: true,
+        } as AdminActorUpdateDto;
+
+        const res = await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          data: expect.objectContaining({
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: ConsentMethod.SIGNED_FORM,
+            consentObtainedAt: '2026-10-05T00:00:00.000Z',
+            consentReference: null,
+          }),
+        });
+        expect(res.consentReference).toBeNull();
+      });
+
+      it('a re-grant with its own date AND reference writes exactly those, not the stored ones', async () => {
+        const before = deniedLinkActor();
+        const after = fixtureActor({
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: new Date('2026-10-05T00:00:00Z'),
+          consentReference: 'NEW-REF',
+        });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto = {
+          consentStatus: ConsentStatus.GRANTED,
+          consentMethod: ConsentMethod.SIGNED_FORM,
+          consentObtainedAt: '2026-10-05T00:00:00.000Z',
+          consentReference: 'NEW-REF',
+          acknowledged: true,
+        } as AdminActorUpdateDto;
+
+        await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          data: expect.objectContaining({
+            consentReference: 'NEW-REF',
+          }),
+        });
+      });
+    });
+
+    // T-3 (design.md §5.5, FR-12/D-20) — the supersession hook fires inside
+    // THIS SAME transaction whenever consentStatus or email actually
+    // changes, and nowhere else.
+    describe('supersession hook (FR-12, D-20, design.md §5.5)', () => {
+      it('supersedes pending requests when consentStatus changes (withdrawal)', async () => {
+        const before = fixtureActor({ consentStatus: ConsentStatus.GRANTED });
+        const after = fixtureActor({ consentStatus: ConsentStatus.DENIED });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update(
+          'actor-1',
+          { consentStatus: ConsentStatus.DENIED } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+        expect(prisma.consentRequest.updateMany.mock.calls[0][0].where.actorId).toEqual({
+          in: ['actor-1'],
+        });
+      });
+
+      it('supersedes pending requests when email changes (email corrected)', async () => {
+        const before = fixtureActor({ email: 'old@example.com' });
+        const after = fixtureActor({ email: 'new@example.com' });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update(
+          'actor-1',
+          { email: 'new@example.com' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('a capacity-only edit does NOT supersede anything (unrelated edit stays open)', async () => {
+        const before = fixtureActor({ capacityTons: 1000 });
+        const after = fixtureActor({ capacityTons: 2000 });
+
+        prisma.actor.findUnique
+          .mockResolvedValueOnce(before)
+          .mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update(
+          'actor-1',
+          { capacityTons: 2000 } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.consentRequest.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
     it('throws NotFoundException when actor id does not exist', async () => {
       prisma.actor.findUnique.mockResolvedValue(null);
 
@@ -1375,6 +1769,30 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       );
       expect(prisma.actor.delete).not.toHaveBeenCalled();
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    // T-3 (design.md §5.5, FR-12/D-20) — always, before the delete.
+    it('supersedes pending requests for the deleted actor, before the delete', async () => {
+      const actor = fixtureActor();
+      const callOrder: string[] = [];
+      prisma.actor.findUnique.mockResolvedValue(actor);
+      prisma.actor.delete.mockImplementation(async () => {
+        callOrder.push('delete');
+        return actor;
+      });
+      prisma.consentRequest.updateMany.mockImplementation(async () => {
+        callOrder.push('supersede');
+        return { count: 0 };
+      });
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-delete' });
+
+      await service.remove('actor-1', ACTING_SUB);
+
+      expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.consentRequest.updateMany.mock.calls[0][0].where.actorId).toEqual({
+        in: ['actor-1'],
+      });
+      expect(callOrder).toEqual(['supersede', 'delete']);
     });
   });
 
@@ -1743,6 +2161,138 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(preserved).toBe(0);
     });
 
+    // T-1 (consent-request-email, DD-9, design.md §5.7) — bulk unlock's
+    // fill/preserve partition must treat a non-GRANTED EMAIL_LINK row as
+    // missing a method (never "preserved" with a label claiming the
+    // actor's own act), and leave an already-GRANTED EMAIL_LINK row alone.
+    describe('EMAIL_LINK rows (DD-9, design.md §5.7, rule 4 — D-24, amended 2026-10-05)', () => {
+      // Falsifier (tasks.md T-1) — "remove the bulk GRANTED + EMAIL_LINK
+      // skip" is what must redden this. Reworked at T-3 for D-24: a
+      // non-GRANTED EMAIL_LINK row's method, date AND reference all come
+      // from the BATCH — never a field-by-field fill — because its stored
+      // date/reference are the actor's own link-era evidence, which must
+      // not survive under an admin-asserted method (the falsifier below:
+      // "fall back to the stored date" must redden this exact fixture).
+      it("fills a DENIED + EMAIL_LINK row with the batch's method, date AND reference (never the stored link-era ones) and leaves a GRANTED + EMAIL_LINK row untouched", async () => {
+        const grantedByLinkObtainedAt = new Date('2026-02-01T00:00:00Z');
+        const existing = [
+          // Was accepted by link, later locked DENIED by an admin — the
+          // method was never cleared. A bulk re-grant must fill it with the
+          // BATCH method/date/reference, not leave EMAIL_LINK standing as
+          // if the actor consented again, and not keep the link-era date
+          // or reference beside the admin's own method (D-24).
+          fixtureActor({
+            id: 'actor-denied-email-link',
+            consentStatus: ConsentStatus.DENIED,
+            consentMethod: ConsentMethod.EMAIL_LINK,
+            consentObtainedAt: grantedByLinkObtainedAt,
+            consentReference: 'consent-req-1',
+          }),
+          // Already GRANTED by link — untouched, reported preserved.
+          fixtureActor({
+            id: 'actor-granted-email-link',
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: ConsentMethod.EMAIL_LINK,
+            consentObtainedAt: grantedByLinkObtainedAt,
+            consentReference: 'consent-req-2',
+          }),
+        ];
+        prisma.actor.findMany.mockResolvedValue(existing);
+        prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+        prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+        const res = await service.bulkSetConsent(
+          ['actor-denied-email-link', 'actor-granted-email-link'],
+          'GRANTED',
+          ACTING_SUB,
+          true,
+          BATCH_METHOD,
+          BATCH_DATE,
+          BATCH_REFERENCE,
+        );
+
+        expect(res).toEqual({
+          requested: 2,
+          applied: 2,
+          notFound: [],
+          preserved: 1,
+        });
+
+        // Two distinct writes: a status-only preserve for the GRANTED+link
+        // row, and a FULL method+date+reference fill (D-24 — never a
+        // field-by-field fill) for the DENIED+link row.
+        expect(prisma.actor.updateMany).toHaveBeenCalledTimes(2);
+        expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['actor-granted-email-link'] } },
+          data: { consentStatus: ConsentStatus.GRANTED },
+        });
+        expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['actor-denied-email-link'] } },
+          data: {
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: BATCH_METHOD,
+            consentObtainedAt: BATCH_DATE,
+            consentReference: BATCH_REFERENCE,
+          },
+        });
+
+        // The GRANTED+link row is a true no-op (status GRANTED -> GRANTED,
+        // nothing else touched), so it gets NO audit row at all — same
+        // empty-diff-skip convention as every other no-op bulk row.
+        const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
+        expect(auditData).toHaveLength(1);
+        expect(auditData[0].actorId).toBe('actor-denied-email-link');
+        expect(auditData[0].changes.fields.consentMethod).toEqual({
+          from: ConsentMethod.EMAIL_LINK,
+          to: BATCH_METHOD,
+        });
+        expect(auditData[0].changes.fields.consentObtainedAt).toEqual({
+          from: grantedByLinkObtainedAt.toISOString(),
+          to: BATCH_DATE,
+        });
+        expect(auditData[0].changes.fields.consentReference).toEqual({
+          from: 'consent-req-1',
+          to: BATCH_REFERENCE,
+        });
+      });
+
+      it("fills a DENIED + EMAIL_LINK row's reference with null when the batch sends none (D-24 — never the stored link-era reference)", async () => {
+        const grantedByLinkObtainedAt = new Date('2026-02-01T00:00:00Z');
+        const existing = [
+          fixtureActor({
+            id: 'actor-denied-email-link',
+            consentStatus: ConsentStatus.DENIED,
+            consentMethod: ConsentMethod.EMAIL_LINK,
+            consentObtainedAt: grantedByLinkObtainedAt,
+            consentReference: 'consent-req-1',
+          }),
+        ];
+        prisma.actor.findMany.mockResolvedValue(existing);
+        prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+        prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+        await service.bulkSetConsent(
+          ['actor-denied-email-link'],
+          'GRANTED',
+          ACTING_SUB,
+          true,
+          BATCH_METHOD,
+          BATCH_DATE,
+          // No consentReference sent by the batch.
+        );
+
+        expect(prisma.actor.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ['actor-denied-email-link'] } },
+          data: {
+            consentStatus: ConsentStatus.GRANTED,
+            consentMethod: BATCH_METHOD,
+            consentObtainedAt: BATCH_DATE,
+            consentReference: null,
+          },
+        });
+      });
+    });
+
     it('skips the audit row for an actor with no field change at all', async () => {
       // Already GRANTED with the SAME provenance the batch would apply —
       // truly nothing changes.
@@ -1876,6 +2426,44 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         preserved: 0,
       });
     });
+
+    // T-3 (design.md §5.5, FR-12/D-20) — "Always, for the ids applied":
+    // both a bulk lock (DENIED) and a bulk unlock (GRANTED) supersede.
+    it('supersedes pending requests for every applied id on a bulk lock (DENIED)', async () => {
+      prisma.actor.findMany.mockResolvedValue([fixtureActor({ id: 'actor-1' })]);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      await service.bulkSetConsent(['actor-1'], 'DENIED', ACTING_SUB);
+
+      expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.consentRequest.updateMany.mock.calls[0][0].where.actorId).toEqual({
+        in: ['actor-1'],
+      });
+    });
+
+    it('supersedes pending requests for every applied id on a bulk unlock (GRANTED)', async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActor({ id: 'actor-1', consentStatus: ConsentStatus.UNKNOWN }),
+      ]);
+      prisma.actor.updateMany.mockResolvedValue({ count: 1 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 1 });
+
+      await service.bulkSetConsent(
+        ['actor-1'],
+        'GRANTED',
+        ACTING_SUB,
+        true,
+        BATCH_METHOD,
+        BATCH_DATE,
+        BATCH_REFERENCE,
+      );
+
+      expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.consentRequest.updateMany.mock.calls[0][0].where.actorId).toEqual({
+        in: ['actor-1'],
+      });
+    });
   });
 
   describe('bulkDelete', () => {
@@ -1913,6 +2501,23 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       expect(res).toEqual({ requested: 2, applied: 2, notFound: [] });
       const auditData = prisma.actorAuditLog.createMany.mock.calls[0][0].data;
       expect(auditData).toHaveLength(2);
+    });
+
+    // T-3 (design.md §5.5, FR-12/D-20) — always, for the ids applied.
+    it('supersedes pending requests for every deleted actor', async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActor({ id: 'actor-1' }),
+        fixtureActor({ id: 'actor-2' }),
+      ]);
+      prisma.actor.deleteMany.mockResolvedValue({ count: 2 });
+      prisma.actorAuditLog.createMany.mockResolvedValue({ count: 2 });
+
+      await service.bulkDelete(['actor-1', 'actor-2'], ACTING_SUB);
+
+      expect(prisma.consentRequest.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.consentRequest.updateMany.mock.calls[0][0].where.actorId).toEqual({
+        in: ['actor-1', 'actor-2'],
+      });
     });
   });
 });

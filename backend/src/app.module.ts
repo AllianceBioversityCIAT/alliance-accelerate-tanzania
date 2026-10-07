@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { RegistrationsModule } from './registrations/registrations.module';
 import { ContactModule } from './contact/contact.module';
+import { ConsentRequestsModule } from './consent-requests/consent-requests.module';
 
 /**
  * Root module. T-1 scaffold + T-5 public Actors API + T-6 public Metrics API +
@@ -28,6 +29,7 @@ import { ContactModule } from './contact/contact.module';
     UsersModule,
     RegistrationsModule,
     ContactModule,
+    ConsentRequestsModule,
   ],
   controllers: [HealthController],
 })

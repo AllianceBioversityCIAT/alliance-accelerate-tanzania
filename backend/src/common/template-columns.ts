@@ -17,9 +17,10 @@
  * This module is DB- and Nest-independent (pure data), matching `normalize.ts`.
  */
 
-import { ConsentMethod, ConsentStatus } from '@prisma/client';
+import { ConsentStatus } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 
 /** Bump on ANY column change (order, headers, allowed values). Stamped on the
  * Instructions sheet and used for best-effort stale-template detection.
@@ -61,13 +62,17 @@ export const CONSENT_VALUES = Object.values(ConsentStatus) as ConsentStatus[];
 
 /**
  * T-6 — Prisma `ConsentMethod` values (NOT_RECORDED | PORTAL_CHECKBOX |
- * SIGNED_FORM | EMAIL | VERBAL_FIELD), derived from the Prisma-generated enum
- * (NFR-3). `PORTAL_CHECKBOX` is included for completeness even though this
- * spec never writes it (design.md §2) — the dropdown lists every valid value.
+ * SIGNED_FORM | EMAIL | VERBAL_FIELD). `PORTAL_CHECKBOX` is included for
+ * completeness even though this spec never writes it (design.md §2) — the
+ * dropdown lists every valid value.
+ *
+ * T-1 (consent-request-email, DD-9) — derived from the admin-assertable
+ * subset, NOT the full Prisma enum: `EMAIL_LINK` is written only by an
+ * actor's own response to a consent-request link, never importable, and
+ * keeping this set unchanged is what keeps the committed import template
+ * byte-identical (design.md §5.7 — no regeneration needed).
  */
-export const CONSENT_METHOD_VALUES = Object.values(
-  ConsentMethod,
-) as ConsentMethod[];
+export const CONSENT_METHOD_VALUES = [...ADMIN_ASSERTABLE_CONSENT_METHODS];
 
 /**
  * Column field → canonical crop name (`Crop.name`), consumed by the parser to

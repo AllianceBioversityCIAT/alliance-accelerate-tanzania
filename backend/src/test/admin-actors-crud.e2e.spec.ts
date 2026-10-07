@@ -20,6 +20,7 @@ import {
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { createActorSequenceMock } from './support/actor-sequence.mock';
 import { validEmailOfLength } from './support/actor-input.fixture';
+import { createConsentRequestMock } from './support/consent-request.mock';
 
 /**
  * T-6 — End-to-end tests for Admin single-actor CRUD + audit history
@@ -611,7 +612,22 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   const actorSequence = createActorSequenceMock();
   const { $executeRaw, $queryRaw } = actorSequence;
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
+  // T-3 (consent-request-email, design.md §5.5) — `ConsentSupersessionService`
+  // is now wired into `update`/`bulkSetConsent`/`remove`/`bulkDelete` and
+  // reaches `tx.consentRequest.updateMany` inside the SAME transaction; this
+  // suite does not exercise consent-request behaviour itself, so a plain
+  // in-memory delegate (no seeded rows) just needs to not crash.
+  const consentRequestMock = createConsentRequestMock();
+
+  const tx = {
+    actor,
+    cropsOnActors,
+    crop,
+    actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
+    $executeRaw,
+    $queryRaw,
+  };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -627,6 +643,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     actorSeq = 0;
     auditSeq = 0;
     actorSequence.reset();
+    consentRequestMock.reset();
 
     for (const actorRow of actors) {
       const names = (
@@ -649,6 +666,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropsOnActors,
     crop,
     actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
     $transaction,
     $executeRaw,
     $queryRaw,
@@ -906,6 +924,47 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       // Unchanged fields are preserved.
       expect(res.body.traderName).toBe('Meru Agro-Processing & Seeds');
       expect(res.body.email).toBe('director@example.com');
+    });
+
+    // D-26 (consent-request-email, design.md §5.7a) — over the real pipe + filter.
+    it('D-26: accepts a matching expectedUpdatedAt, then 409s the same version once the row moved on, writing nothing', async () => {
+      const loadedAt = '2026-01-01T00:00:00.000Z'; // fixtureActor().updatedAt
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: loadedAt })
+        .expect(200);
+
+      // The first save bumped updatedAt; a second form still holding `loadedAt` is stale.
+      const stale = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Mbeya', expectedUpdatedAt: loadedAt })
+        .expect(409);
+
+      expect(stale.body).toMatchObject({
+        statusCode: 409,
+        error: 'Conflict',
+        details: [{ field: 'expectedUpdatedAt' }],
+      });
+
+      const current = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .expect(200);
+      expect(current.body.region).toBe('Dodoma');
+    });
+
+    it('D-26: a malformed expectedUpdatedAt is a field-level 400', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: 'not-a-date' })
+        .expect(400);
+      expect((res.body.details as { field: string }[]).map((d) => d.field)).toContain(
+        'expectedUpdatedAt',
+      );
     });
 
     it('replaces crop assignments when crops is supplied', async () => {

@@ -510,19 +510,26 @@ describe('ActorHistoryPanel — identity fallback', () => {
 // ---------------------------------------------------------------------------
 
 describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
-  const ALL_EIGHT_ACTIONS: AuditEntry['action'][] = [
-    'CREATE',
-    'UPDATE',
-    'DELETE',
-    'BULK_CONSENT',
-    'BULK_DELETE',
-    'IMPORT',
-    'REGISTRATION_APPROVE',
-    'REGISTRATION_REJECT',
-  ];
+  // A literal `Record` over the union: a new action is a compile error HERE
+  // until it is listed (and so rendered by the loop below), instead of a
+  // hand-kept array that silently misses it.
+  const ACTION_PRESENCE: Record<AuditEntry['action'], true> = {
+    CREATE: true,
+    UPDATE: true,
+    DELETE: true,
+    BULK_CONSENT: true,
+    BULK_DELETE: true,
+    IMPORT: true,
+    REGISTRATION_APPROVE: true,
+    REGISTRATION_REJECT: true,
+    CONSENT_REQUESTED: true,
+    CONSENT_RESPONDED: true,
+    CONSENT_DOCUMENT_UPLOADED: true,
+  };
+  const ALL_ACTIONS = Object.keys(ACTION_PRESENCE) as AuditEntry['action'][];
 
-  it('assigns a real, non-empty badge class to every action in the union — including IMPORT and the two registration actions', async () => {
-    const entries: AuditEntry[] = ALL_EIGHT_ACTIONS.map((action, index) => ({
+  it('assigns a real, non-empty badge class to every action in the union — including IMPORT, the registration actions and the three consent actions', async () => {
+    const entries: AuditEntry[] = ALL_ACTIONS.map((action, index) => ({
       id: `audit-total-${index}`,
       actorId: ACTOR_ID,
       traderId: 'T-001',
@@ -548,7 +555,7 @@ describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
       expect(screen.getAllByRole('listitem')).toHaveLength(entries.length),
     );
 
-    for (const action of ALL_EIGHT_ACTIONS) {
+    for (const action of ALL_ACTIONS) {
       const label = action.replace(/_/g, ' ');
       const badge = screen.getByText(label);
       // The pre-T-15 `switch` with no `default` returns `undefined` for an
@@ -590,5 +597,80 @@ describe('ActorHistoryPanel — audit-action taxonomy totality (FR-16)', () => {
     expect(
       screen.getByRole('button', { name: /approved/i }),
     ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-11 — the consent actions and the sentinel author (FR-13)
+// ---------------------------------------------------------------------------
+
+describe('ActorHistoryPanel — consent entries (T-11, FR-13)', () => {
+  const base = {
+    actorId: ACTOR_ID,
+    traderId: 'T-001',
+    traderName: 'Mbeya Seeds Ltd',
+    acknowledged: null,
+    duplicateConfirmation: null,
+    createdAt: '2026-10-02T14:05:00.000Z',
+  };
+
+  it('renders a CONSENT_RESPONDED diff with its request id, authored by "Consent link (actor)"', async () => {
+    const entry: AuditEntry = {
+      ...base,
+      id: 'audit-responded',
+      action: 'CONSENT_RESPONDED',
+      actingSub: 'consent-link',
+      actingEmail: null,
+      changes: {
+        kind: 'diff',
+        requestId: 'req-answered',
+        fields: { consentStatus: { from: 'UNKNOWN', to: 'GRANTED' }, consentMethod: { from: 'NOT_RECORDED', to: 'EMAIL_LINK' } },
+      },
+    };
+    mockGetActorHistory.mockResolvedValue({ data: [entry], page: 1, pageSize: 20, total: 1 });
+    renderPanel();
+
+    const item = await screen.findByRole('listitem');
+    expect(within(item).getByText('CONSENT RESPONDED')).toBeInTheDocument();
+    expect(within(item).getByText('Consent link (actor)')).toBeInTheDocument();
+    expect(within(item).queryByText('consent-link')).not.toBeInTheDocument();
+    expect(within(item).getByText('req-answered')).toBeInTheDocument();
+    expect(within(item).getByText('consentStatus')).toBeInTheDocument();
+    expect(within(item).getByText('EMAIL_LINK')).toBeInTheDocument();
+  });
+
+  it('renders a CONSENT_REQUESTED snapshot with a real summary and its recipient', async () => {
+    const entry: AuditEntry = {
+      ...base,
+      id: 'audit-requested',
+      action: 'CONSENT_REQUESTED',
+      actingSub: 'cognito-sub-admin',
+      actingEmail: 'admin@example.org',
+      changes: { kind: 'snapshot', values: { requestId: 'req-1', recipientEmail: 'asha@example.com' } },
+    };
+    mockGetActorHistory.mockResolvedValue({ data: [entry], page: 1, pageSize: 20, total: 1 });
+    renderPanel();
+
+    const button = await screen.findByRole('button', { name: /consent request sent/i });
+    expect(screen.queryByRole('button', { name: 'Snapshot' })).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(screen.getByText('asha@example.com')).toBeInTheDocument();
+    expect(screen.getByText('admin@example.org')).toBeInTheDocument();
+  });
+
+  it('still shows an admin author as their email', async () => {
+    const entry: AuditEntry = {
+      ...base,
+      id: 'audit-doc',
+      action: 'CONSENT_DOCUMENT_UPLOADED',
+      actingSub: 'cognito-sub-admin',
+      actingEmail: 'admin@example.org',
+      changes: { kind: 'snapshot', values: { fileName: 'signed-form.pdf' } },
+    };
+    mockGetActorHistory.mockResolvedValue({ data: [entry], page: 1, pageSize: 20, total: 1 });
+    renderPanel();
+
+    expect(await screen.findByText('admin@example.org')).toBeInTheDocument();
+    expect(screen.queryByText('Consent link (actor)')).not.toBeInTheDocument();
   });
 });

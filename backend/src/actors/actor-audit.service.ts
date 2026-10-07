@@ -18,6 +18,8 @@ import { Injectable } from '@nestjs/common';
 import {
   ActorAuditAction,
   ActorAuditLog,
+  ConsentDocument,
+  ConsentRequest,
   Prisma,
   Registration,
 } from '@prisma/client';
@@ -100,6 +102,29 @@ const DECIMAL_FIELDS: readonly AuditableField[] = [
  * field set — mirrors why `DECIMAL_FIELDS` is compared as strings.
  */
 const DATE_FIELDS: readonly AuditableField[] = ['consentObtainedAt'] as const;
+
+/**
+ * actors/consent-intake/consent-request-email T-5 (DD-6) — the author a
+ * consent-link response is credited to in the activity trail. The first
+ * non-admin `actingSub`; never a Cognito `sub`.
+ */
+export const CONSENT_LINK_ACTING_SUB = 'consent-link';
+
+/** The four actor fields `ConsentPublicService.respond` can write. */
+const CONSENT_RESPONSE_FIELDS = [
+  'consentStatus',
+  'consentMethod',
+  'consentObtainedAt',
+  'consentReference',
+] as const satisfies readonly AuditableField[];
+
+/** Before/after values of {@link CONSENT_RESPONSE_FIELDS} for one actor. */
+export interface ConsentFieldsSnapshot {
+  consentStatus: string;
+  consentMethod: string;
+  consentObtainedAt: Date | string | null;
+  consentReference: string | null;
+}
 
 /** Full-snapshot envelope. */
 interface SnapshotEnvelope {
@@ -522,6 +547,140 @@ export class ActorAuditService {
             reference: registration.reference,
             traderName,
             reason: registration.rejectionReason ?? null,
+          },
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-4 — record a
+   * `CONSENT_REQUESTED` audit entry (FR-13, design.md §5.2 step 2.6, §7.1).
+   *
+   * The acting identity is the admin who originally ENQUEUED the request —
+   * snapshotted onto the `ConsentRequest` row at enqueue time
+   * (`requestedBySub`/`requestedByEmail`) — never whichever admin (or none)
+   * happens to be driving the dispatch step that actually sends it: a queue
+   * is commonly resumed by a different admin, or by the resume banner with
+   * no admin "doing" anything new, and crediting that resumer as the sender
+   * would misattribute who actually asked. `changes` is a minimal snapshot
+   * naming only the request id and the address it was sent to — the data an
+   * auditor needs to correlate this trail entry with the Consent evidence
+   * panel (T-6), nothing more.
+   */
+  async logConsentRequested(
+    tx: Prisma.TransactionClient,
+    request: Pick<
+      ConsentRequest,
+      'id' | 'actorId' | 'traderId' | 'traderName' | 'recipientEmail' | 'requestedBySub' | 'requestedByEmail'
+    >,
+  ): Promise<ActorAuditLog> {
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: request.actorId,
+        traderId: request.traderId,
+        traderName: request.traderName,
+        action: ActorAuditAction.CONSENT_REQUESTED,
+        actingSub: request.requestedBySub,
+        actingEmail: request.requestedByEmail ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: { requestId: request.id, recipientEmail: request.recipientEmail },
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-5 — record a
+   * `CONSENT_RESPONDED` audit entry (FR-10, FR-13, design.md §5.4 step 4, DD-6).
+   *
+   * The author is the SENTINEL `consent-link` (`CONSENT_LINK_ACTING_SUB`), not
+   * an admin: the first non-admin identity the trail carries. `actingEmail`
+   * is always `null`. The respondent's name, email, phone, IP and user agent
+   * live ONLY on the `ConsentRequest` evidence row (NFR-9) — none of them is
+   * copied here, and no token is ever in scope of this method.
+   *
+   * `changes` is a field-level diff over the four consent fields `respond`
+   * can write (`consentStatus`, and on Accept `consentMethod`,
+   * `consentObtainedAt`, `consentReference`), plus the request id so an
+   * auditor can correlate the row with the Consent evidence panel. A
+   * decline therefore names `consentStatus` alone; an accept names all four
+   * that actually moved. Identity columns come from the request's own
+   * enqueue-time snapshot (like `logConsentRequested`).
+   */
+  async logConsentResponded(
+    tx: Prisma.TransactionClient,
+    input: {
+      request: Pick<ConsentRequest, 'id' | 'actorId' | 'traderId' | 'traderName'>;
+      before: ConsentFieldsSnapshot;
+      after: ConsentFieldsSnapshot;
+    },
+  ): Promise<ActorAuditLog> {
+    const fields: Record<string, { from: unknown; to: unknown }> = {};
+    for (const field of CONSENT_RESPONSE_FIELDS) {
+      const from = this.serializeValue(field, input.before[field]);
+      const to = this.serializeValue(field, input.after[field]);
+      if (!this.valuesEqual(from, to)) {
+        fields[field] = { from, to };
+      }
+    }
+
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: input.request.actorId,
+        traderId: input.request.traderId,
+        traderName: input.request.traderName,
+        action: ActorAuditAction.CONSENT_RESPONDED,
+        actingSub: CONSENT_LINK_ACTING_SUB,
+        actingEmail: null,
+        changes: {
+          kind: 'diff',
+          fields,
+          requestId: input.request.id,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * actors/consent-intake/consent-request-email T-7 — record a
+   * `CONSENT_DOCUMENT_UPLOADED` audit entry (FR-13, design.md §5.6).
+   *
+   * Written at CONFIRM, never at `upload-url`, so a half-uploaded file leaves
+   * no trail entry. `actorId` / `traderId` / `traderName` come from the
+   * document row's own upload-time snapshot (P-28), so the entry is still
+   * written when the actor was deleted between `upload-url` and `confirm`.
+   * The author is the admin who CONFIRMED. `changes` names the document and
+   * its declared file facts only; it never touches the actor's consent fields,
+   * because an upload does not change them (FR-15 "no gate bypass").
+   */
+  async logConsentDocumentUploaded(
+    tx: Prisma.TransactionClient,
+    input: {
+      document: Pick<
+        ConsentDocument,
+        'id' | 'actorId' | 'traderId' | 'traderName' | 'fileName' | 'contentType' | 'sizeBytes'
+      >;
+      acting: ActingAdmin;
+    },
+  ): Promise<ActorAuditLog> {
+    const { document, acting } = input;
+    return tx.actorAuditLog.create({
+      data: {
+        actorId: document.actorId,
+        traderId: document.traderId,
+        traderName: document.traderName,
+        action: ActorAuditAction.CONSENT_DOCUMENT_UPLOADED,
+        actingSub: acting.sub,
+        actingEmail: acting.email ?? null,
+        changes: {
+          kind: 'snapshot',
+          values: {
+            documentId: document.id,
+            fileName: document.fileName,
+            contentType: document.contentType,
+            sizeBytes: document.sizeBytes,
           },
         } as unknown as Prisma.InputJsonValue,
       },
