@@ -65,6 +65,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ROLES } from '@/lib/content/roles';
+import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { REGIONS } from '@/lib/content/regions';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
@@ -136,7 +137,8 @@ const AUTOCOMPLETE_HINTS: Partial<Record<keyof FormValues, string>> = {
 /** Human labels for the error summary — keyed identically to `FormValues`/`errors`. */
 const FIELD_LABELS: Record<keyof FormValues, string> = {
   traderName: 'Organisation name',
-  traderType: 'Trader type',
+  traderType: 'Main actor type',
+  additionalTraderTypes: 'Other actor types',
   contactPerson: 'Contact person',
   position: 'Position',
   district: 'District',
@@ -164,6 +166,7 @@ const FIELD_LABELS: Record<keyof FormValues, string> = {
 export interface FormValues {
   traderName: string;
   traderType: string;
+  additionalTraderTypes: string[];
   contactPerson: string;
   position: string;
   district: string;
@@ -209,6 +212,7 @@ export interface FormValues {
 export interface RegistrationPayloadInput {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[];
   contactPerson: string;
   position?: string;
   district?: string;
@@ -292,6 +296,7 @@ function toFormValues(restored?: FormValues): FormValues {
   const blank: FormValues = {
     traderName: '',
     traderType: '',
+    additionalTraderTypes: [],
     contactPerson: '',
     position: '',
     district: '',
@@ -314,6 +319,7 @@ function toFormValues(restored?: FormValues): FormValues {
   return {
     ...blank,
     ...restored,
+    additionalTraderTypes: restored?.additionalTraderTypes ?? [],
     consentAccepted: false,
     consentPolicyVersion: '',
   };
@@ -350,6 +356,7 @@ function buildPayload(values: FormValues): RegistrationPayloadInput {
   return {
     traderName: values.traderName.trim(),
     traderType: values.traderType,
+    additionalTraderTypes: values.additionalTraderTypes.length > 0 ? values.additionalTraderTypes : undefined,
     contactPerson: values.contactPerson.trim(),
     position: trimmedOrUndefined(values.position),
     district: trimmedOrUndefined(values.district),
@@ -382,7 +389,7 @@ function validate(values: FormValues): Record<string, string> {
     errors.traderName = `Must be ${MAX_LENGTHS.traderName} characters or fewer.`;
   }
 
-  if (!values.traderType) errors.traderType = 'Select a trader type.';
+  if (!values.traderType) errors.traderType = 'Select a main actor type.';
 
   if (!values.contactPerson.trim()) {
     errors.contactPerson = 'Contact person is required.';
@@ -555,7 +562,14 @@ export default function RegistrationForm({
   const fieldId = useCallback((field: keyof FormValues) => `${baseId}-${field}`, [baseId]);
 
   const setField = useCallback(<K extends keyof FormValues>(field: K, value: FormValues[K]) => {
-    setValues((prev) => ({ ...prev, [field]: value }));
+    setValues((prev) => ({
+      ...prev,
+      [field]: value,
+      // Picking a main type that was ticked as "other" drops it from the set.
+      ...(field === 'traderType'
+        ? { additionalTraderTypes: prev.additionalTraderTypes.filter((t) => t !== value) }
+        : {}),
+    }));
     setErrors((prev) => {
       if (!prev[field]) return prev;
       const next = { ...prev };
@@ -575,6 +589,21 @@ export default function RegistrationForm({
       if (!prev.crops) return prev;
       const next = { ...prev };
       delete next.crops;
+      return next;
+    });
+  }, []);
+
+  const toggleAdditionalType = useCallback((type: string) => {
+    setValues((prev) => ({
+      ...prev,
+      additionalTraderTypes: prev.additionalTraderTypes.includes(type)
+        ? prev.additionalTraderTypes.filter((t) => t !== type)
+        : [...prev.additionalTraderTypes, type],
+    }));
+    setErrors((prev) => {
+      if (!prev.additionalTraderTypes) return prev;
+      const next = { ...prev };
+      delete next.additionalTraderTypes;
       return next;
     });
   }, []);
@@ -761,10 +790,21 @@ export default function RegistrationForm({
             {renderInput('traderName', 'Organisation name', 'text', true)}
             {renderSelect(
               'traderType',
-              'Trader type',
+              'Main actor type',
               Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
               true,
             )}
+            <div className="lg:col-span-2">
+              <AdditionalTypesField
+                baseId={baseId}
+                groupId={fieldId('additionalTraderTypes')}
+                mainType={values.traderType}
+                selected={values.additionalTraderTypes}
+                onToggle={toggleAdditionalType}
+                disabled={submitting}
+                error={errors.additionalTraderTypes}
+              />
+            </div>
           </div>
         </fieldset>
       </div>

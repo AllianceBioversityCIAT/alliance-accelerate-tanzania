@@ -75,6 +75,7 @@ const LIST_ROW: AdminRegistrationListRow = {
   reference: 'REG-2026-0184',
   applicant: 'Mbeya Seeds Ltd',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   region: 'Mbeya',
   submittedAt: '2026-08-20T09:00:00.000Z',
   status: 'PENDING_REVIEW',
@@ -95,6 +96,7 @@ const ADMIN_ACTOR: AdminActor = {
   region: 'Mbeya',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   contactPerson: 'Jane Mwangi',
   sex: 'female',
   position: 'Manager',
@@ -183,6 +185,7 @@ const DETAIL_RESPONSE: AdminRegistrationDetail = {
   payload: {
     traderName: 'Mbeya Seeds Ltd',
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     contactPerson: 'Jane Mwangi',
     position: 'Manager',
     district: 'Mbeya Urban',

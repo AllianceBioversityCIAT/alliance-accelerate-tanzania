@@ -109,6 +109,7 @@ const ADMIN_ACTOR: AdminActor = {
   region: 'Mbeya',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   sex: 'F',
   position: 'Manager',
   marketLocation: 'Mbeya Central Market',
@@ -195,7 +196,7 @@ async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: str
 async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'Iringa Cooperative' } });
   await selectRegion(user, 'Iringa');
-  fireEvent.change(screen.getByLabelText(/trader type/i), { target: { value: 'cooperative' } });
+  fireEvent.change(screen.getByLabelText(/main actor type/i), { target: { value: 'cooperative' } });
   fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'UNKNOWN' } });
   fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Asha Mwinyi' } });
   fireEvent.click(screen.getByLabelText('Sorghum'));
@@ -264,7 +265,7 @@ describe('ActorForm — rendering', () => {
     expect(screen.getByLabelText(/trader id/i)).toHaveValue(ADMIN_ACTOR.traderId);
     expect(screen.getByLabelText(/trader name/i)).toHaveValue(ADMIN_ACTOR.traderName);
     expect(screen.getByLabelText(/region/i)).toHaveValue(ADMIN_ACTOR.region);
-    expect(screen.getByLabelText(/trader type/i)).toHaveValue(ADMIN_ACTOR.traderType);
+    expect(screen.getByLabelText(/main actor type/i)).toHaveValue(ADMIN_ACTOR.traderType);
     expect(screen.getByLabelText(/sex/i)).toHaveValue(ADMIN_ACTOR.sex);
     expect(screen.getByLabelText(/position/i)).toHaveValue(ADMIN_ACTOR.position);
     expect(screen.getByLabelText(/district/i)).toHaveValue(ADMIN_ACTOR.district);
@@ -300,7 +301,7 @@ describe('ActorForm — client validation', () => {
 
     expect(getFieldError(/trader name/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/region/i)?.textContent).toMatch(/required/i);
-    expect(getFieldError(/trader type/i)?.textContent).toMatch(/required/i);
+    expect(getFieldError(/main actor type/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/consent status/i)?.textContent).toMatch(/required/i);
   });
 
@@ -1683,5 +1684,61 @@ describe('ActorForm — the optional consent document on create (FR-15)', () => 
     submitForm();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
     expect(onSuccess).toHaveBeenCalledWith(CREATE_RESULT, { documentFile: file });
+  });
+});
+
+describe('ActorForm — other actor types', () => {
+  it('excludes the main type and unchecks it when it becomes the main type', () => {
+    renderForm();
+    const main = screen.getByLabelText(/main actor type/i);
+    fireEvent.change(main, { target: { value: 'ngo' } });
+    expect(screen.queryByRole('checkbox', { name: 'NGO' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Offtaker' }));
+    fireEvent.change(main, { target: { value: 'offtaker' } });
+    expect(screen.queryByRole('checkbox', { name: 'Offtaker' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'NGO' })).not.toBeChecked();
+  });
+
+  it('create sends the chosen set', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'NGO' }));
+    submitForm();
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(createActor).mock.calls[0][0]).toMatchObject({
+      traderType: 'cooperative',
+      additionalTraderTypes: ['ngo'],
+    });
+  });
+
+  it('edit prefills the set and replaces it on save, keeping expectedUpdatedAt', async () => {
+    jest.mocked(updateActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm({
+      mode: 'edit',
+      initialValues: { ...ADMIN_ACTOR, additionalTraderTypes: ['ngo'] },
+    });
+    expect(screen.getByRole('checkbox', { name: 'NGO' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'NGO' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bulk Buyer' }));
+    submitForm();
+    await waitFor(() => expect(updateActor).toHaveBeenCalled());
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto.additionalTraderTypes).toEqual(['bulk_buyer']);
+    expect(dto.expectedUpdatedAt).toBe(ADMIN_ACTOR.updatedAt);
+  });
+
+  it('maps a 400 detail on additionalTraderTypes to the field', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(400, 'Validation failed', [
+        { field: 'additionalTraderTypes', message: 'Must not include the main type' },
+      ]),
+    );
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+    expect(await screen.findByText('Must not include the main type')).toBeInTheDocument();
   });
 });

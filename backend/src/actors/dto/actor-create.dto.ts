@@ -14,6 +14,7 @@ import { Transform } from 'class-transformer';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
+import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
 
 /**
@@ -66,6 +67,10 @@ export class ActorCreateDto {
   @IsString()
   @IsIn(TRADER_TYPES as readonly string[])
   traderType!: string;
+
+  /** Optional extra actor types from the same taxonomy; never the main type. */
+  @IsAdditionalTraderTypes()
+  additionalTraderTypes?: string[];
 
   /**
    * Named natural person, published deliberately once consent is `GRANTED`

@@ -67,3 +67,22 @@ export function roleLabel(type: TraderType): string {
 export function roleColorToken(type: TraderType): string {
   return ROLES[type]?.colorToken ?? 'muted';
 }
+
+/** Labels of an actor's additional types, in the order given (taxonomy order from the API). */
+export function additionalRoleLabels(types: readonly string[] | undefined): string[] {
+  return (types ?? []).map((t) => roleLabel(t as TraderType));
+}
+
+/**
+ * Compact type text for tables: "Seed Company +2", with the full list as `title`.
+ * Main type first; no suffix when there are no additional types.
+ */
+export function roleSummary(
+  main: string,
+  additional: readonly string[] | undefined,
+): { text: string; title: string } {
+  const mainLabel = roleLabel(main as TraderType);
+  const extra = additionalRoleLabels(additional);
+  if (extra.length === 0) return { text: mainLabel, title: mainLabel };
+  return { text: `${mainLabel} +${extra.length}`, title: [mainLabel, ...extra].join(', ') };
+}

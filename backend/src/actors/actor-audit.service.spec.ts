@@ -32,6 +32,7 @@ function fixtureActor(overrides: Partial<AdminActor> = {}): AdminActor {
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     contactPerson: null,
     sex: 'M',
     position: 'Director',

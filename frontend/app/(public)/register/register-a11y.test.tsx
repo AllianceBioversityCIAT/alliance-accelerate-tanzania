@@ -128,7 +128,7 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
-  fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
+  fireEvent.change(screen.getByLabelText(/^main actor type/i), { target: { value: 'seed_company' } });
   await selectRegion(user, 'Arusha');
   fireEvent.click(screen.getByLabelText(/^sorghum/i));
   fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
@@ -243,7 +243,7 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     // engine; this asserts individual reachability, not the browser's order).
     const focusables = [
       screen.getByLabelText(/organisation name/i),
-      screen.getByLabelText(/^trader type/i),
+      screen.getByLabelText(/^main actor type/i),
       screen.getByLabelText(/^region/i),
       screen.getByLabelText(/^sorghum/i),
       screen.getByLabelText(/capacity \(tons\)/i),
@@ -273,7 +273,7 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     // regresses.
     for (const name of [
       /organisation name/i,
-      /^trader type/i,
+      /^main actor type/i,
       /^region/i,
       /district/i,
       /market location/i,

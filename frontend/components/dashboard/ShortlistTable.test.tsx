@@ -30,6 +30,7 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     region: 'Dodoma',
     district: 'Kondoa',
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     capacityTons: 200,
     crops: ['sorghum', 'common_bean'],
     gps: null,
@@ -280,5 +281,16 @@ describe('ShortlistTable — empty state', () => {
     expect(() =>
       render(<ShortlistTable actors={[]} filters={FULL_FILTERS} />),
     ).not.toThrow();
+  });
+});
+
+describe('ShortlistTable — additional types', () => {
+  it('shows the main type with +N and the full list as title', () => {
+    const actor = makeActor({ traderType: 'cooperative', additionalTraderTypes: ['offtaker'] });
+    render(<ShortlistTable actors={[actor]} filters={EMPTY_FILTERS} />);
+    const visible = screen.getByText('Cooperative +1');
+    expect(visible.parentElement).toHaveAttribute('title', 'Cooperative, Offtaker');
+    expect(visible.nextElementSibling).toHaveClass('sr-only');
+    expect(visible.nextElementSibling).toHaveTextContent('Cooperative, Offtaker');
   });
 });

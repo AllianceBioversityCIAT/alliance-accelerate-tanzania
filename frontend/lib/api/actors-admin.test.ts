@@ -64,6 +64,7 @@ const ADMIN_ACTOR: AdminActor = {
   region: 'Mbeya',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   contactPerson: 'Grace Mwangi',
   sex: 'female',
   position: 'manager',

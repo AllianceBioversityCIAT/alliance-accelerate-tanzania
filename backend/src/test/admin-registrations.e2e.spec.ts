@@ -469,9 +469,9 @@ describe('Admin registrations approve e2e (HTTP + in-memory Prisma) — T-8, FR-
  * `AppModule`, the real guard stack, the real
  * `AdminRegistrationsService.list` → `toAdminRegistrationListRow`
  * projection, driven with supertest — asserting the response carries
- * EXACTLY the eight-key list projection (`id` plus the seven fields FR-9
+ * EXACTLY the nine-key list projection (`id` plus the seven fields FR-9
  * scenario 1 names: `reference`, `applicant`, `traderType`, `region`,
- * `submittedAt`, `status`, `duplicateCandidateCount`), and that the raw
+ * `submittedAt`, `status`, `duplicateCandidateCount`, plus `additionalTraderTypes`), and that the raw
  * wire body (`res.text`) carries none of the fixture's non-projected PII
  * VALUES — never merely their absent key names, matching this file's own
  * "row isolation" test's value-sweep convention above.
@@ -512,7 +512,7 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
 
   it(
     'an authenticated Admin GET /admin/registrations 200s with a well-formed body carrying ' +
-      'ONLY the eight-key list projection, and neither submitterEmail, payload PII beyond that ' +
+      'ONLY the nine-key list projection, and neither submitterEmail, payload PII beyond that ' +
       'projection, nor duplicateDismissals reaches the wire (A-53)',
     async () => {
       const res = await request(app.getHttpServer())
@@ -529,6 +529,7 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
           'reference',
           'applicant',
           'traderType',
+          'additionalTraderTypes',
           'region',
           'submittedAt',
           'status',

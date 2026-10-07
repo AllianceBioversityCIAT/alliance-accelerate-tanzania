@@ -90,7 +90,8 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     if (actor.region && actor.region.trim() !== '') {
       regionSet.add(actor.region);
     }
-    typeSet.add(actor.traderType);
+    const types = [actor.traderType, ...(actor.additionalTraderTypes ?? [])];
+    for (const t of types) typeSet.add(t);
 
     // --- Capacity reporting subset ---
     if (isReporting(actor.capacityTons)) {
@@ -100,7 +101,8 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     }
 
     // --- byType (all actors) ---
-    typeCount.set(actor.traderType, (typeCount.get(actor.traderType) ?? 0) + 1);
+    // Main + additional types count equally, so bars can sum above the total.
+    for (const t of types) typeCount.set(t, (typeCount.get(t) ?? 0) + 1);
 
     // --- byCrop (all actors, multi-crop) ---
     for (const crop of actor.crops) {

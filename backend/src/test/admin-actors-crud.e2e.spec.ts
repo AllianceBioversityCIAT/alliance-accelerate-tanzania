@@ -278,6 +278,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   let actors = initialActors.map((a) => ({ ...a }));
   let auditLog: Record<string, unknown>[] = [];
   let cropLinks: Array<{ actorId: string; cropId: string }> = [];
+  let additionalTypeRows: Array<{ actorId: string; traderType: string }> = [];
 
   // Seed initial crop links from the fixture crops arrays.
   for (const actor of actors) {
@@ -370,6 +371,9 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   ): Record<string, unknown> | null {
     if (!actor) return null;
     if (!include?.crops) return actor;
+    const additionalTypes = additionalTypeRows
+      .filter((row) => row.actorId === actor.id)
+      .map((row) => ({ actorId: row.actorId, traderType: row.traderType }));
 
     const links = cropLinks
       .filter((link) => link.actorId === actor.id)
@@ -377,7 +381,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
         const crop = CROPS_CATALOG.find((c) => c.id === link.cropId);
         return { actorId: actor.id, cropId: link.cropId, crop };
       });
-    return { ...actor, crops: links };
+    return { ...actor, crops: links, additionalTypes };
   }
 
   function applyOrderBy(
@@ -481,7 +485,15 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
       }) => {
         const idx = actors.findIndex((a) => a.id === args.where.id);
         if (idx === -1) throwUniqueViolation(['id']);
-        actors[idx] = { ...actors[idx], ...args.data, updatedAt: new Date() };
+        // Nested relation write: replace this actor's additional types.
+        const { additionalTypes, ...scalars } = args.data as Record<string, any>;
+        if (additionalTypes) {
+          additionalTypeRows = additionalTypeRows.filter((row) => row.actorId !== args.where.id);
+          for (const c of additionalTypes.create ?? []) {
+            additionalTypeRows.push({ actorId: args.where.id, traderType: c.traderType });
+          }
+        }
+        actors[idx] = { ...actors[idx], ...scalars, updatedAt: new Date() };
         return actors[idx];
       },
     ),
@@ -518,6 +530,15 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
       }
       return { count: before - actors.length };
     }),
+  };
+
+  const actorAdditionalType = {
+    createMany: jest.fn(
+      async (args: { data: Array<{ actorId: string; traderType: string }> }) => {
+        additionalTypeRows.push(...args.data);
+        return { count: args.data.length };
+      },
+    ),
   };
 
   const cropsOnActors = {
@@ -622,6 +643,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
   const tx = {
     actor,
     cropsOnActors,
+    actorAdditionalType,
     crop,
     actorAuditLog,
     consentRequest: consentRequestMock.consentRequest,
@@ -640,6 +662,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     actors = initialActors.map((a) => ({ ...a }));
     auditLog = [];
     cropLinks = [];
+    additionalTypeRows = [];
     actorSeq = 0;
     auditSeq = 0;
     actorSequence.reset();
@@ -1577,6 +1600,77 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
   // field into the write, not just that the DTO validates it or the 201/200
   // echoes it back. Disqualifier: submitting a contactPerson and reading
   // back null.
+  describe('Additional actor types', () => {
+    it('round-trips on create, replaces on update, leaves untouched when omitted', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), additionalTraderTypes: ['offtaker', 'ngo'] })
+        .expect(201);
+      expect(createRes.body.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
+      const id = createRes.body.id;
+
+      const untouched = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ district: 'Meru' })
+        .expect(200);
+      expect(untouched.body.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
+
+      const replaced = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ additionalTraderTypes: ['cooperative'] })
+        .expect(200);
+      expect(replaced.body.additionalTraderTypes).toEqual(['cooperative']);
+
+      const cleared = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ additionalTraderTypes: [] })
+        .expect(200);
+      expect(cleared.body.additionalTraderTypes).toEqual([]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ additionalTraderTypes: null })
+        .expect(400);
+    });
+
+    it.each([
+      ['contains the main type', ['seed_company']],
+      ['contains an unknown value', ['banana']],
+      ['has duplicates', ['ngo', 'ngo']],
+    ])('400s on additionalTraderTypes when it %s', async (_label, value) => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), additionalTraderTypes: value })
+        .expect(400);
+      const fields = (res.body.details ?? []).map((d: { field: string }) => d.field);
+      expect(fields).toContain('additionalTraderTypes');
+    });
+
+    it('400s on update when the new main type is already an additional type', async () => {
+      const id = (
+        await request(app.getHttpServer())
+          .post('/api/v1/admin/actors')
+          .set(admin)
+          .send({ ...validCreatePayload(), additionalTraderTypes: ['ngo'] })
+          .expect(201)
+      ).body.id;
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/actors/${id}`)
+        .set(admin)
+        .send({ traderType: 'ngo' })
+        .expect(400);
+      const fields = (res.body.details ?? []).map((d: { field: string }) => d.field);
+      expect(fields).toContain('additionalTraderTypes');
+    });
+  });
+
   describe('Contact person and other crops (FR-4)', () => {
     it('round-trips both fields on create — write then read back', async () => {
       const payload = {

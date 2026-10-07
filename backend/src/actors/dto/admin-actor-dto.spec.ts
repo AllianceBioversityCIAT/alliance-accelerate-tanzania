@@ -188,6 +188,43 @@ describe('AdminActorCreateDto', () => {
   });
 });
 
+describe('additionalTraderTypes validation', () => {
+  const validInput = validActorInput({ consentStatus: ConsentStatus.UNKNOWN });
+  const create = (additionalTraderTypes: unknown) =>
+    plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      additionalTraderTypes,
+    });
+
+  it('is optional; accepts distinct taxonomy members, including []', async () => {
+    expect(await validate(create(undefined))).toHaveLength(0);
+    expect(await validate(create([]))).toHaveLength(0);
+    expect(await validate(create(['ngo', 'cooperative']))).toHaveLength(0);
+  });
+
+  it.each([
+    ['the main traderType', () => [validInput.traderType]],
+    ['an unknown value', () => ['banana']],
+    ['duplicates', () => ['ngo', 'ngo']],
+    ['a non-array', () => 'ngo'],
+    ['more entries than the taxonomy allows', () => Array(10).fill('ngo')],
+  ])('rejects %s', async (_label, value) => {
+    expect(await invalidProps(create(value()))).toContain('additionalTraderTypes');
+  });
+
+  it('the update DTO inherits the rule when traderType is in the same patch', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      traderType: 'ngo',
+      additionalTraderTypes: ['ngo'],
+    });
+    expect(await invalidProps(dto)).toContain('additionalTraderTypes');
+    expect(
+      await validate(plainToInstance(AdminActorUpdateDto, { additionalTraderTypes: ['ngo'] })),
+    ).toHaveLength(0);
+  });
+});
+
 describe('AdminActorUpdateDto', () => {
   it('passes a valid partial update with a single field', async () => {
     const dto = plainToInstance(AdminActorUpdateDto, {

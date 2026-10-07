@@ -1,4 +1,5 @@
 import { RegistrationStatus } from '@prisma/client';
+import { sortTraderTypes } from '../../common/additional-types';
 import { DuplicateCandidate } from '../duplicate-detection.service';
 import {
   ActivityTrailEvent,
@@ -38,6 +39,8 @@ import {
 export interface AdminRegistrationPayload {
   traderName: string;
   traderType: string;
+  /** `[]` for payloads queued before the field existed. */
+  additionalTraderTypes: string[];
   /** Persisted to `Actor.contactPerson` on approval; published to `Public` once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string;
   position: string | null;
@@ -99,6 +102,7 @@ export interface AdminRegistrationDetail {
 interface RawRegistrationPayload {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[] | null;
   contactPerson: string;
   position?: string | null;
   district?: string | null;
@@ -136,6 +140,7 @@ function toAdminRegistrationPayload(raw: RawRegistrationPayload): AdminRegistrat
   return {
     traderName: raw.traderName,
     traderType: raw.traderType,
+    additionalTraderTypes: sortTraderTypes(raw.additionalTraderTypes),
     contactPerson: raw.contactPerson,
     position: raw.position ?? null,
     district: raw.district ?? null,

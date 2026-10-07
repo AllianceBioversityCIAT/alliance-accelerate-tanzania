@@ -127,7 +127,15 @@ describe('ActorsService (mocked Prisma)', () => {
       expect(where).toMatchObject({
         consentStatus: ConsentStatus.GRANTED,
         region: 'Arusha',
-        traderType: 'seed_company', // role → traderType
+        // role → main type OR among the additional types
+        AND: [
+          {
+            OR: [
+              { traderType: 'seed_company' },
+              { additionalTypes: { some: { traderType: 'seed_company' } } },
+            ],
+          },
+        ],
         crops: { some: { crop: { name: 'sorghum' } } },
       });
     });
@@ -209,7 +217,14 @@ describe('ActorsService (mocked Prisma)', () => {
       expect(where).toMatchObject({
         consentStatus: ConsentStatus.GRANTED,
         region: 'Arusha',
-        traderType: 'seed_company',
+        AND: [
+          {
+            OR: [
+              { traderType: 'seed_company' },
+              { additionalTypes: { some: { traderType: 'seed_company' } } },
+            ],
+          },
+        ],
         crops: { some: { crop: { name: 'sorghum' } } },
         OR: [
           { traderName: { contains: 'seed' } },
@@ -250,7 +265,7 @@ describe('ActorsService (mocked Prisma)', () => {
       await service.findPublic({} as ListQueryDto);
 
       const include = prisma.actor.findMany.mock.calls[0][0].include;
-      expect(include).toEqual({ crops: { include: { crop: true } } });
+      expect(include).toEqual({ crops: { include: { crop: true } }, additionalTypes: true });
     });
 
     it('maps page/pageSize to skip/take and echoes them with total', async () => {

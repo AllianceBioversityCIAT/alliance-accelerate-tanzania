@@ -19,6 +19,7 @@ import {
   registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 import { CROP_NAMES } from '../../actors/dto/admin-actor-create.dto';
 
@@ -138,6 +139,9 @@ export class RegistrationPayloadDto {
   @IsString()
   @IsIn(TRADER_TYPES as readonly string[])
   traderType!: string;
+
+  @IsAdditionalTraderTypes()
+  additionalTraderTypes?: string[];
 
   /**
    * Published on approval (`actors/public-profile-disclosure` FR-4,

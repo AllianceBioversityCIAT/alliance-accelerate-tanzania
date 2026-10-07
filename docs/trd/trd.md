@@ -74,7 +74,7 @@ Canonical **Actor** entity derived from the existing field dataset. The "CSV hea
 | `Trader_name` | `traderName` | `String` | Required. Indexed for search. |
 | `Region` | `region` | `String` | Indexed (filter + search). |
 | `District` | `district` | `String?` | |
-| `Trader/processor type` | `traderType` | `String` | Indexed (map filter). Consider enum once values are normalized. |
+| `Trader/processor type` | `traderType` | `String` | The actor's **main** type; required, indexed (map filter), drives the single-valued map marker colour. Consider enum once values are normalized. An actor may also carry **additional types** from the same taxonomy (`ActorAdditionalType`, below). |
 | `Sex` | `sex` | `String?` | Normalize to `M`/`F`/`Other`/null. |
 | `Position` | `position` | `String?` | |
 | `Market location` | `marketLocation` | `String?` | |
@@ -125,6 +125,7 @@ model Actor {
   gpsAccuracy      Decimal? @db.Decimal(10, 2)
   consentStatus    ConsentStatus @default(UNKNOWN)  // public API returns GRANTED only
   crops            CropsOnActors[]
+  additionalTypes  ActorAdditionalType[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -132,6 +133,14 @@ model Actor {
   @@index([traderType])
   @@index([consentStatus])
   @@index([traderName])
+}
+
+model ActorAdditionalType {
+  actor      Actor  @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actorId    String
+  traderType String   // same taxonomy as Actor.traderType; never equal to the actor's own main type
+  @@id([actorId, traderType])
+  @@index([traderType])
 }
 
 model Crop {
@@ -148,6 +157,8 @@ model CropsOnActors {
   @@id([actorId, cropId])
 }
 ```
+
+**Additional actor types** (`enhancement/actor-multiple-types`). `traderType` stays the required main type; `ActorAdditionalType` holds zero or more extra types from the same taxonomy (`TRADER_TYPES`), exposed as `additionalTraderTypes: string[]` (always an array, sorted in taxonomy order) on the public list/detail, admin actor and admin registration shapes — it is not PII. Registration payloads carry the same key (absent in older queued payloads, read as `[]`); approval copies it onto the actor. Every type filter (`role`/`traderType` on the public list, the admin actor list and its consent bulk-send "all matching" target, the registration queue) matches **main type OR any additional type**, and the home-page `actorTypes` metric counts distinct types across both. Admin `PATCH` replaces the set when `additionalTraderTypes` is supplied and leaves it unchanged when omitted; the main type may not appear in it (`400`, field `additionalTraderTypes`).
 
 **Disclosure set (single source of truth, revised by `actors/public-profile-disclosure`):** consent (`consentStatus = GRANTED`) gates disclosure of every field an actor supplied, not field identity. Four constants in `src/common/pii-consent.policy.ts` carry the policy: `PUBLICLY_DISCLOSED_FIELDS` (`phone`, `email`, `sex`, `position`, `marketLocation`, `contactPerson`, `otherCrops`) — a *presence* set, required on the single-actor detail read (`GET /api/v1/actors/:id`) for a `GRANTED` actor; `CONTACT_BLOCK_FIELDS` (`phone`, `email`, `position`, `marketLocation`, `contactPerson`) — its subset, an *absence* set on the list read (`GET /api/v1/actors`), by key and by value, under every filter/page/page-size; `NEVER_PUBLIC_FIELDS` — an absence set on **every** public path regardless of consent, now including `technicalSupport` (unreviewed staff-authored free text, not an actor PII declaration) alongside `traderId`, `gpsAltitude`/`gpsAccuracy`, and the registration-provenance columns; and `PII_ALLOWLIST` — retained, **empty**, as the one-file re-restriction point should legal narrow disclosure again. Any new PII-adjacent field is classified in this module (and only there); the role-aware serializer's two projections (`toPublicListItem`, `toPublicDetail`) build public output by explicit allowlist, so the implemented set is exactly what this module declares. Exact GPS (`gpsLatitude`/`gpsLongitude`) is additionally **consent-gated**: it is surfaced only for `GRANTED` actors and withheld (`gps: null`) for non-`GRANTED`, on both list and detail.
 
@@ -185,7 +196,7 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 | Method & path | Auth | Description |
 |---|---|---|
 | `GET /api/v1/metrics` | Public | Landing-page aggregates. |
-| `GET /api/v1/actors` | Public | Paginated/filterable list (`q`, `region`, `crop`, `traderType`, `capacityMin/Max`). Returns the **list set** only — `CONTACT_BLOCK_FIELDS` (`phone`, `email`, `contactPerson`, `position`, `marketLocation`) never appear here, for any actor, under any filter or page size — this is the bulk-exposure boundary the map/dashboard/CSV inherit. |
+| `GET /api/v1/actors` | Public | Paginated/filterable list (`q`, `region`, `crop`, `traderType`, `capacityMin/Max`); the type filter matches an actor's main type or any additional type. Returns the **list set** only — `CONTACT_BLOCK_FIELDS` (`phone`, `email`, `contactPerson`, `position`, `marketLocation`) never appear here, for any actor, under any filter or page size — this is the bulk-exposure boundary the map/dashboard/CSV inherit. |
 | `GET /api/v1/actors/:id` | Public | Single actor. For a `GRANTED` actor, returns the full **published set** including the contact block — the only public path **by actor id** that does (the other single-actor read, `POST /consent/view`, is keyed by token — see below). Non-`GRANTED` → `404`, indistinguishable from a missing id. |
 | `GET /api/v1/admin/actors` | Admin | Paginated list of all actors (any consent status), full record, with PII and consent filters. |
 | `GET /api/v1/admin/actors/:id` | Admin | Single actor, full record, for edit. |
@@ -200,7 +211,7 @@ REST, JSON, versioned under `/api/v1`. List endpoints are paginated (`?page`, `?
 | `POST /api/v1/registrations/verify` | Public | Sends an OTP to the supplied email. **Always `202`, empty body** — deliverable, undeliverable, already-known, and over-cap addresses all get the identical response, so the endpoint cannot be used to test whether an address exists. |
 | `POST /api/v1/registrations` | Public | Creates a `Registration` once the OTP is verified. Returns **only** `{ reference }` — no payload echo, no internal `id`. |
 | `POST /api/v1/registrations/lookup` | Public | Status by `{ reference, email }` in the request **body**, never a query string (keeps an email address out of request lines, `Referer`, and history). `404` is byte-identical for an absent reference, an email mismatch, and the endpoint's own rate-limit lockout — none is distinguishable from another. |
-| `GET /api/v1/admin/registrations` | Admin | Paginated/filterable adjudication queue (`status`, `q`, `region`, `traderType`, `sort`, `page`, `pageSize`); each row carries a `duplicateCandidateCount`, never the candidates themselves. |
+| `GET /api/v1/admin/registrations` | Admin | Paginated/filterable adjudication queue (`status`, `q`, `region`, `traderType` — main or additional, `sort`, `page`, `pageSize`); each row carries a `duplicateCandidateCount`, never the candidates themselves. |
 | `GET /api/v1/admin/registrations/:id` | Admin | Full registration detail: payload, consent record, duplicate candidates, activity trail. `404` here is a plain not-found, distinguishable from `403` — the public lookup's uniformity requirement (above) stops at the auth boundary; an authenticated Admin is entitled to know whether a registration exists. |
 | `POST /api/v1/admin/registrations/:id/approve` | Admin | Single-transaction, compare-and-set approval (`id` + `status = PENDING_REVIEW`; zero rows ⇒ `409` when the row exists, `404` when it does not, DD-22): creates the `Actor`, derives `traderId` (`SR-<year>-<seq>`), writes the literal-picked publishable subset, audits inside the same transaction, links `publishedActorId`. A pre-existing `traderId` also yields `409`, naming the colliding key — never a `500` (ADR-012). |
 | `POST /api/v1/admin/registrations/:id/reject` | Admin | Structured reason from a frozen list + optional applicant-facing note; same compare-and-set refusal as approve; creates no `Actor`; the stored consent record is untouched. |

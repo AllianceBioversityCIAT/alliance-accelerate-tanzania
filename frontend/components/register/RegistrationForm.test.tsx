@@ -60,7 +60,7 @@
 
 import React from 'react';
 import type { CoordinatePickerStubProps } from '@/test-utils/coordinate-picker-stub';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
@@ -124,7 +124,7 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
-  fireEvent.change(screen.getByLabelText(/^trader type/i), {
+  fireEvent.change(screen.getByLabelText(/^main actor type/i), {
     target: { value: 'seed_company' },
   });
   await selectRegion(user, 'Arusha');
@@ -162,7 +162,7 @@ describe('RegistrationForm — structure', () => {
 
   it('offers all ten canonical trader types with human-readable labels (FR-2 scenario 4)', () => {
     render(<RegistrationForm onValidated={jest.fn()} />);
-    const select = screen.getByLabelText(/^trader type/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/^main actor type/i) as HTMLSelectElement;
     // 10 real options + 1 "Select…" placeholder.
     expect(select.options.length).toBe(11);
     const labels = Array.from(select.options).map((o) => o.textContent);
@@ -258,7 +258,7 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
     fireEvent.change(screen.getByLabelText(/organisation name/i), {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
-    fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
+    fireEvent.change(screen.getByLabelText(/^main actor type/i), { target: { value: 'seed_company' } });
     await selectRegion(user, 'Arusha');
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '-5' } });
     fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
@@ -353,7 +353,7 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
     fireEvent.change(screen.getByLabelText(/organisation name/i), {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
-    fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
+    fireEvent.change(screen.getByLabelText(/^main actor type/i), { target: { value: 'seed_company' } });
     await selectRegion(user, 'Arusha');
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '-5' } });
     fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Jane Doe' } });
@@ -506,7 +506,7 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     fireEvent.change(screen.getByLabelText(/organisation name/i), {
       target: { value: 'Kilimanjaro Seed Co-op' },
     });
-    fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
+    fireEvent.change(screen.getByLabelText(/^main actor type/i), { target: { value: 'seed_company' } });
     await selectRegion(user, 'Arusha');
     fireEvent.click(screen.getByLabelText(/^sorghum/i));
     fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
@@ -803,4 +803,42 @@ describe('RegistrationForm — accessibility (jsdom-provable subset)', () => {
   // docs/ux-ui/design.md §7's contrast guidance — per KZ-003 this component
   // takes plain props, so that check must not be deferred on auth/stack
   // grounds.
+});
+
+describe('RegistrationForm — other actor types', () => {
+  it('hides the main type from the checkboxes and drops it when picked as main', async () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    const main = screen.getByLabelText(/^main actor type/i);
+    fireEvent.change(main, { target: { value: 'seed_company' } });
+    expect(screen.queryByRole('checkbox', { name: 'Seed Company' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Offtaker' }));
+    expect(screen.getByRole('checkbox', { name: 'Offtaker' })).toBeChecked();
+
+    // Changing main to a ticked type unchecks it, and the old main becomes selectable.
+    fireEvent.change(main, { target: { value: 'offtaker' } });
+    expect(screen.queryByRole('checkbox', { name: 'Offtaker' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Seed Company' })).not.toBeChecked();
+  });
+
+  it('sends additionalTraderTypes in the payload only when some are chosen', async () => {
+    const user = userEvent.setup();
+    const onValidated = jest.fn();
+    mockGetConsentPolicy.mockResolvedValue({
+      acceptanceStatement:
+        'I have read and accept the Data Protection & Participant Consent Policy.',
+      version: 'v1',
+      sections: [{ heading: 'A section', body: 'Body text.' }],
+    });
+    render(<RegistrationForm onValidated={onValidated} />);
+    await fillMinimalValidForm(user);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'NGO' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Offtaker' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+    await waitFor(() => expect(onValidated).toHaveBeenCalled());
+    expect(onValidated.mock.calls[0][0]).toMatchObject({
+      traderType: 'seed_company',
+      additionalTraderTypes: ['ngo', 'offtaker'],
+    });
+  });
 });

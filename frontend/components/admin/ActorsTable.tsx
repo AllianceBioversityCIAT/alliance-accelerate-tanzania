@@ -71,7 +71,8 @@ import Link from 'next/link';
 
 import { deleteActor, type AdminActor, type ConsentMethod } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
-import { roleLabel, type TraderType } from '@/lib/content/roles';
+import { roleSummary } from '@/lib/content/roles';
+import { RoleSummaryText } from '@/components/map/RoleBadge';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
 // ---------------------------------------------------------------------------
@@ -470,7 +471,9 @@ function ActorCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-fg">{actor.traderName}</p>
-          <p className="text-xs text-muted mt-0.5">{roleLabel(actor.traderType as TraderType)}</p>
+          <p className="text-xs text-muted mt-0.5" title={roleSummary(actor.traderType, actor.additionalTraderTypes).title}>
+            <RoleSummaryText traderType={actor.traderType} additionalTraderTypes={actor.additionalTraderTypes} />
+          </p>
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-1.5">
@@ -698,8 +701,11 @@ export function ActorsTable({
                     <span className={TRADER_NAME_CLAMP_CLASS}>{actor.traderName}</span>
                   </td>
                   <td className="px-4 py-3 text-muted whitespace-nowrap">{actor.region}</td>
-                  <td className="px-4 py-3 text-muted whitespace-nowrap">
-                    {roleLabel(actor.traderType as TraderType)}
+                  <td
+                    className="px-4 py-3 text-muted whitespace-nowrap"
+                    title={roleSummary(actor.traderType, actor.additionalTraderTypes).title}
+                  >
+                    <RoleSummaryText traderType={actor.traderType} additionalTraderTypes={actor.additionalTraderTypes} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <SourceBadge source={actor.registrationSource} />

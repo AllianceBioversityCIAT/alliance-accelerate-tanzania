@@ -267,6 +267,19 @@ function matchesWhere(
   }
   if (where.region && actor.region !== where.region) return false;
   if (where.traderType && actor.traderType !== where.traderType) return false;
+  // Role filter: main type OR among the additional types.
+  for (const clause of where.AND ?? []) {
+    const types = (clause.OR ?? []).map(
+      (c: any) => c.traderType ?? c.additionalTypes?.some?.traderType,
+    );
+    const own = [
+      actor.traderType,
+      ...((actor.additionalTypes as { traderType: string }[] | undefined) ?? []).map(
+        (t) => t.traderType,
+      ),
+    ];
+    if (!types.some((t: string) => own.includes(t))) return false;
+  }
   if (where.crops?.some?.crop?.name) {
     const wanted = where.crops.some.crop.name;
     const names = (actor.crops as { crop?: { name?: string } }[] | undefined)
@@ -309,7 +322,9 @@ function buildPrismaMock(): Partial<PrismaService> {
       },
     ),
   };
-  return { actor } as unknown as Partial<PrismaService>;
+  // No additional types in these fixtures; the union adds nothing.
+  const actorAdditionalType = { groupBy: jest.fn(async () => []) };
+  return { actor, actorAdditionalType } as unknown as Partial<PrismaService>;
 }
 
 /**

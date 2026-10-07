@@ -21,6 +21,7 @@
 
 import { Prisma } from '@prisma/client';
 import { ConsentBearer, publicGps } from './pii-consent.policy';
+import { AdditionalTypeLink, mapAdditionalTypes } from './additional-types';
 
 /**
  * T-7/design.md §6 — the LIST set: what `GET /api/v1/actors` returns, and
@@ -35,6 +36,8 @@ export interface PublicActorListItem {
   region: string;
   district: string | null;
   traderType: string;
+  /** Extra actor types beyond the main one; `[]` when none. Not PII. */
+  additionalTraderTypes: string[];
   capacityTons: number | null;
   crops: string[];
   gps: { lat: number; long: number } | null;
@@ -79,6 +82,7 @@ export interface SerializableActor extends ConsentBearer {
   traderType: string;
   capacityTons?: Prisma.Decimal | number | string | null;
   crops?: SerializableCropLink[] | null;
+  additionalTypes?: AdditionalTypeLink[] | null;
   sex?: string | null;
   otherCrops?: string | null;
 
@@ -122,6 +126,7 @@ export function toPublicListItem(
     region: actor.region,
     district: actor.district ?? null,
     traderType: actor.traderType,
+    additionalTraderTypes: mapAdditionalTypes(actor.additionalTypes),
     capacityTons: toNullableNumber(actor.capacityTons),
     crops: mapCrops(actor.crops),
     gps: publicGps(actor),
@@ -150,6 +155,7 @@ export function toPublicDetail(actor: SerializableActor): PublicActorDetail {
     region: listItem.region,
     district: listItem.district,
     traderType: listItem.traderType,
+    additionalTraderTypes: listItem.additionalTraderTypes,
     capacityTons: listItem.capacityTons,
     crops: listItem.crops,
     gps: listItem.gps,

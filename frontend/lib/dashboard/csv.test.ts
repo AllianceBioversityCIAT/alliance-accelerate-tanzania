@@ -32,6 +32,7 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     region: 'Dodoma',
     district: 'Kondoa',
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     capacityTons: 200,
     crops: ['sorghum', 'common_bean'],
     gps: null,
@@ -82,6 +83,26 @@ describe('buildDashboardCsv — public columns and actor values', () => {
     expect(csv).toContain('cooperative');
   });
 
+  it('serialises additionalTraderTypes right after traderType, joined with "; "', () => {
+    const actor = makeActor({ traderType: 'cooperative', additionalTraderTypes: ['seed_company', 'offtaker'] });
+    const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
+    const lines = csv.split('\n');
+    const header = lines.find((l) => l.startsWith('traderName')) as string;
+    const dataLine = lines.find((l) => l.includes(actor.traderName)) as string;
+    const cols = header.split(',');
+    const at = cols.indexOf('additionalTraderTypes');
+    expect(at).toBe(cols.indexOf('traderType') + 1);
+    expect(dataLine.split(',')[at]).toBe('seed_company; offtaker');
+  });
+
+  it('serialises an empty additionalTraderTypes as an empty cell', () => {
+    const csv = buildDashboardCsv({ actors: [makeActor({ traderName: 'Alliance Agro' })], kpis: BASE_KPIS });
+    const lines = csv.split('\n');
+    const header = (lines.find((l) => l.startsWith('traderName')) as string).split(',');
+    const dataLine = lines.find((l) => l.includes('Alliance Agro')) as string;
+    expect(dataLine.split(',')[header.indexOf('additionalTraderTypes')]).toBe('');
+  });
+
   it('serialises capacityTons as a number string', () => {
     const actor = makeActor({ capacityTons: 350 });
     const csv = buildDashboardCsv({ actors: [actor], kpis: BASE_KPIS });
@@ -129,7 +150,7 @@ describe('buildDashboardCsv — public columns and actor values', () => {
     // reads as satisfied by the unrelated trailing sex/otherCrops empties
     // (both null by default in makeActor) once those columns exist, which
     // makes the assertion pass regardless of district's own value.
-    // Columns: traderName, region, district, traderType, capacityTons, crops, sex, otherCrops.
+    // Columns: traderName, region, district, traderType, additionalTraderTypes, capacityTons, crops, sex, otherCrops.
     const fields = (dataLine as string).split(',');
     expect(fields[2]).toBe('');
   });
@@ -143,9 +164,9 @@ describe('buildDashboardCsv — public columns and actor values', () => {
     // Anchor by column index, not comma pattern — see the district test above
     // for why a bare "look for ,," check is vacuous once trailing empty
     // columns exist.
-    // Columns: traderName, region, district, traderType, capacityTons, crops, sex, otherCrops.
+    // Columns: traderName, region, district, traderType, additionalTraderTypes, capacityTons, crops, sex, otherCrops.
     const fields = (dataLine as string).split(',');
-    expect(fields[4]).toBe('');
+    expect(fields[5]).toBe('');
   });
 
   it('produces multiple data rows when multiple actors are supplied', () => {

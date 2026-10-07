@@ -63,6 +63,7 @@ const MAX_USER_AGENT_LENGTH = 512;
 /** The same `crops.crop` include `ActorsService.findOnePublic` uses (RB-6). */
 const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
+  additionalTypes: true,
 } satisfies Prisma.ActorInclude;
 
 const VIEW_REQUEST_SELECT = {

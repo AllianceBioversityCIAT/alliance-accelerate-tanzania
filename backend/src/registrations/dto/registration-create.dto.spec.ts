@@ -131,6 +131,26 @@ describe('RegistrationCreateDto — crops (FR-2 scenario 2, C-13)', () => {
   });
 });
 
+describe('RegistrationCreateDto — additionalTraderTypes', () => {
+  it('is optional and preserved when valid', async () => {
+    expect((await run(validBody())).error).toBeUndefined();
+    const { result, error } = await run(
+      validBody({ payload: { additionalTraderTypes: ['ngo', 'offtaker'] } }),
+    );
+    expect(error).toBeUndefined();
+    expect(result!.payload.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
+  });
+
+  it.each([
+    ['the main traderType', ['seed_company']],
+    ['an unknown value', ['banana']],
+    ['a duplicate', ['ngo', 'ngo']],
+  ])('rejects %s with a details entry on the field', async (_label, value) => {
+    const { error } = await run(validBody({ payload: { additionalTraderTypes: value } }));
+    expect(details(error!).some((d) => d.field === 'payload.additionalTraderTypes')).toBe(true);
+  });
+});
+
 describe('RegistrationCreateDto — every free-text string is bound', () => {
   const cases: Array<{ field: string; maxLength: number }> = [
     { field: 'traderName', maxLength: 200 },
