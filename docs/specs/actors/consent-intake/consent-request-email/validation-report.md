@@ -1,5 +1,30 @@
 # Validation Report — Consent request by email for team-managed actors
 
+> **Final validation (2026-10-07): archive-ready once R-I passes review.**
+> - **Scope since `2e21c39`:** R-E, R-F, R-G, R-H and T-14.
+> - **Method:** three parallel read-only validators on `opus`: coverage PASS, consistency FAIL (fixed in R-I), facts PASS.
+> - **Gates on this branch at `65f05b8` (origin/main `0b6085e` + the T-14 record; Leader, 2026-10-07):** backend 103 suites / 1759 tests, eslint and build; frontend 132 suites / 2033 tests, lint and build; `validate.sh` and the infra script tests green.
+> - **T-14: PASS.** P-9 measured at 0.72 sends/s and accepted below threshold by the product owner.
+> - **Waivers (product owner):**
+>   - capture durability;
+>   - capture 7;
+>   - send-dialog states beyond the preview (exercised locally and covered by tests);
+>   - Phase E skipped. Consequence until the DB reset: two accepted test actors are publicly visible on the production `/directory`, and the test PDFs stay in the `Retain`, versioned documents bucket.
+> - **Accepted gaps:**
+>   - NFR-10's 375 px captures and the 768 px T-10 edit-page and import-CTA captures were not retaken after R-G's markup changes (the R-G Reviewer verified DOM equivalence against the base);
+>   - NFR-6's "1,000-actor campaign completes from the UI" is extrapolated from 20 live sends, not demonstrated;
+>   - the infra bucket reads ran without `--profile`;
+>   - T-14 step 3 is the product owner's observation plus capture 08, with no pasted responses;
+>   - no frontend test asserts that the address or raw error is absent from the rendered failure list (the backend contract test covers it);
+>   - T-14 step 2's `Content-Disposition` value was not captured live: the download was observed as a file, and the header is pinned by `s3-document-storage.spec.ts`.
+> - **Budget:** 48 review verdicts and ~18,500 LOC. That is about 55 % over the last accepted ceiling (~31 verdicts); the post-R-C overrun was not escalated during the run and is recorded at close-out (design §10).
+> - **R-D advisory 4 is closed by R-E.** R-E's own two advisories stay unapplied (see `execution.md`).
+> - **ADR note:** allocate ADR-NNN at archive, after re-running `git log --oneline --all -20 -- docs/trd/trd.md`.
+>
+> The older notes below are kept as history.
+
+---
+
 > **Re-validation (2026-10-06, after R-A…R-D, `73f7d46`): no FAIL remains. Archive is blocked by T-14 only.**
 > - Every FAIL below is closed: R-A (code), R-B (tests), R-C and R-D (documents, the IAM fallback, a resume test, and a real-MySQL NFR-5 probe).
 > - The three parallel validators re-ran: coverage PASS; consistency and facts FAIL on one blocking contradiction (FR-10) and the `ListBucket` condition. Both were fixed in R-D, which passed review. Details are in `execution.md` § "Re-validation after R-C" and § R-D.

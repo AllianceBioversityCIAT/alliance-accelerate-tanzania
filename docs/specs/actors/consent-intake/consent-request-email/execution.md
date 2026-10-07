@@ -5,12 +5,12 @@
 | Field | Value |
 |---|---|
 | Spec | `actors/consent-intake/consent-request-email` (chunk 2 of `actors/consent-intake`) |
-| Branch | `feature/atp-84-consent-request-flow` |
+| Branch | `feature/atp-84-consent-request-flow`; `docs/atp-84-consent-t14-archive` (T-14 and the archive) |
 | Started | 2026-10-05 |
 | Approval Mode | gated: the continue gate stops after every task, until the 2026-10-06 standing authorization (see *Run continuation*), which let gates auto-pass after a PASS |
 | Leader | Claude Code session, `opus` (T1) |
 | Implementer / Reviewer | `.claude/agents/akili-implementer` (T2) / `.claude/agents/akili-reviewer` (T3) — author ≠ auditor enforced by the wrappers |
-| Budget (design §10) | Planned 14 tasks · ~11,300 LOC · ~20 review rounds; actual ~17,400 LOC added and 35 review verdicts as of R-A/R-B. Escalate above +25 %; the re-baselines are history in design §10. |
+| Budget (design §10) | Planned 14 tasks · ~11,300 LOC · ~20 review rounds; actual ~18,500 LOC added (re-measured at close-out, 2026-10-07) and 48 review verdicts through T-14. Escalate above +25 %; the re-baselines are history in design §10. |
 | Local environment | Native route. MySQL 8 is the `accelerate-mysql` container on `localhost:3306` (the pre-check passed 2026-10-05: Node v26.10.0, port open), so it is the migration rehearsal target. |
 
 ## Task Execution History
@@ -1573,3 +1573,29 @@ The Leader reviewed all 14 and found every state correct at both widths. **They 
    - the log timestamps reconciled (local vs UTC), with D2's exact window stated as not recorded.
 
 **T-14: PASS.**
+
+### Final validation before archive (2026-10-07)
+
+Three read-only validators ran in parallel on `opus`, each told not to defer to the Leader. They checked branch `docs/atp-84-consent-t14-archive` at `65f05b8`: origin/main `0b6085e` plus the T-14 record.
+
+| Dimension | Result | Findings |
+|---|---|---|
+| Clause coverage | PASS | Six WARNs, no uncovered clause. **Applied in R-I:** the NFR-8 coverage row lacked the R-G/R-H log bucket. **Recorded as accepted gaps** in `validation-report.md`: NFR-10 375/768 px captures not retaken after R-G; NFR-6's 1,000-actor completion extrapolated; infra reads without `--profile`; T-14 step 3 narrative only; no frontend absence test for address or raw error. |
+| Decision consistency | FAIL | **One BLOCKING item:** `validation-report.md` was stale. **WARNs, all applied in R-I:** budget figures; the P-9 coverage row still read `UNVERIFIED`; no waiver note on T-14 step 4; "DEV" read as if it were not production. **Advisories applied:** the DD-1 wording; NFR-8 log-bucket versioning; the `infrastructure.md` first-merge observation; the Branch row; the `backend/CLAUDE.md` token-bearer phrase. **Advisories not applied:** the custom-email-sender test count (59 in the guides vs 61 in the report). It predates this spec. |
+| Facts vs code | PASS | About 105 claims checked. Six Low findings, all applied in R-I: the design §7.3 subject; the design §8 `EXPIRED` type; the design §10 respond log; the UX failure-reason wording; `infrastructure.md` orphan recovery for two versioned buckets; the backend guides' rule 3. |
+
+### R-I — Final-validation documentation fixes — **PASS** (attempt 2)
+
+**Change:** docs only, no code. The 16 items in the table above, plus `validation-report.md`'s final addendum. Budget figures re-measured: **48 review verdicts**; `git diff --shortstat 72e8cca..HEAD` over the Actual row's paths gives 18,455 insertions, written as **~18,500 LOC**. The post-R-C overrun is recorded as not escalated.
+
+**Attempt history:**
+1. **Reviewer FAIL, one BLOCKING item:** the addendum's lists of waivers and gaps were incomplete. They left out the live `Content-Disposition` not captured, and the send-dialog states beyond the preview.
+2. **Leader-inline fixes:**
+   - both items and the Phase E consequence added to the addendum, with the budget overrun and the gates' commit;
+   - "R-D advisory 4 is closed by R-E" made precise;
+   - rule 3 gains "while it stays `GRANTED`" in both backend guides;
+   - the UX failure reason no longer claims a cause;
+   - the requirements defect-class row gains the production note;
+   - the `delete-objects` instructions now show the keys file and the 1,000-per-call batching.
+
+**Reviewer re-check: PASS.** The addendum is complete and every advisory is applied. One more change was made after the PASS: the `delete-objects` keys-file format in `infrastructure.md` §2 now uses the exact `{"Objects":[{Key,VersionId}],"Quiet":true}` shape.

@@ -2,7 +2,7 @@
 
 - Spec path: `docs/specs/actors/consent-intake/consent-request-email/`
 - Traces: [`requirements.md`](requirements.md) FR-1…FR-17, NFR-1…NFR-11 · [`design.md`](design.md) §2–§11 · [`judgment.md`](judgment.md) (APPROVED)
-- Budget (design §10): planned **14 tasks · ~11,300 LOC (the sum of the per-task estimates below) · ~20 review rounds**; actual ~17,400 LOC added and 35 review verdicts as of R-A/R-B. Re-baselines are history in design §10.
+- Budget (design §10): planned **14 tasks · ~11,300 LOC (the sum of the per-task estimates below) · ~20 review rounds**; actual ~18,500 LOC added (re-measured at close-out, 2026-10-07) and 48 review verdicts through T-14. Re-baselines are history in design §10.
 - Commits: `[SPEC:actors/consent-intake/consent-request-email] <message>`. Every AWS command uses `--profile IBD-DEV`.
 
 ## How to read a task
@@ -517,13 +517,14 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
   - **Done when:** both sweeps pasted.
 
 - [x] **T-14 Live verification on DEV (HITL)** (deps: T-1…T-13, after deploy)
+  - *Note: the deployed `IBD-DEV` environment is production, the only one (`docs/infrastructure.md` §1). "DEV" in this task and in NFR-8 means that deployment; ids are unchanged.*
   - **Size:** S (~0 LOC; evidence only) · **Effort:** `high` · **Skills:** `aws-serverless`, `systematic-debugging`
   - **Traces:** NFR-6 / P-9 (throughput), NFR-8 (live IAM and bucket gap), FR-16 (live expiry), FR-15 (C-116: live presigned-POST size and type enforcement), FR-10 (one real accept end to end), NFR-10 (the captures reviewed at the HITL pause)
   - **Scope:** with the product owner present, every AWS command with `--profile IBD-DEV`:
     1. **Throughput.** Send to 20 test actors whose emails are controlled. Record the per-dispatch `sent` and `elapsedMs` from the logs. **Decision rule:** if throughput is below 1.1 sends/s, escalate to proposal option A2 rather than ship (design R-4), unless the product owner accepts the measured rate (recorded outcome, as on 2026-10-07).
     2. **Documents.** Upload a real PDF through the UI, confirm, download it, and check the `Content-Disposition`. **Also (T-7 review A-1, added 2026-10-06):** with the deployed role, confirm a document id whose upload never happened. Expect `422`. The fallback (an unconditioned `s3:ListBucket` on the bucket ARN) is **already applied** (R-D, 2026-10-06; design §7.4, the template test and `docs/infrastructure.md` §2 are amended), because `HeadObject` carries no `s3:prefix`. A `500` here would mean a different IAM defect. Check that an access-log object appears under `access/` of the `-consent-docs-logs-` bucket after the upload (delivery can take minutes to hours; `aws s3 ls s3://<logbucket>/access/ --profile IBD-DEV`). Retry the download link after 6 min and expect `AccessDenied`. `aws s3api get-public-access-block` on the bucket shows all four settings `true`.
     3. **One real request.** Accept it, then confirm the actor on `/directory` and `/profile`. Reopen the link and get the dead-end page.
-    4. Review the T-8…T-11 captures. *(Validation R-6, 2026-10-06:)* commit or paste the captures as durable evidence, add 768 px for the T-10 states, and capture T-8's field-error and decline-confirm states.
+    4. Review the T-8…T-11 captures. *(Validation R-6, 2026-10-06:)* commit or paste the captures as durable evidence, add 768 px for the T-10 states, and capture T-8's field-error and decline-confirm states. *(Product-owner waiver, 2026-10-07:)* the captures stay out of the repo (they show her email and test data, and the database will be reset); capture 7 is omitted; only the send-dialog preview was captured.
     5. *(Validation R-6, C-116:)* with a real presigned POST, try a file over 10 MB and a file with a mismatched `Content-Type`. Expect both refused by S3.
   - **Falsifier:**
     - The download is retried after the expiry, and must fail.
@@ -585,11 +586,11 @@ Every task here also attaches a **rendered capture** (headless Chromium over CDP
 | NFR-2, NFR-3, NFR-4, NFR-5 | T-5 (NFR-5 real-MySQL: R-D probe, `execution.md`) |
 | NFR-6 | T-4 (unit), T-14 (live) |
 | NFR-7 | T-4 |
-| NFR-8 | T-7 (template + pins), T-14 (live) |
+| NFR-8 | T-7 (template + pins), T-14 (live); log bucket: R-G/R-H |
 | NFR-9 | T-1 (no FK), T-6 (terminal rows), T-12 (inventory) |
 | NFR-10 | T-8…T-11 (axe + captures), T-14 (HITL review) |
 | NFR-11 | T-8 |
-| Premise P-9 (`UNVERIFIED`, High) | T-14 step 1 |
+| Premise P-9 (High) | T-14 step 1 (measured 0.72 sends/s, accepted by the product owner 2026-10-07) |
 
 No clause above is discharged by citing a different requirement. Each owner was checked against the clause text in `requirements.md` at this revision.
 
