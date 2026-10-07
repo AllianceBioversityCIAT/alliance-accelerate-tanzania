@@ -144,6 +144,7 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     region: 'Arusha',
     district: null,
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     contactPerson: 'Asha Mwinyi',
     sex: null,
     position: null,

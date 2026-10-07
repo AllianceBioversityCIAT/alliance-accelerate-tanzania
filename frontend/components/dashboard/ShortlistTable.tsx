@@ -16,7 +16,8 @@
 
 import Link from 'next/link';
 import type { PublicActor, ActorsQuery } from '@/lib/api/actors';
-import { roleLabel } from '@/lib/content/roles';
+import { roleSummary } from '@/lib/content/roles';
+import { RoleSummaryText } from '@/components/map/RoleBadge';
 import { CROPS } from '@/lib/content/crops';
 import { encodeFilters } from '@/lib/dashboard/filters-url';
 
@@ -125,6 +126,7 @@ export default function ShortlistTable({
               region,
               district,
               traderType,
+              additionalTraderTypes,
               capacityTons,
               crops,
             } = actor;
@@ -152,7 +154,9 @@ export default function ShortlistTable({
                 <td className="py-3 pr-4 text-muted">{location}</td>
 
                 {/* Actor type — human-readable label */}
-                <td className="py-3 pr-4 text-muted">{roleLabel(traderType)}</td>
+                <td className="py-3 pr-4 text-muted" title={roleSummary(traderType, additionalTraderTypes).title}>
+                  <RoleSummaryText traderType={traderType} additionalTraderTypes={additionalTraderTypes} />
+                </td>
 
                 {/* Crops — comma-separated names */}
                 <td className="py-3 pr-4 text-muted">{cropNames(crops)}</td>

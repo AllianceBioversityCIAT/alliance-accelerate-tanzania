@@ -121,6 +121,7 @@ function buildDetail(overrides: Partial<AdminRegistrationDetail> = {}): AdminReg
     payload: {
       traderName: 'Meru Agro Cooperative Society',
       traderType: 'cooperative',
+      additionalTraderTypes: [],
       contactPerson: 'Jane Mushi',
       position: null,
       district: null,

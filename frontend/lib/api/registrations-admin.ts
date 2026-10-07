@@ -69,6 +69,7 @@ export interface AdminRegistrationListRow {
   /** The applicant's organisation name — `Registration.payload.traderName`. */
   applicant: string;
   traderType: string;
+  additionalTraderTypes: string[];
   region: string;
   submittedAt: string;
   status: RegistrationStatus;
@@ -113,6 +114,7 @@ export interface AdminRegistrationListQuery {
 export interface AdminRegistrationPayload {
   traderName: string;
   traderType: string;
+  additionalTraderTypes: string[];
   /** Persisted to `Actor.contactPerson` on approval; published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string;
   position: string | null;

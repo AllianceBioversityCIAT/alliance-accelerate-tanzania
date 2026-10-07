@@ -87,6 +87,7 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
     const result = toPublicListItem(fullActor());
     expect(Object.keys(result).sort()).toEqual(
       [
+        'additionalTraderTypes',
         'capacityTons',
         'crops',
         'district',
@@ -105,6 +106,7 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
     const result = toPublicDetail(fullActor());
     expect(Object.keys(result).sort()).toEqual(
       [
+        'additionalTraderTypes',
         'capacityTons',
         'contactPerson',
         'crops',
@@ -122,6 +124,15 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
         'traderType',
       ].sort(),
     );
+  });
+
+  it('emits additionalTraderTypes sorted in taxonomy order, [] when absent (list and detail)', () => {
+    const actor = fullActor({
+      additionalTypes: [{ traderType: 'offtaker' }, { traderType: 'cooperative' }],
+    });
+    expect(toPublicListItem(actor).additionalTraderTypes).toEqual(['cooperative', 'offtaker']);
+    expect(toPublicDetail(actor).additionalTraderTypes).toEqual(['cooperative', 'offtaker']);
+    expect(toPublicListItem(fullActor()).additionalTraderTypes).toEqual([]);
   });
 
   it('toPublicListItem never carries a contact-block field (FR-9, by key)', () => {

@@ -816,6 +816,7 @@ describe('RegistrationsService.submitRegistration', () => {
           schemaVersion: 1,
           traderName: 'Mbeya Seed Traders Ltd',
           traderType: 'seed_company',
+          additionalTraderTypes: [],
           contactPerson: 'Neema Shirima',
           position: null,
           district: null,
@@ -836,6 +837,17 @@ describe('RegistrationsService.submitRegistration', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    it('stores additionalTraderTypes in the payload, sorted in taxonomy order', async () => {
+      await service.submitRegistration(
+        validDto({ payload: { additionalTraderTypes: ['offtaker', 'ngo'] } }),
+      );
+
+      const createArg = registrationCreateSpy.mock.calls[0][0] as {
+        data: { payload: Record<string, unknown> };
+      };
+      expect(createArg.data.payload.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
     });
 
     it(

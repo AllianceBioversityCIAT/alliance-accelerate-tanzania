@@ -56,6 +56,8 @@ export interface PublicActorListItem {
     | 'digital_service_provider'
     | 'qds_producer'
     | 'bulk_buyer';
+  /** Other types beyond the main one; `[]` when none, never contains `traderType`. */
+  additionalTraderTypes: PublicActorListItem['traderType'][];
   capacityTons?: number | null;
   crops: ('sorghum' | 'common_bean' | 'groundnut')[];
   gps?: { lat: number; long: number } | null;

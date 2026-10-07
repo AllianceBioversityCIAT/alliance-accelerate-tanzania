@@ -64,6 +64,7 @@ export class MetricsService {
       actorsMapped,
       regionGroups,
       typeGroups,
+      additionalTypeGroups,
       cropCounts,
     ] = await Promise.all([
       // actorsMapped — total consented actors mapped.
@@ -72,6 +73,11 @@ export class MetricsService {
       this.prisma.actor.groupBy({ by: ['region'], where: GRANTED_ONLY }),
       // actorTypes — distinct traderTypes among GRANTED actors.
       this.prisma.actor.groupBy({ by: ['traderType'], where: GRANTED_ONLY }),
+      // ...plus distinct additional types of GRANTED actors (equal weight).
+      this.prisma.actorAdditionalType.groupBy({
+        by: ['traderType'],
+        where: { actor: GRANTED_ONLY },
+      }),
       // crops[] — per-slug count of GRANTED actors linked to that crop.
       Promise.all(
         CROP_SLUGS.map((slug) =>
@@ -95,7 +101,10 @@ export class MetricsService {
       // cropsTracked — tracked crops that have ≥1 GRANTED actor (capped at 3).
       cropsTracked: crops.filter((c) => c.mappedActors > 0).length,
       regionsCovered: regionGroups.length,
-      actorTypes: typeGroups.length,
+      actorTypes: new Set([
+        ...typeGroups.map((g) => g.traderType),
+        ...additionalTypeGroups.map((g) => g.traderType),
+      ]).size,
       crops,
     };
   }

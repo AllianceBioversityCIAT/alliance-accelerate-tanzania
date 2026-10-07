@@ -34,6 +34,7 @@ const VALID_ACTOR: PublicActor = {
   region: 'Mbeya',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -8.9, long: 33.46 },

@@ -58,7 +58,7 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   fireEvent.change(screen.getByLabelText(/organisation name/i), {
     target: { value: 'Kilimanjaro Seed Co-op' },
   });
-  fireEvent.change(screen.getByLabelText(/^trader type/i), { target: { value: 'seed_company' } });
+  fireEvent.change(screen.getByLabelText(/^main actor type/i), { target: { value: 'seed_company' } });
   await selectRegion(user, 'Arusha');
   fireEvent.click(screen.getByLabelText(/^sorghum/i));
   fireEvent.change(screen.getByLabelText(/capacity \(tons\)/i), { target: { value: '10' } });
@@ -163,7 +163,7 @@ describe('RegisterPage', () => {
     // Back on the form, with the applicant's work intact — asserted by
     // VALUE, per field. A blank-form regression reddens every line here.
     expect(screen.getByLabelText(/organisation name/i)).toHaveValue('Kilimanjaro Seed Co-op');
-    expect(screen.getByLabelText(/^trader type/i)).toHaveValue('seed_company');
+    expect(screen.getByLabelText(/^main actor type/i)).toHaveValue('seed_company');
     expect(screen.getByLabelText(/contact person/i)).toHaveValue('Jane Doe');
     expect(screen.getByLabelText(/^phone/i)).toHaveValue('+255700000000');
     // Numeric input — `toHaveValue` yields a number here, not the raw string.

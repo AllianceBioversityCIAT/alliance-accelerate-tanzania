@@ -111,6 +111,16 @@ describe('generate-import-template', () => {
     expect(consentMethodColumn).toEqual([...CONSENT_METHOD_VALUES]);
   });
 
+  it('lists Additional Actor Types after Trader Type with the taxonomy on Instructions but no single-value dropdown (v5)', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const dataSheet = workbook.getWorksheet('Data');
+    expect(dataSheet!.getRow(1).getCell(3).value).toBe('Additional Actor Types');
+    const text = collectText(workbook.getWorksheet('Instructions')!);
+    expect(text).toContain('Additional Actor Types');
+    // A list validation would reject "a; b" — the column must not carry one.
+    expect(dataSheet!.getCell('C2').dataValidation ?? null).toBeNull();
+  });
+
   // T-4 (public-profile-disclosure) — Contact Person and Other Crops, v3.
 
   it('writes the Contact Person and Other Crops headers to the Data sheet, after every existing column', async () => {

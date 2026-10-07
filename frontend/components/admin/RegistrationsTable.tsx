@@ -68,7 +68,8 @@
 import Link from 'next/link';
 
 import type { AdminRegistrationListRow, RegistrationStatus } from '@/lib/api/registrations-admin';
-import { roleLabel, type TraderType } from '@/lib/content/roles';
+import { roleSummary } from '@/lib/content/roles';
+import { RoleSummaryText } from '@/components/map/RoleBadge';
 import {
   REGISTRATION_STATUS_LABEL,
   REGISTRATION_STATUS_BADGE_CLASSES,
@@ -215,7 +216,9 @@ function RegistrationCard({ row }: Readonly<{ row: AdminRegistrationListRow }>) 
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-muted">{row.reference}</p>
           <p className="truncate text-sm font-medium text-fg">{row.applicant}</p>
-          <p className="text-xs text-muted mt-0.5">{roleLabel(row.traderType as TraderType)}</p>
+          <p className="text-xs text-muted mt-0.5" title={roleSummary(row.traderType, row.additionalTraderTypes).title}>
+            <RoleSummaryText traderType={row.traderType} additionalTraderTypes={row.additionalTraderTypes} />
+          </p>
         </div>
         <div className="flex flex-col items-end gap-1">
           <StatusBadge status={row.status} />
@@ -289,8 +292,11 @@ export function RegistrationsTable({ rows }: Readonly<RegistrationsTableProps>) 
                 <td className="px-4 py-3 text-fg" title={row.applicant}>
                   <span className={APPLICANT_NAME_CLAMP_CLASS}>{row.applicant}</span>
                 </td>
-                <td className="px-4 py-3 text-muted whitespace-nowrap">
-                  {roleLabel(row.traderType as TraderType)}
+                <td
+                  className="px-4 py-3 text-muted whitespace-nowrap"
+                  title={roleSummary(row.traderType, row.additionalTraderTypes).title}
+                >
+                  <RoleSummaryText traderType={row.traderType} additionalTraderTypes={row.additionalTraderTypes} />
                 </td>
                 <td className="px-4 py-3 text-muted whitespace-nowrap">{row.region}</td>
                 <td className="px-4 py-3 text-muted whitespace-nowrap">{formatDate(row.submittedAt)}</td>

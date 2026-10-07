@@ -74,6 +74,8 @@ export interface AdminActor {
   region: string;
   district: string | null;
   traderType: string;
+  /** Other types beyond the main one; `[]` when none, never contains `traderType`. */
+  additionalTraderTypes: string[];
   /** Published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string | null;
   sex: string | null;
@@ -324,6 +326,8 @@ export interface AdminActorCreateInput {
   traderName: string;
   region: string;
   traderType: string;
+  /** Optional; must not contain `traderType` (400 on `additionalTraderTypes`). On update, omitted = unchanged, array = replace. */
+  additionalTraderTypes?: string[];
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
   registrationSource?: RegistrationSource;
   consentMethod?: ConsentMethod;

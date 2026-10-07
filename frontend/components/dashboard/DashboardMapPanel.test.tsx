@@ -52,6 +52,7 @@ const MOCK_ACTOR_LIST: PublicActorList = {
       id: 'actor-1',
       traderName: 'Dar es Salaam Seed Co.',
       traderType: 'seed_company',
+      additionalTraderTypes: [],
       crops: ['sorghum'],
       region: 'Dar es Salaam',
       district: 'Kinondoni',

@@ -31,6 +31,8 @@ import { SearchableSelect } from '../ui/SearchableSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
+import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
+import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
 import {
   CONTACT_PERSON_MAX_LENGTH,
   EMAIL_MAX_LENGTH,
@@ -52,6 +54,12 @@ import {
 } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import { ACTOR_FORM_CONSENT_COPY } from '@/lib/content/consent-requests';
+import {
+  LATITUDE_HINT,
+  LONGITUDE_HINT,
+  latitudeRangeError,
+  longitudeRangeError,
+} from '@/lib/geo/coordinates';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -130,6 +138,7 @@ interface FormValues {
   traderId: string;
   traderName: string;
   traderType: string;
+  additionalTraderTypes: string[];
   sex: string;
   position: string;
   region: string;
@@ -212,6 +221,7 @@ function toFormValues(actor?: AdminActor): FormValues {
       traderId: '',
       traderName: '',
       traderType: '',
+      additionalTraderTypes: [],
       sex: '',
       position: '',
       region: '',
@@ -237,6 +247,7 @@ function toFormValues(actor?: AdminActor): FormValues {
     traderId: actor.traderId,
     traderName: actor.traderName,
     traderType: actor.traderType,
+    additionalTraderTypes: actor.additionalTraderTypes ?? [],
     sex: actor.sex ?? '',
     position: actor.position ?? '',
     region: actor.region,
@@ -442,7 +453,7 @@ function validate(
     errors.traderName = `Trader name must be ${TRADER_NAME_MAX_LENGTH} characters or fewer.`;
   }
   if (!values.region) errors.region = 'Region is required.';
-  if (!values.traderType) errors.traderType = 'Trader type is required.';
+  if (!values.traderType) errors.traderType = 'Main actor type is required.';
   if (!values.consentStatus) errors.consentStatus = 'Consent status is required.';
 
   for (const field of FRONTEND_INTAKE_REQUIRED_FIELDS) {
@@ -488,16 +499,14 @@ function validate(
 
   if (values.gpsLatitude.trim()) {
     const lat = Number(values.gpsLatitude);
-    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      errors.gpsLatitude = 'Latitude must be between -90 and 90.';
-    }
+    const latError = latitudeRangeError(lat);
+    if (latError) errors.gpsLatitude = latError;
   }
 
   if (values.gpsLongitude.trim()) {
     const lng = Number(values.gpsLongitude);
-    if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      errors.gpsLongitude = 'Longitude must be between -180 and 180.';
-    }
+    const lngError = longitudeRangeError(lng);
+    if (lngError) errors.gpsLongitude = lngError;
   }
 
   return errors;
@@ -570,6 +579,7 @@ function buildDto(
     traderName: values.traderName.trim(),
     region: values.region,
     traderType: values.traderType,
+    additionalTraderTypes: values.additionalTraderTypes,
     consentStatus: values.consentStatus as 'GRANTED' | 'DENIED' | 'UNKNOWN',
     registrationSource: values.registrationSource as RegistrationSource,
     // An emptied select (swap while the stored method is EMAIL_LINK, status not GRANTED)
@@ -766,7 +776,14 @@ export default function ActorForm({
     setValues((prev) =>
       field === 'consentStatus' && initialValues
         ? applyConsentStatusChange(prev, value as string, initialValues)
-        : { ...prev, [field]: value },
+        : {
+            ...prev,
+            [field]: value,
+            // Picking a main type that was ticked as "other" drops it from the set.
+            ...(field === 'traderType'
+              ? { additionalTraderTypes: prev.additionalTraderTypes.filter((t) => t !== value) }
+              : {}),
+          },
     );
     setErrors((prev) => {
       if (!prev[field]) return prev;
@@ -776,6 +793,14 @@ export default function ActorForm({
     });
     setFormError(null);
   }, [initialValues]);
+
+  const toggleAdditionalType = useCallback((type: string) => {
+    setValues((prev) => ({
+      ...prev,
+      additionalTraderTypes: toggleListValue(prev.additionalTraderTypes, type),
+    }));
+    setErrors((prev) => withoutFieldError(prev, 'additionalTraderTypes'));
+  }, []);
 
   const toggleCrop = useCallback((crop: string) => {
     setValues((prev) => {
@@ -1192,12 +1217,23 @@ export default function ActorForm({
               {renderInput('traderName', 'Trader name', 'text', true, undefined, TRADER_NAME_MAX_LENGTH)}
               {renderSelect(
                 'traderType',
-                'Trader type',
+                'Main actor type',
                 Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
                 true,
               )}
               {renderSelect('sex', 'Sex', SEX_OPTIONS)}
               {renderInput('position', 'Position')}
+              <div className="sm:col-span-2 lg:col-span-3">
+                <AdditionalTypesField
+                  baseId={baseId}
+                  groupId={fieldId('additionalTraderTypes')}
+                  mainType={values.traderType}
+                  selected={values.additionalTraderTypes}
+                  onToggle={toggleAdditionalType}
+                  disabled={loading}
+                  error={errors.additionalTraderTypes}
+                />
+              </div>
             </div>
           </fieldset>
         </div>
@@ -1210,8 +1246,8 @@ export default function ActorForm({
               {renderRegionField()}
               {renderInput('district', 'District')}
               {renderInput('marketLocation', 'Market location')}
-              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
+              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, LATITUDE_HINT)}
+              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, LONGITUDE_HINT)}
             </div>
             {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
                 cell would cap the map at ~1/3 card width on lg. Mounted

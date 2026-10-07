@@ -103,6 +103,7 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     consentObtainedAt: null,
     consentReference: null,
     crops: [{ crop: { name: 'sorghum' } }, { crop: { name: 'common_bean' } }],
+    additionalTypes: [],
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -152,6 +153,7 @@ interface MockPrisma {
     createMany: jest.Mock;
     deleteMany: jest.Mock;
   };
+  actorAdditionalType: { createMany: jest.Mock };
   crop: {
     findMany: jest.Mock;
   };
@@ -216,6 +218,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         createMany: jest.fn(),
         deleteMany: jest.fn(),
       },
+      actorAdditionalType: { createMany: jest.fn() },
       crop: {
         findMany: jest.fn(),
       },
@@ -274,7 +277,15 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       const where = prisma.actor.findMany.mock.calls[0][0].where;
       expect(where).toEqual({
         region: 'Arusha',
-        traderType: 'seed_company',
+        // Main type OR among the additional types.
+        AND: [
+          {
+            OR: [
+              { traderType: 'seed_company' },
+              { additionalTypes: { some: { traderType: 'seed_company' } } },
+            ],
+          },
+        ],
         consentStatus: ConsentStatus.DENIED,
       });
       // The Admin list must NOT pin consent to GRANTED (FR-1).
@@ -404,6 +415,35 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       jest.useRealTimers();
     });
 
+    it('creates the additional-type rows with the actor', async () => {
+      prisma.actor.create.mockResolvedValue(fixtureCreatedActor({ id: 'actor-new' }));
+      prisma.crop.findMany.mockResolvedValue([{ id: 'crop-1', name: 'sorghum' }]);
+      prisma.cropsOnActors.createMany.mockResolvedValue({ count: 1 });
+      prisma.actor.findUnique.mockResolvedValue(
+        fixtureActor({ id: 'actor-new', additionalTypes: [{ traderType: 'ngo' }] }),
+      );
+      prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+      const res = await service.create(
+        {
+          traderName: 'New Actor',
+          region: 'Arusha',
+          traderType: 'seed_company',
+          additionalTraderTypes: ['ngo'],
+          crops: ['sorghum'],
+        } as unknown as AdminActorCreateDto,
+        ACTING_SUB,
+      );
+
+      expect(prisma.actor.create.mock.calls[0][0].data).not.toHaveProperty(
+        'additionalTraderTypes',
+      );
+      expect(prisma.actorAdditionalType.createMany).toHaveBeenCalledWith({
+        data: [{ actorId: 'actor-new', traderType: 'ngo' }],
+      });
+      expect(res.additionalTraderTypes).toEqual(['ngo']);
+    });
+
     // T-2 — `as unknown as AdminActorCreateDto` below: with `traderId` gone,
     // these deliberately-partial fixtures no longer satisfy TS's `as` cast.
 
@@ -449,7 +489,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       });
       expect(prisma.actor.findUnique).toHaveBeenCalledWith({
         where: { id: 'actor-new' },
-        include: { crops: { include: { crop: true } } },
+        include: { crops: { include: { crop: true } }, additionalTypes: true },
       });
 
       const auditData = prisma.actorAuditLog.create.mock.calls[0][0].data;
@@ -1027,7 +1067,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
       expect(prisma.actor.findUnique).toHaveBeenCalledWith({
         where: { id: 'actor-1' },
-        include: { crops: { include: { crop: true } } },
+        include: { crops: { include: { crop: true } }, additionalTypes: true },
       });
       expect(res.traderId).toBe('TZ-SEED-0001');
       expect(res.crops).toEqual(['sorghum', 'common_bean']);
@@ -1225,6 +1265,63 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       });
 
       expect(res.traderName).toBe('New Name');
+    });
+
+    describe('additional actor types', () => {
+      it('replaces the set inside the same actor.update (updatedAt bumps) and audits the diff', async () => {
+        const before = fixtureActor({ additionalTypes: [{ traderType: 'ngo' }] });
+        const after = fixtureActor({
+          additionalTypes: [{ traderType: 'offtaker' }, { traderType: 'cooperative' }],
+        });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const res = await service.update(
+          'actor-1',
+          { additionalTraderTypes: ['offtaker', 'cooperative'] } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          data: {
+            updatedAt: expect.any(Date),
+            additionalTypes: {
+              deleteMany: {},
+              create: [{ traderType: 'cooperative' }, { traderType: 'offtaker' }],
+            },
+          },
+        });
+        expect(res.additionalTraderTypes).toEqual(['cooperative', 'offtaker']);
+        const auditData = prisma.actorAuditLog.create.mock.calls[0][0].data;
+        expect(auditData.changes.fields.additionalTraderTypes).toEqual({
+          from: ['ngo'],
+          to: ['cooperative', 'offtaker'],
+        });
+      });
+
+      it('omitted additionalTraderTypes leaves the set untouched', async () => {
+        const before = fixtureActor({ additionalTypes: [{ traderType: 'ngo' }] });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(before);
+        prisma.actor.update.mockResolvedValue(before);
+
+        await service.update('actor-1', { district: 'Meru' } as AdminActorUpdateDto, ACTING_SUB);
+
+        expect(prisma.actor.update.mock.calls[0][0].data).toEqual({ district: 'Meru' });
+      });
+
+      it('400s on additionalTraderTypes when the merged main type is among them', async () => {
+        const before = fixtureActor({ additionalTypes: [{ traderType: 'ngo' }] });
+        prisma.actor.findUnique.mockResolvedValueOnce(before);
+
+        await expect(
+          service.update('actor-1', { traderType: 'ngo' } as AdminActorUpdateDto, ACTING_SUB),
+        ).rejects.toMatchObject({
+          response: { details: [expect.objectContaining({ field: 'additionalTraderTypes' })] },
+        });
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+      });
     });
 
     it('replaces crop links when dto.crops is provided', async () => {

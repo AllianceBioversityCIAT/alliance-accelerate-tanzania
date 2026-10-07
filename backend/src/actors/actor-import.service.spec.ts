@@ -118,11 +118,13 @@ describe('ActorImportService', () => {
     actor: { findMany: jest.Mock; create: jest.Mock };
     crop: { findMany: jest.Mock };
     cropsOnActors: { createMany: jest.Mock };
+    actorAdditionalType: { createMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let tx: {
     actor: { create: jest.Mock };
     cropsOnActors: { createMany: jest.Mock };
+    actorAdditionalType: { createMany: jest.Mock };
     $executeRaw: jest.Mock;
     $queryRaw: jest.Mock;
   };
@@ -161,6 +163,7 @@ describe('ActorImportService', () => {
         })),
       },
       cropsOnActors: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      actorAdditionalType: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
       $executeRaw,
       $queryRaw,
     };
@@ -175,6 +178,7 @@ describe('ActorImportService', () => {
         ]),
       },
       cropsOnActors: { createMany: jest.fn() },
+      actorAdditionalType: { createMany: jest.fn() },
       $transaction: jest.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)),
     };
 
@@ -257,12 +261,12 @@ describe('ActorImportService', () => {
 
     // T-4 (consent-intake/intake-required-fields, FR-5) — v3 (the PREVIOUS
     // version, dropped by this task) is rejected exactly like any other
-    // stale version, naming the version now expected (v4).
-    it('rejects a workbook stamped v3, naming v4 as the expected version', async () => {
+    // stale version, naming the version now expected (v5).
+    it('rejects a workbook stamped v3, naming v5 as the expected version', async () => {
       const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v3' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
-        /found v3, current is v4/i,
+        /found v3, current is v5/i,
       );
     });
 
@@ -1626,6 +1630,60 @@ describe('ActorImportService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(tx.actor.create).not.toHaveBeenCalled();
       expect(auditService.logImport).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Additional Actor Types (v5)', () => {
+    it('parses ";"-separated, case-insensitive values and writes them with the actor', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ additionalTraderTypes: ' NGO ; Cooperative ;' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(tx.actorAdditionalType.createMany).toHaveBeenCalledWith({
+        data: [
+          { actorId: 'new-1', traderType: 'cooperative' },
+          { actorId: 'new-1', traderType: 'ngo' },
+        ],
+      });
+      const created = tx.actor.create.mock.calls[0][0].data as Record<string, unknown>;
+      expect(created).not.toHaveProperty('additionalTraderTypes');
+    });
+
+    it('drops the main type and repeats silently', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderType: 'seed_company', additionalTraderTypes: 'seed_company; ngo; ngo' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(tx.actorAdditionalType.createMany).toHaveBeenCalledWith({
+        data: [{ actorId: 'new-1', traderType: 'ngo' }],
+      });
+    });
+
+    it('treats an empty cell as none (no additional-type write)', async () => {
+      const b64 = await buildWorkbook([validRow()]);
+
+      await service.run(commitDto(b64), 'sub-1');
+
+      expect(tx.actorAdditionalType.createMany).not.toHaveBeenCalled();
+    });
+
+    it('fails the row on an unknown value, naming the column but never echoing the cell', async () => {
+      const b64 = await buildWorkbook([validRow({ additionalTraderTypes: 'ngo; banana' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toContainEqual({
+        field: 'additionalTraderTypes',
+        message: 'Additional Actor Types contains a value not in the allowed taxonomy.',
+      });
+      expect(JSON.stringify(report.rows[0].errors)).not.toContain('banana');
     });
   });
 

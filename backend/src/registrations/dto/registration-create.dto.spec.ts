@@ -131,6 +131,26 @@ describe('RegistrationCreateDto — crops (FR-2 scenario 2, C-13)', () => {
   });
 });
 
+describe('RegistrationCreateDto — additionalTraderTypes', () => {
+  it('is optional and preserved when valid', async () => {
+    expect((await run(validBody())).error).toBeUndefined();
+    const { result, error } = await run(
+      validBody({ payload: { additionalTraderTypes: ['ngo', 'offtaker'] } }),
+    );
+    expect(error).toBeUndefined();
+    expect(result!.payload.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
+  });
+
+  it.each([
+    ['the main traderType', ['seed_company']],
+    ['an unknown value', ['banana']],
+    ['a duplicate', ['ngo', 'ngo']],
+  ])('rejects %s with a details entry on the field', async (_label, value) => {
+    const { error } = await run(validBody({ payload: { additionalTraderTypes: value } }));
+    expect(details(error!).some((d) => d.field === 'payload.additionalTraderTypes')).toBe(true);
+  });
+});
+
 describe('RegistrationCreateDto — every free-text string is bound', () => {
   const cases: Array<{ field: string; maxLength: number }> = [
     { field: 'traderName', maxLength: 200 },
@@ -155,6 +175,25 @@ describe('RegistrationCreateDto — every free-text string is bound', () => {
       cases.map(({ field, maxLength }) => [field, 'x'.repeat(maxLength)]),
     );
     const { error } = await run(validBody({ payload: atBound }));
+    expect(error).toBeUndefined();
+  });
+});
+
+describe('RegistrationCreateDto — GPS must be in Africa', () => {
+  it('rejects a point outside the Africa rectangle, naming the field', async () => {
+    const { error } = await run(
+      validBody({ payload: { gpsLatitude: 4.711, gpsLongitude: -74.07 } }), // Bogotá
+    );
+    expect(error).toBeInstanceOf(BadRequestException);
+    const entry = details(error!).find((d) => d.field === 'payload.gpsLongitude');
+    expect(entry?.message).toBe('GPS coordinates must be in Africa.');
+    expect(details(error!).some((d) => d.field === 'payload.gpsLatitude')).toBe(false);
+  });
+
+  it('accepts the rectangle corners', async () => {
+    const { error } = await run(
+      validBody({ payload: { gpsLatitude: -35, gpsLongitude: 58 } }),
+    );
     expect(error).toBeUndefined();
   });
 });

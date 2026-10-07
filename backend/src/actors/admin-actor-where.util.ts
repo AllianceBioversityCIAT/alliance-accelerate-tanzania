@@ -23,7 +23,19 @@ export interface AdminActorFilterFields {
 export function buildAdminActorWhere(q: AdminActorFilterFields): Prisma.ActorWhereInput {
   return {
     ...(q.region ? { region: q.region } : {}),
-    ...(q.traderType ? { traderType: q.traderType } : {}),
+    // Main type OR among the additional types; AND-nested so it can never clobber another OR.
+    ...(q.traderType
+      ? {
+          AND: [
+            {
+              OR: [
+                { traderType: q.traderType },
+                { additionalTypes: { some: { traderType: q.traderType } } },
+              ],
+            },
+          ],
+        }
+      : {}),
     ...(q.consentStatus ? { consentStatus: q.consentStatus as ConsentStatus } : {}),
     // T-8 (registration-source-and-consent) — AND-composed with the filters
     // above; this is FR-9's enumeration mechanism
