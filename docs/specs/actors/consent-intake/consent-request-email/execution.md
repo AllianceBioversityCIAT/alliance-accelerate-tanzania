@@ -1456,3 +1456,120 @@ Reliability is now A. Ten items remain open: these three, plus the eight accepte
 - `validate.sh` green;
 - backend 103 suites / 1759 tests;
 - eslint and tsc clean.
+
+### T-14 — Live verification on the deployed environment (HITL), 2026-10-07 — verdict at the end of this entry
+
+**Environment.** PR #88 was merged to `main` (`0b6085e`, including R-G and R-H) and deployed by the Jenkins pipeline to the only deployed environment: production, `IBD-DEV` / `eu-west-1`, `https://accelerate-tz.alliance.cgiar.org`. The steps were run by the product owner, with the Leader reading logs and supplying probes.
+
+The production database holds no real actor data (product owner, 2026-10-06). The test actors are "Test 6 … Test 25", 20 actors imported from one template. 17 of them use the product owner's CGIAR address. The other 3 use two more addresses she controls (a personal Gmail on two rows, a university address on one). Phones are distinct; three rows carry southern-hemisphere GPS.
+
+**Step 1: throughput (NFR-6 / P-9).** 20 requests were sent through the import offer. All 20 emails arrived. Lambda log (`/aws/lambda/accelerate-tz-dev-backend-api`), verbatim apart from colour codes:
+
+```
+2026-10-07T15:10:13 consent-request dispatch batchId=d56a7514-53da-4ca7-a007-5517deb7101b sent=6 failed=0 remaining=14 elapsedMs=8642
+2026-10-07T15:10:21 consent-request dispatch batchId=d56a7514-53da-4ca7-a007-5517deb7101b sent=6 failed=0 remaining=8 elapsedMs=7905
+2026-10-07T15:10:30 consent-request dispatch batchId=d56a7514-53da-4ca7-a007-5517deb7101b sent=6 failed=0 remaining=2 elapsedMs=8363
+2026-10-07T15:10:34 consent-request dispatch batchId=d56a7514-53da-4ca7-a007-5517deb7101b sent=2 failed=0 remaining=0 elapsedMs=2925
+```
+
+- **Measured:** 20 sends in 27,835 ms of in-Lambda time, i.e. **0.72 sends/s** (about 1.39 s per send). This is server-side and slightly optimistic: the wall-clock window from the first step's start to the last log line is about 29.6 s, roughly 0.68 sends/s. Every step stayed under NFR-6's 12 s.
+- **Threshold missed.** The rule is ≥ 1.1 sends/s; at the measured rate, 1,000 actors take about 23 min with the tab open.
+- **P-9 settled by the product owner (2026-10-07): option 1, accept as is.** Sending is resumable and loses nothing. A2 (an async worker) is recorded as a future improvement, not shipped; by the product owner's choice it is tracked only here and in design R-4, with no Jira ticket. The acceptance is carried as dated amendments in design DD-1, R-4 and P-9 (with its premise count), requirements NFR-6, the defect-class table and §9, and T-14's decision rule and done-when. The bottleneck is the mail microservice's serialized reply wait, not this module.
+
+**Step 2: documents (NFR-8, FR-15, FR-16).**
+- **Real PDF.** Uploaded through the UI, confirmed, and downloaded as a file rather than opened in the browser. That is observed behaviour; the `Content-Disposition: attachment` value itself was not captured live. It is pinned by `s3-document-storage.spec.ts`.
+- **Download link expiry.** The presigned link was taken from the `download-url` response. After 6 min S3 answered `AccessDenied` / "Request has expired".
+- **API without a session.** Opening the API's `download-url` route directly without the bearer token returned `Unauthorized`.
+- **Probe script.** Run by the product owner with her own admin token; the token was never shared. Output:
+
+```
+== D2.4  confirm a document never uploaded (expect 422)
+confirm -> HTTP 422
+== D5a  presigned POST with a 12 MB file (expect 400 EntityTooLarge)
+S3 -> HTTP 400 <Code>EntityTooLarge</Code>
+== D5b  PDF link, image/png sent (expect 403 AccessDenied)
+S3 -> HTTP 403 <Code>AccessDenied</Code>
+== D2.5  unsigned PUT to the bucket (expect 403 AccessDenied)
+S3 -> HTTP 403 <Code>AccessDenied</Code>
+== control  valid small PDF (expect S3 204, then confirm 200/201)
+S3 -> HTTP 204
+confirm -> HTTP 200
+```
+
+The 422 confirms the R-D fallback, the unconditioned `ListBucket`, on the deployed role.
+
+**Bucket checks run by infra (2026-10-07).** The product owner's IAM user cannot read either bucket's configuration, so the infra operator ran both reads. Output, verbatim (PowerShell):
+
+```
+PS D:\> aws s3api get-public-access-block `
+>>   --bucket "accelerate-tz-dev-backend-consent-docs-$ACC"
+{
+    "PublicAccessBlockConfiguration": {
+        "BlockPublicAcls": true,
+        "IgnorePublicAcls": true,
+        "BlockPublicPolicy": true,
+        "RestrictPublicBuckets": true
+    }
+}
+
+PS D:\> aws s3 ls "s3://accelerate-tz-dev-backend-consent-docs-logs-$ACC/access/" |
+>>     Select-Object -Last 3
+2026-10-07 11:36:32        564 2026-10-07-16-36-31-0362C0C251F17DD9
+2026-10-07 11:36:37        606 2026-10-07-16-36-36-2D93F5867E9C0D10
+2026-10-07 11:37:05       2850 2026-10-07-16-37-04-17323F937BF036DA
+```
+
+- All four Block Public Access settings are `true` on the live documents bucket (NFR-8).
+- Access logs are being delivered under `access/`. The listing's local times (11:36, UTC−5) match the UTC object keys (16:36–16:37). D2 ran after the 15:10 UTC dispatch on the same day; its exact start and end were not recorded, so the logs show delivery works without pinning which request produced them. This discharges the R-G advisory "log delivery is proven only by T-14 step 2".
+- **Profile caveat.** Infra ran the commands with their own default credentials and no `--profile` flag. The bucket names resolve with this account's id, so the reads hit the `IBD-DEV` account, but the profile name itself is not shown. Recorded as is; both commands are read-only.
+
+**Step 3: one real request (FR-10).**
+- **Accept.** One emailed link was accepted, and the actor was published on `/directory` and `/profile`.
+- **Reopen.** Reopening the same link gave the dead-end page.
+- **Decline.** A second link was declined, and that actor became `DENIED`.
+- **Evidence panel (capture 08).** The accept shows sender, address used, edition v1.0, respondent name, position, email and phone, server response time, IP and user agent.
+
+**Step 4: captures (NFR-10).** The product owner took 14 captures (desktop and 768 px) for these states:
+- `/consent/`: ready, field error, decline-confirm, accepted, dead link;
+- the send dialog;
+- the evidence panel.
+
+The Leader reviewed all 14 and found every state correct at both widths. **They are kept outside the repository by the product owner's decision** (`~/Downloads/t14-capturas`), because they show her email and test data and the production database is going to be reset. Validation R-6's "durable evidence" clause is waived for them; this review note is the only retained evidence. For the send dialog only the preview state was captured; the confirm, progress and result states were exercised locally and are covered by `SendConsentDialog` tests. Capture 7, the post-create prompt, was **omitted by the product owner's decision**; that state was exercised locally (A1) and is covered by `SendConsentPrompt` tests. Observations:
+- On decline-confirm, the field errors from a prior Accept attempt stay visible, though Decline needs none of those fields. This is a UX follow-up, not a defect.
+- The preview shows the actor's stored, normalized phone, while the evidence shows what the respondent typed. This is expected.
+- The send dialog showed `no_email` skips for legacy seeded actors. That reason is reachable, which corrects the remark in the local test guide.
+
+**Step 5: storage enforcement (FR-15, C-116).** S3 itself refused both a 12 MB upload (`EntityTooLarge`) and a wrong content type (`AccessDenied`) on real presigned POSTs, in the probe output above.
+
+**Falsifiers:**
+- the expired download was refused;
+- the reopened accepted link gave the dead end;
+- the unsigned `PUT` was refused.
+
+**Cleanup (Phase E): skipped by the product owner's decision.** The whole production database will be reset with test data only, so the test actors stay for now. Until then, the two accepted test actors are publicly visible on the production `/directory`, and the uploaded test PDFs (a real PDF and `t14-probe.pdf`) remain in the versioned documents bucket. Because both buckets are `Retain`, a database reset does **not** remove S3 objects, so the documents bucket must be emptied in the same operation. It is versioned, so every version and delete marker has to go. The command was handed to the product owner for infra.
+
+**Disqualifier check:**
+- the throughput figure comes from 4 dispatch calls on the deployed stack;
+- every AWS command the Leader ran used `--profile IBD-DEV`. That includes the denied reads above, which were the Leader's, not the product owner's;
+- the infra operator's two step-2 reads ran with default credentials and no `--profile`. They do not disqualify the run: they are read-only, and they succeeded against buckets whose names carry this account's id, so they read the `IBD-DEV` account;
+- the product owner ran no AWS CLI command. Her probe script authenticated with her admin API token and uploaded through presigned URLs, so it used no AWS profile.
+
+**Done-when:** all five steps' outputs are recorded above, and P-9 is settled: below the threshold, accepted by the product owner.
+
+**Reviewer (checklist evidence audit):**
+1. **Attempt 1: FAIL.** Four blocking findings:
+   - P-9's acceptance was recorded only here, while design, requirements and T-14 still prescribed escalation;
+   - the step-2 bucket checks were pending, with substitutes overstated;
+   - the capture waiver had no reason;
+   - the disqualifier covered the Leader only.
+2. **Leader fixes:**
+   - dated product-owner amendments across the spec;
+   - infra's verbatim output pasted;
+   - the waiver reason in the product owner's words;
+   - the disqualifier extended.
+3. **Re-audit: PASS.** All four closed and the arithmetic re-checked.
+4. **Advisories applied afterwards:**
+   - a disqualifier bullet for infra's reads;
+   - the log timestamps reconciled (local vs UTC), with D2's exact window stated as not recorded.
+
+**T-14: PASS.**
