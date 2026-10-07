@@ -10,7 +10,7 @@
 //   - All section headings are <h2>; sub-items within sections use <h3>.
 //   - Every <section> carries aria-labelledby pointing to its heading id.
 //   - Tokens only — no raw hex; body text uses text-fg / text-muted for AA contrast.
-//   - Field photo placed beside/below the text (no overlay) — no scrim contrast risk.
+//   - Photos placed beside/below the text (no overlay) — no scrim contrast risk.
 //
 // Static export compliance: no 'use client', no SSR, no route handlers (NFR-5).
 
@@ -53,8 +53,8 @@ export default function AboutPage() {
 
       {/* ====================================================================
           §3.1  ABOUT HERO
-          One <h1> for the page; eyebrow pill + lede + field photograph.
-          Photo is placed below the text column on mobile and beside it on lg+
+          One <h1> for the page; eyebrow pill + lede + photo carousel.
+          Carousel is placed below the text column on mobile and beside it on lg+
           to avoid any text-over-image contrast issue.
       ==================================================================== */}
       <section aria-labelledby="about-hero-heading" className="bg-bg">
@@ -102,11 +102,27 @@ export default function AboutPage() {
 
             </div>
 
-            {/* Right column — field photograph */}
-            {/*
-              Placed beside (not overlaid on) the text, so there is no
-              contrast risk. Rounded corners via token radius-lg (NFR-4).
-            */}
+            {/* Right column — photo carousel (photos in lib/content/about-gallery.ts) */}
+            <PhotoCarousel photos={ABOUT_GALLERY} label="Photos from the field" />
+
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================================================
+          §3.2  THE CHALLENGE
+          Alternating surface (bg-surface-alt). Bold the 3% clause per brief.
+          Field photo left, copy right on lg+; photo stacks above on mobile.
+      ==================================================================== */}
+      <section
+        aria-labelledby="challenge-heading"
+        className="bg-surface-alt"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+
+            {/* Left column — field photograph, beside (not overlaid on) the text,
+                so there is no contrast risk. */}
             <div className="relative w-full h-72 lg:h-96 rounded-lg overflow-hidden bg-surface-alt">
               <Image
                 src="/accelerate-field.jpg"
@@ -116,25 +132,6 @@ export default function AboutPage() {
                 className="object-cover"
               />
             </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* ====================================================================
-          §3.2  THE CHALLENGE
-          Alternating surface (bg-surface-alt). Bold the 3% clause per brief.
-          Photo carousel left, copy right on lg+; carousel stacks above on mobile.
-      ==================================================================== */}
-      <section
-        aria-labelledby="challenge-heading"
-        className="bg-surface-alt"
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-
-            {/* Left column — photo carousel (photos in lib/content/about-gallery.ts) */}
-            <PhotoCarousel photos={ABOUT_GALLERY} label="Photos from the field" />
 
             {/* Right column — copy */}
             <div>
