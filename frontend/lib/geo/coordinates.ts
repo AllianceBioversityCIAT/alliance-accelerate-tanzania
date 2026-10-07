@@ -22,11 +22,17 @@
 /** The single rounding constant governing both write directions (FR-6, DD-3). */
 export const COORDINATE_PRECISION = 5;
 
-/** Inclusive latitude bounds, mirroring both forms' existing range checks. */
-export const LATITUDE_RANGE: readonly [number, number] = [-90, 90];
+/**
+ * Inclusive latitude bounds: a rectangle around Africa and its islands (Cape
+ * Agulhas to Tunisia). Mirrored by the backend DTOs and import (normalize.ts).
+ */
+export const LATITUDE_RANGE: readonly [number, number] = [-35, 37.6];
 
-/** Inclusive longitude bounds, mirroring both forms' existing range checks. */
-export const LONGITUDE_RANGE: readonly [number, number] = [-180, 180];
+/** Inclusive longitude bounds: Cape Verde to Mauritius (Rodrigues excluded). */
+export const LONGITUDE_RANGE: readonly [number, number] = [-25.5, 58];
+
+/** Shown wherever a point outside {@link LATITUDE_RANGE}/{@link LONGITUDE_RANGE} is refused. */
+export const OUTSIDE_AFRICA_MESSAGE = 'The location must be in Africa.';
 
 export interface CoordinatePoint {
   lat: number;
@@ -51,6 +57,29 @@ function inRange(value: number, [min, max]: readonly [number, number]): boolean 
   return value >= min && value <= max;
 }
 
+/** True when the point falls inside the Africa rectangle. */
+export function isInAfrica(lat: number, lng: number): boolean {
+  return inRange(lat, LATITUDE_RANGE) && inRange(lng, LONGITUDE_RANGE);
+}
+
+/** Per-field range errors for the two coordinate inputs; `undefined` when in range. */
+export function latitudeRangeError(lat: number): string | undefined {
+  const [min, max] = LATITUDE_RANGE;
+  return Number.isNaN(lat) || !inRange(lat, LATITUDE_RANGE)
+    ? `Latitude must be between ${min} and ${max}. ${OUTSIDE_AFRICA_MESSAGE}`
+    : undefined;
+}
+
+export function longitudeRangeError(lng: number): string | undefined {
+  const [min, max] = LONGITUDE_RANGE;
+  return Number.isNaN(lng) || !inRange(lng, LONGITUDE_RANGE)
+    ? `Longitude must be between ${min} and ${max}. ${OUTSIDE_AFRICA_MESSAGE}`
+    : undefined;
+}
+
+export const LATITUDE_HINT = `Decimal between ${LATITUDE_RANGE[0]} and ${LATITUDE_RANGE[1]}`;
+export const LONGITUDE_HINT = `Decimal between ${LONGITUDE_RANGE[0]} and ${LONGITUDE_RANGE[1]}`;
+
 /**
  * Parse two raw field strings into a coordinate point, or `null` when the
  * pair cannot be placed: blank, half-filled, non-numeric, or out of range
@@ -71,7 +100,7 @@ export function parseCoordinatePair(lat: string, lng: string): CoordinatePoint |
     return null;
   }
 
-  if (!inRange(latNum, LATITUDE_RANGE) || !inRange(lngNum, LONGITUDE_RANGE)) {
+  if (!isInAfrica(latNum, lngNum)) {
     return null;
   }
 

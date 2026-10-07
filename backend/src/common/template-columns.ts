@@ -18,7 +18,7 @@
  */
 
 import { ConsentStatus } from '@prisma/client';
-import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
+import { CANONICAL_REGIONS, LATITUDE_RANGE, LONGITUDE_RANGE, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 
@@ -182,13 +182,13 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     header: 'GPS Latitude',
     field: 'gpsLatitude',
     required: false,
-    format: 'Decimal degrees between −90 and 90, e.g. −6.7924',
+    format: `Decimal degrees between ${LATITUDE_RANGE[0]} and ${LATITUDE_RANGE[1]} (Africa), e.g. −6.7924`,
   },
   {
     header: 'GPS Longitude',
     field: 'gpsLongitude',
     required: false,
-    format: 'Decimal degrees between −180 and 180, e.g. 39.2083',
+    format: `Decimal degrees between ${LONGITUDE_RANGE[0]} and ${LONGITUDE_RANGE[1]} (Africa), e.g. 39.2083`,
   },
   {
     header: 'Crop: Sorghum',

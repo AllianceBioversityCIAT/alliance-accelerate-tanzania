@@ -69,6 +69,12 @@ import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { REGIONS } from '@/lib/content/regions';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
+import {
+  LATITUDE_HINT,
+  LONGITUDE_HINT,
+  latitudeRangeError,
+  longitudeRangeError,
+} from '@/lib/geo/coordinates';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 
 // ---------------------------------------------------------------------------
@@ -420,12 +426,10 @@ function validate(values: FormValues): Record<string, string> {
   } else if (latRaw && lngRaw) {
     const lat = Number(latRaw);
     const lng = Number(lngRaw);
-    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      errors.gpsLatitude = 'Latitude must be between -90 and 90.';
-    }
-    if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      errors.gpsLongitude = 'Longitude must be between -180 and 180.';
-    }
+    const latError = latitudeRangeError(lat);
+    const lngError = longitudeRangeError(lng);
+    if (latError) errors.gpsLatitude = latError;
+    if (lngError) errors.gpsLongitude = lngError;
   }
 
   if (values.crops.length === 0) errors.crops = 'Select at least one crop.';
@@ -835,13 +839,13 @@ export default function RegistrationForm({
             organisation on the map using the region and district above.
           </p>
           <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90', gpsHintId)}
+            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, LATITUDE_HINT, gpsHintId)}
             {renderInput(
               'gpsLongitude',
               'GPS longitude',
               'number',
               false,
-              'Decimal between -180 and 180',
+              LONGITUDE_HINT,
               gpsHintId,
             )}
           </div>

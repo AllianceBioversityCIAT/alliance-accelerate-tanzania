@@ -179,6 +179,25 @@ describe('RegistrationCreateDto — every free-text string is bound', () => {
   });
 });
 
+describe('RegistrationCreateDto — GPS must be in Africa', () => {
+  it('rejects a point outside the Africa rectangle, naming the field', async () => {
+    const { error } = await run(
+      validBody({ payload: { gpsLatitude: 4.711, gpsLongitude: -74.07 } }), // Bogotá
+    );
+    expect(error).toBeInstanceOf(BadRequestException);
+    const entry = details(error!).find((d) => d.field === 'payload.gpsLongitude');
+    expect(entry?.message).toBe('GPS coordinates must be in Africa.');
+    expect(details(error!).some((d) => d.field === 'payload.gpsLatitude')).toBe(false);
+  });
+
+  it('accepts the rectangle corners', async () => {
+    const { error } = await run(
+      validBody({ payload: { gpsLatitude: -35, gpsLongitude: 58 } }),
+    );
+    expect(error).toBeUndefined();
+  });
+});
+
 describe('RegistrationCreateDto — GPS coordinate pairing (FR-2 scenario 3)', () => {
   it('accepts both coordinates present', async () => {
     const { error } = await run(

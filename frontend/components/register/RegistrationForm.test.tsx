@@ -204,9 +204,9 @@ describe('RegistrationForm — structure', () => {
     // per input prove the copy AND the field's own hint are both present,
     // regardless of concatenation order.
     expect(latitude).toHaveAccessibleDescription(gpsCopy);
-    expect(latitude).toHaveAccessibleDescription(/Decimal between -90 and 90/);
+    expect(latitude).toHaveAccessibleDescription(/Decimal between -35 and 37.6/);
     expect(longitude).toHaveAccessibleDescription(gpsCopy);
-    expect(longitude).toHaveAccessibleDescription(/Decimal between -180 and 180/);
+    expect(longitude).toHaveAccessibleDescription(/Decimal between -25.5 and 58/);
   });
 
   /**
@@ -486,16 +486,18 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(wireShape.gpsLongitude).toBe(0);
   });
 
-  it('rejects out-of-range coordinates', async () => {
+  it('rejects coordinates outside Africa', async () => {
     const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
     await fillMinimalValidForm(user);
-    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
-    fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-200' } });
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '4.711' } });
+    fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-74.07' } });
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
-    expect(screen.getByText('Latitude must be between -90 and 90.')).toBeInTheDocument();
-    expect(screen.getByText('Longitude must be between -180 and 180.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Longitude must be between -25.5 and 58. The location must be in Africa.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Latitude must be between/)).not.toBeInTheDocument();
   });
 
   it('does not call onValidated when the consent checkbox is unticked', async () => {

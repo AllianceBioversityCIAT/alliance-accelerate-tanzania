@@ -316,25 +316,25 @@ describe('ActorForm — client validation', () => {
     expect(createActor).not.toHaveBeenCalled();
   });
 
-  it('rejects GPS latitude outside [-90, 90]', async () => {
+  it('rejects GPS latitude outside Africa', async () => {
     const user = userEvent.setup();
     renderForm();
     await fillRequiredFields(user);
-    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
+    fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '48.85' } });
     submitForm();
 
-    expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-90 and 90/i);
+    expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-35 and 37.6.*Africa/i);
     expect(createActor).not.toHaveBeenCalled();
   });
 
-  it('rejects GPS longitude outside [-180, 180]', async () => {
+  it('rejects GPS longitude outside Africa', async () => {
     const user = userEvent.setup();
     renderForm();
     await fillRequiredFields(user);
-    fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-200' } });
+    fireEvent.change(screen.getByLabelText(/gps longitude/i), { target: { value: '-74.07' } });
     submitForm();
 
-    expect(getFieldError(/gps longitude/i)?.textContent).toMatch(/-180 and 180/i);
+    expect(getFieldError(/gps longitude/i)?.textContent).toMatch(/-25.5 and 58.*Africa/i);
     expect(createActor).not.toHaveBeenCalled();
   });
 
@@ -564,7 +564,7 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
     fireEvent.change(screen.getByLabelText(/gps latitude/i), { target: { value: '95' } });
     submitForm();
 
-    expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-90 and 90/i);
+    expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-35 and 37.6/i);
     expect(createActor).not.toHaveBeenCalled();
   });
 

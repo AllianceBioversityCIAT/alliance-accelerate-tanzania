@@ -53,6 +53,12 @@ import {
 } from '@/lib/api/actors-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import { ACTOR_FORM_CONSENT_COPY } from '@/lib/content/consent-requests';
+import {
+  LATITUDE_HINT,
+  LONGITUDE_HINT,
+  latitudeRangeError,
+  longitudeRangeError,
+} from '@/lib/geo/coordinates';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -492,16 +498,14 @@ function validate(
 
   if (values.gpsLatitude.trim()) {
     const lat = Number(values.gpsLatitude);
-    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      errors.gpsLatitude = 'Latitude must be between -90 and 90.';
-    }
+    const latError = latitudeRangeError(lat);
+    if (latError) errors.gpsLatitude = latError;
   }
 
   if (values.gpsLongitude.trim()) {
     const lng = Number(values.gpsLongitude);
-    if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      errors.gpsLongitude = 'Longitude must be between -180 and 180.';
-    }
+    const lngError = longitudeRangeError(lng);
+    if (lngError) errors.gpsLongitude = lngError;
   }
 
   return errors;
@@ -1248,8 +1252,8 @@ export default function ActorForm({
               {renderRegionField()}
               {renderInput('district', 'District')}
               {renderInput('marketLocation', 'Market location')}
-              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90')}
-              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, 'Decimal between -180 and 180')}
+              {renderInput('gpsLatitude', 'GPS latitude', 'number', false, LATITUDE_HINT)}
+              {renderInput('gpsLongitude', 'GPS longitude', 'number', false, LONGITUDE_HINT)}
             </div>
             {/* T-5 (FR-5): sibling below the grid, not a grid cell — a grid
                 cell would cap the map at ~1/3 card width on lg. Mounted

@@ -119,6 +119,25 @@ describe('AdminActorCreateDto', () => {
     expect(await invalidProps(dto)).toContain('gpsLatitude');
   });
 
+  it('rejects GPS outside Africa and accepts the rectangle edges', async () => {
+    const bogota = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      gpsLatitude: 4.711,
+      gpsLongitude: -74.07,
+    });
+    const props = await invalidProps(bogota);
+    expect(props).toContain('gpsLongitude');
+    expect(props).not.toContain('gpsLatitude');
+
+    const edge = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      gpsLatitude: 37.6,
+      gpsLongitude: -25.5,
+    });
+    expect(await invalidProps(edge)).not.toEqual(expect.arrayContaining(['gpsLatitude']));
+    expect(await invalidProps(edge)).not.toEqual(expect.arrayContaining(['gpsLongitude']));
+  });
+
   // `actors/public-profile-disclosure` T-2 — a populated round-trip, not a
   // `null` default, per the task's Disqualifier: submitting a value and
   // reading it back is what proves the field, not merely that it validates.
