@@ -277,6 +277,16 @@ describe('CoordinatePicker — use my current location (ATP-80)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/outside Africa, so it was not used/i);
   });
 
+  it('clears a device-location error once the coordinates are set another way', async () => {
+    render(<Host />);
+    await clickLocate();
+    act(() => lastCallbacks().success({ coords: { latitude: 4.711, longitude: -74.07, accuracy: 10 } }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/outside Africa/i);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'type manually' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows why a map click outside Africa was not set, and clears it once the fields change', async () => {
     render(<Host />);
     await openPicker();

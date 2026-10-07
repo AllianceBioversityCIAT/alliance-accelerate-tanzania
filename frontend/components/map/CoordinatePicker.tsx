@@ -94,8 +94,10 @@ export default function CoordinatePicker({
   const [locate, setLocate] = useState<LocateStatus>({ kind: 'idle' });
   // A map click/drop outside Africa was refused; cleared once the fields change.
   const [outsideRefused, setOutsideRefused] = useState(false);
+  // Both refusal messages go stale once the fields change: clear them then.
   useEffect(() => {
     setOutsideRefused(false);
+    setLocate((prev) => (prev.kind === 'error' ? { kind: 'idle' } : prev));
   }, [latitude, longitude]);
   const mapRegionId = useId();
 
