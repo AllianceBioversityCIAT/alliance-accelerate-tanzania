@@ -32,6 +32,7 @@ import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { REGIONS } from '@/lib/content/regions';
 import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
+import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
 import {
   CONTACT_PERSON_MAX_LENGTH,
   EMAIL_MAX_LENGTH,
@@ -796,16 +797,9 @@ export default function ActorForm({
   const toggleAdditionalType = useCallback((type: string) => {
     setValues((prev) => ({
       ...prev,
-      additionalTraderTypes: prev.additionalTraderTypes.includes(type)
-        ? prev.additionalTraderTypes.filter((t) => t !== type)
-        : [...prev.additionalTraderTypes, type],
+      additionalTraderTypes: toggleListValue(prev.additionalTraderTypes, type),
     }));
-    setErrors((prev) => {
-      if (!prev.additionalTraderTypes) return prev;
-      const next = { ...prev };
-      delete next.additionalTraderTypes;
-      return next;
-    });
+    setErrors((prev) => withoutFieldError(prev, 'additionalTraderTypes'));
   }, []);
 
   const toggleCrop = useCallback((crop: string) => {
