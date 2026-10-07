@@ -35,7 +35,7 @@ export function IsAdditionalTraderTypes() {
     IsArray(),
     ArrayUnique(),
     ArrayMaxSize(TRADER_TYPES.length - 1),
-    IsIn(TRADER_TYPES as readonly string[], { each: true }),
+    IsIn(TRADER_TYPES, { each: true }),
     NotMainTraderType(),
   );
 }

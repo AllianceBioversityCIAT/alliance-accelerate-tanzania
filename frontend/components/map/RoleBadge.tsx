@@ -78,7 +78,11 @@ export interface RoleBadgeProps {
  * Renders a small color swatch + role label pill.
  * Used in ActorPopup and MapLegend so the visual encoding is consistent.
  */
-export default function RoleBadge({ traderType, variant = 'main', className = '' }: RoleBadgeProps) {
+export default function RoleBadge({
+  traderType,
+  variant = 'main',
+  className = '',
+}: Readonly<RoleBadgeProps>) {
   const { label } = ROLES[traderType] ?? { label: traderType };
   const bgClass   = ROLE_BG_CLASS[traderType] ?? 'bg-muted';
   const chipClass =
@@ -117,7 +121,7 @@ export function RoleBadges({
   additionalTraderTypes,
   layout = 'compact',
   className = '',
-}: RoleBadgesProps) {
+}: Readonly<RoleBadgesProps>) {
   const others = (additionalTraderTypes ?? []) as readonly TraderType[];
 
   if (layout === 'labelled') {

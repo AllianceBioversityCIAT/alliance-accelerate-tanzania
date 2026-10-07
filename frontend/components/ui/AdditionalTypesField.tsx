@@ -27,7 +27,7 @@ export default function AdditionalTypesField({
   disabled,
   error,
   groupId,
-}: AdditionalTypesFieldProps) {
+}: Readonly<AdditionalTypesFieldProps>) {
   const labelId = `${baseId}-additional-types-label`;
   const hintId = `${baseId}-additional-types-hint`;
   const errorId = `${baseId}-additional-types-error`;
@@ -41,13 +41,13 @@ export default function AdditionalTypesField({
       <p id={hintId} className="text-xs text-muted">
         Optional. Select any other roles this organisation plays besides its main type.
       </p>
-      <div
+      {/* Semantic-only fieldset (no border/legend box): its implicit role is "group". */}
+      <fieldset
         id={groupId}
-        role="group"
         aria-labelledby={labelId}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className="flex flex-wrap gap-x-4 gap-y-2"
+        className="m-0 flex min-w-0 flex-wrap gap-x-4 gap-y-2 border-0 p-0"
       >
         {Object.entries(ROLES)
           .filter(([value]) => value !== mainType)
@@ -71,7 +71,7 @@ export default function AdditionalTypesField({
               </div>
             );
           })}
-      </div>
+      </fieldset>
       {error && (
         <p id={errorId} role="alert" className="text-xs text-danger">
           {error}
