@@ -61,7 +61,7 @@ const SELECT_CLASS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Three labeled filter selects: crop, actor role, and region.
+ * Three labeled filter selects: crop, actor type, and region.
  * Each select has an "All …" option that clears that field from the query.
  * Changes call `onChange` with a new merged ActorsQuery (page reset to 1).
  */
@@ -139,19 +139,19 @@ export default function FilterControls({ filters, onChange, regions }: FilterCon
         </select>
       </div>
 
-      {/* ── Actor role ────────────────────────────────────────────────────── */}
+      {/* ── Actor type ────────────────────────────────────────────────────── */}
       <div>
         <label htmlFor="filter-role" className={LABEL_CLASS}>
-          Role
+          Actor type
         </label>
         <select
           id="filter-role"
           value={filters.role ?? ''}
           onChange={handleRole}
           className={SELECT_CLASS}
-          aria-label="Filter by actor role"
+          aria-label="Filter by actor type"
         >
-          <option value="">All roles</option>
+          <option value="">All types</option>
           {(Object.entries(ROLES) as [TraderType, { label: string }][]).map(
             ([type, meta]) => (
               <option key={type} value={type}>

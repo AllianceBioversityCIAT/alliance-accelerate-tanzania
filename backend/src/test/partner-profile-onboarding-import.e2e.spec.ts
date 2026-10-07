@@ -65,6 +65,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { TEMPLATE_COLUMNS, TEMPLATE_HEADERS } from '../common/template-columns';
 import { DISTRICT_TO_REGION } from '../common/normalize';
+import { createActorSequenceMock } from './support/actor-sequence.mock';
 
 // ---- xlsx fixture builder (mirrors admin-actor-import.e2e.spec.ts) ---------
 
@@ -102,12 +103,34 @@ if (!DERIVED_REGION) {
   );
 }
 
+/**
+ * T-4 (consent-intake/intake-required-fields) — the intake contract's
+ * required set (Contact Person, ≥1 crop, Capacity, Phone, Email), spread
+ * into every fixture row below so each dirt class still proves exactly the
+ * ONE thing it names, rather than ALSO failing on the newly-required fields
+ * this spec never meant to exercise. Fields a specific row overrides (e.g.
+ * `unnormalizablePhoneRow`'s own `phone`) take precedence over this filler.
+ */
+const REQUIRED_FIELDS_FILLER: CellMap = {
+  contactPerson: 'Fixture Contact Person',
+  capacityTons: 10,
+  phone: '0700000000',
+  email: 'fixture@example.org',
+  cropSorghum: 'YES',
+};
+
 const districtRescueRow: CellMap = {
-  traderId: 'PPO-1',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture District-Rescue Org',
   traderType: 'bulk_buyer',
   region: DERIVED_REGION,
   district: 'Mbozi',
+  // T-5 (actors/consent-intake/intake-required-fields) — every row below
+  // that is NOT deliberately testing duplicate classification gets its own
+  // phone+email: `REQUIRED_FIELDS_FILLER`'s shared default would otherwise
+  // make every row a strong match of row 2 (design.md §4.5, FR-4).
+  phone: '0700000001',
+  email: 'district-rescue@example.org',
 };
 
 /**
@@ -119,7 +142,7 @@ const districtRescueRow: CellMap = {
  * `traderType` exactly as it would any unrecognized taxonomy value.
  */
 const contaminatedRow: CellMap = {
-  traderId: 'PPO-2',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture Contaminated Org',
   traderType: '+255700000091',
   region: 'Arusha',
@@ -133,27 +156,31 @@ const contaminatedRow: CellMap = {
  * (`design.md` §4.1 / §10.1 F-1).
  */
 const unnormalizablePhoneRow: CellMap = {
-  traderId: 'PPO-3',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture Unnormalizable-Phone Org',
   traderType: 'offtaker',
   region: 'Arusha',
   phone: '+44 20 7946 0958',
+  // T-5 — the phone override above already makes this row's phone unique
+  // (it normalizes to null); its EMAIL still needs its own value so it
+  // isn't an accidental strong match of another row (design.md §4.5).
+  email: 'unnormalizable-phone@example.org',
 };
 
 /**
- * Class 4 — "a duplicate key" (FR-2). Reproduces the SHAPE of the measured
- * `Offtaker_Sorghum` intra-sheet duplicate ids: two rows sharing one
- * `traderId`. The first wins (`dedupeInFile`); the second is
- * `skipped-duplicate-in-file`.
+ * Class 4 — "a duplicate key" (FR-2/FR-4). These two rows deliberately KEEP
+ * `REQUIRED_FIELDS_FILLER`'s shared phone+email — row B strongly matches row
+ * A in-file (design.md §4.5) and is held as `possible-duplicate`, replacing
+ * the old Trader-ID dedupe this pair used to exercise.
  */
 const duplicateKeyRowA: CellMap = {
-  traderId: 'PPO-DUP',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture Duplicate Org A',
   traderType: 'seed_company',
   region: 'Dodoma',
 };
 const duplicateKeyRowB: CellMap = {
-  traderId: 'PPO-DUP',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture Duplicate Org B',
   traderType: 'seed_company',
   region: 'Dodoma',
@@ -167,7 +194,7 @@ const duplicateKeyRowB: CellMap = {
  * the importer's existing required-field check quarantines it on `region`.
  */
 const blankRegionRow: CellMap = {
-  traderId: 'PPO-5',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture Blank-Region Org',
   traderType: 'offtaker',
   region: '',
@@ -192,12 +219,15 @@ const blankRegionRow: CellMap = {
  * does not need checking when the value cannot correspond to anywhere.
  */
 const dmsCoordinatesRow: CellMap = {
-  traderId: 'PPO-6',
+  ...REQUIRED_FIELDS_FILLER,
   traderName: 'Fixture DMS-Coordinates Org',
   traderType: 'seed_company',
   region: 'Mbeya',
   gpsLatitude: "8°75'13\"S",
   gpsLongitude: "33°75'39\"E",
+  // T-5 — its own identity, same reason as `districtRescueRow` above.
+  phone: '0700000002',
+  email: 'dms-coordinates@example.org',
 };
 
 /** Excel rows 2..8, in this fixed order (Excel row number = index + 2). */
@@ -217,6 +247,11 @@ function buildPrismaMock() {
   let actors: Record<string, unknown>[] = [];
   let auditLog: Record<string, unknown>[] = [];
   let actorSeq = 0;
+  // T-4 (consent-intake/intake-required-fields) — in-memory `ActorSequence`
+  // counter (design.md §4.2), mirroring `admin-actor-import.e2e.spec.ts`'s
+  // own T-4 addition: `allocateTraderIds` opens its own transaction,
+  // resolved to the SAME `tx` by the `$transaction` mock below.
+  const actorSequence = createActorSequenceMock();
 
   const nextActorId = (): string =>
     `actor-mock-${String((actorSeq += 1)).padStart(4, '0')}`;
@@ -300,7 +335,9 @@ function buildPrismaMock() {
     }),
   };
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog };
+  const { $executeRaw, $queryRaw } = actorSequence;
+
+  const tx = { actor, cropsOnActors, crop, actorAuditLog, $executeRaw, $queryRaw };
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') return arg(tx);
     return Promise.all(arg);
@@ -316,6 +353,7 @@ function buildPrismaMock() {
       actors = [];
       auditLog = [];
       actorSeq = 0;
+      actorSequence.reset();
       actor.findMany.mockClear();
       actor.create.mockClear();
       $transaction.mockClear();
@@ -427,10 +465,20 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         expect(JSON.stringify(row4.warnings)).not.toContain(digits);
       }
 
-      // Class 4 — duplicate key: first wins as a create, second is
-      // `skipped-duplicate-in-file`.
+      // Class 4 — duplicate key: row A creates, row B strongly matches it
+      // in-file (shared phone+email) and is held as `possible-duplicate`
+      // (design.md §4.5, FR-4 within-file scenario).
       expect(rowByNumber(res.body, 5).outcome).toBe('create');
-      expect(rowByNumber(res.body, 6).outcome).toBe('skipped-duplicate-in-file');
+      const row6 = rowByNumber(res.body, 6);
+      expect(row6.outcome).toBe('possible-duplicate');
+      expect(row6.duplicateCandidates).toEqual([
+        {
+          kind: 'row',
+          row: 5,
+          traderName: 'Fixture Duplicate Org A',
+          matchedOn: expect.arrayContaining(['phone', 'email']),
+        },
+      ]);
 
       // Class 5 — blank required field (quarantine on absent district):
       // quarantined on `region`, never guessed.
@@ -453,12 +501,12 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         rows: 7,
         toCreate: 4,
         created: 0,
-        skipped: 1,
+        possibleDuplicate: 1,
         failed: 2,
       });
       expect(res.body.failureBreakdown).toEqual([
+        { reason: 'possible-duplicate', count: 1 },
         { reason: 'region', count: 1 },
-        { reason: 'skipped-duplicate-in-file', count: 1 },
         { reason: 'traderType', count: 1 },
       ]);
 
@@ -483,14 +531,18 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         rows: 7,
         toCreate: 4,
         created: 4,
-        skipped: 1,
+        possibleDuplicate: 1,
         failed: 2,
       });
 
       // The database mock actually received exactly 4 creates — not inferred
-      // from `totals.created`, but from the mock's own call count.
+      // from `totals.created`, but from the mock's own call count. Row 6
+      // ("Dup Second") is held as a possible duplicate of row 5, never created.
       expect(prismaMock.actor.create).toHaveBeenCalledTimes(4);
-      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      // T-4 — one chunk's commit transaction, plus one for Trader ID
+      // allocation (`allocateTraderIds` opens its own transaction,
+      // design.md §4.2).
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(2);
 
       // Class 1 — the derived-region row round-trips with the derived region.
       const districtRescueId = rowByNumber(res.body, 2).actorId as string;
@@ -533,7 +585,7 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
       // `buildCreateData` drops `undefined` scalars) omits the key
       // entirely, so `not.toHaveProperty` rejects both regressions.
       const dmsCreateCall = prismaMock.actor.create.mock.calls.find(
-        (call) => call[0].data.traderId === 'PPO-6',
+        (call) => call[0].data.traderName === 'Fixture DMS-Coordinates Org',
       );
       expect(dmsCreateCall).toBeDefined();
       const dmsCreateData = dmsCreateCall![0].data;
@@ -542,17 +594,39 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
       expect(dmsCreateData).not.toHaveProperty('gpsAltitude');
       expect(dmsCreateData).not.toHaveProperty('gpsAccuracy');
 
-      // Classes 2 and 5 never became actors at all.
+      // Classes 2 and 5 never became actors at all, nor does the held
+      // Class-4 duplicate (row 6).
       expect(rowByNumber(res.body, 3).actorId).toBeUndefined();
+      expect(rowByNumber(res.body, 6).actorId).toBeUndefined();
       expect(rowByNumber(res.body, 7).actorId).toBeUndefined();
     });
   });
 
-  describe('Idempotent re-upload (FR-2 scenario, upload half: an unchanged workbook re-POSTed in commit mode creates nothing)', () => {
-    it('creates on the first commit and yields zero creates with every row skipped-exists on the second', async () => {
+  /**
+   * T-5 — duplicate classification restores re-upload idempotence
+   * (design.md §4.5, FR-4 scenario 1): a re-posted workbook's own rows now
+   * strongly match the actors the FIRST commit created, so the second commit
+   * holds every row and creates zero.
+   */
+  describe('Re-upload holds every row as a possible duplicate (FR-4 scenario 1, T-5)', () => {
+    it('creates on the first commit; the identical second commit flags both rows, creates zero, and leaves the first run\'s actor untouched', async () => {
       const cleanRows: CellMap[] = [
-        { traderId: 'PPO-IDEM-1', traderName: 'Idempotency Org A', traderType: 'seed_company', region: 'Arusha' },
-        { traderId: 'PPO-IDEM-2', traderName: 'Idempotency Org B', traderType: 'seed_company', region: 'Dodoma' },
+        {
+          ...REQUIRED_FIELDS_FILLER,
+          traderName: 'Idempotency Org A',
+          traderType: 'seed_company',
+          region: 'Arusha',
+          phone: '0700000030',
+          email: 'idempotency-a@example.org',
+        },
+        {
+          ...REQUIRED_FIELDS_FILLER,
+          traderName: 'Idempotency Org B',
+          traderType: 'seed_company',
+          region: 'Dodoma',
+          phone: '0700000031',
+          email: 'idempotency-b@example.org',
+        },
       ];
       const fileBase64 = await buildWorkbook(cleanRows);
       const body = {
@@ -566,12 +640,15 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         .set(admin)
         .send(body)
         .expect(200);
-      expect(first.body.totals).toMatchObject({ created: 2, skipped: 0, failed: 0 });
+      expect(first.body.totals).toMatchObject({ created: 2, possibleDuplicate: 0, failed: 0 });
       expect(first.body.rows.map((r: { outcome: string }) => r.outcome)).toEqual([
         'created',
         'created',
       ]);
 
+      // No upsert mode (FR-2): the first run's own actor is unaffected by
+      // whatever the SECOND run does to the registry, so it is captured
+      // BEFORE the second commit and compared after.
       const firstActorId = first.body.rows[0].actorId as string;
       const beforeSecondRun = await request(app.getHttpServer())
         .get(`/api/v1/admin/actors/${firstActorId}`)
@@ -587,17 +664,19 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         .send(body)
         .expect(200);
 
-      expect(second.body.totals).toMatchObject({ created: 0, skipped: 2, failed: 0 });
+      expect(second.body.totals).toMatchObject({ created: 0, possibleDuplicate: 2, failed: 0 });
       expect(second.body.rows.map((r: { outcome: string }) => r.outcome)).toEqual([
-        'skipped-exists',
-        'skipped-exists',
+        'possible-duplicate',
+        'possible-duplicate',
       ]);
 
-      // Zero NEW creates reached the database mock on the second run.
-      expect(prismaMock.actor.create).toHaveBeenCalledTimes(2); // total across both runs
+      // Only the FIRST run reached the database mock — the second run
+      // created nothing (FR-4 scenario 1: "committing without confirming
+      // any row creates zero actors").
+      expect(prismaMock.actor.create).toHaveBeenCalledTimes(2);
 
-      // The existing record is byte-identical — the importer has no upsert
-      // mode (FR-2's own clause), asserted by comparing the full record.
+      // The first run's actor is byte-identical after the second run — no
+      // upsert mode, and this time no second create either.
       const afterSecondRun = await request(app.getHttpServer())
         .get(`/api/v1/admin/actors/${firstActorId}`)
         .set(admin)

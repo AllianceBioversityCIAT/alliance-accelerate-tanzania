@@ -17,6 +17,7 @@ import {
   CONTACT_BLOCK_FIELDS,
   NEVER_PUBLIC_FIELDS,
 } from '../common/pii-consent.policy';
+import { createConsentRequestMock } from './support/consent-request.mock';
 
 /**
  * T-4 — End-to-end tests for Admin bulk actor operations (FR-1, FR-3, FR-4,
@@ -353,7 +354,13 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     createMany: jest.fn(async () => ({ count: 0 })),
   };
 
-  const tx = { actor, actorAuditLog };
+  // T-3 (consent-request-email, design.md §5.5) — `ConsentSupersessionService`
+  // reaches `tx.consentRequest.updateMany` from `bulkSetConsent`/`bulkDelete`;
+  // this suite does not exercise consent-request behaviour itself, so a
+  // plain in-memory delegate just needs to not crash.
+  const consentRequestMock = createConsentRequestMock();
+
+  const tx = { actor, actorAuditLog, consentRequest: consentRequestMock.consentRequest };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -364,9 +371,16 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
 
   const reset = () => {
     actors = [...initialActors];
+    consentRequestMock.reset();
   };
 
-  return { actor, actorAuditLog, $transaction, reset };
+  return {
+    actor,
+    actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
+    $transaction,
+    reset,
+  };
 }
 
 /** Recursively scan JSON, asserting no forbidden key appears anywhere. */

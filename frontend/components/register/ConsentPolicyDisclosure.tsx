@@ -12,6 +12,10 @@
  * region to its end. This is the UX affordance only; the server-side
  * acceptance field is the enforcement (design.md §5.2, FR-3 scenario 2).
  *
+ * T-8 (`actors/consent-intake/consent-request-email`): the rendering and the
+ * scroll gate moved to `ConsentTextScrollGate.tsx` (shared with the public
+ * consent page); this file keeps the fetch and delegates. Behaviour unchanged.
+ *
  * Controlled component — the one-error-source contract (T-17 obligation).
  * `RegistrationForm` owns a single `errors: Record<string, string>` object
  * and derives both the error summary and every inline message from it. This
@@ -67,10 +71,10 @@
  *      focus it, then Arrow Down/Page Down/End to reach the bottom).
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { getConsentPolicy, type ConsentPolicy } from '@/lib/api/registrations';
-import { hasReachedScrollEnd, type ScrollEndMetrics } from './consent-scroll-gate';
+import ConsentTextScrollGate from './ConsentTextScrollGate';
 
 /**
  * Degrade-safe fallback for the acceptance-checkbox label (see file header)
@@ -104,15 +108,6 @@ export default function ConsentPolicyDisclosure({
 }: ConsentPolicyDisclosureProps) {
   const [policy, setPolicy] = useState<ConsentPolicy | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(false);
-
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const baseId = useId();
-  const headingId = `${baseId}-heading`;
-  const checkboxId = `${baseId}-checkbox`;
-  const progressId = `${baseId}-progress`;
-  const errorId = `${baseId}-error`;
 
   // Read via a ref rather than listed as an effect dependency: the parent
   // (RegistrationForm) passes an inline arrow function that gets a new
@@ -137,151 +132,16 @@ export default function ConsentPolicyDisclosure({
     };
   }, []);
 
-  // The gate is one-way: once the predicate reports the end has been
-  // reached, it stays reached even if the applicant scrolls back up to
-  // re-read a section. Re-reading is allowed; re-hiding the control is not
-  // the behaviour FR-3 describes.
-  const evaluateScrollPosition = useCallback((metrics: ScrollEndMetrics) => {
-    if (hasReachedScrollEnd(metrics)) setReachedEnd(true);
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    evaluateScrollPosition({
-      scrollTop: el.scrollTop,
-      clientHeight: el.clientHeight,
-      scrollHeight: el.scrollHeight,
-    });
-  }, [evaluateScrollPosition]);
-
-  // A short policy never fires a scroll event at all — there is nothing to
-  // scroll — so the gate must also check geometry proactively once the real
-  // sections have rendered (DD-8's "content shorter than its container"
-  // case). Gated on `policy` being loaded: checking before the sections
-  // exist would measure an empty container and could falsely report "fits",
-  // regardless of how long the content about to render actually is.
-  useEffect(() => {
-    if (!policy) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    evaluateScrollPosition({
-      scrollTop: el.scrollTop,
-      clientHeight: el.clientHeight,
-      scrollHeight: el.scrollHeight,
-    });
-  }, [policy, evaluateScrollPosition]);
-
-  const totalSections = policy?.sections.length ?? 0;
-  const progressText = reachedEnd
-    ? `You have reached the end of the policy (${totalSections} section${totalSections === 1 ? '' : 's'}).`
-    : `Keep scrolling — ${totalSections} section${totalSections === 1 ? '' : 's'} to review before you can accept.`;
-
-  const describedBy = [progressId, error ? errorId : ''].filter(Boolean).join(' ') || undefined;
-
   return (
-    <div className="flex flex-col gap-3">
-      {/*
-        T18-A7: this was an <h4>, but the only other heading on /register is
-        RegisterPage's <h1> — an h1 -> h4 skip that only exists once this
-        component is composed into the page (each component's own axe run
-        passed in isolation because the h4 was first there). The fieldset
-        <legend>s around this component are not headings, so this is the
-        page's second real heading and belongs at <h2>.
-      */}
-      <h2 id={headingId} className="text-sm font-semibold text-fg">
-        Data Protection &amp; Participant Consent Policy
-        {policy && <span className="ml-2 font-normal text-muted">v{policy.version}</span>}
-      </h2>
-
-      {/*
-        The focusable scroll region (FR-3 scenario 2's keyboard clause):
-        tabIndex={0} + role="region" + aria-labelledby, so a keyboard user
-        can Tab to it and reach the end with Arrow/Page/End keys without a
-        pointer.
-      */}
-      <div
-        ref={scrollRef}
-        tabIndex={0}
-        role="region"
-        aria-labelledby={headingId}
-        onScroll={handleScroll}
-        className={[
-          'max-h-64 overflow-y-auto rounded-md border border-border bg-surface p-4',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-        ].join(' ')}
-      >
-        {loadFailed && (
-          <p role="alert" className="text-sm text-danger">
-            We couldn&apos;t load the consent policy. Please refresh the page and try again.
-          </p>
-        )}
-        {!policy && !loadFailed && <p className="text-sm text-muted">Loading policy…</p>}
-        {policy?.sections.map((section) => (
-          <section key={section.heading} className="mb-4 last:mb-0">
-            {/* h3, one level under the h2 above (T18-A7) — was h5, which
-                skipped two levels once the outer heading moved from h4 to
-                h2 in the same fix. */}
-            <h3 className="text-sm font-semibold text-fg">{section.heading}</h3>
-            {/* `whitespace-pre-line` is LOAD-BEARING, not styling. Each
-                `section.body` carries Legal's own line breaks and `- ` bullet
-                markers inside a single string; under the CSS default
-                (`white-space: normal`) every one of those newlines collapses
-                to a space, and the section renders as one run-on block.
-                MEASURED in headless Chrome at 375px against the real v1.0
-                text: 280px / 14 lines collapsed, vs 440px / 22 lines correct.
-                This is the document a person accepts, behind the scroll gate.
-                No test in this repo can catch a regression here — jsdom
-                applies no CSS and the text content is present either way — so
-                the assertion in the test file pins the CLASS, and that is a
-                presence-assertion that cannot prove the rendered effect
-                (KZ-002). Verify by rendering, never by reading. */}
-            <p className="mt-1 whitespace-pre-line text-sm text-muted">{section.body}</p>
-            {section.contact && section.contact.length > 0 && (
-              <dl className="mt-2 text-sm text-muted">
-                {section.contact.map((entry) => (
-                  <div key={entry.label} className="flex flex-wrap gap-x-1">
-                    <dt className="font-semibold text-fg">{entry.label}:</dt>
-                    <dd>{entry.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-            {section.bodyAfter && (
-              <p className="mt-2 whitespace-pre-line text-sm text-muted">{section.bodyAfter}</p>
-            )}
-          </section>
-        ))}
-      </div>
-
-      <p id={progressId} aria-live="polite" className="text-xs text-muted">
-        {progressText}
-      </p>
-
-      <div className="flex items-start gap-2">
-        <input
-          id={checkboxId}
-          type="checkbox"
-          checked={checked}
-          disabled={!reachedEnd}
-          onChange={(e) => onChange(e.target.checked)}
-          aria-describedby={describedBy}
-          className={[
-            'mt-0.5 h-4 w-4 rounded border-border text-primary',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
-            'disabled:cursor-not-allowed disabled:opacity-50',
-          ].join(' ')}
-        />
-        <label htmlFor={checkboxId} className="text-sm font-semibold text-fg">
-          {policy?.acceptanceStatement || FALLBACK_ACCEPTANCE_STATEMENT}
-        </label>
-      </div>
-
-      {error && (
-        <p id={errorId} role="alert" className="text-xs text-danger">
-          {error}
-        </p>
-      )}
-    </div>
+    <ConsentTextScrollGate
+      title="Data Protection & Participant Consent Policy"
+      version={policy?.version}
+      sections={policy?.sections ?? null}
+      loadFailed={loadFailed}
+      acceptanceStatement={policy?.acceptanceStatement || FALLBACK_ACCEPTANCE_STATEMENT}
+      checked={checked}
+      onChange={onChange}
+      error={error}
+    />
   );
 }

@@ -90,10 +90,32 @@ jest.mock('../auth/jwt-verifier', () => ({
   resetJwtVerifier: jest.fn(),
 }));
 
+/**
+ * actors/consent-intake/consent-request-email T-5 — the consent delegates the
+ * public `view`/`respond` routes read and write. Module-level so a test can
+ * script them; the Prisma stub below only DEREFERENCES this at instantiation
+ * (inside the app bootstrap, long after this const is initialised).
+ */
+const mockConsentDb = {
+  consentRequest: { findUnique: jest.fn(), updateMany: jest.fn() },
+  actorFindUnique: jest.fn(),
+  actorUpdate: jest.fn(),
+  actorAuditLogCreate: jest.fn(),
+  // The actor-row lock `respond` takes first (`SELECT … FOR UPDATE`): one locked row.
+  queryRaw: jest.fn(),
+};
+
 // In-memory Prisma: a preview import only reads `actor.findMany` for DB dedupe.
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class {
-    actor = { findMany: jest.fn().mockResolvedValue([]) };
+    consentRequest = mockConsentDb.consentRequest;
+    $queryRaw = mockConsentDb.queryRaw;
+    actorAuditLog = { create: mockConsentDb.actorAuditLogCreate };
+    actor = {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: mockConsentDb.actorFindUnique,
+      update: mockConsentDb.actorUpdate,
+    };
     crop = { findMany: jest.fn().mockResolvedValue([]) };
     async onModuleInit(): Promise<void> {}
     async $connect(): Promise<void> {}
@@ -537,6 +559,143 @@ describe('T5-A1 — RegistrationsThrottleGuard 429, proven through the REAL hand
       expect(otherCallerRes.statusCode).toBe(200);
     },
   );
+});
+
+// --- actors/consent-intake/consent-request-email T-5: the public consent routes, through the REAL handler ---
+
+/**
+ * `POST /api/v1/consent/view` and `…/respond` through `lambda.ts`. Two things
+ * only this harness can prove (supertest never reaches `serverless-http`):
+ *
+ *  1. **The JSON body path.** The token travels in the BODY (DD-4); under
+ *     serverless-http `req.body` starts as the raw Buffer, and the shared
+ *     `configureBodyParser` must overwrite it before the `@Allow()`-only DTO
+ *     and the service ever see `token`.
+ *  2. **P-14 — `req.ip` is `event.requestContext.http.sourceIp`.** `respond`
+ *     stores it as evidence (`respondentIp`) and the throttle keys on it. A
+ *     lost `sourceIp` would silently null the evidence and collapse every
+ *     caller into one shared bucket.
+ */
+describe('Consent-link routes through the real handler (T-5, P-14, serverless-http body path)', () => {
+  const VIEW_PATH = '/api/v1/consent/view';
+  const RESPOND_PATH = '/api/v1/consent/respond';
+  // A syntactically ordinary token; the stubs below key off the HASH, not this string.
+  const TOKEN = 'lambda-handler-consent-token-0123456789abcdef';
+
+  const openRequest = {
+    id: 'req-lambda-1',
+    actorId: 'actor-lambda-1',
+    traderId: 'TZ-LAMBDA-1',
+    traderName: 'Lambda Fixture Org',
+    status: 'SENT',
+    editionVersion: 'v1.0',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  };
+  const actorRow = {
+    id: 'actor-lambda-1',
+    traderId: 'TZ-LAMBDA-1',
+    traderName: 'Lambda Fixture Org',
+    region: 'Arusha',
+    district: null,
+    traderType: 'seed_company',
+    consentStatus: 'UNKNOWN',
+    consentMethod: 'NOT_RECORDED',
+    consentObtainedAt: null,
+    consentReference: null,
+    contactPerson: 'Lambda Contact',
+    crops: [],
+  };
+
+  beforeEach(() => {
+    mockConsentDb.consentRequest.findUnique.mockReset();
+    mockConsentDb.consentRequest.updateMany.mockReset();
+    mockConsentDb.actorFindUnique.mockReset();
+    mockConsentDb.actorUpdate.mockReset().mockResolvedValue({});
+    mockConsentDb.actorAuditLogCreate.mockReset().mockResolvedValue({});
+    mockConsentDb.queryRaw.mockReset().mockResolvedValue([
+      { id: 'actor-lambda-1', consentStatus: 'UNKNOWN', consentMethod: 'NOT_RECORDED', consentObtainedAt: null, consentReference: null },
+    ]);
+  });
+
+  it('view: a JSON body with the token reaches the service and returns the 200 preview (not a 400/500 from a raw Buffer body)', async () => {
+    mockConsentDb.consentRequest.findUnique.mockResolvedValue(openRequest);
+    mockConsentDb.actorFindUnique.mockResolvedValue(actorRow);
+
+    const res = await invoke(
+      apiGatewayV2Event({ method: 'POST', path: VIEW_PATH, body: JSON.stringify({ token: TOKEN }), sourceIp: '198.51.100.31' }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.organization).toBe('Lambda Fixture Org');
+    expect(res.body.record.contactPerson).toBe('Lambda Contact');
+    // The token arrived intact: the lookup key is its SHA-256, so a body that
+    // lost or mangled `token` would have missed instead of resolving.
+    const { hashConsentToken } = await import('../consent-requests/consent-token.util');
+    expect(mockConsentDb.consentRequest.findUnique.mock.calls[0][0].where).toEqual({
+      tokenHash: hashConsentToken(TOKEN),
+    });
+  });
+
+  it('respond: req.ip is the event sourceIp and is stored as the evidence IP (P-14), with the user agent', async () => {
+    mockConsentDb.consentRequest.updateMany.mockResolvedValue({ count: 1 });
+    mockConsentDb.consentRequest.findUnique.mockResolvedValue({
+      id: 'req-lambda-1',
+      actorId: 'actor-lambda-1',
+      traderId: 'TZ-LAMBDA-1',
+      traderName: 'Lambda Fixture Org',
+    });
+    mockConsentDb.actorFindUnique.mockResolvedValue(actorRow);
+
+    const res = await invoke(
+      apiGatewayV2Event({
+        method: 'POST',
+        path: RESPOND_PATH,
+        body: JSON.stringify({ token: TOKEN, decision: 'DECLINE' }),
+        sourceIp: '198.51.100.23',
+        headers: { 'user-agent': 'LambdaHandlerBrowser/1.0' },
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ decision: 'DECLINE' });
+    const data = mockConsentDb.consentRequest.updateMany.mock.calls[0][0].data;
+    expect(data.respondentIp).toBe('198.51.100.23');
+    expect(data.respondentUserAgent).toBe('LambdaHandlerBrowser/1.0');
+  });
+
+  it('view throttle: the 21st request from one sourceIp is a 429 and a different sourceIp is unaffected (the key is per-caller, not one shared bucket)', async () => {
+    mockConsentDb.consentRequest.findUnique.mockResolvedValue(null);
+    const send = (ip: string) =>
+      invoke(apiGatewayV2Event({ method: 'POST', path: VIEW_PATH, body: JSON.stringify({ token: 'x' }), sourceIp: ip }));
+
+    for (let i = 0; i < 20; i++) {
+      expect((await send('198.51.100.77')).statusCode).toBe(404);
+    }
+    const over = await send('198.51.100.77');
+    const other = await send('203.0.113.77');
+
+    expect(over.statusCode).toBe(429);
+    expect(other.statusCode).toBe(404);
+  });
+});
+
+describe('Consent-link payload cap (real serverless-http handler, T-5 NFR-4)', () => {
+  it('rejects an oversized body on POST /api/v1/consent/respond with 413, before parsing or the service runs', async () => {
+    mockConsentDb.consentRequest.updateMany.mockClear();
+    const event = apiGatewayV2Event({
+      method: 'POST',
+      path: '/api/v1/consent/respond',
+      body: 'x'.repeat(REGISTRATIONS_PAYLOAD_CAP_BYTES + 1),
+      headers: { 'content-type': 'application/json' },
+      sourceIp: '198.51.100.55',
+    });
+
+    const res = await invoke(event);
+
+    expect(res.statusCode).toBe(413);
+    expect(res.body).toMatchObject({ statusCode: 413 });
+    expect(mockConsentDb.consentRequest.updateMany).not.toHaveBeenCalled();
+  });
 });
 
 // --- T-8: account-access email dispatch survives the Lambda freeze class ---

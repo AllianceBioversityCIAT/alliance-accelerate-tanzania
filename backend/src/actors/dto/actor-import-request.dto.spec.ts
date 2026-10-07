@@ -3,6 +3,9 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ActorImportRequestDto } from './actor-import-request.dto';
 
+/** T-5 — a valid confirmation entry, reused across the new assertions below. */
+const validConfirmation = { row: 5, candidates: ['actor:a1', 'row:3'] };
+
 /**
  * T-4 — Unit tests for the actor bulk-import request DTO (FR-2, FR-3, FR-6, NFR-1).
  *
@@ -88,5 +91,68 @@ describe('ActorImportRequestDto', () => {
     expect(props).toContain('fileName');
     expect(props).toContain('fileBase64');
     expect(props).toContain('mode');
+  });
+
+  // T-5 (actors/consent-intake/intake-required-fields, design.md §3) —
+  // `duplicateConfirmations`.
+  describe('duplicateConfirmations (T-5)', () => {
+    it('passes when omitted entirely', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, validPreview);
+      expect(await invalidProps(dto)).not.toContain('duplicateConfirmations');
+    });
+
+    it('passes a well-formed confirmation list', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: [validConfirmation],
+      });
+      expect(await validate(dto)).toHaveLength(0);
+    });
+
+    it('rejects a non-integer row number', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: [{ ...validConfirmation, row: 'five' }],
+      });
+      expect(await invalidProps(dto)).toContain('duplicateConfirmations');
+    });
+
+    it('rejects a row number below 2 (the first data row)', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: [{ ...validConfirmation, row: 1 }],
+      });
+      expect(await invalidProps(dto)).toContain('duplicateConfirmations');
+    });
+
+    it('rejects a non-string candidate key', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: [{ row: 5, candidates: [42] }],
+      });
+      expect(await invalidProps(dto)).toContain('duplicateConfirmations');
+    });
+
+    it('rejects more than 1,000 entries', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: Array.from({ length: 1001 }, (_, i) => ({
+          row: i + 2,
+          candidates: ['actor:a1'],
+        })),
+      });
+      expect(await invalidProps(dto)).toContain('duplicateConfirmations');
+    });
+
+    it('accepts exactly 1,000 entries', async () => {
+      const dto = plainToInstance(ActorImportRequestDto, {
+        ...validPreview,
+        duplicateConfirmations: Array.from({ length: 1000 }, (_, i) => ({
+          row: i + 2,
+          candidates: ['actor:a1'],
+        })),
+      });
+      expect(await validate(dto)).toHaveLength(0);
+    });
   });
 });

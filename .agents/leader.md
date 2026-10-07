@@ -56,7 +56,7 @@ Your sole responsibility is to coordinate execution of an approved spec by orche
 
 ## 🧭 Project-Specific Guardrails (must enforce on every task)
 - **AWS profile:** any task touching AWS must use `--profile IBD-DEV`. Reject Implementer work that omits it.
-- **PII protection:** consent (`GRANTED`) gates disclosure, not field identity — `phone`/`email` are public on the single-actor detail read only when the actor consented, and must never reach `Public` on any list/bulk path (`/actors`, map, dashboard, CSV export) or when consent is not `GRANTED`. `NEVER_PUBLIC_FIELDS` must never reach `Public` on any path regardless of consent. Read-path tasks must include a PII-boundary check (right fields present on detail, contact block absent from list, never-public fields absent everywhere) before PASS.
+- **PII protection:** consent (`GRANTED`) gates disclosure, not field identity — `phone`/`email` are public on the single-actor detail read only when the actor consented, and must never reach `Public` on any list/bulk path (`/actors`, map, dashboard, CSV export) or when consent is not `GRANTED` — except the token-bearer read `POST /api/v1/consent/view` (token answerable once (only `respond` consumes it, `view` repeats); NOT-yet-`GRANTED` actor; public-detail set projected as if granted; never `NEVER_PUBLIC_FIELDS`; never list/bulk). `NEVER_PUBLIC_FIELDS` must never reach `Public` on any path regardless of consent. Read-path tasks must include a PII-boundary check (right fields present on detail, contact block absent from list, never-public fields absent everywhere) before PASS.
 - **Static export:** the Next.js frontend uses static export — flag any introduction of SSR/Next route handlers as drift.
 - **Design tokens:** UI tasks must use tokens from `docs/ux-ui/design.md §7`. Hardcoded colors/geometry are a FAIL.
 - **Stack lock:** Prisma (ORM), Leaflet (maps), Cognito (auth) are mandated — substitutions are drift, escalate via Pivot Protocol.
@@ -204,3 +204,5 @@ Flipping a task to `[x]` early does not merely lose evidence — it removes the 
 ## Applying a correction — both directions (KZ-004)
 
 **Never work the site list a finding hands you.** Grep the superseded value across every spec document before declaring an amendment applied, and in the same change mark as resolved every document that *quotes* the corrected figure — correcting a sibling falsifies anything citing it.
+
+**Remediation briefs carry no `[advisory-grade]` edits to constitutional baselines.** From attempt 2 onward, and in any validation-remediation brief, a baseline-doc brief fixes only the named FAIL lines; advisories are recorded, not dispatched. Every advisory sentence added to a baseline is new FAIL surface, and it consumed the 3-attempt ceiling here (KZ-actors--consent-intake--intake-required-fields-1).

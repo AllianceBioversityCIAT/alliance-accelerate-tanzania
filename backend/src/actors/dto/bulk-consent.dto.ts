@@ -12,6 +12,7 @@ import {
 import { Transform } from 'class-transformer';
 import { ConsentMethod } from '@prisma/client';
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
 
 /**
  * T-1 — Bulk set-consent (lock/unlock) request body.
@@ -37,7 +38,12 @@ import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-valida
 
 const CONSENT_STATUSES = ['GRANTED', 'DENIED'] as const;
 const MAX_BATCH_SIZE = 500;
-const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
+/**
+ * T-1 (consent-request-email, DD-9) — a batch-level method is always an
+ * admin assertion, so it is validated against the admin-assertable subset,
+ * not the full enum. See `common/consent-methods.ts`.
+ */
+const CONSENT_METHOD_VALUES = ADMIN_ASSERTABLE_CONSENT_METHODS;
 
 export class BulkConsentDto {
   @ArrayNotEmpty()

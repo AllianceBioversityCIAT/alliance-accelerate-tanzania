@@ -14,6 +14,7 @@ import { Transform } from 'class-transformer';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
 
 /**
  * T-3 — Validated write DTO for creating an Actor (NFR-4).
@@ -35,16 +36,21 @@ const SEX_VALUES = ['M', 'F', 'Other'] as const;
 const CONSENT_VALUES = Object.values(ConsentStatus);
 /** T-3 — enum membership derived from the Prisma-generated types (NFR-3, design.md §4.3). */
 const REGISTRATION_SOURCE_VALUES = Object.values(RegistrationSource);
-const CONSENT_METHOD_VALUES = Object.values(ConsentMethod);
+/**
+ * T-1 (consent-request-email, DD-9) — create validates against the
+ * admin-assertable subset, not the full enum: `EMAIL_LINK` can only be
+ * written by the actor's own response to a consent-request link, never
+ * asserted on create. See `common/consent-methods.ts`.
+ */
+const CONSENT_METHOD_VALUES = ADMIN_ASSERTABLE_CONSENT_METHODS;
 
 export class ActorCreateDto {
-  /** Source business key — required, deduped on import (FR-2). */
-  @IsString()
-  @MinLength(1)
-  traderId!: string;
+  // `traderId` is system-assigned (`trader-id.util.ts`, FR-2); a client-sent value is stripped by the global pipe's `whitelist`, not declared here.
 
+  /** Bound matches self-registration's `RegistrationPayloadDto.traderName` (intake-contract.ts, FR-1). */
   @IsString()
   @MinLength(1)
+  @MaxLength(200)
   traderName!: string;
 
   /** Must be a canonical Tanzania region (FR-3). */
@@ -66,11 +72,14 @@ export class ActorCreateDto {
    * (`actors/public-profile-disclosure` FR-4). Bound to match
    * `RegistrationPayloadDto.contactPerson` — the column is `VARCHAR(191)`, so
    * 120 leaves headroom and keeps both intake paths identical.
+   *
+   * Required (FR-1, intake-contract.ts): the required set every intake path
+   * now shares, taking self-registration's rule as the reference.
    */
-  @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(120)
-  contactPerson?: string;
+  contactPerson!: string;
 
   /** PII — gating happens later (T-4); shape is validated here. */
   @IsOptional()
@@ -85,11 +94,10 @@ export class ActorCreateDto {
   @IsString()
   marketLocation?: string;
 
-  /** Capacity in tonnes — numeric, non-negative (FR-3). */
-  @IsOptional()
+  /** Capacity in tonnes — numeric, non-negative; `0` is valid. Required (FR-1, intake-contract.ts). */
   @IsNumber()
   @Min(0)
-  capacityTons?: number;
+  capacityTons!: number;
 
   /** Actor-declared free text, published (FR-4). Matches the `VARCHAR(300)` column. */
   @IsOptional()
@@ -102,14 +110,21 @@ export class ActorCreateDto {
   @MaxLength(2000)
   technicalSupport?: string;
 
-  @IsOptional()
+  /** Required (FR-1, intake-contract.ts); bound matches self-registration's `phone`. */
   @IsString()
-  phone?: string;
+  @MinLength(1)
+  @MaxLength(40)
+  phone!: string;
 
-  /** Validated email format when present (FR-3). */
-  @IsOptional()
+  /**
+   * Validated email format; required (FR-1, intake-contract.ts). `@MaxLength(191)`
+   * matches the `VARCHAR(191)` column — `@IsEmail()` alone admits up to 254
+   * characters (RFC 5321), which would otherwise reach the database and fail
+   * as a 500 (requirements.md FR-1's "same bounds" scenario).
+   */
   @IsEmail()
-  email?: string;
+  @MaxLength(191)
+  email!: string;
 
   /** GPS latitude ∈ [−90, 90] (FR-3). */
   @IsOptional()

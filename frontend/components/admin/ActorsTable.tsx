@@ -69,7 +69,7 @@
 import { useState, useCallback } from 'react';
 import Link from 'next/link';
 
-import { deleteActor, type AdminActor } from '@/lib/api/actors-admin';
+import { deleteActor, type AdminActor, type ConsentMethod } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
 import { roleLabel, type TraderType } from '@/lib/content/roles';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
@@ -95,6 +95,12 @@ export interface ActorsTableProps {
   onEdit?: (actor: AdminActor) => void;
   /** Optional callback for auth failures during row delete. */
   onAuthFailure?: () => void;
+  /**
+   * Replaces the "N actors selected" line — the page passes "All N matching
+   * actors selected" in all-matching mode, where the page's own count (the
+   * visible rows) would contradict the target. Omitted = the row count.
+   */
+  selectionSummary?: string;
   /** Optional row click handler (e.g. open detail/edit in a future task). */
   onRowClick?: (actor: AdminActor) => void;
 }
@@ -198,6 +204,11 @@ const TRADER_NAME_CLAMP_CLASS = 'block max-w-xs truncate';
 // Helpers
 // ---------------------------------------------------------------------------
 
+function defaultSelectionSummary(selectedCount: number): string {
+  if (selectedCount === 0) return 'No actors selected';
+  return `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`;
+}
+
 function consentBadgeClasses(status: string): string {
   switch (status) {
     case 'GRANTED':
@@ -252,20 +263,35 @@ function sourceBadgeClasses(source: string): string {
   }
 }
 
-/** Consent-method caption text (registration-source-and-consent FR-2). */
-function consentMethodLabel(method: string): string {
-  switch (method) {
-    case 'PORTAL_CHECKBOX':
-      return 'Portal checkbox';
-    case 'SIGNED_FORM':
-      return 'Signed form';
-    case 'EMAIL':
-      return 'Email';
-    case 'VERBAL_FIELD':
-      return 'Verbal (field)';
-    default:
-      return 'Not recorded';
-  }
+/**
+ * Consent-method caption text (registration-source-and-consent FR-2).
+ *
+ * A TOTAL `Record` over `ConsentMethod`, not a `switch` with a default: the
+ * old switch rendered a new method as "Not recorded" with no signal
+ * (`EMAIL_LINK` would have been the first casualty, S-3). Now a new union
+ * member is a compile error here.
+ */
+const CONSENT_METHOD_LABEL: Record<ConsentMethod, string> = {
+  NOT_RECORDED: 'Not recorded',
+  PORTAL_CHECKBOX: 'Portal checkbox',
+  SIGNED_FORM: 'Signed form',
+  EMAIL: 'Email',
+  VERBAL_FIELD: 'Verbal (field)',
+  EMAIL_LINK: 'Email link (actor)',
+};
+
+/** Caption colour per method — total for the same reason; the FR-9 warning overrides it below. */
+const CONSENT_METHOD_CLASSES: Record<ConsentMethod, string> = {
+  NOT_RECORDED: 'text-muted',
+  PORTAL_CHECKBOX: 'text-muted',
+  SIGNED_FORM: 'text-muted',
+  EMAIL: 'text-muted',
+  VERBAL_FIELD: 'text-muted',
+  EMAIL_LINK: 'text-muted',
+};
+
+function consentMethodLabel(method: ConsentMethod): string {
+  return CONSENT_METHOD_LABEL[method] ?? CONSENT_METHOD_LABEL.NOT_RECORDED;
 }
 
 /**
@@ -274,12 +300,14 @@ function consentMethodLabel(method: string): string {
  * migration deliberately never backfills it). Flagged with the warning
  * token rather than the neutral muted caption.
  */
-function isUnevidencedGrant(consentStatus: string, consentMethod: string): boolean {
+function isUnevidencedGrant(consentStatus: string, consentMethod: ConsentMethod): boolean {
   return consentStatus === 'GRANTED' && consentMethod === 'NOT_RECORDED';
 }
 
-function consentMethodClasses(consentStatus: string, consentMethod: string): string {
-  return isUnevidencedGrant(consentStatus, consentMethod) ? 'text-warning' : 'text-muted';
+function consentMethodClasses(consentStatus: string, consentMethod: ConsentMethod): string {
+  return isUnevidencedGrant(consentStatus, consentMethod)
+    ? 'text-warning'
+    : (CONSENT_METHOD_CLASSES[consentMethod] ?? 'text-muted');
 }
 
 /**
@@ -290,7 +318,7 @@ function consentMethodClasses(consentStatus: string, consentMethod: string): str
  * an explicit qualifier in the text itself, not just a different token
  * (T-8 rework, "FR-9 flag is emphasis-only" fold-in).
  */
-function consentMethodCaptionText(consentStatus: string, consentMethod: string): string {
+function consentMethodCaptionText(consentStatus: string, consentMethod: ConsentMethod): string {
   const label = consentMethodLabel(consentMethod);
   return isUnevidencedGrant(consentStatus, consentMethod) ? `${label} — no evidence` : label;
 }
@@ -345,7 +373,7 @@ function ConsentCell({
   consentMethod,
 }: {
   consentStatus: string;
-  consentMethod: string;
+  consentMethod: ConsentMethod;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -520,6 +548,7 @@ export function ActorsTable({
   onDelete,
   onEdit,
   onAuthFailure,
+  selectionSummary,
   onRowClick,
 }: ActorsTableProps) {
   const allSelected = actors.length > 0 && actors.every((a) => selectedIds.has(a.id));
@@ -572,9 +601,7 @@ export function ActorsTable({
         aria-live="polite"
         aria-atomic="true"
       >
-        {selectedCount === 0
-          ? 'No actors selected'
-          : `${selectedCount} actor${selectedCount === 1 ? '' : 's'} selected`}
+        {selectionSummary ?? defaultSelectionSummary(selectedCount)}
       </div>
 
       {/* ── Desktop table (lg+) ───────────────────────────────────────────── */}

@@ -9,8 +9,9 @@
 //   - /about page §3.5: wrapped in the Partners section with heading
 //
 // Logo treatment (NFR-4, FR-5):
-//   - Logo'd partners: next/image inside a fixed h-12 cell so logos of varying
-//     aspect ratio align vertically. max-h-9 md:max-h-10 w-auto object-contain.
+//   - Logo'd partners: next/image, vertically centred in their row. Default
+//     max-h-9 md:max-h-10 w-auto object-contain; LOGO_SIZE enlarges specific
+//     logos (wide wordmarks read small at the shared height).
 //     Full color at all times (client request, ATP-76).
 //   - Text-fallback partners (no logo asset): styled <span> inside the same
 //     accessible link wrapper, vertically centered in the h-12 cell.
@@ -36,14 +37,23 @@ const TIER_GROUPS: Array<{
 ];
 
 // Intrinsic dimensions per logo (width × height) for correct next/image layout.
-// Gates wordmark ~1000×202; TARI ~176×64; TOSCI ~200×52; Alliance/PABRA keep prior values.
+// Must match the files in public/ — update when a logo file is replaced.
 const LOGO_DIMS: Record<string, { width: number; height: number }> = {
-  alliance: { width: 400,  height: 80  },
-  pabra:    { width: 477,  height: 181 },
+  alliance: { width: 1200, height: 401 },
+  pabra:    { width: 291,  height: 175 },
   tari:     { width: 176,  height: 64  },
   tosci:    { width: 200,  height: 52  },
-  cimmyt:   { width: 615,  height: 88  },
-  bmgf:     { width: 1000, height: 202 },
+  cimmyt:   { width: 1200, height: 300 },
+  bmgf:     { width: 1280, height: 328 },
+};
+
+const DEFAULT_LOGO_SIZE = 'max-h-9 md:max-h-10';
+
+// Per-logo height overrides (client request: larger Gates, Alliance, PABRA).
+const LOGO_SIZE: Record<string, string> = {
+  bmgf:     'max-h-11 md:max-h-14',
+  alliance: 'max-h-14 md:max-h-16',
+  pabra:    'max-h-14 md:max-h-16',
 };
 
 // ---------------------------------------------------------------------------
@@ -68,8 +78,8 @@ function TierLabel({ label }: { label: string }) {
 
 /**
  * Renders a single partner as an accessible external link.
- * Logo'd partners use next/image in a fixed h-12 cell, in full color. Partners without a logo asset fall back to a styled text label,
- * also vertically centered in an h-12 cell so it aligns with the logos.
+ * Logo'd partners use next/image in a min-h-12 cell, in full color. Partners without a logo asset fall back to a styled text label,
+ * also vertically centered in a min-h-12 cell so it aligns with the logos.
  */
 function PartnerLogo({ p }: { p: Partner }) {
   const dims = LOGO_DIMS[p.key] ?? { width: 160, height: 48 };
@@ -82,14 +92,14 @@ function PartnerLogo({ p }: { p: Partner }) {
       aria-label={`${p.name} — opens in a new tab`}
       className="group inline-flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
-      <span className="flex h-12 items-center">
+      <span className="flex min-h-12 items-center">
         {p.logo ? (
           <Image
             src={p.logo}
             alt={p.name}
             width={dims.width}
             height={dims.height}
-            className="max-h-9 md:max-h-10 w-auto object-contain"
+            className={`${LOGO_SIZE[p.key] ?? DEFAULT_LOGO_SIZE} w-auto object-contain`}
           />
         ) : (
           <span className="text-sm font-semibold text-muted">{p.name}</span>

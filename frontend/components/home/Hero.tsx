@@ -104,7 +104,7 @@ function VisualPanel({ panelRef, countRef }: VisualPanelProps) {
         {/* Real field/harvest photography — meaningful image (informative alt). */}
         <Image
           src="/hero-harvest.jpg"
-          alt="A young bean farmer sorting freshly harvested red beans at a community drying site in the Tanzanian highlands."
+          alt="Group photo of ACCELERATE project partners and staff gathered outside a meeting venue."
           fill
           priority
           sizes="(min-width: 1024px) 50vw, 100vw"

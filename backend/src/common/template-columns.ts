@@ -17,8 +17,10 @@
  * This module is DB- and Nest-independent (pure data), matching `normalize.ts`.
  */
 
-import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
+import { ConsentStatus } from '@prisma/client';
 import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
+import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
+import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 
 /** Bump on ANY column change (order, headers, allowed values). Stamped on the
  * Instructions sheet and used for best-effort stale-template detection.
@@ -27,8 +29,23 @@ import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
  * Method, Consent Obtained At, Consent Reference), FR-1/FR-2/FR-5.
  *
  * T-4 (public-profile-disclosure) — bumped v2 → v3: two columns appended
- * (Contact Person, Other Crops), FR-4/FR-5. */
-export const TEMPLATE_VERSION = 'v3';
+ * (Contact Person, Other Crops), FR-4/FR-5.
+ *
+ * T-4 (consent-intake/intake-required-fields) — bumped v3 → v4: Trader ID,
+ * GPS Altitude, GPS Accuracy and Registration Source columns are dropped (the
+ * system now assigns Trader ID and imports are always TEAM_MANAGED, design.md
+ * §4.5/§4.6); Contact Person, Capacity, Phone and Email become required,
+ * matching the intake contract every path now shares (FR-1, FR-5). */
+export const TEMPLATE_VERSION = 'v4';
+
+/**
+ * Required flags for the four intake-contract scalars this template carries
+ * (`crops` has no single template column — it is the three YES/NO columns
+ * below, enforced as "at least one" at row-validation time, not per-column).
+ * Derived from the ONE declaration (`intake-contract.ts`, NFR-1) rather than a
+ * second hand-maintained boolean per field.
+ */
+const CONTRACT_REQUIRED = new Set<string>(INTAKE_REQUIRED_FIELDS);
 
 /**
  * Canonical Actor `sex` values. Mirrors the private `SEX_VALUES` in
@@ -44,23 +61,18 @@ export const CROP_YES_NO = ['YES', 'NO'] as const;
 export const CONSENT_VALUES = Object.values(ConsentStatus) as ConsentStatus[];
 
 /**
- * T-6 — Prisma `RegistrationSource` values (TEAM_MANAGED | SELF_REGISTERED),
- * derived from the Prisma-generated enum rather than re-typed (NFR-3),
- * matching how `ActorCreateDto` derives `REGISTRATION_SOURCE_VALUES`.
- */
-export const REGISTRATION_SOURCE_VALUES = Object.values(
-  RegistrationSource,
-) as RegistrationSource[];
-
-/**
  * T-6 — Prisma `ConsentMethod` values (NOT_RECORDED | PORTAL_CHECKBOX |
- * SIGNED_FORM | EMAIL | VERBAL_FIELD), derived from the Prisma-generated enum
- * (NFR-3). `PORTAL_CHECKBOX` is included for completeness even though this
- * spec never writes it (design.md §2) — the dropdown lists every valid value.
+ * SIGNED_FORM | EMAIL | VERBAL_FIELD). `PORTAL_CHECKBOX` is included for
+ * completeness even though this spec never writes it (design.md §2) — the
+ * dropdown lists every valid value.
+ *
+ * T-1 (consent-request-email, DD-9) — derived from the admin-assertable
+ * subset, NOT the full Prisma enum: `EMAIL_LINK` is written only by an
+ * actor's own response to a consent-request link, never importable, and
+ * keeping this set unchanged is what keeps the committed import template
+ * byte-identical (design.md §5.7 — no regeneration needed).
  */
-export const CONSENT_METHOD_VALUES = Object.values(
-  ConsentMethod,
-) as ConsentMethod[];
+export const CONSENT_METHOD_VALUES = [...ADMIN_ASSERTABLE_CONSENT_METHODS];
 
 /**
  * Column field → canonical crop name (`Crop.name`), consumed by the parser to
@@ -92,8 +104,7 @@ export interface TemplateColumn {
 /**
  * The template columns, in field-staff data-entry order: identity first, then
  * location, classification, contact/PII, GPS, the three crop toggles, and
- * consent last. Required flags match `ActorCreateDto`'s required fields
- * (traderId, traderName, traderType, region); everything else is optional.
+ * consent last.
  *
  * T-6 — appended after Consent Status (additive only, existing column
  * positions unchanged): Registration Source and the three consent-provenance
@@ -104,9 +115,15 @@ export interface TemplateColumn {
  * D-13): Contact Person and Other Crops, both optional free text with no
  * allowed-value list — there is nothing to validate against, so "no list" IS
  * the headers/Instructions/parser agreement FR-5 requires for these two.
+ *
+ * T-4 (consent-intake/intake-required-fields) — Trader ID, GPS Altitude, GPS
+ * Accuracy and Registration Source columns removed (dropped, not just
+ * optional — the system assigns Trader ID and imports are always
+ * TEAM_MANAGED). Contact Person, Capacity, Phone and Email flip `required` to
+ * `true`, driven by {@link CONTRACT_REQUIRED}; at least one crop is enforced
+ * at row-validation time, not here (FR-1, FR-5).
  */
 export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
-  { header: 'Trader ID', field: 'traderId', required: true },
   { header: 'Trader Name', field: 'traderName', required: true },
   {
     header: 'Trader Type',
@@ -132,20 +149,20 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
   {
     header: 'Capacity (tonnes)',
     field: 'capacityTons',
-    required: false,
+    required: CONTRACT_REQUIRED.has('capacityTons'),
     format: 'Number ≥ 0 in tonnes, e.g. 1250.5',
   },
   { header: 'Technical Support', field: 'technicalSupport', required: false },
   {
     header: 'Phone',
     field: 'phone',
-    required: false,
+    required: CONTRACT_REQUIRED.has('phone'),
     format: 'International format, e.g. +255 7XX XXX XXX',
   },
   {
     header: 'Email',
     field: 'email',
-    required: false,
+    required: CONTRACT_REQUIRED.has('email'),
     format: 'Valid email address, e.g. name@example.org',
   },
   {
@@ -159,18 +176,6 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     field: 'gpsLongitude',
     required: false,
     format: 'Decimal degrees between −180 and 180, e.g. 39.2083',
-  },
-  {
-    header: 'GPS Altitude',
-    field: 'gpsAltitude',
-    required: false,
-    format: 'Metres above sea level (number), e.g. 55',
-  },
-  {
-    header: 'GPS Accuracy',
-    field: 'gpsAccuracy',
-    required: false,
-    format: 'Metres (number ≥ 0), e.g. 4.5',
   },
   {
     header: 'Crop: Sorghum',
@@ -197,12 +202,6 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     allowedValues: CONSENT_VALUES,
   },
   {
-    header: 'Registration Source',
-    field: 'registrationSource',
-    required: false,
-    allowedValues: REGISTRATION_SOURCE_VALUES,
-  },
-  {
     header: 'Consent Method',
     field: 'consentMethod',
     required: false,
@@ -223,7 +222,7 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
   {
     header: 'Contact Person',
     field: 'contactPerson',
-    required: false,
+    required: CONTRACT_REQUIRED.has('contactPerson'),
     format: 'Free text, e.g. Jane Mwangi (max 120 chars)',
   },
   {

@@ -66,11 +66,16 @@ import {
   type ConsentMethod,
 } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
+import type { ConsentRequestTarget } from '@/lib/api/consent-requests-admin';
 
 import { ActorsTable } from '@/components/admin/ActorsTable';
 import { BulkActionBar } from '@/components/admin/BulkActionBar';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { AcknowledgeDialog } from '@/components/admin/AcknowledgeDialog';
+import { ConsentQueueBanner } from '@/components/admin/ConsentQueueBanner';
+import { ConsentSelectionStrip } from '@/components/admin/ConsentSelectionStrip';
+import { SendConsentDialog } from '@/components/admin/SendConsentDialog';
+import { useConsentDispatch } from '@/lib/admin/useConsentDispatch';
 import { FilterSelect } from '@/components/admin/FilterSelect';
 import { PaginationControls } from '@/components/admin/PaginationControls';
 import Skeleton from '@/components/ui/Skeleton';
@@ -110,6 +115,7 @@ const CONSENT_METHOD_OPTIONS: { value: AdminActorListQuery['consentMethod']; lab
   { value: 'SIGNED_FORM',     label: 'Signed form' },
   { value: 'EMAIL',           label: 'Email' },
   { value: 'VERBAL_FIELD',    label: 'Verbal (field)' },
+  { value: 'EMAIL_LINK',      label: 'Email link (actor)' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -249,6 +255,16 @@ function ActorsView() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // T-9 — "all N matching the current filters" target. While true the page's
+  // ids stay selected (the visible rows) but the consent send targets the
+  // URL filters instead; cleared by any selection change, page or filter change.
+  const [allMatching, setAllMatching] = useState(false);
+
+  // T-9 — the target the open send dialog was started with, and a counter
+  // that re-reads the queue banner when the dialog closes.
+  const [sendTarget, setSendTarget] = useState<{ target: ConsentRequestTarget; expectedCount: number } | null>(null);
+  const [queueRefreshKey, setQueueRefreshKey] = useState(0);
+
   // ── Success banner ────────────────────────────────────────────────────────
 
   const [successMsg, setSuccessMsg] = useState<string | undefined>();
@@ -262,7 +278,7 @@ function ActorsView() {
 
   // ── Bulk-action dialog state ──────────────────────────────────────────────
 
-  type DialogKind = 'unlock' | 'lock' | 'delete' | null;
+  type DialogKind = 'unlock' | 'lock' | 'delete' | 'send' | null;
 
   const [activeDialog, setActiveDialog] = useState<DialogKind>(null);
   const [dialogLoading, setDialogLoading] = useState(false);
@@ -283,6 +299,17 @@ function ActorsView() {
   const handleAuthFailure = useCallback(() => {
     router.push('/login');
   }, [router]);
+
+  // ── The ONE consent dispatch owner (T-9) ─────────────────────────────────
+  //
+  // Shared by ConsentQueueBanner and SendConsentDialog. Two instances would
+  // each carry their own in-flight guard and so permit two concurrent
+  // dispatch loops (design.md §5.2, P-10). Lives here — not in the dialog —
+  // so closing the dialog never orphans a loop: it keeps running and the
+  // banner shows it.
+  const consentDispatch = useConsentDispatch({ token: token ?? '', onAuthFailure: handleAuthFailure });
+  const consentSending = consentDispatch.state.phase === 'running';
+  const resetConsentDispatch = consentDispatch.reset;
 
   // ── Fetch helpers ─────────────────────────────────────────────────────────
 
@@ -337,6 +364,7 @@ function ActorsView() {
     setLoading(true);
     setError(undefined);
     setSelectedIds(new Set()); // selection is page-scoped
+    setAllMatching(false);
 
     let cancelled = false;
 
@@ -438,6 +466,7 @@ function ActorsView() {
   // ── Selection handlers ────────────────────────────────────────────────────
 
   const handleToggle = useCallback((id: string) => {
+    setAllMatching(false);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -450,6 +479,7 @@ function ActorsView() {
   }, []);
 
   const handleToggleAll = useCallback(() => {
+    setAllMatching(false);
     setSelectedIds((prev) => {
       const allPageIds = actors.map((a) => a.id);
       const allSelected = allPageIds.every((id) => prev.has(id));
@@ -584,6 +614,41 @@ function ActorsView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+
+  // ── Bulk consent send (T-9) ───────────────────────────────────────────────
+
+  const pageSelected = actors.length > 0 && actors.every((a) => selectedIds.has(a.id));
+
+  const handleSelectAllMatching = useCallback(() => setAllMatching(true), []);
+  const handleClearSelection = useCallback(() => {
+    setAllMatching(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const openSendDialog = useCallback(() => {
+    if (consentSending) return;
+    // The five URL filters only — never page/pageSize (design.md §6).
+    const filter = {
+      ...(region ? { region } : {}),
+      ...(traderType ? { traderType } : {}),
+      ...(consentStatus ? { consentStatus } : {}),
+      ...(registrationSource ? { registrationSource } : {}),
+      ...(consentMethod ? { consentMethod } : {}),
+    };
+    setSendTarget(
+      allMatching
+        ? { target: { kind: 'filter', filter }, expectedCount: total }
+        : { target: { kind: 'ids', ids: Array.from(selectedIds) }, expectedCount: selectedIds.size },
+    );
+    setActiveDialog('send');
+  }, [consentSending, allMatching, total, selectedIds, region, traderType, consentStatus, registrationSource, consentMethod]);
+
+  const closeSendDialog = useCallback(() => {
+    setActiveDialog(null);
+    setSendTarget(null);
+    setQueueRefreshKey((k) => k + 1);
+    resetConsentDispatch(); // no-op while a loop runs; otherwise drops the settled run's counts
+  }, [resetConsentDispatch]);
 
   const openDialog = useCallback((kind: Exclude<DialogKind, null>) => {
     setDialogError(undefined);
@@ -737,6 +802,11 @@ function ActorsView() {
         )}
       </div>
 
+      {/* ── Consent queue banner (T-9) — resume / retry after an interrupted run ── */}
+      {token && (
+        <ConsentQueueBanner token={token} dispatch={consentDispatch} refreshKey={queueRefreshKey} onAuthFailure={handleAuthFailure} />
+      )}
+
       {/* ── Error banner ──────────────────────────────────────────────────── */}
       {error && !loading && (
         <div
@@ -790,7 +860,22 @@ function ActorsView() {
             onUnlock={() => openDialog('unlock')}
             onLock={() => openDialog('lock')}
             onDelete={() => openDialog('delete')}
+            onSendConsent={openSendDialog}
             loading={dialogLoading}
+            allMatching={allMatching}
+            sendDisabled={consentSending}
+            matchingTotal={total}
+          />
+
+          {/* Select page (card view) + select all N matching (T-9) */}
+          <ConsentSelectionStrip
+            pageCount={actors.length}
+            total={total}
+            pageSelected={pageSelected}
+            allMatching={allMatching}
+            onTogglePage={handleToggleAll}
+            onSelectAllMatching={handleSelectAllMatching}
+            onClear={handleClearSelection}
           />
 
           {/* Table */}
@@ -803,6 +888,7 @@ function ActorsView() {
             onDelete={handleDeleteActor}
             onEdit={handleEditActor}
             onAuthFailure={handleAuthFailure}
+            selectionSummary={allMatching ? `All ${total} matching actors selected` : undefined}
           />
 
           {/* Pagination */}
@@ -823,6 +909,17 @@ function ActorsView() {
       )}
 
       {/* ── Bulk-action dialogs ───────────────────────────────────────────── */}
+
+      {activeDialog === 'send' && sendTarget && token && (
+        <SendConsentDialog
+          target={sendTarget.target}
+          expectedCount={sendTarget.expectedCount}
+          token={token}
+          dispatch={consentDispatch}
+          onClose={closeSendDialog}
+          onAuthFailure={handleAuthFailure}
+        />
+      )}
 
       <AcknowledgeDialog
         open={activeDialog === 'unlock'}

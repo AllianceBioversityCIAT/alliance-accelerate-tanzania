@@ -116,8 +116,8 @@ describe('ProfileView', () => {
 
     it('renders GPS coordinates as text when present', () => {
       renderProfile();
-      // formatGps(-6.17, 35.74) → '-6.1700° N, 35.7400° E'
-      expect(screen.getByText(/-6\.1700/)).toBeInTheDocument();
+      // formatGps(-6.17, 35.74) → '6.1700° S, 35.7400° E'
+      expect(screen.getByText('6.1700° S, 35.7400° E')).toBeInTheDocument();
     });
 
     it('renders the Market Activity section heading', () => {

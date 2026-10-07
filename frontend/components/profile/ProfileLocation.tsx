@@ -6,6 +6,7 @@
 // Token-driven: no raw hex (NFR-4).
 
 import type { PublicActor } from '@/lib/api/actors';
+import { formatHemisphericPair } from '@/lib/geo/coordinates';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ export interface ProfileLocationProps {
 
 /** Format a GPS coordinate pair as a compact textual string. */
 function formatGps(lat: number, long: number): string {
-  return `${lat.toFixed(4)}° N, ${long.toFixed(4)}° E`;
+  return formatHemisphericPair(lat, long);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

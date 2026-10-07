@@ -29,7 +29,7 @@ jest.mock('aws-amplify/auth', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { apiGet, apiGetAuthed, AuthFailureError } from './client';
+import { apiFetch, apiGet, apiGetAuthed, ApiError, AuthFailureError } from './client';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -280,5 +280,91 @@ describe('apiGetAuthed() — authenticated transport', () => {
 
     await expect(apiGetAuthed('/api/v1/auth/me')).rejects.toThrow('NEXT_PUBLIC_API_BASE_URL');
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apiFetch — ApiError.body (T-6, actors/consent-intake/intake-required-fields)
+//
+// `ApiError` previously surfaced only `details` (the `[{field, message}]`
+// array). A 409's `duplicateCandidates` sits alongside `details` in the same
+// envelope, not inside it, so `ApiError` must also keep the full parsed body.
+// ---------------------------------------------------------------------------
+
+describe('apiFetch() — ApiError.body carries the full parsed envelope', () => {
+  const ORIGINAL_ENV = process.env;
+
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_API_BASE_URL: 'https://api.example.com' };
+    jest.resetAllMocks();
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('carries the whole envelope on ApiError.body, including a key `details` does not expose', async () => {
+    const envelope = {
+      statusCode: 409,
+      message: 'Possible duplicate',
+      error: 'Conflict',
+      duplicateCandidates: [
+        { actorId: 'actor-1', traderId: 'TM-2026-0001', traderName: 'Kilimo Traders', matchedOn: ['email'] },
+      ],
+    };
+    global.fetch = makeFetchNotOk(409, 'Conflict', envelope);
+
+    let caught: unknown;
+    try {
+      await apiFetch('/api/v1/admin/actors', { method: 'POST', token: 't', body: {} });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).body).toEqual(envelope);
+    // `details` stays undefined for an envelope that never had one — the two
+    // fields are independent, not a weaker/stronger pair of the same data.
+    expect((caught as ApiError).details).toBeUndefined();
+  });
+
+  it('still populates `details` from the envelope alongside `body` (no regression)', async () => {
+    const envelope = {
+      statusCode: 400,
+      message: 'Validation failed',
+      error: 'Bad Request',
+      details: [{ field: 'phone', message: 'phone is required' }],
+    };
+    global.fetch = makeFetchNotOk(400, 'Bad Request', envelope);
+
+    let caught: unknown;
+    try {
+      await apiFetch('/api/v1/admin/actors', { method: 'POST', token: 't', body: {} });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).details).toEqual(envelope.details);
+    expect((caught as ApiError).body).toEqual(envelope);
+  });
+
+  it('leaves `body` undefined when the error response is not JSON', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: () => Promise.reject(new Error('not json')),
+    });
+
+    let caught: unknown;
+    try {
+      await apiFetch('/api/v1/admin/actors', { method: 'GET', token: 't' });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).body).toBeUndefined();
   });
 });

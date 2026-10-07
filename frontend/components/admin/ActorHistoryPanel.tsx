@@ -22,8 +22,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { getActorHistory, type AuditEntry } from '@/lib/api/actors-admin';
+import { getActorHistory, type AuditEntry, type DuplicateConfirmationSnapshot } from '@/lib/api/actors-admin';
 import Skeleton from '@/components/ui/Skeleton';
+import { matchedOnLabel } from '@/components/admin/DuplicateConfirmDialog';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,6 +40,8 @@ export interface ActorHistoryPanelProps {
 interface DiffChanges {
   kind: 'diff';
   fields: Record<string, { from: unknown; to: unknown }>;
+  /** `CONSENT_RESPONDED` — the consent request the actor answered. */
+  requestId?: string;
 }
 
 interface SnapshotChanges {
@@ -97,7 +100,14 @@ const actionBadgeClasses: Record<AuditEntry['action'], string> = {
   IMPORT: 'bg-primary-soft text-primary',
   REGISTRATION_APPROVE: 'bg-highlight-tint text-success',
   REGISTRATION_REJECT: 'bg-danger-soft text-danger',
+  CONSENT_REQUESTED: 'bg-primary-soft text-primary',
+  CONSENT_RESPONDED: 'bg-highlight-tint text-success',
+  CONSENT_DOCUMENT_UPLOADED: 'bg-surface-alt text-warning',
 };
+
+/** `actingSub` of an entry written by the actor's own consent response (FR-13), not an admin. */
+const CONSENT_LINK_ACTING_SUB = 'consent-link';
+const CONSENT_LINK_LABEL = 'Consent link (actor)';
 
 function actionLabel(action: AuditEntry['action']): string {
   return action.replace(/_/g, ' ');
@@ -141,6 +151,12 @@ function DiffDetails({ changes }: { changes: DiffChanges }) {
 
   return (
     <dl className="mt-2 space-y-1">
+      {changes.requestId && (
+        <div className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 text-sm">
+          <dt className="font-medium text-muted">Consent request</dt>
+          <dd className="break-all text-fg">{changes.requestId}</dd>
+        </div>
+      )}
       {fields.map(([field, delta]) => (
         <div key={field} className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 text-sm">
           <dt className="font-medium text-muted">{field}</dt>
@@ -181,6 +197,12 @@ function SnapshotDetails({
     case 'REGISTRATION_APPROVE':
       summary = 'Approved — actor published';
       break;
+    case 'CONSENT_REQUESTED':
+      summary = 'Consent request sent — details';
+      break;
+    case 'CONSENT_DOCUMENT_UPLOADED':
+      summary = 'Consent document attached — details';
+      break;
     default:
       summary = 'Snapshot';
   }
@@ -218,8 +240,51 @@ function SnapshotDetails({
   );
 }
 
+/**
+ * T-6 (`actors/consent-intake/intake-required-fields`, FR-3) — one
+ * "Confirmed not a duplicate of …" line per snapshot. `'actor'` kind names
+ * the existing actor's Trader ID (the only kind admin create produces);
+ * `'row'` kind names the workbook row when an in-file import match was never
+ * resolved to a created actor (T-5, design.md §4.5).
+ */
+function duplicateConfirmationLine(snapshot: DuplicateConfirmationSnapshot): string {
+  const target = snapshot.kind === 'actor' ? snapshot.traderId : `row ${snapshot.row}`;
+  return `Confirmed not a duplicate of ${target} (matched on ${matchedOnLabel(snapshot.matchedOn)})`;
+}
+
+function DuplicateConfirmationList({
+  duplicateConfirmation,
+}: Readonly<{
+  duplicateConfirmation: DuplicateConfirmationSnapshot[] | null;
+}>) {
+  // The real API returns `null` for "nothing confirmed"; an in-memory e2e
+  // test harness mock has stored the Prisma.JsonNull sentinel instead — never
+  // assert on that shape here, just render nothing for null/empty either way.
+  if (!Array.isArray(duplicateConfirmation) || duplicateConfirmation.length === 0) {
+    return null;
+  }
+
+  // Plain <div>/<p>, not <ul>/<li> — an <li> carries an IMPLICIT "listitem"
+  // role with no opt-out, which would collide with the single
+  // `role="listitem"` HistoryEntry.article already carries (every existing
+  // test queries `getByRole('listitem')` expecting exactly one match per entry).
+  return (
+    <div className="mt-2 space-y-1">
+      {duplicateConfirmation.map((snapshot) => {
+        const key = snapshot.kind === 'actor' ? `actor-${snapshot.actorId}` : `row-${snapshot.row}`;
+        return (
+          <p key={key} className="text-sm text-muted">
+            {duplicateConfirmationLine(snapshot)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function HistoryEntry({ entry }: { entry: AuditEntry }) {
-  const actorLabel = entry.actingEmail ?? entry.actingSub;
+  const actorLabel =
+    entry.actingSub === CONSENT_LINK_ACTING_SUB ? CONSENT_LINK_LABEL : (entry.actingEmail ?? entry.actingSub);
 
   return (
     <article
@@ -241,6 +306,8 @@ function HistoryEntry({ entry }: { entry: AuditEntry }) {
       {!isDiff(entry.changes) && !isSnapshot(entry.changes) && (
         <p className="mt-2 text-sm text-muted">Details not available</p>
       )}
+
+      <DuplicateConfirmationList duplicateConfirmation={entry.duplicateConfirmation} />
     </article>
   );
 }

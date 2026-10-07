@@ -1,4 +1,17 @@
-import { IsBase64, IsBoolean, IsIn, IsOptional, IsString, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBase64,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 /**
  * T-4 — Admin-only validated request body for the actor bulk-import route
@@ -14,6 +27,26 @@ import { IsBase64, IsBoolean, IsIn, IsOptional, IsString, Matches } from 'class-
  * @sdd-spec admin/actor-import
  * Design refs: `docs/specs/admin/actor-import/design.md` §3.
  */
+
+/**
+ * T-5 (actors/consent-intake/intake-required-fields) — one row's confirmed
+ * duplicate candidates (design.md §3). `candidates` entries are the exact
+ * keys the row's `duplicateCandidates` carried in a prior preview:
+ * `actor:<id>` for an existing-actor match, `row:<n>` for an earlier row of
+ * the same workbook.
+ */
+export class DuplicateConfirmationEntryDto {
+  /** Excel data-row number this confirmation applies to. */
+  @IsInt()
+  @Min(2)
+  row!: number;
+
+  /** Candidate keys the admin confirmed are NOT duplicates of this row. */
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  candidates!: string[];
+}
 
 export class ActorImportRequestDto {
   /** Uploaded workbook filename — `.xlsx` only; `.csv`/`.xls` are out of scope (FR-2). */
@@ -38,4 +71,18 @@ export class ActorImportRequestDto {
   @IsOptional()
   @IsBoolean()
   acknowledged?: boolean;
+
+  /**
+   * T-5 — per-row duplicate confirmations (design.md §3, DD-4). Ignored in
+   * `preview` mode; the server recomputes every row's matches at commit and
+   * only creates a `possible-duplicate` row whose strong candidates are ALL
+   * named here for its own `row` number — a stale or partial confirmation
+   * never passes (FR-4's "premise changed" scenario).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => DuplicateConfirmationEntryDto)
+  duplicateConfirmations?: DuplicateConfirmationEntryDto[];
 }

@@ -21,7 +21,6 @@ import {
 import {
   CONSENT_METHOD_VALUES,
   CROP_YES_NO,
-  REGISTRATION_SOURCE_VALUES,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
 } from './template-columns';
@@ -70,14 +69,11 @@ describe('generate-import-template', () => {
     expect(text).toContain(CANONICAL_REGIONS[CANONICAL_REGIONS.length - 1]);
   });
 
-  it('lists the allowed values for the T-6 enum columns on the Instructions sheet (FR-5)', async () => {
+  it('lists the allowed values for the consent-method column on the Instructions sheet (FR-5)', async () => {
     const workbook = await loadGeneratedWorkbook();
     const instructions = workbook.getWorksheet('Instructions');
     const text = collectText(instructions!);
 
-    for (const value of REGISTRATION_SOURCE_VALUES) {
-      expect(text).toContain(value);
-    }
     for (const value of CONSENT_METHOD_VALUES) {
       expect(text).toContain(value);
     }
@@ -97,6 +93,24 @@ describe('generate-import-template', () => {
     expect(cropColumn).toEqual([...CROP_YES_NO]);
   });
 
+  /**
+   * T-4 (consent-intake/intake-required-fields) — Registration Source's
+   * removal re-letters every constrained Lists column AFTER it (design.md
+   * §4.6). Consent Method was column I in v3 and is column H in v4; Region
+   * (B) and the crop YES/NO columns (D) sit BEFORE the removed column and are
+   * unaffected (pinned above, unchanged).
+   */
+  it('moves Consent Method to Lists column H now that Registration Source is gone (v4)', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const lists = workbook.getWorksheet('Lists');
+    expect(lists).toBeDefined();
+
+    const consentMethodColumn = CONSENT_METHOD_VALUES.map(
+      (_, i) => lists!.getCell(i + 1, 8).value,
+    );
+    expect(consentMethodColumn).toEqual([...CONSENT_METHOD_VALUES]);
+  });
+
   // T-4 (public-profile-disclosure) — Contact Person and Other Crops, v3.
 
   it('writes the Contact Person and Other Crops headers to the Data sheet, after every existing column', async () => {
@@ -111,7 +125,7 @@ describe('generate-import-template', () => {
     expect(headerRow.getCell(TEMPLATE_HEADERS.length).value).toBe('Other Crops');
   });
 
-  it('lists Contact Person and Other Crops on the Instructions sheet as optional free text with no allowed-value list (FR-5)', async () => {
+  it('lists Contact Person and Other Crops on the Instructions sheet with no allowed-value list (FR-5)', async () => {
     const workbook = await loadGeneratedWorkbook();
     const instructions = workbook.getWorksheet('Instructions');
     expect(instructions).toBeDefined();
@@ -130,13 +144,44 @@ describe('generate-import-template', () => {
     const otherCropsRow = rows.find((r) => r[1] === 'Other Crops');
     expect(contactPersonRow).toBeDefined();
     expect(otherCropsRow).toBeDefined();
-    // Required: No; Format/guidance names the bound; Allowed values: '—'
-    // (free text, not a dropdown) — this row IS the Instructions-sheet half
-    // of FR-5's "headers, allowed-value lists, and parser agree" clause.
-    expect(contactPersonRow![2]).toBe('No');
+    // T-4 (consent-intake/intake-required-fields) — Contact Person is now
+    // required (the intake contract, FR-1); Other Crops stays optional.
+    // Format/guidance names the bound; Allowed values: '—' (free text, not a
+    // dropdown) — this row IS the Instructions-sheet half of FR-5's
+    // "headers, allowed-value lists, and parser agree" clause.
+    expect(contactPersonRow![2]).toBe('Yes');
     expect(contactPersonRow![4]).toBe('—');
     expect(otherCropsRow![2]).toBe('No');
     expect(otherCropsRow![4]).toBe('—');
+  });
+
+  /**
+   * T-4 (consent-intake/intake-required-fields) — the Instructions sheet's
+   * how-to list names the new system-generated Trader ID / duplicate-review
+   * behaviour (requirements.md FR-5's Instructions-sheet clause).
+   */
+  it('describes the system-generated Trader ID and duplicate review on the Instructions sheet', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const instructions = workbook.getWorksheet('Instructions');
+    const text = collectText(instructions!);
+
+    expect(text).toMatch(/trader id/i);
+    expect(text).toMatch(/system assigns/i);
+    expect(text).toMatch(/held for review/i);
+  });
+
+  /**
+   * T-4 (consent-intake/intake-required-fields rework) — FR-5's Instructions-
+   * sheet clause: "at least one crop" is part of the required set (FR-1) but
+   * no single column is marked Required for it, so field staff get no warning
+   * without this line (Reviewer-found gap).
+   */
+  it('tells field staff at least one crop must be YES on the Instructions sheet', async () => {
+    const workbook = await loadGeneratedWorkbook();
+    const instructions = workbook.getWorksheet('Instructions');
+    const text = collectText(instructions!);
+
+    expect(text).toMatch(/at least one crop must be yes/i);
   });
 
   it('exposes buildTemplateWorkbook returning the three template sheets', () => {

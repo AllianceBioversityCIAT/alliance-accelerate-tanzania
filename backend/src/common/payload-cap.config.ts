@@ -111,6 +111,14 @@ const REGISTRATIONS_PATH_PREFIX = '/api/v1/registrations';
 const CONTACT_PATH_PREFIX = '/api/v1/contact';
 
 /**
+ * actors/consent-intake/consent-request-email T-5 (NFR-4): the two public,
+ * unauthenticated consent-link POST routes (`/consent/view`, `/consent/respond`),
+ * capped at the same 32 KB figure — a token-bearer body is tiny, and without
+ * this entry the routes would inherit the global 8 MB JSON limit.
+ */
+const CONSENT_PATH_PREFIX = '/api/v1/consent';
+
+/**
  * Every path prefix this middleware caps. Adding a route here is the ONLY
  * change needed to bring a new public endpoint under the cap — the matching
  * rule, the case-insensitivity, and the P-3 "declares no length" logic below
@@ -123,7 +131,11 @@ const CONTACT_PATH_PREFIX = '/api/v1/contact';
  * hard-codes its own copy proves nothing about a prefix added later. Adding an
  * entry here automatically extends the suite.
  */
-export const CAPPED_PATH_PREFIXES = [REGISTRATIONS_PATH_PREFIX, CONTACT_PATH_PREFIX];
+export const CAPPED_PATH_PREFIXES = [
+  REGISTRATIONS_PATH_PREFIX,
+  CONTACT_PATH_PREFIX,
+  CONSENT_PATH_PREFIX,
+];
 
 /**
  * Case-insensitive on purpose: Express's router matches routes

@@ -1,10 +1,15 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod, ConsentStatus } from '@prisma/client';
 import { AdminActorCreateDto } from './admin-actor-create.dto';
 import { AdminActorUpdateDto } from './admin-actor-update.dto';
 import { ActorHistoryQueryDto } from './actor-history-query.dto';
+import {
+  invalidProps,
+  validActorInput,
+  validEmailOfLength,
+} from '../../test/support/actor-input.fixture';
 
 /**
  * T-2 — Unit tests for the admin actor write/query DTOs (FR-1, FR-3, FR-7, NFR-1, NFR-6).
@@ -15,26 +20,8 @@ import { ActorHistoryQueryDto } from './actor-history-query.dto';
  * pagination bounds are the focus.
  */
 
-/** Helper: which property names produced at least one constraint violation. */
-async function invalidProps(dto: object): Promise<string[]> {
-  const errors = await validate(dto);
-  return errors.map((e) => e.property);
-}
-
 describe('AdminActorCreateDto', () => {
-  const validInput = {
-    traderId: 'TZ-0001',
-    traderName: 'Mbeya Seed Traders Ltd',
-    region: 'Mbeya',
-    district: 'Mbeya Urban',
-    traderType: 'seed_company',
-    sex: 'F',
-    capacityTons: 1250.5,
-    email: 'contact@mbeyaseed.co.tz',
-    gpsLatitude: -8.9094,
-    gpsLongitude: 33.4607,
-    consentStatus: ConsentStatus.UNKNOWN,
-  };
+  const validInput = validActorInput({ consentStatus: ConsentStatus.UNKNOWN });
 
   it('passes a valid create input with crops', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
@@ -44,9 +31,12 @@ describe('AdminActorCreateDto', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
-  it('passes a valid create input without crops', async () => {
+  // T-1 (intake-required-fields) FR-1 — crops is now required (at least one),
+  // reversing the old "without crops" pass. `otherCrops` is free text and
+  // must NOT substitute for it (the "other crops alone" scenario below).
+  it('rejects create input with crops omitted', async () => {
     const dto = plainToInstance(AdminActorCreateDto, validInput);
-    expect(await validate(dto)).toHaveLength(0);
+    expect(await invalidProps(dto)).toContain('crops');
   });
 
   it('rejects an invalid crop name', async () => {
@@ -63,6 +53,46 @@ describe('AdminActorCreateDto', () => {
       crops: ['sorghum', 'sorghum'],
     });
     expect(await invalidProps(dto)).toContain('crops');
+  });
+
+  // Falsifier 2 (tasks.md T-1) — otherCrops alone must NOT satisfy the crop
+  // requirement, matching self-registration's rule exactly.
+  it('rejects an explicit empty crops array even when otherCrops is filled', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      otherCrops: 'millet',
+      crops: [],
+    });
+    expect(await invalidProps(dto)).toContain('crops');
+  });
+
+  // T-1 — the required set self-registration enforces, now required here too.
+  it.each(['contactPerson', 'capacityTons', 'phone', 'email'])(
+    'rejects a missing %s',
+    async (field) => {
+      const input = { ...validInput, crops: ['sorghum'] } as Record<string, unknown>;
+      delete input[field];
+      const dto = plainToInstance(AdminActorCreateDto, input);
+      expect(await invalidProps(dto)).toContain(field);
+    },
+  );
+
+  it('rejects phone over its 40-char bound', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      phone: 'x'.repeat(41),
+    });
+    expect(await invalidProps(dto)).toContain('phone');
+  });
+
+  it('rejects an email over its 191-char bound (requirements.md FR-1 — matches the VARCHAR(191) column)', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      email: validEmailOfLength(192),
+    });
+    expect(await invalidProps(dto)).toContain('email');
   });
 
   it('rejects a non-boolean acknowledged value', async () => {
@@ -95,6 +125,7 @@ describe('AdminActorCreateDto', () => {
   it('passes and round-trips a non-empty contactPerson and otherCrops', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
       ...validInput,
+      crops: ['sorghum'],
       contactPerson: 'Neema Shirima',
       otherCrops: 'Sesame trial plot',
     });
@@ -120,10 +151,40 @@ describe('AdminActorCreateDto', () => {
   it('accepts contactPerson and otherCrops exactly at their bound', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
       ...validInput,
+      crops: ['sorghum'],
       contactPerson: 'x'.repeat(120),
       otherCrops: 'x'.repeat(300),
     });
     expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // T-1 (consent-request-email, DD-9) — Falsifier 1 (tasks.md T-1): swapping
+  // ADMIN_ASSERTABLE_CONSENT_METHODS for Object.values(ConsentMethod) in
+  // actor-create.dto.ts is what must redden this.
+  it('rejects EMAIL_LINK as a consentMethod on create — only the actor\'s own response can record it (DD-9)', async () => {
+    const dto = plainToInstance(AdminActorCreateDto, {
+      ...validInput,
+      crops: ['sorghum'],
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
+  });
+
+  it('accepts every admin-assertable consentMethod value on create', async () => {
+    for (const method of [
+      ConsentMethod.NOT_RECORDED,
+      ConsentMethod.PORTAL_CHECKBOX,
+      ConsentMethod.SIGNED_FORM,
+      ConsentMethod.EMAIL,
+      ConsentMethod.VERBAL_FIELD,
+    ]) {
+      const dto = plainToInstance(AdminActorCreateDto, {
+        ...validInput,
+        crops: ['sorghum'],
+        consentMethod: method,
+      });
+      expect(await invalidProps(dto)).not.toContain('consentMethod');
+    }
   });
 });
 
@@ -182,6 +243,27 @@ describe('AdminActorUpdateDto', () => {
     });
     expect(await invalidProps(dto)).toContain('email');
   });
+
+  // T-1 (consent-request-email, design.md §5.7) — the UPDATE DTO keeps the
+  // FULL ConsentMethod enum (unlike create's admin-assertable subset),
+  // because ActorForm.buildDto always resends the stored value (P-16): a
+  // narrowed update DTO would 400 every save of an EMAIL_LINK actor. This
+  // pins the redeclared decorator actually overriding the inherited one
+  // from ActorCreateDto (class-validator resolves per property+target, own
+  // metadata wins — verified judgment-day).
+  it('accepts EMAIL_LINK as consentMethod shape-wise on update (the admin-assertable rule is enforced service-side, not here)', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).not.toContain('consentMethod');
+  });
+
+  it('still rejects a bogus consentMethod value on update', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      consentMethod: 'BOGUS',
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
+  });
 });
 
 describe('ActorHistoryQueryDto', () => {
@@ -220,4 +302,27 @@ describe('ActorHistoryQueryDto', () => {
     expect(await validate(dto)).toHaveLength(0);
     expect(dto.pageSize).toBe(100);
   });
+});
+
+// D-26 (consent-request-email, design.md §5.7a) — optional stale-form guard.
+describe('AdminActorUpdateDto.expectedUpdatedAt (D-26)', () => {
+  it('is optional: an update without it passes', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, { traderName: 'X' });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it('accepts an ISO-8601 instant', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, {
+      expectedUpdatedAt: '2026-10-06T08:15:30.123Z',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it.each(['yesterday', '2026-13-45T00:00:00Z', 12345, ''])(
+    'rejects %p',
+    async (value) => {
+      const dto = plainToInstance(AdminActorUpdateDto, { expectedUpdatedAt: value });
+      expect(await invalidProps(dto)).toContain('expectedUpdatedAt');
+    },
+  );
 });

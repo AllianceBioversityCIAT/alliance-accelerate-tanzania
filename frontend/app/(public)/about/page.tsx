@@ -10,7 +10,7 @@
 //   - All section headings are <h2>; sub-items within sections use <h3>.
 //   - Every <section> carries aria-labelledby pointing to its heading id.
 //   - Tokens only — no raw hex; body text uses text-fg / text-muted for AA contrast.
-//   - Field photo placed beside/below the text (no overlay) — no scrim contrast risk.
+//   - Photos placed beside/below the text (no overlay) — no scrim contrast risk.
 //
 // Static export compliance: no 'use client', no SSR, no route handlers (NFR-5).
 
@@ -20,6 +20,8 @@ import Button from '@/components/ui/Button';
 import PillarCards from '@/components/home/PillarCards';
 import PartnerWall from '@/components/home/PartnerWall';
 import CropImage from '@/components/home/CropImage';
+import PhotoCarousel from '@/components/about/PhotoCarousel';
+import { ABOUT_GALLERY } from '@/lib/content/about-gallery';
 import { CROPS, type CropTokenClass } from '@/lib/content/crops';
 
 // Static crop-accent text classes — full strings so Tailwind's content scan keeps
@@ -51,8 +53,8 @@ export default function AboutPage() {
 
       {/* ====================================================================
           §3.1  ABOUT HERO
-          One <h1> for the page; eyebrow pill + lede + field photograph.
-          Photo is placed below the text column on mobile and beside it on lg+
+          One <h1> for the page; eyebrow pill + lede + photo carousel.
+          Carousel is placed below the text column on mobile and beside it on lg+
           to avoid any text-over-image contrast issue.
       ==================================================================== */}
       <section aria-labelledby="about-hero-heading" className="bg-bg">
@@ -100,11 +102,27 @@ export default function AboutPage() {
 
             </div>
 
-            {/* Right column — field photograph */}
-            {/*
-              Placed beside (not overlaid on) the text, so there is no
-              contrast risk. Rounded corners via token radius-lg (NFR-4).
-            */}
+            {/* Right column — photo carousel (photos in lib/content/about-gallery.ts) */}
+            <PhotoCarousel photos={ABOUT_GALLERY} label="Photos from the field" />
+
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================================================
+          §3.2  THE CHALLENGE
+          Alternating surface (bg-surface-alt). Bold the 3% clause per brief.
+          Field photo left, copy right on lg+; photo stacks above on mobile.
+      ==================================================================== */}
+      <section
+        aria-labelledby="challenge-heading"
+        className="bg-surface-alt"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+
+            {/* Left column — field photograph, beside (not overlaid on) the text,
+                so there is no contrast risk. */}
             <div className="relative w-full h-72 lg:h-96 rounded-lg overflow-hidden bg-surface-alt">
               <Image
                 src="/accelerate-field.jpg"
@@ -115,50 +133,40 @@ export default function AboutPage() {
               />
             </div>
 
+            {/* Right column — copy */}
+            <div>
+              {/* Eyebrow */}
+              <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
+                Context
+              </span>
+
+              <h2
+                id="challenge-heading"
+                className="text-2xl font-extrabold text-fg leading-tight mb-6"
+              >
+                The challenge
+              </h2>
+
+              <div className="max-w-prose flex flex-col gap-4">
+                <p className="text-base text-muted leading-relaxed">
+                  Across Tanzania, most smallholder farmers still grow old, low-yielding varieties
+                  that are increasingly vulnerable to drought and climate stress. Adoption of improved
+                  open-pollinated varieties (OPVs) remains low &mdash; held back by a lack of product
+                  information, limited promotion, poor access to early-generation seed, thin data to
+                  guide decisions, and a weak seed supply system.
+                </p>
+                <p className="text-base text-muted leading-relaxed">
+                  The formal seed sector meets only about{' '}
+                  <strong className="text-fg font-semibold">
+                    3% of farmers&rsquo; planting requirements
+                  </strong>
+                  . The rest comes from informal channels, which keeps better genetics from reaching
+                  the field.
+                </p>
+              </div>
+            </div>
+
           </div>
-        </div>
-      </section>
-
-      {/* ====================================================================
-          §3.2  THE CHALLENGE
-          Alternating surface (bg-surface-alt). Bold the 3% clause per brief.
-      ==================================================================== */}
-      <section
-        aria-labelledby="challenge-heading"
-        className="bg-surface-alt"
-      >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
-
-          {/* Eyebrow */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
-            Context
-          </span>
-
-          <h2
-            id="challenge-heading"
-            className="text-2xl font-extrabold text-fg leading-tight mb-6"
-          >
-            The challenge
-          </h2>
-
-          <div className="max-w-prose flex flex-col gap-4">
-            <p className="text-base text-muted leading-relaxed">
-              Across Tanzania, most smallholder farmers still grow old, low-yielding varieties
-              that are increasingly vulnerable to drought and climate stress. Adoption of improved
-              open-pollinated varieties (OPVs) remains low &mdash; held back by a lack of product
-              information, limited promotion, poor access to early-generation seed, thin data to
-              guide decisions, and a weak seed supply system.
-            </p>
-            <p className="text-base text-muted leading-relaxed">
-              The formal seed sector meets only about{' '}
-              <strong className="text-fg font-semibold">
-                3% of farmers&rsquo; planting requirements
-              </strong>
-              . The rest comes from informal channels, which keeps better genetics from reaching
-              the field.
-            </p>
-          </div>
-
         </div>
       </section>
 

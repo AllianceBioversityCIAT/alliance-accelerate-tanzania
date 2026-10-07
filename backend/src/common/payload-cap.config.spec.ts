@@ -185,7 +185,7 @@ describe('registrationsPayloadCapMiddleware', () => {
   // ───────────────────────────────────────────────────────────────────────────
   it('pins the capped prefixes — removing one fails HERE rather than shrinking the suite above', () => {
     expect(CAPPED_PATH_PREFIXES).toEqual(
-      expect.arrayContaining(['/api/v1/registrations', '/api/v1/contact']),
+      expect.arrayContaining(['/api/v1/registrations', '/api/v1/contact', '/api/v1/consent']),
     );
   });
 

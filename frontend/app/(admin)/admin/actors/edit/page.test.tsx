@@ -21,7 +21,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation — a mutable search-params store, like the real
@@ -103,14 +103,39 @@ jest.mock('@/lib/api/actors-admin', () => {
   };
 });
 
+const mockPreview = jest.fn();
+const mockEvidence = jest.fn();
+const mockEnqueue = jest.fn();
+const mockDispatch = jest.fn();
+const mockDocumentStatus = jest.fn();
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  ...jest.requireActual('@/lib/api/consent-requests-admin'),
+  getConsentDocumentStatus: (...args: unknown[]) => mockDocumentStatus(...args),
+  previewConsentRequests: (...args: unknown[]) => mockPreview(...args),
+  getActorConsentEvidence: (...args: unknown[]) => mockEvidence(...args),
+  enqueueConsentRequests: (...args: unknown[]) => mockEnqueue(...args),
+  dispatchConsentRequests: (...args: unknown[]) => mockDispatch(...args),
+  retryConsentRequests: jest.fn(),
+}));
+
 import EditActorPage from './page';
 import type { AdminActor } from '@/lib/api/actors-admin';
+import { ApiError } from '@/lib/api/client';
 
 // ---------------------------------------------------------------------------
 // Fixtures — two distinct actors, both UNKNOWN consent (no acknowledge
 // dialog involved) so the test isolates the field-freeze bug.
 // ---------------------------------------------------------------------------
 
+/**
+ * T-6 (`actors/consent-intake/intake-required-fields`, FR-1) — contactPerson,
+ * crops, capacityTons, phone, and email are now part of the required set
+ * every intake path shares, enforced client-side before a save: an actor
+ * missing any of them cannot be re-saved until they're filled (FR-1 scenario
+ * 3). This fixture populates all five so the R-1 regression this file tests
+ * (cross-actor field-freeze on a searchParams-only navigation) isn't masked
+ * by an unrelated required-field validation error.
+ */
 function buildActor(overrides: Partial<AdminActor>): AdminActor {
   return {
     id: 'actor-a',
@@ -119,15 +144,15 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     region: 'Arusha',
     district: null,
     traderType: 'seed_company',
-    contactPerson: null,
+    contactPerson: 'Asha Mwinyi',
     sex: null,
     position: null,
     marketLocation: null,
-    capacityTons: null,
+    capacityTons: 100,
     otherCrops: null,
     technicalSupport: null,
-    phone: null,
-    email: null,
+    phone: '+255700000000',
+    email: 'asha@example.com',
     gpsLatitude: null,
     gpsLongitude: null,
     gpsAltitude: null,
@@ -137,7 +162,7 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     consentMethod: 'NOT_RECORDED',
     consentObtainedAt: null,
     consentReference: null,
-    crops: [],
+    crops: ['sorghum'],
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -152,6 +177,78 @@ const ACTOR_B = buildActor({
   region: 'Dodoma',
 });
 
+const SKIPS_NONE = { no_email: 0, granted: 0, pending_request: 0, declined: 0 };
+
+describe('EditActorPage — Send consent request (FR-3, T-10)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetActorHistory.mockResolvedValue({ data: [], page: 1, pageSize: 20, total: 0 });
+    mockSearchParams = new URLSearchParams({ id: 'actor-a' });
+    mockAdminGetActor.mockResolvedValue(ACTOR_A);
+    mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: SKIPS_NONE });
+    mockEvidence.mockResolvedValue({ requests: [], documents: [] });
+    mockDocumentStatus.mockResolvedValue({ enabled: false });
+    mockEnqueue.mockResolvedValue({ batchId: 'b1', queued: 1, skipped: SKIPS_NONE });
+    mockDispatch.mockResolvedValue({ sent: 1, failed: 0, remaining: 0 });
+  });
+
+  it('offers "Send consent request" when eligible and posts scope single with exactly one id', async () => {
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAttribute('aria-disabled', 'false');
+    expect(mockPreview).toHaveBeenCalledWith(
+      { target: { kind: 'ids', ids: ['actor-a'] }, scope: 'single' },
+      TOKEN,
+    );
+
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByRole('button', { name: /send 1 request/i }));
+
+    await waitFor(() =>
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        { target: { kind: 'ids', ids: ['actor-a'] }, scope: 'single' },
+        TOKEN,
+      ),
+    );
+    await waitFor(() => expect(mockDispatch).toHaveBeenCalledWith({ batchId: 'b1' }, TOKEN));
+  });
+
+  it('is disabled with the FR-2 reason when the actor has no email', async () => {
+    mockPreview.mockResolvedValue({ total: 1, toSend: 0, skipped: { ...SKIPS_NONE, no_email: 1 } });
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAccessibleDescription('No email address on file');
+    fireEvent.click(button);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('is disabled with the reason when consent is already granted', async () => {
+    mockPreview.mockResolvedValue({ total: 1, toSend: 0, skipped: { ...SKIPS_NONE, granted: 1 } });
+    render(<EditActorPage />);
+    const button = await screen.findByRole('button', { name: 'Send consent request' });
+    expect(button).toHaveAccessibleDescription('Consent already granted');
+  });
+
+  it('reads "Resend consent request" when a pending request exists', async () => {
+    mockEvidence.mockResolvedValue({ requests: [{ id: 'r1', status: 'SENT' }], documents: [] });
+    render(<EditActorPage />);
+    expect(await screen.findByRole('button', { name: 'Resend consent request' })).toBeInTheDocument();
+  });
+
+  it('keeps "Send" when the only request is EXPIRED or DECLINED', async () => {
+    mockEvidence.mockResolvedValue({
+      requests: [
+        { id: 'r1', status: 'EXPIRED' },
+        { id: 'r2', status: 'DECLINED' },
+      ],
+      documents: [],
+    });
+    render(<EditActorPage />);
+    expect(await screen.findByRole('button', { name: 'Send consent request' })).toBeInTheDocument();
+  });
+});
+
 describe('EditActorPage — cross-actor identity on a searchParams-only navigation (R-1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -161,6 +258,8 @@ describe('EditActorPage — cross-actor identity on a searchParams-only navigati
       Promise.resolve(id === 'actor-a' ? ACTOR_A : ACTOR_B),
     );
     mockUpdateActor.mockResolvedValue(ACTOR_B);
+    mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: SKIPS_NONE });
+    mockEvidence.mockResolvedValue({ requests: [], documents: [] });
   });
 
   it('remounts the form and targets the newly-resolved actor after id changes without unmounting the route', async () => {
@@ -228,5 +327,56 @@ describe('EditActorPage — cross-actor identity on a searchParams-only navigati
       expect(screen.getByLabelText(/Trader name/i)).toHaveValue('Trader A');
     });
     expect(screen.queryByText(/could not load the requested actor/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('EditActorPage — evidence panel and stale-form reload (T-11, FR-14, D-26)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetActorHistory.mockResolvedValue({ data: [], page: 1, pageSize: 20, total: 0 });
+    mockSearchParams = new URLSearchParams({ id: 'actor-a' });
+    mockAdminGetActor.mockResolvedValue(ACTOR_A);
+    mockPreview.mockResolvedValue({ total: 1, toSend: 1, skipped: SKIPS_NONE });
+    mockEvidence.mockResolvedValue({ requests: [], documents: [] });
+    mockDocumentStatus.mockResolvedValue({ enabled: false });
+  });
+
+  it('mounts the Consent evidence panel between the form and the history', async () => {
+    render(<EditActorPage />);
+
+    const panel = await screen.findByRole('region', { name: 'Consent evidence' });
+    expect(await within(panel).findByText('No consent evidence yet.')).toBeInTheDocument();
+    expect(mockEvidence).toHaveBeenCalledWith('actor-a', TOKEN);
+  });
+
+  it('a 409 on expectedUpdatedAt shows the notice; Reload re-reads the actor and remounts the form on it', async () => {
+    const answered = { ...ACTOR_A, consentStatus: 'GRANTED', consentMethod: 'EMAIL_LINK' as const, consentObtainedAt: '2026-10-02T14:05:00.000Z', consentReference: 'req-1', updatedAt: '2026-10-02T14:05:00.000Z' };
+    // The mocked router is a fresh object per render, so the load effect may re-run: serve by state, not by call count.
+    let served: AdminActor = ACTOR_A;
+    mockAdminGetActor.mockImplementation(() => Promise.resolve(served));
+    mockUpdateActor.mockRejectedValue(
+      new ApiError(409, 'The actor changed since the form was loaded', [
+        { field: 'expectedUpdatedAt', message: 'The actor changed since the form was loaded' },
+      ]),
+    );
+    render(<EditActorPage />);
+
+    fireEvent.change(await screen.findByLabelText(/trader name/i), { target: { value: 'Typed By The Admin' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    // The save carried the loaded version, and the admin's typing is untouched.
+    await waitFor(() => expect(mockUpdateActor).toHaveBeenCalled());
+    expect(mockUpdateActor.mock.calls[0][1]).toHaveProperty('expectedUpdatedAt', ACTOR_A.updatedAt);
+    const notice = await screen.findByText('This actor changed since you opened it — reload to see the latest');
+    expect(screen.getByLabelText(/trader name/i)).toHaveValue('Typed By The Admin');
+
+    served = answered;
+    fireEvent.click(within(notice.closest('[role="alert"]') as HTMLElement).getByRole('button', { name: 'Reload' }));
+
+    // Fresh record: the form shows the actor's own answer, read-only, and the notice is gone.
+    await waitFor(() => expect(screen.getByLabelText('Consent method')).toHaveValue('Email link (actor)'));
+    expect(screen.getByLabelText(/trader name/i)).toHaveValue('Trader A');
+    expect(screen.queryByText(/changed since you opened it/i)).not.toBeInTheDocument();
+    expect(mockAdminGetActor.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -91,8 +91,13 @@ interface ActorComparisonRow {
   gpsLongitude: Prisma.Decimal | number | string | null;
 }
 
-/** `ActorComparisonRow`, pre-normalized once for the whole batch. */
-interface NormalizedActorRow {
+/**
+ * `ActorComparisonRow`, pre-normalized once for the whole batch. Exported
+ * (T-3, `actors/consent-intake/intake-required-fields`, design.md §4.3) so
+ * `IntakeDuplicateService` can build the SAME shape for its own admin-intake
+ * scan — reusing this type, never `DuplicateDetectionService` itself (P-11).
+ */
+export interface NormalizedActorRow {
   id: string;
   traderId: string;
   traderName: string;
@@ -117,14 +122,19 @@ const GPS_BOUNDING_BOX_DEGREES = 0.01;
 /** Candidates surfaced per registration, ordered by match strength (§6.5 "capped"). */
 const MAX_CANDIDATES_PER_REGISTRATION = 5;
 
+// The five functions below are exported (T-3, design.md §4.3) for
+// `IntakeDuplicateService` to reuse VERBATIM — same normalization, same
+// matching rule — with no change to their behavior or to any call site in
+// this file.
+
 /** Trim + case-fold + collapse internal whitespace, for name equality only. */
-function normalizeTraderNameForMatch(raw: string | null | undefined): string {
+export function normalizeTraderNameForMatch(raw: string | null | undefined): string {
   if (raw == null) return '';
   return raw.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /** Trim + lowercase; blank collapses to `null` so it never "matches" another blank. */
-function normalizeEmailForMatch(raw: string | null | undefined): string | null {
+export function normalizeEmailForMatch(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   const trimmed = raw.trim().toLowerCase();
   return trimmed === '' ? null : trimmed;
@@ -136,13 +146,13 @@ function normalizeEmailForMatch(raw: string | null | undefined): string | null {
  * (`actor-import.service.ts`) — so a spacing/formatting difference on
  * either side normalizes away rather than producing a false negative.
  */
-function normalizePhoneForMatch(raw: string | null | undefined): string | null {
+export function normalizePhoneForMatch(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   return normalizePhone(raw).phone;
 }
 
 /** Coerce a Prisma Decimal / number / numeric string to a finite number or null. */
-function toNullableNumber(
+export function toNullableNumber(
   value: Prisma.Decimal | number | string | null | undefined,
 ): number | null {
   if (value === null || value === undefined) return null;
@@ -151,7 +161,7 @@ function toNullableNumber(
 }
 
 /** True only when BOTH sides carry both coordinates and both fall within the box. */
-function isWithinBoundingBox(
+export function isWithinBoundingBox(
   latA: number | null,
   lonA: number | null,
   latB: number | null,
@@ -217,13 +227,21 @@ export class DuplicateDetectionService {
  * isolated purely to keep `matchOne`'s per-actor loop body flat — each
  * comparison stays exactly as independently guarded as before. Split out
  * for SonarCloud S3776 (Cognitive Complexity); no matching behavior changes.
+ *
+ * Exported and widened to the narrow `Pick`s below (T-3, design.md §4.3) —
+ * a type-only change; every existing call here still passes a full
+ * `DuplicateDetectionInput`/`NormalizedActorRow`, structurally assignable
+ * to the narrower type.
  */
-function computeMatchedOn(
+export function computeMatchedOn(
   normalizedPhone: string | null,
   normalizedEmail: string | null,
   normalizedTraderName: string,
-  input: DuplicateDetectionInput,
-  actor: NormalizedActorRow,
+  input: Pick<DuplicateDetectionInput, 'gpsLatitude' | 'gpsLongitude'>,
+  actor: Pick<
+    NormalizedActorRow,
+    'normalizedPhone' | 'normalizedEmail' | 'normalizedTraderName' | 'gpsLatitude' | 'gpsLongitude'
+  >,
 ): DuplicateMatchAttribute[] {
   const matchedOn: DuplicateMatchAttribute[] = [];
   if (normalizedPhone && actor.normalizedPhone && normalizedPhone === actor.normalizedPhone) {
