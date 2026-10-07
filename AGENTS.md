@@ -33,7 +33,7 @@ Failure-only variants — a green run should cost one summary line.
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
 | `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) — sources the profile floor above: still makes no STS call and creates nothing, but **aborts** on an ambient profile other than `IBD-DEV` | — | — |
 | `infra/` (scripts) | `./infra/scripts/tests/run-tests.sh` — 51 stub-backed cases over `infra/scripts/*.sh`, including the **account-id scan** (no account id versioned under `infra/`). ⚠️ `validate.sh` never reads a script — it does not cover this. | — | — |
-| `.../functions/custom-email-sender/` | `cd infra/10-data-auth/functions/custom-email-sender && npm test` — 59 tests. ⚠️ `npm test`, never bare `npx jest` (ESM; needs `node --experimental-vm-modules`). | — | — |
+| `.../functions/custom-email-sender/` | `cd infra/10-data-auth/functions/custom-email-sender && npm test` — 61 tests. ⚠️ `npm test`, never bare `npx jest` (ESM; needs `node --experimental-vm-modules`). | — | — |
 
 **Asymmetry rule:** suppress passing noise only — **failures print complete and verbatim**, because that output is the evidence a Reviewer audits. `backend`'s `npm run lint` runs `eslint --fix` and **mutates** files; use the `npx eslint … --quiet` form when verifying a diff.
 

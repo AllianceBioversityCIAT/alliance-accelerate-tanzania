@@ -120,6 +120,7 @@ Operator-run deploys from a workstation remain possible and are documented in `i
 4. **Static export only.** The frontend must remain a pure static artifact — introducing Next.js SSR/ISR/route handlers breaks S3/CloudFront hosting outright.
 5. **No secrets in git.** Secrets Manager or SSM; `.env` stays local. **The converse is also a rule:** a value that is public by construction — anything baked into the client bundle and therefore readable by every visitor — must *not* be put in Secrets Manager or SSM. Doing so implies a confidentiality it does not have and adds a deploy dependency for nothing. The GA4 measurement Id is the current instance (§4).
 6. **Tag propagation** via `samconfig.toml` — do not strip the `Project` tag.
+7. **Every S3 bucket declares server access logging (to a dedicated private log bucket) and versioning — the log bucket included.** SonarCloud gates PRs on both (S6258, S6252); omitting them turns the PR's security rating red after it is opened (KZ-actors--consent-intake--consent-request-email-2).
 
 ## 6. Local Environment
 

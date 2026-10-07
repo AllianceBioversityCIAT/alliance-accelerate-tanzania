@@ -7,7 +7,7 @@
 | Spec Path | `actors/consent-intake/consent-request-email` |
 | Archive | `docs/specs/archive/2026-10-07-actors--consent-intake--consent-request-email/` |
 | Date | 2026-10-07 |
-| Branch | `docs/atp-84-consent-t14-archive` is a **spec branch**. This was resolved by fact against the `Default Branch: main` pin; there is no `Integration Branch:` pin. Every shared-file edit below is a pending item for the apply phase on **`main`**. |
+| Branch | `docs/atp-84-consent-t14-archive` is a **spec branch**. This was resolved by fact against the `Default Branch: main` pin; there is no `Integration Branch:` pin. Every shared-file edit below was a pending item for the apply phase on **`main`**; it was applied there on 2026-10-07 (kaizen apply pass). |
 | Archive Run | 1 |
 | Approval Mode | gated, then a standing product-owner authorization (2026-10-06: "continue without stopping; stop only for a decision") |
 
@@ -80,7 +80,7 @@
 | Target | `docs/specs/general-setup/task.md` (live/HITL verification task guidance) |
 | Edit | **A live check whose failure action is "do not ship" must run before the merge that deploys.** Here a merge to `main` deploys to production, the only environment (`docs/infrastructure.md` §1). If the check can only run on the deployed stack, write its failure action as a post-ship decision (rollback, flag-off, or an accepted risk), not "escalate rather than ship" (KZ-actors--consent-intake--consent-request-email-1). |
 | Severity | Medium |
-| Status | pending |
+| Status | applied (2026-10-07), lightly reworded in `task.md` ("A merge to `main`…", "never" for "not"); same meaning |
 
 ### P2
 
@@ -90,7 +90,7 @@
 | Target | methodology |
 | Edit | `/akili-specify` task decomposition, live/HITL verification tasks: "If a live verification task's failure action is 'do not ship', schedule it before the merge, or confirm a non-production deploy target exists. When the default-branch merge deploys to production, rewrite the failure action as a post-ship decision. Otherwise the gate becomes a retroactive waiver." |
 | Severity | Medium |
-| Status | pending |
+| Status | upstreamed (2026-10-07, `docs/specs/kaizen/upstream-2026-10-07.md`) |
 
 ### P3
 
@@ -100,7 +100,7 @@
 | Target | `docs/infrastructure.md` §2 (Network/security, S3 conventions) |
 | Edit | **Every S3 bucket declares server access logging (to a dedicated private log bucket) and versioning, the log bucket included.** SonarCloud gates PRs on both (S6258, S6252). A bucket without them turns the PR's security rating red after it is opened (KZ-actors--consent-intake--consent-request-email-2). |
 | Severity | Medium |
-| Status | pending |
+| Status | applied (2026-10-07) — placed in `docs/infrastructure.md` §5 (Infrastructure Rules) as rule 7, the durable rules list, rather than §2 |
 
 ### P4
 
@@ -110,7 +110,7 @@
 | Target | KZ-008 |
 | Edit | Add source `actors/consent-intake/consent-request-email`, recurrence ×10. **Status labels are assertions too:** a "PASS" heading or a `[x]` written before the Reviewer's verdict happened three times in one run (R-D, R-I, T-14). Write the verdict line only after it is returned, then flip the checkbox. |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-07) |
 
 ### P5
 
@@ -120,7 +120,7 @@
 | Target | KZ-011 |
 | Edit | Add source `actors/consent-intake/consent-request-email`, recurrence ×6. Leader-authored **manual test guides** are spec text too: three steps given to the product owner were false against the code and her `.env`, and T-14 targeted a "DEV" environment `infrastructure.md` says does not exist. **Check each manual step against the code and the environment contract before handing it over.** |
 | Severity | High |
-| Status | pending |
+| Status | applied (2026-10-07) |
 
 ### P6
 
@@ -130,7 +130,7 @@
 | Target | `docs/trd/trd.md` |
 | Edit | Replace the `ADR-NNN` placeholder in the ADR index (the "token-bearer consent link" decision: persist-then-dispatch, the actor-originated route to `GRANTED`, `EMAIL_LINK` never admin-assertable, the private document bucket) with the next free number. It is new, not superseding: it amends ADR-013 in part, as its row states. Replace all 5 `ADR-NNN` citations in the TRD with that number. **Before allocating, run `git log --oneline --all -20 -- docs/trd/trd.md` and read the newest unmerged branch's highest ADR** (root `CLAUDE.md` concurrency corollary). Candidate: ADR-018. On 2026-10-07 no ref carried an allocated ADR-018. |
 | Severity | Medium |
-| Status | pending |
+| Status | applied (2026-10-07) — allocated **ADR-018**; all 5 citations replaced |
 
 ### P7
 
@@ -140,4 +140,4 @@
 | Target | root `CLAUDE.md` and `AGENTS.md` (verification table, custom-email-sender row) |
 | Edit | "59 tests" → "61 tests". Measured 2026-10-07 with `cd infra/10-data-auth/functions/custom-email-sender && npm test`: `Tests: 61 passed, 61 total`. Update both mirrors in lockstep. Not caused by this spec, but the claim is false today. |
 | Severity | Low |
-| Status | pending |
+| Status | applied (2026-10-07) |
