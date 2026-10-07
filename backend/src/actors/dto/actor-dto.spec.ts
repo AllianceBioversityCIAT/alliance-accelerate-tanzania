@@ -1,9 +1,14 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { ConsentStatus } from '@prisma/client';
+import { ConsentMethod } from '@prisma/client';
 import { ActorCreateDto } from './actor-create.dto';
 import { ListQueryDto } from './list-query.dto';
+import {
+  invalidProps,
+  validActorInput,
+  validEmailOfLength,
+} from '../../test/support/actor-input.fixture';
 
 /**
  * T-3 — Unit tests for the validated write/query DTOs (NFR-4). These drive
@@ -11,49 +16,91 @@ import { ListQueryDto } from './list-query.dto';
  * non-empty error array means the input would yield a 400 once wired.
  */
 
-/** Helper: which property names produced at least one constraint violation. */
-async function invalidProps(dto: object): Promise<string[]> {
-  const errors = await validate(dto);
-  return errors.map((e) => e.property);
-}
-
 describe('ActorCreateDto', () => {
-  const validInput = {
-    traderId: 'TZ-0001',
-    traderName: 'Mbeya Seed Traders Ltd',
-    region: 'Mbeya',
-    district: 'Mbeya Urban',
-    traderType: 'seed_company',
-    sex: 'F',
-    capacityTons: 1250.5,
-    email: 'contact@mbeyaseed.co.tz',
-    gpsLatitude: -8.9094,
-    gpsLongitude: 33.4607,
-    consentStatus: ConsentStatus.GRANTED,
-  };
+  const validInput = validActorInput();
 
   it('passes a valid, fully-populated create input', async () => {
     const dto = plainToInstance(ActorCreateDto, validInput);
     expect(await validate(dto)).toHaveLength(0);
   });
 
+  // T-1 (intake-required-fields) — "required fields only" now includes the
+  // intake contract's set (contactPerson, capacityTons, phone, email), not
+  // just identity/location. `crops` is `AdminActorCreateDto`'s field, tested
+  // there.
   it('passes a minimal input (required fields only)', async () => {
     const dto = plainToInstance(ActorCreateDto, {
       traderId: 'TZ-0002',
       traderName: 'Dodoma Groundnut Co-op',
       region: 'Dodoma',
       traderType: 'cooperative',
+      contactPerson: 'Halima Mrisho',
+      capacityTons: 0,
+      phone: '+255700000001',
+      email: 'halima@example.com',
     });
     expect(await validate(dto)).toHaveLength(0);
   });
 
-  it('rejects missing required fields (traderId, traderName)', async () => {
+  it('rejects missing required fields (traderName)', async () => {
     const dto = plainToInstance(ActorCreateDto, {
       region: 'Mbeya',
       traderType: 'seed_company',
     });
     const props = await invalidProps(dto);
-    expect(props).toEqual(expect.arrayContaining(['traderId', 'traderName']));
+    expect(props).toEqual(expect.arrayContaining(['traderName']));
+  });
+
+  // FR-2 — no decorator exists for traderId, so a client-sent value can't fail validate() (stripping happens at the pipe, proven in the e2e spec).
+  it('a client-sent traderId does not block validation either way (no decorator exists for it)', async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, traderId: 'CLIENT-SUPPLIED' });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // T-1 (intake-required-fields) FR-1 — the same required set self-registration
+  // enforces, now required on the admin-side base DTO too.
+  it.each(['contactPerson', 'capacityTons', 'phone', 'email'])(
+    'rejects a missing %s',
+    async (field) => {
+      const input = { ...validInput } as Record<string, unknown>;
+      delete input[field];
+      const dto = plainToInstance(ActorCreateDto, input);
+      expect(await invalidProps(dto)).toContain(field);
+    },
+  );
+
+  // FR-1 "capacity of zero" scenario — self-registration accepts 0, and so must this path.
+  it('accepts capacityTons of exactly 0', async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, capacityTons: 0 });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  // FR-1 "same bounds" scenario — taken verbatim from self-registration (intake-contract.ts).
+  it.each([
+    { field: 'traderName', maxLength: 200 },
+    { field: 'phone', maxLength: 40 },
+  ])('rejects $field over its $maxLength-char bound', async ({ field, maxLength }) => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      [field]: 'x'.repeat(maxLength + 1),
+    });
+    expect(await invalidProps(dto)).toContain(field);
+  });
+
+  it('rejects an email over its 191-char bound (requirements.md FR-1 — matches the VARCHAR(191) column)', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      email: validEmailOfLength(192),
+    });
+    expect(await invalidProps(dto)).toContain('email');
+  });
+
+  it('accepts an email exactly at the 191-char bound', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      email: validEmailOfLength(191),
+    });
+    expect(await validate(dto)).toHaveLength(0);
   });
 
   it('rejects a non-canonical region', async () => {
@@ -99,6 +146,17 @@ describe('ActorCreateDto', () => {
   it('rejects an out-of-set sex value', async () => {
     const dto = plainToInstance(ActorCreateDto, { ...validInput, sex: 'Z' });
     expect(await invalidProps(dto)).toContain('sex');
+  });
+
+  // T-1 (consent-request-email, DD-9) — the admin-assertable subset is
+  // enforced on this base class, so `AdminActorCreateDto` (and anything
+  // else extending it) inherits the restriction automatically.
+  it('rejects EMAIL_LINK as a consentMethod — only the actor\'s own response can record it (DD-9)', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      consentMethod: ConsentMethod.EMAIL_LINK,
+    });
+    expect(await invalidProps(dto)).toContain('consentMethod');
   });
 });
 

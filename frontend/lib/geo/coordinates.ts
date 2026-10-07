@@ -96,3 +96,17 @@ export function isSamePoint(point: CoordinatePoint, lat: string, lng: string): b
   }
   return point.lat === parsed.lat && point.lng === parsed.lng;
 }
+
+/** Display decimals for `formatHemisphericPair` (profile and consent preview). */
+const DISPLAY_DECIMALS = 4;
+
+/**
+ * Human-readable coordinate pair for display: the absolute value plus the
+ * hemisphere letter (N/S for latitude, E/W for longitude) — a southern
+ * latitude reads `3.3869° S`, never `-3.3869° N`. Zero reads N / E.
+ */
+export function formatHemisphericPair(lat: number, lng: number): string {
+  const latText = `${Math.abs(lat).toFixed(DISPLAY_DECIMALS)}° ${lat < 0 ? 'S' : 'N'}`;
+  const lngText = `${Math.abs(lng).toFixed(DISPLAY_DECIMALS)}° ${lng < 0 ? 'W' : 'E'}`;
+  return `${latText}, ${lngText}`;
+}

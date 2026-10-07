@@ -56,12 +56,19 @@ export class AuthFailureError extends Error {
 export class ApiError extends Error {
   readonly status: number;
   readonly details?: unknown;
+  /**
+   * The full parsed error envelope (T-6, `actors/consent-intake/intake-required-fields`
+   * design.md §5) — e.g. a 409's `duplicateCandidates`, which `details` alone
+   * does not carry. `undefined` when the body was not JSON.
+   */
+  readonly body?: unknown;
 
-  constructor(status: number, message: string, details?: unknown) {
+  constructor(status: number, message: string, details?: unknown, body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.details = details;
+    this.body = body;
   }
 }
 
@@ -226,8 +233,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   if (!response.ok) {
     let message = `HTTP ${response.status} ${response.statusText}`;
     let details: unknown;
+    let body: unknown;
     try {
       const envelope = (await response.json()) as Partial<ApiErrorEnvelope>;
+      body = envelope;
       if (envelope.message) {
         message = envelope.message;
       }
@@ -235,7 +244,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     } catch {
       // Body is not JSON — use the status line message set above.
     }
-    throw new ApiError(response.status, message, details);
+    throw new ApiError(response.status, message, details, body);
   }
 
   if (expectEmpty) {

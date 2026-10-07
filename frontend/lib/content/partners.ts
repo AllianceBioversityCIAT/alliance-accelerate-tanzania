@@ -108,7 +108,7 @@ export const PARTNERS: Partner[] = [
     name: 'CIMMYT',
     role: 'Market intelligence, sorghum/groundnut',
     url: 'https://www.cimmyt.org',
-    logo: '/partners/cimmyt.png',
+    logo: '/partners/cimmyt.jpg',
     // Official CIMMYT mark (corn + wordmark + colour squares), transparent PNG;
     // coloured on transparency — needs a light chip on dark surfaces.
     lightSafe: false,

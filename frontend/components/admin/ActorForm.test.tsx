@@ -9,7 +9,11 @@
  *   - edit mode prefills values from initialValues
  *   - AcknowledgeDialog gates submits that set consentStatus to GRANTED
  *   - server 400 field errors map inline via aria-describedby
- *   - server 409 duplicate traderId maps inline to the traderId field
+ *   - (T-6) Trader ID has no input on create and is read-only on edit; the
+ *     required set mirrors the shared intake contract (FR-1, NFR-1 frontend
+ *     half); a 409 carrying `duplicateCandidates` opens
+ *     `DuplicateConfirmDialog`, which resubmits the UNION of every id
+ *     confirmed across however many 409 rounds occur (FR-3)
  *   - successful submit calls onSuccess
  *   - AuthFailureError triggers onAuthFailure
  *   - jest-axe clean in create mode and with the FR-3 inline errors shown (NFR-5)
@@ -45,6 +49,16 @@ jest.mock('@/lib/api/actors-admin', () => ({
   updateActor: jest.fn(),
 }));
 
+// T-11 — the create form embeds `ConsentDocumentField`, which asks the API
+// whether uploads are configured. `uploadConsentDocument` is mocked ONLY so a
+// test can assert the form never attempts an upload itself (the page does,
+// after the actor exists).
+jest.mock('@/lib/api/consent-requests-admin', () => ({
+  ...jest.requireActual('@/lib/api/consent-requests-admin'),
+  getConsentDocumentStatus: jest.fn(),
+  uploadConsentDocument: jest.fn(),
+}));
+
 /**
  * Recording stub for CoordinatePicker (T-5), mirroring the mock shape
  * CoordinatePicker.test.tsx uses for its own Leaflet shell: capture every
@@ -73,9 +87,11 @@ import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 import ActorForm from './ActorForm';
+import { FRONTEND_INTAKE_REQUIRED_FIELDS } from '@/lib/content/intake-required-fields';
 import { createActor, updateActor } from '@/lib/api/actors-admin';
+import { getConsentDocumentStatus, uploadConsentDocument } from '@/lib/api/consent-requests-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
-import type { AdminActor } from '@/lib/api/actors-admin';
+import type { AdminActor, AdminActorCreateResult, DuplicateCandidate } from '@/lib/api/actors-admin';
 
 // Extend jest-dom expect with the jest-axe matcher (NFR-5).
 expect.extend(toHaveNoViolations);
@@ -119,6 +135,26 @@ const ADMIN_ACTOR: AdminActor = {
 
 const ACKNOWLEDGEMENT_TEXT = 'I confirm consent is on file';
 
+/** `createActor`'s 201 response envelope (T-6) — the created actor plus `duplicateWarnings`. */
+const CREATE_RESULT: AdminActorCreateResult = {
+  ...ADMIN_ACTOR,
+  duplicateWarnings: [],
+};
+
+const STRONG_CANDIDATE: DuplicateCandidate = {
+  actorId: 'actor-existing-001',
+  traderId: 'TM-2026-0001',
+  traderName: 'Kilimo Traders',
+  matchedOn: ['email'],
+};
+
+const OTHER_STRONG_CANDIDATE: DuplicateCandidate = {
+  actorId: 'actor-existing-002',
+  traderId: 'TM-2026-0002',
+  traderName: 'Songwe Agro',
+  matchedOn: ['phone'],
+};
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
@@ -150,12 +186,22 @@ async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: str
   await user.click(screen.getByRole('option', { name: label }));
 }
 
+/**
+ * Fills every field the shared intake contract requires (FR-1), plus the
+ * pre-existing identity fields — so tests that are not themselves about the
+ * required set can submit successfully. T-6: Trader ID is no longer one of
+ * these fields (there is no input for it in create mode, FR-2).
+ */
 async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
-  fireEvent.change(screen.getByLabelText(/trader id/i), { target: { value: 'T-002' } });
   fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'Iringa Cooperative' } });
   await selectRegion(user, 'Iringa');
   fireEvent.change(screen.getByLabelText(/trader type/i), { target: { value: 'cooperative' } });
   fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'UNKNOWN' } });
+  fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'Asha Mwinyi' } });
+  fireEvent.click(screen.getByLabelText('Sorghum'));
+  fireEvent.change(screen.getByLabelText(/capacity/i), { target: { value: '100' } });
+  fireEvent.change(screen.getByLabelText(/phone/i), { target: { value: '+255700000000' } });
+  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'asha@example.com' } });
 }
 
 function submitForm() {
@@ -188,6 +234,7 @@ function getFieldError(name: RegExp) {
 beforeEach(() => {
   jest.resetAllMocks();
   receivedCoordinatePickerProps = null;
+  jest.mocked(getConsentDocumentStatus).mockResolvedValue({ enabled: true });
   process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
 });
 
@@ -251,7 +298,6 @@ describe('ActorForm — client validation', () => {
     renderForm();
     submitForm();
 
-    expect(getFieldError(/trader id/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/trader name/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/region/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/trader type/i)?.textContent).toMatch(/required/i);
@@ -304,6 +350,173 @@ describe('ActorForm — client validation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Required intake set (T-6, FR-1, NFR-1 frontend half)
+//
+// `FRONTEND_INTAKE_REQUIRED_FIELDS` is a DELIBERATE fourth copy of the
+// backend's `intake-contract.ts` `INTAKE_REQUIRED_FIELDS` (DD-1) — the
+// frontend cannot import the backend module. `validate()` drives its
+// required-presence checks from this constant (one entry = one loop
+// iteration), so the two things below are what actually discriminate
+// falsifier 5: this test pins the constant's contents against the backend's
+// literal list, and the per-field "left blank" tests below pin what
+// `validate()` does with it. Removing `'phone'` from the constant reddens
+// BOTH: this test (the literal no longer matches) and "rejects a create
+// with Phone left blank" (the loop no longer checks it). A required check
+// that bypasses the constant would need a new branch — validate() currently
+// has no other required-presence branch for these five fields.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — required intake set (T-6, FR-1, NFR-1 frontend half)', () => {
+  it('declares exactly the same required set as the backend intake contract', () => {
+    // Transcribed from backend/src/common/intake-contract.ts's
+    // INTAKE_REQUIRED_FIELDS — NOT imported (the frontend cannot import
+    // backend code), so this literal is one half of the pin and
+    // FRONTEND_INTAKE_REQUIRED_FIELDS (lib/content/intake-required-fields.ts)
+    // is the other: both halves must be edited together, or this test
+    // reddens.
+    expect(FRONTEND_INTAKE_REQUIRED_FIELDS).toEqual([
+      'contactPerson',
+      'crops',
+      'capacityTons',
+      'phone',
+      'email',
+    ]);
+  });
+
+  it('rejects a create with every OTHER required field filled but Contact person blank', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/contact person/i)?.textContent).toMatch(/required/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a create with no crop selected, even when Other crop(s) is filled (FR-1 "otherCrops alone")', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    // Undo the one crop fillRequiredFields ticked, then fill otherCrops only.
+    fireEvent.click(screen.getByLabelText('Sorghum'));
+    fireEvent.change(screen.getByLabelText(/other crop/i), { target: { value: 'Sesame' } });
+    submitForm();
+
+    expect(screen.getByText('Select at least one crop.')).toBeInTheDocument();
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a create with Capacity left blank', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/capacity/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/capacity/i)?.textContent).toMatch(/required/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a create with Phone left blank', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/phone/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/phone/i)?.textContent).toMatch(/required/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a create with Email left blank', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/email/i)?.textContent).toMatch(/required/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  it('accepts a capacity of exactly 0 (FR-1 "capacity of zero")', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/capacity/i), { target: { value: '0' } });
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(getFieldError(/capacity/i)).toBeNull();
+  });
+
+  it('enforces the same bounds as self-registration (Trader name > 200, Contact person > 120, Phone > 40, Email > 191)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillRequiredFields(user);
+    fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'A'.repeat(201) } });
+    fireEvent.change(screen.getByLabelText(/contact person/i), { target: { value: 'B'.repeat(121) } });
+    fireEvent.change(screen.getByLabelText(/phone/i), { target: { value: '1'.repeat(41) } });
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: `${'a'.repeat(187)}@b.co` }, // 192 chars, over the 191 bound
+    });
+    submitForm();
+
+    expect(getFieldError(/trader name/i)?.textContent).toMatch(/200 characters or fewer/i);
+    expect(getFieldError(/contact person/i)?.textContent).toMatch(/120 characters or fewer/i);
+    expect(getFieldError(/phone/i)?.textContent).toMatch(/40 characters or fewer/i);
+    expect(getFieldError(/email/i)?.textContent).toMatch(/191 characters or fewer/i);
+    expect(createActor).not.toHaveBeenCalled();
+  });
+
+  // W-1 — the required-set loop in `validate()` runs identically in edit
+  // mode (FR-1's edit scenario): it is not gated on `mode === 'create'`.
+  it('rejects an edit with Email cleared, same as a create', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: '' } });
+    submitForm();
+
+    expect(getFieldError(/email/i)?.textContent).toMatch(/required/i);
+    expect(updateActor).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trader ID (T-6, FR-2) — system-generated: no input on create, read-only on
+// edit. Falsifier 3: rendering the input in create mode reddens the first
+// test below.
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — Trader ID (T-6, FR-2)', () => {
+  it('renders no Trader ID input in create mode', () => {
+    renderForm();
+    expect(screen.queryByLabelText(/trader id/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the Trader ID read-only (disabled) in edit mode, prefilled from the actor', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    const traderIdInput = screen.getByLabelText(/trader id/i);
+    expect(traderIdInput).toHaveValue(ADMIN_ACTOR.traderId);
+    expect(traderIdInput).toBeDisabled();
+    expect(traderIdInput).toHaveAttribute('readonly');
+  });
+
+  it('never sends traderId in the create or update payload', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(createActor).mock.calls[0][0]).not.toHaveProperty('traderId');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CoordinatePicker adoption (T-5, FR-1 sc. 3, FR-2 sc. 1, FR-5)
 // ---------------------------------------------------------------------------
 
@@ -336,14 +549,12 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
     expect(screen.getByLabelText(/gps longitude/i)).toHaveValue(39.0);
   });
 
-  it('FR-5: the four GPS inputs are still present, labelled, and independently validated', async () => {
+  it('FR-5: the latitude/longitude GPS inputs are still present, labelled, and independently validated', async () => {
     const user = userEvent.setup();
     renderForm();
 
     expect(screen.getByLabelText(/gps latitude/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/gps longitude/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gps altitude/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/gps accuracy/i)).toBeInTheDocument();
 
     // Existing range validation (FR-5 sc. 2) still fires unchanged — a
     // latitude-only submission is valid here (C-2), so only the
@@ -355,6 +566,39 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
     expect(getFieldError(/gps latitude/i)?.textContent).toMatch(/-90 and 90/i);
     expect(createActor).not.toHaveBeenCalled();
   });
+
+  // D-19 (2026-10-05) — GPS altitude/accuracy removed from the admin form on
+  // both create and edit. Falsifier: re-add either input and this redlines.
+  it('D-19: GPS altitude/accuracy inputs are not rendered on create', () => {
+    renderForm({ mode: 'create' });
+
+    expect(screen.queryByLabelText(/gps altitude/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/gps accuracy/i)).not.toBeInTheDocument();
+  });
+
+  it('D-19: GPS altitude/accuracy inputs are not rendered on edit', () => {
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    expect(screen.queryByLabelText(/gps altitude/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/gps accuracy/i)).not.toBeInTheDocument();
+  });
+
+  it('D-19: editing an actor with stored GPS altitude/accuracy sends a PATCH payload with neither key (an omitted key preserves the stored value; null would wipe it)', async () => {
+    const actorWithGpsExtras: AdminActor = {
+      ...ADMIN_ACTOR,
+      gpsAltitude: 1400,
+      gpsAccuracy: 5,
+    };
+    jest.mocked(updateActor).mockResolvedValue(actorWithGpsExtras);
+    renderForm({ mode: 'edit', initialValues: actorWithGpsExtras });
+
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto).not.toHaveProperty('gpsAltitude');
+    expect(dto).not.toHaveProperty('gpsAccuracy');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -364,7 +608,7 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
 describe('ActorForm — consent acknowledgement gating', () => {
   it('opens AcknowledgeDialog and sends acknowledged: true when creating with GRANTED', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -453,7 +697,7 @@ describe('ActorForm — consent acknowledgement gating', () => {
 
   it('does not gate submits with consent DENIED or UNKNOWN', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -530,7 +774,7 @@ describe('ActorForm — consent & provenance fieldset', () => {
 
   it('allows a GRANTED submission once method and date are supplied, sending a full RFC-3339 instant anchored at Tanzania midnight', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -676,7 +920,7 @@ describe('ActorForm — registration source (FR-6)', () => {
 
   it('sends registrationSource explicitly as TEAM_MANAGED when a new actor is created without changing the default', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -728,7 +972,7 @@ describe('ActorForm — contact person and other crops (FR-4)', () => {
 
   it('round-trips a non-empty Contact person and Other crop(s) into the create payload', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -764,9 +1008,9 @@ describe('ActorForm — contact person and other crops (FR-4)', () => {
     expect(dto.otherCrops).toBe('Cassava');
   });
 
-  it('sends null, not empty string, when Contact person and Other crop(s) are left blank', async () => {
+  it('sends null, not empty string, when Other crop(s) is left blank (T-6: Contact person is now required, so it can no longer be blank — see the required-set block)', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -774,7 +1018,6 @@ describe('ActorForm — contact person and other crops (FR-4)', () => {
 
     await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
     const dto = jest.mocked(createActor).mock.calls[0][0];
-    expect(dto.contactPerson).toBeNull();
     expect(dto.otherCrops).toBeNull();
   });
 });
@@ -840,7 +1083,7 @@ describe('ActorForm — Region field (T-7, SearchableSelect adoption)', () => {
 
   it('a region committed via the combobox flows unchanged into the create payload', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
 
     await fillRequiredFields(user);
@@ -853,7 +1096,7 @@ describe('ActorForm — Region field (T-7, SearchableSelect adoption)', () => {
 
   it('typed, uncommitted region text is never emitted to the payload — FR-3 preserved through the adoption', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     renderForm();
     await fillRequiredFields(user);
 
@@ -906,18 +1149,22 @@ describe('ActorForm — accessibility', () => {
 // ---------------------------------------------------------------------------
 
 describe('ActorForm — server error mapping', () => {
-  it('maps 409 duplicate traderId inline to the traderId field', async () => {
+  it('a generic 409 (no duplicateCandidates) renders a top-level form error, not a traderId field error (P-13: mapApiError no longer assumes every 409 is a Trader ID collision)', async () => {
     const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(
-      new ApiError(409, 'An actor with this traderId already exists'),
+      new ApiError(409, 'A conflicting record already exists'),
     );
     renderForm();
 
     await fillRequiredFields(user);
     submitForm();
 
-    await waitFor(() => expect(getFieldError(/trader id/i)?.textContent).toMatch(/already exists/i));
-    expect(screen.getByLabelText(/trader id/i)).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('A conflicting record already exists'),
+    );
+    // There is no Trader ID field in create mode at all (FR-2) — this would
+    // throw if the old 409→traderId mapping still existed.
+    expect(screen.queryByLabelText(/trader id/i)).not.toBeInTheDocument();
   });
 
   it('maps 400 field errors inline via aria-describedby', async () => {
@@ -963,13 +1210,248 @@ describe('ActorForm — server error mapping', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Duplicate detection on admin create (T-6, FR-3)
+//
+// A 409 carrying `duplicateCandidates` opens DuplicateConfirmDialog instead
+// of a field error. Confirming resubmits with `confirmedNotDuplicateOf`,
+// accumulating the UNION of every candidate id confirmed across however many
+// 409 rounds occur in this session (forward pointer, T-3 execution.md:
+// confirm A, 409 names B, confirm B must resubmit {A, B} — never just the
+// latest round, falsifier 2's mutation).
+// ---------------------------------------------------------------------------
+
+describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
+  it('opens DuplicateConfirmDialog on a 409 carrying duplicateCandidates (falsifier 1)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('heading', { name: /possible duplicate/i })).toBeInTheDocument();
+    expect(within(dialog).getByText(STRONG_CANDIDATE.traderName)).toBeInTheDocument();
+    expect(within(dialog).getByText(STRONG_CANDIDATE.traderId)).toBeInTheDocument();
+    // `getByText`'s default matcher only considers a node's OWN direct text
+    // nodes, not descendant elements' text — the Trader ID and the matched
+    // attribute each live in their own nested <span>, so each is asserted as
+    // its own exact leaf match rather than one compound string.
+    expect(within(dialog).getByText('email address')).toBeInTheDocument();
+  });
+
+  // W-8 (NFR-4) — the candidate count is announced to assistive tech, not
+  // only shown visually.
+  it('announces the candidate count via a polite live region (W-8)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    const liveRegion = within(dialog).getByText(/1 possible duplicate found/i);
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('resubmits with confirmedNotDuplicateOf carrying the shown candidate\'s id when confirmed (falsifier 2)', async () => {
+    const user = userEvent.setup();
+    jest
+      .mocked(createActor)
+      .mockRejectedValueOnce(
+        new ApiError(409, 'Possible duplicate', undefined, {
+          statusCode: 409,
+          message: 'Possible duplicate',
+          duplicateCandidates: [STRONG_CANDIDATE],
+        }),
+      )
+      .mockResolvedValueOnce(CREATE_RESULT);
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /not a duplicate/i }));
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(2));
+    const secondDto = jest.mocked(createActor).mock.calls[1][0];
+    expect(secondDto.confirmedNotDuplicateOf).toEqual([STRONG_CANDIDATE.actorId]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('accumulates the UNION across two 409 rounds: confirm A, 409 names B, confirm B resubmits {A, B} (falsifier 2 mutation — sending only the latest round must fail this)', async () => {
+    const user = userEvent.setup();
+    jest
+      .mocked(createActor)
+      .mockRejectedValueOnce(
+        new ApiError(409, 'Possible duplicate', undefined, {
+          statusCode: 409,
+          message: 'Possible duplicate',
+          duplicateCandidates: [STRONG_CANDIDATE],
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError(409, 'Possible duplicate', undefined, {
+          statusCode: 409,
+          message: 'Possible duplicate',
+          duplicateCandidates: [OTHER_STRONG_CANDIDATE],
+        }),
+      )
+      .mockResolvedValueOnce(CREATE_RESULT);
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    // Round 1: confirm A (STRONG_CANDIDATE).
+    const dialog1 = await screen.findByRole('dialog');
+    expect(within(dialog1).getByText(STRONG_CANDIDATE.traderName)).toBeInTheDocument();
+    fireEvent.click(within(dialog1).getByRole('button', { name: /not a duplicate/i }));
+
+    // Round 2: the server now names B (OTHER_STRONG_CANDIDATE) — A is NOT
+    // relisted (design.md DD-4: a 409 lists only the unconfirmed candidates).
+    const dialog2 = await screen.findByRole('dialog');
+    expect(within(dialog2).getByText(OTHER_STRONG_CANDIDATE.traderName)).toBeInTheDocument();
+    expect(within(dialog2).queryByText(STRONG_CANDIDATE.traderName)).not.toBeInTheDocument();
+    fireEvent.click(within(dialog2).getByRole('button', { name: /not a duplicate/i }));
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(3));
+    const thirdDto = jest.mocked(createActor).mock.calls[2][0];
+    expect(new Set(thirdDto.confirmedNotDuplicateOf)).toEqual(
+      new Set([STRONG_CANDIDATE.actorId, OTHER_STRONG_CANDIDATE.actorId]),
+    );
+  });
+
+  it('cancelling the dialog does not resubmit', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(createActor).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves focus to a real button inside the dialog on open, not the panel (focus trap, falsifier 6)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => {
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+      expect(document.activeElement?.tagName).toBe('BUTTON');
+    });
+  });
+
+  it('Shift+Tab from the first focusable button wraps to the last button inside the dialog (focus trap)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    const buttons = within(dialog).getAllByRole('button');
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+
+    await waitFor(() => expect(document.activeElement).toBe(first));
+
+    // Drive it through the hook's own handler, not native tab order (jsdom
+    // doesn't implement tab navigation) — this is what actually wraps focus.
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+
+    expect(document.activeElement).toBe(last);
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it('Escape cancels the dialog without resubmitting (focus trap, falsifier 6)', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValue(
+      new ApiError(409, 'Possible duplicate', undefined, {
+        statusCode: 409,
+        message: 'Possible duplicate',
+        duplicateCandidates: [STRONG_CANDIDATE],
+      }),
+    );
+    renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(createActor).toHaveBeenCalledTimes(1);
+  });
+
+  it('a weak-only match (duplicateWarnings, no 409) creates normally and passes the full result, including duplicateWarnings, to onSuccess', async () => {
+    const user = userEvent.setup();
+    const weakResult: AdminActorCreateResult = {
+      ...ADMIN_ACTOR,
+      duplicateWarnings: [{ ...STRONG_CANDIDATE, matchedOn: ['traderName'] }],
+    };
+    jest.mocked(createActor).mockResolvedValue(weakResult);
+    const { onSuccess } = renderForm();
+
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(weakResult, { documentFile: null }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Success flow
 // ---------------------------------------------------------------------------
 
 describe('ActorForm — success flow', () => {
   it('calls onSuccess after a successful create', async () => {
     const user = userEvent.setup();
-    jest.mocked(createActor).mockResolvedValue(ADMIN_ACTOR);
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
     const { onSuccess } = renderForm();
 
     await fillRequiredFields(user);
@@ -984,5 +1466,222 @@ describe('ActorForm — success flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// T-11 — EMAIL_LINK evidence, the select swap, and D-26 (design §5.7, §5.7a)
+// ---------------------------------------------------------------------------
+
+/** GRANTED through the emailed link: the actor's own act, evidence frozen (rule 3). */
+const LINK_GRANTED_ACTOR: AdminActor = {
+  ...ADMIN_ACTOR,
+  consentStatus: 'GRANTED',
+  consentMethod: 'EMAIL_LINK',
+  consentObtainedAt: '2026-10-01T09:30:00.000Z',
+  consentReference: 'req-123',
+};
+
+/** The link-era record after an admin set it to DENIED: method still EMAIL_LINK, evidence not frozen. */
+const LINK_DENIED_ACTOR: AdminActor = { ...LINK_GRANTED_ACTOR, consentStatus: 'DENIED' };
+
+describe('ActorForm — an EMAIL_LINK actor (FR-10, design §5.7)', () => {
+  it('shows the method read-only as "Email link (actor)", with no select, and re-sends the stored value', async () => {
+    jest.mocked(updateActor).mockResolvedValue(LINK_GRANTED_ACTOR);
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    const method = screen.getByLabelText('Consent method');
+    expect(method).toHaveValue('Email link (actor)');
+    expect(method).toHaveAttribute('readonly');
+    expect(method.tagName).toBe('INPUT');
+
+    submitForm();
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    const [, dto] = jest.mocked(updateActor).mock.calls[0];
+    expect(dto).toMatchObject({
+      consentStatus: 'GRANTED',
+      consentMethod: 'EMAIL_LINK',
+      // Verbatim stored instant — never rebuilt through the Tanzania-midnight helper.
+      consentObtainedAt: '2026-10-01T09:30:00.000Z',
+      consentReference: 'req-123',
+    });
+  });
+
+  it('renders the consent date and reference read-only while GRANTED by link (frozen evidence, rule 3)', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    expect(screen.getByLabelText('Consent obtained on')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Consent reference')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).toHaveValue('req-123');
+  });
+
+  it('swaps back to an EMPTY assertable select, without EMAIL_LINK, when the status changes', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+
+    const select = screen.getByLabelText('Consent method') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    expect(select.value).toBe('');
+    const options = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value);
+    expect(options).not.toContain('EMAIL_LINK');
+    expect(options).toEqual(['', 'NOT_RECORDED', 'PORTAL_CHECKBOX', 'SIGNED_FORM', 'EMAIL', 'VERBAL_FIELD']);
+    // Date and reference are editable again.
+    expect(screen.getByLabelText('Consent obtained on')).not.toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
+  });
+
+  it('clears the link-era date and reference on a re-grant so they cannot ride under an admin method (D-24)', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('');
+    expect(screen.getByLabelText('Consent reference')).toHaveValue('');
+  });
+
+  it('refuses a re-grant that picks no method, naming the field', async () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+    submitForm();
+
+    expect(await screen.findByText('Select how consent was obtained before granting consent.')).toBeInTheDocument();
+    expect(updateActor).not.toHaveBeenCalled();
+  });
+
+  it('restores the stored link evidence when the status is put back', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'GRANTED' } });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('Email link (actor)');
+    expect(screen.getByLabelText('Consent obtained on')).toHaveValue('2026-10-01');
+  });
+
+  it('re-sends the stored EMAIL_LINK when the status changes to a non-GRANTED value with no method chosen', async () => {
+    jest.mocked(updateActor).mockResolvedValue(LINK_DENIED_ACTOR);
+    renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'DENIED' } });
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(updateActor).mock.calls[0][1]).toMatchObject({
+      consentStatus: 'DENIED',
+      consentMethod: 'EMAIL_LINK',
+    });
+  });
+
+  it('has no axe violations for an EMAIL_LINK actor (NFR-10)', async () => {
+    const { container } = renderForm({ mode: 'edit', initialValues: LINK_GRANTED_ACTOR });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe('ActorForm — stale-form protection (D-26, design §5.7a)', () => {
+  it('always sends expectedUpdatedAt — the loaded record\'s updatedAt — on an edit save', async () => {
+    jest.mocked(updateActor).mockResolvedValue(ADMIN_ACTOR);
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(updateActor).mock.calls[0][1]).toHaveProperty('expectedUpdatedAt', ADMIN_ACTOR.updatedAt);
+  });
+
+  it('never sends expectedUpdatedAt on a create', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(createActor).mock.calls[0][0]).not.toHaveProperty('expectedUpdatedAt');
+  });
+
+  it('shows an accessible notice with a Reload action on a 409 naming expectedUpdatedAt, keeping the typed values', async () => {
+    jest.mocked(updateActor).mockRejectedValue(
+      new ApiError(409, 'The actor changed since the form was loaded', [
+        { field: 'expectedUpdatedAt', message: 'The actor changed since the form was loaded' },
+      ]),
+    );
+    const onReload = jest.fn();
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR, onReload });
+
+    fireEvent.change(screen.getByLabelText(/trader name/i), { target: { value: 'Typed By The Admin' } });
+    submitForm();
+
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('This actor changed since you opened it — reload to see the latest');
+    // Nothing the admin typed is lost silently.
+    expect(screen.getByLabelText(/trader name/i)).toHaveValue('Typed By The Admin');
+
+    fireEvent.click(within(notice).getByRole('button', { name: 'Reload' }));
+    expect(onReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat an unrelated 409 as a stale form', async () => {
+    jest.mocked(updateActor).mockRejectedValue(new ApiError(409, 'Some other conflict'));
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+
+    submitForm();
+
+    expect(await screen.findByText('Some other conflict')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ActorForm — the optional consent document on create (FR-15)', () => {
+  const pdf = () => new File(['%PDF-1.4'], 'consent.pdf', { type: 'application/pdf' });
+
+  it('offers the document field on create, and not on edit (the evidence panel owns it there)', async () => {
+    const { unmount } = renderForm();
+    await waitFor(() => expect(screen.getByLabelText(/consent document/i)).toBeEnabled());
+    unmount();
+
+    renderForm({ mode: 'edit', initialValues: ADMIN_ACTOR });
+    expect(screen.queryByLabelText(/consent document/i)).not.toBeInTheDocument();
+  });
+
+  it('hands the held file to onSuccess ONLY after the create resolves, and never uploads itself', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    const { onSuccess } = renderForm();
+    const file = pdf();
+
+    fireEvent.change(await screen.findByLabelText(/consent document/i), { target: { files: [file] } });
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(CREATE_RESULT, { documentFile: file }));
+    expect(uploadConsentDocument).not.toHaveBeenCalled();
+  });
+
+  it('a rejected create leaves no upload attempt and reports no file upward; the file survives for the resubmit', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockRejectedValueOnce(new ApiError(500, 'Server error'));
+    const { onSuccess } = renderForm();
+    const file = pdf();
+
+    fireEvent.change(await screen.findByLabelText(/consent document/i), { target: { files: [file] } });
+    await fillRequiredFields(user);
+    submitForm();
+
+    expect(await screen.findByText('Server error')).toBeInTheDocument();
+    expect(uploadConsentDocument).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    // Still held: fixing and resubmitting yields at most ONE document.
+    expect(screen.getByText('Selected: consent.pdf')).toBeInTheDocument();
+
+    jest.mocked(createActor).mockResolvedValueOnce(CREATE_RESULT);
+    submitForm();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(onSuccess).toHaveBeenCalledWith(CREATE_RESULT, { documentFile: file });
   });
 });

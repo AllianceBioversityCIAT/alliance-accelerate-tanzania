@@ -19,7 +19,7 @@ Next.js (App Router, TS, Tailwind, **static export**) → S3/CloudFront · NestJ
 
 ## Hard constraints
 1. All AWS CLI / deploy / IaC commands use `--profile IBD-DEV` — **except `infra/scripts/deploy-frontend.sh`, which reads `AWS_PROFILE` and parses no flags** (`AWS_PROFILE=IBD-DEV ./infra/scripts/deploy-frontend.sh`); `--profile` passed to it is silently ignored. An ambient non-`IBD-DEV` `AWS_PROFILE` no longer wins silently: all seven `infra/scripts/*.sh` source a shared profile floor (`infra/scripts/_guard.sh`) that **aborts** unless `ALLOW_NON_IBD_DEV_PROFILE` is set to that exact same profile (`bugfix/deploy-script-guardrails`).
-2. Consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public only on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path. `NEVER_PUBLIC_FIELDS` stays absolute on every public path regardless of consent. Enforce server-side.
+2. Consent (`consentStatus = GRANTED`) gates disclosure, not field identity — `phone`/`email` are no longer a blanket "never exposed to `Public`" set (`actors/public-profile-disclosure` inverted that). A `GRANTED` actor's full contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) is public only on the single-actor detail read (`GET /api/v1/actors/:id`), never on any list/bulk path. A second single-actor path (the third disclosure path, after the list and detail reads) exists: the token-bearer read `POST /api/v1/consent/view` (emailed token in the request body, answerable once: only `respond` consumes it; `view` can be repeated until answered or expired) returns, for a NOT-yet-`GRANTED` actor, only the public-detail set projected as if granted (`toPublicDetail`) — never `NEVER_PUBLIC_FIELDS`, never on any list/bulk path. `POST /api/v1/consent/respond` is the only route that moves an actor to `GRANTED` without the admin acknowledgement, and `EMAIL_LINK` is never admin-assertable. `NEVER_PUBLIC_FIELDS` stays absolute on every public path regardless of consent. Enforce server-side.
 3. No Next.js SSR/route handlers — server logic stays in NestJS.
 4. Use design tokens from `docs/ux-ui/design.md §7`; no hardcoded colors/geometry.
 
@@ -29,11 +29,11 @@ Failure-only variants — a green run should cost one summary line.
 | Package | Verify | Lint | Build |
 |---|---|---|---|
 | `backend/` | `cd backend && npm test -- --silent` | `cd backend && npx eslint "{src,test}/**/*.ts" --quiet` | `cd backend && npm run build` |
-| `backend/` (e2e) | *no separate command* — the 16 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` above | — | — |
+| `backend/` (e2e) | *no separate command* — the 18 `*.e2e.spec.ts` files run under `backend/`'s ordinary `npm test` above | — | — |
 | `frontend/` | `cd frontend && npm test -- --silent` | `cd frontend && npm run lint` | `cd frontend && npm run build` |
 | `infra/` | `./infra/scripts/validate.sh` (`--profile IBD-DEV`) — sources the profile floor above: still makes no STS call and creates nothing, but **aborts** on an ambient profile other than `IBD-DEV` | — | — |
 | `infra/` (scripts) | `./infra/scripts/tests/run-tests.sh` — 51 stub-backed cases over `infra/scripts/*.sh`, including the **account-id scan** (no account id versioned under `infra/`). ⚠️ `validate.sh` never reads a script — it does not cover this. | — | — |
-| `.../functions/custom-email-sender/` | `cd infra/10-data-auth/functions/custom-email-sender && npm test` — 59 tests. ⚠️ `npm test`, never bare `npx jest` (ESM; needs `node --experimental-vm-modules`). | — | — |
+| `.../functions/custom-email-sender/` | `cd infra/10-data-auth/functions/custom-email-sender && npm test` — 61 tests. ⚠️ `npm test`, never bare `npx jest` (ESM; needs `node --experimental-vm-modules`). | — | — |
 
 **Asymmetry rule:** suppress passing noise only — **failures print complete and verbatim**, because that output is the evidence a Reviewer audits. `backend`'s `npm run lint` runs `eslint --fix` and **mutates** files; use the `npx eslint … --quiet` form when verifying a diff.
 

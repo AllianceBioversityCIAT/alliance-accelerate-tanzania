@@ -72,7 +72,7 @@ function hasActiveFilters(
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Three labeled filter selects: crop, actor role, and region.
+ * Three labeled filter selects: crop, actor type, and region.
  * Each select has an "All …" option that clears that field from the query.
  * A "Clear filters" button appears when any filter is active (FR-2).
  */
@@ -132,19 +132,19 @@ export default function DirectoryFilters({
           </select>
         </div>
 
-        {/* ── Actor role ────────────────────────────────────────────────────── */}
+        {/* ── Actor type ────────────────────────────────────────────────────── */}
         <div className="min-w-[10rem] flex-1">
           <label htmlFor="dir-filter-role" className={LABEL_CLASS}>
-            Role
+            Actor type
           </label>
           <select
             id="dir-filter-role"
             value={filters.role ?? ''}
             onChange={handleRole}
             className={SELECT_CLASS}
-            aria-label="Filter by actor role"
+            aria-label="Filter by actor type"
           >
-            <option value="">All roles</option>
+            <option value="">All types</option>
             {(Object.entries(ROLES) as [TraderType, { label: string }][]).map(
               ([type, meta]) => (
                 <option key={type} value={type}>

@@ -269,7 +269,7 @@ describe('DirectoryView', () => {
     useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
     render(<DirectoryView />);
 
-    expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/filter by actor type/i)).toBeInTheDocument();
   });
 
   it('renders the region filter control', () => {

@@ -47,7 +47,7 @@ describe('DirectoryFilters', () => {
   it('renders a role select with label', () => {
     render(<DirectoryFilters filters={EMPTY_FILTERS} onChange={jest.fn()} onClear={jest.fn()} />);
 
-    expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/filter by actor type/i)).toBeInTheDocument();
   });
 
   it('renders a region control labeled by its visible "Region" label (OQ-1 — the accessible name is the visible label, not a redundant aria-label)', () => {
@@ -82,7 +82,7 @@ describe('DirectoryFilters', () => {
       <DirectoryFilters filters={EMPTY_FILTERS} onChange={onChange} onClear={jest.fn()} />,
     );
 
-    fireEvent.change(screen.getByLabelText(/filter by actor role/i), {
+    fireEvent.change(screen.getByLabelText(/filter by actor type/i), {
       target: { value: 'cooperative' },
     });
 
@@ -152,7 +152,7 @@ describe('DirectoryFilters', () => {
     expect(call.crop).toBeUndefined();
   });
 
-  it('calls onChange with role=undefined when "All roles" is selected', () => {
+  it('calls onChange with role=undefined when "All types" is selected', () => {
     const onChange = jest.fn();
     render(
       <DirectoryFilters
@@ -162,7 +162,7 @@ describe('DirectoryFilters', () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText(/filter by actor role/i), {
+    fireEvent.change(screen.getByLabelText(/filter by actor type/i), {
       target: { value: '' },
     });
 

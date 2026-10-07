@@ -110,7 +110,7 @@ describe('FilterControls', () => {
     const onChange = jest.fn();
     render(<FilterControls filters={{}} onChange={onChange} />);
 
-    const roleSelect = screen.getByLabelText(/filter by actor role/i);
+    const roleSelect = screen.getByLabelText(/filter by actor type/i);
     fireEvent.change(roleSelect, { target: { value: 'cooperative' } });
 
     expect(onChange).toHaveBeenCalledWith({ role: 'cooperative', page: 1 });
@@ -158,7 +158,7 @@ describe('FilterControls', () => {
     // Crop/role keep their aria-label; region's accessible name is now its
     // visible "Region" label (OQ-1 — the redundant aria-label is removed).
     expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/filter by actor role/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/filter by actor type/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 

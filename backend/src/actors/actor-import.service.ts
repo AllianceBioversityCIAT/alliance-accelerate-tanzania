@@ -5,8 +5,9 @@
  * Parses an uploaded `.xlsx` workbook (base64 JSON body, DR-1) with exceljs,
  * validates every data row against the SAME canonical rules as single create
  * (`common/normalize.ts` + `AdminActorCreateDto` bounds), classifies each row
- * (create / skip / fail / warning), and — on commit — inserts the survivors in
- * chunked, fault-isolated transactions with `IMPORT` audit entries.
+ * (create / possible-duplicate / fail / warning), and — on commit — inserts
+ * the survivors in chunked, fault-isolated transactions with `IMPORT` audit
+ * entries.
  *
  * The pipeline is stateless: `preview` and `commit` re-run the whole thing, so
  * the commit re-validates and re-dedupes from scratch (DR-4). Nothing is written
@@ -19,25 +20,38 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConsentMethod, ConsentStatus, Prisma, RegistrationSource } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
-import { isEmail } from 'class-validator';
+import { isEmail, validateSync } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
-import { ActorAuditService, ActingAdmin } from './actor-audit.service';
+import {
+  ActorAuditService,
+  ActingAdmin,
+  DuplicateConfirmationSnapshot,
+} from './actor-audit.service';
 import { AdminActor, toAdminActor } from './admin-actor.serializer';
+import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import {
+  ImportDuplicateCandidate,
   ImportFailureReason,
   ImportReport,
   ImportRowError,
   ImportRowResult,
 } from './actor-import.types';
 import {
+  IntakeDuplicateCandidateInput,
+  IntakeDuplicateIndex,
+  IntakeDuplicateIndexMatch,
+  IntakeDuplicateService,
+} from './intake-duplicate.service';
+import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
+import {
   CONSENT_METHOD_VALUES,
   CONSENT_VALUES,
   CROP_COLUMN_CATALOG,
   CropColumnField,
-  REGISTRATION_SOURCE_VALUES,
   TEMPLATE_COLUMNS,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
@@ -52,12 +66,28 @@ import {
   parseCapacityTons,
 } from '../common/normalize';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
+import { INTAKE_MAX_LENGTHS, IntakeRequiredField } from '../common/intake-contract';
+import {
+  allocateTraderIds,
+  isTraderIdCollisionError,
+  MAX_TRADER_ID_ALLOCATION_ATTEMPTS,
+} from './trader-id.util';
 
 /** Hard caps (design §3): decoded file size and data-row count. */
 const MAX_DECODED_BYTES = 4 * 1024 * 1024; // 4 MB
 const MAX_DATA_ROWS = 1000;
 /** Actors created per transaction; a chunk is the fault-isolation unit (FR-5). */
 const COMMIT_CHUNK_SIZE = 100;
+/**
+ * T-5 attempt 2 (design.md §3/§9) — per-row strong candidates on the WIRE are
+ * capped at this many, matching the confirmation DTO's `ArrayMaxSize(50)`: a
+ * row above this count can never be fully confirmed anyway. Without this cap,
+ * N rows sharing one phone/email produce N(N−1)/2 candidates — about 385 such
+ * rows would exceed Lambda's 6 MB synchronous response limit. **Gating always
+ * uses the full, uncapped strong-key set** (`classifyDuplicates`) — this
+ * constant bounds only what is serialized.
+ */
+const MAX_WIRE_DUPLICATE_CANDIDATES = 50;
 
 /** `Date.UTC(1899, 11, 30)` — Excel's day-0 epoch (its well-known leap-year-bug date). */
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
@@ -133,9 +163,39 @@ function templateColumnIndex(field: string): number {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
-/** Scalar Actor create payload assembled from a validated row. */
+/**
+ * T-4 (FR-1) — one row's message(s) for a required field, reusing
+ * `AdminActorCreateDto`'s own class-validator output for the same "missing"
+ * shape (NFR-1), rather than a hand-typed paraphrase. Memoized per field
+ * (module-level map, not per row) to keep `validateSync` off the per-row hot
+ * path (NFR-2).
+ */
+const MISSING_FIELD_ERROR_CACHE = new Map<IntakeRequiredField, ImportRowError[]>();
+
+function missingContractFieldErrors(field: IntakeRequiredField): ImportRowError[] {
+  const cached = MISSING_FIELD_ERROR_CACHE.get(field);
+  if (cached) return cached;
+
+  const probeInput: Record<string, unknown> =
+    field === 'crops' ? { crops: [] } : { [field]: undefined };
+  const probe = plainToInstance(AdminActorCreateDto, probeInput);
+  const violations = validateSync(probe, { skipMissingProperties: false });
+  const match = violations.find((v) => v.property === field);
+  const messages = Object.values(match?.constraints ?? {});
+  // Fallback only guards a future metadata drift (NFR-1's set-equality test
+  // pins the normal case); it must never throw and kill the whole row.
+  const result =
+    messages.length > 0
+      ? messages.map((message) => ({ field, message }))
+      : [{ field, message: `${field} is required` }];
+  MISSING_FIELD_ERROR_CACHE.set(field, result);
+  return result;
+}
+
+/** Scalar Actor create payload assembled from a validated row. `traderId` is
+ * merged in separately at commit time, once a chunk has allocated one
+ * (design.md §4.2/§4.5) — a row never carries its own Trader ID. */
 interface ActorScalarData {
-  traderId: string;
   traderName: string;
   region: string;
   traderType: string;
@@ -155,10 +215,8 @@ interface ActorScalarData {
   email?: string;
   gpsLatitude?: number;
   gpsLongitude?: number;
-  gpsAltitude?: number;
-  gpsAccuracy?: number;
   consentStatus: ConsentStatus;
-  /** T-6 — which track produced this record (FR-1); defaults to TEAM_MANAGED. */
+  /** Imports are always TEAM_MANAGED (FR-5, T-4); no longer a column. */
   registrationSource: RegistrationSource;
   /** T-6 — how consent was obtained (FR-2); defaults to NOT_RECORDED. */
   consentMethod: ConsentMethod;
@@ -168,9 +226,8 @@ interface ActorScalarData {
   consentReference?: string;
   /**
    * T-4 (public-profile-disclosure) — named natural person, published
-   * deliberately once consent is GRANTED. Bound to 120 chars in
-   * `validateRow`, matching `ActorCreateDto.contactPerson` (the column
-   * itself is `VARCHAR(191)`, but 120 keeps every intake path identical).
+   * deliberately once consent is GRANTED. Bound in `validateRow` to
+   * `INTAKE_MAX_LENGTHS.contactPerson`, matching every other intake path.
    */
   contactPerson?: string;
   /**
@@ -184,22 +241,20 @@ interface ActorScalarData {
 /** Mutable per-row working state threaded through the pipeline phases. */
 interface WorkRow {
   rowNumber: number;
+  /** `null` until a chunk allocates and commits this row (design.md §4.2). */
   traderId: string | null;
   traderName: string | null;
   errors: ImportRowError[];
   warnings: string[];
   /**
-   * `candidate` — passed validation + dedupe + consent gate, eligible to create.
+   * `candidate` — passed validation (+ duplicate classification, + consent
+   * gate), eligible to create.
+   * `possible-duplicate` — a strong match (DB or in-file) was not confirmed;
+   * never created (T-5, design.md §4.5).
    * `failed` — validation, consent-gate, or commit-chunk failure (has errors).
-   * `skipped-exists` / `skipped-dup` — duplicate rules (FR-4).
    * `created` — committed (has `actorId`).
    */
-  state:
-    | 'candidate'
-    | 'failed'
-    | 'skipped-exists'
-    | 'skipped-dup'
-    | 'created';
+  state: 'candidate' | 'possible-duplicate' | 'failed' | 'created';
   /** Present while the row is a create candidate. */
   create?: {
     scalar: ActorScalarData;
@@ -207,6 +262,59 @@ interface WorkRow {
     consentGranted: boolean;
   };
   actorId?: string;
+  /**
+   * T-5 — this row's strong matches (DB + in-file), reported on every
+   * surface whatever the outcome. Also the source the commit-time audit
+   * confirmation is resolved from (design.md §4.5): a `kind: 'row'` entry
+   * naming an earlier row that itself got created is rewritten to
+   * `kind: 'actor'` using THAT row's created id/traderId.
+   */
+  duplicateCandidates?: ImportDuplicateCandidate[];
+  /**
+   * T-5 — the full strong-match count behind `duplicateCandidates`, before
+   * the 50-item wire cap (design.md §3/§9, attempt-2 rework).
+   */
+  duplicateCandidatesTotal?: number;
+  /** T-5 — this row's weak matches (DB + in-file) — advisory only. */
+  duplicateWarnings?: ImportDuplicateCandidate[];
+}
+
+/** A candidate row's scalar data reduced to `IntakeDuplicateService`'s comparison shape. */
+function toCandidateInput(scalar: ActorScalarData): IntakeDuplicateCandidateInput {
+  return {
+    phone: scalar.phone ?? null,
+    email: scalar.email ?? null,
+    traderName: scalar.traderName,
+    gpsLatitude: scalar.gpsLatitude ?? null,
+    gpsLongitude: scalar.gpsLongitude ?? null,
+  };
+}
+
+/** An existing-actor match → the wire/audit `kind: 'actor'` shape (T-5, design.md §3). */
+function toActorCandidate(c: DuplicateCandidate): ImportDuplicateCandidate {
+  return {
+    kind: 'actor',
+    actorId: c.actorId,
+    traderId: c.traderId,
+    traderName: c.traderName,
+    matchedOn: c.matchedOn,
+  };
+}
+
+/**
+ * An in-file match → the wire/audit `kind: 'row'` shape. `match.key` is
+ * whatever `IntakeDuplicateIndex.add()` indexed the earlier row under — this
+ * service always uses `row:<n>` (never leaking the raw key onto the wire,
+ * T-3 Reviewer forward pointer), so the row number is recovered by slicing
+ * off that fixed prefix.
+ */
+function toRowCandidate(match: IntakeDuplicateIndexMatch): ImportDuplicateCandidate {
+  return {
+    kind: 'row',
+    row: Number(match.key.slice('row:'.length)),
+    traderName: match.traderName,
+    matchedOn: match.matchedOn,
+  };
 }
 
 @Injectable()
@@ -215,6 +323,7 @@ export class ActorImportService {
     private readonly prisma: PrismaService,
     private readonly auditService: ActorAuditService,
     private readonly actingAdminResolver: ActingAdminResolver,
+    private readonly intakeDuplicateService: IntakeDuplicateService,
   ) {}
 
   /**
@@ -264,8 +373,16 @@ export class ActorImportService {
     const commit = dto.mode === 'commit';
     const rows = rawRows.map((raw) => this.validateRow(raw));
 
-    this.dedupeInFile(rows);
-    await this.dedupeAgainstDb(rows);
+    // T-5 (design.md §1, §4.5) — duplicate classification runs BEFORE the
+    // consent gate: a row the consent gate later fails still had a VALID
+    // identity, so it stays an in-file match source; only a row that failed
+    // VALIDATION (above) is excluded. `duplicateConfirmations` is ignored in
+    // preview (the field itself is also unused there, design.md §3).
+    await this.classifyDuplicates(
+      rows,
+      commit ? (dto.duplicateConfirmations ?? []) : [],
+    );
+
     this.applyConsentGate(rows, commit, dto.acknowledged);
 
     if (commit) {
@@ -419,14 +536,17 @@ export class ActorImportService {
     const errors: ImportRowError[] = [];
     const warnings: string[] = [];
 
-    const traderId = cells.traderId || null;
+    // T-4 — Trader ID is no longer a column: it is system-assigned per chunk
+    // at commit time (design.md §4.2/§4.5), never parsed from a cell.
     const traderName = cells.traderName || null;
 
-    if (!traderId) {
-      errors.push({ field: 'traderId', message: 'Trader ID is required.' });
-    }
     if (!traderName) {
       errors.push({ field: 'traderName', message: 'Trader Name is required.' });
+    } else if (traderName.length > INTAKE_MAX_LENGTHS.traderName) {
+      errors.push({
+        field: 'traderName',
+        message: `Trader Name must be ${INTAKE_MAX_LENGTHS.traderName} characters or fewer.`,
+      });
     }
 
     // Region — required + canonical (normalized).
@@ -475,9 +595,12 @@ export class ActorImportService {
       }
     }
 
-    // Capacity — optional; when present must be a number ≥ 0.
+    // Capacity — required (FR-1). Blank → missing omission; non-blank,
+    // non-numeric → its own format error (design.md §4.1).
     let capacityTons: number | undefined;
-    if (cells.capacityTons) {
+    if (!cells.capacityTons) {
+      errors.push(...missingContractFieldErrors('capacityTons'));
+    } else {
       const parsed = parseCapacityTons(cells.capacityTons);
       if (parsed === null) {
         errors.push({
@@ -489,16 +612,19 @@ export class ActorImportService {
       }
     }
 
-    // Phone — optional; normalized to E.164 or cleared with a warning (FR-5,
-    // T-3). NOT an error: FR-5 forbids rejecting a real organisation over an
-    // unusable phone, so the row stays a create candidate either way.
-    //
-    // The two branches are independent, not exclusive. `normalizePhone()`
-    // counts *segments*, so a cell like "garbage/<number>" returns
-    // `{ phone: null, additionalCount: 1 }` and must raise BOTH warnings
-    // (T-1 advisory A2). Never assume `phone !== null` when the count is > 0.
+    // Phone — required (`common/intake-contract.ts`, FR-1). An
+    // unnormalizable (but present) value warns and clears rather than
+    // failing the row (FR-5); the two phone-cleared warnings below are
+    // independent, not exclusive.
     let phone: string | null | undefined;
-    if (cells.phone) {
+    if (!cells.phone) {
+      errors.push(...missingContractFieldErrors('phone'));
+    } else if (cells.phone.length > INTAKE_MAX_LENGTHS.phone) {
+      errors.push({
+        field: 'phone',
+        message: `Phone must be ${INTAKE_MAX_LENGTHS.phone} characters or fewer.`,
+      });
+    } else {
       const normalized = normalizePhone(cells.phone);
       // `null`, never the raw string — storing an unnormalizable value is the
       // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
@@ -511,14 +637,21 @@ export class ActorImportService {
       }
     }
 
-    // Email — optional; when present must be a valid address. Never echo value.
+    // Email — required (FR-1). Blank → missing omission; over bound rejected
+    // before the format check; present + in-bound must be a valid address.
+    // Never echo the value.
     let email: string | undefined;
-    if (cells.email) {
-      if (!isEmail(cells.email)) {
-        errors.push({ field: 'email', message: 'Email format is invalid.' });
-      } else {
-        email = cells.email;
-      }
+    if (!cells.email) {
+      errors.push(...missingContractFieldErrors('email'));
+    } else if (cells.email.length > INTAKE_MAX_LENGTHS.email) {
+      errors.push({
+        field: 'email',
+        message: `Email must be ${INTAKE_MAX_LENGTHS.email} characters or fewer.`,
+      });
+    } else if (!isEmail(cells.email)) {
+      errors.push({ field: 'email', message: 'Email format is invalid.' });
+    } else {
+      email = cells.email;
     }
 
     // GPS — out-of-range or non-numeric lat/long clears ALL GPS + warns (DR-5).
@@ -538,19 +671,9 @@ export class ActorImportService {
       }
     }
 
-    // Registration Source — optional; blank defaults to TEAM_MANAGED (FR-1).
-    let registrationSource: RegistrationSource = RegistrationSource.TEAM_MANAGED;
-    if (cells.registrationSource) {
-      const upper = cells.registrationSource.toUpperCase();
-      if (!(REGISTRATION_SOURCE_VALUES as string[]).includes(upper)) {
-        errors.push({
-          field: 'registrationSource',
-          message: `Registration Source must be one of ${REGISTRATION_SOURCE_VALUES.join(', ')}.`,
-        });
-      } else {
-        registrationSource = upper as RegistrationSource;
-      }
-    }
+    // Registration Source — no longer a column; imports are always
+    // TEAM_MANAGED (FR-5, T-4).
+    const registrationSource: RegistrationSource = RegistrationSource.TEAM_MANAGED;
 
     // Consent Method — optional; blank defaults to NOT_RECORDED (FR-2). Always
     // normalized to the enum BEFORE the provenance gate sees it — a raw,
@@ -602,22 +725,20 @@ export class ActorImportService {
       }
     }
 
-    // Contact Person — optional named natural person, published deliberately
-    // once consent is GRANTED (public-profile-disclosure FR-4/FR-5). Bound to
-    // 120 chars to match `ActorCreateDto.contactPerson` — the column is
-    // `VARCHAR(191)`, but 120 keeps every intake path identical. Follows the
-    // Consent Reference precedent above: a second import-path writer, so it
-    // gets its own bound rather than trusting the column to reject silently.
+    // Contact Person — required (FR-1, intake-required-fields): published
+    // deliberately once consent is GRANTED (public-profile-disclosure
+    // FR-4/FR-5). A blank cell is the missing omission below; bound to
+    // `INTAKE_MAX_LENGTHS.contactPerson`, matching every other intake path.
     let contactPerson: string | undefined;
-    if (cells.contactPerson) {
-      if (cells.contactPerson.length > 120) {
-        errors.push({
-          field: 'contactPerson',
-          message: 'Contact Person must be 120 characters or fewer.',
-        });
-      } else {
-        contactPerson = cells.contactPerson;
-      }
+    if (!cells.contactPerson) {
+      errors.push(...missingContractFieldErrors('contactPerson'));
+    } else if (cells.contactPerson.length > INTAKE_MAX_LENGTHS.contactPerson) {
+      errors.push({
+        field: 'contactPerson',
+        message: `Contact Person must be ${INTAKE_MAX_LENGTHS.contactPerson} characters or fewer.`,
+      });
+    } else {
+      contactPerson = cells.contactPerson;
     }
 
     // Other Crops — optional actor-declared free text, published
@@ -636,12 +757,16 @@ export class ActorImportService {
       }
     }
 
-    // Crops — three YES/NO columns → crop-name list (DR-3).
+    // Crops — three YES/NO columns → crop-name list (DR-3). At least one is
+    // required (FR-1): zero names is the same "missing" shape as `crops: []`.
     const cropNames = this.resolveCrops(cells, errors);
+    if (cropNames.length === 0) {
+      errors.push(...missingContractFieldErrors('crops'));
+    }
 
     const row: WorkRow = {
       rowNumber,
-      traderId,
+      traderId: null,
       traderName,
       errors,
       warnings,
@@ -651,7 +776,6 @@ export class ActorImportService {
     if (row.state === 'candidate') {
       row.create = {
         scalar: {
-          traderId: traderId as string,
           traderName: traderName as string,
           region: region as string,
           traderType: traderType as string,
@@ -665,8 +789,6 @@ export class ActorImportService {
           email,
           gpsLatitude: gps.lat,
           gpsLongitude: gps.lng,
-          gpsAltitude: gps.alt,
-          gpsAccuracy: gps.acc,
           consentStatus,
           registrationSource,
           consentMethod,
@@ -744,10 +866,11 @@ export class ActorImportService {
   }
 
   /**
-   * Resolve the four GPS cells. If a present lat/long is out of range or
-   * non-numeric (or a present altitude/accuracy is non-numeric), ALL four GPS
-   * values are cleared and a single warning is recorded (DR-5) — GPS problems
-   * never fail a whole actor.
+   * Resolve the two GPS cells the template still carries (GPS Altitude and
+   * GPS Accuracy are no longer import columns, T-4 — they stay on the admin
+   * form and in the database, D-11). If a present lat/long is out of range
+   * or non-numeric, BOTH GPS values are cleared and a warning is recorded
+   * (DR-5) — GPS problems never fail a whole actor.
    */
   private resolveGps(
     cells: Record<string, string>,
@@ -755,19 +878,13 @@ export class ActorImportService {
   ): {
     lat?: number;
     lng?: number;
-    alt?: number;
-    acc?: number;
   } {
     const lat = this.numOrNull(cells.gpsLatitude);
     const lng = this.numOrNull(cells.gpsLongitude);
-    const alt = this.numOrNull(cells.gpsAltitude);
-    const acc = this.numOrNull(cells.gpsAccuracy);
 
     const invalid =
       (cells.gpsLatitude !== '' && !isValidLatitude(lat)) ||
-      (cells.gpsLongitude !== '' && !isValidLongitude(lng)) ||
-      (cells.gpsAltitude !== '' && alt === null) ||
-      (cells.gpsAccuracy !== '' && (acc === null || acc < 0));
+      (cells.gpsLongitude !== '' && !isValidLongitude(lng));
 
     if (invalid) {
       warnings.push(GPS_CLEARED_WARNING);
@@ -777,8 +894,6 @@ export class ActorImportService {
     return {
       lat: lat ?? undefined,
       lng: lng ?? undefined,
-      alt: alt ?? undefined,
-      acc: acc ?? undefined,
     };
   }
 
@@ -811,53 +926,103 @@ export class ActorImportService {
     return names;
   }
 
-  // ---- dedupe + consent gate --------------------------------------------
+  // ---- duplicate classification (T-5, FR-4, design.md §4.5) --------------
 
   /**
-   * In-file dedupe on `traderId` (FR-4): the first valid occurrence wins; later
-   * valid rows with the same id become `skipped-duplicate-in-file`.
+   * Classify every row that passed validation against the database AND
+   * against earlier rows of the same workbook, in one pass (design.md §3,
+   * §4.5):
+   *
+   * - **One actor scan for the whole batch** via `checkBatch` (T-3's API,
+   *   design.md §4.3) — never one scan per row.
+   * - **In-file direction:** a row is matched against `IntakeDuplicateIndex`
+   *   BEFORE it is added, so only EARLIER rows can match a LATER one
+   *   (FR-4 scenario 2). A `failed` row (validation) is never added, so it
+   *   is never a match source; a row that will later fail the CONSENT gate
+   *   still passed validation here and IS added (FR-4: "a row the consent
+   *   gate later fails stays a match source").
+   * - **The gate:** a row's strong keys (`actor:<id>` / `row:<n>`) must ALL
+   *   be named in its own `duplicateConfirmations` entry, or it becomes
+   *   `possible-duplicate` and is excluded from commit (which filters on
+   *   `state === 'candidate'`). `row.create` is kept, not cleared, so
+   *   `applyConsentGate` can still check a held row's provenance (T-5
+   *   attempt 3, design.md §4.5 amendment) — a held row is never created
+   *   either way. The server recomputes this every run (DD-4) — a
+   *   confirmation covers only the candidates it names.
+   * - **Wire cap (attempt-2 rework):** `row.duplicateCandidates` is truncated
+   *   to {@link MAX_WIRE_DUPLICATE_CANDIDATES}; `strongKeys`, used for the
+   *   gate above, is never truncated.
    */
-  private dedupeInFile(rows: WorkRow[]): void {
-    const seen = new Set<string>();
-    for (const row of rows) {
-      if (row.state !== 'candidate' || !row.traderId) continue;
-      if (seen.has(row.traderId)) {
-        row.state = 'skipped-dup';
-        row.create = undefined;
-      } else {
-        seen.add(row.traderId);
-      }
+  private async classifyDuplicates(
+    rows: WorkRow[],
+    confirmations: Array<{ row: number; candidates: string[] }>,
+  ): Promise<void> {
+    const candidateRows = rows.filter(
+      (row) => row.state === 'candidate' && row.create !== undefined,
+    );
+    if (candidateRows.length === 0) return;
+
+    const confirmedByRow = new Map<number, Set<string>>();
+    for (const entry of confirmations) {
+      confirmedByRow.set(entry.row, new Set(entry.candidates));
     }
-  }
 
-  /**
-   * DB dedupe (FR-4): one `findMany` over the surviving candidates' traderIds;
-   * any already in the registry become `skipped-exists` (the existing actor is
-   * never touched).
-   */
-  private async dedupeAgainstDb(rows: WorkRow[]): Promise<void> {
-    const candidateIds = rows
-      .filter((r) => r.state === 'candidate' && r.traderId)
-      .map((r) => r.traderId as string);
-    if (candidateIds.length === 0) return;
+    const inputs = candidateRows.map((row) =>
+      toCandidateInput((row.create as NonNullable<WorkRow['create']>).scalar),
+    );
+    const dbResults = await this.intakeDuplicateService.checkBatch(inputs);
+    const index = new IntakeDuplicateIndex();
 
-    const existing = await this.prisma.actor.findMany({
-      where: { traderId: { in: candidateIds } },
-      select: { traderId: true },
+    candidateRows.forEach((row, i) => {
+      const input = inputs[i];
+      const dbResult = dbResults[i];
+      const inFileResult = index.match(input);
+
+      const strongCandidates: ImportDuplicateCandidate[] = [
+        ...dbResult.strong.map(toActorCandidate),
+        ...inFileResult.strong.map(toRowCandidate),
+      ];
+      const weakCandidates: ImportDuplicateCandidate[] = [
+        ...dbResult.weak.map(toActorCandidate),
+        ...inFileResult.weak.map(toRowCandidate),
+      ];
+      // Gating uses this FULL, uncapped list — never the wire-truncated one
+      // below (design.md §3/§9: a row above the cap can never be fully
+      // confirmed, so it correctly stays `possible-duplicate`).
+      const strongKeys = [
+        ...dbResult.strong.map((c) => `actor:${c.actorId}`),
+        ...inFileResult.strong.map((m) => m.key),
+      ];
+
+      if (strongCandidates.length > 0) {
+        row.duplicateCandidates = strongCandidates.slice(
+          0,
+          MAX_WIRE_DUPLICATE_CANDIDATES,
+        );
+        row.duplicateCandidatesTotal = strongCandidates.length;
+      }
+      if (weakCandidates.length > 0) row.duplicateWarnings = weakCandidates;
+
+      const confirmedSet = confirmedByRow.get(row.rowNumber) ?? new Set<string>();
+      const allConfirmed = strongKeys.every((key) => confirmedSet.has(key));
+
+      if (strongKeys.length > 0 && !allConfirmed) {
+        row.state = 'possible-duplicate';
+        // `row.create` is kept (not cleared): the consent gate (below) still
+        // needs its scalar data to check a held row's provenance (design.md
+        // §4.5 amendment, T-5 attempt 3). Commit only ever creates rows whose
+        // STATE is 'candidate', so a held row is never created regardless.
+      }
+      // `IntakeDuplicateIndex` enforces nothing about direction or exclusion
+      // itself (intake-duplicate.service.ts docblock) — THIS caller decides:
+      // add every row that passed validation, in row order, regardless of
+      // whether it just became `possible-duplicate` (FR-4 scenario 2's
+      // "including rows that are themselves possible-duplicate").
+      index.add(`row:${row.rowNumber}`, input);
     });
-    const existingIds = new Set(existing.map((a) => a.traderId));
-
-    for (const row of rows) {
-      if (
-        row.state === 'candidate' &&
-        row.traderId &&
-        existingIds.has(row.traderId)
-      ) {
-        row.state = 'skipped-exists';
-        row.create = undefined;
-      }
-    }
   }
+
+  // ---- consent gate -------------------------------------------------------
 
   /**
    * Consent gate (FR-3, FR-6, NFR-7, DD-5). Two INDEPENDENT checks, both must
@@ -866,16 +1031,24 @@ export class ActorImportService {
    * 1. Per-row provenance (T-6, new): the SAME shared `isConsentProvenanceSatisfied`
    *    predicate consulted by create/update/bulk-consent (NFR-7 — one
    *    implementation, not a reimplementation here). Import only ever creates
-   *    NEW actors — `dedupeAgainstDb` already routed any existing `traderId`
-   *    to `skipped-exists` — so `stored` is always `null`, which means
-   *    condition (a) always fires for an effective-`GRANTED` row; the
-   *    predicate reduces to "does this row itself carry a method (not
+   *    NEW actors, so `stored` is always `null`, which means condition (a)
+   *    always fires for an effective-`GRANTED` row; the predicate reduces to
+   *    "does this row itself carry a method (not
    *    `NOT_RECORDED`) and a date". A failure rejects ONLY this row (QA-9's
    *    per-row isolation) with a field-level reason; neighbours are untouched.
    * 2. The pre-existing file-level `acknowledged` flag (unchanged, DD-2/DD-5):
    *    required on commit — without it those rows fail. In preview the row
    *    stays a create candidate but carries a warning so the UI knows to show
    *    the acknowledgement dialog.
+   *
+   * T-5 attempt 3 (design.md §4.5 amendment) — this also runs on HELD
+   * (`possible-duplicate`) rows, not just `candidate` ones: `classifyDuplicates`
+   * no longer clears `row.create` when it holds a row, so its scalar data is
+   * still here. A provenance failure outranks the hold (FR-5: the row reports
+   * `failed`, never `possible-duplicate`). A held row that passes provenance
+   * is never created either way, so only the preview acknowledgement warning
+   * applies to it — that is what makes the frontend's file-level
+   * acknowledgement dialog fire before a LATER confirmation reaches commit.
    */
   private applyConsentGate(
     rows: WorkRow[],
@@ -883,39 +1056,70 @@ export class ActorImportService {
     acknowledged?: boolean,
   ): void {
     for (const row of rows) {
-      if (row.state !== 'candidate' || !row.create) continue;
+      this.applyConsentGateToRow(row, commit, acknowledged);
+    }
+  }
 
-      const scalar = row.create.scalar;
-      const provenanceOk = isConsentProvenanceSatisfied(null, {
-        consentStatus: scalar.consentStatus,
-        consentMethod: scalar.consentMethod,
-        consentObtainedAt: scalar.consentObtainedAt,
-        consentReference: scalar.consentReference,
+  /** Per-row body of {@link applyConsentGate} — see that method's docblock. */
+  private applyConsentGateToRow(
+    row: WorkRow,
+    commit: boolean,
+    acknowledged?: boolean,
+  ): void {
+    const held = row.state === 'possible-duplicate';
+    if ((row.state !== 'candidate' && !held) || !row.create) return;
+
+    if (!this.passesProvenanceGate(row, row.create.scalar)) return;
+    if (!row.create.consentGranted) return;
+
+    if (held) {
+      if (!commit) row.warnings.push(CONSENT_ACK_WARNING);
+      return;
+    }
+
+    this.applyAcknowledgementGate(row, commit, acknowledged);
+  }
+
+  /**
+   * Provenance half of the consent gate (T-6). On failure, fails the row and
+   * returns `false`; a passing row is left untouched and returns `true`.
+   */
+  private passesProvenanceGate(row: WorkRow, scalar: ActorScalarData): boolean {
+    const provenanceOk = isConsentProvenanceSatisfied(null, {
+      consentStatus: scalar.consentStatus,
+      consentMethod: scalar.consentMethod,
+      consentObtainedAt: scalar.consentObtainedAt,
+      consentReference: scalar.consentReference,
+    });
+    if (provenanceOk) return true;
+
+    row.state = 'failed';
+    row.create = undefined;
+    row.errors.push(
+      ...this.buildProvenanceRowErrors(scalar.consentMethod, scalar.consentObtainedAt),
+    );
+    return false;
+  }
+
+  /**
+   * File-level acknowledgement half of the consent gate (DD-2/DD-5), for a
+   * non-held `candidate` row whose provenance already passed and that
+   * publishes `GRANTED`.
+   */
+  private applyAcknowledgementGate(
+    row: WorkRow,
+    commit: boolean,
+    acknowledged?: boolean,
+  ): void {
+    if (commit && acknowledged !== true) {
+      row.state = 'failed';
+      row.create = undefined;
+      row.errors.push({
+        field: 'consentStatus',
+        message: 'Acknowledgement is required to import GRANTED actors.',
       });
-      if (!provenanceOk) {
-        row.state = 'failed';
-        row.create = undefined;
-        row.errors.push(
-          ...this.buildProvenanceRowErrors(
-            scalar.consentMethod,
-            scalar.consentObtainedAt,
-          ),
-        );
-        continue;
-      }
-
-      if (!row.create.consentGranted) continue;
-
-      if (commit && acknowledged !== true) {
-        row.state = 'failed';
-        row.create = undefined;
-        row.errors.push({
-          field: 'consentStatus',
-          message: 'Acknowledgement is required to import GRANTED actors.',
-        });
-      } else if (!commit) {
-        row.warnings.push(CONSENT_ACK_WARNING);
-      }
+    } else if (!commit) {
+      row.warnings.push(CONSENT_ACK_WARNING);
     }
   }
 
@@ -949,10 +1153,10 @@ export class ActorImportService {
   // ---- commit ------------------------------------------------------------
 
   /**
-   * Create the surviving candidates in chunked transactions (FR-5). Each chunk
-   * is one `$transaction` (actor + crop links + one `IMPORT` audit batch); a
-   * chunk failure rolls that chunk back and fails only its rows — later chunks
-   * still run.
+   * Create the surviving candidates in chunked transactions (FR-5). Each
+   * chunk is one `$transaction` (actor + crop links + one `IMPORT` audit
+   * batch); a chunk failure rolls that chunk back and fails only its rows —
+   * later chunks still run.
    */
   private async commit(
     rows: WorkRow[],
@@ -964,18 +1168,51 @@ export class ActorImportService {
 
     const acting = await this.resolveActing(actingSub);
     const cropIdByName = await this.loadCropIds();
+    // T-5 — rowNumber → created identity, so a LATER chunk (or a LATER row
+    // in the SAME chunk) can resolve a `kind: 'row'` confirmation snapshot
+    // to the real actor it ended up pointing at (design.md §4.5).
+    const createdByRow = new Map<number, { actorId: string; traderId: string }>();
 
     for (let i = 0; i < candidates.length; i += COMMIT_CHUNK_SIZE) {
       const chunk = candidates.slice(i, i + COMMIT_CHUNK_SIZE);
+      await this.commitChunk(chunk, acting, cropIdByName, acknowledged, createdByRow);
+    }
+  }
+
+  /**
+   * Allocate this chunk's Trader IDs, then create it in one transaction
+   * (design.md §4.2, §4.5). A `traderId` collision retries the WHOLE chunk,
+   * up to {@link MAX_TRADER_ID_ALLOCATION_ATTEMPTS} times; exhaustion or any
+   * other error keeps the existing whole-chunk failure (P-23) — later chunks
+   * still run, nothing is rethrown out of `commit`.
+   */
+  private async commitChunk(
+    chunk: WorkRow[],
+    acting: ActingAdmin,
+    cropIdByName: Map<string, string>,
+    acknowledged: boolean | undefined,
+    createdByRow: Map<number, { actorId: string; traderId: string }>,
+  ): Promise<void> {
+    const now = new Date();
+
+    for (let attempt = 1; attempt <= MAX_TRADER_ID_ALLOCATION_ATTEMPTS; attempt += 1) {
       try {
+        const traderIds = await allocateTraderIds(this.prisma, chunk.length, now);
+        // T-5 — seeded from the OUTER map (earlier chunks' creates), then
+        // grown with THIS chunk's own rows as they are created below, so a
+        // row can resolve a confirmation against an earlier row of the SAME
+        // chunk too. Discarded on any failure in this attempt — only merged
+        // into `createdByRow` once the transaction actually commits.
+        const localCreated = new Map(createdByRow);
         const createdIds = await this.prisma.$transaction(async (tx) => {
           const createdActors: AdminActor[] = [];
           const ids: string[] = [];
 
-          for (const row of chunk) {
+          for (let idx = 0; idx < chunk.length; idx += 1) {
+            const row = chunk[idx];
             const create = row.create as NonNullable<WorkRow['create']>;
             const actor = await tx.actor.create({
-              data: this.buildCreateData(create.scalar),
+              data: this.buildCreateData(create.scalar, traderIds[idx]),
             });
 
             const linkedNames = create.cropNames.filter((name) =>
@@ -997,13 +1234,19 @@ export class ActorImportService {
                 crops: linkedNames.map((name) => ({ crop: { name } })),
               }),
             );
+            localCreated.set(row.rowNumber, { actorId: actor.id, traderId: traderIds[idx] });
           }
+
+          const duplicateConfirmations = chunk.map((row) =>
+            this.resolveDuplicateConfirmation(row.duplicateCandidates, localCreated),
+          );
 
           await this.auditService.logImport(
             tx,
             createdActors,
             acting,
             acknowledged,
+            duplicateConfirmations,
           );
           return ids;
         });
@@ -1011,18 +1254,29 @@ export class ActorImportService {
         chunk.forEach((row, idx) => {
           row.state = 'created';
           row.actorId = createdIds[idx];
+          row.traderId = traderIds[idx];
+          createdByRow.set(row.rowNumber, {
+            actorId: createdIds[idx],
+            traderId: traderIds[idx],
+          });
         });
-      } catch {
+        return;
+      } catch (err) {
+        if (isTraderIdCollisionError(err) && attempt < MAX_TRADER_ID_ALLOCATION_ATTEMPTS) {
+          continue;
+        }
         for (const row of chunk) {
           row.state = 'failed';
           row.create = undefined;
           row.actorId = undefined;
+          row.traderId = null;
           row.errors.push({
-            field: '_row',
+            field: ROW_LEVEL_ERROR_FIELD,
             message:
               'This batch failed and was rolled back; the row was not imported.',
           });
         }
+        return;
       }
     }
   }
@@ -1043,9 +1297,61 @@ export class ActorImportService {
     return new Map(crops.map((c) => [c.name, c.id]));
   }
 
-  /** Build a Prisma create payload, omitting undefined optionals. */
-  private buildCreateData(scalar: ActorScalarData): Prisma.ActorCreateInput {
-    const data: Record<string, unknown> = {};
+  /**
+   * Resolve one row's confirmed strong candidates into the audit snapshot
+   * `logImport` persists (design.md §2/§4.5). A `kind: 'row'` entry whose
+   * referenced row was ITSELF created earlier in this same import (an
+   * earlier chunk, or an earlier row of this chunk) is rewritten to
+   * `kind: 'actor'` using that row's real id/traderId — the wire-facing
+   * `ImportRowResult.duplicateCandidates` is never mutated this way, only
+   * the audit copy. `null` when there is nothing to confirm (mirrors
+   * `ActorsAdminService.create`'s `duplicateConfirmation`, T-3).
+   */
+  private resolveDuplicateConfirmation(
+    candidates: ImportDuplicateCandidate[] | undefined,
+    createdByRow: ReadonlyMap<number, { actorId: string; traderId: string }>,
+  ): DuplicateConfirmationSnapshot[] | null {
+    if (!candidates || candidates.length === 0) return null;
+
+    return candidates.map((candidate): DuplicateConfirmationSnapshot => {
+      if (candidate.kind === 'actor') {
+        return {
+          kind: 'actor',
+          actorId: candidate.actorId,
+          traderId: candidate.traderId,
+          traderName: candidate.traderName,
+          matchedOn: candidate.matchedOn,
+        };
+      }
+      const resolved = createdByRow.get(candidate.row);
+      if (resolved) {
+        return {
+          kind: 'actor',
+          actorId: resolved.actorId,
+          traderId: resolved.traderId,
+          traderName: candidate.traderName,
+          matchedOn: candidate.matchedOn,
+        };
+      }
+      return {
+        kind: 'row',
+        row: candidate.row,
+        traderName: candidate.traderName,
+        matchedOn: candidate.matchedOn,
+      };
+    });
+  }
+
+  /**
+   * Build a Prisma create payload, omitting undefined optionals. `traderId`
+   * is merged in explicitly — it is allocated per chunk (design.md §4.2),
+   * never carried on the row's own scalar data.
+   */
+  private buildCreateData(
+    scalar: ActorScalarData,
+    traderId: string,
+  ): Prisma.ActorCreateInput {
+    const data: Record<string, unknown> = { traderId };
     for (const [key, value] of Object.entries(scalar)) {
       if (value !== undefined) {
         data[key] = value;
@@ -1067,8 +1373,8 @@ export class ActorImportService {
     );
 
     const created = resultRows.filter((r) => r.outcome === 'created').length;
-    const skipped = resultRows.filter((r) =>
-      r.outcome.startsWith('skipped'),
+    const possibleDuplicate = resultRows.filter(
+      (r) => r.outcome === 'possible-duplicate',
     ).length;
     const failed = resultRows.filter((r) => r.outcome === 'failed').length;
     const warnings = resultRows.filter(
@@ -1076,6 +1382,7 @@ export class ActorImportService {
     ).length;
     // Preview reports prospective creates in `toCreate` (`created` = 0); commit
     // reports what actually landed (`toCreate` mirrors `created`, FR-7).
+    // Either way: toCreate + possibleDuplicate + failed = rows (T-5, FR-4).
     const toCreate =
       mode === 'commit'
         ? created
@@ -1087,7 +1394,7 @@ export class ActorImportService {
         rows: resultRows.length,
         toCreate,
         created: mode === 'commit' ? created : 0,
-        skipped,
+        possibleDuplicate,
         failed,
         warnings,
       },
@@ -1105,7 +1412,7 @@ export class ActorImportService {
 
   /**
    * T-4 (FR-7) — tally why rows did not import, **one reason per row**, so the
-   * counts sum to `failed + skipped` exactly.
+   * counts sum to `failed + possibleDuplicate` exactly (T-5 renamed `skipped`).
    *
    * Ordering is count descending, then reason ascending. The tie-break uses a
    * plain `<` on the slugs rather than `localeCompare`, which is
@@ -1134,11 +1441,12 @@ export class ActorImportService {
   /**
    * The single reason a row did not import, or `null` if it did (or will).
    *
-   * A skipped row is named by its outcome; a failed row by the template-first
-   * of its errors. Both vocabularies are closed and value-free (FR-7, NFR-9).
+   * A `possible-duplicate` row is named by its outcome; a failed row by the
+   * template-first of its errors. Both vocabularies are closed and
+   * value-free (FR-7, NFR-9).
    */
   private failureReasonFor(row: ImportRowResult): string | null {
-    if (row.outcome.startsWith('skipped')) return row.outcome;
+    if (row.outcome === 'possible-duplicate') return row.outcome;
     if (row.outcome !== 'failed') return null;
 
     const errors = row.errors ?? [];
@@ -1168,11 +1476,10 @@ export class ActorImportService {
       case 'created':
         outcome = 'created';
         break;
-      case 'skipped-exists':
-        outcome = 'skipped-exists';
-        break;
-      case 'skipped-dup':
-        outcome = 'skipped-duplicate-in-file';
+      case 'possible-duplicate':
+        // T-5 — held in BOTH modes (design.md §4.5: preview shows the hold
+        // as plainly as commit does; only commit's enforcement differs).
+        outcome = 'possible-duplicate';
         break;
       default:
         outcome = 'failed';
@@ -1192,6 +1499,15 @@ export class ActorImportService {
     }
     if (row.warnings.length > 0) {
       result.warnings = row.warnings;
+    }
+    if (row.duplicateCandidates && row.duplicateCandidates.length > 0) {
+      result.duplicateCandidates = row.duplicateCandidates;
+      if (row.duplicateCandidatesTotal !== undefined) {
+        result.duplicateCandidatesTotal = row.duplicateCandidatesTotal;
+      }
+    }
+    if (row.duplicateWarnings && row.duplicateWarnings.length > 0) {
+      result.duplicateWarnings = row.duplicateWarnings;
     }
     return result;
   }

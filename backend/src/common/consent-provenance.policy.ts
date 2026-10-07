@@ -97,7 +97,7 @@ export function isConsentProvenanceSatisfied(
     if (!(field in payload)) return false;
     const submitted = payload[field];
     if (submitted === undefined) return false;
-    return !isSameValue(submitted, stored?.[field] ?? null);
+    return !isSameProvenanceValue(submitted, stored?.[field] ?? null);
   });
 
   if (!transitionsIntoGranted && !provenanceValueChanged) {
@@ -123,8 +123,13 @@ export function isConsentProvenanceSatisfied(
  * arrive as a `Date` (from Prisma) on one side and an ISO string (from a
  * freshly-parsed DTO) on the other, so dates are compared by ISO string
  * rather than reference/`Date` identity.
+ *
+ * Exported (T-1, consent-request-email) so `ActorsAdminService.update`'s
+ * EMAIL_LINK evidence-frozen rule (design.md §5.7 rule 3) can reuse the same
+ * comparison this module already uses internally, rather than a second
+ * implementation drifting from it.
  */
-function isSameValue(
+export function isSameProvenanceValue(
   a: string | Date | null | undefined,
   b: string | Date | null | undefined,
 ): boolean {

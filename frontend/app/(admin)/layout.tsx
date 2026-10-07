@@ -185,16 +185,18 @@ export default function AdminLayout({
               'md:flex md:flex-col w-full md:w-56 lg:w-64 shrink-0 bg-surface border-b md:border-b-0 md:border-r border-border',
             ].join(' ')}
           >
-            <div className="md:flex-1 md:min-h-0 md:overflow-y-auto">
+            {/* relative: makes this scroll pane the containing block for absolutely-positioned descendants, so none escape to the document and inflate page scrollHeight. */}
+            <div className="relative md:flex-1 md:min-h-0 md:overflow-y-auto">
               <AdminSidebar />
             </div>
             <AdminSidebarUserSlot />
           </aside>
 
           {/* Content region */}
+          {/* relative: same containing-block fix as the sidebar scroll div above (confirmed root cause of the double-scroll/blank-bottom bug). */}
           <main
             id="main-content"
-            className="flex-1 md:min-h-0 overflow-auto p-4 sm:p-6 lg:p-8"
+            className="relative flex-1 md:min-h-0 overflow-auto p-4 sm:p-6 lg:p-8"
           >
             {children}
           </main>

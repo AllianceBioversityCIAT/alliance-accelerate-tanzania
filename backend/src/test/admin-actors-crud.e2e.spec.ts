@@ -18,6 +18,9 @@ import {
   NEVER_PUBLIC_FIELDS,
 } from '../common/pii-consent.policy';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
+import { createActorSequenceMock } from './support/actor-sequence.mock';
+import { validEmailOfLength } from './support/actor-input.fixture';
+import { createConsentRequestMock } from './support/consent-request.mock';
 
 /**
  * T-6 — End-to-end tests for Admin single-actor CRUD + audit history
@@ -63,6 +66,11 @@ function fixtureActor(
     sex: 'M',
     position: 'Director',
     marketLocation: 'Arusha Central Market',
+    // T-1 (intake-required-fields) — part of the required set (FR-1); a
+    // COMPLETE fixture by default so unrelated PATCH tests aren't tripped by
+    // the merged-state required check (design.md §4.4). `actor-incomplete-1`
+    // below is the dedicated "legacy incomplete actor" fixture.
+    contactPerson: 'Grace Mushi',
     technicalSupport: 'Needs cold storage',
     phone: '+255700000000',
     email: 'director@example.com',
@@ -98,6 +106,64 @@ const INITIAL_ACTORS: Record<string, unknown>[] = [
     traderType: 'cooperative',
     consentStatus: ConsentStatus.UNKNOWN,
     crops: [{ crop: { name: 'groundnut' } }],
+  }),
+  // T-1 (intake-required-fields) FR-1 scenario 3 — a legacy actor stored
+  // incomplete (no email), the way one created before this spec could be.
+  // Only a WRITE on it is rejected (design.md §4.4); a read is unaffected
+  // (the scenario's BUT clause).
+  fixtureActor({
+    id: 'actor-incomplete-1',
+    traderId: 'TZ-INCOMPLETE-0001',
+    traderName: 'Incomplete Legacy Actor',
+    region: 'Mwanza',
+    traderType: 'seed_company',
+    // Kept off the public GRANTED list (same reasoning as actor-unknown-1)
+    // so the "Public read + PII boundary" suite's actor count is unaffected.
+    consentStatus: ConsentStatus.UNKNOWN,
+    email: null,
+  }),
+  // Rework (attempt 2, review issue 2) — a separate legacy actor stored
+  // incomplete on `contactPerson` specifically (kept apart from
+  // actor-incomplete-1's PATCH scenarios, which are about `email` and would
+  // otherwise also start failing on a missing `contactPerson`). Proves a
+  // stored `null` contactPerson round-trips as `null` on the admin detail
+  // read, now that `fixtureActor()`'s default supplies a non-null value.
+  fixtureActor({
+    id: 'actor-incomplete-2',
+    traderId: 'TZ-INCOMPLETE-0002',
+    traderName: 'Incomplete Legacy Actor (no contact person)',
+    region: 'Tabora',
+    traderType: 'seed_company',
+    consentStatus: ConsentStatus.UNKNOWN,
+    contactPerson: null,
+  }),
+  // T-3 (intake-required-fields) FR-3 — dedicated fixtures for the
+  // duplicate-detection gate, with phone/email/traderName/GPS distinct from
+  // every other fixture above (which all share `fixtureActor()`'s defaults),
+  // so a duplicate test matches EXACTLY the actor it targets.
+  fixtureActor({
+    id: 'actor-dup-target-1',
+    traderId: 'TZ-DUP-0001',
+    traderName: 'Dup Target One',
+    region: 'Kigoma',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.UNKNOWN,
+    phone: '+255788880001',
+    email: 'dup-target-one@example.com',
+    gpsLatitude: -4.5,
+    gpsLongitude: 29.5,
+  }),
+  fixtureActor({
+    id: 'actor-dup-target-2',
+    traderId: 'TZ-DUP-0002',
+    traderName: 'Dup Target Two',
+    region: 'Kigoma',
+    traderType: 'offtaker',
+    consentStatus: ConsentStatus.UNKNOWN,
+    phone: '+255788880002',
+    email: 'dup-target-two@example.com',
+    gpsLatitude: -5.5,
+    gpsLongitude: 30.5,
   }),
 ];
 
@@ -346,7 +412,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     });
   }
 
-  function throwUniqueViolation(target: string[]): never {
+  function throwUniqueViolation(target: string[] | string): never {
     throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
       clientVersion: '0.0.0',
@@ -395,7 +461,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     create: jest.fn(async (args: { data: Record<string, unknown> }) => {
       const data = args.data;
       if (actors.some((a) => a.traderId === data.traderId)) {
-        throwUniqueViolation(['traderId']);
+        // Real MySQL P2002 shape (design.md §4.4): meta.target is the index-name string.
+        throwUniqueViolation('Actor_traderId_key');
       }
       const now = new Date();
       const created = {
@@ -539,7 +606,28 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }),
   };
 
-  const tx = { actor, cropsOnActors, crop, actorAuditLog };
+  // T-2 — in-memory ActorSequence counter (design.md §4.2). Reachable
+  // through the SAME $transaction as create/update, since allocateTraderIds
+  // opens its own transaction before the caller's.
+  const actorSequence = createActorSequenceMock();
+  const { $executeRaw, $queryRaw } = actorSequence;
+
+  // T-3 (consent-request-email, design.md §5.5) — `ConsentSupersessionService`
+  // is now wired into `update`/`bulkSetConsent`/`remove`/`bulkDelete` and
+  // reaches `tx.consentRequest.updateMany` inside the SAME transaction; this
+  // suite does not exercise consent-request behaviour itself, so a plain
+  // in-memory delegate (no seeded rows) just needs to not crash.
+  const consentRequestMock = createConsentRequestMock();
+
+  const tx = {
+    actor,
+    cropsOnActors,
+    crop,
+    actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
+    $executeRaw,
+    $queryRaw,
+  };
 
   const $transaction = jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
@@ -554,6 +642,8 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     cropLinks = [];
     actorSeq = 0;
     auditSeq = 0;
+    actorSequence.reset();
+    consentRequestMock.reset();
 
     for (const actorRow of actors) {
       const names = (
@@ -571,14 +661,28 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     }
   };
 
-  return { actor, cropsOnActors, crop, actorAuditLog, $transaction, reset };
+  return {
+    actor,
+    cropsOnActors,
+    crop,
+    actorAuditLog,
+    consentRequest: consentRequestMock.consentRequest,
+    $transaction,
+    $executeRaw,
+    $queryRaw,
+    reset,
+  };
 }
 
 const admin = { Authorization: 'Bearer admin-token' };
 const staff = { Authorization: 'Bearer staff-token' };
 const pub = { Authorization: 'Bearer public-token' };
 
-/** Valid create payload that does not require consent acknowledgement. */
+/**
+ * Valid create payload (no consent acknowledgement needed). `traderId` is
+ * left in on purpose — the system assigns its own, so every test here also
+ * proves a client-sent value is ignored (design.md §4.2).
+ */
 const validCreatePayload = (): Record<string, unknown> => ({
   traderId: 'TZ-NEW-0001',
   traderName: 'New Seed Actor',
@@ -588,6 +692,7 @@ const validCreatePayload = (): Record<string, unknown> => ({
   sex: 'M',
   position: 'Manager',
   marketLocation: 'Arusha Market',
+  contactPerson: 'Jane Mwakyusa',
   capacityTons: 500,
   technicalSupport: 'Irrigation support',
   phone: '+255711111111',
@@ -599,6 +704,9 @@ const validCreatePayload = (): Record<string, unknown> => ({
   consentStatus: 'UNKNOWN',
   crops: ['sorghum', 'common_bean'],
 });
+
+// `validEmailOfLength` lives in `./support/actor-input.fixture` (shared with
+// `actor-dto.spec.ts` / `admin-actor-dto.spec.ts`).
 
 describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
   let app: INestApplication;
@@ -663,7 +771,10 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .send(validCreatePayload())
         .expect(201);
 
-      expect(res.body.traderId).toBe('TZ-NEW-0001');
+      // T-2 (intake-required-fields) FR-2 — the system assigns the id; the
+      // payload's own `traderId: 'TZ-NEW-0001'` is never stored.
+      expect(res.body.traderId).toMatch(/^TM-\d{4}-\d{4}$/);
+      expect(res.body.traderId).not.toBe('TZ-NEW-0001');
       expect(res.body.traderName).toBe('New Seed Actor');
       expect(res.body.consentStatus).toBe('UNKNOWN');
       expect(res.body.crops).toEqual(['sorghum', 'common_bean']);
@@ -710,15 +821,18 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       }
     });
 
-    it('returns 409 for a duplicate traderId', async () => {
+    // design.md §4.2 — a client-sent traderId matching an existing actor no
+    // longer collides; it's ignored and a fresh id is assigned.
+    it('ignores a client-sent traderId even when it matches an existing actor — the create still succeeds with a generated id (FR-2 scenario 3)', async () => {
       const payload = { ...validCreatePayload(), traderId: 'TZ-SEED-0001' };
       const res = await request(app.getHttpServer())
         .post('/api/v1/admin/actors')
         .set(admin)
         .send(payload)
-        .expect(409);
+        .expect(201);
 
-      expect(res.body.message).toMatch(/traderId already exists/i);
+      expect(res.body.traderId).toMatch(/^TM-\d{4}-\d{4}$/);
+      expect(res.body.traderId).not.toBe('TZ-SEED-0001');
     });
   });
 
@@ -812,6 +926,47 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.email).toBe('director@example.com');
     });
 
+    // D-26 (consent-request-email, design.md §5.7a) — over the real pipe + filter.
+    it('D-26: accepts a matching expectedUpdatedAt, then 409s the same version once the row moved on, writing nothing', async () => {
+      const loadedAt = '2026-01-01T00:00:00.000Z'; // fixtureActor().updatedAt
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: loadedAt })
+        .expect(200);
+
+      // The first save bumped updatedAt; a second form still holding `loadedAt` is stale.
+      const stale = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Mbeya', expectedUpdatedAt: loadedAt })
+        .expect(409);
+
+      expect(stale.body).toMatchObject({
+        statusCode: 409,
+        error: 'Conflict',
+        details: [{ field: 'expectedUpdatedAt' }],
+      });
+
+      const current = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .expect(200);
+      expect(current.body.region).toBe('Dodoma');
+    });
+
+    it('D-26: a malformed expectedUpdatedAt is a field-level 400', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ region: 'Dodoma', expectedUpdatedAt: 'not-a-date' })
+        .expect(400);
+      expect((res.body.details as { field: string }[]).map((d) => d.field)).toContain(
+        'expectedUpdatedAt',
+      );
+    });
+
     it('replaces crop assignments when crops is supplied', async () => {
       const res = await request(app.getHttpServer())
         .patch('/api/v1/admin/actors/actor-granted-1')
@@ -829,6 +984,23 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .send({ region: 'Dodoma' })
         .expect(404);
     });
+
+    // W-3 — the identity scalars are required on create via DTO decorators,
+    // but PartialType's @IsOptional() waves an explicit null through them;
+    // that null used to reach Prisma's NOT NULL column as an unhandled 500.
+    it.each(['traderName', 'traderType', 'region'])(
+      'rejects %s set to null with a field-level 400, not a 500',
+      async (field) => {
+        const res = await request(app.getHttpServer())
+          .patch('/api/v1/admin/actors/actor-granted-1')
+          .set(admin)
+          .send({ [field]: null })
+          .expect(400);
+
+        const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+        expect(fields).toContain(field);
+      },
+    );
   });
 
   describe('DELETE /api/v1/admin/actors/:id', () => {
@@ -954,6 +1126,10 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         .expect(201);
 
       const id = createRes.body.id as string;
+      // T-2 (intake-required-fields) FR-2 — the system-assigned id, never
+      // the payload's own `traderId: 'TZ-NEW-0001'`.
+      const generatedTraderId = createRes.body.traderId as string;
+      expect(generatedTraderId).toMatch(/^TM-\d{4}-\d{4}$/);
 
       const detailRes = await request(app.getHttpServer())
         .get(`/api/v1/admin/actors/${id}`)
@@ -1006,7 +1182,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         'CREATE',
       ]);
       expect(historyRes2.body.data[0].actorId).toBe(id);
-      expect(historyRes2.body.data[0].traderId).toBe('TZ-NEW-0001');
+      expect(historyRes2.body.data[0].traderId).toBe(generatedTraderId);
       expect(historyRes2.body.data[0].traderName).toBe('New Seed Actor');
       expect(historyRes2.body.data[0].changes.kind).toBe('snapshot');
     });
@@ -1449,14 +1625,34 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(getRes.body.otherCrops).toBe('Cassava');
     });
 
-    it('defaults both fields to null when never set', async () => {
+    // T-1 (intake-required-fields) — `contactPerson` is now part of the
+    // required set and the shared `fixtureActor()` default supplies it, so
+    // this null-default proof moves to `otherCrops` alone (still genuinely
+    // optional and genuinely unset on every fixture). `contactPerson`'s
+    // "stored null" case is covered by `actor-incomplete-2` below instead
+    // (review issue 2, attempt 2 rework).
+    it('defaults otherCrops to null when never set', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/admin/actors/actor-granted-1')
         .set(admin)
         .expect(200);
 
-      expect(res.body.contactPerson).toBeNull();
       expect(res.body.otherCrops).toBeNull();
+    });
+
+    // Rework (attempt 2, review issue 2) — restores the "stored null
+    // contactPerson round-trips as null" proof the "defaults both fields to
+    // null" test used to carry, on the actor dedicated to this (see
+    // actor-incomplete-2 above), since actor-granted-1 no longer stores null
+    // there.
+    it('returns a stored null contactPerson as null (actor-incomplete-2)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-incomplete-2')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.traderName).toBe('Incomplete Legacy Actor (no contact person)');
+      expect(res.body.contactPerson).toBeNull();
     });
 
     it('rejects a contactPerson over 120 characters — field-level 400', async () => {
@@ -1481,6 +1677,335 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
 
       const fields = (res.body.details as { field: string }[]).map((d) => d.field);
       expect(fields).toContain('otherCrops');
+    });
+  });
+
+  /**
+   * T-1 (intake-required-fields) — the API-side proof of FR-1's "same
+   * required set on every intake path", over real HTTP through the real
+   * global pipe (not a direct service call). The DTO's own black-box specs
+   * (`actor-dto.spec.ts`, `admin-actor-dto.spec.ts`) and the NFR-1 metadata
+   * test are the primary gate (DD-1); these are the "a direct POST … cannot
+   * bypass the rule" scenarios requirements.md calls for explicitly.
+   */
+  describe('FR-1 — the required set, enforced by the API directly', () => {
+    it('rejects create missing phone — 400 naming phone', async () => {
+      const payload = { ...validCreatePayload() } as Record<string, unknown>;
+      delete payload.phone;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('phone');
+    });
+
+    it('rejects create with no crop, only otherCrops — 400 naming crops', async () => {
+      const payload = { ...validCreatePayload(), otherCrops: 'millet' } as Record<
+        string,
+        unknown
+      >;
+      delete payload.crops;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('crops');
+    });
+
+    it('accepts capacityTons of exactly 0', async () => {
+      const payload = { ...validCreatePayload(), capacityTons: 0 };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.capacityTons).toBe(0);
+    });
+
+    it.each([
+      { field: 'traderName', maxLength: 200 },
+      { field: 'phone', maxLength: 40 },
+    ])('rejects $field over its $maxLength-char bound — 400', async ({ field, maxLength }) => {
+      const payload = { ...validCreatePayload(), [field]: 'x'.repeat(maxLength + 1) };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain(field);
+    });
+
+    it('rejects email over its 191-char bound — 400', async () => {
+      // A 193-char email built by padding the LOCAL part (`'x'.repeat(181) +
+      // '@example.com'`) would fail `@IsEmail()`'s format check on its own
+      // (local part > 64 chars), independent of the `@MaxLength` bound this
+      // test targets — an inert fixture that can't tell the two apart.
+      // `validEmailOfLength` pads the domain instead, staying a valid email
+      // shape at any length.
+      const payload = {
+        ...validCreatePayload(),
+        email: validEmailOfLength(192),
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('email');
+    });
+
+    it('accepts an email exactly at the 191-char bound', async () => {
+      const payload = { ...validCreatePayload(), email: validEmailOfLength(191) };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.email).toBe(validEmailOfLength(191));
+    });
+
+    it('rejects an explicit empty crops array on update — 400 naming crops (design.md §4.4)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ crops: [] })
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('crops');
+    });
+
+    // Advisory (tasks.md T-1 rework) — `crops: null` reaches the service
+    // through `AdminActorUpdateDto`'s `@IsOptional` (which skips validation
+    // on `null`, not just `undefined`), the same way `crops: []` does. It
+    // must be treated identically: a clean 400 naming `crops`, never a 500
+    // from `patch.crops.length` throwing on `null`.
+    it('rejects crops: null on update — 400 naming crops, not a 500', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ crops: null })
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('crops');
+    });
+  });
+
+  /**
+   * FR-1 scenario 3 — an actor stored incomplete (legacy data, D-3: no
+   * back-fill) is still readable and unaltered by merely existing; a WRITE
+   * on it is rejected until the missing field is supplied.
+   */
+  describe('FR-1 — an incomplete legacy actor (actor-incomplete-1, no email)', () => {
+    it('is returned normally by the detail read, unaltered and unflagged', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-incomplete-1')
+        .set(admin)
+        .expect(200);
+
+      expect(res.body.traderName).toBe('Incomplete Legacy Actor');
+      expect(res.body.email).toBeNull();
+    });
+
+    it('rejects an unrelated-field edit until email is filled — 400 naming email', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-incomplete-1')
+        .set(admin)
+        .send({ region: 'Shinyanga' })
+        .expect(400);
+
+      const fields = (res.body.details as { field: string }[]).map((d) => d.field);
+      expect(fields).toContain('email');
+
+      // Rejected — the stored actor is unchanged.
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors/actor-incomplete-1')
+        .set(admin)
+        .expect(200);
+      expect(getRes.body.region).toBe('Mwanza');
+    });
+
+    it('allows the same edit once email is supplied in the same patch', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-incomplete-1')
+        .set(admin)
+        .send({ region: 'Shinyanga', email: 'now-complete@example.com' })
+        .expect(200);
+
+      expect(res.body.region).toBe('Shinyanga');
+      expect(res.body.email).toBe('now-complete@example.com');
+    });
+  });
+
+  /**
+   * T-3 (intake-required-fields) FR-3 — the duplicate-detection gate on
+   * admin create, over real HTTP through the real global pipe (design.md
+   * §3, §4.3, §4.4). `actor-dup-target-1`/`-2` above are dedicated fixtures
+   * so a test's match is unambiguous.
+   */
+  describe('FR-3 — duplicate detection gate on admin create', () => {
+    it('returns 409 with duplicateCandidates on a strong (email) match, naming it (case-insensitive) — the direct-POST enforcement', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'Dup-Target-One@Example.com',
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(409);
+
+      expect(res.body.statusCode).toBe(409);
+      expect(res.body.message).toBe('Possible duplicate');
+      expect(res.body.duplicateCandidates).toEqual([
+        {
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['email'],
+        },
+      ]);
+
+      // Nothing was created.
+      const listRes = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors')
+        .set(admin)
+        .expect(200);
+      expect(listRes.body.total).toBe(INITIAL_ACTORS.length);
+    });
+
+    it('creates and records the confirmation when the strong candidate is named in confirmedNotDuplicateOf', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-one@example.com',
+        confirmedNotDuplicateOf: ['actor-dup-target-1'],
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.email).toBe('dup-target-one@example.com');
+      expect(res.body.duplicateWarnings).toEqual([]);
+
+      const historyRes = await request(app.getHttpServer())
+        .get(`/api/v1/admin/actors/${res.body.id}/history`)
+        .set(admin)
+        .expect(200);
+      const createEntry = historyRes.body.data.find(
+        (e: { action: string }) => e.action === 'CREATE',
+      );
+      expect(createEntry.duplicateConfirmation).toEqual([
+        {
+          kind: 'actor',
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['email'],
+        },
+      ]);
+    });
+
+    it('creates without confirmation and returns duplicateWarnings when only a weak (name) match exists — MUST NOT ask', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        traderName: 'Dup Target One', // matches actor-dup-target-1's name only
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(201);
+
+      expect(res.body.duplicateWarnings).toEqual([
+        {
+          actorId: 'actor-dup-target-1',
+          traderId: 'TZ-DUP-0001',
+          traderName: 'Dup Target One',
+          matchedOn: ['traderName'],
+        },
+      ]);
+    });
+
+    it('re-asks when the confirmed id does not cover a DIFFERENT actor the current email strongly matches (confirmation not reusable)', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-two@example.com',
+        confirmedNotDuplicateOf: ['actor-dup-target-1'], // confirms the WRONG actor
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload)
+        .expect(409);
+
+      expect(res.body.duplicateCandidates).toEqual([
+        {
+          actorId: 'actor-dup-target-2',
+          traderId: 'TZ-DUP-0002',
+          traderName: 'Dup Target Two',
+          matchedOn: ['email'],
+        },
+      ]);
+    });
+
+    // Falsifier 5 (tasks.md T-3) — an empty confirmedNotDuplicateOf must not
+    // read as "fully confirmed".
+    it('does not bypass the gate when confirmedNotDuplicateOf is present but empty', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        email: 'dup-target-one@example.com',
+        confirmedNotDuplicateOf: [],
+      };
+
+      const before = await prismaMock.actor.count({});
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload);
+
+      expect(res.status).toBe(409);
+      const after = await prismaMock.actor.count({});
+      expect(after).toBe(before);
+    });
+
+    it('rejects confirmedNotDuplicateOf with more than 50 entries — 400', async () => {
+      const payload = {
+        ...validCreatePayload(),
+        confirmedNotDuplicateOf: Array.from({ length: 51 }, (_, i) => `actor-${i}`),
+      };
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(payload);
+
+      expect(res.status).toBe(400);
     });
   });
 
