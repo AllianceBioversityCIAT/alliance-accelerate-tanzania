@@ -15,6 +15,10 @@ export const ALL_REGION_NAMES: readonly string[] = [
   ...new Set(AFRICAN_COUNTRIES.flatMap((c) => c.regions)),
 ];
 
+// Short on purpose: @IsIn's default message would list every allowed value.
+export const UNKNOWN_COUNTRY = { message: 'country must be the ISO code of an African country.' };
+export const UNKNOWN_REGION = { message: 'region is not a known region.' };
+
 const BY_CODE = new Map(AFRICAN_COUNTRIES.map((c) => [c.code, c]));
 
 export function countryByCode(code: string | null | undefined): AfricanCountry | undefined {

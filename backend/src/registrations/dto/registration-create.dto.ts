@@ -26,7 +26,7 @@ import {
   OUTSIDE_AFRICA_MESSAGE,
   TRADER_TYPES,
 } from '../../common/normalize';
-import { COUNTRY_CODES } from '../../common/geo/countries';
+import { COUNTRY_CODES, UNKNOWN_COUNTRY } from '../../common/geo/countries';
 import { IsRegionOfCountry } from '../../common/region-of-country.validator';
 import { CROP_NAMES } from '../../actors/dto/admin-actor-create.dto';
 
@@ -184,7 +184,7 @@ export class RegistrationPayloadDto {
   sex?: string;
 
   @IsString()
-  @IsIn(COUNTRY_CODES)
+  @IsIn(COUNTRY_CODES, UNKNOWN_COUNTRY)
   country!: string;
 
   @IsString()

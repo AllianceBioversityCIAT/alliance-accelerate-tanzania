@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { TRADER_TYPES } from '../../common/normalize';
-import { ALL_REGION_NAMES, COUNTRY_CODES } from '../../common/geo/countries';
+import { ALL_REGION_NAMES, COUNTRY_CODES, UNKNOWN_COUNTRY, UNKNOWN_REGION } from '../../common/geo/countries';
 import { IsRegionOfCountryFilter } from '../../common/region-of-country.validator';
 
 /**
@@ -52,11 +52,11 @@ export class ListQueryDto {
 
   /** ISO 3166-1 alpha-2 country code. */
   @IsOptional()
-  @IsIn(COUNTRY_CODES)
+  @IsIn(COUNTRY_CODES, UNKNOWN_COUNTRY)
   country?: string;
 
   @IsOptional()
-  @IsIn(ALL_REGION_NAMES)
+  @IsIn(ALL_REGION_NAMES, UNKNOWN_REGION)
   @IsRegionOfCountryFilter()
   region?: string;
 

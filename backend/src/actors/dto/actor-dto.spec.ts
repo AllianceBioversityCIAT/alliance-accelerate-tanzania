@@ -217,6 +217,18 @@ describe('ListQueryDto', () => {
     expect(await invalidProps(plainToInstance(ListQueryDto, { country: 'XX' }))).toContain('country');
   });
 
+  it('rejects an unknown country or region with a short message, not the allowed list', async () => {
+    const messages = (await validate(plainToInstance(ListQueryDto, { country: 'XX', region: 'Atlantis' })))
+      .flatMap((e) => Object.values(e.constraints ?? {}));
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        'country must be the ISO code of an African country.',
+        'region is not a known region.',
+      ]),
+    );
+    expect(messages.every((m) => m.length < 100)).toBe(true);
+  });
+
   it('accepts a region of any country on its own, but not a region of another country when country is set', async () => {
     expect(await validate(plainToInstance(ListQueryDto, { region: 'Mombasa' }))).toHaveLength(0);
     expect(await invalidProps(plainToInstance(ListQueryDto, { region: 'Atlantis' }))).toContain('region');

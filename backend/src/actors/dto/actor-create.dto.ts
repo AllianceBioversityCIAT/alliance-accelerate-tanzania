@@ -21,7 +21,7 @@ import {
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
 import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
-import { COUNTRY_CODES } from '../../common/geo/countries';
+import { COUNTRY_CODES, UNKNOWN_COUNTRY } from '../../common/geo/countries';
 import { IsRegionOfCountry } from '../../common/region-of-country.validator';
 
 /**
@@ -63,7 +63,7 @@ export class ActorCreateDto {
 
   /** ISO 3166-1 alpha-2 code of an African country. */
   @IsString()
-  @IsIn(COUNTRY_CODES)
+  @IsIn(COUNTRY_CODES, UNKNOWN_COUNTRY)
   country!: string;
 
   /** Must be a region of `country`. */
