@@ -79,6 +79,7 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     id: 'actor-1',
     traderName: 'Kilimo Seeds Ltd',
     region: 'Dodoma',
+    country: 'TZ',
     district: 'Kondoa',
     traderType: 'seed_company',
     additionalTraderTypes: [],

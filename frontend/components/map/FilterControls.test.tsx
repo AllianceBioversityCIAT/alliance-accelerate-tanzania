@@ -10,8 +10,9 @@
  *   (d) role select uses traderType slug value
  *   (e) existing filter fields are preserved when one changes
  *   (f) "All crops" clears the crop field (undefined) and resets page
- *   (g) dynamic `regions` subset renders exactly that subset; falls back to
- *       all 31 when undefined/empty
+ *   (g) no country → every region of every country, labelled `Region (Country)`;
+ *       a country → only its regions; picking a region sets its country;
+ *       changing the country clears a region that no longer fits
  *   (h) the surrounding role="group" is preserved
  *
  * T-5 (enhancement/searchable-region-select): the region control is now
@@ -29,7 +30,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FilterControls from './FilterControls';
 import type { ActorsQuery } from '@/lib/api/actors';
-import { REGIONS } from '@/lib/content/regions';
+import { ALL_REGION_OPTIONS, regionsFor } from '@/lib/content/countries';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,16 +50,16 @@ describe('FilterControls', () => {
 
   // ── (a) Region option pick → onChange with { region, page: 1 } ───────────
 
-  it('calls onChange with { region: "Mbeya", page: 1 } when Mbeya is picked', async () => {
+  it('calls onChange with { region: "Mbeya", page: 1 } when Mbeya is picked within its country', async () => {
     const user = userEvent.setup();
     const onChange = jest.fn();
-    render(<FilterControls filters={{}} onChange={onChange} />);
+    render(<FilterControls filters={{ country: 'TZ' }} onChange={onChange} />);
 
     await user.click(screen.getByLabelText(/^region$/i));
     await user.click(screen.getByRole('option', { name: 'Mbeya' }));
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenCalledWith({ region: 'Mbeya', page: 1 });
+    expect(onChange).toHaveBeenCalledWith({ country: 'TZ', region: 'Mbeya', page: 1 });
   });
 
   // ── (b) "All regions" clears region (undefined) and resets page ───────────
@@ -67,7 +68,7 @@ describe('FilterControls', () => {
     const user = userEvent.setup();
     const onChange = jest.fn();
     // Start with region already set to verify it is cleared.
-    render(<FilterControls filters={{ region: 'Mbeya' }} onChange={onChange} />);
+    render(<FilterControls filters={{ country: 'TZ', region: 'Mbeya' }} onChange={onChange} />);
 
     await user.click(screen.getByLabelText(/^region$/i));
     await user.click(screen.getByRole('option', { name: 'All regions' }));
@@ -79,6 +80,7 @@ describe('FilterControls', () => {
     const call = onChange.mock.calls[0][0] as ActorsQuery;
     expect(call.region).toBeUndefined();
     expect(call.region).not.toBe('');
+    expect(call.country).toBe('TZ');
     expect(call.page).toBe(1);
   });
 
@@ -124,11 +126,12 @@ describe('FilterControls', () => {
     render(<FilterControls filters={{ crop: 'sorghum' }} onChange={onChange} />);
 
     await user.click(screen.getByLabelText(/^region$/i));
-    await user.click(screen.getByRole('option', { name: 'Arusha' }));
+    await user.click(screen.getByRole('option', { name: 'Arusha (Tanzania)' }));
 
     expect(onChange).toHaveBeenCalledWith({
       crop: 'sorghum',
       region: 'Arusha',
+      country: 'TZ',
       page: 1,
     });
   });
@@ -152,65 +155,79 @@ describe('FilterControls', () => {
 
   // ── Label association (NFR-3) ─────────────────────────────────────────────
 
-  it('renders all three labeled controls (crop, role, region)', () => {
+  it('renders all four labeled controls (crop, role, country, region)', () => {
     render(<FilterControls filters={{}} onChange={jest.fn()} />);
 
     // Crop/role keep their aria-label; region's accessible name is now its
     // visible "Region" label (OQ-1 — the redundant aria-label is removed).
     expect(screen.getByLabelText(/filter by crop/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/filter by actor type/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^country$/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
   });
 
-  // ── (g) Dynamic region subset (FR-5 "Dynamic option subset") ─────────────
+  // ── (g) Country ↔ region dependency ───────────────────────────────────────
 
-  // These three scope the option query to the region listbox via `within` —
-  // a bare `screen.getAllByRole('option')` also picks up the crop/role
-  // native <select>s' <option> elements, which carry the same implicit ARIA
-  // role, so an unscoped query over-collects. Also strips a leading "✓":
-  // `filters.region` defaults to `''` here, which matches the clear entry's
-  // own value, so the clear entry renders checked.
-
-  it('lists exactly the provided regions subset, not all 31, when regions is non-empty', async () => {
-    const user = userEvent.setup();
-    render(<FilterControls filters={{}} onChange={jest.fn()} regions={['Mbeya', 'Dodoma']} />);
-
-    await user.click(screen.getByLabelText(/^region$/i));
-
-    const optionLabels = within(screen.getByRole('listbox'))
+  // Scoped to the open listbox: a bare `getAllByRole('option')` also collects
+  // the crop/role native <select>s' <option> elements.
+  async function openedOptionLabels(user: ReturnType<typeof userEvent.setup>, label: RegExp) {
+    await user.click(screen.getByLabelText(label));
+    return within(screen.getByRole('listbox'))
       .getAllByRole('option')
-      .map((o) => o.textContent?.replace(/^✓/, '') ?? '')
-      .filter((label) => label !== 'All regions');
+      .map((o) => o.textContent?.replace(/^✓/, '') ?? '');
+  }
 
-    expect(optionLabels).toEqual(['Mbeya', 'Dodoma']);
-  });
-
-  it('falls back to all 31 canonical regions when regions is undefined', async () => {
+  it('offers every region of every country, labelled with its country, when no country is set', async () => {
     const user = userEvent.setup();
     render(<FilterControls filters={{}} onChange={jest.fn()} />);
 
-    await user.click(screen.getByLabelText(/^region$/i));
+    const labels = (await openedOptionLabels(user, /^region$/i)).filter((l) => l !== 'All regions');
 
-    const optionLabels = within(screen.getByRole('listbox'))
-      .getAllByRole('option')
-      .map((o) => o.textContent?.replace(/^✓/, '') ?? '')
-      .filter((label) => label !== 'All regions');
-
-    expect(optionLabels).toEqual(REGIONS);
+    expect(labels).toEqual(ALL_REGION_OPTIONS.map((o) => o.label));
+    expect(labels).toContain('Northern (Ghana)');
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it('falls back to all 31 canonical regions when regions is an empty array', async () => {
+  it('offers only the selected country\'s regions when a country is set', async () => {
     const user = userEvent.setup();
-    render(<FilterControls filters={{}} onChange={jest.fn()} regions={[]} />);
+    render(<FilterControls filters={{ country: 'KE' }} onChange={jest.fn()} />);
+
+    const labels = (await openedOptionLabels(user, /^region$/i)).filter((l) => l !== 'All regions');
+
+    expect(labels).toEqual([...regionsFor('KE')]);
+  });
+
+  it('sets the region\'s country when a region is picked while no country is selected', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(<FilterControls filters={{}} onChange={onChange} />);
 
     await user.click(screen.getByLabelText(/^region$/i));
+    await user.click(screen.getByRole('option', { name: 'Nakuru (Kenya)' }));
 
-    const optionLabels = within(screen.getByRole('listbox'))
-      .getAllByRole('option')
-      .map((o) => o.textContent?.replace(/^✓/, '') ?? '')
-      .filter((label) => label !== 'All regions');
+    expect(onChange).toHaveBeenCalledWith({ country: 'KE', region: 'Nakuru', page: 1 });
+  });
 
-    expect(optionLabels).toEqual(REGIONS);
+  it('clears a region that does not belong to the newly chosen country', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(<FilterControls filters={{ country: 'TZ', region: 'Mbeya' }} onChange={onChange} />);
+
+    await user.click(screen.getByLabelText(/^country$/i));
+    await user.click(screen.getByRole('option', { name: 'Kenya' }));
+
+    expect(onChange).toHaveBeenCalledWith({ country: 'KE', region: undefined, page: 1 });
+  });
+
+  it('clears both country and region with "All countries"', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    render(<FilterControls filters={{ country: 'TZ', region: 'Mbeya' }} onChange={onChange} />);
+
+    await user.click(screen.getByLabelText(/^country$/i));
+    await user.click(screen.getByRole('option', { name: 'All countries' }));
+
+    expect(onChange).toHaveBeenCalledWith({ country: undefined, region: undefined, page: 1 });
   });
 
   // ── (h) Surrounding role="group" preserved ────────────────────────────────

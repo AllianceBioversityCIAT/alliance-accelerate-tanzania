@@ -183,6 +183,7 @@ const ACTOR_A: AdminActor = {
   traderId: 'TZ-001',
   traderName: 'Meru Agro',
   region: 'Arusha',
+  country: 'TZ',
   district: 'Arusha Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -214,6 +215,7 @@ const ACTOR_B: AdminActor = {
   traderId: 'TZ-002',
   traderName: 'Kilimo Co',
   region: 'Dodoma',
+  country: 'TZ',
   district: 'Dodoma Urban',
   traderType: 'cooperative',
   additionalTraderTypes: [],
@@ -765,6 +767,20 @@ function setSearchParams(qs: string) {
   mockUseSearchParams.mockReturnValue(new URLSearchParams(qs));
 }
 
+describe('ActorsPage — country and region filters', () => {
+  it('reads country and region from the URL and passes both to adminListActors', async () => {
+    setSearchParams('country=KE&region=Nakuru');
+    await populatePage();
+
+    expect(screen.getByLabelText('Country')).toHaveValue('Kenya');
+    expect(screen.getByLabelText('Region')).toHaveValue('Nakuru');
+    expect(mockAdminListActors).toHaveBeenCalledWith(
+      expect.objectContaining({ country: 'KE', region: 'Nakuru' }),
+      TOKEN,
+    );
+  });
+});
+
 describe('ActorsPage — registration-source and consent-method filters (T-8, FR-6)', () => {
   it('renders the Registration source and Consent method filter selects', async () => {
     setSearchParams('');
@@ -926,7 +942,7 @@ describe('ActorsPage — invalid URL-borne filter values degrade instead of erro
   });
 
   it('keeps the filter bar visible and enabled when adminListActors errors (no dead-end)', async () => {
-    setSearchParams('region=Mbeya');
+    setSearchParams('country=TZ&region=Mbeya');
     mockGetSession.mockResolvedValue(FAKE_SESSION);
     mockAdminListActors.mockRejectedValue(new Error('Network failure'));
     render(<ActorsPage />);
@@ -947,7 +963,7 @@ describe('ActorsPage — invalid URL-borne filter values degrade instead of erro
   });
 
   it('keeps the filter bar and Clear filters reachable in the empty state', async () => {
-    setSearchParams('region=Mbeya');
+    setSearchParams('country=TZ&region=Mbeya');
     mockGetSession.mockResolvedValue(FAKE_SESSION);
     mockAdminListActors.mockResolvedValue({ data: [], page: 1, pageSize: 25, total: 0 });
     render(<ActorsPage />);
@@ -1014,6 +1030,22 @@ describe('ActorsPage — bulk consent send (T-9)', () => {
     await waitFor(() => expect(mockPreviewConsent).toHaveBeenCalledTimes(1));
     expect(mockPreviewConsent).toHaveBeenCalledWith(
       { target: { kind: 'filter', filter: { region: 'Arusha', consentStatus: 'UNKNOWN' } }, scope: 'bulk' },
+      TOKEN,
+    );
+  });
+
+  it('keeps the country in an all-matching consent target so it never targets more actors than listed', async () => {
+    setSearchParams('country=KE&consentStatus=UNKNOWN');
+    mockPreviewConsent.mockResolvedValue(PREVIEW);
+    await populateWithMatches();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select all actors on this page/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select all 140 matching/i }));
+    fireEvent.click(screen.getByRole('button', { name: /send consent request/i }));
+
+    await waitFor(() => expect(mockPreviewConsent).toHaveBeenCalledTimes(1));
+    expect(mockPreviewConsent).toHaveBeenCalledWith(
+      { target: { kind: 'filter', filter: { country: 'KE', consentStatus: 'UNKNOWN' } }, scope: 'bulk' },
       TOKEN,
     );
   });

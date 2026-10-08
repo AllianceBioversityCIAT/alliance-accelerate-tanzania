@@ -25,6 +25,7 @@ const ACTOR_FULL: PublicActor = {
   id: 'actor-full',
   traderName: 'Dodoma Seeds Ltd',
   region: 'Dodoma',
+  country: 'TZ',
   district: 'Dodoma Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -40,6 +41,7 @@ const ACTOR_SPARSE: PublicActor = {
   id: 'actor-sparse',
   traderName: 'Mbeya Cooperative',
   region: 'Mbeya',
+  country: 'TZ',
   district: null,
   traderType: 'cooperative',
   additionalTraderTypes: [],
@@ -92,14 +94,13 @@ describe('ActorCard', () => {
   it('renders region · district when district is present', () => {
     render(<ActorCard actor={ACTOR_FULL} />);
 
-    // Location paragraph contains "Dodoma · Dodoma Urban"
-    expect(screen.getByText('Dodoma · Dodoma Urban')).toBeInTheDocument();
+    expect(screen.getByText('Dodoma, Tanzania · Dodoma Urban')).toBeInTheDocument();
   });
 
   it('renders only region when district is null (no null/undefined shown)', () => {
     render(<ActorCard actor={ACTOR_SPARSE} />);
 
-    expect(screen.getByText('Mbeya')).toBeInTheDocument();
+    expect(screen.getByText('Mbeya, Tanzania')).toBeInTheDocument();
     // Must not display the word "null" or "undefined"
     expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();

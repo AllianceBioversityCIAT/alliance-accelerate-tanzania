@@ -23,14 +23,21 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ConsentMethod, RegistrationSource } from '@prisma/client';
+import { ALL_REGION_NAMES, COUNTRY_CODES } from '../../common/geo/countries';
+import { IsRegionOfCountry } from '../../common/region-of-country.validator';
 
 const CONSENT_STATUSES = ['GRANTED', 'DENIED', 'UNKNOWN'] as const;
 const MAX_IDS = 1000;
 
-/** The five filter fields a consent-request "all matching" target accepts — identical to `AdminActorListQueryDto`'s, minus pagination. */
+/** The six filter fields a consent-request "all matching" target accepts — identical to `AdminActorListQueryDto`'s, minus pagination. */
 export class ConsentRequestFilterDto {
   @IsOptional()
-  @IsString()
+  @IsIn(COUNTRY_CODES)
+  country?: string;
+
+  @IsOptional()
+  @IsIn(ALL_REGION_NAMES)
+  @IsRegionOfCountry()
   region?: string;
 
   @IsOptional()

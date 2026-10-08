@@ -44,6 +44,7 @@ export function validActorInput(
   return {
     traderId: 'TZ-0001',
     traderName: 'Mbeya Seed Traders Ltd',
+    country: 'TZ',
     region: 'Mbeya',
     district: 'Mbeya Urban',
     traderType: 'seed_company',

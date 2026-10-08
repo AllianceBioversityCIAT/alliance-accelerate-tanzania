@@ -367,9 +367,16 @@ export interface PhoneNormalizationResult {
  * warn "a second number was present" without this function — or anything
  * downstream — ever holding, logging, or persisting the discarded digits
  * (PII — FR-5, NFR-9).
+ *
+ * `callingCode` selects the country. The Tanzanian national formats below
+ * are only read for Tanzania (`255`); for any other country only the
+ * international form with that country's code is accepted, because a
+ * national "0…" number is not unambiguous across Africa (in Côte d'Ivoire
+ * the leading 0 is part of the number).
  */
 export function normalizePhone(
   raw: string | null | undefined,
+  callingCode: string = TZ_COUNTRY_CODE,
 ): PhoneNormalizationResult {
   if (raw == null) return { phone: null, additionalCount: 0 };
 
@@ -383,7 +390,10 @@ export function normalizePhone(
   if (parts.length === 0) return { phone: null, additionalCount: 0 };
 
   return {
-    phone: normalizeSinglePhone(parts[0]),
+    phone:
+      callingCode === TZ_COUNTRY_CODE
+        ? normalizeSinglePhone(parts[0])
+        : normalizeInternationalPhone(parts[0], callingCode),
     additionalCount: parts.length - 1,
   };
 }
@@ -435,6 +445,21 @@ function normalizeSinglePhone(candidate: string): string | null {
   }
 
   return null;
+}
+
+/** Côte d'Ivoire, Congo and Gabon: the leading 0 belongs to the subscriber number. */
+const LEADING_ZERO_CALLING_CODES = new Set(['225', '241', '242']);
+
+/**
+ * `+<callingCode>` (or `00<callingCode>`) followed by a 6–12 digit
+ * subscriber number, which starts with 0 only where that is part of the
+ * number; anything else → null.
+ */
+function normalizeInternationalPhone(candidate: string, callingCode: string): string | null {
+  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '').replace(/^00/, '+');
+  const first = LEADING_ZERO_CALLING_CODES.has(callingCode) ? '\\d' : '[1-9]';
+  const match = new RegExp(`^\\+${callingCode}(${first}\\d{5,11})$`).exec(cleaned);
+  return match ? `+${callingCode}${match[1]}` : null;
 }
 
 /**

@@ -1,7 +1,9 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { RegistrationStatus } from '@prisma/client';
-import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
+import { TRADER_TYPES } from '../../common/normalize';
+import { ALL_REGION_NAMES, COUNTRY_CODES } from '../../common/geo/countries';
+import { IsRegionOfCountryFilter } from '../../common/region-of-country.validator';
 
 /**
  * T-4 — Admin registrations list query DTO (`GET /admin/registrations`).
@@ -10,7 +12,7 @@ import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
  * dto/admin-actor-list-query.dto.ts`) rather than re-deriving it. `status`,
  * `region` and `traderType` are validated against the same enums/canonical
  * constants the write paths already use (`RegistrationStatus` from the
- * Prisma-generated client; `CANONICAL_REGIONS`/`TRADER_TYPES` from
+ * Prisma-generated client; `ALL_REGION_NAMES`/`TRADER_TYPES` from
  * `common/normalize.ts`) so a filter value can never diverge from what the
  * column/payload actually stores.
  *
@@ -64,7 +66,12 @@ export class AdminRegistrationListQueryDto {
   q?: string;
 
   @IsOptional()
-  @IsIn(CANONICAL_REGIONS)
+  @IsIn(COUNTRY_CODES)
+  country?: string;
+
+  @IsOptional()
+  @IsIn(ALL_REGION_NAMES)
+  @IsRegionOfCountryFilter()
   region?: string;
 
   @IsOptional()

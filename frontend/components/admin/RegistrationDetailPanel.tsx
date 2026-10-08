@@ -65,6 +65,7 @@ import {
 import { ApiError, AuthFailureError } from '@/lib/api/client';
 import { additionalRoleLabels, roleLabel, type TraderType } from '@/lib/content/roles';
 import { CROPS } from '@/lib/content/crops';
+import { countryName } from '@/lib/content/countries';
 import {
   REGISTRATION_STATUS_LABEL,
   REGISTRATION_STATUS_BADGE_CLASSES,
@@ -168,6 +169,7 @@ function buildPayloadRows(detail: AdminRegistrationDetail): PayloadFieldRow[] {
     { key: 'district', label: 'District', value: formatValue(payload.district) },
     { key: 'marketLocation', label: 'Market location', value: formatValue(payload.marketLocation) },
     { key: 'sex', label: 'Sex', value: formatValue(payload.sex) },
+    { key: 'country', label: 'Country', value: formatValue(countryName(payload.country) || null) },
     { key: 'region', label: 'Region', value: formatValue(payload.region) },
     {
       key: 'crops',

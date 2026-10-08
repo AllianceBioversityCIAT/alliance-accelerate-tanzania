@@ -18,6 +18,7 @@
 
 import type { PublicActor } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
+import { formatLocation } from '@/lib/content/countries';
 import { RoleBadges } from './RoleBadge';
 
 // ── Crop chip helper ──────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ export default function ActorPopup({ actor }: ActorPopupProps) {
 
       {/* Region · District */}
       <p className="mb-2 text-xs text-muted">
-        {actor.region}
+        {formatLocation(actor.region, actor.country)}
         {actor.district ? <> &middot; {actor.district}</> : null}
       </p>
 

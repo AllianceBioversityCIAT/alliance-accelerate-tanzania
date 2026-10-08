@@ -32,6 +32,7 @@ const VALID_ACTOR: PublicActor = {
   id: 'actor-1',
   traderName: 'Mbeya Seeds Ltd',
   region: 'Mbeya',
+  country: 'TZ',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],

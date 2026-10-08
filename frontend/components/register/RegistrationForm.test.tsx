@@ -114,7 +114,13 @@ beforeEach(() => {
  * never reaches `onChange` (FR-3). Mirrors `SearchableSelect.test.tsx`'s own
  * JD-8 pointer-commit tests.
  */
+async function selectCountry(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByLabelText(/^country/i));
+  await user.click(screen.getByRole('option', { name }));
+}
+
 async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await selectCountry(user, 'Tanzania');
   await user.click(screen.getByLabelText(/^region/i));
   await user.click(screen.getByRole('option', { name: label }));
 }
@@ -538,6 +544,7 @@ describe('RegistrationForm — GPS pairing and payload construction', () => {
     expect(payload).toMatchObject({
       traderName: 'Kilimanjaro Seed Co-op',
       traderType: 'seed_company',
+      country: 'TZ',
       region: 'Arusha',
       contactPerson: 'Jane Doe',
       phone: '+255700000000',
@@ -687,22 +694,64 @@ describe('RegistrationForm — CoordinatePicker adoption (T-6)', () => {
 // ---------------------------------------------------------------------------
 
 describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', () => {
-  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', () => {
+  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectCountry(user, 'Tanzania');
     expect(screen.getByLabelText(/^region/i)).not.toHaveAttribute('aria-invalid');
 
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
     expect(screen.getByLabelText(/^region/i)).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', () => {
+  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectCountry(user, 'Tanzania');
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     const region = screen.getByLabelText(/^region/i);
     const describedBy = region.getAttribute('aria-describedby');
     expect(describedBy).toBe(`${region.id}-error`);
     expect(document.getElementById(describedBy!)).toHaveTextContent('Select a region.');
+  });
+
+  it('is disabled with a hint until a country is chosen, and lists only that country\'s regions', async () => {
+    const user = userEvent.setup();
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    expect(screen.getByLabelText(/^region/i)).toBeDisabled();
+    expect(screen.getByText('Choose a country first to see its regions.')).toBeInTheDocument();
+
+    await selectCountry(user, 'Kenya');
+    const region = screen.getByLabelText(/^region/i);
+    expect(region).toBeEnabled();
+    await user.click(region);
+    expect(screen.getByRole('option', { name: 'Nakuru' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Arusha' })).not.toBeInTheDocument();
+  });
+
+  it('clears the region when the country changes to one that does not have it', async () => {
+    const user = userEvent.setup();
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectRegion(user, 'Arusha');
+    expect(screen.getByLabelText(/^region/i)).toHaveValue('Arusha');
+
+    await selectCountry(user, 'Kenya');
+    expect(screen.getByLabelText(/^region/i)).toHaveValue('');
+  });
+
+  it('reports only the country when neither country nor region is chosen', () => {
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+    expect(screen.getByText('Select a country.')).toBeInTheDocument();
+    expect(screen.queryByText('Select a region.')).not.toBeInTheDocument();
+  });
+
+  it('shows the selected country\'s calling code in the phone hint', async () => {
+    const user = userEvent.setup();
+    render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectCountry(user, 'Kenya');
+    expect(screen.getByText(/Include the country code, e\.g\. \+254/)).toBeInTheDocument();
   });
 
   it('the Region label carries the required asterisk', () => {
@@ -721,8 +770,10 @@ describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', (
     expect(screen.getByLabelText(/^region/i)).toBeDisabled();
   });
 
-  it('"Select a region." appears both inline and in the error summary, from the one errors record', () => {
+  it('"Select a region." appears both inline and in the error summary, from the one errors record', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectCountry(user, 'Tanzania');
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     expect(screen.getByText('Select a region.')).toBeInTheDocument();
@@ -731,8 +782,10 @@ describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', (
     expect(summary).toHaveTextContent('Select a region.');
   });
 
-  it('the error-summary anchor #<baseId>-region resolves to a genuinely FOCUSABLE element, not merely a live one', () => {
+  it('the error-summary anchor #<baseId>-region resolves to a genuinely FOCUSABLE element, not merely a live one', async () => {
+    const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
+    await selectCountry(user, 'Tanzania');
     fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
 
     const summary = screen.getByTestId('error-summary');

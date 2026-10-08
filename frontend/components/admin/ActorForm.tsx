@@ -29,7 +29,9 @@ import Button from '../ui/Button';
 import { SearchableSelect } from '../ui/SearchableSelect';
 
 import CoordinatePicker from '@/components/map/CoordinatePicker';
-import { REGIONS } from '@/lib/content/regions';
+import { callingCode, regionsFor } from '@/lib/content/countries';
+import CountrySelect from '@/components/geo/CountrySelect';
+import RegionSelect from '@/components/geo/RegionSelect';
 import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
@@ -85,10 +87,6 @@ const CONSENT_OPTIONS = [
   { value: 'UNKNOWN', label: 'Unknown' },
 ] as const;
 
-// T-7 (design.md §5.6) — computed once at module scope, mirroring
-// RegistrationForm's REGION_OPTIONS (T-4), for SearchableSelect's `options` prop.
-const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
-
 /**
  * T-9 (FR-2, FR-6) — mirrors the labels used by the admin actors table filter
  * (`app/(admin)/admin/actors/page.tsx` `CONSENT_METHOD_OPTIONS`) so the same
@@ -141,6 +139,7 @@ interface FormValues {
   additionalTraderTypes: string[];
   sex: string;
   position: string;
+  country: string;
   region: string;
   district: string;
   marketLocation: string;
@@ -224,6 +223,7 @@ function toFormValues(actor?: AdminActor): FormValues {
       additionalTraderTypes: [],
       sex: '',
       position: '',
+      country: '',
       region: '',
       district: '',
       marketLocation: '',
@@ -250,6 +250,7 @@ function toFormValues(actor?: AdminActor): FormValues {
     additionalTraderTypes: actor.additionalTraderTypes ?? [],
     sex: actor.sex ?? '',
     position: actor.position ?? '',
+    country: actor.country,
     region: actor.region,
     district: actor.district ?? '',
     marketLocation: actor.marketLocation ?? '',
@@ -452,7 +453,8 @@ function validate(
   } else if (values.traderName.trim().length > TRADER_NAME_MAX_LENGTH) {
     errors.traderName = `Trader name must be ${TRADER_NAME_MAX_LENGTH} characters or fewer.`;
   }
-  if (!values.region) errors.region = 'Region is required.';
+  if (!values.country) errors.country = 'Country is required.';
+  if (values.country && !values.region) errors.region = 'Region is required.';
   if (!values.traderType) errors.traderType = 'Main actor type is required.';
   if (!values.consentStatus) errors.consentStatus = 'Consent status is required.';
 
@@ -577,6 +579,7 @@ function buildDto(
     // top of a newer actor (e.g. the actor just answered by link) is refused.
     ...(mode === 'edit' && initialValues ? { expectedUpdatedAt: initialValues.updatedAt } : {}),
     traderName: values.traderName.trim(),
+    country: values.country,
     region: values.region,
     traderType: values.traderType,
     additionalTraderTypes: values.additionalTraderTypes,
@@ -779,6 +782,10 @@ export default function ActorForm({
         : {
             ...prev,
             [field]: value,
+            // A region only stays while it belongs to the chosen country.
+            ...(field === 'country' && !regionsFor(value as string).includes(prev.region)
+              ? { region: '' }
+              : {}),
             // Picking a main type that was ticked as "other" drops it from the set.
             ...(field === 'traderType'
               ? { additionalTraderTypes: prev.additionalTraderTypes.filter((t) => t !== value) }
@@ -961,30 +968,43 @@ export default function ActorForm({
     );
   };
 
-  /**
-   * T-7 (design.md §5.6) — `SearchableSelect` swapped in for the native
-   * `<select>` `renderSelect` still renders for `traderType`/`sex`/`consentStatus`, inside
-   * the SAME `Field` wrapper so the label, required asterisk, and inline
-   * error message are unchanged. `invalid`/`describedBy` are computed the
-   * same way `renderSelect` computes them for every other field, so
-   * `aria-invalid`/`aria-describedby` follow the one `errors` record with no
-   * second path. No `clearOptionLabel` — region is required here too.
-   */
-  const renderRegionField = () => {
-    const field: keyof FormValues = 'region';
-    const id = fieldId(field);
-    const error = errors[field];
+  const renderCountryField = () => {
+    const id = fieldId('country');
+    const error = errors.country;
     return (
-      <Field id={id} label="Region" error={error} required>
-        <SearchableSelect
+      <Field id={id} label="Country" error={error} required>
+        <CountrySelect
           id={id}
-          value={values.region}
-          onChange={(next) => setField('region', next)}
-          options={REGION_OPTIONS}
-          placeholder="Select…"
+          value={values.country}
+          onChange={(next) => setField('country', next)}
           disabled={loading}
           invalid={!!error}
           describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
+  const renderRegionField = () => {
+    const id = fieldId('region');
+    const error = errors.region;
+    return (
+      <Field
+        id={id}
+        label="Region"
+        error={error}
+        required
+        hint={values.country ? undefined : 'Choose a country first to see its regions.'}
+      >
+        <RegionSelect
+          id={id}
+          country={values.country}
+          region={values.region}
+          onChange={({ region }) => setField('region', region)}
+          requireCountry
+          disabled={loading}
+          invalid={!!error}
+          describedBy={[values.country ? '' : `${id}-hint`, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
         />
       </Field>
     );
@@ -1243,6 +1263,7 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {renderCountryField()}
               {renderRegionField()}
               {renderInput('district', 'District')}
               {renderInput('marketLocation', 'Market location')}
@@ -1259,6 +1280,7 @@ export default function ActorForm({
                 initiallyOpen
                 latitude={values.gpsLatitude}
                 longitude={values.gpsLongitude}
+                country={values.country}
                 disabled={loading}
                 onChange={(lat, lng) => {
                   setField('gpsLatitude', lat);
@@ -1286,7 +1308,7 @@ export default function ActorForm({
             <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {renderInput('contactPerson', 'Contact person', 'text', true, undefined, CONTACT_PERSON_MAX_LENGTH)}
-              {renderInput('phone', 'Phone', 'text', true, undefined, PHONE_MAX_LENGTH)}
+              {renderInput('phone', 'Phone', 'text', true, values.country ? `Include the country code, e.g. ${callingCode(values.country)} …` : undefined, PHONE_MAX_LENGTH)}
               {renderInput('email', 'Email', 'email', true, undefined, EMAIL_MAX_LENGTH)}
             </div>
           </fieldset>

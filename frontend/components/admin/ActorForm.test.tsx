@@ -107,6 +107,7 @@ const ADMIN_ACTOR: AdminActor = {
   traderId: 'T-001',
   traderName: 'Mbeya Seeds Ltd',
   region: 'Mbeya',
+  country: 'TZ',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -182,7 +183,13 @@ function renderForm(props: Partial<React.ComponentProps<typeof ActorForm>> = {})
  * never reaches `onChange` (FR-3). Mirrors RegistrationForm.test.tsx's T-4
  * `selectRegion` helper.
  */
+async function selectCountry(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByLabelText(/^country/i));
+  await user.click(screen.getByRole('option', { name }));
+}
+
 async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await selectCountry(user, 'Tanzania');
   await user.click(screen.getByLabelText(/^region/i));
   await user.click(screen.getByRole('option', { name: label }));
 }
@@ -264,7 +271,8 @@ describe('ActorForm — rendering', () => {
 
     expect(screen.getByLabelText(/trader id/i)).toHaveValue(ADMIN_ACTOR.traderId);
     expect(screen.getByLabelText(/trader name/i)).toHaveValue(ADMIN_ACTOR.traderName);
-    expect(screen.getByLabelText(/region/i)).toHaveValue(ADMIN_ACTOR.region);
+    expect(screen.getByLabelText(/^country/i)).toHaveValue('Tanzania');
+    expect(screen.getByLabelText(/^region/i)).toHaveValue(ADMIN_ACTOR.region);
     expect(screen.getByLabelText(/main actor type/i)).toHaveValue(ADMIN_ACTOR.traderType);
     expect(screen.getByLabelText(/sex/i)).toHaveValue(ADMIN_ACTOR.sex);
     expect(screen.getByLabelText(/position/i)).toHaveValue(ADMIN_ACTOR.position);
@@ -300,7 +308,7 @@ describe('ActorForm — client validation', () => {
     submitForm();
 
     expect(getFieldError(/trader name/i)?.textContent).toMatch(/required/i);
-    expect(getFieldError(/region/i)?.textContent).toMatch(/required/i);
+    expect(getFieldError(/^country/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/main actor type/i)?.textContent).toMatch(/required/i);
     expect(getFieldError(/consent status/i)?.textContent).toMatch(/required/i);
   });
@@ -1035,22 +1043,60 @@ describe('ActorForm — contact person and other crops (FR-4)', () => {
 // ---------------------------------------------------------------------------
 
 describe('ActorForm — Region field (T-7, SearchableSelect adoption)', () => {
-  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', () => {
+  it('aria-invalid is present ("true") on the region combobox once errored, and absent on a clean render', async () => {
+    const user = userEvent.setup();
     renderForm();
+    await selectCountry(user, 'Tanzania');
     expect(screen.getByLabelText(/^region/i)).not.toHaveAttribute('aria-invalid');
 
     submitForm();
     expect(screen.getByLabelText(/^region/i)).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', () => {
+  it('aria-describedby on the region combobox points at #<id>-error once errored, resolving to the inline message', async () => {
+    const user = userEvent.setup();
     renderForm();
+    await selectCountry(user, 'Tanzania');
     submitForm();
 
     const region = screen.getByLabelText(/^region/i);
     const describedBy = region.getAttribute('aria-describedby');
     expect(describedBy).toBe(`${region.id}-error`);
     expect(document.getElementById(describedBy!)).toHaveTextContent('Region is required.');
+  });
+
+  it('is disabled until a country is chosen, and lists only that country\'s regions', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    expect(screen.getByLabelText(/^region/i)).toBeDisabled();
+
+    await selectCountry(user, 'Kenya');
+    const region = screen.getByLabelText(/^region/i);
+    expect(region).toBeEnabled();
+    await user.click(region);
+    expect(screen.getByRole('option', { name: 'Nakuru' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Iringa' })).not.toBeInTheDocument();
+  });
+
+  it('clears the region when the country changes to one that does not have it', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await selectRegion(user, 'Iringa');
+    expect(screen.getByLabelText(/^region/i)).toHaveValue('Iringa');
+
+    await selectCountry(user, 'Kenya');
+    expect(screen.getByLabelText(/^region/i)).toHaveValue('');
+  });
+
+  it('sends the chosen country in the create payload', async () => {
+    const user = userEvent.setup();
+    jest.mocked(createActor).mockResolvedValue(CREATE_RESULT);
+    renderForm();
+    await fillRequiredFields(user);
+    submitForm();
+
+    await waitFor(() => expect(createActor).toHaveBeenCalledTimes(1));
+    expect(jest.mocked(createActor).mock.calls[0][0].country).toBe('TZ');
   });
 
   it('the Region label carries the required asterisk', () => {
@@ -1075,8 +1121,10 @@ describe('ActorForm — Region field (T-7, SearchableSelect adoption)', () => {
     await waitFor(() => expect(screen.getByLabelText(/^region/i)).toBeDisabled());
   });
 
-  it('"Region is required." appears inline from the one errors record', () => {
+  it('"Region is required." appears inline from the one errors record', async () => {
+    const user = userEvent.setup();
     renderForm();
+    await selectCountry(user, 'Tanzania');
     submitForm();
 
     expect(getFieldError(/^region/i)?.textContent).toBe('Region is required.');

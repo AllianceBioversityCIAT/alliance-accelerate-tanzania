@@ -29,6 +29,7 @@ function fixtureActor(overrides: Partial<AdminActor> = {}): AdminActor {
     id: 'actor-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
@@ -119,6 +120,7 @@ describe('ActorAuditService', () => {
       expect(changes.values).toMatchObject({
         traderId: actor.traderId,
         traderName: actor.traderName,
+        country: actor.country,
         region: actor.region,
         district: actor.district,
         traderType: actor.traderType,
@@ -299,6 +301,22 @@ describe('ActorAuditService', () => {
       const data = (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0]
         .data as Record<string, unknown>;
       expect(data.acknowledged).toBe(true);
+    });
+
+    it('records a country change in the diff', async () => {
+      const tx = mockTx();
+      const before = fixtureActor({ country: 'TZ', region: 'Arusha' });
+      const after = fixtureActor({ country: 'KE', region: 'Mombasa' });
+      tx.actorAuditLog.create = jest.fn().mockResolvedValue({ id: 'log-country' });
+
+      await service.logUpdate(tx, before, after, acting);
+
+      const fields = (
+        (tx.actorAuditLog.create as jest.Mock).mock.calls[0][0].data as {
+          changes: { fields: Record<string, unknown> };
+        }
+      ).changes.fields;
+      expect(fields.country).toEqual({ from: 'TZ', to: 'KE' });
     });
 
     it('omits acknowledged from the row when not provided', async () => {

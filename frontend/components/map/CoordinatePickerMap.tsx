@@ -39,7 +39,7 @@ import {
   parseCoordinatePair,
   type CoordinatePoint,
 } from '@/lib/geo/coordinates';
-import { TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
+import { AFRICA_BOUNDS, TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -50,6 +50,11 @@ import { TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants'
 // country (T-3 review FAIL 2 — measured ≈38 m/px at -6.37° lat). The empty
 // view is framed by `fitBounds` in the init effect below instead.
 const PICKER_ZOOM = 12;
+
+function emptyViewBounds(country: string | undefined): L.LatLngBoundsExpression {
+  const bounds = country === 'TZ' ? TANZANIA_BOUNDS : AFRICA_BOUNDS;
+  return bounds.map((corner) => [...corner]) as L.LatLngBoundsExpression;
+}
 
 // ── Marker styling (NFR-3) ───────────────────────────────────────────────────
 
@@ -137,6 +142,8 @@ export interface CoordinatePickerMapProps {
   disabled?: boolean;
   /** Called when a click or drop lands outside Africa; nothing is written. */
   onOutsideBounds?: () => void;
+  /** Frames the empty view: Tanzania for `TZ`, all of Africa otherwise. */
+  country?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -147,6 +154,7 @@ export default function CoordinatePickerMap({
   onChange,
   disabled = false,
   onOutsideBounds,
+  country,
 }: Readonly<CoordinatePickerMapProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -173,6 +181,11 @@ export default function CoordinatePickerMap({
   const fieldsRef = useRef({ latitude, longitude });
   useEffect(() => {
     fieldsRef.current = { latitude, longitude };
+  });
+
+  const countryRef = useRef(country);
+  useEffect(() => {
+    countryRef.current = country;
   });
 
   // A drop outside Africa writes nothing and returns the marker to the fields' point.
@@ -211,7 +224,7 @@ export default function CoordinatePickerMap({
     // removed, `npx tsc --noEmit` reports TS2345, "Argument of type
     // 'readonly [readonly [number, number], readonly [number, number]]' is
     // not assignable to parameter of type 'LatLngBoundsExpression'."
-    map.fitBounds(TANZANIA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
+    map.fitBounds(emptyViewBounds(countryRef.current));
 
     L.tileLayer(OSM_TILE_URL, {
       attribution: OSM_ATTRIBUTION,
@@ -261,7 +274,7 @@ export default function CoordinatePickerMap({
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, []); // Only once — TANZANIA_BOUNDS is a constant; onChange/disabled read via refs above.
+  }, []); // Only once — bounds are constants; onChange/disabled/country read via refs above.
 
   // ── Marker placement (mount + every latitude/longitude change) ──────────────
   // This effect ALSO fires on the initial render (React runs every effect
@@ -314,6 +327,13 @@ export default function CoordinatePickerMap({
     markerRef.current = created;
     map.setView([point.lat, point.lng], PICKER_ZOOM);
   }, [latitude, longitude]);
+
+  // ── Re-frame the empty view when the form's country changes ────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || parseCoordinatePair(fieldsRef.current.latitude, fieldsRef.current.longitude)) return;
+    map.fitBounds(emptyViewBounds(country));
+  }, [country]);
 
   // ── Interactivity toggle (disabled while the form is submitting) ────────────
   useEffect(() => {

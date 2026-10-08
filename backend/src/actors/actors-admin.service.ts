@@ -29,6 +29,8 @@ import {
   isSameProvenanceValue,
 } from '../common/consent-provenance.policy';
 import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
+import { isRegionOf } from '../common/geo/countries';
+import { regionOfCountryMessage } from '../common/region-of-country.validator';
 import {
   allocateTraderIds,
   isTraderIdCollisionError,
@@ -105,6 +107,7 @@ type ActorWithCrops = Prisma.ActorGetPayload<{ include: typeof CROPS_INCLUDE }>;
  */
 const SCALAR_FIELDS = [
   'traderName',
+  'country',
   'region',
   'district',
   'traderType',
@@ -208,6 +211,7 @@ export class ActorsAdminService {
     // matches a different actor is never silently waved through.
     const { strong, weak } = await this.intakeDuplicateService.check({
       phone: dto.phone ?? null,
+      country: dto.country,
       email: dto.email ?? null,
       traderName: dto.traderName,
       gpsLatitude: dto.gpsLatitude ?? null,
@@ -369,6 +373,7 @@ export class ActorsAdminService {
         // demands — never merely because the actor already existed
         // incomplete (FR-1 scenario 3's BUT clause).
         this.assertRequiredFieldsPresent(before, dto);
+        this.assertRegionBelongsToCountry(before, dto);
 
         if (
           dto.consentStatus === ConsentStatus.GRANTED &&
@@ -498,12 +503,37 @@ export class ActorsAdminService {
     }
   }
 
+  /** Merged (incoming ?? stored) country/region pair must agree; throws the 400 on `region`. */
+  private assertRegionBelongsToCountry(before: ActorWithCrops, dto: AdminActorUpdateDto): void {
+    if (dto.country === undefined && dto.region === undefined) return;
+    const country = dto.country ?? before.country;
+    const region = dto.region ?? before.region;
+    if (isRegionOf(country, region)) return;
+    const message = regionOfCountryMessage(country);
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message,
+      details: [{ field: 'region', message }],
+    });
+  }
+
   /** FR-1/NFR-1 merged-state required-set check of {@link update}; throws the 400. */
   private assertRequiredFieldsPresent(before: ActorWithCrops, dto: AdminActorUpdateDto): void {
     const missingFields = [
       ...missingIdentityFields(
-        { traderName: before.traderName, traderType: before.traderType, region: before.region },
-        { traderName: dto.traderName, traderType: dto.traderType, region: dto.region },
+        {
+          traderName: before.traderName,
+          traderType: before.traderType,
+          country: before.country,
+          region: before.region,
+        },
+        {
+          traderName: dto.traderName,
+          traderType: dto.traderType,
+          country: dto.country,
+          region: dto.region,
+        },
       ),
       ...missingIntakeFields(
         {

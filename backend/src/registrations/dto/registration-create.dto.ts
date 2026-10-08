@@ -21,12 +21,13 @@ import {
 import { Type } from 'class-transformer';
 import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
 import {
-  CANONICAL_REGIONS,
   LATITUDE_RANGE,
   LONGITUDE_RANGE,
   OUTSIDE_AFRICA_MESSAGE,
   TRADER_TYPES,
 } from '../../common/normalize';
+import { COUNTRY_CODES } from '../../common/geo/countries';
+import { IsRegionOfCountry } from '../../common/region-of-country.validator';
 import { CROP_NAMES } from '../../actors/dto/admin-actor-create.dto';
 
 /**
@@ -183,7 +184,11 @@ export class RegistrationPayloadDto {
   sex?: string;
 
   @IsString()
-  @IsIn(CANONICAL_REGIONS as readonly string[])
+  @IsIn(COUNTRY_CODES)
+  country!: string;
+
+  @IsString()
+  @IsRegionOfCountry()
   region!: string;
 
   @IsOptional()

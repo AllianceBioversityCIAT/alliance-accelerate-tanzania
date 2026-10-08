@@ -24,7 +24,6 @@ import {
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
 } from './template-columns';
-import { CANONICAL_REGIONS } from './normalize';
 
 const COMMITTED_ASSET = path.resolve(
   __dirname,
@@ -56,17 +55,15 @@ describe('generate-import-template', () => {
     expect(headers).toEqual([...TEMPLATE_HEADERS]);
   });
 
-  it('stamps the template version and lists the region allowed values on the Instructions sheet', async () => {
+  it('stamps the template version and describes the Country and Region columns on the Instructions sheet', async () => {
     const workbook = await loadGeneratedWorkbook();
     const instructions = workbook.getWorksheet('Instructions');
     expect(instructions).toBeDefined();
 
     const text = collectText(instructions!);
     expect(text).toContain(`Template version: ${TEMPLATE_VERSION}`);
-    // Spot-check the region list end-to-end (first, a Zanzibar region, last).
-    expect(text).toContain(CANONICAL_REGIONS[0]);
-    expect(text).toContain('Kusini Pemba');
-    expect(text).toContain(CANONICAL_REGIONS[CANONICAL_REGIONS.length - 1]);
+    expect(text).toContain('Country name or ISO code (e.g. Tanzania or TZ)');
+    expect(text).toContain("A region of the row's country (ISO 3166-2)");
   });
 
   it('lists the allowed values for the consent-method column on the Instructions sheet (FR-5)', async () => {
@@ -85,11 +82,10 @@ describe('generate-import-template', () => {
     expect(lists).toBeDefined();
     expect(lists!.state).toBe('veryHidden');
 
-    // Region list (Lists column B) mirrors the canonical constant exactly.
-    const regionColumn = CANONICAL_REGIONS.map((_, i) => lists!.getCell(i + 1, 2).value);
-    expect(regionColumn).toEqual([...CANONICAL_REGIONS]);
-    // Crop YES/NO list (Lists column D, shared shape of the three crop columns).
-    const cropColumn = CROP_YES_NO.map((_, i) => lists!.getCell(i + 1, 4).value);
+    // Country and Region are free-typed (no dropdown), so Sex is Lists column B.
+    expect(lists!.getCell(1, 2).value).toBe('M');
+    // Crop YES/NO list (Lists column C, shared shape of the three crop columns).
+    const cropColumn = CROP_YES_NO.map((_, i) => lists!.getCell(i + 1, 3).value);
     expect(cropColumn).toEqual([...CROP_YES_NO]);
   });
 
@@ -100,13 +96,13 @@ describe('generate-import-template', () => {
    * (B) and the crop YES/NO columns (D) sit BEFORE the removed column and are
    * unaffected (pinned above, unchanged).
    */
-  it('moves Consent Method to Lists column H now that Registration Source is gone (v4)', async () => {
+  it('keeps Consent Method on Lists column G now that Region has no dropdown (v6)', async () => {
     const workbook = await loadGeneratedWorkbook();
     const lists = workbook.getWorksheet('Lists');
     expect(lists).toBeDefined();
 
     const consentMethodColumn = CONSENT_METHOD_VALUES.map(
-      (_, i) => lists!.getCell(i + 1, 8).value,
+      (_, i) => lists!.getCell(i + 1, 7).value,
     );
     expect(consentMethodColumn).toEqual([...CONSENT_METHOD_VALUES]);
   });

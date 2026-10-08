@@ -49,6 +49,8 @@ import RegisterPage from './page';
  * never reaches `onChange`. Mirrors `RegistrationForm.test.tsx`'s own helper.
  */
 async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^country/i));
+  await user.click(screen.getByRole('option', { name: 'Tanzania' }));
   await user.click(screen.getByLabelText(/^region/i));
   await user.click(screen.getByRole('option', { name: label }));
 }

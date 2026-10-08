@@ -76,6 +76,8 @@ export interface RawSourceRow {
 export interface ActorImportInput {
   traderId: string;
   traderName: string;
+  /** The legacy source file is Tanzania-only. */
+  country: 'TZ';
   region: string;
   district: string | null;
   traderType: string;
@@ -189,6 +191,7 @@ export class ImportService {
     const actor: ActorImportInput = {
       traderId,
       traderName,
+      country: 'TZ',
       region: regionResult.region,
       district: cleanString(raw.District),
       traderType,

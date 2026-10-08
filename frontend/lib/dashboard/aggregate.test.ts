@@ -19,6 +19,7 @@ function makeActor(overrides: Partial<PublicActor> & Pick<PublicActor, 'id'>): P
   return {
     traderName: `Actor ${overrides.id}`,
     region: 'Dodoma',
+    country: 'TZ',
     traderType: 'cooperative',
     additionalTraderTypes: [],
     crops: ['sorghum'],
@@ -162,6 +163,24 @@ describe('aggregate — regionsCovered and actorTypes', () => {
       makeActor({ id: '4', region: 'Mwanza'   }),
     ];
     expect(aggregate(actors).kpis.regionsCovered).toBe(3);
+  });
+
+  it('keeps same-named regions of different countries apart and labels them with their country', () => {
+    const actors: PublicActor[] = [
+      makeActor({ id: '1', country: 'GH', region: 'Northern', capacityTons: 10 }),
+      makeActor({ id: '2', country: 'UG', region: 'Northern', capacityTons: 30 }),
+    ];
+    const result = aggregate(actors);
+    expect(result.kpis.regionsCovered).toBe(2);
+    expect(result.capacityByRegion.map((p) => p.label).sort()).toEqual([
+      'Northern (Ghana)',
+      'Northern (Uganda)',
+    ]);
+  });
+
+  it('leaves region labels bare while the data spans a single country', () => {
+    const actors: PublicActor[] = [makeActor({ id: '1', region: 'Dodoma', capacityTons: 10 })];
+    expect(aggregate(actors).capacityByRegion[0].label).toBe('Dodoma');
   });
 
   it('counts distinct traderTypes across all actors', () => {

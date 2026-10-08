@@ -32,6 +32,7 @@
  */
 
 import type { PublicActor } from '@/lib/api/actors';
+import { countryName } from '@/lib/content/countries';
 import type { DashboardKpis } from '@/lib/dashboard/aggregate';
 
 // ── Allowed public columns (explicit allowlist — the list set, FR-7) ───────────
@@ -47,6 +48,7 @@ import type { DashboardKpis } from '@/lib/dashboard/aggregate';
  */
 const PUBLIC_COLUMNS = [
   'traderName',
+  'country',
   'region',
   'district',
   'traderType',
@@ -61,17 +63,17 @@ type PublicColumn = (typeof PUBLIC_COLUMNS)[number];
 
 // ── Residual risk notes for this array's order (csv.test.ts anchoring) ────────
 //
-// The null-district/null-capacityTons tests anchor on `fields[2]`/`fields[5]`
+// The null-district/null-capacityTons tests anchor on `fields[3]`/`fields[6]`
 // (this array's positions for `district`/`capacityTons`) rather than a
 // comma-count regex — robust against appends, and fails loudly on most
 // insertions. It is silently vacuous only on a nullable insertion ahead of
-// the index: a new null-by-default column added at or before index 2 shifts
-// the target and leaves `fields[2]` reading the new empty column — green,
+// the index: a new null-by-default column added at or before index 3 shifts
+// the target and leaves `fields[3]` reading the new empty column — green,
 // asserting nothing about `district`.
 //
 // The null-sex/null-otherCrops test instead checks the row ends `/,,$/`,
 // relying on `sex`/`otherCrops` being the last two, both-nullable columns.
-// Safe today, but one nullable append from re-vacuizing: add a ninth
+// Safe today, but one nullable append from re-vacuizing: add a tenth
 // nullable column and the row ends `,female,,`, which matches `/,,$/` even
 // though `sex` itself is non-empty — same mechanism, opposite end of the row.
 //
@@ -110,6 +112,8 @@ function actorColumnValue(actor: PublicActor, col: PublicColumn): string {
   switch (col) {
     case 'traderName':
       return actor.traderName;
+    case 'country':
+      return countryName(actor.country);
     case 'region':
       return actor.region;
     case 'district':

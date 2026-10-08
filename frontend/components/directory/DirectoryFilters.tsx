@@ -1,11 +1,11 @@
 'use client';
 
-// DirectoryFilters — crop / role / region selects + clear control for the
+// DirectoryFilters — crop / role / country / region selects + clear control for the
 // Actor Directory (FR-2, NFR-3, NFR-4).
 //
 // Mirrors the select/label pattern from components/map/FilterControls.tsx.
-// Region options come from REGIONS (reconciled to CANONICAL_REGIONS) so no
-// selected value can produce a backend 400 (OQ-1 resolved).
+// Region options come from lib/content/countries.ts, so no selected value
+// can produce a backend 400 (OQ-1 resolved).
 //
 // T-5 (enhancement/searchable-region-select, design.md §5.6): the region
 // select is the searchable `SearchableSelect` primitive rather than a native
@@ -23,25 +23,22 @@ import type { ActorsQuery } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
 import { ROLES } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
-import { REGIONS } from '@/lib/content/regions';
-import { SearchableSelect } from '@/components/ui/SearchableSelect';
-
-// Static — REGIONS never changes at runtime, so this is built once rather
-// than re-mapped on every render.
-const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
+import { withCountry } from '@/lib/content/countries';
+import CountrySelect from '@/components/geo/CountrySelect';
+import RegionSelect from '@/components/geo/RegionSelect';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface DirectoryFiltersProps {
   /** Current active filters — mirrors the URL params. */
-  filters: Pick<ActorsQuery, 'crop' | 'role' | 'region'>;
+  filters: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>;
   /**
    * Called whenever a select changes or clear is activated.
    * Receives a new merged object with the changed field applied (or cleared to
    * undefined when "All …" is selected / clear pressed).
    * Caller is responsible for resetting page to 1 (FR-2).
    */
-  onChange: (next: Pick<ActorsQuery, 'crop' | 'role' | 'region'>) => void;
+  onChange: (next: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>) => void;
   /** Called when the "Clear filters" button is activated (FR-2). */
   onClear: () => void;
 }
@@ -62,10 +59,13 @@ const SELECT_CLASS = [
 
 /** True when at least one filter is active (controls clear-button visibility). */
 function hasActiveFilters(
-  filters: Pick<ActorsQuery, 'crop' | 'role' | 'region'>,
+  filters: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>,
 ): boolean {
   return (
-    filters.crop != null || filters.role != null || filters.region != null
+    filters.crop != null ||
+    filters.role != null ||
+    filters.country != null ||
+    filters.region != null
   );
 }
 
@@ -93,14 +93,16 @@ export default function DirectoryFilters({
     onChange({ ...filters, role: value !== '' ? value : undefined });
   }
 
-  // SearchableSelect's onChange hands back the committed option's value
-  // directly (never the typed search text — FR-3) rather than a change
-  // event, so this takes a string, not a ChangeEvent. The clear entry
-  // (`clearOptionLabel`) commits `''` via that same path, which this then
-  // maps to `undefined` — FR-5's `BUT it must NOT` send `region=` as an
-  // empty parameter.
-  function handleRegion(value: string) {
-    onChange({ ...filters, region: value !== '' ? value : undefined });
+  function handleCountry(value: string) {
+    onChange(withCountry(filters, value !== '' ? value : undefined));
+  }
+
+  function handleRegion(next: { country: string; region: string }) {
+    onChange({
+      ...filters,
+      country: next.country !== '' ? next.country : undefined,
+      region: next.region !== '' ? next.region : undefined,
+    });
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -155,18 +157,30 @@ export default function DirectoryFilters({
           </select>
         </div>
 
+        {/* ── Country ──────────────────────────────────────────────────────── */}
+        <div className="min-w-[10rem] flex-1">
+          <label htmlFor="dir-filter-country" className={LABEL_CLASS}>
+            Country
+          </label>
+          <CountrySelect
+            id="dir-filter-country"
+            value={filters.country ?? ''}
+            onChange={handleCountry}
+            clearLabel="All countries"
+          />
+        </div>
+
         {/* ── Region ───────────────────────────────────────────────────────── */}
         <div className="min-w-[10rem] flex-1">
           <label htmlFor="dir-filter-region" className={LABEL_CLASS}>
             Region
           </label>
-          <SearchableSelect
+          <RegionSelect
             id="dir-filter-region"
-            value={filters.region ?? ''}
+            country={filters.country ?? ''}
+            region={filters.region ?? ''}
             onChange={handleRegion}
-            options={REGION_OPTIONS}
-            clearOptionLabel="All regions"
-            placeholder="All regions"
+            clearLabel="All regions"
           />
         </div>
 

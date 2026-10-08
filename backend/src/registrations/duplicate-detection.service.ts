@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizePhone } from '../common/normalize';
+import { normalizePhoneFor } from '../common/geo/countries';
 
 /**
  * T-5 — Duplicate candidate detection (FR-11 scenario 1's queue-flag limb;
@@ -48,6 +48,8 @@ export interface DuplicateDetectionInput {
   registrationId: string;
   /** Raw `payload.phone`; normalized internally via `common/normalize.ts`. */
   phone: string | null;
+  /** ISO country of the registration; selects the phone's calling code. */
+  country: string;
   /** Raw `Registration.submitterEmail`; lowercased internally. */
   email: string | null;
   /** Raw `payload.traderName`; normalized internally. */
@@ -86,6 +88,7 @@ interface ActorComparisonRow {
   traderId: string;
   traderName: string;
   phone: string | null;
+  country: string;
   email: string | null;
   gpsLatitude: Prisma.Decimal | number | string | null;
   gpsLongitude: Prisma.Decimal | number | string | null;
@@ -146,9 +149,12 @@ export function normalizeEmailForMatch(raw: string | null | undefined): string |
  * (`actor-import.service.ts`) — so a spacing/formatting difference on
  * either side normalizes away rather than producing a false negative.
  */
-export function normalizePhoneForMatch(raw: string | null | undefined): string | null {
+export function normalizePhoneForMatch(
+  raw: string | null | undefined,
+  country: string,
+): string | null {
   if (raw == null) return null;
-  return normalizePhone(raw).phone;
+  return normalizePhoneFor(country, raw).phone;
 }
 
 /** Coerce a Prisma Decimal / number / numeric string to a finite number or null. */
@@ -197,6 +203,7 @@ export class DuplicateDetectionService {
         traderId: true,
         traderName: true,
         phone: true,
+        country: true,
         email: true,
         gpsLatitude: true,
         gpsLongitude: true,
@@ -207,7 +214,7 @@ export class DuplicateDetectionService {
       id: actor.id,
       traderId: actor.traderId,
       traderName: actor.traderName,
-      normalizedPhone: normalizePhoneForMatch(actor.phone),
+      normalizedPhone: normalizePhoneForMatch(actor.phone, actor.country),
       normalizedEmail: normalizeEmailForMatch(actor.email),
       normalizedTraderName: normalizeTraderNameForMatch(actor.traderName),
       gpsLatitude: toNullableNumber(actor.gpsLatitude),
@@ -271,7 +278,7 @@ function matchOne(
   input: DuplicateDetectionInput,
   actors: NormalizedActorRow[],
 ): DuplicateCandidate[] {
-  const normalizedPhone = normalizePhoneForMatch(input.phone);
+  const normalizedPhone = normalizePhoneForMatch(input.phone, input.country);
   const normalizedEmail = normalizeEmailForMatch(input.email);
   const normalizedTraderName = normalizeTraderNameForMatch(input.traderName);
   const dismissed = new Set(input.dismissedActorIds);

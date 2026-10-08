@@ -13,7 +13,6 @@ import {
 import { Transform } from 'class-transformer';
 import { ConsentMethod, ConsentStatus, RegistrationSource } from '@prisma/client';
 import {
-  CANONICAL_REGIONS,
   LATITUDE_RANGE,
   LONGITUDE_RANGE,
   OUTSIDE_AFRICA_MESSAGE,
@@ -22,6 +21,8 @@ import {
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
 import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
+import { COUNTRY_CODES } from '../../common/geo/countries';
+import { IsRegionOfCountry } from '../../common/region-of-country.validator';
 
 /**
  * T-3 — Validated write DTO for creating an Actor (NFR-4).
@@ -29,7 +30,7 @@ import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
  * Per the project rule, every write goes through a `class-validator` DTO so
  * malformed input is rejected (→ 400 once wired to a controller in T-5), never
  * silently coerced. Enum membership is enforced against the SAME canonical
- * constants the normalizer uses (`CANONICAL_REGIONS`, `TRADER_TYPES`) so the
+ * constants the normalizer uses (`TRADER_TYPES`) so the
  * write contract and the cleaner can never drift (DD-5).
  *
  * Scope note: this DTO is authored and unit-tested in isolation (T-3). It is NOT
@@ -60,9 +61,14 @@ export class ActorCreateDto {
   @MaxLength(200)
   traderName!: string;
 
-  /** Must be a canonical Tanzania region (FR-3). */
+  /** ISO 3166-1 alpha-2 code of an African country. */
   @IsString()
-  @IsIn(CANONICAL_REGIONS as readonly string[])
+  @IsIn(COUNTRY_CODES)
+  country!: string;
+
+  /** Must be a region of `country`. */
+  @IsString()
+  @IsRegionOfCountry()
   region!: string;
 
   @IsOptional()

@@ -53,6 +53,7 @@ const fullActor = (
   id: 'ckactor1',
   traderId: 'TZ-0001',
   traderName: 'Mbeya Seed Traders Ltd',
+  country: 'TZ',
   region: 'Mbeya',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
@@ -89,6 +90,7 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
       [
         'additionalTraderTypes',
         'capacityTons',
+        'country',
         'crops',
         'district',
         'gps',
@@ -109,6 +111,7 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
         'additionalTraderTypes',
         'capacityTons',
         'contactPerson',
+        'country',
         'crops',
         'district',
         'email',
@@ -124,6 +127,12 @@ describe('toPublicListItem / toPublicDetail — PII boundary (FR-1/FR-9)', () =>
         'traderType',
       ].sort(),
     );
+  });
+
+  it('emits the stored country on both projections', () => {
+    const actor = fullActor({ country: 'KE', region: 'Nairobi' });
+    expect(toPublicListItem(actor).country).toBe('KE');
+    expect(toPublicDetail(actor).country).toBe('KE');
   });
 
   it('emits additionalTraderTypes sorted in taxonomy order, [] when absent (list and detail)', () => {

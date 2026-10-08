@@ -73,6 +73,7 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'actor-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
@@ -116,6 +117,7 @@ function fixtureCreatedActor(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'actor-new',
     traderId: 'TZ-SEED-0002',
     traderName: 'New Actor',
+    country: 'TZ',
     region: 'Arusha',
     district: null,
     traderType: 'seed_company',
@@ -721,6 +723,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
       const dto: AdminActorCreateDto = {
         traderName: 'New Actor',
+        country: 'TZ',
         region: 'Arusha',
         traderType: 'seed_company',
         contactPerson: 'Neema Shirima',
@@ -1377,6 +1380,74 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       await updateAndExpectFieldRejection('actor-1', dto, 'crops');
       expect(prisma.cropsOnActors.deleteMany).not.toHaveBeenCalled();
       expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    describe('country/region merge on update', () => {
+      const regionMessage = (country: string) => `Region must be one of ${country}'s regions.`;
+
+      async function rejection(dto: AdminActorUpdateDto): Promise<{
+        message: string;
+        details: Array<{ field: string; message: string }>;
+      }> {
+        try {
+          await service.update('actor-1', dto, ACTING_SUB);
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+          return (err as BadRequestException).getResponse() as never;
+        }
+        throw new Error('expected a 400');
+      }
+
+      it("rejects changing only the country when the stored region is not that country's", async () => {
+        prisma.actor.findUnique.mockResolvedValue(fixtureActor({ country: 'TZ', region: 'Arusha' }));
+
+        const body = await rejection({ country: 'KE' } as AdminActorUpdateDto);
+
+        expect(body.details).toEqual([{ field: 'region', message: regionMessage('Kenya') }]);
+        expect(prisma.actor.update).not.toHaveBeenCalled();
+      });
+
+      it("rejects changing only the region to one outside the stored country", async () => {
+        prisma.actor.findUnique.mockResolvedValue(fixtureActor({ country: 'TZ', region: 'Arusha' }));
+
+        const body = await rejection({ region: 'Mombasa' } as AdminActorUpdateDto);
+
+        expect(body.details).toEqual([{ field: 'region', message: regionMessage('Tanzania') }]);
+      });
+
+      it('accepts country and region changed together, writes both and audits the country change', async () => {
+        const before = fixtureActor({ country: 'TZ', region: 'Arusha' });
+        const after = fixtureActor({ country: 'KE', region: 'Mombasa' });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const res = await service.update(
+          'actor-1',
+          { country: 'KE', region: 'Mombasa' } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.actor.update).toHaveBeenCalledWith({
+          where: { id: 'actor-1' },
+          data: { country: 'KE', region: 'Mombasa' },
+        });
+        expect(res.country).toBe('KE');
+        const changes = prisma.actorAuditLog.create.mock.calls[0][0].data.changes;
+        expect(changes.fields.country).toEqual({ from: 'TZ', to: 'KE' });
+      });
+
+      it('leaves an update that touches neither country nor region unchecked, even for a legacy mismatch', async () => {
+        const before = fixtureActor({ country: 'TZ', region: 'Atlantis' });
+        const after = fixtureActor({ country: 'TZ', region: 'Atlantis', traderName: 'Renamed' });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update('actor-1', { traderName: 'Renamed' } as AdminActorUpdateDto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+      });
     });
 
     // FR-1 scenario 3 / design.md §4.4 — the merged-state required check.

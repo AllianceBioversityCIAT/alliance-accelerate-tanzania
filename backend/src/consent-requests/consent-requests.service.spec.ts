@@ -32,6 +32,7 @@ interface FixtureActor {
   traderName: string;
   email: string | null;
   consentStatus: ConsentStatus;
+  country?: string;
   region?: string;
   traderType?: string;
   registrationSource?: RegistrationSource;
@@ -186,6 +187,26 @@ describe('ConsentRequestsService', () => {
       expect(result.toSend).toBe(1);
       expect(prisma.actor.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { region: 'Arusha' } }),
+      );
+    });
+  });
+
+  describe('filter target — country', () => {
+    it('narrows "all matching" to the chosen country through the same where-builder', async () => {
+      const prisma = buildPrisma(
+        [
+          { id: 'a1', traderId: 'T1', traderName: 'Tz One', email: 'a1@example.com', consentStatus: ConsentStatus.UNKNOWN, country: 'TZ' },
+          { id: 'a2', traderId: 'T2', traderName: 'Ke One', email: 'a2@example.com', consentStatus: ConsentStatus.UNKNOWN, country: 'KE' },
+        ],
+        [],
+      );
+      const service = buildService(prisma);
+
+      const result = await service.preview({ kind: 'filter', filter: { country: 'KE' } }, 'bulk');
+
+      expect(result.total).toBe(1);
+      expect(prisma.actor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { country: 'KE' } }),
       );
     });
   });
@@ -408,14 +429,14 @@ describe('ConsentRequestsService', () => {
       // the lock — the vacuity guard: this proves genuine interleaving, not
       // two calls that happened to run one after the other.
       for (let i = 0; i < 10; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
+         
         await Promise.resolve();
       }
       expect(queryRawCalls).toBe(2);
 
       gates[0].resolve();
       for (let i = 0; i < 10; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
+         
         await Promise.resolve();
       }
       // The first transaction has fully committed its createMany before the

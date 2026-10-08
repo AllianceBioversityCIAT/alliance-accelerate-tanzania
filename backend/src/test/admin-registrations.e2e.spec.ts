@@ -469,7 +469,7 @@ describe('Admin registrations approve e2e (HTTP + in-memory Prisma) — T-8, FR-
  * `AppModule`, the real guard stack, the real
  * `AdminRegistrationsService.list` → `toAdminRegistrationListRow`
  * projection, driven with supertest — asserting the response carries
- * EXACTLY the nine-key list projection (`id` plus the seven fields FR-9
+ * EXACTLY the ten-key list projection (`id` plus the seven fields FR-9
  * scenario 1 names: `reference`, `applicant`, `traderType`, `region`,
  * `submittedAt`, `status`, `duplicateCandidateCount`, plus `additionalTraderTypes`), and that the raw
  * wire body (`res.text`) carries none of the fixture's non-projected PII
@@ -530,6 +530,7 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
           'applicant',
           'traderType',
           'additionalTraderTypes',
+          'country',
           'region',
           'submittedAt',
           'status',
@@ -540,6 +541,7 @@ describe('Admin registrations list e2e (HTTP + in-memory Prisma) — T-10, A-53'
       expect(row.reference).toBe('REG-2026-0184');
       expect(row.applicant).toBe('Meru Agro-Processing & Seeds');
       expect(row.traderType).toBe('seed_company');
+      expect(row.country).toBe('TZ');
       expect(row.region).toBe('Arusha');
       expect(row.status).toBe('PENDING_REVIEW');
       expect(row.duplicateCandidateCount).toBe(0);

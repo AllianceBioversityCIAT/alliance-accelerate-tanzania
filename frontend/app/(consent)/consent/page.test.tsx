@@ -43,6 +43,7 @@ const VIEW: ConsentViewResponse = {
     id: 'actor-42',
     traderName: 'Kilimo Seeds Ltd',
     region: 'Arusha',
+    country: 'TZ',
     district: null,
     traderType: 'seed_company',
     additionalTraderTypes: [],

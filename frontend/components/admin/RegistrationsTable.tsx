@@ -69,6 +69,7 @@ import Link from 'next/link';
 
 import type { AdminRegistrationListRow, RegistrationStatus } from '@/lib/api/registrations-admin';
 import { roleSummary } from '@/lib/content/roles';
+import { countryName, formatLocation } from '@/lib/content/countries';
 import { RoleSummaryText } from '@/components/map/RoleBadge';
 import {
   REGISTRATION_STATUS_LABEL,
@@ -229,7 +230,7 @@ function RegistrationCard({ row }: Readonly<{ row: AdminRegistrationListRow }>) 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
         <div>
           <dt className="text-muted">Region</dt>
-          <dd className="font-medium text-fg">{row.region}</dd>
+          <dd className="font-medium text-fg">{formatLocation(row.region, row.country)}</dd>
         </div>
         <div>
           <dt className="text-muted">Submitted</dt>
@@ -298,7 +299,10 @@ export function RegistrationsTable({ rows }: Readonly<RegistrationsTableProps>) 
                 >
                   <RoleSummaryText traderType={row.traderType} additionalTraderTypes={row.additionalTraderTypes} />
                 </td>
-                <td className="px-4 py-3 text-muted whitespace-nowrap">{row.region}</td>
+                <td className="px-4 py-3 text-muted whitespace-nowrap">
+                    {row.region}
+                    <span className="block text-xs">{countryName(row.country)}</span>
+                  </td>
                 <td className="px-4 py-3 text-muted whitespace-nowrap">{formatDate(row.submittedAt)}</td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <DuplicatesFlag count={row.duplicateCandidateCount} />

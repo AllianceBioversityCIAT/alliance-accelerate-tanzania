@@ -67,8 +67,9 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
-import { REGIONS } from '@/lib/content/regions';
-import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { callingCode, regionsFor } from '@/lib/content/countries';
+import CountrySelect from '@/components/geo/CountrySelect';
+import RegionSelect from '@/components/geo/RegionSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
 import {
   LATITUDE_HINT,
@@ -95,13 +96,10 @@ const SEX_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ] as const;
 
-/**
- * `SearchableSelect`'s `options` prop (T-4, design.md §5.6) — computed once
- * at module scope, not per render, so its identity is stable and the
- * control's internal `useMemo`-based filter (design.md §5.4/NFR-4) never
- * re-scans on a `RegistrationForm` re-render unrelated to `region`.
- */
-const REGION_OPTIONS = REGIONS.map((region) => ({ value: region, label: region }));
+function phoneHint(country: string): string | undefined {
+  const code = callingCode(country);
+  return code ? `Include the country code, e.g. ${code} …` : undefined;
+}
 
 /** `@MaxLength` bounds, transcribed field-for-field from `registration-create.dto.ts`. */
 const MAX_LENGTHS = {
@@ -151,6 +149,7 @@ const FIELD_LABELS: Record<keyof FormValues, string> = {
   district: 'District',
   marketLocation: 'Market location',
   sex: 'Sex',
+  country: 'Country',
   region: 'Region',
   gpsLatitude: 'GPS latitude',
   gpsLongitude: 'GPS longitude',
@@ -179,6 +178,7 @@ export interface FormValues {
   district: string;
   marketLocation: string;
   sex: string;
+  country: string;
   region: string;
   gpsLatitude: string;
   gpsLongitude: string;
@@ -225,6 +225,7 @@ export interface RegistrationPayloadInput {
   district?: string;
   marketLocation?: string;
   sex?: string;
+  country: string;
   region: string;
   gpsLatitude?: number;
   gpsLongitude?: number;
@@ -309,6 +310,7 @@ function toFormValues(restored?: FormValues): FormValues {
     district: '',
     marketLocation: '',
     sex: '',
+    country: '',
     region: '',
     gpsLatitude: '',
     gpsLongitude: '',
@@ -369,6 +371,7 @@ function buildPayload(values: FormValues): RegistrationPayloadInput {
     district: trimmedOrUndefined(values.district),
     marketLocation: trimmedOrUndefined(values.marketLocation),
     sex: values.sex || undefined,
+    country: values.country,
     region: values.region,
     gpsLatitude: parseOptionalNumber(values.gpsLatitude),
     gpsLongitude: parseOptionalNumber(values.gpsLongitude),
@@ -414,7 +417,9 @@ function validate(values: FormValues): Record<string, string> {
     errors.marketLocation = `Must be ${MAX_LENGTHS.marketLocation} characters or fewer.`;
   }
 
-  if (!values.region) errors.region = 'Select a region.';
+  if (!values.country) errors.country = 'Select a country.';
+  // Without a country the region field is disabled, so only the country is reported.
+  if (values.country && !values.region) errors.region = 'Select a region.';
 
   // Coordinate pairing (FR-2 scenario 3): exactly one of two is rejected;
   // both blank is accepted; both present are range-checked independently.
@@ -570,6 +575,10 @@ export default function RegistrationForm({
     setValues((prev) => ({
       ...prev,
       [field]: value,
+      // A region only stays while it belongs to the chosen country.
+      ...(field === 'country' && !regionsFor(value as string).includes(prev.region)
+        ? { region: '' }
+        : {}),
       // Picking a main type that was ticked as "other" drops it from the set.
       ...(field === 'traderType'
         ? { additionalTraderTypes: prev.additionalTraderTypes.filter((t) => t !== value) }
@@ -669,32 +678,43 @@ export default function RegistrationForm({
     );
   };
 
-  /**
-   * The Region field (T-4, FR-4, design.md §5.6, JD-2) — `SearchableSelect`
-   * swapped in for the native `<select>` `renderSelect` still renders for
-   * `traderType`/`sex`, inside the SAME `Field` wrapper so the label, the
-   * required asterisk, and the inline error message are unchanged. The
-   * control receives `invalid` (never a message — DD-3) and `describedBy`
-   * exactly as `renderSelect`/`renderInput` already compute them for every
-   * other field, so `aria-invalid` and `aria-describedby` follow the one
-   * `errors` record with no second path. No `clearOptionLabel` — this is
-   * the required field design.md §5.1 says omits the clear affordance.
-   */
-  const renderRegionField = () => {
-    const field: keyof FormValues = 'region';
-    const id = fieldId(field);
-    const error = errors[field];
+  const renderCountryField = () => {
+    const id = fieldId('country');
+    const error = errors.country;
     return (
-      <Field id={id} label="Region" error={error} required>
-        <SearchableSelect
+      <Field id={id} label="Country" error={error} required>
+        <CountrySelect
           id={id}
-          value={values.region}
-          onChange={(next) => setField('region', next)}
-          options={REGION_OPTIONS}
-          placeholder="Select…"
+          value={values.country}
+          onChange={(next) => setField('country', next)}
           disabled={submitting}
           invalid={!!error}
           describedBy={error ? `${id}-error` : undefined}
+        />
+      </Field>
+    );
+  };
+
+  const renderRegionField = () => {
+    const id = fieldId('region');
+    const error = errors.region;
+    return (
+      <Field
+        id={id}
+        label="Region"
+        error={error}
+        required
+        hint={values.country ? undefined : 'Choose a country first to see its regions.'}
+      >
+        <RegionSelect
+          id={id}
+          country={values.country}
+          region={values.region}
+          onChange={({ region }) => setField('region', region)}
+          requireCountry
+          disabled={submitting}
+          invalid={!!error}
+          describedBy={[values.country ? '' : `${id}-hint`, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
         />
       </Field>
     );
@@ -812,6 +832,7 @@ export default function RegistrationForm({
         <fieldset className="border-0 p-0 m-0">
           <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {renderCountryField()}
             {renderRegionField()}
             {renderInput('district', 'District')}
             {renderInput(
@@ -852,6 +873,7 @@ export default function RegistrationForm({
             <CoordinatePicker
               latitude={values.gpsLatitude}
               longitude={values.gpsLongitude}
+              country={values.country}
               disabled={submitting}
               describedBy={gpsHintId}
               onChange={(lat, lng) => {
@@ -946,7 +968,7 @@ export default function RegistrationForm({
             {renderInput('contactPerson', 'Contact person', 'text', true, 'Shown on your public profile once your registration is approved')}
             {renderInput('position', 'Position')}
             {renderSelect('sex', 'Sex', SEX_OPTIONS)}
-            {renderInput('phone', 'Phone', 'text', true)}
+            {renderInput('phone', 'Phone', 'text', true, phoneHint(values.country))}
             {/*
               The one verified, top-level `email` (S-6) — collected here, not
               in `RegistrationPayloadDto`. See the file header's T-19-seam

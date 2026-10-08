@@ -8,6 +8,7 @@
  */
 
 import type { PublicActor } from '@/lib/api/actors';
+import { countryName } from '@/lib/content/countries';
 
 // ── Output types ────────────────────────────────────────────────────────────
 
@@ -81,23 +82,30 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
   const regionSet = new Set<string>();
   const typeSet = new Set<string>();
   const capacityValues: number[] = [];
-  const regionCapacity = new Map<string, number>();
+  const regionCapacity = new Map<string, { region: string; country: string; tons: number }>();
+  const countrySet = new Set<string>();
   const cropCount = new Map<string, number>();
   const typeCount = new Map<string, number>();
 
   for (const actor of actors) {
     // --- Distinct sets (all actors) ---
     if (actor.region && actor.region.trim() !== '') {
-      regionSet.add(actor.region);
+      regionSet.add(`${actor.country}|${actor.region}`);
     }
+    if (actor.country) countrySet.add(actor.country);
     const types = [actor.traderType, ...(actor.additionalTraderTypes ?? [])];
     for (const t of types) typeSet.add(t);
 
     // --- Capacity reporting subset ---
     if (isReporting(actor.capacityTons)) {
       capacityValues.push(actor.capacityTons);
-      const prev = regionCapacity.get(actor.region) ?? 0;
-      regionCapacity.set(actor.region, prev + actor.capacityTons);
+      const key = `${actor.country}|${actor.region}`;
+      const prev = regionCapacity.get(key);
+      regionCapacity.set(key, {
+        region: actor.region,
+        country: actor.country,
+        tons: (prev?.tons ?? 0) + actor.capacityTons,
+      });
     }
 
     // --- byType (all actors) ---
@@ -125,7 +133,11 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
 
   // --- Series ---
   const capacityByRegion: DashboardSeriesPoint[] = sortDesc(
-    Array.from(regionCapacity.entries()).map(([label, value]) => ({ label, value })),
+    Array.from(regionCapacity.values()).map(({ region, country, tons }) => ({
+      // Same-named regions of different countries stay apart once the data spans countries.
+      label: countrySet.size > 1 ? `${region} (${countryName(country)})` : region,
+      value: tons,
+    })),
   );
 
   const byCrop: DashboardSeriesPoint[] = sortDesc(

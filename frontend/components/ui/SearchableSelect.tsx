@@ -171,6 +171,9 @@ export interface SearchableSelectProps {
   labelledBy?: string;
   /** Copy for the empty-filter state; also the live region's zero-count text (design.md §5.3). */
   noMatchLabel?: string;
+  /** Singular/plural nouns for the live region's count text. */
+  itemNoun?: string;
+  itemNounPlural?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +194,8 @@ export function SearchableSelect({
   describedBy,
   labelledBy,
   noMatchLabel = DEFAULT_NO_MATCH_LABEL,
+  itemNoun = 'region',
+  itemNounPlural = 'regions',
 }: SearchableSelectProps) {
   const [searchText, setSearchText] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -255,8 +260,8 @@ export function SearchableSelect({
     : isNoMatch
       ? noMatchLabel
       : matchedOptions.length === 1
-        ? '1 region available'
-        : `${matchedOptions.length} regions available`;
+        ? `1 ${itemNoun} available`
+        : `${matchedOptions.length} ${itemNounPlural} available`;
 
   const closeAndReset = useCallback(() => {
     setIsOpen(false);

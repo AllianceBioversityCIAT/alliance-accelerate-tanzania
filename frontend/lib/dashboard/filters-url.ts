@@ -9,9 +9,10 @@
  */
 
 import type { ActorsQuery } from '@/lib/api/actors';
+import { cleanGeo } from '@/lib/content/countries';
 
 // Fields handled by this codec (excludes page / pageSize)
-const STRING_FIELDS = ['crop', 'role', 'region', 'district', 'search'] as const;
+const STRING_FIELDS = ['crop', 'role', 'country', 'region', 'district', 'search'] as const;
 const NUMBER_FIELDS = ['capacityMin', 'capacityMax'] as const;
 
 type StringField = (typeof STRING_FIELDS)[number];
@@ -68,6 +69,12 @@ export function decodeFilters(params: URLSearchParams): ActorsQuery {
       }
     }
   }
+
+  const { country, region } = cleanGeo(q.country, q.region);
+  if (country) q.country = country;
+  else delete q.country;
+  if (region) q.region = region;
+  else delete q.region;
 
   return q;
 }

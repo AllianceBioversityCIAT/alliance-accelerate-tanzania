@@ -264,6 +264,7 @@ function buildStoredPayload(payload: RegistrationPayloadDto): Prisma.InputJsonVa
     district: payload.district ?? null,
     marketLocation: payload.marketLocation ?? null,
     sex: payload.sex ?? null,
+    country: payload.country,
     region: payload.region,
     gpsLatitude: payload.gpsLatitude ?? null,
     gpsLongitude: payload.gpsLongitude ?? null,
@@ -1157,6 +1158,7 @@ export class RegistrationsService {
         reference,
         traderName: payload.traderName,
         traderType: payload.traderType,
+        country: payload.country,
         region: payload.region,
       });
     })();

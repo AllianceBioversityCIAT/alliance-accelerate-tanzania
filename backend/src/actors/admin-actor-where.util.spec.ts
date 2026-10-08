@@ -1,5 +1,18 @@
 import { buildAdminActorWhere } from './admin-actor-where.util';
 
+describe('buildAdminActorWhere — country', () => {
+  it('filters country by equality alongside region', () => {
+    expect(buildAdminActorWhere({ country: 'KE', region: 'Mombasa' })).toEqual({
+      country: 'KE',
+      region: 'Mombasa',
+    });
+  });
+
+  it('adds nothing when no country is given', () => {
+    expect(buildAdminActorWhere({})).toEqual({});
+  });
+});
+
 describe('buildAdminActorWhere — traderType', () => {
   it('matches the main type OR an additional type, nested in AND so no other OR is clobbered', () => {
     const where = buildAdminActorWhere({ traderType: 'ngo', region: 'Arusha' });

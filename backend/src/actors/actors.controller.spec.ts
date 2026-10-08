@@ -28,6 +28,7 @@ import {
 const publicActorListItem: PublicActorListItem = {
   id: 'actor-1',
   traderName: 'Meru Agro-Processing & Seeds',
+  country: 'TZ',
   region: 'Arusha',
   district: 'Arusha Urban',
   traderType: 'seed_company',
@@ -43,6 +44,7 @@ const publicActorListItem: PublicActorListItem = {
 const publicActorDetail: PublicActorDetail = {
   id: 'actor-1',
   traderName: 'Meru Agro-Processing & Seeds',
+  country: 'TZ',
   region: 'Arusha',
   district: 'Arusha Urban',
   traderType: 'seed_company',

@@ -55,6 +55,7 @@ const MOCK_ACTOR_LIST: PublicActorList = {
       additionalTraderTypes: [],
       crops: ['sorghum'],
       region: 'Dar es Salaam',
+      country: 'TZ',
       district: 'Kinondoni',
       capacityTons: 500,
       gps: { lat: -6.7924, long: 39.2083 },

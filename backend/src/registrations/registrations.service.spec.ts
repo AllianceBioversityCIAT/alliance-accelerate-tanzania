@@ -644,6 +644,7 @@ describe('RegistrationsService.submitRegistration', () => {
         traderName: 'Mbeya Seed Traders Ltd',
         traderType: 'seed_company',
         contactPerson: 'Neema Shirima',
+        country: 'TZ',
         region: 'Mbeya',
         crops: ['sorghum', 'common_bean'],
         capacityTons: 120,
@@ -822,6 +823,7 @@ describe('RegistrationsService.submitRegistration', () => {
           district: null,
           marketLocation: null,
           sex: null,
+          country: 'TZ',
           region: 'Mbeya',
           gpsLatitude: null,
           gpsLongitude: null,
@@ -951,8 +953,20 @@ describe('RegistrationsService.submitRegistration', () => {
           reference: result.reference,
           traderName: 'Mbeya Seed Traders Ltd',
           traderType: 'seed_company',
+          country: 'TZ',
           region: 'Mbeya',
         },
+      );
+    });
+
+    it('carries the applicant country, so a Kenyan submission is not announced as Tanzanian', async () => {
+      await service.submitRegistration(
+        validDto({ payload: { country: 'KE', region: 'Mombasa' } as never }),
+      );
+
+      expect(mailService.sendNewRegistrationNotice).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ country: 'KE', region: 'Mombasa' }),
       );
     });
 

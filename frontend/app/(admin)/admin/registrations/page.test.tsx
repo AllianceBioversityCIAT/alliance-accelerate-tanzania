@@ -21,6 +21,7 @@
 
 import React from 'react';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -106,6 +107,7 @@ const ROW_A: AdminRegistrationListRow = {
   traderType: 'seed_company',
   additionalTraderTypes: [],
   region: 'Arusha',
+  country: 'TZ',
   submittedAt: '2026-06-01T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 0,
@@ -118,6 +120,7 @@ const ROW_B: AdminRegistrationListRow = {
   traderType: 'cooperative',
   additionalTraderTypes: [],
   region: 'Dodoma',
+  country: 'TZ',
   submittedAt: '2026-05-15T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 2,
@@ -264,8 +267,47 @@ describe('RegistrationsPage', () => {
 
   // R16 — region/traderType were checked alongside sort and found equally
   // unasserted for URL sync; added here too.
+  it('R16 — pushes the country query param onto the URL when the country filter changes (URL sync)', async () => {
+    const user = userEvent.setup();
+    await renderAndWaitForList();
+    await waitFor(() => expect(screen.getByLabelText('Country')).toBeEnabled());
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(screen.getByRole('option', { name: 'Tanzania' }));
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('country=TZ'), { scroll: false }),
+    );
+  });
+
   it('R16 — pushes the region query param onto the URL when the region filter changes (URL sync)', async () => {
-    await expectFieldChangePushesUrlParam('Region', 'Arusha', 'region=Arusha');
+    const user = userEvent.setup();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('country=TZ'));
+    await renderAndWaitForList();
+    await waitFor(() => expect(screen.getByLabelText('Region')).toBeEnabled());
+
+    await user.click(screen.getByLabelText('Region'));
+    await user.click(screen.getByRole('option', { name: 'Arusha' }));
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('region=Arusha'), { scroll: false }),
+    );
+  });
+
+  it('clears a region that does not belong to the newly chosen country', async () => {
+    const user = userEvent.setup();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams('country=TZ&region=Arusha'));
+    await renderAndWaitForList();
+    await waitFor(() => expect(screen.getByLabelText('Country')).toBeEnabled());
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(screen.getByRole('option', { name: 'Kenya' }));
+
+    await waitFor(() => {
+      const url = mockRouterReplace.mock.calls.at(-1)![0] as string;
+      expect(url).toContain('country=KE');
+      expect(url).not.toContain('region=');
+    });
   });
 
   it('R16 — pushes the traderType query param onto the URL when the type filter changes (URL sync)', async () => {
