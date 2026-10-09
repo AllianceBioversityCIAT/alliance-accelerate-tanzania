@@ -74,6 +74,22 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
  */
 const FORBIDDEN_KEYS = [...NEVER_PUBLIC_FIELDS];
 
+
+/** WHERE for region=Arusha, role=seed_company, crop=sorghum: role matches the main type OR an additional one. */
+const FILTERED_WHERE = {
+        consentStatus: ConsentStatus.GRANTED,
+        region: 'Arusha',
+        AND: [
+          {
+            OR: [
+              { traderType: 'seed_company' },
+              { additionalTypes: { some: { traderType: 'seed_company' } } },
+            ],
+          },
+        ],
+        crops: { some: { crop: { name: 'sorghum' } } },
+};
+
 describe('ActorsService (mocked Prisma)', () => {
   let service: ActorsService;
   let prisma: {
@@ -124,12 +140,7 @@ describe('ActorsService (mocked Prisma)', () => {
       } as ListQueryDto);
 
       const where = prisma.actor.findMany.mock.calls[0][0].where;
-      expect(where).toMatchObject({
-        consentStatus: ConsentStatus.GRANTED,
-        region: 'Arusha',
-        traderType: 'seed_company', // role → traderType
-        crops: { some: { crop: { name: 'sorghum' } } },
-      });
+      expect(where).toMatchObject(FILTERED_WHERE);
     });
 
     it('translates the district filter into a `contains` WHERE clause, not equality', async () => {
@@ -207,10 +218,7 @@ describe('ActorsService (mocked Prisma)', () => {
       const where = prisma.actor.findMany.mock.calls[0][0].where;
       // consent + filters survive alongside OR; all sibling keys → Prisma ANDs.
       expect(where).toMatchObject({
-        consentStatus: ConsentStatus.GRANTED,
-        region: 'Arusha',
-        traderType: 'seed_company',
-        crops: { some: { crop: { name: 'sorghum' } } },
+        ...FILTERED_WHERE,
         OR: [
           { traderName: { contains: 'seed' } },
           { region: { contains: 'seed' } },
@@ -250,7 +258,7 @@ describe('ActorsService (mocked Prisma)', () => {
       await service.findPublic({} as ListQueryDto);
 
       const include = prisma.actor.findMany.mock.calls[0][0].include;
-      expect(include).toEqual({ crops: { include: { crop: true } } });
+      expect(include).toEqual({ crops: { include: { crop: true } }, additionalTypes: true });
     });
 
     it('maps page/pageSize to skip/take and echoes them with total', async () => {

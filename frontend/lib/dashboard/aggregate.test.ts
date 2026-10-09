@@ -20,6 +20,7 @@ function makeActor(overrides: Partial<PublicActor> & Pick<PublicActor, 'id'>): P
     traderName: `Actor ${overrides.id}`,
     region: 'Dodoma',
     traderType: 'cooperative',
+    additionalTraderTypes: [],
     crops: ['sorghum'],
     capacityTons: null,
     sex: null,
@@ -42,6 +43,28 @@ describe('aggregate — empty input', () => {
     expect(result.capacityByRegion).toEqual([]);
     expect(result.byCrop).toEqual([]);
     expect(result.byType).toEqual([]);
+  });
+});
+
+// ── additional types ─────────────────────────────────────────────────────────
+
+describe('aggregate — additional actor types', () => {
+  const actors: PublicActor[] = [
+    makeActor({ id: '1', traderType: 'cooperative', additionalTraderTypes: ['seed_company', 'offtaker'] }),
+    makeActor({ id: '2', traderType: 'seed_company' }),
+  ];
+
+  it('counts an actor under its main type AND each additional type', () => {
+    const byType = Object.fromEntries(aggregate(actors).byType.map((p) => [p.label, p.value]));
+    expect(byType).toEqual({ cooperative: 1, seed_company: 2, offtaker: 1 });
+  });
+
+  it('counts additional types in the distinct actor-types KPI', () => {
+    expect(aggregate(actors).kpis.actorTypes).toBe(3);
+  });
+
+  it('does not change matchingCount', () => {
+    expect(aggregate(actors).kpis.matchingCount).toBe(2);
   });
 });
 

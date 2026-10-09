@@ -49,6 +49,7 @@ const ROW_PENDING: AdminRegistrationListRow = {
   reference: 'REG-2026-0001',
   applicant: 'Meru Agro Cooperative Society with a Very Long Cooperative Name Ltd',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   region: 'Arusha',
   submittedAt: '2026-06-01T00:00:00.000Z',
   status: 'PENDING_REVIEW',
@@ -60,6 +61,7 @@ const ROW_APPROVED: AdminRegistrationListRow = {
   reference: 'REG-2026-0002',
   applicant: 'Kilimo Co',
   traderType: 'cooperative',
+  additionalTraderTypes: [],
   region: 'Dodoma',
   submittedAt: '2026-05-15T00:00:00.000Z',
   status: 'APPROVED',
@@ -71,6 +73,7 @@ const ROW_REJECTED_WITH_DUPES: AdminRegistrationListRow = {
   reference: 'REG-2026-0003',
   applicant: 'Dodoma Traders',
   traderType: 'informal_trader',
+  additionalTraderTypes: [],
   region: 'Dodoma',
   submittedAt: '2026-04-20T00:00:00.000Z',
   status: 'REJECTED',
@@ -83,6 +86,7 @@ const ROW_SATURATED_DUPES: AdminRegistrationListRow = {
   reference: 'REG-2026-0004',
   applicant: 'Arusha Seeds Ltd',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   region: 'Arusha',
   submittedAt: '2026-03-10T00:00:00.000Z',
   status: 'PENDING_REVIEW',
@@ -193,5 +197,17 @@ describe('RegistrationsTable', () => {
     const { container } = render(<RegistrationsTable rows={ROWS} />);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+describe('RegistrationsTable — additional types', () => {
+  it('shows the main type with +N and the full list as title', () => {
+    render(
+      <RegistrationsTable rows={[{ ...ROW_PENDING, additionalTraderTypes: ['offtaker'] }]} />,
+    );
+    const visible = screen.getAllByText('Seed Company +1')[0];
+    expect(visible.parentElement).toHaveAttribute('title', 'Seed Company, Offtaker');
+    expect(visible.nextElementSibling).toHaveClass('sr-only');
+    expect(visible.nextElementSibling).toHaveTextContent('Seed Company, Offtaker');
   });
 });

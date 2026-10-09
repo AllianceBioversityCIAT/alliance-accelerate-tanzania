@@ -403,9 +403,7 @@ Resources:
                 Fn::Sub: "${DataAuthStackName}-DbSecretArn"
           # TLS posture: encrypted, cert chain NOT verified — Prisma's MySQL (Rust)
           # engine can't reliably trust a custom CA on this stack. This environment is
-          # production (docs/infrastructure.md §1), so this is an open production risk
-          # (OQ-INFRA-7), not a dev trade-off. The "no real PII yet" mitigation and its
-          # 2026-10-01 expiry live in infra/README.md §11.
+          # production; accepted for cost on 2026-10-09 (OQ-INFRA-7, infra/README.md §11).
           DB_SSL: accept_invalid_certs
           # Cognito pool/client ids feed the JWT verifier (auth-wiring FR-5/FR-9):
           # the JwtAuthGuard verifies access tokens against this pool's JWKS and

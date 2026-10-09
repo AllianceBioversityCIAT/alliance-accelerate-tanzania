@@ -50,6 +50,7 @@ const PUBLIC_COLUMNS = [
   'region',
   'district',
   'traderType',
+  'additionalTraderTypes',
   'capacityTons',
   'crops',
   'sex',
@@ -60,7 +61,7 @@ type PublicColumn = (typeof PUBLIC_COLUMNS)[number];
 
 // ── Residual risk notes for this array's order (csv.test.ts anchoring) ────────
 //
-// The null-district/null-capacityTons tests anchor on `fields[2]`/`fields[4]`
+// The null-district/null-capacityTons tests anchor on `fields[2]`/`fields[5]`
 // (this array's positions for `district`/`capacityTons`) rather than a
 // comma-count regex — robust against appends, and fails loudly on most
 // insertions. It is silently vacuous only on a nullable insertion ahead of
@@ -115,6 +116,8 @@ function actorColumnValue(actor: PublicActor, col: PublicColumn): string {
       return actor.district ?? '';
     case 'traderType':
       return actor.traderType;
+    case 'additionalTraderTypes':
+      return (actor.additionalTraderTypes ?? []).join('; ');
     case 'capacityTons':
       return actor.capacityTons != null ? String(actor.capacityTons) : '';
     case 'crops':

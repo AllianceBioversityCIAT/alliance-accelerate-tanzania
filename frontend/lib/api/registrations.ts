@@ -105,6 +105,7 @@ export async function requestVerificationCode(email: string): Promise<void> {
 export interface RegistrationSubmitPayload {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[];
   contactPerson: string;
   position?: string;
   district?: string;

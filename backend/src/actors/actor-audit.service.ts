@@ -712,6 +712,7 @@ export class ActorAuditService {
       values[field] = this.serializeValue(field, actor[field]);
     }
     values.crops = actor.crops;
+    values.additionalTraderTypes = actor.additionalTraderTypes;
     return { kind: 'snapshot', values };
   }
 
@@ -733,6 +734,13 @@ export class ActorAuditService {
     const cropsToSorted = [...after.crops].sort();
     if (!this.valuesEqual(cropsFromSorted, cropsToSorted)) {
       diff.crops = { from: before.crops, to: after.crops };
+    }
+
+    if (!this.valuesEqual(before.additionalTraderTypes, after.additionalTraderTypes)) {
+      diff.additionalTraderTypes = {
+        from: before.additionalTraderTypes,
+        to: after.additionalTraderTypes,
+      };
     }
 
     return diff;

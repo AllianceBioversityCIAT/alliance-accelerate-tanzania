@@ -56,10 +56,10 @@ function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
   const reducedMotion = useChartReducedMotion();
 
   return (
-    <ResponsiveContainer width="100%" height={240}>
+    <ResponsiveContainer width="100%" height={280}>
       <BarChart
         data={series}
-        margin={{ top: 8, right: 16, bottom: 40, left: 8 }}
+        margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
       >
         <CartesianGrid
           strokeDasharray="3 3"
@@ -74,6 +74,8 @@ function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
           interval={0}
           angle={-30}
           textAnchor="end"
+          // Room for the longest rotated label ("Digital Service Provider").
+          height={80}
         />
         <YAxis
           allowDecimals={false}
@@ -127,6 +129,9 @@ export default function ActorTypeChart({ data }: ActorTypeChartProps) {
       valueHeader="Actor count"
     >
       <InnerChart series={series} />
+      <p className="mt-2 text-xs text-muted">
+        An actor can have several types, so the bars can add up to more than the total number of actors.
+      </p>
     </ChartCard>
   );
 }

@@ -29,6 +29,7 @@ const ACTOR_FULL: PublicActor = {
   region: 'Dodoma',
   district: 'Dodoma Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   capacityTons: 500,
   crops: ['sorghum', 'common_bean'],
   gps: { lat: -6.17, long: 35.74 },
@@ -43,6 +44,7 @@ const ACTOR_SPARSE: PublicActor = {
   region: 'Mbeya',
   district: null,
   traderType: 'cooperative',
+  additionalTraderTypes: [],
   capacityTons: null,
   crops: ['groundnut'],
   gps: null,
@@ -192,5 +194,15 @@ describe('ActorPopup', () => {
 
     expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/email/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ActorPopup — additional types', () => {
+  it('shows the main badge first and the additional types after it', () => {
+    render(<ActorPopup actor={{ ...ACTOR_FULL, additionalTraderTypes: ['offtaker', 'ngo'] }} />);
+    const { textContent } = document.body;
+    expect(screen.getByText('Offtaker')).toBeInTheDocument();
+    expect(screen.getByText('NGO')).toBeInTheDocument();
+    expect(textContent!.indexOf('Other types:')).toBeGreaterThan(-1);
   });
 });

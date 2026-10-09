@@ -14,7 +14,7 @@
 // with no coordinates).
 
 import type { PublicActor } from '@/lib/api/actors';
-import RoleBadge from './RoleBadge';
+import { RoleBadges } from './RoleBadge';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ export default function ActorListItem({ actor, selected, onSelect }: ActorListIt
         </span>
 
         {/* ── Role badge ────────────────────────────────────────────────────── */}
-        <RoleBadge traderType={traderType} />
+        <RoleBadges traderType={traderType} additionalTraderTypes={actor.additionalTraderTypes} />
 
         {/* ── Location ─────────────────────────────────────────────────────── */}
         <span className="text-xs text-muted">{location}</span>

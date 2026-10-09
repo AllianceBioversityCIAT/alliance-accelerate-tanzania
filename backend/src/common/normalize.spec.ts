@@ -275,22 +275,22 @@ describe('parseCapacityTons', () => {
 });
 
 describe('GPS guards', () => {
-  it('isValidLatitude enforces [−90, 90]', () => {
+  it('isValidLatitude enforces the Africa rectangle [−35, 37.6]', () => {
     expect(isValidLatitude(-8.9094)).toBe(true);
-    expect(isValidLatitude(-90)).toBe(true);
-    expect(isValidLatitude(90)).toBe(true);
-    expect(isValidLatitude(120)).toBe(false);
-    expect(isValidLatitude(-91)).toBe(false);
+    expect(isValidLatitude(-35)).toBe(true);
+    expect(isValidLatitude(37.6)).toBe(true);
+    expect(isValidLatitude(-35.01)).toBe(false); // south of Cape Agulhas
+    expect(isValidLatitude(48.85)).toBe(false); // Paris
     expect(isValidLatitude(NaN)).toBe(false);
     expect(isValidLatitude(null)).toBe(false);
   });
 
-  it('isValidLongitude enforces [−180, 180]', () => {
+  it('isValidLongitude enforces the Africa rectangle [−25.5, 58]', () => {
     expect(isValidLongitude(33.4607)).toBe(true);
-    expect(isValidLongitude(-180)).toBe(true);
-    expect(isValidLongitude(180)).toBe(true);
-    expect(isValidLongitude(200)).toBe(false);
-    expect(isValidLongitude(-181)).toBe(false);
+    expect(isValidLongitude(-25.5)).toBe(true); // Cape Verde
+    expect(isValidLongitude(58)).toBe(true); // Mauritius
+    expect(isValidLongitude(-74.07)).toBe(false); // Bogotá
+    expect(isValidLongitude(63.4)).toBe(false); // Rodrigues, deliberately excluded
     expect(isValidLongitude(undefined)).toBe(false);
   });
 });

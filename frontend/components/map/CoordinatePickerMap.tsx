@@ -34,6 +34,7 @@ import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef } from 'react';
 import {
   formatCoordinate,
+  isInAfrica,
   isSamePoint,
   parseCoordinatePair,
   type CoordinatePoint,
@@ -88,7 +89,7 @@ function buildMarkerIcon(): L.DivIcon {
 function createMarker(
   point: CoordinatePoint,
   draggable: boolean,
-  onDragEnd: (lat: number, lng: number) => void,
+  onDragEnd: (lat: number, lng: number, marker: L.Marker) => void,
 ): L.Marker {
   const marker = L.marker([point.lat, point.lng], {
     icon: buildMarkerIcon(),
@@ -118,7 +119,7 @@ function createMarker(
     // `2 * atan(exp(y / R)) - PI/2` asymptotes toward ±90° for any finite Y
     // and can never reach or cross it.
     const lng = L.Util.wrapNum(pos.lng, [-180, 180], true);
-    onDragEnd(pos.lat, lng);
+    onDragEnd(pos.lat, lng, marker);
   });
   return marker;
 }
@@ -134,6 +135,8 @@ export interface CoordinatePickerMapProps {
   onChange: (lat: string, lng: string) => void;
   /** Mirrors the form's `submitting` state — dragging/clicking must not write while true. */
   disabled?: boolean;
+  /** Called when a click or drop lands outside Africa; nothing is written. */
+  onOutsideBounds?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -143,6 +146,7 @@ export default function CoordinatePickerMap({
   longitude,
   onChange,
   disabled = false,
+  onOutsideBounds,
 }: Readonly<CoordinatePickerMapProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -161,6 +165,31 @@ export default function CoordinatePickerMap({
   useEffect(() => {
     disabledRef.current = disabled;
   });
+  const onOutsideBoundsRef = useRef(onOutsideBounds);
+  useEffect(() => {
+    onOutsideBoundsRef.current = onOutsideBounds;
+  });
+  // Latest field values, so a refused drop can snap the marker back.
+  const fieldsRef = useRef({ latitude, longitude });
+  useEffect(() => {
+    fieldsRef.current = { latitude, longitude };
+  });
+
+  // A drop outside Africa writes nothing and returns the marker to the fields' point.
+  const handleDrop = (lat: number, lng: number, marker: L.Marker) => {
+    if (!isInAfrica(lat, lng)) {
+      const back = parseCoordinatePair(fieldsRef.current.latitude, fieldsRef.current.longitude);
+      if (back) {
+        marker.setLatLng([back.lat, back.lng]);
+      } else {
+        marker.remove();
+        markerRef.current = null;
+      }
+      onOutsideBoundsRef.current?.();
+      return;
+    }
+    onChangeRef.current(formatCoordinate(lat), formatCoordinate(lng));
+  };
 
   // ── Map initialization (runs once) ──────────────────────────────────────────
   useEffect(() => {
@@ -208,15 +237,17 @@ export default function CoordinatePickerMap({
       // panning already put the viewport there.
       const lng = L.Util.wrapNum(event.latlng.lng, [-180, 180], true);
       const point: CoordinatePoint = { lat: event.latlng.lat, lng };
+      if (!isInAfrica(point.lat, point.lng)) {
+        onOutsideBoundsRef.current?.();
+        return;
+      }
       const existing = markerRef.current;
       if (existing) {
         existing.setLatLng([point.lat, point.lng]);
       } else {
         // disabledRef.current is already known false (the guard above
         // returned otherwise), so the new marker is always draggable here.
-        const created = createMarker(point, true, (lat, lng) => {
-          onChangeRef.current(formatCoordinate(lat), formatCoordinate(lng));
-        });
+        const created = createMarker(point, true, handleDrop);
         created.addTo(map);
         markerRef.current = created;
       }
@@ -278,9 +309,7 @@ export default function CoordinatePickerMap({
     // First placement (mount with coordinates already set) or re-placement
     // after a `null` gap: create the marker at exactly the parsed value
     // (forward pointer 1) and center on it.
-    const created = createMarker(point, !disabledRef.current, (lat, lng) => {
-      onChangeRef.current(formatCoordinate(lat), formatCoordinate(lng));
-    });
+    const created = createMarker(point, !disabledRef.current, handleDrop);
     created.addTo(map);
     markerRef.current = created;
     map.setView([point.lat, point.lng], PICKER_ZOOM);

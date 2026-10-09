@@ -437,12 +437,20 @@ function normalizeSinglePhone(candidate: string): string | null {
   return null;
 }
 
-/** GPS latitude guard: finite and within [−90, 90]. */
+/**
+ * Accepted GPS bounds: a rectangle around Africa and its islands (Cape Agulhas
+ * to Tunisia, Cape Verde to Mauritius). Mirrored by frontend/lib/geo/coordinates.ts.
+ */
+export const LATITUDE_RANGE = [-35, 37.6] as const;
+export const LONGITUDE_RANGE = [-25.5, 58] as const;
+export const OUTSIDE_AFRICA_MESSAGE = 'GPS coordinates must be in Africa.';
+
+/** GPS latitude guard: finite and within {@link LATITUDE_RANGE}. */
 export function isValidLatitude(n: number | null | undefined): boolean {
-  return typeof n === 'number' && Number.isFinite(n) && n >= -90 && n <= 90;
+  return typeof n === 'number' && Number.isFinite(n) && n >= LATITUDE_RANGE[0] && n <= LATITUDE_RANGE[1];
 }
 
-/** GPS longitude guard: finite and within [−180, 180]. */
+/** GPS longitude guard: finite and within {@link LONGITUDE_RANGE}. */
 export function isValidLongitude(n: number | null | undefined): boolean {
-  return typeof n === 'number' && Number.isFinite(n) && n >= -180 && n <= 180;
+  return typeof n === 'number' && Number.isFinite(n) && n >= LONGITUDE_RANGE[0] && n <= LONGITUDE_RANGE[1];
 }

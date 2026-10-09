@@ -159,7 +159,12 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         AND: [
           { status: RegistrationStatus.PENDING_REVIEW },
           { payload: { path: '$.region', equals: 'Arusha' } },
-          { payload: { path: '$.traderType', equals: 'seed_company' } },
+          {
+            OR: [
+              { payload: { path: '$.traderType', equals: 'seed_company' } },
+              { payload: { path: '$.additionalTraderTypes', array_contains: 'seed_company' } },
+            ],
+          },
           { payload: { path: '$.traderName', string_contains: 'Meru' } },
         ],
       });
@@ -245,6 +250,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         reference: 'REG-2026-0002',
         applicant: 'Dodoma Farmers Cooperative',
         traderType: 'cooperative',
+        additionalTraderTypes: [],
         region: 'Dodoma',
         submittedAt: new Date('2026-02-01T00:00:00Z'),
         status: RegistrationStatus.APPROVED,
@@ -261,6 +267,19 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       expect(res.data).toEqual([]);
       expect(res.total).toBe(0);
       expect(res.page).toBe(5);
+    });
+
+    it('list rows carry additionalTraderTypes sorted, [] for legacy payloads', async () => {
+      prisma.registration.findMany.mockResolvedValue([
+        fixtureRow({ payload: { traderName: 'A', traderType: 'ngo', region: 'Dodoma', additionalTraderTypes: ['offtaker', 'cooperative'] } }),
+        fixtureRow({ id: 'reg-legacy', payload: { traderName: 'B', traderType: 'ngo', region: 'Dodoma' } }),
+      ]);
+      prisma.registration.count.mockResolvedValue(2);
+
+      const res = await service.list({} as never);
+
+      expect(res.data[0].additionalTraderTypes).toEqual(['cooperative', 'offtaker']);
+      expect(res.data[1].additionalTraderTypes).toEqual([]);
     });
 
     describe('A-28 half 1 — page has no @Max; skip is clamped to total instead', () => {
@@ -724,6 +743,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       let registration = { ...registrationRow };
       const createdActors: Record<string, unknown>[] = [];
       const cropLinks: Array<{ actorId: string; cropName: string }> = [];
+      const additionalTypeRows: Array<{ actorId: string; traderType: string }> = [];
       let actorSeq = 0;
 
       const registrationDelegate = {
@@ -766,7 +786,8 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           const links = cropLinks
             .filter((l) => l.actorId === args.where.id)
             .map((l) => ({ crop: { name: l.cropName } }));
-          return { ...found, crops: links };
+          const additionalTypes = additionalTypeRows.filter((r) => r.actorId === args.where.id);
+          return { ...found, crops: links, additionalTypes };
         }),
       };
 
@@ -778,6 +799,15 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           }
           return { count: args.data.length };
         }),
+      };
+
+      const actorAdditionalTypeDelegate = {
+        createMany: jest.fn(
+          async (args: { data: Array<{ actorId: string; traderType: string }> }) => {
+            additionalTypeRows.push(...args.data);
+            return { count: args.data.length };
+          },
+        ),
       };
 
       const cropDelegate = {
@@ -799,6 +829,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         registration: registrationDelegate,
         actor: actorDelegate,
         cropsOnActors: cropsOnActorsDelegate,
+        actorAdditionalType: actorAdditionalTypeDelegate,
         crop: cropDelegate,
         actorAuditLog: actorAuditLogDelegate,
         getStoredRegistration: () => registration,
@@ -826,6 +857,33 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         expect(result.actor.consentMethod).toBe(ConsentMethod.PORTAL_CHECKBOX);
         expect(result.actor.consentObtainedAt).toEqual(new Date('2026-01-01T00:10:00Z'));
         expect(result.actor.consentReference).toBe('REG-2026-0184');
+      });
+
+      it('copies payload.additionalTraderTypes onto the actor (sorted, main type excluded); a legacy payload without the key creates none', async () => {
+        const withTypes = approvalRegistrationRow();
+        (withTypes.payload as Record<string, unknown>).additionalTraderTypes = [
+          'offtaker',
+          'seed_company',
+          'ngo',
+        ];
+        const tx = buildTx(withTypes);
+        wireTransaction(tx);
+
+        const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+
+        expect(result.actor.additionalTraderTypes).toEqual(['ngo', 'offtaker']);
+        expect(tx.actorAdditionalType.createMany).toHaveBeenCalledWith({
+          data: [
+            { actorId: result.actor.id, traderType: 'ngo' },
+            { actorId: result.actor.id, traderType: 'offtaker' },
+          ],
+        });
+
+        const legacyTx = buildTx();
+        wireTransaction(legacyTx);
+        const legacy = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+        expect(legacy.actor.additionalTraderTypes).toEqual([]);
+        expect(legacyTx.actorAdditionalType.createMany).not.toHaveBeenCalled();
       });
 
       it("marks the registration APPROVED with publishedActorId, reviewedBySub, reviewedByEmail and reviewedAt", async () => {

@@ -83,6 +83,7 @@ const ACTOR_A: AdminActor = {
   region: 'Arusha',
   district: 'Arusha Urban',
   traderType: 'seed_company',
+  additionalTraderTypes: [],
   contactPerson: null,
   sex: 'M',
   position: 'Director',
@@ -114,6 +115,7 @@ const ACTOR_B: AdminActor = {
   region: 'Dodoma',
   district: 'Dodoma Urban',
   traderType: 'cooperative',
+  additionalTraderTypes: [],
   contactPerson: null,
   sex: 'F',
   position: 'Manager',
@@ -151,6 +153,7 @@ const ACTOR_UNEVIDENCED: AdminActor = {
   region: 'Mwanza',
   district: null,
   traderType: 'informal_trader',
+  additionalTraderTypes: [],
   contactPerson: null,
   sex: null,
   position: null,
@@ -627,5 +630,16 @@ describe('ActorsTable — accessibility', () => {
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+});
+
+describe('ActorsTable — additional types', () => {
+  it('shows the main type with +N and the full list as title', () => {
+    renderTable({ actors: [{ ...ACTOR_A, traderType: 'cooperative', additionalTraderTypes: ['seed_company', 'ngo'] }] });
+    const cell = within(getTable()).getAllByText('Cooperative +2')[0];
+    expect(cell).toHaveAttribute('aria-hidden', 'true');
+    expect(cell.parentElement).toHaveAttribute('title', 'Cooperative, Seed Company, NGO');
+    expect(cell.nextElementSibling).toHaveClass('sr-only');
+    expect(cell.nextElementSibling).toHaveTextContent('Cooperative, Seed Company, NGO');
   });
 });

@@ -105,6 +105,7 @@ function buildDetail(overrides: Partial<AdminRegistrationDetail> = {}): AdminReg
     payload: {
       traderName: 'Meru Agro Cooperative Society',
       traderType: 'cooperative',
+      additionalTraderTypes: [],
       contactPerson: 'Jane Mushi',
       position: 'Operations Manager',
       district: 'Arusha Urban',
@@ -584,5 +585,14 @@ describe('RegistrationDetailPanel', () => {
       expect(confirm).toHaveClass('bg-primary');
       expect(confirm).not.toHaveClass('bg-danger');
     });
+  });
+});
+
+describe('RegistrationDetailPanel — other actor types', () => {
+  it('lists the additional types in their own row', () => {
+    const base = buildDetail();
+    renderPanel({ payload: { ...base.payload, additionalTraderTypes: ['seed_company', 'offtaker'] } });
+    expect(screen.getByText('Other actor types')).toBeInTheDocument();
+    expect(screen.getByText('Seed Company, Offtaker')).toBeInTheDocument();
   });
 });

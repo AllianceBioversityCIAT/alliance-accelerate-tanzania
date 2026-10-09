@@ -55,6 +55,7 @@ const MAX_PAGE_SIZE = 500;
 /** The `crops.crop` include reused by both reads so names resolve in the serializer. */
 const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
+  additionalTypes: true,
 } satisfies Prisma.ActorInclude;
 
 @Injectable()
@@ -80,12 +81,24 @@ export class ActorsService {
     // case-insensitive (no `mode: 'insensitive'` — unsupported on MySQL).
     const term = query.search?.trim();
 
+    // Main type OR among the additional types; AND-nested so it never clobbers the search OR.
+    const roleFilter: Prisma.ActorWhereInput[] = query.role
+      ? [
+          {
+            OR: [
+              { traderType: query.role },
+              { additionalTypes: { some: { traderType: query.role } } },
+            ],
+          },
+        ]
+      : [];
+
     const where: Prisma.ActorWhereInput = {
       // Consent enforced at the QUERY — never serializer-only (NFR-1, DD-3).
       consentStatus: ConsentStatus.GRANTED,
       ...(query.region ? { region: query.region } : {}),
       ...(query.district ? { district: { contains: query.district } } : {}),
-      ...(query.role ? { traderType: query.role } : {}),
+      ...(roleFilter.length > 0 ? { AND: roleFilter } : {}),
       ...(query.crop
         ? { crops: { some: { crop: { name: query.crop } } } }
         : {}),

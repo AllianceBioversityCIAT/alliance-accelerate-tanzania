@@ -63,7 +63,7 @@ import {
   dismissDuplicateCandidate,
 } from '@/lib/api/registrations-admin';
 import { ApiError, AuthFailureError } from '@/lib/api/client';
-import { roleLabel, type TraderType } from '@/lib/content/roles';
+import { additionalRoleLabels, roleLabel, type TraderType } from '@/lib/content/roles';
 import { CROPS } from '@/lib/content/crops';
 import {
   REGISTRATION_STATUS_LABEL,
@@ -155,8 +155,13 @@ function buildPayloadRows(detail: AdminRegistrationDetail): PayloadFieldRow[] {
     { key: 'traderName', label: 'Trader name', value: formatValue(payload.traderName) },
     {
       key: 'traderType',
-      label: 'Trader type',
+      label: 'Main actor type',
       value: roleLabel(payload.traderType as TraderType),
+    },
+    {
+      key: 'additionalTraderTypes',
+      label: 'Other actor types',
+      value: formatValue(additionalRoleLabels(payload.additionalTraderTypes).join(', ') || null),
     },
     { key: 'contactPerson', label: 'Contact person', value: formatValue(payload.contactPerson) },
     { key: 'position', label: 'Position', value: formatValue(payload.position) },

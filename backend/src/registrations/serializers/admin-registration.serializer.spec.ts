@@ -56,6 +56,7 @@ describe('toAdminRegistrationDetail — FR-10 scenarios 1, 2', () => {
       expect(result.payload).toEqual({
         traderName: 'Mbeya Seed Traders Ltd',
         traderType: 'seed_company',
+        additionalTraderTypes: [],
         contactPerson: 'Amina Hassan',
         position: 'Managing Director',
         district: 'Mbeya Urban',
@@ -69,6 +70,17 @@ describe('toAdminRegistrationDetail — FR-10 scenarios 1, 2', () => {
         capacityTons: 120,
         phone: '+255700000000',
       });
+    });
+
+    it('reads additionalTraderTypes from the payload, sorted; legacy payloads read as []', () => {
+      const withTypes = fixtureRow({
+        payload: { ...(fixtureRow().payload as object), additionalTraderTypes: ['offtaker', 'ngo'] },
+      });
+      expect(toAdminRegistrationDetail(withTypes, []).payload.additionalTraderTypes).toEqual([
+        'ngo',
+        'offtaker',
+      ]);
+      expect(toAdminRegistrationDetail(fixtureRow(), []).payload.additionalTraderTypes).toEqual([]);
     });
 
     it('includes the reference code, so the reviewer can quote it out-of-band', () => {

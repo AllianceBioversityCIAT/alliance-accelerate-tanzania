@@ -263,7 +263,7 @@ describe('ConsentPublicService', () => {
 
       expect(harness.actor.findUnique).toHaveBeenCalledWith({
         where: { id: CONSENT_ACTOR_ID },
-        include: { crops: { include: { crop: true } } },
+        include: { crops: { include: { crop: true } }, additionalTypes: true },
       });
       expect(result.record.crops).toEqual(['sorghum', 'groundnut']);
     });

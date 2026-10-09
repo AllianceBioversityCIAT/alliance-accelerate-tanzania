@@ -25,13 +25,14 @@ describe('template-columns', () => {
   };
 
   it('exports the template version stamp', () => {
-    expect(TEMPLATE_VERSION).toBe('v4');
+    expect(TEMPLATE_VERSION).toBe('v5');
   });
 
   it('lists columns in the exact field-staff order', () => {
     expect(TEMPLATE_COLUMNS.map((c) => c.field)).toEqual([
       'traderName',
       'traderType',
+      'additionalTraderTypes',
       'region',
       'district',
       'marketLocation',
@@ -83,6 +84,7 @@ describe('template-columns', () => {
     expect(requiredByField).toEqual({
       traderName: true,
       traderType: true,
+      additionalTraderTypes: false,
       region: true,
       district: false,
       marketLocation: false,
