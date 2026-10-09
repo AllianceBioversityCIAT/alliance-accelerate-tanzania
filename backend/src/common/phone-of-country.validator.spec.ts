@@ -21,6 +21,10 @@ describe('IsPhoneOfCountry', () => {
     ['KE', '+254 712 345 678'],
     ['UG', '00256772123456'],
     ['CI', '+225 07 12 34 56 78'],
+    ['TZ', '0712-345-678'],
+    ['TZ', '+255 (0) 712 345 678'],
+    ['TZ', '00255712345678'],
+    ['KE', '+254.712.345.678'],
   ])('accepts %s %s', async (country, phone) => {
     expect(await errorsFor(country, phone)).toEqual([]);
   });

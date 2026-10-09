@@ -87,6 +87,19 @@ describe('DiscoverRail', () => {
     expect(screen.getByText(/5 more without coordinates are not shown/i)).toBeInTheDocument();
   });
 
+  it('explains an empty list when every matching actor lacks coordinates', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={[]} total={3} unlocated={3} />);
+
+    expect(screen.getByText(/none of the matching actors have coordinates/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no actors match your filters/i)).not.toBeInTheDocument();
+  });
+
+  it('counts the loaded actors, not only the located ones, when the fetch was truncated', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={1200} truncated unlocated={998} />);
+
+    expect(screen.getByText(/only the first 1000 matching actors were loaded/i)).toBeInTheDocument();
+  });
+
   it('says nothing about coordinates when every matching actor is on the map', () => {
     render(<DiscoverRail {...DEFAULT_PROPS} />);
 

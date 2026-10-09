@@ -180,7 +180,9 @@ export default function DiscoverRail({
             aria-live="polite"
             className="rounded-md border border-border bg-surface p-4 text-sm text-muted"
           >
-            No actors match your filters. Try adjusting the crop, role, or region.
+            {unlocated > 0
+              ? 'None of the matching actors have coordinates, so none can be shown on the map.'
+              : 'No actors match your filters. Try adjusting the crop, role, or region.'}
           </div>
         ) : (
           // Scrollable actor list (FR-5, NFR-3).
@@ -239,8 +241,8 @@ export default function DiscoverRail({
               the fetch actually fell short, so the ordinary case is unchanged. */}
           {!loading && isTruncated && (
             <p className="mt-1 text-xs text-warning">
-              This map is showing the first {shownCount}. Narrow the filters to
-              see the rest.
+              Only the first {shownCount + unlocated} matching actors were loaded.
+              Narrow the filters to see the rest.
             </p>
           )}
         </div>

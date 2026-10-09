@@ -28,7 +28,7 @@ const CoordinatePickerMap = dynamic(() => import('./CoordinatePickerMap'), {
   ssr: false,
   loading: () => (
     <div
-      className="flex h-80 w-full items-center justify-center rounded-md border border-border bg-surface-alt"
+      className="flex h-96 w-full items-center justify-center rounded-md border border-border bg-surface-alt"
       role="status"
       aria-label="Loading map"
     >
@@ -78,7 +78,7 @@ export interface CoordinatePickerProps {
   disabled?: boolean;
   /** An existing hint element's id (e.g. `RegistrationForm`'s `gpsHintId`) to join (FR-5). */
   describedBy?: string;
-  /** The form's country: frames the empty map (Tanzania for `TZ`, else Africa). */
+  /** The form's country: frames the empty map on it (Africa when none). */
   country?: string;
 }
 

@@ -61,6 +61,8 @@ export interface ActorMapProps {
   onSelectActor: (id: string | null) => void;
   /** Country filter; when set the map frames that country. */
   country?: string;
+  /** Matching actors left off because they have no coordinates. */
+  unlocated?: number;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ export default function ActorMap({
   selectedActorId,
   onSelectActor,
   country,
+  unlocated = 0,
 }: ActorMapProps) {
   // Derive the actors array — empty when data is null/undefined.
   const actors: PublicActor[] = data?.data ?? [];
@@ -124,7 +127,9 @@ export default function ActorMap({
         aria-live="polite"
         aria-label="No actors match the current filters"
       >
-        <p className="text-base font-medium text-fg">No actors match</p>
+        <p className="text-base font-medium text-fg">
+          {unlocated > 0 ? 'No matching actor has coordinates' : 'No actors match'}
+        </p>
         <p className="text-sm text-muted">
           Try adjusting your filters to see actors on the map.
         </p>

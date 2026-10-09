@@ -8,7 +8,11 @@ import { countryName, callingCode } from '@/lib/content/countries';
 /** Côte d'Ivoire, Gabon and Congo: the leading 0 belongs to the subscriber number. */
 const LEADING_ZERO_CALLING_CODES = new Set(['225', '241', '242']);
 
-const clean = (raw: string) => raw.split('/')[0].trim().replace(/[()]/g, '').replace(/\s+/g, '');
+const clean = (raw: string) =>
+  (raw.split('/').map((part) => part.trim()).find((part) => part !== '') ?? '')
+    .replace(/\(0\)/g, '')
+    .replace(/[()\s.-]/g, '')
+    .replace(/^00/, '+');
 
 function isTanzanian(phone: string): boolean {
   return /^\+?255[1-9]\d{8}$/.test(phone) || /^0\d{9}$/.test(phone) || /^[67]\d{8}$/.test(phone);
@@ -20,7 +24,7 @@ export function isPhoneOfCountry(country: string, raw: string): boolean {
   const phone = clean(raw);
   if (country === 'TZ') return isTanzanian(phone);
   const first = LEADING_ZERO_CALLING_CODES.has(cc) ? '\\d' : '[1-9]';
-  return new RegExp(`^\\+${cc}${first}\\d{5,11}$`).test(phone.replace(/^00/, '+'));
+  return new RegExp(`^\\+${cc}${first}\\d{5,11}$`).test(phone);
 }
 
 export function phoneOfCountryMessage(country: string): string {

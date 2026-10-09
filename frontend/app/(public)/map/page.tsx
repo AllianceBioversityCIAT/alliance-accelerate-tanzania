@@ -18,7 +18,7 @@
 // route handlers — Leaflet is loaded only inside <ActorMap> via dynamic import.
 // Token discipline (NFR-4): no raw hex anywhere in this file.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useDashboardActors } from '@/lib/dashboard/useDashboardActors';
 import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 import ActorMap from '@/components/map/ActorMap';
@@ -44,7 +44,8 @@ export default function MapPage() {
   // 1 000-marker map "1200 actors shown" (ATP-68).
   const { actors: matched, total, truncated, loading, error } = useDashboardActors(filters);
   // Only actors with coordinates can be on the map, so only they are listed beside it.
-  const actors = matched.filter((a) => a.gps != null);
+  // Memoized: LeafletMap rebuilds its markers and re-fits whenever this reference changes.
+  const actors = useMemo(() => matched.filter((a) => a.gps != null), [matched]);
   const unlocated = matched.length - actors.length;
 
   // Build the PublicActorList shape expected by <ActorMap data=…>.
@@ -101,6 +102,7 @@ export default function MapPage() {
           selectedActorId={selectedActorId}
           onSelectActor={setSelectedActorId}
           country={filters.country}
+          unlocated={unlocated}
         />
       </section>
     </div>

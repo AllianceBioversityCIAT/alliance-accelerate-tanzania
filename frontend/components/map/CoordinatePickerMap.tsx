@@ -24,7 +24,7 @@
 // Forward pointer (2) — `PICKER_ZOOM` below is this component's OWN view
 // policy, not `LeafletMap`'s. `INITIAL_ZOOM` (6, full-viewport country
 // overview) and `ACTOR_ZOOM` (11, fly-to-a-selected-actor) stay in
-// `LeafletMap.tsx` on purpose (T-2 review) — a ~300px map embedded in a form
+// `LeafletMap.tsx` on purpose (T-2 review) — a ~380px map embedded in a form
 // needs its own value, not a borrowed one, so FR-8's "one definition, no new
 // coupling" holds for the constants that are actually shared (§7.2) without
 // smuggling view policy in behind it.
@@ -45,9 +45,9 @@ import { countryBounds } from '@/lib/content/countries';
 // ── Constants ────────────────────────────────────────────────────────────────
 
 // This picker's zoom for a PLACED point (FR-2 sc. 1) — close enough to place
-// a pin precisely in a ~300px-tall embedded map. Deliberately NOT imported
+// a pin precisely in a ~380px-tall embedded map. Deliberately NOT imported
 // from `LeafletMap.tsx` (forward pointer 2), and NOT used for the empty
-// view (FR-2 sc. 2): z12 over a ~300px container shows ≈12 km, not a
+// view (FR-2 sc. 2): z12 over a ~380px container shows ≈15 km, not a
 // country (T-3 review FAIL 2 — measured ≈38 m/px at -6.37° lat). The empty
 // view is framed by `fitBounds` in the init effect below instead.
 const PICKER_ZOOM = 12;
@@ -146,7 +146,7 @@ export interface CoordinatePickerMapProps {
   disabled?: boolean;
   /** Called when a click or drop lands outside Africa; nothing is written. */
   onOutsideBounds?: () => void;
-  /** Frames the empty view: Tanzania for `TZ`, all of Africa otherwise. */
+  /** Frames the empty view on this country; all of Africa when none. */
   country?: string;
 }
 
@@ -224,8 +224,10 @@ export default function CoordinatePickerMap({
     // Bounds are `readonly` tuples; `toLatLngBounds` spreads them into the
     // mutable shape Leaflet's types expect (TS2345 otherwise).
     map.fitBounds(emptyViewBounds(countryRef.current));
-    // Zooming out stops at Africa: every accepted coordinate is in it.
-    map.setMinZoom(map.getBoundsZoom(toLatLngBounds(AFRICA_BOUNDS)));
+    // Zooming out stops at Africa (every accepted coordinate is in it), re-measured on resize.
+    const fitAfricaMinZoom = () => map.setMinZoom(map.getBoundsZoom(toLatLngBounds(AFRICA_BOUNDS)));
+    fitAfricaMinZoom();
+    map.on('resize', fitAfricaMinZoom);
 
     L.tileLayer(OSM_TILE_URL, {
       attribution: OSM_ATTRIBUTION,

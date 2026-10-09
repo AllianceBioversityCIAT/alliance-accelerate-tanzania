@@ -399,15 +399,21 @@ export function normalizePhone(
 }
 
 /**
- * Normalize one phone candidate (already trimmed, no `/` splitting). Strips
- * parentheses and internal whitespace, then matches the resulting digit
- * string against the four length/prefix shapes that unambiguously resolve
- * to a Tanzanian E.164 number. No other punctuation is stripped — a value
- * with a dash or other separator is not a measured format, so it falls
- * through to `null` rather than being guessed at.
+ * Separators people type (spaces, dashes, dots, parentheses) and a "(0)"
+ * trunk marker after the country code are dropped; a leading 00 becomes +.
+ */
+function cleanPhone(candidate: string): string {
+  return candidate.replace(/\(0\)/g, '').replace(/[()\s.-]/g, '').replace(/^00/, '+');
+}
+
+/**
+ * Normalize one phone candidate (already trimmed, no `/` splitting). After
+ * {@link cleanPhone}, matches the digit string against the four length/prefix
+ * shapes that unambiguously resolve to a Tanzanian E.164 number; anything
+ * else falls through to `null` rather than being guessed at.
  */
 function normalizeSinglePhone(candidate: string): string | null {
-  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '');
+  const cleaned = cleanPhone(candidate);
   if (cleaned === '') return null;
 
   // Already `+255` + 9 digits. The subscriber part may not begin with `0`
@@ -456,7 +462,7 @@ const LEADING_ZERO_CALLING_CODES = new Set(['225', '241', '242']);
  * number; anything else → null.
  */
 function normalizeInternationalPhone(candidate: string, callingCode: string): string | null {
-  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '').replace(/^00/, '+');
+  const cleaned = cleanPhone(candidate);
   const first = LEADING_ZERO_CALLING_CODES.has(callingCode) ? '\\d' : '[1-9]';
   const match = new RegExp(`^\\+${callingCode}(${first}\\d{5,11})$`).exec(cleaned);
   return match ? `+${callingCode}${match[1]}` : null;

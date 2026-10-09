@@ -153,7 +153,7 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     field: 'country',
     required: true,
     allowedValues: AFRICAN_COUNTRIES.map((c) => c.name),
-    format: 'Choose a country from the dropdown (a pasted ISO code, e.g. TZ, is also accepted)',
+    format: 'Choose a country from the dropdown',
   },
   {
     header: 'Region',
