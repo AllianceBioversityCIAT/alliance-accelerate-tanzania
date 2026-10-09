@@ -345,7 +345,7 @@ Resources:
       MultiAZ: false             # single-AZ (NFR-6)
       StorageEncrypted: true     # at-rest encryption
       BackupRetentionPeriod: 1   # minimal backups for dev (NFR-6)
-      DeletionProtection: false  # easy teardown (NFR-6)
+      DeletionProtection: true   # production data: block accidental instance deletion
       # No DBSubnetGroup → default VPC (NFR-3).
       Tags:
         - Key: Name
@@ -405,9 +405,8 @@ Resources:
   #           step for this row ran at all.
   #         - DeletionProtection=INACTIVE - AWS's universal opt-in
   #           convention for deletion protection, not a CLI-help-quoted
-  #           default. Matches this stack's existing explicit
-  #           `DeletionProtection: false` posture on `Db`
-  #           (line ~297 above). `CustomEmailSenderKey` (a KMS key) has no
+  #           default. (`Db` itself has `DeletionProtection: true`
+  #           since this became production.) `CustomEmailSenderKey` (a KMS key) has no
   #           `DeletionProtection` property at all - it uses
   #           `PendingWindowInDays` instead, and its own comment
   #           attributes the stack's easy-teardown posture to elsewhere in
@@ -921,9 +920,8 @@ Resources:
       # DD-2d: rotation stays off (near-worthless for codes that live
       # minutes; reasoned in design.md §4/DD-2d, not re-opened at T-6).
       # PendingWindowInDays shortened from KMS's 30-day default to match
-      # this stack's easy-teardown posture (DeletionProtection: false
-      # elsewhere in this stack) - 30 days would leave a billed key behind
-      # after a stack delete.
+      # the stack's original easy-teardown posture - 30 days would leave a
+      # billed key behind after a stack delete.
       # Written out rather than left to the default, for the same reason
       # KeySpec is (above): a reader should never have to know an AWS
       # default to understand this resource. DD-2d: off deliberately -
