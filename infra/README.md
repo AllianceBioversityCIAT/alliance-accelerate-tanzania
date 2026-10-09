@@ -755,78 +755,33 @@ aws ses delete-identity-policy --identity j.cadavid@cgiar.org \
 
 ---
 
-## 11. Hardening follow-up (`infra/network-hardening`)
+## 11. Production posture of the data stack (decided 2026-10-09)
 
-These stacks were written as a **dev bootstrap**, intentionally trading production
-posture for a minimal, cheap, easy-to-deploy footprint (DD-1/DD-2/DD-3, NFR-3).
-That trade was correct for what they were.
+These stacks were written as a **dev bootstrap**, trading production posture for a
+minimal, cheap footprint (DD-1/DD-2/DD-3, NFR-3). `docs/infrastructure.md` §1
+records that this deployment is now **production**, so each trade-off was
+re-evaluated against that role on **2026-10-09** (product owner; **OQ-INFRA-7**,
+resolved). The templates still say `dev-only` — read that as history.
 
-⚠️ **They are no longer a dev bootstrap.** `docs/infrastructure.md` §1 records
-that this deployment is **production** — the only deployed environment, serving
-the public at `accelerate-tz.alliance.cgiar.org`, with no development, staging or
-test environment planned. The trade-off was never re-evaluated against that change
-of role; it carried over silently, which is why the templates still say `dev-only`
-and this section still said "dev bootstrap". Everything below is therefore an
-**open production risk**, not deferred dev work — same list, different standing.
-Priority and acceptance are **OQ-INFRA-7** in `docs/infrastructure.md`.
+| Setting | Decision |
+|---|---|
+| Public RDS endpoint, `0.0.0.0/0:3306`, unverified TLS (`accept_invalid_certs`) | **Accepted for cost.** The fix — Lambda-in-VPC, private RDS, VPC endpoints/NAT, RDS Proxy or IAM auth for verified TLS — carries a recurring cost. The `infra/network-hardening` spec will not be written. |
+| `MultiAZ: false` | **Accepted for cost.** An AZ failure is an outage. |
+| Backups | **Handled outside the stack.** IBD's own server dumps the database on a cron schedule. `BackupRetentionPeriod` stays at `1` — free, and the only point-in-time recovery; do not set it to `0` (that also reboots the instance). |
+| `DeletionProtection` | **Enabled 2026-10-09** (`34e4f27`). |
 
-The hardening — to be specified separately as **`infra/network-hardening`** —
-covers:
+What stands between the internet and the data is therefore a **strong generated
+password** in Secrets Manager and **TLS-encrypted** connections (chain not
+verified).
 
-- **Lambda-in-VPC** with **private RDS** (no public DB endpoint; drop the
-  `0.0.0.0/0:3306` ingress rule).
-- **VPC endpoints / NAT** for the now-private Lambda's egress (Secrets Manager,
-  Cognito JWKS, AWS SDK calls).
-- **RDS Proxy** for connection pooling under higher concurrency.
-- **RDS IAM authentication** (replace the long-lived Secrets Manager password).
-- **Verified TLS** — certificate-chain validation (`sslaccept=strict`, or RDS
-  Proxy / IAM auth); today `accept_invalid_certs`.
-- **Durability and availability** (added 2026-09-29 with the change of role):
-  raise `BackupRetentionPeriod` above 1 day and decide `MultiAZ` deliberately.
-  (`DeletionProtection` was on this list; enabled on the live instance
-  2026-10-09.) These sit in `10-data-auth/template.yaml`
-  alongside the network settings and were chosen for the same reason (NFR-6,
-  cost on a disposable stack), so they belong in the same follow-up.
+⚠️ **The external backups depend on the public endpoint.** IBD's server reaches
+RDS through the same `0.0.0.0/0` rule. Anyone who later closes that rule or makes
+the instance private must give that server another way in first, or the backups
+stop without any error in this repository.
 
-Until then, the public RDS endpoint is mitigated by **TLS-required** connections
-(unverified certificate chain) and a **strong generated password** in Secrets
-Manager.
+**The planned wipe is a data operation, not a stack operation.** Deleting rows or
+dropping and re-seeding schemas is unaffected by `DeletionProtection`, which
+guards the *DB instance*.
 
-The third mitigation this section lists — **no real applicant PII yet** — is the
-one with a **known expiry**, and it is the reason the items above have a deadline
-rather than a backlog position.
-
-**The handover (product owner, 2026-09-29).** The database holds demonstration
-data only. It is shown to the client at a walkthrough meeting on **Thursday
-2026-10-01**, wiped immediately afterwards because the contents are fabricated,
-and the client then begins entering **their own real data**. From that point the
-database holds real records about real organisations and real named contact
-people, and this mitigation is gone.
-
-**The trigger is the first real record, not the date.** The meeting may move; the
-property that matters does not. A previous version of this paragraph carried a
-bare date (2026-09-17) with no expiry condition attached, which is precisely how
-it went stale unnoticed — the same defect §11's own opening now describes at the
-level of the whole environment. So: treat this mitigation as **live until the
-first real record is written, expected 2026-10-01**, and as **void from that
-moment**, whenever it actually arrives.
-
-Two consequences worth stating plainly, because they are easy to get backwards:
-
-- **The planned wipe is a data operation, not a stack operation.** Deleting rows
-  or dropping and re-seeding schemas is unaffected by `DeletionProtection`, which
-  guards the *DB instance*. Deletion protection (enabled 2026-10-09) therefore
-  does not interfere with any wipe or re-seed.
-- **Everything above gets harder to change after the handover, not easier.** A
-  maintenance window on a database holding the client's own working data is a
-  conversation with the client; today it is a decision internal to the team. The
-  cheap item left in the hardening list — backup retention — is reversible,
-  takes effect without downtime at its current value, and are
-  materially easier to land on **2026-09-30** than on **2026-10-02**.
-
-**Easy teardown** (section 10) is listed here as a mitigation of the *dev*
-posture and does not survive the change of role either: on a production database,
-a one-day backup window makes teardown a risk
-rather than a safety valve. Note that easy teardown is **not** what the
-2026-10-01 wipe needs — see above; that is a data operation, and section 10 is
-about destroying the stack.
+**Easy teardown** (section 10) no longer applies to the database: deletion
+protection makes destroying it a deliberate two-step act.
