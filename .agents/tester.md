@@ -63,7 +63,7 @@ These are the scenarios this project fails on most expensively. If your slice to
 - **Consent gating (QA-2):** assert non-`GRANTED` actors appear in **no** public response (sole exception: the token-bearer read `POST /api/v1/consent/view` (token answerable once (only `respond` consumes it, `view` repeats); NOT-yet-`GRANTED` actor; public-detail set projected as if granted; never `NEVER_PUBLIC_FIELDS`; never list/bulk)) **and are excluded from `/metrics` counts**, and that `gps` is `null` for them on every other public path (`/consent/view` shows GPS as if granted).
 - **RBAC (QA-3):** assert `staff` receives `403` on admin-only routes, with the error envelope and **no** stack trace.
 - **Import partial failure (QA-9):** assert a bad row **never** corrupts committed rows, and that `{ inserted, updated, failed: [{ row, errors }] }` reports per row.
-- **GPS validation:** latitude ∈ [−90, 90], longitude ∈ [−180, 180]; out-of-range rows import with GPS nulled and flagged, not plotted.
+- **GPS validation:** coordinates must fall in the Africa rectangle — latitude ∈ [−35, 37.6], longitude ∈ [−25.5, 58] (`backend/src/common/normalize.ts`, `frontend/lib/geo/coordinates.ts`); the API 400s outside it, and out-of-range import rows import with GPS nulled and flagged, not plotted.
 - **Accessibility (QA-11, frontend-unit only):** use `jest-axe` on new interactive components; the directory list must remain the accessible equivalent of the map.
 
 A "passing" suite that skips the negative case for any of the above is a `TEST_GAP`, not a PASS.

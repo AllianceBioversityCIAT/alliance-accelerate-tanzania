@@ -1,6 +1,7 @@
 // @sdd-spec admin/bulk-actor-operations
 
 import { Prisma } from '@prisma/client';
+import { AdditionalTypeLink, mapAdditionalTypes } from '../common/additional-types';
 import { SerializableCropLink } from '../common/role-aware.serializer';
 
 /**
@@ -25,6 +26,8 @@ export interface AdminActor {
   region: string;
   district: string | null;
   traderType: string;
+  /** Extra actor types beyond the main one; `[]` when none. */
+  additionalTraderTypes: string[];
   /** Published once consent is `GRANTED` (`actors/public-profile-disclosure` FR-4). */
   contactPerson: string | null;
   sex: string | null;
@@ -81,6 +84,7 @@ interface AdminActorInput {
   consentObtainedAt?: Date | null;
   consentReference?: string | null;
   crops?: SerializableCropLink[] | null;
+  additionalTypes?: AdditionalTypeLink[] | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,6 +103,7 @@ export function toAdminActor(actor: AdminActorInput): AdminActor {
     region: actor.region,
     district: actor.district ?? null,
     traderType: actor.traderType,
+    additionalTraderTypes: mapAdditionalTypes(actor.additionalTypes),
     contactPerson: actor.contactPerson ?? null,
     sex: actor.sex ?? null,
     position: actor.position ?? null,

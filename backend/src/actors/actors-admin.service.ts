@@ -9,6 +9,7 @@ import {
 import { ConsentMethod, ConsentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminActorListQueryDto } from './dto/admin-actor-list-query.dto';
+import { sortTraderTypes } from '../common/additional-types';
 import { buildAdminActorWhere } from './admin-actor-where.util';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { AdminActorUpdateDto } from './dto/admin-actor-update.dto';
@@ -90,6 +91,7 @@ const MAX_PAGE_SIZE = 100;
 /** Crop include reused so the Admin serializer can resolve crop names. */
 const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
+  additionalTypes: true,
 } satisfies Prisma.ActorInclude;
 
 type FrozenValue = string | Date | null | undefined;
@@ -247,6 +249,13 @@ export class ActorsAdminService {
             } as Prisma.ActorCreateInput,
           });
 
+          const additionalTypes = sortTraderTypes(dto.additionalTraderTypes);
+          if (additionalTypes.length > 0) {
+            await tx.actorAdditionalType.createMany({
+              data: additionalTypes.map((traderType) => ({ actorId: created.id, traderType })),
+            });
+          }
+
           if (dto.crops && dto.crops.length > 0) {
             const cropLinks = await this.buildCropLinks(
               tx,
@@ -379,7 +388,18 @@ export class ActorsAdminService {
 
         const dtoForWrite = this.assertConsentProvenance(before, dto);
 
-        const updateData = this.buildScalarData(dtoForWrite);
+        this.assertAdditionalTypesExcludeMain(before, dto);
+
+        const updateData: Record<string, unknown> = { ...this.buildScalarData(dtoForWrite) };
+        // Replace the set inside the same update; `updatedAt` is set explicitly
+        // because a nested-only write does not stamp it.
+        if (dto.additionalTraderTypes !== undefined) {
+          updateData.updatedAt = new Date();
+          updateData.additionalTypes = {
+            deleteMany: {},
+            create: sortTraderTypes(dto.additionalTraderTypes).map((traderType) => ({ traderType })),
+          };
+        }
         if (Object.keys(updateData).length > 0) {
           await tx.actor.update({
             where: { id },
@@ -445,6 +465,35 @@ export class ActorsAdminService {
         error: 'Conflict',
         message,
         details: [{ field: 'expectedUpdatedAt', message }],
+      });
+    }
+  }
+
+  /** The merged main type must not appear among the effective additional types (400 on `additionalTraderTypes`). */
+  private assertAdditionalTypesExcludeMain(
+    before: ActorWithCrops,
+    dto: AdminActorUpdateDto,
+  ): void {
+    // `@IsOptional()` lets null through; reject it rather than read it as "clear".
+    if (dto.additionalTraderTypes === null) {
+      const message = 'additionalTraderTypes must be an array; send [] to clear it';
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message,
+        details: [{ field: 'additionalTraderTypes', message }],
+      });
+    }
+    const main = dto.traderType ?? before.traderType;
+    const effective =
+      dto.additionalTraderTypes ?? before.additionalTypes.map((l) => l.traderType);
+    if (effective.includes(main)) {
+      const message = 'additionalTraderTypes must not contain the main traderType';
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message,
+        details: [{ field: 'additionalTraderTypes', message }],
       });
     }
   }

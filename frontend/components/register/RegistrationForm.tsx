@@ -65,9 +65,17 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ROLES } from '@/lib/content/roles';
+import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
+import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
 import { REGIONS } from '@/lib/content/regions';
 import { SearchableSelect } from '@/components/ui/SearchableSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
+import {
+  LATITUDE_HINT,
+  LONGITUDE_HINT,
+  latitudeRangeError,
+  longitudeRangeError,
+} from '@/lib/geo/coordinates';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 
 // ---------------------------------------------------------------------------
@@ -136,7 +144,8 @@ const AUTOCOMPLETE_HINTS: Partial<Record<keyof FormValues, string>> = {
 /** Human labels for the error summary — keyed identically to `FormValues`/`errors`. */
 const FIELD_LABELS: Record<keyof FormValues, string> = {
   traderName: 'Organisation name',
-  traderType: 'Trader type',
+  traderType: 'Main actor type',
+  additionalTraderTypes: 'Other actor types',
   contactPerson: 'Contact person',
   position: 'Position',
   district: 'District',
@@ -164,6 +173,7 @@ const FIELD_LABELS: Record<keyof FormValues, string> = {
 export interface FormValues {
   traderName: string;
   traderType: string;
+  additionalTraderTypes: string[];
   contactPerson: string;
   position: string;
   district: string;
@@ -209,6 +219,7 @@ export interface FormValues {
 export interface RegistrationPayloadInput {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[];
   contactPerson: string;
   position?: string;
   district?: string;
@@ -292,6 +303,7 @@ function toFormValues(restored?: FormValues): FormValues {
   const blank: FormValues = {
     traderName: '',
     traderType: '',
+    additionalTraderTypes: [],
     contactPerson: '',
     position: '',
     district: '',
@@ -314,6 +326,7 @@ function toFormValues(restored?: FormValues): FormValues {
   return {
     ...blank,
     ...restored,
+    additionalTraderTypes: restored?.additionalTraderTypes ?? [],
     consentAccepted: false,
     consentPolicyVersion: '',
   };
@@ -350,6 +363,7 @@ function buildPayload(values: FormValues): RegistrationPayloadInput {
   return {
     traderName: values.traderName.trim(),
     traderType: values.traderType,
+    additionalTraderTypes: values.additionalTraderTypes.length > 0 ? values.additionalTraderTypes : undefined,
     contactPerson: values.contactPerson.trim(),
     position: trimmedOrUndefined(values.position),
     district: trimmedOrUndefined(values.district),
@@ -382,7 +396,7 @@ function validate(values: FormValues): Record<string, string> {
     errors.traderName = `Must be ${MAX_LENGTHS.traderName} characters or fewer.`;
   }
 
-  if (!values.traderType) errors.traderType = 'Select a trader type.';
+  if (!values.traderType) errors.traderType = 'Select a main actor type.';
 
   if (!values.contactPerson.trim()) {
     errors.contactPerson = 'Contact person is required.';
@@ -413,12 +427,10 @@ function validate(values: FormValues): Record<string, string> {
   } else if (latRaw && lngRaw) {
     const lat = Number(latRaw);
     const lng = Number(lngRaw);
-    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      errors.gpsLatitude = 'Latitude must be between -90 and 90.';
-    }
-    if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      errors.gpsLongitude = 'Longitude must be between -180 and 180.';
-    }
+    const latError = latitudeRangeError(lat);
+    const lngError = longitudeRangeError(lng);
+    if (latError) errors.gpsLatitude = latError;
+    if (lngError) errors.gpsLongitude = lngError;
   }
 
   if (values.crops.length === 0) errors.crops = 'Select at least one crop.';
@@ -555,7 +567,14 @@ export default function RegistrationForm({
   const fieldId = useCallback((field: keyof FormValues) => `${baseId}-${field}`, [baseId]);
 
   const setField = useCallback(<K extends keyof FormValues>(field: K, value: FormValues[K]) => {
-    setValues((prev) => ({ ...prev, [field]: value }));
+    setValues((prev) => ({
+      ...prev,
+      [field]: value,
+      // Picking a main type that was ticked as "other" drops it from the set.
+      ...(field === 'traderType'
+        ? { additionalTraderTypes: prev.additionalTraderTypes.filter((t) => t !== value) }
+        : {}),
+    }));
     setErrors((prev) => {
       if (!prev[field]) return prev;
       const next = { ...prev };
@@ -577,6 +596,14 @@ export default function RegistrationForm({
       delete next.crops;
       return next;
     });
+  }, []);
+
+  const toggleAdditionalType = useCallback((type: string) => {
+    setValues((prev) => ({
+      ...prev,
+      additionalTraderTypes: toggleListValue(prev.additionalTraderTypes, type),
+    }));
+    setErrors((prev) => withoutFieldError(prev, 'additionalTraderTypes'));
   }, []);
 
   const handleSubmit = useCallback(
@@ -761,10 +788,21 @@ export default function RegistrationForm({
             {renderInput('traderName', 'Organisation name', 'text', true)}
             {renderSelect(
               'traderType',
-              'Trader type',
+              'Main actor type',
               Object.entries(ROLES).map(([value, meta]) => ({ value, label: meta.label })),
               true,
             )}
+            <div className="lg:col-span-2">
+              <AdditionalTypesField
+                baseId={baseId}
+                groupId={fieldId('additionalTraderTypes')}
+                mainType={values.traderType}
+                selected={values.additionalTraderTypes}
+                onToggle={toggleAdditionalType}
+                disabled={submitting}
+                error={errors.additionalTraderTypes}
+              />
+            </div>
           </div>
         </fieldset>
       </div>
@@ -795,13 +833,13 @@ export default function RegistrationForm({
             organisation on the map using the region and district above.
           </p>
           <div className="mt-2 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, 'Decimal between -90 and 90', gpsHintId)}
+            {renderInput('gpsLatitude', 'GPS latitude', 'number', false, LATITUDE_HINT, gpsHintId)}
             {renderInput(
               'gpsLongitude',
               'GPS longitude',
               'number',
               false,
-              'Decimal between -180 and 180',
+              LONGITUDE_HINT,
               gpsHintId,
             )}
           </div>

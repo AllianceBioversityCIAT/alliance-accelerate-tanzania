@@ -18,7 +18,7 @@
 
 import type { PublicActor } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
-import RoleBadge from './RoleBadge';
+import { RoleBadges } from './RoleBadge';
 
 // ── Crop chip helper ──────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ export default function ActorPopup({ actor }: ActorPopupProps) {
 
       {/* Role badge */}
       <div className="mb-2">
-        <RoleBadge traderType={actor.traderType} />
+        <RoleBadges traderType={actor.traderType} additionalTraderTypes={actor.additionalTraderTypes} />
       </div>
 
       {/* Region · District */}

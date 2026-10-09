@@ -9,6 +9,7 @@
 import {
   COORDINATE_PRECISION,
   LATITUDE_RANGE,
+  isInAfrica,
   LONGITUDE_RANGE,
   formatCoordinate,
   parseCoordinatePair,
@@ -25,12 +26,12 @@ describe('constants', () => {
     expect(COORDINATE_PRECISION).toBe(5);
   });
 
-  it('bounds LATITUDE_RANGE at [-90, 90]', () => {
-    expect(LATITUDE_RANGE).toEqual([-90, 90]);
+  it('bounds LATITUDE_RANGE to the Africa rectangle [-35, 37.6]', () => {
+    expect(LATITUDE_RANGE).toEqual([-35, 37.6]);
   });
 
-  it('bounds LONGITUDE_RANGE at [-180, 180]', () => {
-    expect(LONGITUDE_RANGE).toEqual([-180, 180]);
+  it('bounds LONGITUDE_RANGE to the Africa rectangle [-25.5, 58]', () => {
+    expect(LONGITUDE_RANGE).toEqual([-25.5, 58]);
   });
 });
 
@@ -98,9 +99,15 @@ describe('parseCoordinatePair — a valid pair', () => {
     expect(parseCoordinatePair('-6.8', '39.28')).toEqual({ lat: -6.8, lng: 39.28 });
   });
 
-  it('accepts the inclusive range boundaries (-90/90, -180/180), matching both forms’ existing checks', () => {
-    expect(parseCoordinatePair('90', '180')).toEqual({ lat: 90, lng: 180 });
-    expect(parseCoordinatePair('-90', '-180')).toEqual({ lat: -90, lng: -180 });
+  it('accepts the inclusive Africa boundaries, matching both forms’ checks', () => {
+    expect(parseCoordinatePair('37.6', '58')).toEqual({ lat: 37.6, lng: 58 });
+    expect(parseCoordinatePair('-35', '-25.5')).toEqual({ lat: -35, lng: -25.5 });
+  });
+
+  it('rejects a point outside Africa (Bogotá), so it is never placed', () => {
+    expect(parseCoordinatePair('4.711', '-74.0721')).toBeNull();
+    expect(isInAfrica(4.711, -74.0721)).toBe(false);
+    expect(isInAfrica(-6.8, 39.28)).toBe(true); // Dar es Salaam
   });
 });
 

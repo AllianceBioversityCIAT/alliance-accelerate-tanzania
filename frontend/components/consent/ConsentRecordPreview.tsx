@@ -13,7 +13,7 @@
 import type { PublicActorDetail } from '@/lib/api/actors';
 import { formatHemisphericPair } from '@/lib/geo/coordinates';
 import { CROPS } from '@/lib/content/crops';
-import { roleLabel } from '@/lib/content/roles';
+import { additionalRoleLabels, roleLabel } from '@/lib/content/roles';
 import { CONSENT_PAGE_COPY } from '@/lib/content/consent-requests';
 
 const DASH = '—';
@@ -31,6 +31,10 @@ export default function ConsentRecordPreview({ record }: Readonly<{ record: Publ
   const rows: ReadonlyArray<{ label: string; value: string; mono?: boolean }> = [
     { label: 'Organization', value: record.traderName || DASH },
     { label: 'Type', value: record.traderType ? roleLabel(record.traderType) : DASH },
+    {
+      label: 'Other types',
+      value: additionalRoleLabels(record.additionalTraderTypes).join(', ') || DASH,
+    },
     { label: 'Region', value: record.region || DASH },
     { label: 'District', value: record.district || DASH },
     {

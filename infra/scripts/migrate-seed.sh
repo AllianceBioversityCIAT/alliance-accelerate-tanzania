@@ -114,9 +114,8 @@ DB_PASS_ENC="$(jq -rn --arg p "$DB_PASS" '$p | @uri')"
 # TLS posture: the connection is encrypted, but the RDS server cert chain is NOT
 # verified. Prisma's MySQL (Rust) engine cannot reliably trust a custom CA via the
 # URL (sslcert) or NODE_EXTRA_CA_CERTS, so strict verification is impractical on
-# this stack. This environment is production (docs/infrastructure.md §1), so this
-# is an open production risk (OQ-INFRA-7), not a dev trade-off. The "no real PII
-# yet" mitigation and its 2026-10-01 expiry live in infra/README.md §11.
+# this stack. This environment is production; accepted for cost on 2026-10-09
+# (OQ-INFRA-7, infra/README.md §11).
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_ENC}@${RDS_ENDPOINT}:${RDS_PORT}/${DB_NAME}?sslaccept=accept_invalid_certs"
 
 # Scrub the raw secret material now that the (encoded) URL is built.
@@ -133,7 +132,7 @@ echo "==> Applying Prisma migrations against $RDS_ENDPOINT (TLS) ..."
   DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
 )
 
-echo "==> Seeding the consented sample dataset (no real PII — NFR-5) ..."
+echo "==> Seeding reference crops (sample actors only if SEED_SAMPLE_ACTORS=true) ..."
 (
   cd "$BACKEND_DIR"
   # `prisma db seed` honors the package.json `prisma.seed` config (seed.ts).

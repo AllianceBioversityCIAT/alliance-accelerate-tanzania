@@ -220,6 +220,7 @@ import {
   RegistrationCreateDto,
   RegistrationPayloadDto,
 } from './dto/registration-create.dto';
+import { sortTraderTypes } from '../common/additional-types';
 import { isKnownConsentPolicyVersion } from './consent-policy';
 import {
   MAX_REFERENCE_ALLOCATION_ATTEMPTS,
@@ -257,6 +258,7 @@ function buildStoredPayload(payload: RegistrationPayloadDto): Prisma.InputJsonVa
     schemaVersion: REGISTRATION_PAYLOAD_SCHEMA_VERSION,
     traderName: payload.traderName,
     traderType: payload.traderType,
+    additionalTraderTypes: sortTraderTypes(payload.additionalTraderTypes),
     contactPerson: payload.contactPerson,
     position: payload.position ?? null,
     district: payload.district ?? null,

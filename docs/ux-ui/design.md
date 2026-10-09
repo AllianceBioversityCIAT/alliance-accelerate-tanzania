@@ -122,7 +122,7 @@
 
 - **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (renders only for a `GRANTED` actor — Contact section included; a non-consented actor's profile route 404s, so the whole page is absent, not the section masked) → optionally jump to Map centered on that actor.
   - The consent banner **overlays** the landing page, it does not gate it: every public route stays reachable while the decision is pending, and the choice persists so the banner is not shown again.
-- **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters → click marker → mini-profile popup → open full profile.
+- **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters (an actor matches on its main type or any additional type) → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
 - **Bulk seed (Admin):** Login → Admin → Import → upload CSV → preview mapping + validation summary → confirm → per-row result report.
 
@@ -133,7 +133,7 @@
 | Landing | Public | Hero, 3–4 metric stat cards, CTA into Directory & Map, crop legend. |
 | About | Public | Project narrative: hero, the challenge (3% formal-sector clause), the demand-led model (`PillarCards`), crops & value chains (per-crop cards with representative varieties), partners (`PartnerWall`), four enterprise case studies (the hero links the ACCELERATE project website), and an "About this registry" section with CTAs into Map / Directory / Contact. |
 | Directory | Public | Search bar, filter chips, paginated table/cards of actors (public fields only). |
-| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, type; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
+| Actor Profile | Public / Staff / Admin | Identity, location, crop(s), capacity, main type plus any additional types; for a consenting actor, the full record including a Contact section (`ProfileContact`) renders unconditionally — no "restricted" affordance remains. |
 | Seed Map | Public | Full-bleed Leaflet map, filter panel, marker popups, result count. |
 | Discovery Dashboard | Public | KPI tiles, filtered actor view, and a **Download view** button emitting a CSV of the current filter that never carries an actor's contact block (`lib/dashboard/csv.ts`) — structural, since it is built from the same list projection as the directory and map. Public audience — distinct from the role-aware admin export, which is cancelled (PRD §5 Out of Scope). |
 | Registration Form | Public | Sectioned form (Identity · Location · Crops & capacity · Contact · Data protection & consent), in-flow versioned consent disclosure, OTP verification step. Server-validated to the same DTO rules as the admin create form. |

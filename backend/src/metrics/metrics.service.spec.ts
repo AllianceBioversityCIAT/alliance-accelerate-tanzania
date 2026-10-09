@@ -28,6 +28,7 @@ describe('MetricsService (mocked Prisma)', () => {
       count: jest.Mock;
       groupBy: jest.Mock;
     };
+    actorAdditionalType: { groupBy: jest.Mock };
   };
 
   /**
@@ -40,6 +41,7 @@ describe('MetricsService (mocked Prisma)', () => {
     actorsMapped: number;
     regions: string[];
     traderTypes: string[];
+    additionalTypes?: string[];
     perCrop: Record<(typeof SLUGS)[number], number>;
   }) {
     prisma = {
@@ -58,6 +60,11 @@ describe('MetricsService (mocked Prisma)', () => {
           }
           return Promise.resolve([]);
         }),
+      },
+      actorAdditionalType: {
+        groupBy: jest.fn().mockImplementation(() =>
+          Promise.resolve((opts.additionalTypes ?? []).map((traderType) => ({ traderType }))),
+        ),
       },
     };
     service = new MetricsService(prisma as never);
@@ -132,6 +139,22 @@ describe('MetricsService (mocked Prisma)', () => {
 
     expect(metrics.regionsCovered).toBe(3);
     expect(metrics.actorTypes).toBe(2);
+  });
+
+  it('actorTypes counts the union of main and additional types of GRANTED actors', async () => {
+    setup({
+      actorsMapped: 30,
+      regions: ['Arusha'],
+      traderTypes: ['seed_company', 'ngo'],
+      additionalTypes: ['ngo', 'cooperative', 'offtaker'],
+      perCrop: { sorghum: 1, common_bean: 1, groundnut: 1 },
+    });
+
+    const metrics = await service.getMetrics();
+
+    expect(metrics.actorTypes).toBe(4);
+    const call = prisma.actorAdditionalType.groupBy.mock.calls[0][0];
+    expect(call.where.actor.consentStatus).toBe(ConsentStatus.GRANTED);
   });
 
   it('returns the exact Metrics shape (field-for-field with the frontend contract)', async () => {

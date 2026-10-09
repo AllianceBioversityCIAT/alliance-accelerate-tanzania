@@ -45,6 +45,7 @@ const VIEW: ConsentViewResponse = {
     region: 'Arusha',
     district: null,
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     capacityTons: 120,
     crops: ['sorghum', 'groundnut'],
     gps: { lat: -3.3869, long: 36.683 },
@@ -225,6 +226,19 @@ describe('ready state (FR-9)', () => {
     expect(within(dl).getAllByText('—').length).toBeGreaterThanOrEqual(3);
     // No input lives in the preview.
     expect(preview.querySelector('input, textarea, select')).toBeNull();
+  });
+
+  it('lists the additional actor types the accept would publish', async () => {
+    mockView.mockResolvedValue({
+      ...VIEW,
+      record: { ...VIEW.record, additionalTraderTypes: ['ngo', 'offtaker'] },
+    });
+    render(<ConsentPage />);
+    const heading = await screen.findByRole('heading', { name: 'Information that will be published' });
+    const dl = (heading.closest('section') as HTMLElement).querySelector('dl') as HTMLElement;
+
+    expect(within(dl).getByText('Other types')).toBeInTheDocument();
+    expect(within(dl).getByText('NGO, Offtaker')).toBeInTheDocument();
   });
 
   it('shows the organization read-only and four EMPTY required inputs', async () => {

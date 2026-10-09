@@ -132,7 +132,7 @@ describe('CoordinatePicker', () => {
 
     expect(receivedProps).not.toBeNull();
     expect(Object.keys(receivedProps!).sort()).toEqual(
-      ['disabled', 'latitude', 'longitude', 'onChange'].sort(),
+      ['disabled', 'latitude', 'longitude', 'onChange', 'onOutsideBounds'].sort(),
     );
     expect(typeof receivedProps!.onChange).toBe('function');
   });
@@ -265,6 +265,36 @@ describe('CoordinatePicker — use my current location (ATP-80)', () => {
     expect(lastCallbacks().options).toEqual(
       expect.objectContaining({ enableHighAccuracy: true, maximumAge: 0 }),
     );
+  });
+
+  it('refuses a device location outside Africa: nothing is set and the reason is shown', async () => {
+    const onChange = jest.fn();
+    render(<Host onChange={onChange} />);
+    await clickLocate();
+    act(() => lastCallbacks().success({ coords: { latitude: 4.711, longitude: -74.07, accuracy: 10 } }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/outside Africa, so it was not used/i);
+  });
+
+  it('clears a device-location error once the coordinates are set another way', async () => {
+    render(<Host />);
+    await clickLocate();
+    act(() => lastCallbacks().success({ coords: { latitude: 4.711, longitude: -74.07, accuracy: 10 } }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/outside Africa/i);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'type manually' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows why a map click outside Africa was not set, and clears it once the fields change', async () => {
+    render(<Host />);
+    await openPicker();
+    act(() => receivedProps!.onOutsideBounds!());
+    expect(screen.getByRole('alert')).toHaveTextContent(/must be in Africa/i);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'type manually' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('shows a busy, disabled control while waiting for the device', async () => {

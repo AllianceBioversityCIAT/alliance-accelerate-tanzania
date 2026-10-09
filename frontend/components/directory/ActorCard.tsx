@@ -17,7 +17,7 @@
 import Link from 'next/link';
 import type { PublicActor } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
-import RoleBadge from '@/components/map/RoleBadge';
+import { RoleBadges } from '@/components/map/RoleBadge';
 
 // ── Crop chip helper (mirrors ActorPopup.tsx) ─────────────────────────────────
 
@@ -82,7 +82,7 @@ export default function ActorCard({ actor }: ActorCardProps) {
 
       {/* ── Role badge ────────────────────────────────────────────────────── */}
       <div className="mb-2">
-        <RoleBadge traderType={traderType} />
+        <RoleBadges traderType={traderType} additionalTraderTypes={actor.additionalTraderTypes} />
       </div>
 
       {/* ── Region · District ─────────────────────────────────────────────── */}

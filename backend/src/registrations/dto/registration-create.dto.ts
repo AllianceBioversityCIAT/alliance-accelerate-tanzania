@@ -19,7 +19,14 @@ import {
   registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
+import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
+import {
+  CANONICAL_REGIONS,
+  LATITUDE_RANGE,
+  LONGITUDE_RANGE,
+  OUTSIDE_AFRICA_MESSAGE,
+  TRADER_TYPES,
+} from '../../common/normalize';
 import { CROP_NAMES } from '../../actors/dto/admin-actor-create.dto';
 
 /**
@@ -139,6 +146,9 @@ export class RegistrationPayloadDto {
   @IsIn(TRADER_TYPES as readonly string[])
   traderType!: string;
 
+  @IsAdditionalTraderTypes()
+  additionalTraderTypes?: string[];
+
   /**
    * Published on approval (`actors/public-profile-disclosure` FR-4,
    * authorised by Daniela Gómez, 2026-09-03/04) — no longer "review context
@@ -178,15 +188,15 @@ export class RegistrationPayloadDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(-90)
-  @Max(90)
+  @Min(LATITUDE_RANGE[0], { message: OUTSIDE_AFRICA_MESSAGE })
+  @Max(LATITUDE_RANGE[1], { message: OUTSIDE_AFRICA_MESSAGE })
   @RequiresPairedCoordinate('gpsLongitude')
   gpsLatitude?: number;
 
   @IsOptional()
   @IsNumber()
-  @Min(-180)
-  @Max(180)
+  @Min(LONGITUDE_RANGE[0], { message: OUTSIDE_AFRICA_MESSAGE })
+  @Max(LONGITUDE_RANGE[1], { message: OUTSIDE_AFRICA_MESSAGE })
   @RequiresPairedCoordinate('gpsLatitude')
   gpsLongitude?: number;
 

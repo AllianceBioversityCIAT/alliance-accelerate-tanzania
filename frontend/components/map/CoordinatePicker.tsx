@@ -20,9 +20,9 @@
 // single-field write is inexpressible here by construction, not by discipline.
 
 import dynamic from 'next/dynamic';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Button from '@/components/ui/Button';
-import { formatCoordinate } from '@/lib/geo/coordinates';
+import { OUTSIDE_AFRICA_MESSAGE, formatCoordinate, isInAfrica } from '@/lib/geo/coordinates';
 
 const CoordinatePickerMap = dynamic(() => import('./CoordinatePickerMap'), {
   ssr: false,
@@ -92,6 +92,13 @@ export default function CoordinatePicker({
 }: Readonly<CoordinatePickerProps>) {
   const [open, setOpen] = useState(initiallyOpen);
   const [locate, setLocate] = useState<LocateStatus>({ kind: 'idle' });
+  // A map click/drop outside Africa was refused; cleared once the fields change.
+  const [outsideRefused, setOutsideRefused] = useState(false);
+  // Both refusal messages go stale once the fields change: clear them then.
+  useEffect(() => {
+    setOutsideRefused(false);
+    setLocate((prev) => (prev.kind === 'error' ? { kind: 'idle' } : prev));
+  }, [latitude, longitude]);
   const mapRegionId = useId();
 
   function locateDevice() {
@@ -102,6 +109,13 @@ export default function CoordinatePicker({
     setLocate({ kind: 'locating' });
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        if (!isInAfrica(coords.latitude, coords.longitude)) {
+          setLocate({
+            kind: 'error',
+            message: `Your device's location is outside Africa, so it was not used. ${MANUAL_FALLBACK}`,
+          });
+          return;
+        }
         const lat = formatCoordinate(coords.latitude);
         const lng = formatCoordinate(coords.longitude);
         onChange(lat, lng);
@@ -162,6 +176,11 @@ export default function CoordinatePicker({
         {located &&
           `Location set from your device, accurate to about ${located.accuracy} m. Check the pin and drag it to the exact spot if needed.`}
       </p>
+      {outsideRefused && (
+        <p role="alert" className="text-xs text-danger">
+          {`${OUTSIDE_AFRICA_MESSAGE} That point was not set.`}
+        </p>
+      )}
       {locate.kind === 'error' && (
         <p role="alert" className="text-xs text-danger">
           {locate.message}
@@ -181,6 +200,7 @@ export default function CoordinatePicker({
             longitude={longitude}
             onChange={onChange}
             disabled={disabled}
+            onOutsideBounds={() => setOutsideRefused(true)}
           />
         </div>
       )}

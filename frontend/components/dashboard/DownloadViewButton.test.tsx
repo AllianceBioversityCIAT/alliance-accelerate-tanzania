@@ -81,6 +81,7 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     region: 'Dodoma',
     district: 'Kondoa',
     traderType: 'seed_company',
+    additionalTraderTypes: [],
     capacityTons: 200,
     crops: ['sorghum', 'common_bean'],
     gps: null,

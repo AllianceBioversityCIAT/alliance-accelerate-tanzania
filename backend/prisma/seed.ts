@@ -7,6 +7,10 @@
  *      to re-run; reproducible because the dataset is deterministic),
  *   3. re-links each actor's crops through the `CropsOnActors` join.
  *
+ * Steps 2–3 run only when `SEED_SAMPLE_ACTORS=true`. `prisma db seed` also runs
+ * on every Jenkins deploy (RUN_MIGRATIONS), so by default it writes the crops
+ * alone and never re-inserts sample actors into a live database.
+ *
  * Wiring: invoked by `prisma db seed` (configured in package.json). It needs a
  * reachable `DATABASE_URL`; in this environment there is none (docker down,
  * :3306 closed), so the LIVE run is a deferred step — the data SHAPE is proven
@@ -76,6 +80,13 @@ async function upsertActor(
 
 async function main(): Promise<void> {
   const cropIdBySlug = await upsertCrops();
+  if (process.env.SEED_SAMPLE_ACTORS !== 'true') {
+    // eslint-disable-next-line no-console
+    console.log(
+      `Seed complete: ${SEED_CROP_SLUGS.length} crops (sample actors skipped; set SEED_SAMPLE_ACTORS=true to load them).`,
+    );
+    return;
+  }
   for (const actor of SEED_ACTORS) {
     await upsertActor(actor, cropIdBySlug);
   }

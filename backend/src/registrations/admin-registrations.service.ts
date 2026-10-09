@@ -22,6 +22,7 @@ import { AdminActor, toAdminActor } from '../actors/admin-actor.serializer';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 import { FieldErrorDetail } from '../common/validation-pipe';
 import { MailService } from '../mail/mail.service';
+import { sortTraderTypes } from '../common/additional-types';
 import { AdminRegistrationListQueryDto } from './dto/admin-registration-list-query.dto';
 import { RegistrationApproveDto } from './dto/registration-approve.dto';
 import { RegistrationRejectDto } from './dto/registration-reject.dto';
@@ -103,6 +104,8 @@ export interface AdminRegistrationListRow {
   /** The applicant's organisation name — `Registration.payload.traderName`. */
   applicant: string;
   traderType: string;
+  /** `[]` for payloads queued before the field existed. */
+  additionalTraderTypes: string[];
   region: string;
   submittedAt: Date;
   status: RegistrationStatus;
@@ -153,6 +156,7 @@ const MAX_DISMISS_DUPLICATE_ATTEMPTS = 3;
 interface QueueRowPayload {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[] | null;
   region: string;
   phone?: string | null;
   gpsLatitude?: number | null;
@@ -196,6 +200,7 @@ function toAdminRegistrationListRow(
     reference: row.reference,
     applicant: payload.traderName,
     traderType: payload.traderType,
+    additionalTraderTypes: sortTraderTypes(payload.additionalTraderTypes),
     region: payload.region,
     submittedAt: row.createdAt,
     status: row.status,
@@ -272,6 +277,7 @@ export interface DismissDuplicateResult {
 /** Crop include reused so the refetched actor can be projected via `toAdminActor` (mirrors `ActorsAdminService`'s `CROPS_INCLUDE`). */
 const CROPS_INCLUDE = {
   crops: { include: { crop: true } },
+  additionalTypes: true,
 } satisfies Prisma.ActorInclude;
 
 /**
@@ -343,6 +349,7 @@ export function deriveTraderIdFromReference(reference: string): string {
 interface RegistrationApprovalPayload {
   traderName: string;
   traderType: string;
+  additionalTraderTypes?: string[] | null;
   contactPerson: string;
   position?: string | null;
   district?: string | null;
@@ -479,7 +486,14 @@ export class AdminRegistrationsService {
       conditions.push({ payload: { path: '$.region', equals: q.region } });
     }
     if (q.traderType) {
-      conditions.push({ payload: { path: '$.traderType', equals: q.traderType } });
+      // Main type OR among the additional types; nested in AND so it never clobbers another OR.
+      conditions.push({
+        OR: [
+          { payload: { path: '$.traderType', equals: q.traderType } },
+          // Bare-string array_contains is deliberate; verified against MySQL (legacy payloads included).
+          { payload: { path: '$.additionalTraderTypes', array_contains: q.traderType } },
+        ],
+      });
     }
     if (q.q) {
       // A-28 half 2 — escaped at this Prisma boundary, not in the DTO: the
@@ -1000,6 +1014,15 @@ export class AdminRegistrationsService {
             throw new ConflictException(`An actor with traderId ${traderId} already exists`);
           }
           throw err;
+        }
+
+        const additionalTypes = sortTraderTypes(payload.additionalTraderTypes).filter(
+          (t) => t !== payload.traderType,
+        );
+        if (additionalTypes.length > 0) {
+          await tx.actorAdditionalType.createMany({
+            data: additionalTypes.map((traderType) => ({ actorId: created.id, traderType })),
+          });
         }
 
         // Step 6

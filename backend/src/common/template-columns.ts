@@ -18,7 +18,7 @@
  */
 
 import { ConsentStatus } from '@prisma/client';
-import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
+import { CANONICAL_REGIONS, LATITUDE_RANGE, LONGITUDE_RANGE, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 
@@ -35,8 +35,11 @@ import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
  * GPS Altitude, GPS Accuracy and Registration Source columns are dropped (the
  * system now assigns Trader ID and imports are always TEAM_MANAGED, design.md
  * §4.5/§4.6); Contact Person, Capacity, Phone and Email become required,
- * matching the intake contract every path now shares (FR-1, FR-5). */
-export const TEMPLATE_VERSION = 'v4';
+ * matching the intake contract every path now shares (FR-1, FR-5).
+ *
+ * v4 → v5: optional "Additional Actor Types" column inserted after Trader
+ * Type (";"-separated). v4 files are rejected as out of date. */
+export const TEMPLATE_VERSION = 'v5';
 
 /**
  * Required flags for the four intake-contract scalars this template carries
@@ -99,6 +102,8 @@ export interface TemplateColumn {
   readonly allowedValues?: readonly string[];
   /** Human-readable format hint for free/numeric columns (Instructions sheet). */
   readonly format?: string;
+  /** ";"-separated cell: listed on Instructions, but no single-value dropdown. */
+  readonly multiValue?: boolean;
 }
 
 /**
@@ -130,6 +135,14 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     field: 'traderType',
     required: true,
     allowedValues: TRADER_TYPES,
+  },
+  {
+    header: 'Additional Actor Types',
+    field: 'additionalTraderTypes',
+    required: false,
+    allowedValues: TRADER_TYPES,
+    multiValue: true,
+    format: 'Optional. Values from the Trader Type list separated by ";", e.g. cooperative; ngo',
   },
   {
     header: 'Region',
@@ -169,13 +182,13 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     header: 'GPS Latitude',
     field: 'gpsLatitude',
     required: false,
-    format: 'Decimal degrees between −90 and 90, e.g. −6.7924',
+    format: `Decimal degrees between ${LATITUDE_RANGE[0]} and ${LATITUDE_RANGE[1]} (Africa), e.g. −6.7924`,
   },
   {
     header: 'GPS Longitude',
     field: 'gpsLongitude',
     required: false,
-    format: 'Decimal degrees between −180 and 180, e.g. 39.2083',
+    format: `Decimal degrees between ${LONGITUDE_RANGE[0]} and ${LONGITUDE_RANGE[1]} (Africa), e.g. 39.2083`,
   },
   {
     header: 'Crop: Sorghum',

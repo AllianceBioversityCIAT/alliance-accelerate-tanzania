@@ -23,6 +23,7 @@ import * as ExcelJS from 'exceljs';
 import { isEmail, validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
+import { sortTraderTypes } from '../common/additional-types';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingAdminResolver } from './acting-admin.resolver';
 import {
@@ -259,6 +260,7 @@ interface WorkRow {
   create?: {
     scalar: ActorScalarData;
     cropNames: string[];
+    additionalTraderTypes: string[];
     consentGranted: boolean;
   };
   actorId?: string;
@@ -581,6 +583,27 @@ export class ActorImportService {
       }
     }
 
+    // Additional actor types — optional, ";"-separated. Unknown value fails the
+    // row; the main type and repeats are silently dropped (spreadsheet-friendly).
+    const additionalTraderTypes: string[] = [];
+    if (cells.additionalTraderTypes) {
+      for (const part of cells.additionalTraderTypes.split(';')) {
+        const trimmed = part.trim();
+        if (trimmed === '') continue;
+        const normalized = normalizeTraderType(trimmed);
+        if (!normalized) {
+          if (!errors.some((e) => e.field === 'additionalTraderTypes')) {
+            errors.push({
+              field: 'additionalTraderTypes',
+              message: 'Additional Actor Types contains a value not in the allowed taxonomy.',
+            });
+          }
+        } else if (normalized !== traderType && !additionalTraderTypes.includes(normalized)) {
+          additionalTraderTypes.push(normalized);
+        }
+      }
+    }
+
     // Sex — optional; when present must normalize to M/F/Other.
     let sex: string | undefined;
     if (cells.sex) {
@@ -798,6 +821,7 @@ export class ActorImportService {
           otherCrops,
         },
         cropNames,
+        additionalTraderTypes: sortTraderTypes(additionalTraderTypes),
         consentGranted: consentStatus === ConsentStatus.GRANTED,
       };
     }
@@ -1215,6 +1239,15 @@ export class ActorImportService {
               data: this.buildCreateData(create.scalar, traderIds[idx]),
             });
 
+            if (create.additionalTraderTypes.length > 0) {
+              await tx.actorAdditionalType.createMany({
+                data: create.additionalTraderTypes.map((traderType) => ({
+                  actorId: actor.id,
+                  traderType,
+                })),
+              });
+            }
+
             const linkedNames = create.cropNames.filter((name) =>
               cropIdByName.has(name),
             );
@@ -1232,6 +1265,7 @@ export class ActorImportService {
               toAdminActor({
                 ...actor,
                 crops: linkedNames.map((name) => ({ crop: { name } })),
+                additionalTypes: create.additionalTraderTypes.map((traderType) => ({ traderType })),
               }),
             );
             localCreated.set(row.rowNumber, { actorId: actor.id, traderId: traderIds[idx] });

@@ -169,7 +169,7 @@ function buildListsSheet(workbook: ExcelJS.Workbook): Record<string, string> {
 
   let colIndex = 1;
   for (const col of TEMPLATE_COLUMNS) {
-    if (!col.allowedValues) continue;
+    if (!col.allowedValues || col.multiValue) continue;
     const letter = ws.getColumn(colIndex).letter;
     col.allowedValues.forEach((value, rowOffset) => {
       ws.getCell(rowOffset + 1, colIndex).value = value;
@@ -207,7 +207,7 @@ function populateDataSheet(
 
   TEMPLATE_COLUMNS.forEach((col, i) => {
     ws.getColumn(i + 1).width = Math.max(14, col.header.length + 2);
-    if (!col.allowedValues) return;
+    if (!col.allowedValues || col.multiValue) return;
     const letter = ws.getColumn(i + 1).letter;
     validations.add(`${letter}2:${letter}${DATA_VALIDATION_LAST_ROW}`, {
       type: 'list',
