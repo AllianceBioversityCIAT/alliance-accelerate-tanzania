@@ -133,7 +133,7 @@ echo "==> Applying Prisma migrations against $RDS_ENDPOINT (TLS) ..."
   DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
 )
 
-echo "==> Seeding the consented sample dataset (no real PII — NFR-5) ..."
+echo "==> Seeding reference crops (sample actors only if SEED_SAMPLE_ACTORS=true) ..."
 (
   cd "$BACKEND_DIR"
   # `prisma db seed` honors the package.json `prisma.seed` config (seed.ts).
