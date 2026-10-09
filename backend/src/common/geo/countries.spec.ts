@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { CANONICAL_REGIONS } from '../normalize';
+import { CANONICAL_REGIONS, isValidLatitude, isValidLongitude } from '../normalize';
 import {
   AFRICAN_COUNTRIES,
   ALL_REGION_NAMES,
@@ -43,6 +43,22 @@ describe('african countries allowlist', () => {
     expect(read('frontend/lib/content/african-countries.generated.ts')).toBe(
       read('backend/src/common/geo/african-countries.generated.ts'),
     );
+  });
+
+  it('gives every country a map frame inside the accepted Africa box', () => {
+    for (const c of AFRICAN_COUNTRIES) {
+      const [[south, west], [north, east]] = c.bounds;
+      expect(south).toBeLessThan(north);
+      expect(west).toBeLessThan(east);
+      expect(isValidLatitude(south) && isValidLatitude(north)).toBe(true);
+      expect(isValidLongitude(west) && isValidLongitude(east)).toBe(true);
+    }
+  });
+
+  it('frames South Africa without its sub-Antarctic islands, and Somalia with Somaliland', () => {
+    const frame = (code: string) => AFRICAN_COUNTRIES.find((c) => c.code === code)!.bounds;
+    expect(frame('ZA')[0][0]).toBeGreaterThan(-36);
+    expect(frame('SO')[1][0]).toBeGreaterThan(11);
   });
 
   it('exposes every region name for country-less filtering', () => {

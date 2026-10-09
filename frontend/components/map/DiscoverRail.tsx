@@ -36,6 +36,8 @@ export interface DiscoverRailProps {
    * the shortfall instead of captioning a partial map with the full `total`.
    */
   truncated?: boolean;
+  /** Matching actors left off the map and the list because they have no coordinates. */
+  unlocated?: number;
   /** True while useActors is in-flight. */
   loading: boolean;
   /** True when getActors() resolved to null (API failure, DD-6). */
@@ -128,6 +130,7 @@ export default function DiscoverRail({
   actors,
   total,
   truncated = false,
+  unlocated = 0,
   loading,
   error,
   filters,
@@ -181,7 +184,7 @@ export default function DiscoverRail({
           </div>
         ) : (
           // Scrollable actor list (FR-5, NFR-3).
-          <div className="max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md md:max-h-none md:min-h-0 md:flex-1">
+          <div className="relative max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md md:max-h-none md:min-h-0 md:flex-1">
             <ActorList
               actors={actors}
               selectedActorId={selectedActorId}
@@ -224,9 +227,14 @@ export default function DiscoverRail({
               loading={loading}
               truncated={isTruncated}
               shown={shownCount}
-              total={displayCount}
+              total={isTruncated ? displayCount : shownCount}
             />
           </p>
+          {!loading && unlocated > 0 && (
+            <p className="text-xs text-muted">
+              {unlocated} more without coordinates {unlocated === 1 ? 'is' : 'are'} not shown.
+            </p>
+          )}
           {/* ATP-68 — the ceiling is stated, never silent. Rendered only when
               the fetch actually fell short, so the ordinary case is unchanged. */}
           {!loading && isTruncated && (
@@ -260,7 +268,7 @@ export default function DiscoverRail({
       <div
         id="discover-rail-body"
         className={[
-          'flex-1 overflow-y-auto p-4',
+          'relative flex-1 overflow-y-auto p-4',
           // Mobile: hidden when closed, block when open.
           mobileOpen ? 'block' : 'hidden',
           // Desktop: always shown; the list, not the rail, takes the leftover height.

@@ -35,6 +35,7 @@ import {
   OSM_TILE_URL,
   OSM_ATTRIBUTION,
 } from './map-constants';
+import { countryBounds } from '@/lib/content/countries';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -137,6 +138,8 @@ export interface LeafletMapProps {
    * Callback fired when a pin is clicked — updates page-level selectedActorId.
    */
   onSelectActor: (id: string | null) => void;
+  /** Country filter; when set the view frames that country (and any actor outside it). */
+  country?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -145,6 +148,7 @@ export default function LeafletMap({
   actors,
   selectedActorId,
   onSelectActor,
+  country,
 }: LeafletMapProps) {
   const containerRef   = useRef<HTMLDivElement | null>(null);
   const mapRef         = useRef<L.Map | null>(null);
@@ -252,12 +256,19 @@ export default function LeafletMap({
     const points = actors
       .filter((a) => a.gps != null)
       .map((a) => [a.gps!.lat, a.gps!.long] as L.LatLngTuple);
+    const frame = countryBounds(country);
+    if (frame) {
+      const bounds = L.latLngBounds(frame.map((corner) => [...corner]) as L.LatLngTuple[]);
+      points.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds, { padding: FIT_PADDING });
+      return;
+    }
     if (points.length === 0) {
       map.fitBounds(AFRICA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
       return;
     }
     map.fitBounds(L.latLngBounds(points), { padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM });
-  }, [actors]);
+  }, [actors, country]);
 
   // ── Fly-to on selection change (FR-5 partial, NFR-3 motion-reduce) ───────────
   useEffect(() => {

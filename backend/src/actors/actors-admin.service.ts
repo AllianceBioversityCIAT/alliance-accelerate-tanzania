@@ -31,6 +31,7 @@ import {
 import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
 import { isRegionOf } from '../common/geo/countries';
 import { regionOfCountryMessage } from '../common/region-of-country.validator';
+import { isPhoneOfCountry, phoneOfCountryMessage } from '../common/phone-of-country.validator';
 import {
   allocateTraderIds,
   isTraderIdCollisionError,
@@ -374,6 +375,7 @@ export class ActorsAdminService {
         // incomplete (FR-1 scenario 3's BUT clause).
         this.assertRequiredFieldsPresent(before, dto);
         this.assertRegionBelongsToCountry(before, dto);
+        this.assertPhoneMatchesCountry(before, dto);
 
         if (
           dto.consentStatus === ConsentStatus.GRANTED &&
@@ -515,6 +517,20 @@ export class ActorsAdminService {
       error: 'Bad Request',
       message,
       details: [{ field: 'region', message }],
+    });
+  }
+
+  private assertPhoneMatchesCountry(before: ActorWithCrops, dto: AdminActorUpdateDto): void {
+    if (dto.country === undefined && dto.phone === undefined) return;
+    const country = dto.country ?? before.country;
+    const phone = dto.phone ?? before.phone;
+    if (phone == null || isPhoneOfCountry(country, phone)) return;
+    const message = phoneOfCountryMessage(country);
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message,
+      details: [{ field: 'phone', message }],
     });
   }
 

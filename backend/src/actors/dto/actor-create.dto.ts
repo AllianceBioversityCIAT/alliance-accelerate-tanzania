@@ -20,6 +20,7 @@ import {
 } from '../../common/normalize';
 import { IsFullInstant, IsNotFutureDate } from '../../common/consent-date-validators';
 import { IsAdditionalTraderTypes } from '../../common/additional-types.validator';
+import { IsPhoneOfCountry } from '../../common/phone-of-country.validator';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from '../../common/consent-methods';
 import { COUNTRY_CODES, UNKNOWN_COUNTRY } from '../../common/geo/countries';
 import { IsRegionOfCountry } from '../../common/region-of-country.validator';
@@ -131,6 +132,7 @@ export class ActorCreateDto {
   @IsString()
   @MinLength(1)
   @MaxLength(40)
+  @IsPhoneOfCountry()
   phone!: string;
 
   /**

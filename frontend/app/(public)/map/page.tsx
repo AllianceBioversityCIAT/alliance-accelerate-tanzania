@@ -42,7 +42,10 @@ export default function MapPage() {
   // DASH_PAGE_SIZE × DASH_MAX_PAGES actors while `total` keeps reporting the
   // server's full count. Dropping it here is what let the rail caption a
   // 1 000-marker map "1200 actors shown" (ATP-68).
-  const { actors, total, truncated, loading, error } = useDashboardActors(filters);
+  const { actors: matched, total, truncated, loading, error } = useDashboardActors(filters);
+  // Only actors with coordinates can be on the map, so only they are listed beside it.
+  const actors = matched.filter((a) => a.gps != null);
+  const unlocated = matched.length - actors.length;
 
   // Build the PublicActorList shape expected by <ActorMap data=…>.
   const data: PublicActorList = {
@@ -70,6 +73,7 @@ export default function MapPage() {
       */}
       <DiscoverRail
         actors={actors}
+        unlocated={unlocated}
         total={total}
         truncated={truncated}
         loading={loading}
@@ -96,6 +100,7 @@ export default function MapPage() {
           error={error}
           selectedActorId={selectedActorId}
           onSelectActor={setSelectedActorId}
+          country={filters.country}
         />
       </section>
     </div>

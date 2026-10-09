@@ -39,7 +39,8 @@ import {
   parseCoordinatePair,
   type CoordinatePoint,
 } from '@/lib/geo/coordinates';
-import { AFRICA_BOUNDS, TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
+import { AFRICA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
+import { countryBounds } from '@/lib/content/countries';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -51,9 +52,12 @@ import { AFRICA_BOUNDS, TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from '.
 // view is framed by `fitBounds` in the init effect below instead.
 const PICKER_ZOOM = 12;
 
+const toLatLngBounds = (bounds: readonly (readonly [number, number])[]) =>
+  bounds.map((corner) => [...corner]) as L.LatLngBoundsExpression;
+
+/** The form's country when it has one, otherwise Africa. */
 function emptyViewBounds(country: string | undefined): L.LatLngBoundsExpression {
-  const bounds = country === 'TZ' ? TANZANIA_BOUNDS : AFRICA_BOUNDS;
-  return bounds.map((corner) => [...corner]) as L.LatLngBoundsExpression;
+  return toLatLngBounds(countryBounds(country) ?? AFRICA_BOUNDS);
 }
 
 // ── Marker styling (NFR-3) ───────────────────────────────────────────────────
@@ -215,16 +219,13 @@ export default function CoordinatePickerMap({
     // with `setView(point, PICKER_ZOOM)` whenever a point already exists —
     // so this framing is only ever what a person with no coordinates yet
     // sees (FR-2 sc. 2).
-    const map = L.map(containerRef.current);
-    // TANZANIA_BOUNDS is a `readonly` tuple (design.md §7.2); spread into a
-    // fresh mutable tuple before casting — Leaflet's types carry no
-    // `readonly`, so passing it straight through fails here too. This is a
-    // call **argument**, not an assignment, so the code differs from
-    // `map-constants.ts`'s genuinely measured TS2322: with the spread
-    // removed, `npx tsc --noEmit` reports TS2345, "Argument of type
-    // 'readonly [readonly [number, number], readonly [number, number]]' is
-    // not assignable to parameter of type 'LatLngBoundsExpression'."
+    // Quarter-step zoom lets Africa fill the frame instead of dropping to a world view.
+    const map = L.map(containerRef.current, { zoomSnap: 0.25 });
+    // Bounds are `readonly` tuples; `toLatLngBounds` spreads them into the
+    // mutable shape Leaflet's types expect (TS2345 otherwise).
     map.fitBounds(emptyViewBounds(countryRef.current));
+    // Zooming out stops at Africa: every accepted coordinate is in it.
+    map.setMinZoom(map.getBoundsZoom(toLatLngBounds(AFRICA_BOUNDS)));
 
     L.tileLayer(OSM_TILE_URL, {
       attribution: OSM_ATTRIBUTION,
@@ -355,13 +356,14 @@ export default function CoordinatePickerMap({
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    // h-80: fixed height from the Tailwind spacing scale (design.md §7.4) —
+    // h-96: fixed height from the Tailwind spacing scale (design.md §7.4), tall
+    // enough for Africa (taller than wide) to fill the frame —
     // not an arbitrary value. border + rounded-md, not a shadow, carries the
     // section boundary: `--color-surface` on `--color-bg` is only 1.05:1
     // (frontend/CLAUDE.md).
     <div
       ref={containerRef}
-      className="relative h-80 w-full overflow-hidden rounded-md border border-border"
+      className="relative h-96 w-full overflow-hidden rounded-md border border-border"
       aria-label="Map for setting the location"
       aria-disabled={disabled || undefined}
       role="application"

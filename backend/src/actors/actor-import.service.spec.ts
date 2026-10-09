@@ -43,6 +43,9 @@ import {
   IntakeRequiredField,
 } from '../common/intake-contract';
 import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
+import * as ExcelJS from 'exceljs';
+import { generateTemplateBuffer } from '../../scripts/generate-import-template';
+import { regionDropdownFor } from '../test/support/import-template-dropdowns';
 import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
 import {
   CellMap,
@@ -223,6 +226,35 @@ describe('ActorImportService', () => {
         possibleDuplicate: 0,
         failed: 0,
       });
+    });
+
+    it('imports cleanly a workbook filled with the template dropdown values (Kenya, Tanzania, Uganda)', async () => {
+      const template = new ExcelJS.Workbook();
+      await template.xlsx.load((await generateTemplateBuffer()) as unknown as ExcelJS.Buffer);
+      const picks = [
+        { country: 'Kenya', region: 'Nakuru' },
+        { country: 'Tanzania', region: 'Kigoma' },
+        { country: 'Uganda', region: 'Gulu' },
+      ];
+      for (const { country, region } of picks) {
+        expect(regionDropdownFor(template, country)).toContain(region);
+      }
+
+      const b64 = await buildWorkbook(
+        picks.map((p, i) =>
+          validRow({
+            ...p,
+            traderName: `Dropdown Actor ${p.country}`,
+            phone: ['+254712345678', '+255712345678', '+256712345678'][i],
+            email: `dropdown-${i}@example.org`,
+          }),
+        ),
+      );
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.totals).toMatchObject({ rows: 3, toCreate: 3, failed: 0 });
+      expect(report.rows.map((r) => r.outcome)).toEqual(['create', 'create', 'create']);
     });
 
     it('skips fully-empty data rows entirely', async () => {

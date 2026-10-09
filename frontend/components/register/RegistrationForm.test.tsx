@@ -751,7 +751,22 @@ describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', (
     const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
     await selectCountry(user, 'Kenya');
-    expect(screen.getByText(/Include the country code, e\.g\. \+254/)).toBeInTheDocument();
+    expect(screen.getByText('Kenya: start with +254')).toBeInTheDocument();
+  });
+
+  it('rejects a phone that is not from the selected country', async () => {
+    const user = userEvent.setup();
+    const onValidated = jest.fn();
+    render(<RegistrationForm onValidated={onValidated} />);
+    await fillMinimalValidForm(user);
+    fireEvent.change(screen.getByLabelText(/^phone/i), { target: { value: '+254700000000' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /continue to verification/i }));
+
+    expect(onValidated).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText(/Phone must be a Tanzanian number/).length,
+    ).toBeGreaterThan(0);
   });
 
   it('the Region label carries the required asterisk', () => {

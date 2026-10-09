@@ -31,6 +31,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ExcelJS from 'exceljs';
 
+import { AFRICAN_COUNTRIES } from '../src/common/geo/countries';
 import {
   TEMPLATE_COLUMNS,
   TEMPLATE_VERSION,
@@ -47,6 +48,10 @@ const INSTRUCTIONS_SHEET = 'Instructions';
 const DATA_SHEET = 'Data';
 const LISTS_SHEET = 'Lists';
 
+/** Defined name of the empty range the Region list falls back to (blank or unrecognised Country). */
+const NO_REGIONS_NAME = 'R_NONE';
+const regionName = (code: string): string => `R_${code}`;
+
 /** Last row the Data-sheet dropdowns cover (headers = row 1). */
 const DATA_VALIDATION_LAST_ROW = 1001;
 
@@ -59,7 +64,7 @@ const OUTPUT_PATH = path.resolve(
 const HOW_TO_LINES: readonly string[] = [
   '1. Enter one actor per row on the "Data" sheet. Do not rename, reorder, or delete the header row.',
   '2. Columns marked Required must be filled in — rows missing a required value are rejected on import.',
-  '3. Where a column has a dropdown (Trader Type, Sex, the three Crop columns, Consent Status), pick a listed value.',
+  '3. Where a column has a dropdown (Trader Type, Country, Region, Sex, the three Crop columns, Consent Status), pick a listed value. Pick the Country first: the Region list shows only that country’s regions.',
   '4. For each crop the actor deals in, choose YES or NO in that crop’s column. At least one crop must be YES.',
   '5. Leave a cell blank when you have no value; blank optional cells are accepted.',
   '6. Save the file as .xlsx and upload it from Admin → Actors → Import.',
@@ -179,7 +184,45 @@ function buildListsSheet(workbook: ExcelJS.Workbook): Record<string, string> {
     colIndex += 1;
   }
 
+  ranges.regionLookup = buildRegionLists(workbook, ws, colIndex);
   return ranges;
+}
+
+/**
+ * Country → region lists for the dependent Region dropdown: a name → code lookup
+ * (two columns), then one column of regions per country, each exposed as the
+ * defined name `R_<code>`. Returns the lookup range.
+ */
+function buildRegionLists(
+  workbook: ExcelJS.Workbook,
+  ws: ExcelJS.Worksheet,
+  firstCol: number,
+): string {
+  const nameLetter = ws.getColumn(firstCol).letter;
+  const codeLetter = ws.getColumn(firstCol + 1).letter;
+  AFRICAN_COUNTRIES.forEach((c, i) => {
+    ws.getCell(i + 1, firstCol).value = c.name;
+    ws.getCell(i + 1, firstCol + 1).value = c.code;
+  });
+
+  let colIndex = firstCol + 2;
+  for (const country of AFRICAN_COUNTRIES) {
+    const letter = ws.getColumn(colIndex).letter;
+    country.regions.forEach((region, i) => {
+      ws.getCell(i + 1, colIndex).value = region;
+    });
+    workbook.definedNames.add(
+      `${LISTS_SHEET}!$${letter}$1:$${letter}$${country.regions.length}`,
+      regionName(country.code),
+    );
+    colIndex += 1;
+  }
+
+  // A single never-filled cell: an empty dropdown instead of a formula error.
+  const emptyLetter = ws.getColumn(colIndex).letter;
+  workbook.definedNames.add(`${LISTS_SHEET}!$${emptyLetter}$1`, NO_REGIONS_NAME);
+
+  return `${LISTS_SHEET}!$${nameLetter}$1:$${codeLetter}$${AFRICAN_COUNTRIES.length}`;
 }
 
 /**
@@ -205,8 +248,26 @@ function populateDataSheet(
     cell.font = { bold: true };
   });
 
+  const countryIndex = TEMPLATE_COLUMNS.findIndex((c) => c.field === 'country');
+
   TEMPLATE_COLUMNS.forEach((col, i) => {
     ws.getColumn(i + 1).width = Math.max(14, col.header.length + 2);
+    if (col.field === 'region') {
+      const letter = ws.getColumn(i + 1).letter;
+      const country = `$${ws.getColumn(countryIndex + 1).letter}2`;
+      validations.add(`${letter}2:${letter}${DATA_VALIDATION_LAST_ROW}`, {
+        type: 'list',
+        allowBlank: true,
+        formulae: [
+          `IFERROR(INDIRECT("R_"&VLOOKUP(${country},${listRanges.regionLookup},2,FALSE)),${NO_REGIONS_NAME})`,
+        ],
+        showErrorMessage: true,
+        errorStyle: 'warning',
+        errorTitle: 'Region not in the list',
+        error: 'Pick a region of the selected country from the dropdown.',
+      });
+      return;
+    }
     if (!col.allowedValues || col.multiValue) return;
     const letter = ws.getColumn(i + 1).letter;
     validations.add(`${letter}2:${letter}${DATA_VALIDATION_LAST_ROW}`, {

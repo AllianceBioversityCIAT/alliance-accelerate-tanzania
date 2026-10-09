@@ -44,18 +44,6 @@ export const AFRICA_BOUNDS: readonly [
   [37.6, 58],
 ];
 
-/**
- * Approximate bounding box for Tanzania — keeps the initial view focused.
- * `[southWest, northEast]`, each a `[lat, lng]` pair.
- */
-export const TANZANIA_BOUNDS: readonly [
-  readonly [number, number],
-  readonly [number, number],
-] = [
-  [-11.75, 29.34], // SW corner
-  [-0.98, 40.44], // NE corner
-];
-
 /** OSM raster tile URL template. */
 export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 

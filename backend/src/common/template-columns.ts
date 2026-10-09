@@ -21,6 +21,7 @@ import { ConsentStatus } from '@prisma/client';
 import { LATITUDE_RANGE, LONGITUDE_RANGE, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
+import { AFRICAN_COUNTRIES } from './geo/countries';
 
 /** Bump on ANY column change (order, headers, allowed values). Stamped on the
  * Instructions sheet and used for best-effort stale-template detection.
@@ -40,8 +41,8 @@ import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
  * v4 → v5: optional "Additional Actor Types" column inserted after Trader
  * Type (";"-separated). v4 files are rejected as out of date.
  *
- * v5 → v6: required "Country" column inserted before Region; Region is now a
- * free-typed region of that country (no dropdown). */
+ * v5 → v6: required "Country" column (dropdown) inserted before Region; the
+ * Region dropdown now lists only the regions of that row's country. */
 export const TEMPLATE_VERSION = 'v6';
 
 /**
@@ -151,13 +152,14 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     header: 'Country',
     field: 'country',
     required: true,
-    format: 'Country name or ISO code (e.g. Tanzania or TZ)',
+    allowedValues: AFRICAN_COUNTRIES.map((c) => c.name),
+    format: 'Choose a country from the dropdown (a pasted ISO code, e.g. TZ, is also accepted)',
   },
   {
     header: 'Region',
     field: 'region',
     required: true,
-    format: "A region of the row's country (ISO 3166-2)",
+    format: "Choose from the dropdown: it lists the regions of the country picked in the same row (ISO 3166-2)",
   },
   { header: 'District', field: 'district', required: false },
   { header: 'Market Location', field: 'marketLocation', required: false },

@@ -1415,6 +1415,26 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         expect(body.details).toEqual([{ field: 'region', message: regionMessage('Tanzania') }]);
       });
 
+      it('rejects changing only the country when the stored phone is not from it', async () => {
+        prisma.actor.findUnique.mockResolvedValue(
+          fixtureActor({ country: 'TZ', region: 'Arusha', phone: '+255712345678' }),
+        );
+
+        const body = await rejection({ country: 'KE', region: 'Mombasa' } as AdminActorUpdateDto);
+
+        expect(body.details).toEqual([
+          { field: 'phone', message: 'Phone must be a number from Kenya, starting with +254.' },
+        ]);
+      });
+
+      it('rejects a new phone that is not from the stored country', async () => {
+        prisma.actor.findUnique.mockResolvedValue(fixtureActor({ country: 'TZ', region: 'Arusha' }));
+
+        const body = await rejection({ phone: '+254712345678' } as AdminActorUpdateDto);
+
+        expect(body.details.map((d: { field: string }) => d.field)).toEqual(['phone']);
+      });
+
       it('accepts country and region changed together, writes both and audits the country change', async () => {
         const before = fixtureActor({ country: 'TZ', region: 'Arusha' });
         const after = fixtureActor({ country: 'KE', region: 'Mombasa' });
@@ -1424,13 +1444,13 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
         const res = await service.update(
           'actor-1',
-          { country: 'KE', region: 'Mombasa' } as AdminActorUpdateDto,
+          { country: 'KE', region: 'Mombasa', phone: '+254712345678' } as AdminActorUpdateDto,
           ACTING_SUB,
         );
 
         expect(prisma.actor.update).toHaveBeenCalledWith({
           where: { id: 'actor-1' },
-          data: { country: 'KE', region: 'Mombasa' },
+          data: { country: 'KE', region: 'Mombasa', phone: '+254712345678' },
         });
         expect(res.country).toBe('KE');
         const changes = prisma.actorAuditLog.create.mock.calls[0][0].data.changes;

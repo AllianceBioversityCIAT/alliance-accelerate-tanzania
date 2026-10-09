@@ -846,7 +846,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       const mismatch = await request(app.getHttpServer())
         .post('/api/v1/admin/actors')
         .set(admin)
-        .send({ ...validCreatePayload(), country: 'KE', region: 'Arusha' })
+        .send({ ...validCreatePayload(), country: 'KE', region: 'Arusha', phone: '+254712345678' })
         .expect(400);
       expect(mismatch.body.details).toEqual([
         { field: 'region', message: "Region must be one of Kenya's regions." },

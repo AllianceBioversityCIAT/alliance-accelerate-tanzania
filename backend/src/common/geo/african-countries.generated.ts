@@ -9,6 +9,8 @@ export interface AfricanCountry {
   /** E.164 country calling code, without the "+". */
   readonly callingCode: string;
   readonly regions: readonly string[];
+  /** Map frame, `[[south, west], [north, east]]` (Natural Earth, mainland-weighted). */
+  readonly bounds: readonly [readonly [number, number], readonly [number, number]];
 }
 
 export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
@@ -75,6 +77,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tizi Ouzou",
       "Tlemcen",
       "Touggourt"
+    ],
+    "bounds": [
+      [
+        18.99,
+        -8.68
+      ],
+      [
+        37.09,
+        11.97
+      ]
     ]
   },
   {
@@ -100,6 +112,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Namibe",
       "Uíge",
       "Zaire"
+    ],
+    "bounds": [
+      [
+        -18.02,
+        11.74
+      ],
+      [
+        -5.86,
+        24.05
+      ]
     ]
   },
   {
@@ -119,6 +141,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Ouémé",
       "Plateau",
       "Zou"
+    ],
+    "bounds": [
+      [
+        6.22,
+        0.76
+      ],
+      [
+        12.38,
+        3.83
+      ]
     ]
   },
   {
@@ -142,6 +174,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "South East",
       "Southern",
       "Sowa Town"
+    ],
+    "bounds": [
+      [
+        -26.85,
+        19.98
+      ],
+      [
+        -17.79,
+        29.36
+      ]
     ]
   },
   {
@@ -162,6 +204,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Plateau-Central",
       "Sahel",
       "Sud-Ouest"
+    ],
+    "bounds": [
+      [
+        9.42,
+        -5.52
+      ],
+      [
+        15.08,
+        2.39
+      ]
     ]
   },
   {
@@ -187,6 +239,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Rumonge",
       "Rutana",
       "Ruyigi"
+    ],
+    "bounds": [
+      [
+        -4.46,
+        29.01
+      ],
+      [
+        -2.31,
+        30.81
+      ]
     ]
   },
   {
@@ -216,6 +278,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "São Vicente",
       "Tarrafal",
       "Tarrafal de São Nicolau"
+    ],
+    "bounds": [
+      [
+        14.82,
+        -25.34
+      ],
+      [
+        17.19,
+        -22.68
+      ]
     ]
   },
   {
@@ -233,6 +305,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "South",
       "South-West",
       "West"
+    ],
+    "bounds": [
+      [
+        1.68,
+        8.53
+      ],
+      [
+        13.08,
+        16.18
+      ]
     ]
   },
   {
@@ -257,6 +339,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Ouham-Pendé",
       "Sangha",
       "Vakaga"
+    ],
+    "bounds": [
+      [
+        2.27,
+        14.43
+      ],
+      [
+        11,
+        27.4
+      ]
     ]
   },
   {
@@ -287,6 +379,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tibesti",
       "Ville de Ndjamena",
       "Wadi Fira"
+    ],
+    "bounds": [
+      [
+        7.48,
+        13.45
+      ],
+      [
+        23.45,
+        23.98
+      ]
     ]
   },
   {
@@ -297,6 +399,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Anjouan",
       "Grande Comore",
       "Mohéli"
+    ],
+    "bounds": [
+      [
+        -12.37,
+        43.23
+      ],
+      [
+        -11.37,
+        44.53
+      ]
     ]
   },
   {
@@ -316,6 +428,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Pointe-Noire",
       "Pool",
       "Sangha"
+    ],
+    "bounds": [
+      [
+        -5,
+        11.13
+      ],
+      [
+        3.69,
+        18.62
+      ]
     ]
   },
   {
@@ -337,6 +459,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Woroba",
       "Yamoussoukro",
       "Zanzan"
+    ],
+    "bounds": [
+      [
+        4.35,
+        -8.6
+      ],
+      [
+        10.72,
+        -2.51
+      ]
     ]
   },
   {
@@ -370,6 +502,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tanganyika",
       "Tshopo",
       "Tshuapa"
+    ],
+    "bounds": [
+      [
+        -13.45,
+        12.21
+      ],
+      [
+        5.31,
+        31.27
+      ]
     ]
   },
   {
@@ -383,6 +525,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Djibouti",
       "Obock",
       "Tadjourah"
+    ],
+    "bounds": [
+      [
+        10.94,
+        41.76
+      ],
+      [
+        12.71,
+        43.41
+      ]
     ]
   },
   {
@@ -417,6 +569,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Qinā",
       "Shamāl Sīnā'",
       "Sūhāj"
+    ],
+    "bounds": [
+      [
+        21.99,
+        24.7
+      ],
+      [
+        31.65,
+        36.87
+      ]
     ]
   },
   {
@@ -432,6 +594,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Kié-Ntem",
       "Littoral",
       "Wele-Nzas"
+    ],
+    "bounds": [
+      [
+        0.96,
+        8.43
+      ],
+      [
+        3.76,
+        11.34
+      ]
     ]
   },
   {
@@ -445,6 +617,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Janūbī al Baḩrī al Aḩmar",
       "Qāsh-Barkah",
       "Shimālī al Baḩrī al Aḩmar"
+    ],
+    "bounds": [
+      [
+        12.38,
+        36.43
+      ],
+      [
+        18.01,
+        43.12
+      ]
     ]
   },
   {
@@ -456,6 +638,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Lubombo",
       "Manzini",
       "Shiselweni"
+    ],
+    "bounds": [
+      [
+        -27.31,
+        30.79
+      ],
+      [
+        -25.74,
+        32.11
+      ]
     ]
   },
   {
@@ -476,6 +668,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Southern Nations, Nationalities and Peoples",
       "Southwest Ethiopia Peoples",
       "Tigrai"
+    ],
+    "bounds": [
+      [
+        3.46,
+        33
+      ],
+      [
+        14.85,
+        47.98
+      ]
     ]
   },
   {
@@ -492,6 +694,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Ogooué-Lolo",
       "Ogooué-Maritime",
       "Woleu-Ntem"
+    ],
+    "bounds": [
+      [
+        -3.92,
+        8.7
+      ],
+      [
+        2.3,
+        14.48
+      ]
     ]
   },
   {
@@ -505,6 +717,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "North Bank",
       "Upper River",
       "Western"
+    ],
+    "bounds": [
+      [
+        13.06,
+        -16.82
+      ],
+      [
+        13.81,
+        -13.83
+      ]
     ]
   },
   {
@@ -528,6 +750,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Volta",
       "Western",
       "Western North"
+    ],
+    "bounds": [
+      [
+        4.76,
+        -3.24
+      ],
+      [
+        11.17,
+        1.19
+      ]
     ]
   },
   {
@@ -543,6 +775,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Labé",
       "Mamou",
       "Nzérékoré"
+    ],
+    "bounds": [
+      [
+        7.22,
+        -15.05
+      ],
+      [
+        12.67,
+        -7.68
+      ]
     ]
   },
   {
@@ -559,6 +801,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Oio",
       "Quinara",
       "Tombali"
+    ],
+    "bounds": [
+      [
+        10.94,
+        -16.71
+      ],
+      [
+        12.68,
+        -13.67
+      ]
     ]
   },
   {
@@ -613,6 +865,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Vihiga",
       "Wajir",
       "West Pokot"
+    ],
+    "bounds": [
+      [
+        -4.69,
+        33.9
+      ],
+      [
+        5.49,
+        41.88
+      ]
     ]
   },
   {
@@ -630,6 +892,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Qacha's Nek",
       "Quthing",
       "Thaba-Tseka"
+    ],
+    "bounds": [
+      [
+        -30.64,
+        27.05
+      ],
+      [
+        -28.58,
+        29.39
+      ]
     ]
   },
   {
@@ -652,6 +924,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "River Cess",
       "River Gee",
       "Sinoe"
+    ],
+    "bounds": [
+      [
+        4.35,
+        -11.51
+      ],
+      [
+        8.54,
+        -7.4
+      ]
     ]
   },
   {
@@ -681,6 +963,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Ţarābulus",
       "Wādī al Ḩayāt",
       "Wādī ash Shāţi’"
+    ],
+    "bounds": [
+      [
+        19.5,
+        9.31
+      ],
+      [
+        33.18,
+        25.15
+      ]
     ]
   },
   {
@@ -694,6 +986,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Mahajanga",
       "Toamasina",
       "Toliara"
+    ],
+    "bounds": [
+      [
+        -25.57,
+        43.26
+      ],
+      [
+        -12.08,
+        50.48
+      ]
     ]
   },
   {
@@ -729,6 +1031,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Salima",
       "Thyolo",
       "Zomba"
+    ],
+    "bounds": [
+      [
+        -17.13,
+        32.67
+      ],
+      [
+        -9.4,
+        35.89
+      ]
     ]
   },
   {
@@ -747,6 +1059,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Sikasso",
       "Taoudénit",
       "Tombouctou"
+    ],
+    "bounds": [
+      [
+        10.14,
+        -12.28
+      ],
+      [
+        25,
+        4.23
+      ]
     ]
   },
   {
@@ -769,6 +1091,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tagant",
       "Tiris Zemmour",
       "Trarza"
+    ],
+    "bounds": [
+      [
+        14.75,
+        -17.06
+      ],
+      [
+        27.29,
+        -4.82
+      ]
     ]
   },
   {
@@ -788,6 +1120,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Rivière du Rempart",
       "Rodrigues Island",
       "Savanne"
+    ],
+    "bounds": [
+      [
+        -20.51,
+        57.32
+      ],
+      [
+        -19.99,
+        57.79
+      ]
     ]
   },
   {
@@ -807,6 +1149,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Rabat-Salé-Kénitra",
       "Souss-Massa",
       "Tanger-Tétouan-Al Hoceïma"
+    ],
+    "bounds": [
+      [
+        21.42,
+        -17
+      ],
+      [
+        35.93,
+        -1.07
+      ]
     ]
   },
   {
@@ -824,6 +1176,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Sofala",
       "Tete",
       "Zambézia"
+    ],
+    "bounds": [
+      [
+        -26.86,
+        30.22
+      ],
+      [
+        -10.46,
+        40.84
+      ]
     ]
   },
   {
@@ -845,6 +1207,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Oshikoto",
       "Otjozondjupa",
       "Zambezi"
+    ],
+    "bounds": [
+      [
+        -28.94,
+        11.72
+      ],
+      [
+        -16.97,
+        25.26
+      ]
     ]
   },
   {
@@ -860,6 +1232,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tahoua",
       "Tillabéri",
       "Zinder"
+    ],
+    "bounds": [
+      [
+        11.7,
+        0.16
+      ],
+      [
+        23.52,
+        15.96
+      ]
     ]
   },
   {
@@ -904,6 +1286,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Taraba",
       "Yobe",
       "Zamfara"
+    ],
+    "bounds": [
+      [
+        4.28,
+        2.69
+      ],
+      [
+        13.87,
+        14.63
+      ]
     ]
   },
   {
@@ -916,6 +1308,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Northern",
       "Southern",
       "Western"
+    ],
+    "bounds": [
+      [
+        -2.81,
+        28.86
+      ],
+      [
+        -1.06,
+        30.88
+      ]
     ]
   },
   {
@@ -930,6 +1332,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Lobata",
       "Mé-Zóchi",
       "Príncipe"
+    ],
+    "bounds": [
+      [
+        0.05,
+        6.47
+      ],
+      [
+        1.7,
+        7.45
+      ]
     ]
   },
   {
@@ -951,6 +1363,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tambacounda",
       "Thiès",
       "Ziguinchor"
+    ],
+    "bounds": [
+      [
+        12.33,
+        -17.54
+      ],
+      [
+        16.68,
+        -11.38
+      ]
     ]
   },
   {
@@ -985,6 +1407,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Roche Caiman",
       "Saint Louis",
       "Takamaka"
+    ],
+    "bounds": [
+      [
+        -4.79,
+        55.38
+      ],
+      [
+        -4.56,
+        55.54
+      ]
     ]
   },
   {
@@ -997,6 +1429,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Northern",
       "Southern",
       "Western Area (Freetown)"
+    ],
+    "bounds": [
+      [
+        6.91,
+        -13.29
+      ],
+      [
+        10,
+        -10.28
+      ]
     ]
   },
   {
@@ -1022,6 +1464,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Sool",
       "Togdheer",
       "Woqooyi Galbeed"
+    ],
+    "bounds": [
+      [
+        -1.7,
+        40.96
+      ],
+      [
+        11.98,
+        51.39
+      ]
     ]
   },
   {
@@ -1038,6 +1490,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "North-West",
       "Northern Cape",
       "Western Cape"
+    ],
+    "bounds": [
+      [
+        -34.79,
+        16.45
+      ],
+      [
+        -22.15,
+        32.89
+      ]
     ]
   },
   {
@@ -1055,6 +1517,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Warrap",
       "Western Bahr el Ghazal",
       "Western Equatoria"
+    ],
+    "bounds": [
+      [
+        3.49,
+        24.15
+      ],
+      [
+        12.22,
+        35.27
+      ]
     ]
   },
   {
@@ -1080,6 +1552,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "West Darfur",
       "West Kordofan",
       "White Nile"
+    ],
+    "bounds": [
+      [
+        8.67,
+        21.83
+      ],
+      [
+        22.2,
+        38.61
+      ]
     ]
   },
   {
@@ -1118,6 +1600,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Songwe",
       "Tabora",
       "Tanga"
+    ],
+    "bounds": [
+      [
+        -11.72,
+        29.32
+      ],
+      [
+        -0.99,
+        40.46
+      ]
     ]
   },
   {
@@ -1130,6 +1622,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Maritime (Région)",
       "Plateaux",
       "Savanes"
+    ],
+    "bounds": [
+      [
+        6.09,
+        -0.09
+      ],
+      [
+        11.12,
+        1.78
+      ]
     ]
   },
   {
@@ -1161,6 +1663,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Tozeur",
       "Tunis",
       "Zaghouan"
+    ],
+    "bounds": [
+      [
+        30.23,
+        7.5
+      ],
+      [
+        37.34,
+        11.54
+      ]
     ]
   },
   {
@@ -1303,6 +1815,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Wakiso",
       "Yumbe",
       "Zombo"
+    ],
+    "bounds": [
+      [
+        -1.47,
+        29.56
+      ],
+      [
+        4.22,
+        34.98
+      ]
     ]
   },
   {
@@ -1320,6 +1842,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Northern",
       "Southern",
       "Western"
+    ],
+    "bounds": [
+      [
+        -18.04,
+        21.98
+      ],
+      [
+        -8.19,
+        33.66
+      ]
     ]
   },
   {
@@ -1337,6 +1869,16 @@ export const AFRICAN_COUNTRIES: readonly AfricanCountry[] = [
       "Matabeleland North",
       "Matabeleland South",
       "Midlands"
+    ],
+    "bounds": [
+      [
+        -22.4,
+        25.22
+      ],
+      [
+        -15.64,
+        33.01
+      ]
     ]
   }
 ];

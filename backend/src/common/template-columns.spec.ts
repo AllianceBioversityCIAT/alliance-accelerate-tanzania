@@ -136,14 +136,13 @@ describe('template-columns', () => {
     );
   });
 
-  it('places Country immediately before Region, both free-typed with a format hint', () => {
+  it('places Country immediately before Region, Country as a name dropdown and Region as a dependent dropdown', () => {
     const fields = TEMPLATE_COLUMNS.map((c) => c.field);
     expect(fields.indexOf('country')).toBe(fields.indexOf('region') - 1);
     expect(byField('country').header).toBe('Country');
-    expect(byField('country').allowedValues).toBeUndefined();
-    expect(byField('country').format).toBe('Country name or ISO code (e.g. Tanzania or TZ)');
+    expect(byField('country').allowedValues).toHaveLength(54);
+    // The region list is per country (generator defined names), not a column list.
     expect(byField('region').allowedValues).toBeUndefined();
-    expect(byField('region').format).toBe("A region of the row's country (ISO 3166-2)");
     expect(byField('phone').format).toBe(
       'International format, e.g. +255 7XX XXX XXX (other countries: + country code)',
     );

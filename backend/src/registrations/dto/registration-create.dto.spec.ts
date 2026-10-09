@@ -175,6 +175,8 @@ describe('RegistrationCreateDto — every free-text string is bound', () => {
     const atBound = Object.fromEntries(
       cases.map(({ field, maxLength }) => [field, 'x'.repeat(maxLength)]),
     );
+    // A phone must also be a real number of the payload's country; pad a valid one to the bound.
+    atBound.phone = '+255 712 345 678'.padEnd(40, ' ');
     const { error } = await run(validBody({ payload: atBound }));
     expect(error).toBeUndefined();
   });
@@ -322,7 +324,7 @@ describe('RegistrationCreateDto — country and region', () => {
   });
 
   it('rejects a region that belongs to another country, naming the country', async () => {
-    const { error } = await run(validBody({ payload: { country: 'KE', region: 'Mbeya' } }));
+    const { error } = await run(validBody({ payload: { country: 'KE', region: 'Mbeya', phone: '+254712345678' } }));
 
     expect(details(error!)).toEqual([
       { field: 'payload.region', message: "Region must be one of Kenya's regions." },

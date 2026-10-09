@@ -18,6 +18,11 @@ export function regionsFor(code: string | null | undefined): readonly string[] {
   return (code && BY_CODE.get(code)?.regions) || [];
 }
 
+/** Map frame `[[south, west], [north, east]]`, or undefined when the country is unknown. */
+export function countryBounds(code: string | null | undefined): AfricanCountry['bounds'] | undefined {
+  return code ? BY_CODE.get(code)?.bounds : undefined;
+}
+
 /** E.164 calling code including the "+", or '' when the country is unknown. */
 export function callingCode(code: string | null | undefined): string {
   const cc = code ? BY_CODE.get(code)?.callingCode : undefined;

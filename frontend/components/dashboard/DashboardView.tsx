@@ -206,6 +206,7 @@ export default function DashboardView() {
             error={error}
             selectedActorId={selectedActorId}
             onSelectActor={setSelectedActorId}
+            country={filters.country}
           />
         </section>
 

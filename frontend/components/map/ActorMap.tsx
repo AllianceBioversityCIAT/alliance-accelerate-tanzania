@@ -59,6 +59,8 @@ export interface ActorMapProps {
    * Declared here so the prop contract is stable before T-3 lands.
    */
   onSelectActor: (id: string | null) => void;
+  /** Country filter; when set the map frames that country. */
+  country?: string;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -69,6 +71,7 @@ export default function ActorMap({
   error,
   selectedActorId,
   onSelectActor,
+  country,
 }: ActorMapProps) {
   // Derive the actors array — empty when data is null/undefined.
   const actors: PublicActor[] = data?.data ?? [];
@@ -137,6 +140,7 @@ export default function ActorMap({
         actors={actors}
         selectedActorId={selectedActorId}
         onSelectActor={onSelectActor}
+        country={country}
       />
     </div>
   );

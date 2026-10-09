@@ -67,7 +67,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
-import { callingCode, regionsFor } from '@/lib/content/countries';
+import { regionsFor } from '@/lib/content/countries';
 import CountrySelect from '@/components/geo/CountrySelect';
 import RegionSelect from '@/components/geo/RegionSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
@@ -78,6 +78,7 @@ import {
   longitudeRangeError,
 } from '@/lib/geo/coordinates';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
+import { isPhoneOfCountry, phoneHint, phoneOfCountryMessage } from '@/lib/geo/phone';
 
 // ---------------------------------------------------------------------------
 // Constants — mirrors design.md §4.1 / registration-create.dto.ts verbatim
@@ -95,11 +96,6 @@ const SEX_OPTIONS = [
   { value: 'F', label: 'Female' },
   { value: 'Other', label: 'Other' },
 ] as const;
-
-function phoneHint(country: string): string | undefined {
-  const code = callingCode(country);
-  return code ? `Include the country code, e.g. ${code} …` : undefined;
-}
 
 /** `@MaxLength` bounds, transcribed field-for-field from `registration-create.dto.ts`. */
 const MAX_LENGTHS = {
@@ -458,6 +454,8 @@ function validate(values: FormValues): Record<string, string> {
     errors.phone = 'Phone is required.';
   } else if (values.phone.trim().length > MAX_LENGTHS.phone) {
     errors.phone = `Must be ${MAX_LENGTHS.phone} characters or fewer.`;
+  } else if (values.country && !isPhoneOfCountry(values.country, values.phone)) {
+    errors.phone = phoneOfCountryMessage(values.country);
   }
 
   if (!values.email.trim()) {

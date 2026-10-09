@@ -29,7 +29,7 @@ import Button from '../ui/Button';
 import { SearchableSelect } from '../ui/SearchableSelect';
 
 import CoordinatePicker from '@/components/map/CoordinatePicker';
-import { callingCode, regionsFor } from '@/lib/content/countries';
+import { regionsFor } from '@/lib/content/countries';
 import CountrySelect from '@/components/geo/CountrySelect';
 import RegionSelect from '@/components/geo/RegionSelect';
 import { ROLES } from '@/lib/content/roles';
@@ -62,6 +62,7 @@ import {
   latitudeRangeError,
   longitudeRangeError,
 } from '@/lib/geo/coordinates';
+import { isPhoneOfCountry, phoneHint, phoneOfCountryMessage } from '@/lib/geo/phone';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -480,6 +481,8 @@ function validate(
 
   if (!errors.phone && values.phone.trim().length > PHONE_MAX_LENGTH) {
     errors.phone = `Phone must be ${PHONE_MAX_LENGTH} characters or fewer.`;
+  } else if (!errors.phone && values.country && !isPhoneOfCountry(values.country, values.phone)) {
+    errors.phone = phoneOfCountryMessage(values.country);
   }
 
   if (!errors.email) {
@@ -1308,7 +1311,7 @@ export default function ActorForm({
             <legend className="mb-4 text-base font-semibold text-fg">Contact</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {renderInput('contactPerson', 'Contact person', 'text', true, undefined, CONTACT_PERSON_MAX_LENGTH)}
-              {renderInput('phone', 'Phone', 'text', true, values.country ? `Include the country code, e.g. ${callingCode(values.country)} …` : undefined, PHONE_MAX_LENGTH)}
+              {renderInput('phone', 'Phone', 'text', true, phoneHint(values.country), PHONE_MAX_LENGTH)}
               {renderInput('email', 'Email', 'email', true, undefined, EMAIL_MAX_LENGTH)}
             </div>
           </fieldset>
