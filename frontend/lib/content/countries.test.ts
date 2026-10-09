@@ -63,7 +63,11 @@ describe('country-less region links', () => {
 describe('cleanGeo', () => {
   it('keeps a pair the API accepts', () => {
     expect(cleanGeo('KE', 'Nakuru')).toEqual({ country: 'KE', region: 'Nakuru' });
-    expect(cleanGeo(undefined, 'Kigoma')).toEqual({ country: undefined, region: 'Kigoma' });
+    expect(cleanGeo(undefined, 'Nakuru')).toEqual({ country: 'KE', region: 'Nakuru' });
+  });
+
+  it('pins a country-less region to the country its label shows (Tanzania first)', () => {
+    expect(cleanGeo(undefined, 'Mwanza')).toEqual({ country: 'TZ', region: 'Mwanza' });
   });
 
   it('drops a region that is not the country’s, or not any country’s', () => {
@@ -72,6 +76,6 @@ describe('cleanGeo', () => {
   });
 
   it('drops an unknown country', () => {
-    expect(cleanGeo('XX', 'Nakuru')).toEqual({ country: undefined, region: 'Nakuru' });
+    expect(cleanGeo('XX', 'Nakuru')).toEqual({ country: 'KE', region: 'Nakuru' });
   });
 });

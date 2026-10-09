@@ -236,14 +236,16 @@ export function SearchableSelect({
   // Hidden entirely in the no-match state: FR-1 says the message "replaces
   // the option list", which this reads as the whole list, clear entry
   // included, rather than leaving a lone clear row behind it.
+  // While the user is typing, the clear entry is left out so Enter commits the first match.
+  const isSearching = searchText.trim() !== '';
   const renderedOptions: SearchableSelectOption[] = useMemo(
     () =>
       isNoMatch
         ? []
-        : clearOptionLabel !== undefined
+        : clearOptionLabel !== undefined && !isSearching
           ? [{ value: '', label: clearOptionLabel }, ...matchedOptions]
           : matchedOptions,
-    [isNoMatch, clearOptionLabel, matchedOptions],
+    [isNoMatch, clearOptionLabel, isSearching, matchedOptions],
   );
 
   const committedLabel = options.find((opt) => opt.value === value)?.label ?? '';

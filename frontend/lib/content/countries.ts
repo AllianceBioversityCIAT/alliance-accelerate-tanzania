@@ -79,11 +79,16 @@ export function regionOptionValue(filters: GeoFilter): string {
   return (matches.find((o) => o.country === 'TZ') ?? matches[0])?.value ?? '';
 }
 
-/** URL pair the API will accept: unknown country dropped, region dropped unless it fits. */
+/**
+ * URL pair the API will accept: unknown country dropped, region dropped unless
+ * it fits. A region without a country gets the country its label shows.
+ */
 export function cleanGeo(country: string | undefined, region: string | undefined): GeoFilter {
   const knownCountry = country && BY_CODE.has(country) ? country : undefined;
-  const fits = knownCountry
-    ? regionsFor(knownCountry).includes(region ?? '')
-    : ALL_REGION_OPTIONS.some((o) => o.region === region);
-  return { country: knownCountry, region: region && fits ? region : undefined };
+  if (!region) return { country: knownCountry, region: undefined };
+  if (knownCountry) {
+    return { country: knownCountry, region: regionsFor(knownCountry).includes(region) ? region : undefined };
+  }
+  const value = regionOptionValue({ region });
+  return value ? { country: value.split('|')[0], region } : { country: undefined, region: undefined };
 }

@@ -57,7 +57,8 @@ export default function MapPage() {
     // Full-bleed within <main> (PublicLayout has no container — pages own it).
     // flex-col on mobile (rail stacks above map); md:flex-row on wider screens.
     // min-h: keeps the combined region visible even with sparse content.
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
+    // md+: exactly the viewport, so the map's fitted view is never below the fold.
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col md:h-[calc(100vh-4rem)] md:flex-row">
 
       {/*
         ── Discover actors rail (T-4) ────────────────────────────────────────

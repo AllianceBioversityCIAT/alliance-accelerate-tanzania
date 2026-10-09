@@ -1029,7 +1029,7 @@ describe('ActorsPage — bulk consent send (T-9)', () => {
 
     await waitFor(() => expect(mockPreviewConsent).toHaveBeenCalledTimes(1));
     expect(mockPreviewConsent).toHaveBeenCalledWith(
-      { target: { kind: 'filter', filter: { region: 'Arusha', consentStatus: 'UNKNOWN' } }, scope: 'bulk' },
+      { target: { kind: 'filter', filter: { country: 'TZ', region: 'Arusha', consentStatus: 'UNKNOWN' } }, scope: 'bulk' },
       TOKEN,
     );
   });

@@ -154,12 +154,12 @@ export default function DiscoverRail({
   // ── Rail body (shared between mobile panel and desktop rail) ─────────────────
 
   const railBody = (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 md:min-h-0 md:flex-1">
       {/* ── Filter controls (FR-4) ─────────────────────────────────────────── */}
       <FilterControls filters={filters} onChange={onFilterChange} />
 
       {/* ── Actor list / states (FR-5, FR-7) ─────────────────────────────── */}
-      <div>
+      <div className="md:flex md:min-h-48 md:flex-1 md:flex-col">
         {loading ? (
           <LoadingRows />
         ) : error ? (
@@ -181,7 +181,7 @@ export default function DiscoverRail({
           </div>
         ) : (
           // Scrollable actor list (FR-5, NFR-3).
-          <div className="max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md">
+          <div className="max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md md:max-h-none md:min-h-0 md:flex-1">
             <ActorList
               actors={actors}
               selectedActorId={selectedActorId}
@@ -205,7 +205,7 @@ export default function DiscoverRail({
       className={[
         // Full-height left rail on ≥ md; auto-height strip on mobile.
         'flex flex-col border-b border-border bg-surface-alt',
-        'md:w-72 md:min-h-full md:flex-shrink-0 md:border-b-0 md:border-r',
+        'md:w-72 md:min-h-0 md:flex-shrink-0 md:border-b-0 md:border-r',
       ].join(' ')}
     >
       {/* ── Rail header: count + title ─────────────────────────────────────── */}
@@ -263,8 +263,8 @@ export default function DiscoverRail({
           'flex-1 overflow-y-auto p-4',
           // Mobile: hidden when closed, block when open.
           mobileOpen ? 'block' : 'hidden',
-          // Desktop: always block regardless of mobileOpen.
-          'md:block',
+          // Desktop: always shown; the list, not the rail, takes the leftover height.
+          'md:flex md:flex-col',
         ].join(' ')}
       >
         {railBody}
