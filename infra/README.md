@@ -710,6 +710,10 @@ the CloudFront distribution (FR-8, NFR-6). It guards and orders the destruction:
   CloudFormation refuses to delete data-auth while backend exists.
 - **Idempotent / re-runnable** — tolerates an already-absent stack/bucket, so a
   re-run finishes a partial teardown.
+- **Stops at `10-data-auth` by design** — the RDS instance has
+  `DeletionProtection: true` (since 2026-10-09), so that stack's delete fails
+  until protection is turned off on the instance first. That extra step is the
+  point: it is the confirmation gate for destroying production data.
 
 Verify nothing remains:
 
@@ -778,8 +782,9 @@ covers:
 - **Verified TLS** — certificate-chain validation (`sslaccept=strict`, or RDS
   Proxy / IAM auth); today `accept_invalid_certs`.
 - **Durability and availability** (added 2026-09-29 with the change of role):
-  raise `BackupRetentionPeriod` above 1 day, enable `DeletionProtection`, and
-  decide `MultiAZ` deliberately. These sit in `10-data-auth/template.yaml`
+  raise `BackupRetentionPeriod` above 1 day and decide `MultiAZ` deliberately.
+  (`DeletionProtection` was on this list; enabled on the live instance
+  2026-10-09.) These sit in `10-data-auth/template.yaml`
   alongside the network settings and were chosen for the same reason (NFR-6,
   cost on a disposable stack), so they belong in the same follow-up.
 
@@ -810,19 +815,18 @@ Two consequences worth stating plainly, because they are easy to get backwards:
 
 - **The planned wipe is a data operation, not a stack operation.** Deleting rows
   or dropping and re-seeding schemas is unaffected by `DeletionProtection`, which
-  guards the *DB instance*. Enabling deletion protection **before** the meeting
-  therefore does not interfere with the wipe, and closes the window in which a
-  mistaken stack delete during the demo preparation destroys the instance.
+  guards the *DB instance*. Deletion protection (enabled 2026-10-09) therefore
+  does not interfere with any wipe or re-seed.
 - **Everything above gets harder to change after the handover, not easier.** A
   maintenance window on a database holding the client's own working data is a
   conversation with the client; today it is a decision internal to the team. The
-  cheap items in the hardening list — deletion protection, backup retention — are
-  reversible, take effect without downtime at their current values, and are
+  cheap item left in the hardening list — backup retention — is reversible,
+  takes effect without downtime at its current value, and are
   materially easier to land on **2026-09-30** than on **2026-10-02**.
 
 **Easy teardown** (section 10) is listed here as a mitigation of the *dev*
 posture and does not survive the change of role either: on a production database,
-`DeletionProtection: false` and a one-day backup window make teardown a risk
+a one-day backup window makes teardown a risk
 rather than a safety valve. Note that easy teardown is **not** what the
 2026-10-01 wipe needs — see above; that is a data operation, and section 10 is
 about destroying the stack.
