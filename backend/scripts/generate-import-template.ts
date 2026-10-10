@@ -259,7 +259,8 @@ function populateDataSheet(
         type: 'list',
         allowBlank: true,
         formulae: [
-          `IFERROR(INDIRECT("R_"&VLOOKUP(${country},${listRanges.regionLookup},2,FALSE)),${NO_REGIONS_NAME})`,
+          // INDIRECT must be outermost: a list source has to evaluate to a range.
+          `INDIRECT("R_"&IFERROR(VLOOKUP(${country},${listRanges.regionLookup},2,FALSE),"NONE"))`,
         ],
         showErrorMessage: true,
         errorStyle: 'warning',

@@ -41,7 +41,7 @@ describe('aggregate — empty input', () => {
     expect(result.kpis.capacityReportingCount).toBe(0);
     expect(result.kpis.regionsCovered).toBe(0);
     expect(result.kpis.actorTypes).toBe(0);
-    expect(result.capacityByRegion).toEqual([]);
+    expect(result.capacityByCountry).toEqual([]);
     expect(result.byCrop).toEqual([]);
     expect(result.byType).toEqual([]);
   });
@@ -96,11 +96,10 @@ describe('aggregate — null capacityTons handling', () => {
     expect(total).toBe(3);
   });
 
-  it('capacityByRegion has no entry for actors without capacity', () => {
-    // All actors share the same region; only 1 is reporting
+  it('capacityByCountry sums only the actors that report capacity', () => {
+    // All actors share the same country; only 1 is reporting
     const result = aggregate(actors);
-    const regionEntry = result.capacityByRegion.find((p) => p.label === 'Dodoma');
-    expect(regionEntry?.value).toBe(100);
+    expect(result.capacityByCountry).toEqual([{ label: 'Tanzania', value: 100 }]);
   });
 });
 
@@ -165,22 +164,12 @@ describe('aggregate — regionsCovered and actorTypes', () => {
     expect(aggregate(actors).kpis.regionsCovered).toBe(3);
   });
 
-  it('keeps same-named regions of different countries apart and labels them with their country', () => {
+  it('counts same-named regions of different countries as separate regions', () => {
     const actors: PublicActor[] = [
       makeActor({ id: '1', country: 'GH', region: 'Northern', capacityTons: 10 }),
       makeActor({ id: '2', country: 'UG', region: 'Northern', capacityTons: 30 }),
     ];
-    const result = aggregate(actors);
-    expect(result.kpis.regionsCovered).toBe(2);
-    expect(result.capacityByRegion.map((p) => p.label).sort()).toEqual([
-      'Northern (Ghana)',
-      'Northern (Uganda)',
-    ]);
-  });
-
-  it('leaves region labels bare while the data spans a single country', () => {
-    const actors: PublicActor[] = [makeActor({ id: '1', region: 'Dodoma', capacityTons: 10 })];
-    expect(aggregate(actors).capacityByRegion[0].label).toBe('Dodoma');
+    expect(aggregate(actors).kpis.regionsCovered).toBe(2);
   });
 
   it('counts distinct traderTypes across all actors', () => {
@@ -253,28 +242,27 @@ describe('aggregate — byType sort order', () => {
   });
 });
 
-// ── capacityByRegion sort and aggregation ─────────────────────────────────────
+// ── capacityByCountry sort and aggregation ────────────────────────────────────
 
-describe('aggregate — capacityByRegion', () => {
-  it('sums capacity per region for reporting actors only', () => {
+describe('aggregate — capacityByCountry', () => {
+  it('sums capacity per country across its regions, reporting actors only, largest first', () => {
     const actors: PublicActor[] = [
-      makeActor({ id: '1', region: 'Dodoma', capacityTons: 100 }),
-      makeActor({ id: '2', region: 'Dodoma', capacityTons: 50  }),
-      makeActor({ id: '3', region: 'Arusha', capacityTons: 200 }),
-      makeActor({ id: '4', region: 'Dodoma', capacityTons: null }),  // excluded
+      makeActor({ id: '1', country: 'TZ', region: 'Dodoma', capacityTons: 100 }),
+      makeActor({ id: '2', country: 'TZ', region: 'Arusha', capacityTons: 50  }),
+      makeActor({ id: '3', country: 'KE', region: 'Nakuru', capacityTons: 200 }),
+      makeActor({ id: '4', country: 'TZ', region: 'Dodoma', capacityTons: null }),  // excluded
     ];
-    const { capacityByRegion } = aggregate(actors);
-    expect(capacityByRegion[0]).toEqual({ label: 'Arusha', value: 200 });
-    expect(capacityByRegion[1]).toEqual({ label: 'Dodoma', value: 150 });
+    expect(aggregate(actors).capacityByCountry).toEqual([
+      { label: 'Kenya', value: 200 },
+      { label: 'Tanzania', value: 150 },
+    ]);
   });
 
-  it('excludes regions that have no reporting actors', () => {
+  it('excludes countries that have no reporting actors', () => {
     const actors: PublicActor[] = [
-      makeActor({ id: '1', region: 'Dodoma', capacityTons: null }),
-      makeActor({ id: '2', region: 'Arusha', capacityTons: 75  }),
+      makeActor({ id: '1', country: 'UG', region: 'Gulu', capacityTons: null }),
+      makeActor({ id: '2', country: 'TZ', region: 'Arusha', capacityTons: 75 }),
     ];
-    const { capacityByRegion } = aggregate(actors);
-    expect(capacityByRegion).toHaveLength(1);
-    expect(capacityByRegion[0].label).toBe('Arusha');
+    expect(aggregate(actors).capacityByCountry).toEqual([{ label: 'Tanzania', value: 75 }]);
   });
 });

@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * CapacityByRegionChart
+ * CapacityByCountryChart
  *
- * Horizontal BarChart of seed storage/handling capacity (t) per region.
+ * Horizontal BarChart of seed storage/handling capacity (t) per country.
  * Wraps Recharts inside ChartCard, which provides the accessible data-table
  * fallback and the empty-state guard (FR-5, FR-6, NFR-4).
  *
@@ -16,9 +16,9 @@
  * Spec: docs/specs/dashboard/discovery-dashboard.
  *
  * Usage:
- *   import CapacityByRegionChart from '@/components/dashboard/charts/CapacityByRegionChart';
+ *   import CapacityByCountryChart from '@/components/dashboard/charts/CapacityByCountryChart';
  *
- *   <CapacityByRegionChart data={aggregate.capacityByRegion} />
+ *   <CapacityByCountryChart data={aggregate.capacityByCountry} />
  */
 
 import React from 'react';
@@ -42,8 +42,8 @@ import type { DashboardSeriesPoint } from '@/lib/dashboard/aggregate';
 // Props
 // ---------------------------------------------------------------------------
 
-export interface CapacityByRegionChartProps {
-  /** Raw series from aggregate.capacityByRegion — { label: region, value: tons }[] */
+export interface CapacityByCountryChartProps {
+  /** Raw series from aggregate.capacityByCountry — { label: country, value: tons }[] */
   data: DashboardSeriesPoint[];
 }
 
@@ -105,7 +105,7 @@ function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
 // Public component
 // ---------------------------------------------------------------------------
 
-export default function CapacityByRegionChart({ data }: CapacityByRegionChartProps) {
+export default function CapacityByCountryChart({ data }: CapacityByCountryChartProps) {
   // Build the friendly series ONCE — same array drives both ChartCard's data
   // table and the Recharts chart, so table + chart always agree.
   const series = data.map((point) => ({
@@ -115,7 +115,7 @@ export default function CapacityByRegionChart({ data }: CapacityByRegionChartPro
 
   return (
     <ChartCard
-      title="Capacity by region (t)"
+      title="Capacity by country (t)"
       icon={<IconMapPin className="h-5 w-5" />}
       series={series}
       valueHeader="Capacity (t)"

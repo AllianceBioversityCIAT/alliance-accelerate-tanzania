@@ -64,11 +64,11 @@ jest.mock('@/components/map/ActorMap', () => {
 // ── Chart components ──────────────────────────────────────────────────────────
 // Replace with lightweight stubs so Recharts / ResizeObserver is never used.
 
-jest.mock('@/components/dashboard/charts/CapacityByRegionChart', () => {
+jest.mock('@/components/dashboard/charts/CapacityByCountryChart', () => {
   const Stub = () => (
-    <div data-testid="capacity-by-region-chart">Capacity by region (t)</div>
+    <div data-testid="capacity-by-country-chart">Capacity by country (t)</div>
   );
-  Stub.displayName = 'CapacityByRegionChartStub';
+  Stub.displayName = 'CapacityByCountryChartStub';
   return Stub;
 });
 
@@ -171,10 +171,10 @@ describe('DashboardView', () => {
       ).toBeInTheDocument();
     });
 
-    it('renders at least one chart title (Capacity by region)', () => {
+    it('renders at least one chart title (Capacity by country)', () => {
       renderView();
-      // Chart stub renders text "Capacity by region (t)"
-      expect(screen.getByText(/capacity by region/i)).toBeInTheDocument();
+      // Chart stub renders text "Capacity by country (t)"
+      expect(screen.getByText(/capacity by country/i)).toBeInTheDocument();
     });
 
     it('renders the map panel stub', () => {
@@ -192,7 +192,7 @@ describe('DashboardView', () => {
 
     it('renders all three chart stubs', () => {
       renderView();
-      expect(screen.getByTestId('capacity-by-region-chart')).toBeInTheDocument();
+      expect(screen.getByTestId('capacity-by-country-chart')).toBeInTheDocument();
       expect(screen.getByTestId('crop-distribution-chart')).toBeInTheDocument();
       expect(screen.getByTestId('actor-type-chart')).toBeInTheDocument();
     });

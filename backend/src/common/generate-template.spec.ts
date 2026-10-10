@@ -224,7 +224,7 @@ describe('generate-import-template', () => {
       expect(validation.allowBlank).toBe(true);
       expect(validation.errorStyle).toBe('warning');
       expect(validation.formulae![0]).toMatch(
-        /^IFERROR\(INDIRECT\("R_"&VLOOKUP\(\$D2,Lists!\$[A-Z]+\$1:\$[A-Z]+\$54,2,FALSE\)\),R_NONE\)$/,
+        /^INDIRECT\("R_"&IFERROR\(VLOOKUP\(\$D2,Lists!\$[A-Z]+\$1:\$[A-Z]+\$54,2,FALSE\),"NONE"\)\)$/,
       );
       // Same single formula for the whole column: relative $D2 shifts per row.
       expect(data.getCell('E1001').dataValidation.formulae).toEqual(validation.formulae);

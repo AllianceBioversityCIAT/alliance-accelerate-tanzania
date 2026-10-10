@@ -42,8 +42,8 @@ import { IconAdjustments, IconMap, IconList } from '@/components/dashboard/icons
 // Recharts is a heavy dependency; lazy-loading the three charts keeps it out of
 // the initial /dashboard bundle so first paint (filters + KPIs) isn't blocked.
 const ChartFallback = () => <Skeleton className="h-64 w-full rounded-lg" />;
-const CapacityByRegionChart = dynamic(
-  () => import('@/components/dashboard/charts/CapacityByRegionChart'),
+const CapacityByCountryChart = dynamic(
+  () => import('@/components/dashboard/charts/CapacityByCountryChart'),
   { ssr: false, loading: ChartFallback },
 );
 const CropDistributionChart = dynamic(
@@ -191,7 +191,7 @@ export default function DashboardView() {
         <section className="flex flex-col gap-3">
           <SectionHeading>Breakdowns</SectionHeading>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <CapacityByRegionChart data={agg.capacityByRegion} />
+            <CapacityByCountryChart data={agg.capacityByCountry} />
             <CropDistributionChart data={agg.byCrop} />
             <ActorTypeChart data={agg.byType} />
           </div>

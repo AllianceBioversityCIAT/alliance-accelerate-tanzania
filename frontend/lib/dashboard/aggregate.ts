@@ -34,8 +34,8 @@ export interface DashboardKpis {
 
 export interface DashboardAggregate {
   kpis: DashboardKpis;
-  /** Sum of capacityTons per region (reporting actors only), desc by value. */
-  capacityByRegion: DashboardSeriesPoint[];
+  /** Sum of capacityTons per country (reporting actors only), desc by value. */
+  capacityByCountry: DashboardSeriesPoint[];
   /**
    * Actor count per crop slug; only crops that actually occur are included,
    * desc by value. An actor counts toward each of its listed crops.
@@ -82,8 +82,7 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
   const regionSet = new Set<string>();
   const typeSet = new Set<string>();
   const capacityValues: number[] = [];
-  const regionCapacity = new Map<string, { region: string; country: string; tons: number }>();
-  const countrySet = new Set<string>();
+  const countryCapacity = new Map<string, number>();
   const cropCount = new Map<string, number>();
   const typeCount = new Map<string, number>();
 
@@ -92,20 +91,13 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     if (actor.region && actor.region.trim() !== '') {
       regionSet.add(`${actor.country}|${actor.region}`);
     }
-    if (actor.country) countrySet.add(actor.country);
     const types = [actor.traderType, ...(actor.additionalTraderTypes ?? [])];
     for (const t of types) typeSet.add(t);
 
     // --- Capacity reporting subset ---
     if (isReporting(actor.capacityTons)) {
       capacityValues.push(actor.capacityTons);
-      const key = `${actor.country}|${actor.region}`;
-      const prev = regionCapacity.get(key);
-      regionCapacity.set(key, {
-        region: actor.region,
-        country: actor.country,
-        tons: (prev?.tons ?? 0) + actor.capacityTons,
-      });
+      countryCapacity.set(actor.country, (countryCapacity.get(actor.country) ?? 0) + actor.capacityTons);
     }
 
     // --- byType (all actors) ---
@@ -132,12 +124,8 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
   };
 
   // --- Series ---
-  const capacityByRegion: DashboardSeriesPoint[] = sortDesc(
-    Array.from(regionCapacity.values()).map(({ region, country, tons }) => ({
-      // Same-named regions of different countries stay apart once the data spans countries.
-      label: countrySet.size > 1 ? `${region} (${countryName(country)})` : region,
-      value: tons,
-    })),
+  const capacityByCountry: DashboardSeriesPoint[] = sortDesc(
+    Array.from(countryCapacity.entries()).map(([country, value]) => ({ label: countryName(country), value })),
   );
 
   const byCrop: DashboardSeriesPoint[] = sortDesc(
@@ -148,5 +136,5 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     Array.from(typeCount.entries()).map(([label, value]) => ({ label, value })),
   );
 
-  return { kpis, capacityByRegion, byCrop, byType };
+  return { kpis, capacityByCountry, byCrop, byType };
 }
