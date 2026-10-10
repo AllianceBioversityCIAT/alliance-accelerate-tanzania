@@ -1423,7 +1423,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         const body = await rejection({ country: 'KE', region: 'Mombasa' } as AdminActorUpdateDto);
 
         expect(body.details).toEqual([
-          { field: 'phone', message: 'Phone must be a number from Kenya, starting with +254.' },
+          { field: 'phone', message: 'Phone must include the country prefix: a number from Kenya starts with +254.' },
         ]);
       });
 

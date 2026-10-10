@@ -313,7 +313,8 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     const phone = screen.getByLabelText(/^phone/i);
     const phoneDescribedBy = phone.getAttribute('aria-describedby');
     expect(phoneDescribedBy).toBeTruthy();
-    expect(document.getElementById(phoneDescribedBy!.split(' ')[0])).toHaveTextContent(
+    // The phone field always carries its prefix hint too, so the error is one of the ids.
+    expect(phoneDescribedBy!.split(' ').map((id) => document.getElementById(id)?.textContent)).toContain(
       'Phone is required.',
     );
 

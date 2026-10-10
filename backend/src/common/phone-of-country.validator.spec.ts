@@ -16,12 +16,11 @@ const errorsFor = async (country: string, phone: string) =>
 
 describe('IsPhoneOfCountry', () => {
   it.each([
-    ['TZ', '0712 345 678'],
     ['TZ', '+255 712 345 678'],
     ['KE', '+254 712 345 678'],
     ['UG', '00256772123456'],
     ['CI', '+225 07 12 34 56 78'],
-    ['TZ', '0712-345-678'],
+    ['TZ', '+255-712-345-678'],
     ['TZ', '+255 (0) 712 345 678'],
     ['TZ', '00255712345678'],
     ['KE', '+254.712.345.678'],
@@ -30,9 +29,10 @@ describe('IsPhoneOfCountry', () => {
   });
 
   it.each([
-    ['KE', '0712 345 678', 'Phone must be a number from Kenya, starting with +254.'],
-    ['KE', '+255 712 345 678', 'Phone must be a number from Kenya, starting with +254.'],
-    ['TZ', '12345', 'Phone must be a Tanzanian number, e.g. +255 712 345 678 or 0712 345 678.'],
+    ['KE', '0712 345 678', 'Phone must include the country prefix: a number from Kenya starts with +254.'],
+    ['KE', '+255 712 345 678', 'Phone must include the country prefix: a number from Kenya starts with +254.'],
+    ['TZ', '0712 345 678', 'Phone must include the country prefix: a number from Tanzania starts with +255.'],
+    ['TZ', '12345', 'Phone must include the country prefix: a number from Tanzania starts with +255.'],
   ])('rejects %s %s', async (country, phone, message) => {
     expect(await errorsFor(country, phone)).toEqual([message]);
   });
@@ -42,6 +42,6 @@ describe('IsPhoneOfCountry', () => {
   });
 
   it('names the country in the message', () => {
-    expect(phoneOfCountryMessage('UG')).toBe('Phone must be a number from Uganda, starting with +256.');
+    expect(phoneOfCountryMessage('UG')).toBe('Phone must include the country prefix: a number from Uganda starts with +256.');
   });
 });

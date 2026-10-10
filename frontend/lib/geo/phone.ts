@@ -1,7 +1,6 @@
 /**
- * Phone rules per country, mirroring backend `normalizePhone` /
- * `phone-of-country.validator.ts`: Tanzania also accepts its national formats;
- * every other country needs the international form with its calling code.
+ * Phone rule for the forms, mirroring backend `phone-of-country.validator.ts`:
+ * the international form with the country's prefix, Tanzania included.
  */
 import { countryName, callingCode } from '@/lib/content/countries';
 
@@ -14,30 +13,21 @@ const clean = (raw: string) =>
     .replace(/[()\s.-]/g, '')
     .replace(/^00/, '+');
 
-function isTanzanian(phone: string): boolean {
-  return /^\+?255[1-9]\d{8}$/.test(phone) || /^0\d{9}$/.test(phone) || /^[67]\d{8}$/.test(phone);
-}
-
 export function isPhoneOfCountry(country: string, raw: string): boolean {
   const cc = callingCode(country).slice(1);
   if (!cc) return true;
-  const phone = clean(raw);
-  if (country === 'TZ') return isTanzanian(phone);
   const first = LEADING_ZERO_CALLING_CODES.has(cc) ? '\\d' : '[1-9]';
-  return new RegExp(`^\\+${cc}${first}\\d{5,11}$`).test(phone);
+  return new RegExp(`^\\+${cc}${first}\\d{5,11}$`).test(clean(raw));
 }
 
 export function phoneOfCountryMessage(country: string): string {
-  return country === 'TZ'
-    ? 'Phone must be a Tanzanian number, e.g. +255 712 345 678 or 0712 345 678.'
-    : `Phone must be a number from ${countryName(country)}, starting with ${callingCode(country)}.`;
+  return `Phone must include the country prefix: a number from ${countryName(country)} starts with ${callingCode(country)}.`;
 }
 
-/** Hint under the phone field once a country is chosen. */
-export function phoneHint(country: string): string | undefined {
+/** Hint under the phone field: always ask for the prefix, and name it once a country is chosen. */
+export function phoneHint(country: string): string {
   const cc = callingCode(country);
-  if (!cc) return undefined;
-  return country === 'TZ'
-    ? `Tanzania: ${cc} 7XX XXX XXX or 07XX XXX XXX`
-    : `${countryName(country)}: start with ${cc}`;
+  return cc
+    ? `Please include the country prefix (${countryName(country)}: ${cc}).`
+    : 'Please include the country prefix, e.g. +255.';
 }

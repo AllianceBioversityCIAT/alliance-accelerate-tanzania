@@ -372,11 +372,13 @@ export interface PhoneNormalizationResult {
  * are only read for Tanzania (`255`); for any other country only the
  * international form with that country's code is accepted, because a
  * national "0…" number is not unambiguous across Africa (in Côte d'Ivoire
- * the leading 0 is part of the number).
+ * the leading 0 is part of the number). `internationalOnly` applies that
+ * rule to Tanzania too (forms and API; the import keeps the national formats).
  */
 export function normalizePhone(
   raw: string | null | undefined,
   callingCode: string = TZ_COUNTRY_CODE,
+  { internationalOnly = false }: { internationalOnly?: boolean } = {},
 ): PhoneNormalizationResult {
   if (raw == null) return { phone: null, additionalCount: 0 };
 
@@ -391,7 +393,7 @@ export function normalizePhone(
 
   return {
     phone:
-      callingCode === TZ_COUNTRY_CODE
+      callingCode === TZ_COUNTRY_CODE && !internationalOnly
         ? normalizeSinglePhone(parts[0])
         : normalizeInternationalPhone(parts[0], callingCode),
     additionalCount: parts.length - 1,

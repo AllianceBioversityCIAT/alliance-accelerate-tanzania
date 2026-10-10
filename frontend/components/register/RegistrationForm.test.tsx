@@ -397,8 +397,9 @@ describe('RegistrationForm — error contract (one source, not two)', () => {
     const phoneInput = screen.getByLabelText(/^phone/i);
     const describedBy = phoneInput.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
-    const errorEl = document.getElementById(describedBy!.split(' ')[0]);
-    expect(errorEl).toHaveTextContent('Phone is required.');
+    // The phone field always carries its prefix hint too, so the error is one of the ids.
+    const described = describedBy!.split(' ').map((id) => document.getElementById(id)?.textContent);
+    expect(described).toContain('Phone is required.');
 
     // The crops checkbox GROUP (not a checkbox) carries the association —
     // Reviewer FAIL, attempt 2: no control pointed at the crops error at all.
@@ -751,7 +752,7 @@ describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', (
     const user = userEvent.setup();
     render(<RegistrationForm onValidated={jest.fn()} />);
     await selectCountry(user, 'Kenya');
-    expect(screen.getByText('Kenya: start with +254')).toBeInTheDocument();
+    expect(screen.getByText('Please include the country prefix (Kenya: +254).')).toBeInTheDocument();
   });
 
   it('rejects a phone that is not from the selected country', async () => {
@@ -765,7 +766,7 @@ describe('RegistrationForm — Region field (T-4, SearchableSelect adoption)', (
 
     expect(onValidated).not.toHaveBeenCalled();
     expect(
-      screen.getAllByText(/Phone must be a Tanzanian number/).length,
+      screen.getAllByText(/Phone must include the country prefix: a number from Tanzania starts with \+255/).length,
     ).toBeGreaterThan(0);
   });
 
