@@ -24,7 +24,7 @@ export default function CountryRegionFields({
   errors,
   disabled,
   onChange,
-}: CountryRegionFieldsProps) {
+}: Readonly<CountryRegionFieldsProps>) {
   const countryId = idFor('country');
   const regionId = idFor('region');
   return (

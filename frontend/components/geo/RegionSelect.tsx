@@ -37,7 +37,7 @@ export default function RegionSelect({
   disabled: externallyDisabled = false,
   invalid,
   describedBy,
-}: RegionSelectProps) {
+}: Readonly<RegionSelectProps>) {
   const options = useMemo(
     () => (country ? regionOptionsFor(country) : ALL_REGION_OPTIONS),
     [country],

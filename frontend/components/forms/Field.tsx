@@ -12,7 +12,7 @@ export interface FieldProps {
   children: React.ReactNode;
 }
 
-export function Field({ id, label, error, hint, required, children }: FieldProps) {
+export function Field({ id, label, error, hint, required, children }: Readonly<FieldProps>) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-fg">

@@ -29,16 +29,19 @@ import RegionSelect from '@/components/geo/RegionSelect';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
+/** The URL-backed filters this panel edits. */
+type DirectoryFilterKey = 'crop' | 'role' | 'country' | 'region';
+
 export interface DirectoryFiltersProps {
   /** Current active filters — mirrors the URL params. */
-  filters: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>;
+  filters: Pick<ActorsQuery, DirectoryFilterKey>;
   /**
    * Called whenever a select changes or clear is activated.
    * Receives a new merged object with the changed field applied (or cleared to
    * undefined when "All …" is selected / clear pressed).
    * Caller is responsible for resetting page to 1 (FR-2).
    */
-  onChange: (next: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>) => void;
+  onChange: (next: Pick<ActorsQuery, DirectoryFilterKey>) => void;
   /** Called when the "Clear filters" button is activated (FR-2). */
   onClear: () => void;
 }
@@ -59,7 +62,7 @@ const SELECT_CLASS = [
 
 /** True when at least one filter is active (controls clear-button visibility). */
 function hasActiveFilters(
-  filters: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>,
+  filters: Pick<ActorsQuery, DirectoryFilterKey>,
 ): boolean {
   return (
     filters.crop != null ||

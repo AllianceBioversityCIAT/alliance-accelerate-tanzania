@@ -56,7 +56,7 @@ const CONTROL_CLASS = [
  *     onChange={(next) => setQuery(next)}
  *   />
  */
-export default function DashboardFilters({ filters, onChange }: DashboardFiltersProps) {
+export default function DashboardFilters({ filters, onChange }: Readonly<DashboardFiltersProps>) {
   // ── Merge helper ─────────────────────────────────────────────────────────────
 
   /**

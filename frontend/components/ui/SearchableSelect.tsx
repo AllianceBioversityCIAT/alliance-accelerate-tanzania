@@ -238,15 +238,11 @@ export function SearchableSelect({
   // included, rather than leaving a lone clear row behind it.
   // While the user is typing, the clear entry is left out so Enter commits the first match.
   const isSearching = searchText.trim() !== '';
-  const renderedOptions: SearchableSelectOption[] = useMemo(
-    () =>
-      isNoMatch
-        ? []
-        : clearOptionLabel !== undefined && !isSearching
-          ? [{ value: '', label: clearOptionLabel }, ...matchedOptions]
-          : matchedOptions,
-    [isNoMatch, clearOptionLabel, isSearching, matchedOptions],
-  );
+  const renderedOptions: SearchableSelectOption[] = useMemo(() => {
+    if (isNoMatch) return [];
+    if (clearOptionLabel === undefined || isSearching) return matchedOptions;
+    return [{ value: '', label: clearOptionLabel }, ...matchedOptions];
+  }, [isNoMatch, clearOptionLabel, isSearching, matchedOptions]);
 
   const committedLabel = options.find((opt) => opt.value === value)?.label ?? '';
   const displayValue = isOpen ? searchText : committedLabel;

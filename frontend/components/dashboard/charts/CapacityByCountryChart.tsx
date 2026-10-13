@@ -52,7 +52,7 @@ export interface CapacityByCountryChartProps {
 // Defined separately so the hook is called inside the ChartCard provider tree.
 // ---------------------------------------------------------------------------
 
-function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
+function InnerChart({ series }: Readonly<{ series: DashboardSeriesPoint[] }>) {
   const reducedMotion = useChartReducedMotion();
 
   return (
@@ -92,8 +92,8 @@ function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
           }}
         />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={!reducedMotion}>
-          {series.map((_point, index) => (
-            <Cell key={`cell-${index}`} fill={categoricalColor(index)} />
+          {series.map((point, index) => (
+            <Cell key={point.label} fill={categoricalColor(index)} />
           ))}
         </Bar>
       </BarChart>
@@ -105,7 +105,7 @@ function InnerChart({ series }: { series: DashboardSeriesPoint[] }) {
 // Public component
 // ---------------------------------------------------------------------------
 
-export default function CapacityByCountryChart({ data }: CapacityByCountryChartProps) {
+export default function CapacityByCountryChart({ data }: Readonly<CapacityByCountryChartProps>) {
   // Build the friendly series ONCE — same array drives both ChartCard's data
   // table and the Recharts chart, so table + chart always agree.
   const series = data.map((point) => ({

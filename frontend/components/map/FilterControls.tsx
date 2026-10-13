@@ -59,7 +59,7 @@ const SELECT_CLASS = [
  * Each select has an "All …" option that clears that field from the query.
  * Changes call `onChange` with a new merged ActorsQuery (page reset to 1).
  */
-export default function FilterControls({ filters, onChange }: FilterControlsProps) {
+export default function FilterControls({ filters, onChange }: Readonly<FilterControlsProps>) {
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   function handleCrop(e: React.ChangeEvent<HTMLSelectElement>) {

@@ -25,7 +25,7 @@ export default function CountrySelect({
   disabled,
   invalid,
   describedBy,
-}: CountrySelectProps) {
+}: Readonly<CountrySelectProps>) {
   return (
     <SearchableSelect
       id={id}
