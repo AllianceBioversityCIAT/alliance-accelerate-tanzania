@@ -29,8 +29,6 @@ import Button from '../ui/Button';
 
 import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { regionsFor } from '@/lib/content/countries';
-import CountrySelect from '@/components/geo/CountrySelect';
-import RegionSelect from '@/components/geo/RegionSelect';
 import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
@@ -62,6 +60,8 @@ import {
   longitudeRangeError,
 } from '@/lib/geo/coordinates';
 import { isPhoneOfCountry, phoneHint, phoneOfCountryMessage } from '@/lib/geo/phone';
+import { Field } from '@/components/forms/Field';
+import CountryRegionFields from '@/components/geo/CountryRegionFields';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -681,45 +681,6 @@ function mapApiError(err: unknown): { formError?: string; fieldErrors: Record<st
   };
 }
 
-// ---------------------------------------------------------------------------
-// Reusable field wrapper
-// ---------------------------------------------------------------------------
-
-interface FieldProps {
-  id: string;
-  label: string;
-  error?: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}
-
-function Field({ id, label, error, hint, required, children }: FieldProps) {
-  const errorId = `${id}-error`;
-  const hintId = `${id}-hint`;
-  const describedBy = [hint ? hintId : '', error ? errorId : ''].filter(Boolean).join(' ') || undefined;
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-fg">
-        {label}
-        {required && <span aria-hidden="true" className="ml-0.5 text-danger">*</span>}
-      </label>
-      {children}
-      {hint && (
-        <p id={hintId} className="text-xs text-muted">
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={errorId} role="alert" className="text-xs text-danger">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
@@ -978,48 +939,6 @@ export default function ActorForm({
     );
   };
 
-  const renderCountryField = () => {
-    const id = fieldId('country');
-    const error = errors.country;
-    return (
-      <Field id={id} label="Country" error={error} required>
-        <CountrySelect
-          id={id}
-          value={values.country}
-          onChange={(next) => setField('country', next)}
-          disabled={loading}
-          invalid={!!error}
-          describedBy={error ? `${id}-error` : undefined}
-        />
-      </Field>
-    );
-  };
-
-  const renderRegionField = () => {
-    const id = fieldId('region');
-    const error = errors.region;
-    return (
-      <Field
-        id={id}
-        label="Region"
-        error={error}
-        required
-        hint={values.country ? undefined : 'Choose a country first to see its regions.'}
-      >
-        <RegionSelect
-          id={id}
-          country={values.country}
-          region={values.region}
-          onChange={({ region }) => setField('region', region)}
-          requireCountry
-          disabled={loading}
-          invalid={!!error}
-          describedBy={[values.country ? '' : `${id}-hint`, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
-        />
-      </Field>
-    );
-  };
-
   /**
    * T-6 (FR-2) — edit mode only: the Trader ID is shown read-only (disabled,
    * never submitted — `buildDto` has no `traderId` key at all). Not wrapped
@@ -1273,8 +1192,14 @@ export default function ActorForm({
           <fieldset className="border-0 p-0 m-0">
             <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {renderCountryField()}
-              {renderRegionField()}
+              <CountryRegionFields
+                idFor={fieldId}
+                country={values.country}
+                region={values.region}
+                errors={{ country: errors.country, region: errors.region }}
+                disabled={loading}
+                onChange={(field, value) => setField(field, value)}
+              />
               {renderInput('district', 'District')}
               {renderInput('marketLocation', 'Market location')}
               {renderInput('gpsLatitude', 'GPS latitude', 'number', false, LATITUDE_HINT)}

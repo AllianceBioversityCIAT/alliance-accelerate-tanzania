@@ -1,4 +1,19 @@
-import { AFRICAN_COUNTRIES, type AfricanCountry } from './african-countries.generated';
+// african-countries.generated.json is written by backend/scripts/generate-african-geo.ts
+// and must stay byte-identical to the backend copy (backend countries.spec.ts).
+import GENERATED from './african-countries.generated.json';
+
+export interface AfricanCountry {
+  /** ISO 3166-1 alpha-2, the value stored in `country`. */
+  readonly code: string;
+  readonly name: string;
+  /** E.164 country calling code, without the "+". */
+  readonly callingCode: string;
+  readonly regions: readonly string[];
+  /** Map frame, `[[south, west], [north, east]]` (Natural Earth, mainland-weighted). */
+  readonly bounds: readonly [readonly [number, number], readonly [number, number]];
+}
+
+const AFRICAN_COUNTRIES = GENERATED as unknown as readonly AfricanCountry[];
 
 export const COUNTRIES: readonly AfricanCountry[] = [...AFRICAN_COUNTRIES].sort((a, b) =>
   a.name.localeCompare(b.name),

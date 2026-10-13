@@ -267,41 +267,32 @@ describe('RegistrationsPage', () => {
 
   // R16 — region/traderType were checked alongside sort and found equally
   // unasserted for URL sync; added here too.
-  it('R16 — pushes the country query param onto the URL when the country filter changes (URL sync)', async () => {
+  /** Opens the Country or Region filter (starting from `search`) and picks `option`. */
+  async function pickGeoFilter(label: 'Country' | 'Region', option: string, search = '') {
     const user = userEvent.setup();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(search));
     await renderAndWaitForList();
-    await waitFor(() => expect(screen.getByLabelText('Country')).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText(label)).toBeEnabled());
+    await user.click(screen.getByLabelText(label));
+    await user.click(screen.getByRole('option', { name: option }));
+  }
 
-    await user.click(screen.getByLabelText('Country'));
-    await user.click(screen.getByRole('option', { name: 'Tanzania' }));
+  it.each([
+    ['country', 'Country', 'Tanzania', '', 'country=TZ'],
+    ['region', 'Region', 'Arusha', 'country=TZ', 'region=Arusha'],
+  ] as const)(
+    'R16 — pushes the %s query param onto the URL when its filter changes (URL sync)',
+    async (_param, label, option, search, expected) => {
+      await pickGeoFilter(label, option, search);
 
-    await waitFor(() =>
-      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('country=TZ'), { scroll: false }),
-    );
-  });
-
-  it('R16 — pushes the region query param onto the URL when the region filter changes (URL sync)', async () => {
-    const user = userEvent.setup();
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('country=TZ'));
-    await renderAndWaitForList();
-    await waitFor(() => expect(screen.getByLabelText('Region')).toBeEnabled());
-
-    await user.click(screen.getByLabelText('Region'));
-    await user.click(screen.getByRole('option', { name: 'Arusha' }));
-
-    await waitFor(() =>
-      expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining('region=Arusha'), { scroll: false }),
-    );
-  });
+      await waitFor(() =>
+        expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining(expected), { scroll: false }),
+      );
+    },
+  );
 
   it('clears a region that does not belong to the newly chosen country', async () => {
-    const user = userEvent.setup();
-    mockUseSearchParams.mockReturnValue(new URLSearchParams('country=TZ&region=Arusha'));
-    await renderAndWaitForList();
-    await waitFor(() => expect(screen.getByLabelText('Country')).toBeEnabled());
-
-    await user.click(screen.getByLabelText('Country'));
-    await user.click(screen.getByRole('option', { name: 'Kenya' }));
+    await pickGeoFilter('Country', 'Kenya', 'country=TZ&region=Arusha');
 
     await waitFor(() => {
       const url = mockRouterReplace.mock.calls.at(-1)![0] as string;

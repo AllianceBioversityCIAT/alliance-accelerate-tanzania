@@ -1,12 +1,24 @@
 /**
  * Country/region allowlist: the 54 African countries and their ISO 3166-2
- * regions (african-countries.generated.ts). `country` is stored as the ISO
- * 3166-1 alpha-2 code; `region` must be one of that country's regions.
+ * regions (african-countries.generated.json, written by
+ * scripts/generate-african-geo.ts). `country` is stored as the ISO 3166-1
+ * alpha-2 code; `region` must be one of that country's regions.
  */
 import { normalizePhone, normalizeRegion, type PhoneNormalizationResult } from '../normalize';
-import { AFRICAN_COUNTRIES, type AfricanCountry } from './african-countries.generated';
+import GENERATED from './african-countries.generated.json';
 
-export { AFRICAN_COUNTRIES, type AfricanCountry };
+export interface AfricanCountry {
+  /** ISO 3166-1 alpha-2, the value stored in `country`. */
+  readonly code: string;
+  readonly name: string;
+  /** E.164 country calling code, without the "+". */
+  readonly callingCode: string;
+  readonly regions: readonly string[];
+  /** Map frame, `[[south, west], [north, east]]` (Natural Earth, mainland-weighted). */
+  readonly bounds: readonly [readonly [number, number], readonly [number, number]];
+}
+
+export const AFRICAN_COUNTRIES = GENERATED as unknown as readonly AfricanCountry[];
 
 export const COUNTRY_CODES: readonly string[] = AFRICAN_COUNTRIES.map((c) => c.code);
 

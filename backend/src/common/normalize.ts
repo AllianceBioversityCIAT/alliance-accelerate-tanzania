@@ -20,7 +20,7 @@
  * Official Tanzania regions (mainland + Zanzibar), 31 as of the most recent
  * administrative split (Songwe carved from Mbeya; Zanzibar's five urban/rural
  * regions included). Tanzania's entry in the generated country list
- * (`geo/african-countries.generated.ts`) is built from this constant, and
+ * (`geo/african-countries.generated.json`) is built from this constant, and
  * `normalizeRegion` keeps its aliases; after editing it, re-run
  * `scripts/generate-african-geo.ts` and `npm run generate:template`
  * (`geo/countries.spec.ts` fails until the generated list matches).

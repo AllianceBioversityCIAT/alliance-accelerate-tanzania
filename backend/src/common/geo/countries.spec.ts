@@ -40,8 +40,8 @@ describe('african countries allowlist', () => {
 
   it('is byte-identical to the frontend copy', () => {
     const read = (p: string) => readFileSync(join(__dirname, '../../../..', p), 'utf8');
-    expect(read('frontend/lib/content/african-countries.generated.ts')).toBe(
-      read('backend/src/common/geo/african-countries.generated.ts'),
+    expect(read('frontend/lib/content/african-countries.generated.json')).toBe(
+      read('backend/src/common/geo/african-countries.generated.json'),
     );
   });
 

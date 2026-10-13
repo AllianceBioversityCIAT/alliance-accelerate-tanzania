@@ -68,8 +68,6 @@ import { ROLES } from '@/lib/content/roles';
 import AdditionalTypesField from '@/components/ui/AdditionalTypesField';
 import { toggleListValue, withoutFieldError } from '@/lib/forms/field-state';
 import { regionsFor } from '@/lib/content/countries';
-import CountrySelect from '@/components/geo/CountrySelect';
-import RegionSelect from '@/components/geo/RegionSelect';
 import CoordinatePicker from '@/components/map/CoordinatePicker';
 import {
   LATITUDE_HINT,
@@ -79,6 +77,8 @@ import {
 } from '@/lib/geo/coordinates';
 import ConsentPolicyDisclosure from './ConsentPolicyDisclosure';
 import { isPhoneOfCountry, phoneHint, phoneOfCountryMessage } from '@/lib/geo/phone';
+import { Field } from '@/components/forms/Field';
+import CountryRegionFields from '@/components/geo/CountryRegionFields';
 
 // ---------------------------------------------------------------------------
 // Constants — mirrors design.md §4.1 / registration-create.dto.ts verbatim
@@ -471,46 +471,6 @@ function validate(values: FormValues): Record<string, string> {
   return errors;
 }
 
-// ---------------------------------------------------------------------------
-// Reusable field wrapper — mirrors ActorForm.tsx's `Field`
-// ---------------------------------------------------------------------------
-
-interface FieldProps {
-  id: string;
-  label: string;
-  error?: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}
-
-function Field({ id, label, error, hint, required, children }: FieldProps) {
-  const errorId = `${id}-error`;
-  const hintId = `${id}-hint`;
-  const describedBy = [hint ? hintId : '', error ? errorId : ''].filter(Boolean).join(' ') || undefined;
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-fg">
-        {label}
-        {required && <span aria-hidden="true" className="ml-0.5 text-danger">*</span>}
-      </label>
-      {/* `describedBy` is threaded onto the control by the caller via aria-describedby={describedBy}; kept here for reference by both hint and error ids below. */}
-      {children}
-      {hint && (
-        <p id={hintId} className="text-xs text-muted">
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={errorId} role="alert" className="text-xs text-danger">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function inputClasses(error?: boolean): string {
   return [
     'block w-full rounded-md border bg-surface px-3 py-2 text-sm text-fg',
@@ -676,48 +636,6 @@ export default function RegistrationForm({
     );
   };
 
-  const renderCountryField = () => {
-    const id = fieldId('country');
-    const error = errors.country;
-    return (
-      <Field id={id} label="Country" error={error} required>
-        <CountrySelect
-          id={id}
-          value={values.country}
-          onChange={(next) => setField('country', next)}
-          disabled={submitting}
-          invalid={!!error}
-          describedBy={error ? `${id}-error` : undefined}
-        />
-      </Field>
-    );
-  };
-
-  const renderRegionField = () => {
-    const id = fieldId('region');
-    const error = errors.region;
-    return (
-      <Field
-        id={id}
-        label="Region"
-        error={error}
-        required
-        hint={values.country ? undefined : 'Choose a country first to see its regions.'}
-      >
-        <RegionSelect
-          id={id}
-          country={values.country}
-          region={values.region}
-          onChange={({ region }) => setField('region', region)}
-          requireCountry
-          disabled={submitting}
-          invalid={!!error}
-          describedBy={[values.country ? '' : `${id}-hint`, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
-        />
-      </Field>
-    );
-  };
-
   const renderInput = (
     field: keyof FormValues,
     label: string,
@@ -830,8 +748,14 @@ export default function RegistrationForm({
         <fieldset className="border-0 p-0 m-0">
           <legend className="mb-4 text-base font-semibold text-fg">Location</legend>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {renderCountryField()}
-            {renderRegionField()}
+            <CountryRegionFields
+              idFor={fieldId}
+              country={values.country}
+              region={values.region}
+              errors={{ country: errors.country, region: errors.region }}
+              disabled={submitting}
+              onChange={(field, value) => setField(field, value)}
+            />
             {renderInput('district', 'District')}
             {renderInput(
               'marketLocation',
