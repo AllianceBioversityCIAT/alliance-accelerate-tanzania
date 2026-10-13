@@ -37,7 +37,7 @@ const CROP_TEXT: Record<CropTokenClass, string> = {
 // ---------------------------------------------------------------------------
 
 export const metadata: Metadata = {
-  title: 'About ACCELERATE — Tanzania Seed Registry',
+  title: 'About — PABRA Seed Registry',
   description:
     'ACCELERATE is a 2023–2026 initiative building a demand-led model to speed adoption of improved sorghum, common bean, and groundnut varieties across Tanzania.',
 };
@@ -458,9 +458,9 @@ export default function AboutPage() {
           </h2>
 
           <p className="text-base text-muted leading-relaxed max-w-prose mb-8">
-            This platform is the public registry behind ACCELERATE &mdash; a single, trusted map
-            of the seed companies, cooperatives, offtakers, research institutes, and traders that
-            make up Tanzania&rsquo;s seed system. It helps institutions find the right actors
+            This platform began under ACCELERATE and is now a PABRA product &mdash; a single, trusted
+            map of the seed companies, cooperatives, offtakers, research institutes, and traders that
+            make up Africa&rsquo;s seed systems. It helps institutions find the right actors
             quickly, understand who operates where, and strengthen the value chains that move
             improved varieties from lab to field.
           </p>

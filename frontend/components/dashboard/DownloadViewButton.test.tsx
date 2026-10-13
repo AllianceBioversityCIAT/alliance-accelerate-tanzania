@@ -219,7 +219,7 @@ describe('DownloadViewButton — filename', () => {
     expect(download).toMatch(/\.csv$/);
   });
 
-  it('uses the default filenameBase "accelerate-tz-actors" when not provided', () => {
+  it('uses the default filenameBase "pabra-seed-registry-actors" when not provided', () => {
     let capturedAnchor: HTMLAnchorElement | null = null;
     jest.spyOn(document, 'createElement').mockImplementation((tag: string) => {
       const el = originalCreateElement(tag);
@@ -234,7 +234,7 @@ describe('DownloadViewButton — filename', () => {
     fireEvent.click(screen.getByRole('button', { name: /download this view/i }));
 
     const download = (capturedAnchor as HTMLAnchorElement | null)?.getAttribute('download') ?? '';
-    expect(download).toMatch(/^accelerate-tz-actors-/);
+    expect(download).toMatch(/^pabra-seed-registry-actors-/);
   });
 
   it('uses the provided filenameBase in the download attribute', () => {

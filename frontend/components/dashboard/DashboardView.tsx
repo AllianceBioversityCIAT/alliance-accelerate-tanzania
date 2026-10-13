@@ -136,7 +136,7 @@ export default function DashboardView() {
             <h1 className="text-xl font-extrabold text-fg sm:text-2xl">Seed Discovery Dashboard</h1>
             {/* Intro hidden on mobile to keep the toolbar compact */}
             <p className="hidden text-sm text-muted sm:block">
-              Filter Tanzania&apos;s seed-system actors, read the breakdowns, and export the view.
+              Filter seed-system actors across Africa, read the breakdowns, and export the view.
             </p>
           </div>
           {hasResults ? (

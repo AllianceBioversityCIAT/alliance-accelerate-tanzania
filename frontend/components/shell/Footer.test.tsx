@@ -88,3 +88,28 @@ describe('Footer — links (FR-6, T-6)', () => {
     expect(new Set(classNames).size).toBe(1);
   });
 });
+
+describe('Footer — rebrand (PABRA brand mark, ACCELERATE in the logo row)', () => {
+  const srcs = () =>
+    Array.from(document.querySelectorAll('img')).map((i) =>
+      decodeURIComponent(i.getAttribute('src') ?? ''),
+    );
+
+  it('uses the PABRA logo as the brand mark, linking home', () => {
+    render(<Footer />);
+
+    const brand = screen.getByRole('link', { name: 'PABRA Seed Registry — home' });
+    expect(brand).toHaveAttribute('href', '/');
+    expect(brand.querySelector('img')?.getAttribute('src') ?? '').toContain('pabra-logo.png');
+  });
+
+  it('shows the ACCELERATE logo in the logo row and PABRA only once (the brand mark)', () => {
+    render(<Footer />);
+
+    const all = srcs();
+    expect(all.filter((s) => s.includes('/brand/accelerate-logo-color.png'))).toHaveLength(1);
+    expect(all.filter((s) => s.includes('pabra-logo.png'))).toHaveLength(1);
+    expect(all.some((s) => s.includes('accelerate-logo-white'))).toBe(false);
+    expect(screen.queryByRole('link', { name: /pan-africa bean research alliance/i })).toBeNull();
+  });
+});

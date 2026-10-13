@@ -72,7 +72,7 @@ export function getMicroserviceMailConfig(): MicroserviceMailConfig {
     // deliberate, NOT a typo: the microservice appends " No reply" to the
     // display name it's given, so this renders as "ACCELERATE Tanzania Seed
     // Registry - No reply". Do not "fix" the dash.
-    senderName: process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -',
+    senderName: process.env.EMAIL_SENDER_NAME ?? 'PABRA Seed Registry -',
   };
 }
 

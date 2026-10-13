@@ -54,6 +54,8 @@ export interface ConsentPolicyEdition {
   version: string;
   issuedAt: string;
   sections: readonly ConsentPolicySection[];
+  /** This edition's checkbox label; per edition so a new wording never rewrites what was accepted before. */
+  acceptanceStatement: string;
 }
 
 /**
@@ -100,7 +102,6 @@ const CONSENT_POLICY_EDITIONS_SOURCE: ConsentPolicyEdition[] = APPROVED_TEXT.edi
  * the label), and the doubled full stop at the end ("...where provided..")
  * is corrected to a single one.
  */
-export const CONSENT_ACCEPTANCE_STATEMENT: string = APPROVED_TEXT.acceptanceStatement;
 
 /**
  * The append-only registry — OLDEST FIRST — and this module's single source
@@ -209,6 +210,16 @@ export function deriveKnownConsentPolicyVersions(
  * falsifier.
  */
 export const CONSENT_POLICY_VERSION: string = deriveConsentPolicyVersion(CONSENT_POLICY_EDITIONS);
+
+/**
+ * The current edition's acceptance-checkbox label (see the note above
+ * `CONSENT_POLICY_EDITIONS`): served as `acceptanceStatement` by
+ * `GET /registrations/consent-policy`. Each edition carries its own since
+ * v1.1, when the product was renamed; v1.0-placeholder and v1.0 keep the
+ * statement they were served with.
+ */
+export const CONSENT_ACCEPTANCE_STATEMENT: string =
+  deriveCurrentEdition(CONSENT_POLICY_EDITIONS).acceptanceStatement;
 
 /**
  * Every consent policy version this server will accept back at submission

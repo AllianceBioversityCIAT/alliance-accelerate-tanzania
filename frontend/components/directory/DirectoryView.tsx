@@ -240,7 +240,7 @@ export default function DirectoryView() {
       <div className="mb-6">
         <h1 className="text-2xl font-extrabold text-fg">Actor Directory</h1>
         <p className="mt-1 text-sm text-muted">
-          Tanzania seed system actors — sorghum, common bean, and groundnut value chains.
+          Seed-system actors across Africa — sorghum, common bean, and groundnut value chains.
         </p>
       </div>
 

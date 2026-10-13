@@ -113,7 +113,7 @@ describe('StatusLookupForm', () => {
 
     expect(await screen.findByText('Pending review')).toBeInTheDocument();
     expect(
-      screen.getByText(/waiting to be reviewed by the accelerate tanzania team/i),
+      screen.getByText(/waiting to be reviewed by the pabra team/i),
     ).toBeInTheDocument();
   });
 

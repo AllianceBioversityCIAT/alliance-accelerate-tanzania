@@ -16,7 +16,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ActingAdminResolver } from '../actors/acting-admin.resolver';
 import { createConsentRequestMock, ConsentRequestMockRow } from './support/consent-request.mock';
 import {
-  CURRENT_ADMIN_CONSENT_EDITION,
+  CURRENT_ADMIN_CONSENT_EDITION, getAdminConsentEdition,
   computeAdminConsentEditionHash,
 } from '../consent-requests/admin-consent-policy';
 import { MailService } from '../mail/mail.service';
@@ -726,8 +726,13 @@ describe('Admin consent-requests e2e (HTTP + in-memory Prisma)', () => {
 
     it('GET /consent-editions/:version returns the exact edition text, and 404 for an unknown version', async () => {
       const res = await request(app.getHttpServer()).get('/api/v1/admin/consent-editions/v1.0').set(admin).expect(200);
-      expect(res.body).toEqual(JSON.parse(JSON.stringify(CURRENT_ADMIN_CONSENT_EDITION)));
+      expect(res.body).toEqual(JSON.parse(JSON.stringify(getAdminConsentEdition('v1.0'))));
       expect(Object.keys(res.body).sort()).toEqual(['acceptanceStatement', 'issuedAt', 'sections', 'version']);
+      const current = await request(app.getHttpServer())
+        .get(`/api/v1/admin/consent-editions/${CURRENT_ADMIN_CONSENT_EDITION.version}`)
+        .set(admin)
+        .expect(200);
+      expect(current.body).toEqual(JSON.parse(JSON.stringify(CURRENT_ADMIN_CONSENT_EDITION)));
       await request(app.getHttpServer()).get('/api/v1/admin/consent-editions/v9.9').set(admin).expect(404);
     });
 

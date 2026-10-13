@@ -8,13 +8,23 @@ import Link from 'next/link';
 import { PARTNERS } from '@/lib/content/partners';
 
 // Partners with logo assets that anchor the footer coalition row (FR-10).
-// alliance + pabra = "An initiative of"; bmgf = "Funded by".
-const COALITION_KEYS = ['alliance', 'pabra'] as const;
+// alliance + ACCELERATE (the origin project, not a PARTNERS entry) = "Developed under";
+// bmgf = "Funded by". PABRA is the footer brand mark above.
+const COALITION_KEYS = ['alliance'] as const;
 const FUNDER_KEYS    = ['bmgf']               as const;
 
 const coalitionPartners = PARTNERS.filter(
   (p) => (COALITION_KEYS as readonly string[]).includes(p.key) && p.logo,
 );
+// ACCELERATE is the project this registry began under; shown as a logo-row entry.
+const ACCELERATE = {
+  name: 'ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops',
+  url: 'https://alliancebioversityciat.org/projects/accelerate',
+  logo: '/brand/accelerate-logo-color.png',
+  width: 867,
+  height: 194,
+};
+
 const funderPartners = PARTNERS.filter(
   (p) => (FUNDER_KEYS as readonly string[]).includes(p.key) && p.logo,
 );
@@ -22,7 +32,6 @@ const funderPartners = PARTNERS.filter(
 // Explicit display dimensions per partner (original asset dims → display h-9 w-auto).
 const LOGO_DIMS: Record<string, { width: number; height: number }> = {
   alliance: { width: 400, height: 80  },
-  pabra:    { width: 477, height: 181 },
   bmgf:     { width: 1000, height: 202 },
 };
 
@@ -41,17 +50,17 @@ export default function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 
-          {/* White-reverse logo — white-on-transparent sits cleanly on bg-fg */}
+          {/* PABRA brand mark — the logo has no white variant, so it sits on a light plate */}
           <Link
             href="/"
-            aria-label="ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops — home"
-            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg rounded-sm"
+            aria-label="PABRA Seed Registry — home"
+            className="inline-flex items-center rounded-md bg-surface px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg"
           >
             <Image
-              src="/brand/accelerate-logo-white.png"
-              width={816}
-              height={144}
-              alt="ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops"
+              src="/brand/pabra-logo.png"
+              width={291}
+              height={175}
+              alt="PABRA Seed Registry"
               className="h-9 w-auto sm:h-10"
             />
           </Link>
@@ -90,17 +99,17 @@ export default function Footer() {
 
         {/* ----------------------------------------------------------------
             Coalition attribution (FR-10):
-            Lead coalition — Alliance of Bioversity & CIAT + PABRA — and
+            Origin — Alliance of Bioversity & CIAT + the ACCELERATE project — and
             funder — Bill & Melinda Gates Foundation.
             Coloured logos sit on a light (bg-surface) chip so their marks
-            read against the dark footer (lightSafe: false for all three).
+            read against the dark footer (lightSafe: false for all).
         ---------------------------------------------------------------- */}
         <div className="mt-8 border-t border-bg/15 pt-6 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-4">
 
-          {/* Initiative: Alliance + PABRA */}
+          {/* Origin: Alliance + ACCELERATE */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <span className="text-xs font-semibold uppercase tracking-wider opacity-60 shrink-0">
-              An initiative of
+              Developed under
             </span>
             <div className="flex flex-wrap items-center gap-2">
               {coalitionPartners.map((partner) => {
@@ -116,11 +125,7 @@ export default function Footer() {
                   >
                     <Image
                       src={partner.logo!}
-                      alt={
-                        partner.key === 'pabra'
-                          ? 'PABRA — Pan-Africa Bean Research Alliance, celebrating 30 years of better beans for Africa'
-                          : partner.name
-                      }
+                      alt={partner.name}
                       width={dims.width}
                       height={dims.height}
                       className="h-9 w-auto"
@@ -128,6 +133,21 @@ export default function Footer() {
                   </a>
                 );
               })}
+              <a
+                href={ACCELERATE.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="ACCELERATE project — opens in a new tab"
+                className="inline-flex items-center rounded-md bg-surface px-3 py-2 transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-fg"
+              >
+                <Image
+                  src={ACCELERATE.logo}
+                  alt={ACCELERATE.name}
+                  width={ACCELERATE.width}
+                  height={ACCELERATE.height}
+                  className="h-9 w-auto"
+                />
+              </a>
             </div>
           </div>
 

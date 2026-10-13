@@ -445,7 +445,7 @@ describe('DD-3a — the published envelope mirrors buildMicroserviceEnvelope\'s 
         data: {
           from: {
             email: 'alliance-acceleratetz-no-reply@cgiar.org',
-            name: 'ACCELERATE Tanzania Seed Registry -',
+            name: 'PABRA Seed Registry -',
           },
           emailBody: {
             subject: expect.any(String),

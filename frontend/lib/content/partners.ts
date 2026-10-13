@@ -1,5 +1,5 @@
 /**
- * partners.ts — static partner/funder content for the ACCELERATE Tanzania Seed Registry.
+ * partners.ts — static partner/funder content for the PABRA Seed Registry.
  * T-1 (FR-11, FR-12, System Design §7 tokens).
  *
  * Provides the six-partner coalition backing the ACCELERATE project.
@@ -80,7 +80,7 @@ export const PARTNERS: Partner[] = [
     name: 'Pan-Africa Bean Research Alliance (PABRA)',
     role: 'Co-lead, bean value chain',
     url: 'https://www.pabra-africa.org',
-    logo: '/pabra-30-logo.png',
+    logo: '/brand/pabra-logo.png',
     // Coloured mark on transparency — requires a light chip on dark footer
     lightSafe: false,
     tier: 'lead',

@@ -22,7 +22,7 @@ import Header from '@/components/shell/Header';
 import Footer from '@/components/shell/Footer';
 
 export const metadata: Metadata = {
-  title: 'Consent request | ACCELERATE Tanzania Seed Registry',
+  title: 'Consent request | PABRA Seed Registry',
   robots: { index: false, follow: false },
 };
 

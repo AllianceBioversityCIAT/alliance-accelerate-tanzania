@@ -72,9 +72,9 @@ function signInUrl() {
 export function buildPasswordResetMessage(to, code) {
   return {
     to,
-    subject: 'Your ACCELERATE Tanzania password reset code',
+    subject: 'Your PABRA Seed Registry password reset code',
     text:
-      'A password reset was requested for your ACCELERATE Tanzania account.\n\n' +
+      'A password reset was requested for your PABRA Seed Registry account.\n\n' +
       `Your reset code is ${code}.\n\n` +
       'Go back to the window or tab where you requested this reset and ' +
       'enter the code there to choose a new password — it is already ' +
@@ -87,7 +87,7 @@ export function buildPasswordResetMessage(to, code) {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'A password reset was requested for your ACCELERATE Tanzania account.',
+          text: 'A password reset was requested for your PABRA Seed Registry account.',
         },
         {
           kind: 'callout',
@@ -146,10 +146,10 @@ export function buildAttributeVerificationMessage(to, code) {
 
   return {
     to,
-    subject: 'Verify your ACCELERATE Tanzania email address',
+    subject: 'Verify your PABRA Seed Registry email address',
     text:
-      'An administrator updated the email address on your ACCELERATE ' +
-      'Tanzania account.\n\n' +
+      'An administrator updated the email address on your PABRA Seed ' +
+      'Registry account.\n\n' +
       `Your verification code is ${code}.\n\n` +
       'Once verified, sign in as usual:\n' +
       `${SIGN_IN_URL}\n\n` +
@@ -160,7 +160,7 @@ export function buildAttributeVerificationMessage(to, code) {
       blocks: [
         {
           kind: 'paragraph',
-          text: 'An administrator updated the email address on your ACCELERATE Tanzania account.',
+          text: 'An administrator updated the email address on your PABRA Seed Registry account.',
         },
         { kind: 'callout', label: 'Verification code', value: code },
         { kind: 'link', label: 'Sign in', href: SIGN_IN_URL },

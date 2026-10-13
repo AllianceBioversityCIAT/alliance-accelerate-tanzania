@@ -997,7 +997,7 @@ Resources:
           # EMAIL_SENDER is public by construction (the From header of
           # every message this system sends) - hiding it protects nothing.
           EMAIL_SENDER: alliance-acceleratetz-no-reply@cgiar.org
-          EMAIL_SENDER_NAME: "ACCELERATE Tanzania Seed Registry -"
+          EMAIL_SENDER_NAME: "PABRA Seed Registry -"
       Policies:
         # SAM adds the default CloudWatch Logs policy automatically (same
         # note as 20-backend's ApiFunction).

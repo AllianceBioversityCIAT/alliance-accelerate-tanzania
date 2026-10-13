@@ -77,11 +77,11 @@
 import type { LegalDocument } from './types';
 
 export const PRIVACY_POLICY: LegalDocument = {
-  title: 'ACCELERATE Tanzania Registry Privacy Policy',
-  version: 'v1.0',
-  effectiveDate: '30 September 2026',
+  title: 'PABRA Seed Registry Privacy Policy',
+  version: 'v1.1',
+  effectiveDate: '13 October 2026',
   lede: [
-    'The ACCELERATE Tanzania Registry ("Registry") is an online platform operated by ' +
+    'The PABRA Seed Registry ("Registry") is an online platform operated by ' +
       'the International Center for Tropical Agriculture (CIAT), through its Tanzania office ("CIAT", "we", "our", or "us") to increase the visibility of actors ' +
       'involved in seed systems and agricultural value chains, facilitate business and ' +
       'professional connections, and support access to market opportunities and services.',
@@ -570,7 +570,7 @@ export const PRIVACY_POLICY: LegalDocument = {
             {
               heading: 'Who receives it',
               paragraphs: [
-                'Your message is sent by email to the ACCELERATE Tanzania programme team, ' +
+                'Your message is sent by email to the PABRA team, ' +
                   'the administrators of this platform, so they can respond to you directly.',
               ],
             },

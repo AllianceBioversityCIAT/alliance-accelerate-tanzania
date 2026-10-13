@@ -15,9 +15,9 @@ import type { Metadata } from 'next';
 import ContactForm from '@/components/contact/ContactForm';
 
 export const metadata: Metadata = {
-  title: 'Contact — ACCELERATE Tanzania Seed Registry',
+  title: 'Contact — PABRA Seed Registry',
   description:
-    'Reach the ACCELERATE Tanzania programme team with a question, correction, or partnership inquiry about the seed registry.',
+    'Reach the PABRA team with a question, correction, or partnership inquiry about the seed registry.',
 };
 
 export default function ContactPage() {
@@ -28,7 +28,7 @@ export default function ContactPage() {
       </h1>
       <p className="mt-2 max-w-prose text-sm text-muted">
         Have a question, a correction, or a partnership inquiry? Send a message to the
-        ACCELERATE Tanzania programme team and we&rsquo;ll get back to you.
+        PABRA team and we&rsquo;ll get back to you.
       </p>
 
       <div className="mt-8">

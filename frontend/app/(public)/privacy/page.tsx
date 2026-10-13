@@ -23,9 +23,9 @@ import LegalDocumentView from '@/components/legal/LegalDocumentView';
 import { PRIVACY_POLICY } from '@/lib/content/legal/privacy';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — ACCELERATE Tanzania Seed Registry',
+  title: 'Privacy Policy — PABRA Seed Registry',
   description:
-    'How the ACCELERATE Tanzania Registry collects, uses, stores, publishes and protects '
+    'How the PABRA Seed Registry collects, uses, stores, publishes and protects '
     + 'information submitted through the platform.',
 };
 

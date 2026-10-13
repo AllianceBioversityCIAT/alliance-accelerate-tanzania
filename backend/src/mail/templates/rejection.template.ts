@@ -26,7 +26,7 @@ export function buildRejectionMessage(to: string, reference: string): MailMessag
     reference,
     subject: `Your registration was not approved — ${reference}`,
     text:
-      'Your ACCELERATE Tanzania registration has been reviewed and was not approved at this time.\n\n' +
+      'Your PABRA Seed Registry registration has been reviewed and was not approved at this time.\n\n' +
       `Your reference is ${reference}. You can look up your submission at any time using this ` +
       'reference and the email address you registered with to see the reviewer\'s note, if one was ' +
       'left.\n\n' +
@@ -40,7 +40,7 @@ export function buildRejectionMessage(to: string, reference: string): MailMessag
       blocks: [
         {
           kind: 'paragraph',
-          text: 'Your ACCELERATE Tanzania registration has been reviewed and was not approved at this time.',
+          text: 'Your PABRA Seed Registry registration has been reviewed and was not approved at this time.',
         },
         { kind: 'fields', rows: [{ label: 'Reference', value: reference }] },
         {

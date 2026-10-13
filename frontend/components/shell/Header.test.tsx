@@ -90,7 +90,7 @@ describe('Header — Public (unauthenticated)', () => {
     renderHeader();
 
     // Brand accessible label
-    expect(screen.getByRole('link', { name: /accelerate tanzania seed registry/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /pabra seed registry/i })).toBeInTheDocument();
 
     // Primary nav links (rendered at least once — desktop nav)
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
@@ -266,20 +266,30 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
 
     // The brand Link still points at '/' and still names itself as home, so
     // removing the duplicate entry cost no route and no accessible name.
-    const brand = screen.getByRole('link', { name: /accelerate tanzania seed registry.*home/i });
+    const brand = screen.getByRole('link', { name: /pabra seed registry.*home/i });
     expect(brand).toHaveAttribute('href', '/');
 
     // No nav item whose accessible name is exactly "Home".
     expect(screen.queryAllByRole('link', { name: /^home$/i })).toHaveLength(0);
   });
 
-  it('does not render the "Tanzania Seed Registry" descriptor in the bar', () => {
+  it('shows the PABRA logo as the brand mark, not the ACCELERATE one', () => {
+    const { container } = renderHeader();
+
+    const brand = screen.getByRole('link', { name: 'PABRA Seed Registry — home' });
+    const img = brand.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(decodeURIComponent(img!.getAttribute('src') ?? '')).toContain('/brand/pabra-logo.png');
+    expect(container.innerHTML).not.toContain('accelerate-logo');
+  });
+
+  it('does not render the "Seed Registry" descriptor in the bar', () => {
     renderHeader();
 
     // Removed rather than deferred to a wider breakpoint: the container is
     // max-w-7xl, so usable width is capped at 1216px and never grows with the
     // viewport — there is no screen wide enough for the descriptor to fit.
-    expect(screen.queryByText(/tanzania seed registry/i)).toBeNull();
+    expect(screen.queryByText(/seed registry/i)).toBeNull();
   });
 
   it('switches between the mobile drawer and the desktop bar at lg, not md', () => {

@@ -1,11 +1,11 @@
-# CLAUDE.md — ACCELERATE Tanzania Seed Registry
+# CLAUDE.md — PABRA Seed Registry
 
 Guidance for Claude (and any AI agent) working in this repository.
 
 **Default Branch: `main`.** *(Added 2026-09-09. Its absence is why every archive so far resolved Branch Context to "spec branch" **by fallback rather than by fact**, deferring every constitution-sync write — including on runs that were genuinely on the default branch.)*
 
 ## What this project is
-A public, serverless web platform that maps and visualizes Tanzania's seed system ecosystem (sorghum, common bean, groundnut value chains) for 1,000+ actors. See `docs/prd.md` for the full product context.
+A public, serverless web platform that maps and visualizes seed-system actors across Africa (sorghum, common bean, groundnut value chains) for 1,000+ actors. Branded the **PABRA Seed Registry**, a product of PABRA (Pan-Africa Bean Research Alliance). It began as the ACCELERATE Tanzania Seed Registry: internal identifiers (repo, AWS stacks, the `accelerate-tz` domain and sender address, storage keys) keep that name on purpose, and the `v1.0` consent editions keep it as the text people accepted. See `docs/prd.md` for the full product context.
 
 ## Constitutional baseline — read these first
 These documents are the source of truth. Consult them before writing code or specs:

@@ -51,7 +51,7 @@ export function buildNewRegistrationMessage(
     reference: data.reference,
     subject: `New registration awaiting review — ${data.reference}`,
     text:
-      'A new self-registration was submitted to the ACCELERATE Tanzania registry ' +
+      'A new self-registration was submitted to the PABRA Seed Registry ' +
       'and is waiting for review.\n\n' +
       rows.map((r) => `${r.label}: ${r.value}`).join('\n') +
       `\n\nReview it in the Admin console: ${reviewQueueUrl}`,
@@ -61,7 +61,7 @@ export function buildNewRegistrationMessage(
       blocks: [
         {
           kind: 'paragraph',
-          text: 'A new self-registration was submitted to the ACCELERATE Tanzania registry and is waiting for review.',
+          text: 'A new self-registration was submitted to the PABRA Seed Registry and is waiting for review.',
         },
         { kind: 'fields', rows },
         { kind: 'link', label: 'Open the review queue', href: reviewQueueUrl },

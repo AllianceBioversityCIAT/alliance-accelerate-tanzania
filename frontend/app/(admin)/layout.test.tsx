@@ -205,7 +205,7 @@ describe('AdminLayout — role guard (RequireRole allow=[Admin])', () => {
     renderAdminLayout(ADMIN_SESSION);
 
     const brand = screen.getByRole('link', {
-      name: /accelerate tanzania — view public site/i,
+      name: /pabra seed registry — view public site/i,
     });
     expect(brand).toHaveAttribute('href', '/');
   });

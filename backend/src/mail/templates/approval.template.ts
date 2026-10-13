@@ -19,7 +19,7 @@ export function buildApprovalMessage(to: string, reference: string): MailMessage
     reference,
     subject: `Your registration has been approved — ${reference}`,
     text:
-      'Good news — your ACCELERATE Tanzania registration has been reviewed and approved.\n\n' +
+      'Good news — your PABRA Seed Registry registration has been reviewed and approved.\n\n' +
       `Your reference is ${reference}. Your organisation is now listed in the public seed ` +
       'system directory.\n\n' +
       'You can look up your submission at any time using this reference and the email ' +
@@ -28,7 +28,7 @@ export function buildApprovalMessage(to: string, reference: string): MailMessage
       preheader: `Approved — ${reference}. Your organisation is now listed.`,
       heading: 'Your registration has been approved',
       blocks: [
-        { kind: 'paragraph', text: 'Good news — your ACCELERATE Tanzania registration has been reviewed and approved.' },
+        { kind: 'paragraph', text: 'Good news — your PABRA Seed Registry registration has been reviewed and approved.' },
         { kind: 'callout', label: 'Your reference', value: reference },
         { kind: 'paragraph', text: 'Your organisation is now listed in the public seed system directory.' },
         {

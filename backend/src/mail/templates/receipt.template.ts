@@ -37,17 +37,17 @@ export function buildReceiptMessage(to: string, reference: string): MailMessage 
     reference,
     subject: `Registration received — ${reference}`,
     text:
-      'Thank you for registering with ACCELERATE Tanzania.\n\n' +
+      'Thank you for registering with the PABRA Seed Registry.\n\n' +
       `Your reference is ${reference}. Keep it — you can use it together with ` +
       'this email address to check your submission\'s status at any time at ' +
       `${STATUS_LOOKUP_URL}\n\n` +
-      'An ACCELERATE Tanzania reviewer will check your submission. You do not ' +
+      'A PABRA reviewer will check your submission. You do not ' +
       'need to take any further action.',
     html: renderEmailHtml({
       preheader: `Your reference is ${reference}. Keep it to check your status.`,
       heading: 'Registration received',
       blocks: [
-        { kind: 'paragraph', text: 'Thank you for registering with ACCELERATE Tanzania.' },
+        { kind: 'paragraph', text: 'Thank you for registering with the PABRA Seed Registry.' },
         {
           kind: 'callout',
           label: 'Your reference',
@@ -58,7 +58,7 @@ export function buildReceiptMessage(to: string, reference: string): MailMessage 
         { kind: 'link', label: 'Check status', href: STATUS_LOOKUP_URL },
         {
           kind: 'note',
-          text: 'An ACCELERATE Tanzania reviewer will check your submission. You do not need to take any further action.',
+          text: 'A PABRA reviewer will check your submission. You do not need to take any further action.',
         },
       ],
     }),

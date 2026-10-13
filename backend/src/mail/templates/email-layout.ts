@@ -168,8 +168,8 @@ export function renderEmailHtml({ preheader, heading, blocks }: EmailLayoutInput
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:${PALETTE.surface};border:1px solid ${PALETTE.border};border-radius:8px;">` +
     // Wordmark as type, not an image — see the file header.
     `<tr><td style="padding:22px 28px;border-bottom:1px solid ${PALETTE.border};">` +
-    `<span style="font:700 19px/1 ${FONT};letter-spacing:.02em;color:${PALETTE.primary};">ACCELERATE</span>` +
-    `<span style="font:400 12px/1 ${FONT};color:${PALETTE.muted};"> &nbsp;|&nbsp; Tanzania Seed Registry</span>` +
+    `<span style="font:700 19px/1 ${FONT};letter-spacing:.02em;color:${PALETTE.primary};">PABRA</span>` +
+    `<span style="font:400 12px/1 ${FONT};color:${PALETTE.muted};"> &nbsp;|&nbsp; Seed Registry</span>` +
     `</td></tr>` +
     `<tr><td style="padding:28px;">` +
     `<h1 style="margin:0 0 18px;font:700 22px/1.3 ${FONT};color:${PALETTE.ink};">${escapeHtml(heading)}</h1>` +
@@ -177,7 +177,7 @@ export function renderEmailHtml({ preheader, heading, blocks }: EmailLayoutInput
     `</td></tr>` +
     `<tr><td style="padding:18px 28px;border-top:1px solid ${PALETTE.border};background:${PALETTE.surfaceAlt};border-radius:0 0 8px 8px;">` +
     `<p style="margin:0;font:400 12px/1.6 ${FONT};color:${PALETTE.muted};">` +
-    `ACCELERATE Tanzania Seed Registry — a seed-system registry for institutional partners and agribusinesses. Data governed under participant consent.` +
+    `PABRA Seed Registry — a seed-system registry for institutional partners and agribusinesses. Data governed under participant consent.` +
     `</p></td></tr>` +
     `</table></td></tr></table></body></html>`
   );

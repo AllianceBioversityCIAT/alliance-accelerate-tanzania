@@ -136,7 +136,7 @@ describe('mail.config', () => {
       delete process.env.EMAIL_SENDER_NAME;
       expect(() => getMicroserviceMailConfig()).not.toThrow();
       expect(getMicroserviceMailConfig().senderName).toBe(
-        'ACCELERATE Tanzania Seed Registry -',
+        'PABRA Seed Registry -',
       );
     });
 
