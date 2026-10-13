@@ -12,6 +12,7 @@ interface MockPrisma {
 
 function fixtureActorRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    country: 'TZ',
     id: 'actor-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
@@ -26,6 +27,7 @@ function fixtureActorRow(overrides: Partial<Record<string, unknown>> = {}) {
 function fixtureCandidate(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     phone: null,
+    country: 'TZ',
     email: null,
     traderName: 'Unrelated Trader',
     gpsLatitude: null,
@@ -33,6 +35,7 @@ function fixtureCandidate(overrides: Partial<Record<string, unknown>> = {}) {
     ...overrides,
   } as {
     phone: string | null;
+    country: string;
     email: string | null;
     traderName: string;
     gpsLatitude: number | null;
@@ -75,6 +78,26 @@ describe('IntakeDuplicateService (mocked Prisma)', () => {
         { actorId: 'actor-1', traderId: 'TZ-SEED-0001', traderName: 'Meru Agro-Processing & Seeds', matchedOn: ['phone'] },
       ]);
       expect(result.weak).toEqual([]);
+    });
+
+    it("classifies a Kenyan candidate's phone against a stored Kenyan actor as strong", async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActorRow({ phone: '+254712345678', country: 'KE' }),
+      ]);
+
+      const result = await service.check(fixtureCandidate({ phone: '+254 712 345 678', country: 'KE' }));
+
+      expect(result.strong.map((c) => c.matchedOn)).toEqual([['phone']]);
+    });
+
+    it('does not read a Tanzanian national number as a stored Kenyan phone', async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActorRow({ phone: '+254712345678', country: 'KE' }),
+      ]);
+
+      const result = await service.check(fixtureCandidate({ phone: '0712 345 678', country: 'TZ' }));
+
+      expect(result).toEqual({ strong: [], weak: [] });
     });
 
     it('classifies an email match as strong (case-insensitive)', async () => {

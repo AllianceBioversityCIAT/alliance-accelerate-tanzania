@@ -17,6 +17,7 @@
 import Link from 'next/link';
 import type { PublicActor, ActorsQuery } from '@/lib/api/actors';
 import { roleSummary } from '@/lib/content/roles';
+import { formatLocation } from '@/lib/content/countries';
 import { RoleSummaryText } from '@/components/map/RoleBadge';
 import { CROPS } from '@/lib/content/crops';
 import { encodeFilters } from '@/lib/dashboard/filters-url';
@@ -124,6 +125,7 @@ export default function ShortlistTable({
               id,
               traderName,
               region,
+              country,
               district,
               traderType,
               additionalTraderTypes,
@@ -131,8 +133,8 @@ export default function ShortlistTable({
               crops,
             } = actor;
 
-            // Location: "Region · District" or just "Region"
-            const location = district ? `${region} · ${district}` : region;
+            const place = formatLocation(region, country);
+            const location = district ? `${place} · ${district}` : place;
 
             return (
               <tr

@@ -169,6 +169,7 @@ describe('Intake contract — NFR-1 metadata pin', () => {
       ...INTAKE_REQUIRED_FIELDS,
       'traderName',
       'traderType',
+      'country',
       'region',
     ]);
 
@@ -229,6 +230,7 @@ describe('FR-1 — admin create reports the same field-level messages as self-re
   const validAdminInput = {
     traderId: 'TZ-0001',
     traderName: 'Valid Trader',
+    country: 'TZ',
     region: 'Mbeya',
     traderType: 'seed_company',
     contactPerson: 'Neema Shirima',
@@ -242,6 +244,7 @@ describe('FR-1 — admin create reports the same field-level messages as self-re
     traderName: 'Valid Trader',
     traderType: 'seed_company',
     contactPerson: 'Neema Shirima',
+    country: 'TZ',
     region: 'Mbeya',
     crops: ['sorghum'],
     capacityTons: 10,

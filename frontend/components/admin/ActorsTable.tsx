@@ -72,6 +72,7 @@ import Link from 'next/link';
 import { deleteActor, type AdminActor, type ConsentMethod } from '@/lib/api/actors-admin';
 import { AuthFailureError } from '@/lib/api/client';
 import { roleSummary } from '@/lib/content/roles';
+import { countryName, formatLocation } from '@/lib/content/countries';
 import { RoleSummaryText } from '@/components/map/RoleBadge';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 
@@ -494,7 +495,7 @@ function ActorCard({
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
         <div>
           <dt className="text-muted">Region</dt>
-          <dd className="font-medium text-fg">{actor.region}</dd>
+          <dd className="font-medium text-fg">{formatLocation(actor.region, actor.country)}</dd>
         </div>
         <div>
           <dt className="text-muted">Market</dt>
@@ -700,7 +701,10 @@ export function ActorsTable({
                   >
                     <span className={TRADER_NAME_CLAMP_CLASS}>{actor.traderName}</span>
                   </td>
-                  <td className="px-4 py-3 text-muted whitespace-nowrap">{actor.region}</td>
+                  <td className="px-4 py-3 text-muted whitespace-nowrap">
+                    {actor.region}
+                    <span className="block text-xs">{countryName(actor.country)}</span>
+                  </td>
                   <td
                     className="px-4 py-3 text-muted whitespace-nowrap"
                     title={roleSummary(actor.traderType, actor.additionalTraderTypes).title}

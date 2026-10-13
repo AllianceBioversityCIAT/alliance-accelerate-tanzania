@@ -14,6 +14,7 @@
 // with no coordinates).
 
 import type { PublicActor } from '@/lib/api/actors';
+import { formatLocation } from '@/lib/content/countries';
 import { RoleBadges } from './RoleBadge';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -34,10 +35,10 @@ export interface ActorListItemProps {
  * when gps is null. Token-driven; no PII (PublicActor has none).
  */
 export default function ActorListItem({ actor, selected, onSelect }: ActorListItemProps) {
-  const { id, traderName, region, district, traderType, gps, capacityTons } = actor;
+  const { id, traderName, region, country, district, traderType, gps, capacityTons } = actor;
 
-  // Location string: "Region · District" or just "Region"
-  const location = district ? `${region} · ${district}` : region;
+  const place = formatLocation(region, country);
+  const location = district ? `${place} · ${district}` : place;
 
   return (
     <li>

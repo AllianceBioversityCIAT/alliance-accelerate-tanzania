@@ -22,9 +22,9 @@
 // `parseCoordinatePair` will re-derive next render.
 //
 // Forward pointer (2) — `PICKER_ZOOM` below is this component's OWN view
-// policy, not `LeafletMap`'s. `INITIAL_ZOOM` (6, full-viewport country
-// overview) and `ACTOR_ZOOM` (11, fly-to-a-selected-actor) stay in
-// `LeafletMap.tsx` on purpose (T-2 review) — a ~300px map embedded in a form
+// policy, not `LeafletMap`'s. `FIT_MAX_ZOOM` (10, fit-to-actors cap) and
+// `ACTOR_ZOOM` (11, fly-to-a-selected-actor) stay in
+// `LeafletMap.tsx` on purpose (T-2 review) — a ~380px map embedded in a form
 // needs its own value, not a borrowed one, so FR-8's "one definition, no new
 // coupling" holds for the constants that are actually shared (§7.2) without
 // smuggling view policy in behind it.
@@ -39,17 +39,26 @@ import {
   parseCoordinatePair,
   type CoordinatePoint,
 } from '@/lib/geo/coordinates';
-import { TANZANIA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
+import { AFRICA_BOUNDS, OSM_TILE_URL, OSM_ATTRIBUTION } from './map-constants';
+import { countryBounds } from '@/lib/content/countries';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 // This picker's zoom for a PLACED point (FR-2 sc. 1) — close enough to place
-// a pin precisely in a ~300px-tall embedded map. Deliberately NOT imported
+// a pin precisely in a ~380px-tall embedded map. Deliberately NOT imported
 // from `LeafletMap.tsx` (forward pointer 2), and NOT used for the empty
-// view (FR-2 sc. 2): z12 over a ~300px container shows ≈12 km, not a
+// view (FR-2 sc. 2): z12 over a ~380px container shows ≈15 km, not a
 // country (T-3 review FAIL 2 — measured ≈38 m/px at -6.37° lat). The empty
 // view is framed by `fitBounds` in the init effect below instead.
 const PICKER_ZOOM = 12;
+
+const toLatLngBounds = (bounds: readonly (readonly [number, number])[]) =>
+  bounds.map((corner) => [...corner]) as L.LatLngBoundsExpression;
+
+/** The form's country when it has one, otherwise Africa. */
+function emptyViewBounds(country: string | undefined): L.LatLngBoundsExpression {
+  return toLatLngBounds(countryBounds(country) ?? AFRICA_BOUNDS);
+}
 
 // ── Marker styling (NFR-3) ───────────────────────────────────────────────────
 
@@ -137,6 +146,8 @@ export interface CoordinatePickerMapProps {
   disabled?: boolean;
   /** Called when a click or drop lands outside Africa; nothing is written. */
   onOutsideBounds?: () => void;
+  /** Frames the empty view on this country; all of Africa when none. */
+  country?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -147,6 +158,7 @@ export default function CoordinatePickerMap({
   onChange,
   disabled = false,
   onOutsideBounds,
+  country,
 }: Readonly<CoordinatePickerMapProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -173,6 +185,11 @@ export default function CoordinatePickerMap({
   const fieldsRef = useRef({ latitude, longitude });
   useEffect(() => {
     fieldsRef.current = { latitude, longitude };
+  });
+
+  const countryRef = useRef(country);
+  useEffect(() => {
+    countryRef.current = country;
   });
 
   // A drop outside Africa writes nothing and returns the marker to the fields' point.
@@ -202,16 +219,15 @@ export default function CoordinatePickerMap({
     // with `setView(point, PICKER_ZOOM)` whenever a point already exists —
     // so this framing is only ever what a person with no coordinates yet
     // sees (FR-2 sc. 2).
-    const map = L.map(containerRef.current);
-    // TANZANIA_BOUNDS is a `readonly` tuple (design.md §7.2); spread into a
-    // fresh mutable tuple before casting — Leaflet's types carry no
-    // `readonly`, so passing it straight through fails here too. This is a
-    // call **argument**, not an assignment, so the code differs from
-    // `map-constants.ts`'s genuinely measured TS2322: with the spread
-    // removed, `npx tsc --noEmit` reports TS2345, "Argument of type
-    // 'readonly [readonly [number, number], readonly [number, number]]' is
-    // not assignable to parameter of type 'LatLngBoundsExpression'."
-    map.fitBounds(TANZANIA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
+    // Quarter-step zoom lets Africa fill the frame instead of dropping to a world view.
+    const map = L.map(containerRef.current, { zoomSnap: 0.25 });
+    // Bounds are `readonly` tuples; `toLatLngBounds` spreads them into the
+    // mutable shape Leaflet's types expect (TS2345 otherwise).
+    map.fitBounds(emptyViewBounds(countryRef.current));
+    // Zooming out stops at Africa (every accepted coordinate is in it), re-measured on resize.
+    const fitAfricaMinZoom = () => map.setMinZoom(map.getBoundsZoom(toLatLngBounds(AFRICA_BOUNDS)));
+    fitAfricaMinZoom();
+    map.on('resize', fitAfricaMinZoom);
 
     L.tileLayer(OSM_TILE_URL, {
       attribution: OSM_ATTRIBUTION,
@@ -261,7 +277,7 @@ export default function CoordinatePickerMap({
       mapRef.current = null;
       markerRef.current = null;
     };
-  }, []); // Only once — TANZANIA_BOUNDS is a constant; onChange/disabled read via refs above.
+  }, []); // Only once — bounds are constants; onChange/disabled/country read via refs above.
 
   // ── Marker placement (mount + every latitude/longitude change) ──────────────
   // This effect ALSO fires on the initial render (React runs every effect
@@ -315,6 +331,13 @@ export default function CoordinatePickerMap({
     map.setView([point.lat, point.lng], PICKER_ZOOM);
   }, [latitude, longitude]);
 
+  // ── Re-frame the empty view when the form's country changes ────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || parseCoordinatePair(fieldsRef.current.latitude, fieldsRef.current.longitude)) return;
+    map.fitBounds(emptyViewBounds(country));
+  }, [country]);
+
   // ── Interactivity toggle (disabled while the form is submitting) ────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -335,13 +358,14 @@ export default function CoordinatePickerMap({
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    // h-80: fixed height from the Tailwind spacing scale (design.md §7.4) —
+    // h-96: fixed height from the Tailwind spacing scale (design.md §7.4), tall
+    // enough for Africa (taller than wide) to fill the frame —
     // not an arbitrary value. border + rounded-md, not a shadow, carries the
     // section boundary: `--color-surface` on `--color-bg` is only 1.05:1
     // (frontend/CLAUDE.md).
     <div
       ref={containerRef}
-      className="relative h-80 w-full overflow-hidden rounded-md border border-border"
+      className="relative h-96 w-full overflow-hidden rounded-md border border-border"
       aria-label="Map for setting the location"
       aria-disabled={disabled || undefined}
       role="application"

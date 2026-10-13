@@ -1,6 +1,7 @@
 import { MailMessage } from '../mail-transport.interface';
 import { getPublicAppBaseUrl } from '../mail.config';
 import { renderEmailHtml } from './email-layout';
+import { countryName } from '../../common/geo/countries';
 
 /**
  * ATP-78 — tells the platform admins a self-registration is waiting in the
@@ -17,6 +18,8 @@ export interface NewRegistrationNoticeData {
   reference: string;
   traderName: string;
   traderType: string;
+  /** ISO country code of the applicant. */
+  country: string;
   region: string;
 }
 
@@ -39,7 +42,7 @@ export function buildNewRegistrationMessage(
   const rows = [
     { label: 'Organisation', value: singleLine(data.traderName) },
     { label: 'Actor type', value: humanizeTraderType(singleLine(data.traderType)) },
-    { label: 'Region', value: singleLine(data.region) },
+    { label: 'Region', value: `${singleLine(data.region)}, ${countryName(data.country)}` },
     { label: 'Reference', value: data.reference },
   ];
 

@@ -52,6 +52,8 @@ model Actor {
   id                 String             @id @default(cuid())
   traderId           String             @unique
   traderName         String
+  // ISO 3166-1 alpha-2; `region` is one of this country's regions (common/geo).
+  country            String             @db.VarChar(2)
   region             String
   district           String?
   traderType         String
@@ -79,6 +81,7 @@ model Actor {
   updatedAt          DateTime           @updatedAt
 
   @@index([region])
+  @@index([country, region])
   @@index([traderType])
   @@index([consentStatus])
   @@index([traderName])

@@ -1,4 +1,5 @@
 import { RegistrationStatus } from '@prisma/client';
+import { payloadCountry } from '../../common/geo/countries';
 import { sortTraderTypes } from '../../common/additional-types';
 import { DuplicateCandidate } from '../duplicate-detection.service';
 import {
@@ -47,6 +48,8 @@ export interface AdminRegistrationPayload {
   district: string | null;
   marketLocation: string | null;
   sex: string | null;
+  /** ISO country code; payloads queued before the field existed read as `TZ`. */
+  country: string;
   region: string;
   gpsLatitude: number | null;
   gpsLongitude: number | null;
@@ -108,6 +111,7 @@ interface RawRegistrationPayload {
   district?: string | null;
   marketLocation?: string | null;
   sex?: string | null;
+  country?: string | null;
   region: string;
   gpsLatitude?: number | null;
   gpsLongitude?: number | null;
@@ -146,6 +150,7 @@ function toAdminRegistrationPayload(raw: RawRegistrationPayload): AdminRegistrat
     district: raw.district ?? null,
     marketLocation: raw.marketLocation ?? null,
     sex: raw.sex ?? null,
+    country: payloadCountry(raw),
     region: raw.region,
     gpsLatitude: raw.gpsLatitude ?? null,
     gpsLongitude: raw.gpsLongitude ?? null,

@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { payloadCountry } from '../common/geo/countries';
 import {
   ConsentMethod,
   ConsentStatus,
@@ -106,6 +107,8 @@ export interface AdminRegistrationListRow {
   traderType: string;
   /** `[]` for payloads queued before the field existed. */
   additionalTraderTypes: string[];
+  /** ISO country code; legacy payloads read as `TZ`. */
+  country: string;
   region: string;
   submittedAt: Date;
   status: RegistrationStatus;
@@ -157,6 +160,7 @@ interface QueueRowPayload {
   traderName: string;
   traderType: string;
   additionalTraderTypes?: string[] | null;
+  country?: string | null;
   region: string;
   phone?: string | null;
   gpsLatitude?: number | null;
@@ -201,6 +205,7 @@ function toAdminRegistrationListRow(
     applicant: payload.traderName,
     traderType: payload.traderType,
     additionalTraderTypes: sortTraderTypes(payload.additionalTraderTypes),
+    country: payloadCountry(payload),
     region: payload.region,
     submittedAt: row.createdAt,
     status: row.status,
@@ -246,6 +251,7 @@ function toDuplicateDetectionInput(row: QueueSourceRow): DuplicateDetectionInput
   return {
     registrationId: row.id,
     phone: payload.phone ?? null,
+    country: payloadCountry(payload),
     email: row.submitterEmail,
     traderName: payload.traderName,
     gpsLatitude: payload.gpsLatitude ?? null,
@@ -355,6 +361,7 @@ interface RegistrationApprovalPayload {
   district?: string | null;
   marketLocation?: string | null;
   sex?: string | null;
+  country?: string | null;
   region: string;
   gpsLatitude?: number | null;
   gpsLongitude?: number | null;
@@ -481,6 +488,9 @@ export class AdminRegistrationsService {
     const conditions: Prisma.RegistrationWhereInput[] = [];
     if (q.status) {
       conditions.push({ status: q.status });
+    }
+    if (q.country) {
+      conditions.push({ payload: { path: '$.country', equals: q.country } });
     }
     if (q.region) {
       conditions.push({ payload: { path: '$.region', equals: q.region } });
@@ -970,6 +980,7 @@ export class AdminRegistrationsService {
           district: payload.district ?? null,
           marketLocation: payload.marketLocation ?? null,
           sex: payload.sex ?? null,
+          country: payloadCountry(payload),
           region: payload.region,
           gpsLatitude: payload.gpsLatitude ?? null,
           gpsLongitude: payload.gpsLongitude ?? null,

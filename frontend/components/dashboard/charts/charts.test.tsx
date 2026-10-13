@@ -1,6 +1,6 @@
 /**
  * Unit tests for the three T-8 discovery charts:
- *   - CapacityByRegionChart
+ *   - CapacityByCountryChart
  *   - CropDistributionChart
  *   - ActorTypeChart
  *
@@ -19,7 +19,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 
-import CapacityByRegionChart from './CapacityByRegionChart';
+import CapacityByCountryChart from './CapacityByCountryChart';
 import CropDistributionChart from './CropDistributionChart';
 import ActorTypeChart from './ActorTypeChart';
 
@@ -65,39 +65,39 @@ const TYPE_DATA = [
 ];
 
 // ============================================================================
-// CapacityByRegionChart
+// CapacityByCountryChart
 // ============================================================================
 
-describe('CapacityByRegionChart', () => {
+describe('CapacityByCountryChart', () => {
   describe('(a) title renders', () => {
     it('renders the chart title', () => {
-      render(<CapacityByRegionChart data={REGION_DATA} />);
-      expect(screen.getByText('Capacity by region (t)')).toBeInTheDocument();
+      render(<CapacityByCountryChart data={REGION_DATA} />);
+      expect(screen.getByText('Capacity by country (t)')).toBeInTheDocument();
     });
   });
 
   describe('(b) data-table contains correct labels and values', () => {
     it('shows all region labels in the data table', () => {
-      render(<CapacityByRegionChart data={REGION_DATA} />);
+      render(<CapacityByCountryChart data={REGION_DATA} />);
       expect(screen.getByText('Dodoma')).toBeInTheDocument();
       expect(screen.getByText('Arusha')).toBeInTheDocument();
       expect(screen.getByText('Mwanza')).toBeInTheDocument();
     });
 
     it('shows all capacity values in the data table', () => {
-      render(<CapacityByRegionChart data={REGION_DATA} />);
+      render(<CapacityByCountryChart data={REGION_DATA} />);
       expect(screen.getByText('500')).toBeInTheDocument();
       expect(screen.getByText('320')).toBeInTheDocument();
       expect(screen.getByText('180')).toBeInTheDocument();
     });
 
     it('renders a <details> data-table element when data is non-empty', () => {
-      const { container } = render(<CapacityByRegionChart data={REGION_DATA} />);
+      const { container } = render(<CapacityByCountryChart data={REGION_DATA} />);
       expect(container.querySelector('details')).toBeInTheDocument();
     });
 
     it('renders one tbody row per data point', () => {
-      const { container } = render(<CapacityByRegionChart data={REGION_DATA} />);
+      const { container } = render(<CapacityByCountryChart data={REGION_DATA} />);
       const rows = container.querySelectorAll('tbody tr');
       expect(rows).toHaveLength(REGION_DATA.length);
     });
@@ -105,23 +105,23 @@ describe('CapacityByRegionChart', () => {
 
   describe('(c) empty data → empty state', () => {
     it('shows the ChartCard empty-state message', () => {
-      render(<CapacityByRegionChart data={[]} />);
+      render(<CapacityByCountryChart data={[]} />);
       expect(screen.getByText('No data for this filter')).toBeInTheDocument();
     });
 
     it('does not render a data table when data is empty', () => {
-      const { container } = render(<CapacityByRegionChart data={[]} />);
+      const { container } = render(<CapacityByCountryChart data={[]} />);
       expect(container.querySelector('details')).not.toBeInTheDocument();
     });
   });
 
   describe('(d) no throw', () => {
     it('renders without throwing for populated data', () => {
-      expect(() => render(<CapacityByRegionChart data={REGION_DATA} />)).not.toThrow();
+      expect(() => render(<CapacityByCountryChart data={REGION_DATA} />)).not.toThrow();
     });
 
     it('renders without throwing for empty data', () => {
-      expect(() => render(<CapacityByRegionChart data={[]} />)).not.toThrow();
+      expect(() => render(<CapacityByCountryChart data={[]} />)).not.toThrow();
     });
   });
 });

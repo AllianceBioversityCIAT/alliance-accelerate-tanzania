@@ -60,12 +60,12 @@ import {
 import {
   isValidLatitude,
   isValidLongitude,
-  normalizePhone,
-  normalizeRegion,
   normalizeSex,
   normalizeTraderType,
   parseCapacityTons,
 } from '../common/normalize';
+import { normalizeCountry, normalizePhoneFor, normalizeRegionFor } from '../common/geo/countries';
+import { regionOfCountryMessage } from '../common/region-of-country.validator';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 import { INTAKE_MAX_LENGTHS, IntakeRequiredField } from '../common/intake-contract';
 import {
@@ -117,7 +117,7 @@ const CONSENT_ACK_WARNING =
  * report surface (FR-5, NFR-9).
  */
 const PHONE_UNNORMALIZABLE_WARNING =
-  'Phone — value is not a recognized Tanzanian number; imported with Phone cleared';
+  "Phone — value is not a recognized number for the row's country (use +country code); imported with Phone cleared";
 
 /**
  * T-3 (FR-5) — warning for a `/`-separated multi-number Phone cell. The first
@@ -198,6 +198,7 @@ function missingContractFieldErrors(field: IntakeRequiredField): ImportRowError[
  * (design.md §4.2/§4.5) — a row never carries its own Trader ID. */
 interface ActorScalarData {
   traderName: string;
+  country: string;
   region: string;
   traderType: string;
   district?: string;
@@ -285,6 +286,7 @@ interface WorkRow {
 function toCandidateInput(scalar: ActorScalarData): IntakeDuplicateCandidateInput {
   return {
     phone: scalar.phone ?? null,
+    country: scalar.country,
     email: scalar.email ?? null,
     traderName: scalar.traderName,
     gpsLatitude: scalar.gpsLatitude ?? null,
@@ -551,17 +553,29 @@ export class ActorImportService {
       });
     }
 
-    // Region — required + canonical (normalized).
+    // Country — required; a name or an ISO code.
+    let country: string | null = null;
+    if (!cells.country) {
+      errors.push({ field: 'country', message: 'Country is required.' });
+    } else {
+      country = normalizeCountry(cells.country);
+      if (!country) {
+        errors.push({
+          field: 'country',
+          message: 'Country is not a recognized African country.',
+        });
+      }
+    }
+
+    // Region — required + a region of the row's country (normalized). With no
+    // usable country the row already fails on `country`.
     let region: string | null = null;
     if (!cells.region) {
       errors.push({ field: 'region', message: 'Region is required.' });
-    } else {
-      const normalized = normalizeRegion(cells.region);
+    } else if (country) {
+      const normalized = normalizeRegionFor(country, cells.region);
       if (!normalized.region) {
-        errors.push({
-          field: 'region',
-          message: 'Region is not a recognized Tanzania region.',
-        });
+        errors.push({ field: 'region', message: regionOfCountryMessage(country) });
       } else {
         region = normalized.region;
       }
@@ -647,8 +661,8 @@ export class ActorImportService {
         field: 'phone',
         message: `Phone must be ${INTAKE_MAX_LENGTHS.phone} characters or fewer.`,
       });
-    } else {
-      const normalized = normalizePhone(cells.phone);
+    } else if (country) {
+      const normalized = normalizePhoneFor(country, cells.phone);
       // `null`, never the raw string — storing an unnormalizable value is the
       // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
       phone = normalized.phone;
@@ -800,6 +814,7 @@ export class ActorImportService {
       row.create = {
         scalar: {
           traderName: traderName as string,
+          country: country as string,
           region: region as string,
           traderType: traderType as string,
           district: cells.district || undefined,

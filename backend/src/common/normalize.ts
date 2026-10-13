@@ -19,8 +19,11 @@
 /**
  * Official Tanzania regions (mainland + Zanzibar), 31 as of the most recent
  * administrative split (Songwe carved from Mbeya; Zanzibar's five urban/rural
- * regions included). This is the canonical allowlist `region` is matched
- * against. Edited in one place per DD-5 if the administrative map changes.
+ * regions included). Tanzania's entry in the generated country list
+ * (`geo/african-countries.generated.json`) is built from this constant, and
+ * `normalizeRegion` keeps its aliases; after editing it, re-run
+ * `scripts/generate-african-geo.ts` and `npm run generate:template`
+ * (`geo/countries.spec.ts` fails until the generated list matches).
  */
 export const CANONICAL_REGIONS = [
   'Arusha',
@@ -341,14 +344,14 @@ export function parseCapacityTons(
  */
 const TZ_COUNTRY_CODE = '255';
 
-/** Result of {@link normalizePhone}: a canonical `+255…` number or `null`. */
+/** Result of {@link normalizePhone}: a canonical E.164 number or `null`. */
 export interface PhoneNormalizationResult {
   phone: string | null;
   additionalCount: number;
 }
 
 /**
- * Normalize a raw `phone` cell to Tanzanian E.164 (`+255…`), or `null` (FR-5).
+ * Normalize a raw `phone` cell to E.164 for `callingCode` (default Tanzania), or `null` (FR-5).
  *
  * Quarantine philosophy (matching `normalizeRegion` / `normalizeTraderType`
  * above): a value is normalized only when the mapping is unambiguous — a
@@ -367,9 +370,18 @@ export interface PhoneNormalizationResult {
  * warn "a second number was present" without this function — or anything
  * downstream — ever holding, logging, or persisting the discarded digits
  * (PII — FR-5, NFR-9).
+ *
+ * `callingCode` selects the country. The Tanzanian national formats below
+ * are only read for Tanzania (`255`); for any other country only the
+ * international form with that country's code is accepted, because a
+ * national "0…" number is not unambiguous across Africa (in Côte d'Ivoire
+ * the leading 0 is part of the number). `internationalOnly` applies that
+ * rule to Tanzania too (forms and API; the import keeps the national formats).
  */
 export function normalizePhone(
   raw: string | null | undefined,
+  callingCode: string = TZ_COUNTRY_CODE,
+  { internationalOnly = false }: { internationalOnly?: boolean } = {},
 ): PhoneNormalizationResult {
   if (raw == null) return { phone: null, additionalCount: 0 };
 
@@ -383,21 +395,30 @@ export function normalizePhone(
   if (parts.length === 0) return { phone: null, additionalCount: 0 };
 
   return {
-    phone: normalizeSinglePhone(parts[0]),
+    phone:
+      callingCode === TZ_COUNTRY_CODE && !internationalOnly
+        ? normalizeSinglePhone(parts[0])
+        : normalizeInternationalPhone(parts[0], callingCode),
     additionalCount: parts.length - 1,
   };
 }
 
 /**
- * Normalize one phone candidate (already trimmed, no `/` splitting). Strips
- * parentheses and internal whitespace, then matches the resulting digit
- * string against the four length/prefix shapes that unambiguously resolve
- * to a Tanzanian E.164 number. No other punctuation is stripped — a value
- * with a dash or other separator is not a measured format, so it falls
- * through to `null` rather than being guessed at.
+ * Separators people type (spaces, dashes, dots, parentheses) and a "(0)"
+ * trunk marker after the country code are dropped; a leading 00 becomes +.
+ */
+function cleanPhone(candidate: string): string {
+  return candidate.replace(/\(0\)/g, '').replace(/[()\s.-]/g, '').replace(/^00/, '+');
+}
+
+/**
+ * Normalize one phone candidate (already trimmed, no `/` splitting). After
+ * {@link cleanPhone}, matches the digit string against the four length/prefix
+ * shapes that unambiguously resolve to a Tanzanian E.164 number; anything
+ * else falls through to `null` rather than being guessed at.
  */
 function normalizeSinglePhone(candidate: string): string | null {
-  const cleaned = candidate.replace(/[()]/g, '').replace(/\s+/g, '');
+  const cleaned = cleanPhone(candidate);
   if (cleaned === '') return null;
 
   // Already `+255` + 9 digits. The subscriber part may not begin with `0`
@@ -435,6 +456,21 @@ function normalizeSinglePhone(candidate: string): string | null {
   }
 
   return null;
+}
+
+/** Côte d'Ivoire, Congo and Gabon: the leading 0 belongs to the subscriber number. */
+const LEADING_ZERO_CALLING_CODES = new Set(['225', '241', '242']);
+
+/**
+ * `+<callingCode>` (or `00<callingCode>`) followed by a 6–12 digit
+ * subscriber number, which starts with 0 only where that is part of the
+ * number; anything else → null.
+ */
+function normalizeInternationalPhone(candidate: string, callingCode: string): string | null {
+  const cleaned = cleanPhone(candidate);
+  const first = LEADING_ZERO_CALLING_CODES.has(callingCode) ? '\\d' : '[1-9]';
+  const match = new RegExp(`^\\+${callingCode}(${first}\\d{5,11})$`).exec(cleaned);
+  return match ? `+${callingCode}${match[1]}` : null;
 }
 
 /**

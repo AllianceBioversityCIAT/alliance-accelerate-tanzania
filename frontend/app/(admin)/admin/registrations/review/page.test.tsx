@@ -128,6 +128,7 @@ function buildDetail(overrides: Partial<AdminRegistrationDetail> = {}): AdminReg
       marketLocation: null,
       sex: null,
       region: 'Arusha',
+      country: 'TZ',
       gpsLatitude: null,
       gpsLongitude: null,
       crops: ['sorghum'],

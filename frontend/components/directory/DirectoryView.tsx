@@ -35,6 +35,7 @@ import DirectorySearch from './DirectorySearch';
 import DirectoryFilters from './DirectoryFilters';
 import DirectoryPagination from './DirectoryPagination';
 import type { ActorsQuery } from '@/lib/api/actors';
+import { cleanGeo } from '@/lib/content/countries';
 
 // ── Page size (per PRD OQ-5) ──────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export default function DirectoryView() {
   const search = param(searchParams, 'search');
   const crop   = param(searchParams, 'crop');
   const role   = param(searchParams, 'role');
-  const region = param(searchParams, 'region');
+  const { country, region } = cleanGeo(param(searchParams, 'country'), param(searchParams, 'region'));
   const page   = pageParam(searchParams);
 
   // ── Build the API query from URL state ─────────────────────────────────────
@@ -111,6 +112,7 @@ export default function DirectoryView() {
     ...(search   ? { search }   : {}),
     ...(crop     ? { crop }     : {}),
     ...(role     ? { role }     : {}),
+    ...(country  ? { country }  : {}),
     ...(region   ? { region }   : {}),
     page,
     pageSize: PAGE_SIZE,
@@ -202,10 +204,11 @@ export default function DirectoryView() {
   // ── Filter handler ─────────────────────────────────────────────────────────
 
   const handleFilters = useCallback(
-    (next: Pick<ActorsQuery, 'crop' | 'role' | 'region'>) => {
+    (next: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>) => {
       pushParams({
         crop:   next.crop   ?? undefined,
         role:   next.role   ?? undefined,
+        country: next.country ?? undefined,
         region: next.region ?? undefined,
         page:   undefined,  // reset page to 1 (FR-2)
       });
@@ -216,7 +219,7 @@ export default function DirectoryView() {
   // ── Clear filters handler ──────────────────────────────────────────────────
 
   const handleClearFilters = useCallback(() => {
-    pushParams({ crop: undefined, role: undefined, region: undefined, page: undefined });
+    pushParams({ crop: undefined, role: undefined, country: undefined, region: undefined, page: undefined });
   }, [pushParams]);
 
   // ── Pagination handler ─────────────────────────────────────────────────────
@@ -245,7 +248,7 @@ export default function DirectoryView() {
       <div className="mb-6 flex flex-col gap-4">
         <DirectorySearch value={search ?? ''} onSearch={handleSearch} />
         <DirectoryFilters
-          filters={{ crop, role, region }}
+          filters={{ crop, role, country, region }}
           onChange={handleFilters}
           onClear={handleClearFilters}
         />
@@ -293,7 +296,7 @@ export default function DirectoryView() {
           <p className="text-sm text-muted">
             Try adjusting your search or filters.
           </p>
-          {(search || crop || role || region) && (
+          {(search || crop || role || country || region) && (
             <button
               type="button"
               onClick={() =>
@@ -301,6 +304,7 @@ export default function DirectoryView() {
                   search: undefined,
                   crop:   undefined,
                   role:   undefined,
+                  country: undefined,
                   region: undefined,
                   page:   undefined,
                 })

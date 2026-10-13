@@ -13,7 +13,9 @@
 
 import type { ActorsQuery } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
-import { REGIONS } from '@/lib/content/regions';
+import { withCountry } from '@/lib/content/countries';
+import CountrySelect from '@/components/geo/CountrySelect';
+import RegionSelect from '@/components/geo/RegionSelect';
 import { ROLES } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
 import CapacityRangeControl from './CapacityRangeControl';
@@ -28,12 +30,6 @@ export interface DashboardFiltersProps {
    * with the changed field applied (or cleared to undefined) and page reset to 1.
    */
   onChange: (next: ActorsQuery) => void;
-  /**
-   * Region options for the dropdown — when provided (only the regions that
-   * have actors), used instead of the full canonical list. Falls back to all
-   * canonical REGIONS when undefined (e.g. before data loads).
-   */
-  regions?: string[];
 }
 
 // ── Shared style constants ────────────────────────────────────────────────────
@@ -51,7 +47,7 @@ const CONTROL_CLASS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Dashboard filter panel containing crop, region, district, actor type,
+ * Dashboard filter panel containing crop, country, region, district, actor type,
  * free-text search, and capacity range controls.
  *
  * Usage:
@@ -60,10 +56,7 @@ const CONTROL_CLASS = [
  *     onChange={(next) => setQuery(next)}
  *   />
  */
-export default function DashboardFilters({ filters, onChange, regions }: DashboardFiltersProps) {
-  // Only show regions that have actors when provided; otherwise the full list.
-  const regionOptions = regions && regions.length > 0 ? regions : REGIONS;
-
+export default function DashboardFilters({ filters, onChange }: Readonly<DashboardFiltersProps>) {
   // ── Merge helper ─────────────────────────────────────────────────────────────
 
   /**
@@ -81,9 +74,17 @@ export default function DashboardFilters({ filters, onChange, regions }: Dashboa
     onChange(merge({ crop: value !== '' ? value : undefined }));
   }
 
-  function handleRegion(e: React.ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value;
-    onChange(merge({ region: value !== '' ? value : undefined }));
+  function handleCountry(value: string) {
+    onChange({ ...withCountry(filters, value !== '' ? value : undefined), page: 1 });
+  }
+
+  function handleRegion(next: { country: string; region: string }) {
+    onChange(
+      merge({
+        country: next.country !== '' ? next.country : undefined,
+        region: next.region !== '' ? next.region : undefined,
+      }),
+    );
   }
 
   function handleDistrict(e: React.ChangeEvent<HTMLInputElement>) {
@@ -111,7 +112,7 @@ export default function DashboardFilters({ filters, onChange, regions }: Dashboa
     <div className="flex flex-col gap-3" role="group" aria-label="Filter dashboard actors">
 
       {/* ── Dropdown + range filters (grid row) ───────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
 
       {/* ── Crop ─────────────────────────────────────────────────────────── */}
       <div>
@@ -134,25 +135,31 @@ export default function DashboardFilters({ filters, onChange, regions }: Dashboa
         </select>
       </div>
 
+      {/* ── Country ──────────────────────────────────────────────────────── */}
+      <div>
+        <label htmlFor="dash-filter-country" className={LABEL_CLASS}>
+          Country
+        </label>
+        <CountrySelect
+          id="dash-filter-country"
+          value={filters.country ?? ''}
+          onChange={handleCountry}
+          clearLabel="All countries"
+        />
+      </div>
+
       {/* ── Region ───────────────────────────────────────────────────────── */}
       <div>
         <label htmlFor="dash-filter-region" className={LABEL_CLASS}>
           Region
         </label>
-        <select
+        <RegionSelect
           id="dash-filter-region"
-          value={filters.region ?? ''}
+          country={filters.country ?? ''}
+          region={filters.region ?? ''}
           onChange={handleRegion}
-          className={CONTROL_CLASS}
-          aria-label="Filter by region"
-        >
-          <option value="">All regions</option>
-          {regionOptions.map((region) => (
-            <option key={region} value={region}>
-              {region}
-            </option>
-          ))}
-        </select>
+          clearLabel="All regions"
+        />
       </div>
 
       {/* ── District ─────────────────────────────────────────────────────── */}

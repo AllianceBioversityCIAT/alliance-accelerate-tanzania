@@ -22,6 +22,7 @@ function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'actor-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     phone: '+255712345678',
     email: 'director@example.com',
     gpsLatitude: -3.3869,
@@ -34,6 +35,7 @@ function fixtureInput(overrides: Partial<DuplicateDetectionInput> = {}): Duplica
   return {
     registrationId: 'reg-1',
     phone: null,
+    country: 'TZ',
     email: null,
     traderName: 'Unrelated Trader',
     gpsLatitude: null,
@@ -104,6 +106,30 @@ describe('DuplicateDetectionService (mocked Prisma)', () => {
       const candidates = result.get('reg-1')!;
       expect(candidates).toHaveLength(1);
       expect(candidates[0]).toMatchObject({ actorId: 'actor-1', matchedOn: ['phone'] });
+    });
+
+    it("matches a Kenyan registration to a stored Kenyan actor's +254 phone", async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActor({ phone: '+254712345678', country: 'KE' }),
+      ]);
+
+      const result = await service.detectForBatch([
+        fixtureInput({ registrationId: 'reg-1', phone: '+254 712 345 678', country: 'KE' }),
+      ]);
+
+      expect(result.get('reg-1')![0]).toMatchObject({ actorId: 'actor-1', matchedOn: ['phone'] });
+    });
+
+    it('reads a Tanzanian national number only against Tanzania, never as a Kenyan one', async () => {
+      prisma.actor.findMany.mockResolvedValue([
+        fixtureActor({ phone: '+254712345678', country: 'KE' }),
+      ]);
+
+      const result = await service.detectForBatch([
+        fixtureInput({ registrationId: 'reg-1', phone: '0712 345 678', country: 'TZ' }),
+      ]);
+
+      expect(result.get('reg-1')).toEqual([]);
     });
 
     it('does not match distinct phone numbers', async () => {

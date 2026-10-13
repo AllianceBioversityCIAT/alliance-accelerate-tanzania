@@ -9,6 +9,7 @@ import {
   toPublicListItem,
 } from '../common/role-aware.serializer';
 import { isPublic } from '../common/pii-consent.policy';
+import { countryCodesMatching } from '../common/geo/countries';
 
 /**
  * T-5/T-8 — Public Actors read service (FR-1, FR-9, NFR-1, NFR-6).
@@ -66,7 +67,7 @@ export class ActorsService {
    * Paginated, filtered public directory list (FR-6).
    *
    * The WHERE always pins `consentStatus = GRANTED` (consent enforced at the
-   * query, not just the serializer); optional `region`, `role` (→ `traderType`)
+   * query, not just the serializer); optional `country`, `region`, `role` (→ `traderType`)
    * and `crop` (→ CropsOnActors relation by crop name) narrow it. Pagination is
    * clamped to sane defaults and a capped page size. Every row is projected
    * through {@link toPublicListItem}; `total` counts the same filtered
@@ -93,9 +94,12 @@ export class ActorsService {
         ]
       : [];
 
+    const countryCodes = term ? countryCodesMatching(term) : [];
+
     const where: Prisma.ActorWhereInput = {
       // Consent enforced at the QUERY — never serializer-only (NFR-1, DD-3).
       consentStatus: ConsentStatus.GRANTED,
+      ...(query.country ? { country: query.country } : {}),
       ...(query.region ? { region: query.region } : {}),
       ...(query.district ? { district: { contains: query.district } } : {}),
       ...(roleFilter.length > 0 ? { AND: roleFilter } : {}),
@@ -109,6 +113,7 @@ export class ActorsService {
               { traderName: { contains: term } },
               { region: { contains: term } },
               { district: { contains: term } },
+              ...(countryCodes.length > 0 ? [{ country: { in: countryCodes } }] : []),
             ],
           }
         : {}),

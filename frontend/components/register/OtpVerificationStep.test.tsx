@@ -71,6 +71,7 @@ const PAYLOAD: RegistrationSubmitPayload = {
   traderType: 'seed_company',
   contactPerson: 'Jane Doe',
   region: 'Arusha',
+  country: 'TZ',
   crops: ['sorghum'],
   capacityTons: 10,
   phone: '+255700000000',

@@ -48,6 +48,8 @@ import {
 /** The new actor's (or one import row's) comparison inputs, pre-validation-gate. */
 export interface IntakeDuplicateCandidateInput {
   phone: string | null;
+  /** ISO country; selects the phone's calling code (blank reads as Tanzania). */
+  country: string;
   email: string | null;
   traderName: string;
   gpsLatitude: number | null;
@@ -76,7 +78,7 @@ interface NormalizedCandidate {
 
 function normalizeCandidate(input: IntakeDuplicateCandidateInput): NormalizedCandidate {
   return {
-    normalizedPhone: normalizePhoneForMatch(input.phone),
+    normalizedPhone: normalizePhoneForMatch(input.phone, input.country),
     normalizedEmail: normalizeEmailForMatch(input.email),
     normalizedTraderName: normalizeTraderNameForMatch(input.traderName),
     gpsLatitude: input.gpsLatitude,
@@ -163,6 +165,7 @@ export class IntakeDuplicateService {
         traderId: true,
         traderName: true,
         phone: true,
+        country: true,
         email: true,
         gpsLatitude: true,
         gpsLongitude: true,
@@ -173,7 +176,7 @@ export class IntakeDuplicateService {
       id: actor.id,
       traderId: actor.traderId,
       traderName: actor.traderName,
-      normalizedPhone: normalizePhoneForMatch(actor.phone),
+      normalizedPhone: normalizePhoneForMatch(actor.phone, actor.country),
       normalizedEmail: normalizeEmailForMatch(actor.email),
       normalizedTraderName: normalizeTraderNameForMatch(actor.traderName),
       gpsLatitude: toNullableNumber(actor.gpsLatitude),

@@ -2,7 +2,7 @@
  * Unit tests for DirectoryFilters — T-4, T-5, FR-2, FR-5, NFR-3.
  *
  * Covers:
- *   (a) renders three labeled selects/controls (crop, role, region)
+ *   (a) renders three labeled selects/controls (crop, role, country, region)
  *   (b) selecting a crop calls onChange with crop set and others preserved
  *   (c) selecting a role calls onChange with role set
  *   (d) selecting a region calls onChange with region set
@@ -26,14 +26,14 @@ import React from 'react';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DirectoryFilters from './DirectoryFilters';
-import { REGIONS } from '@/lib/content/regions';
+import { ALL_REGION_OPTIONS, regionsFor } from '@/lib/content/countries';
 import type { ActorsQuery } from '@/lib/api/actors';
 
 afterEach(() => jest.clearAllMocks());
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
-const EMPTY_FILTERS: Pick<ActorsQuery, 'crop' | 'role' | 'region'> = {};
+const EMPTY_FILTERS: Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'> = {};
 
 describe('DirectoryFilters', () => {
   // ── (a) Renders labeled selects ────────────────────────────────────────────
@@ -101,10 +101,10 @@ describe('DirectoryFilters', () => {
     );
 
     await user.click(screen.getByLabelText(/^region$/i));
-    await user.click(screen.getByRole('option', { name: 'Dodoma' }));
+    await user.click(screen.getByRole('option', { name: 'Dodoma (Tanzania)' }));
 
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ region: 'Dodoma' }),
+      expect.objectContaining({ country: 'TZ', region: 'Dodoma' }),
     );
   });
 
@@ -115,7 +115,7 @@ describe('DirectoryFilters', () => {
     const onChange = jest.fn();
     render(
       <DirectoryFilters
-        filters={{ region: 'Dodoma' }}
+        filters={{ country: 'TZ', region: 'Dodoma' }}
         onChange={onChange}
         onClear={jest.fn()}
       />,
@@ -127,7 +127,7 @@ describe('DirectoryFilters', () => {
     // Assert on the value handed to onChange — the emitted query object —
     // not on any internal component state. That distinction is the exact
     // defect FR-5's `BUT it must NOT` clause guards against.
-    const call = onChange.mock.calls[0][0] as Pick<ActorsQuery, 'crop' | 'role' | 'region'>;
+    const call = onChange.mock.calls[0][0] as Pick<ActorsQuery, 'crop' | 'role' | 'country' | 'region'>;
     expect(call.region).toBeUndefined();
     expect(call.region).not.toBe('');
   });
@@ -223,32 +223,66 @@ describe('DirectoryFilters', () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  // ── (i) Region options equal the canonical set (OQ-1) ─────────────────────
+  // ── (i) Country ↔ region dependency ───────────────────────────────────────
 
-  it('region control lists exactly the canonical region strings', async () => {
-    const user = userEvent.setup();
-    render(
-      <DirectoryFilters filters={EMPTY_FILTERS} onChange={jest.fn()} onClear={jest.fn()} />,
-    );
-
+  async function optionLabels(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByLabelText(/^region$/i));
-
-    // Scoped to the region listbox — a bare `screen.getAllByRole('option')`
-    // also picks up the crop/role native <select>s' <option> elements, which
-    // carry the same implicit role. Strips a leading "✓" (option.value === ''
-    // matches the unset region filter, so the clear entry renders checked).
-    const optionLabels = within(screen.getByRole('listbox'))
+    return within(screen.getByRole('listbox'))
       .getAllByRole('option')
       .map((o) => o.textContent?.replace(/^✓/, '') ?? '')
       .filter((label) => label !== 'All regions');
+  }
 
-    expect(optionLabels).toEqual(REGIONS);
-    // Spot-check canonical strings from CANONICAL_REGIONS (OQ-1 resolution).
-    expect(optionLabels).toContain('Kagera');
-    expect(optionLabels).toContain('Manyara');
-    expect(optionLabels).toContain('Rukwa');
-    expect(optionLabels).toContain('Songwe');
-    expect(optionLabels).toContain('Kaskazini Unguja');
-    expect(optionLabels).toContain('Kusini Pemba');
+  it('lists every region of every country, labelled with its country, when no country is set', async () => {
+    const user = userEvent.setup();
+    render(<DirectoryFilters filters={EMPTY_FILTERS} onChange={jest.fn()} onClear={jest.fn()} />);
+
+    const labels = await optionLabels(user);
+
+    expect(labels).toEqual(ALL_REGION_OPTIONS.map((o) => o.label));
+    expect(labels).toContain('Kusini Pemba (Tanzania)');
+  });
+
+  it('lists only the selected country\'s regions', async () => {
+    const user = userEvent.setup();
+    render(
+      <DirectoryFilters filters={{ country: 'TZ' }} onChange={jest.fn()} onClear={jest.fn()} />,
+    );
+
+    expect(await optionLabels(user)).toEqual([...regionsFor('TZ')]);
+  });
+
+  it('clears a foreign region when the country changes, and keeps a matching one', async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    const { rerender } = render(
+      <DirectoryFilters
+        filters={{ country: 'TZ', region: 'Dodoma' }}
+        onChange={onChange}
+        onClear={jest.fn()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText(/^country$/i));
+    await user.click(screen.getByRole('option', { name: 'Kenya' }));
+    expect(onChange).toHaveBeenLastCalledWith({ country: 'KE', region: undefined });
+
+    rerender(
+      <DirectoryFilters
+        filters={{ country: 'TZ', region: 'Dodoma' }}
+        onChange={onChange}
+        onClear={jest.fn()}
+      />,
+    );
+    await user.click(screen.getByLabelText(/^country$/i));
+    await user.click(screen.getByRole('option', { name: 'All countries' }));
+    expect(onChange).toHaveBeenLastCalledWith({ country: undefined, region: undefined });
+  });
+
+  it('shows the clear button when only a country is active', () => {
+    render(
+      <DirectoryFilters filters={{ country: 'KE' }} onChange={jest.fn()} onClear={jest.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: /clear all filters/i })).toBeInTheDocument();
   });
 });

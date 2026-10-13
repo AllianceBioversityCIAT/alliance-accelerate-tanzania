@@ -42,6 +42,7 @@ export type ConsentRequestEvidenceStatus = ConsentRequestStatus | 'EXPIRED';
  * list filters, never pagination (`ConsentRequestFilterDto`).
  */
 export interface ConsentRequestFilter {
+  country?: string;
   region?: string;
   traderType?: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';

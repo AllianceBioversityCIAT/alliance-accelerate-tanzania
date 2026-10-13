@@ -110,6 +110,7 @@ async function main(): Promise<void> {
       data: {
         traderId: `SYN-${idNum}`,
         traderName: name,
+        country: 'TZ',
         region: r.name,
         district: `${r.name} ${pick(['Urban', 'Rural', 'District'])}`,
         traderType,

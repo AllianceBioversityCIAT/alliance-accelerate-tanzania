@@ -28,6 +28,7 @@ function makeActor(overrides: Partial<PublicActor> = {}): PublicActor {
     id: 'actor-1',
     traderName: 'Kilimo Seeds Ltd',
     region: 'Dodoma',
+    country: 'TZ',
     district: 'Kondoa',
     traderType: 'seed_company',
     additionalTraderTypes: [],
@@ -57,6 +58,7 @@ const FULL_FILTERS: ActorsQuery = {
   crop: 'sorghum',
   role: 'seed_company',
   region: 'Dodoma',
+  country: 'TZ',
 };
 
 // ---------------------------------------------------------------------------
@@ -99,13 +101,13 @@ describe('ShortlistTable — row rendering and profile links', () => {
   it('renders the actor region in the row', () => {
     const actor = makeActor({ region: 'Mwanza', district: undefined });
     render(<ShortlistTable actors={[actor]} filters={EMPTY_FILTERS} />);
-    expect(screen.getByText('Mwanza')).toBeInTheDocument();
+    expect(screen.getByText('Mwanza, Tanzania')).toBeInTheDocument();
   });
 
   it('renders "Region · District" when district is present', () => {
     const actor = makeActor({ region: 'Dodoma', district: 'Kondoa' });
     render(<ShortlistTable actors={[actor]} filters={EMPTY_FILTERS} />);
-    expect(screen.getByText('Dodoma · Kondoa')).toBeInTheDocument();
+    expect(screen.getByText('Dodoma, Tanzania · Kondoa')).toBeInTheDocument();
   });
 
   it('renders the human-readable role label', () => {

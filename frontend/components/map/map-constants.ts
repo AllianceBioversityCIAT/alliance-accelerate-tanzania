@@ -2,8 +2,9 @@
  * map-constants.ts — the shared geography and tile source for both OSM
  * surfaces in this app (enhancement/map-coordinate-picker FR-8, DD-5).
  *
- * `TANZANIA_CENTER`, `TANZANIA_BOUNDS`, `OSM_TILE_URL`, and `OSM_ATTRIBUTION`
- * were module-private `const`s in `LeafletMap.tsx` until this extraction
+ * `AFRICA_BOUNDS`, `OSM_TILE_URL`, and `OSM_ATTRIBUTION` (per-country frames
+ * come from `countryBounds` in `lib/content/countries.ts`) were module-private
+ * `const`s in `LeafletMap.tsx` until this extraction
  * (enhancement/map-coordinate-picker C-1). They are moved here verbatim —
  * no value changes — so `LeafletMap` (the public `/map` page) has one
  * definition to import rather than owning it privately, ready for a second
@@ -25,8 +26,7 @@
  * [number, number]' is 'readonly' and cannot be assigned to the mutable
  * type 'LatLngTuple'." A consumer must instead spread into a fresh mutable
  * tuple at the call site — `LeafletMap.tsx`'s `L.map(...)` call does exactly
- * this: `center: [...TANZANIA_CENTER] as L.LatLngExpression` and
- * `maxBounds: TANZANIA_BOUNDS.map((corner) => [...corner]) as
+ * this with `maxBounds: AFRICA_BOUNDS.map((corner) => [...corner]) as
  * L.LatLngBoundsExpression`. Keeping the exports `readonly` here is a
  * deliberate trade, not an oversight: it protects these shared values from
  * being mutated by a consumer, at the cost of one spread per call site.
@@ -34,25 +34,15 @@
  * enhancement/map-coordinate-picker DD-5) — will meet the same kind of
  * rejection if it assigns one of these exports directly rather than
  * spreading; a consumer that spreads from the first line, which is what
- * this note exists to produce, will meet none. Note the two exports fail
- * against different targets: `TANZANIA_CENTER` against `LatLngTuple`,
- * `TANZANIA_BOUNDS` against `LatLngBoundsLiteral` (`LatLngTuple[]`) — so
- * the message differs between them.
- */
+ * this note exists to produce, will meet none.  */
 
-/** Tanzania's geographic center, as `[lat, lng]`. */
-export const TANZANIA_CENTER: readonly [number, number] = [-6.37, 34.89];
-
-/**
- * Approximate bounding box for Tanzania — keeps the initial view focused.
- * `[southWest, northEast]`, each a `[lat, lng]` pair.
- */
-export const TANZANIA_BOUNDS: readonly [
+/** Africa-wide box, the same extent `lib/geo/coordinates.ts` accepts. `[southWest, northEast]`. */
+export const AFRICA_BOUNDS: readonly [
   readonly [number, number],
   readonly [number, number],
 ] = [
-  [-11.75, 29.34], // SW corner
-  [-0.98, 40.44], // NE corner
+  [-35, -25.5],
+  [37.6, 58],
 ];
 
 /** OSM raster tile URL template. */

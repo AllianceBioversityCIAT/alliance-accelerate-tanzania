@@ -142,6 +142,7 @@ function buildActor(overrides: Partial<AdminActor>): AdminActor {
     traderId: 'TZ-A-0001',
     traderName: 'Trader A',
     region: 'Arusha',
+    country: 'TZ',
     district: null,
     traderType: 'seed_company',
     additionalTraderTypes: [],
@@ -176,6 +177,7 @@ const ACTOR_B = buildActor({
   traderId: 'TZ-B-0002',
   traderName: 'Trader B',
   region: 'Dodoma',
+  country: 'TZ',
 });
 
 const SKIPS_NONE = { no_email: 0, granted: 0, pending_request: 0, declined: 0 };

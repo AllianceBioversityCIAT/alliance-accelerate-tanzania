@@ -19,7 +19,7 @@
  * Uses useSearchParams() — must be wrapped in <Suspense> at the page level.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -42,8 +42,8 @@ import { IconAdjustments, IconMap, IconList } from '@/components/dashboard/icons
 // Recharts is a heavy dependency; lazy-loading the three charts keeps it out of
 // the initial /dashboard bundle so first paint (filters + KPIs) isn't blocked.
 const ChartFallback = () => <Skeleton className="h-64 w-full rounded-lg" />;
-const CapacityByRegionChart = dynamic(
-  () => import('@/components/dashboard/charts/CapacityByRegionChart'),
+const CapacityByCountryChart = dynamic(
+  () => import('@/components/dashboard/charts/CapacityByCountryChart'),
   { ssr: false, loading: ChartFallback },
 );
 const CropDistributionChart = dynamic(
@@ -97,20 +97,6 @@ export default function DashboardView() {
     () => ({ data: actors, page: 1, pageSize: actors.length, total }),
     [actors, total],
   );
-
-  // ── Region dropdown options: only regions that have actors ────────────────
-  // Captured from the loaded set whenever no region filter is applied, so that
-  // selecting a region doesn't collapse the list. Falls back to the full
-  // canonical list (via DashboardFilters) until the first load completes.
-  const [regionOptions, setRegionOptions] = useState<string[] | undefined>(undefined);
-  useEffect(() => {
-    if (!filters.region && actors.length > 0) {
-      const distinct = Array.from(
-        new Set(actors.map((a) => a.region).filter((r): r is string => Boolean(r))),
-      ).sort();
-      setRegionOptions(distinct);
-    }
-  }, [actors, filters.region]);
 
   // ── Error state (NFR-6) — standalone panel, intentionally minimal ─────────
   if (error) {
@@ -170,7 +156,7 @@ export default function DashboardView() {
             <IconAdjustments className="h-4 w-4" />
             Filters
           </div>
-          <DashboardFilters filters={filters} onChange={handleFilterChange} regions={regionOptions} />
+          <DashboardFilters filters={filters} onChange={handleFilterChange} />
           <div className="mt-3 border-t border-border pt-3">
             <ActiveFilterChips filters={filters} onChange={handleFilterChange} />
           </div>
@@ -205,7 +191,7 @@ export default function DashboardView() {
         <section className="flex flex-col gap-3">
           <SectionHeading>Breakdowns</SectionHeading>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <CapacityByRegionChart data={agg.capacityByRegion} />
+            <CapacityByCountryChart data={agg.capacityByCountry} />
             <CropDistributionChart data={agg.byCrop} />
             <ActorTypeChart data={agg.byType} />
           </div>
@@ -220,6 +206,7 @@ export default function DashboardView() {
             error={error}
             selectedActorId={selectedActorId}
             onSelectActor={setSelectedActorId}
+            country={filters.country}
           />
         </section>
 

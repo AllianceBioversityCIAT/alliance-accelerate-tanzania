@@ -187,6 +187,7 @@ const INITIAL_ACTORS: Record<string, unknown>[] = [
     id: 'actor-exist-1',
     traderId: 'TZ-EXIST-1',
     traderName: 'Existing Registry Trader',
+    country: 'TZ',
     region: 'Dodoma',
     district: null,
     traderType: 'cooperative',

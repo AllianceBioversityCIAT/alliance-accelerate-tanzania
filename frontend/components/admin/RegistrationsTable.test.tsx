@@ -51,6 +51,7 @@ const ROW_PENDING: AdminRegistrationListRow = {
   traderType: 'seed_company',
   additionalTraderTypes: [],
   region: 'Arusha',
+  country: 'TZ',
   submittedAt: '2026-06-01T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 0,
@@ -63,6 +64,7 @@ const ROW_APPROVED: AdminRegistrationListRow = {
   traderType: 'cooperative',
   additionalTraderTypes: [],
   region: 'Dodoma',
+  country: 'TZ',
   submittedAt: '2026-05-15T00:00:00.000Z',
   status: 'APPROVED',
   duplicateCandidateCount: 0,
@@ -75,6 +77,7 @@ const ROW_REJECTED_WITH_DUPES: AdminRegistrationListRow = {
   traderType: 'informal_trader',
   additionalTraderTypes: [],
   region: 'Dodoma',
+  country: 'TZ',
   submittedAt: '2026-04-20T00:00:00.000Z',
   status: 'REJECTED',
   duplicateCandidateCount: 3,
@@ -88,6 +91,7 @@ const ROW_SATURATED_DUPES: AdminRegistrationListRow = {
   traderType: 'seed_company',
   additionalTraderTypes: [],
   region: 'Arusha',
+  country: 'TZ',
   submittedAt: '2026-03-10T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 5,
@@ -100,6 +104,15 @@ const ROWS = [ROW_PENDING, ROW_APPROVED, ROW_REJECTED_WITH_DUPES];
 // ---------------------------------------------------------------------------
 
 describe('RegistrationsTable', () => {
+  it('shows the country by name under the region, and as "Region, Country" in the cards', () => {
+    render(<RegistrationsTable rows={[{ ...ROW_PENDING, country: 'KE', region: 'Nakuru' }]} />);
+    const table = screen.getByRole('table', { name: 'Registrations' });
+    const cell = within(table).getByText('Nakuru').closest('td')!;
+    expect(cell).toHaveTextContent('NakuruKenya');
+    expect(screen.getByText('Nakuru, Kenya')).toBeInTheDocument();
+    expect(screen.queryByText('KE')).not.toBeInTheDocument();
+  });
+
   it('renders all eight column headers', () => {
     render(<RegistrationsTable rows={ROWS} />);
     const table = screen.getByRole('table', { name: 'Registrations' });
