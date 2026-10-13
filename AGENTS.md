@@ -3,7 +3,7 @@
 Tool-agnostic guidance for any AI agent (Claude Code, OpenCode, Antigravity, etc.). Mirrors `CLAUDE.md`.
 
 ## Project
-Public, serverless web platform mapping seed-system actors across Africa (sorghum, common bean, groundnut) for 1,000+ actors, branded the **PABRA Seed Registry** (it began as the ACCELERATE Tanzania Seed Registry; internal identifiers — repo, AWS stacks, the `accelerate-tz` domain and sender, storage keys — keep that name on purpose). Full context: `docs/prd.md`.
+Public, serverless web platform mapping seed-system actors across Africa (sorghum, common bean, groundnut) for 1,000+ actors, branded the **PABRA Seed Registry** (it began as the ACCELERATE Tanzania Seed Registry; internal identifiers — repo, AWS stacks, the `accelerate-tz` domain and sender, storage keys — keep that name on purpose, and the `v1.0` consent editions keep it as the text people accepted). Full context: `docs/prd.md`.
 
 ## Constitutional baseline (read before acting)
 - `docs/prd.md` — product requirements (what/why, personas, scope, acceptance criteria).

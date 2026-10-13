@@ -403,7 +403,7 @@ describe(
         );
     });
 
-    it('keeps the sentence each earlier edition was accepted under', () => {
+    it('keeps the former registry-wide sentence on the earlier editions', () => {
       expect(CONSENT_POLICY_EDITIONS[0].acceptanceStatement).toBe(V1_0_STATEMENT);
       expect(CONSENT_POLICY_EDITIONS[1].acceptanceStatement).toBe(V1_0_STATEMENT);
     });

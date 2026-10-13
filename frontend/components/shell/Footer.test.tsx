@@ -112,4 +112,12 @@ describe('Footer — rebrand (PABRA brand mark, ACCELERATE in the logo row)', ()
     expect(all.some((s) => s.includes('accelerate-logo-white'))).toBe(false);
     expect(screen.queryByRole('link', { name: /pan-africa bean research alliance/i })).toBeNull();
   });
+  it('labels the Alliance + ACCELERATE row "Developed under" and links ACCELERATE to its project page', () => {
+    render(<Footer />);
+
+    expect(screen.getByText('Developed under')).toBeInTheDocument();
+    const accelerate = screen.getByRole('link', { name: 'ACCELERATE project — opens in a new tab' });
+    expect(accelerate).toHaveAttribute('href', 'https://alliancebioversityciat.org/projects/accelerate');
+    expect(accelerate).toHaveAttribute('target', '_blank');
+  });
 });

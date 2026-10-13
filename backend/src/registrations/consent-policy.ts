@@ -215,8 +215,8 @@ export const CONSENT_POLICY_VERSION: string = deriveConsentPolicyVersion(CONSENT
  * The current edition's acceptance-checkbox label (see the note above
  * `CONSENT_POLICY_EDITIONS`): served as `acceptanceStatement` by
  * `GET /registrations/consent-policy`. Each edition carries its own since
- * v1.1, when the product was renamed; v1.0-placeholder and v1.0 keep the
- * statement they were served with.
+ * v1.1, when the product was renamed; v1.0-placeholder and v1.0 inherit the
+ * former registry-wide sentence (served from v1.0 on, D-13).
  */
 export const CONSENT_ACCEPTANCE_STATEMENT: string =
   deriveCurrentEdition(CONSENT_POLICY_EDITIONS).acceptanceStatement;

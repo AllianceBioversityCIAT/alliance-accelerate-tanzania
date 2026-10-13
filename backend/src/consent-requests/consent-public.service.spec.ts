@@ -15,7 +15,7 @@ import { ConsentPublicService, buildConsentLinkNotFoundError } from './consent-p
 import { hashConsentToken } from './consent-token.util';
 
 // `getAdminConsentEdition` is wrapped so one test can register a fixture
-// `v1.1` the real (append-only) registry does not yet hold.
+// edition the real (append-only) registry does not hold.
 jest.mock('./admin-consent-policy', () => {
   const actual = jest.requireActual('./admin-consent-policy');
   return { ...actual, getAdminConsentEdition: jest.fn(actual.getAdminConsentEdition) };

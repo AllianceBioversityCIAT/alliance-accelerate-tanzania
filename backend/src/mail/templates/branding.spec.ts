@@ -44,7 +44,7 @@ describe('email branding (PABRA Seed Registry)', () => {
 
   it.each(Object.entries(messages()))('%s names the PABRA Seed Registry and never ACCELERATE', (_name, msg) => {
     const all = `${msg.subject}\n${msg.text}\n${msg.html}`;
-    expect(all).not.toMatch(/ACCELERATE/i);
+    expect(all).not.toMatch(/ACCELERATE|Tanzania Seed Registry/i);
     expect(msg.html).toContain('>PABRA</span>');
   });
 });
