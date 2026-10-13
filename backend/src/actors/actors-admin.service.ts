@@ -520,8 +520,11 @@ export class ActorsAdminService {
     });
   }
 
+  /** Only a changed phone or country is checked, so stored legacy numbers stay editable. */
   private assertPhoneMatchesCountry(before: ActorWithCrops, dto: AdminActorUpdateDto): void {
-    if (dto.country === undefined && dto.phone === undefined) return;
+    const phoneChanged = dto.phone !== undefined && dto.phone !== before.phone;
+    const countryChanged = dto.country !== undefined && dto.country !== before.country;
+    if (!phoneChanged && !countryChanged) return;
     const country = dto.country ?? before.country;
     const phone = dto.phone ?? before.phone;
     if (phone == null || isPhoneOfCountry(country, phone)) return;

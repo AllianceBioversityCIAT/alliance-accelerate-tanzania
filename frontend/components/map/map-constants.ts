@@ -2,8 +2,9 @@
  * map-constants.ts — the shared geography and tile source for both OSM
  * surfaces in this app (enhancement/map-coordinate-picker FR-8, DD-5).
  *
- * `TANZANIA_BOUNDS`, `AFRICA_BOUNDS`, `OSM_TILE_URL`, and `OSM_ATTRIBUTION`
- * were module-private `const`s in `LeafletMap.tsx` until this extraction
+ * `AFRICA_BOUNDS`, `OSM_TILE_URL`, and `OSM_ATTRIBUTION` (per-country frames
+ * come from `countryBounds` in `lib/content/countries.ts`) were module-private
+ * `const`s in `LeafletMap.tsx` until this extraction
  * (enhancement/map-coordinate-picker C-1). They are moved here verbatim —
  * no value changes — so `LeafletMap` (the public `/map` page) has one
  * definition to import rather than owning it privately, ready for a second

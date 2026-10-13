@@ -18,7 +18,7 @@
  *   Prince Edward Islands), with Somaliland counted as Somalia, as in ISO.
  *
  * Writes the same file to backend/src/common/geo and frontend/lib/content;
- * african-countries.spec.ts fails if the two copies differ.
+ * countries.spec.ts fails if the two copies differ.
  */
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';

@@ -1427,6 +1427,20 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         ]);
       });
 
+      it('lets an unrelated edit through when the stored phone predates the prefix rule', async () => {
+        const before = fixtureActor({ country: 'TZ', region: 'Arusha', phone: '0712345678' });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(before);
+        prisma.actor.update.mockResolvedValue(before);
+
+        await expect(
+          service.update(
+            'actor-1',
+            { country: 'TZ', phone: '0712345678', traderName: 'Renamed' } as AdminActorUpdateDto,
+            ACTING_SUB,
+          ),
+        ).resolves.toBeDefined();
+      });
+
       it('rejects a new phone that is not from the stored country', async () => {
         prisma.actor.findUnique.mockResolvedValue(fixtureActor({ country: 'TZ', region: 'Arusha' }));
 

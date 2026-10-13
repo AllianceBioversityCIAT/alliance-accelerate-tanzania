@@ -9,8 +9,9 @@
  * design.md §4 + §8 DR-3).
  *
  * Allowed-value lists are built FROM the canonical constants the DTO/normalizer
- * already use (`TRADER_TYPES` from `common/normalize.ts`,
- * the Actor `sex` shape, `ConsentStatus` from Prisma) rather than re-typed here
+ * already use (`TRADER_TYPES` from `common/normalize.ts`, `AFRICAN_COUNTRIES`
+ * from `common/geo/countries.ts`, the Actor `sex` shape, `ConsentStatus` from
+ * Prisma) rather than re-typed here
  * — one edit site per DD-5. Crops are three YES/NO columns (DR-3): dropdown-
  * friendly for field staff, zero spelling risk.
  *

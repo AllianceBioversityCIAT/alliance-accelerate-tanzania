@@ -26,7 +26,6 @@ import { AcknowledgeDialog } from './AcknowledgeDialog';
 import { DuplicateConfirmDialog } from './DuplicateConfirmDialog';
 import { ConsentDocumentField } from './ConsentDocumentField';
 import Button from '../ui/Button';
-import { SearchableSelect } from '../ui/SearchableSelect';
 
 import CoordinatePicker from '@/components/map/CoordinatePicker';
 import { regionsFor } from '@/lib/content/countries';
@@ -481,7 +480,15 @@ function validate(
 
   if (!errors.phone && values.phone.trim().length > PHONE_MAX_LENGTH) {
     errors.phone = `Phone must be ${PHONE_MAX_LENGTH} characters or fewer.`;
-  } else if (!errors.phone && values.country && !isPhoneOfCountry(values.country, values.phone)) {
+  } else if (
+    !errors.phone &&
+    values.country &&
+    // On edit only a changed phone or country is checked, so stored legacy numbers stay saveable.
+    (mode === 'create' ||
+      values.phone.trim() !== (initialValues?.phone ?? '').trim() ||
+      values.country !== initialValues?.country) &&
+    !isPhoneOfCountry(values.country, values.phone)
+  ) {
     errors.phone = phoneOfCountryMessage(values.country);
   }
 
@@ -1056,7 +1063,7 @@ export default function ActorForm({
           disabled={loading}
           maxLength={maxLength}
           aria-invalid={error ? 'true' : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
+          aria-describedby={[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
           className={inputClasses(!!error)}
         />
       </Field>

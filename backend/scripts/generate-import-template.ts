@@ -64,7 +64,7 @@ const OUTPUT_PATH = path.resolve(
 const HOW_TO_LINES: readonly string[] = [
   '1. Enter one actor per row on the "Data" sheet. Do not rename, reorder, or delete the header row.',
   '2. Columns marked Required must be filled in — rows missing a required value are rejected on import.',
-  '3. Where a column has a dropdown (Trader Type, Country, Region, Sex, the three Crop columns, Consent Status), pick a listed value. Pick the Country first: the Region list shows only that country’s regions.',
+  '3. Where a column has a dropdown (Trader Type, Country, Region, Sex, the three Crop columns, Consent Status, Consent Method), pick a listed value. Pick the Country first: the Region list shows only that country’s regions.',
   '4. For each crop the actor deals in, choose YES or NO in that crop’s column. At least one crop must be YES.',
   '5. Leave a cell blank when you have no value; blank optional cells are accepted.',
   '6. Save the file as .xlsx and upload it from Admin → Actors → Import.',

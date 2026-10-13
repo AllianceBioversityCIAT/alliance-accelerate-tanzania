@@ -22,8 +22,8 @@
 // `parseCoordinatePair` will re-derive next render.
 //
 // Forward pointer (2) — `PICKER_ZOOM` below is this component's OWN view
-// policy, not `LeafletMap`'s. `INITIAL_ZOOM` (6, full-viewport country
-// overview) and `ACTOR_ZOOM` (11, fly-to-a-selected-actor) stay in
+// policy, not `LeafletMap`'s. `FIT_MAX_ZOOM` (10, fit-to-actors cap) and
+// `ACTOR_ZOOM` (11, fly-to-a-selected-actor) stay in
 // `LeafletMap.tsx` on purpose (T-2 review) — a ~380px map embedded in a form
 // needs its own value, not a borrowed one, so FR-8's "one definition, no new
 // coupling" holds for the constants that are actually shared (§7.2) without

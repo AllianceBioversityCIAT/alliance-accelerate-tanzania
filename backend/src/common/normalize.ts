@@ -19,8 +19,11 @@
 /**
  * Official Tanzania regions (mainland + Zanzibar), 31 as of the most recent
  * administrative split (Songwe carved from Mbeya; Zanzibar's five urban/rural
- * regions included). This is the canonical allowlist `region` is matched
- * against. Edited in one place per DD-5 if the administrative map changes.
+ * regions included). Tanzania's entry in the generated country list
+ * (`geo/african-countries.generated.ts`) is built from this constant, and
+ * `normalizeRegion` keeps its aliases; after editing it, re-run
+ * `scripts/generate-african-geo.ts` and `npm run generate:template`
+ * (`geo/countries.spec.ts` fails until the generated list matches).
  */
 export const CANONICAL_REGIONS = [
   'Arusha',
@@ -341,14 +344,14 @@ export function parseCapacityTons(
  */
 const TZ_COUNTRY_CODE = '255';
 
-/** Result of {@link normalizePhone}: a canonical `+255…` number or `null`. */
+/** Result of {@link normalizePhone}: a canonical E.164 number or `null`. */
 export interface PhoneNormalizationResult {
   phone: string | null;
   additionalCount: number;
 }
 
 /**
- * Normalize a raw `phone` cell to Tanzanian E.164 (`+255…`), or `null` (FR-5).
+ * Normalize a raw `phone` cell to E.164 for `callingCode` (default Tanzania), or `null` (FR-5).
  *
  * Quarantine philosophy (matching `normalizeRegion` / `normalizeTraderType`
  * above): a value is normalized only when the mapping is unambiguous — a

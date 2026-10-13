@@ -232,7 +232,9 @@ function getFieldError(name: RegExp) {
   if (!input) return null;
   const describedBy = input.getAttribute('aria-describedby');
   if (!describedBy) return null;
-  return document.getElementById(describedBy);
+  // A field may reference its hint and its error; the error id ends in "-error".
+  const errorId = describedBy.split(' ').find((id) => id.endsWith('-error'));
+  return errorId ? document.getElementById(errorId) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -607,6 +609,27 @@ describe('ActorForm — CoordinatePicker adoption (T-5)', () => {
     const [, dto] = jest.mocked(updateActor).mock.calls[0];
     expect(dto).not.toHaveProperty('gpsAltitude');
     expect(dto).not.toHaveProperty('gpsAccuracy');
+  });
+
+  it('saves an unrelated edit of an actor whose stored phone predates the prefix rule', async () => {
+    const legacy: AdminActor = { ...ADMIN_ACTOR, country: 'TZ', phone: '0712345678' };
+    jest.mocked(updateActor).mockResolvedValue(legacy);
+    renderForm({ mode: 'edit', initialValues: legacy });
+
+    submitForm();
+
+    await waitFor(() => expect(updateActor).toHaveBeenCalledTimes(1));
+  });
+
+  it('checks the prefix once the phone is changed on edit', async () => {
+    const legacy: AdminActor = { ...ADMIN_ACTOR, country: 'TZ', phone: '0712345678' };
+    renderForm({ mode: 'edit', initialValues: legacy });
+    fireEvent.change(screen.getByLabelText(/^phone/i), { target: { value: '0799999999' } });
+
+    submitForm();
+
+    expect(getFieldError(/^phone/i)?.textContent).toMatch(/country prefix/i);
+    expect(updateActor).not.toHaveBeenCalled();
   });
 });
 

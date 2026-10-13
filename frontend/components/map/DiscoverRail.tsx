@@ -3,7 +3,7 @@
 // DiscoverRail — the left-panel "Discover actors" rail.
 //
 // FR-1: Part of the /map page layout; always rendered.
-// FR-4: Contains FilterControls (crop/role/region) that update page filters
+// FR-4: Contains FilterControls (crop/role/country/region) that update page filters
 //        → useActors refetches (DD-3 server-side filtering).
 // FR-5: Contains ActorList; selecting an item sets selectedActorId → map fly-to.
 // FR-7: Handles loading (Skeleton rows), error, and empty states.
@@ -11,8 +11,8 @@
 //        toggle (bottom-area strip); on ≥ md is the persistent left rail.
 // NFR-4: Token-driven classes only — no raw hex.
 //
-// Count header: uses `total` from the API response (PublicActorList.total).
-// Falls back to `actors.length` if `total` is not provided.
+// Count header: the listed (located) actors; `total` is shown only when the
+// fetch was truncated, next to how many were loaded.
 
 import { useState } from 'react';
 import type { ActorsQuery, PublicActor } from '@/lib/api/actors';
@@ -123,8 +123,9 @@ function LoadingRows() {
  * fills mobile screen space (NFR-2). The toggle opens a panel layered over
  * the page content. On ≥ md: rendered inline as the persistent left rail.
  *
- * The rail body is the accessible non-map equivalent of the Leaflet map,
- * giving keyboard/screen-reader users a complete actor listing (NFR-3).
+ * The rail body is the accessible non-map equivalent of the Leaflet map: it
+ * lists exactly the actors on the map (those with coordinates) and states how
+ * many matching actors lack them; the directory lists every actor (NFR-3).
  */
 export default function DiscoverRail({
   actors,
@@ -143,8 +144,7 @@ export default function DiscoverRail({
   // On ≥ md (md:block) the panel is always visible regardless of this state.
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Count to display: prefer total from the pagination envelope (authoritative
-  // server-side count); fall back to the length of the returned actors array.
+  // Registry-wide count, shown only in the truncation caption.
   const displayCount = total ?? actors.length;
 
   // ATP-68: when the fetch was truncated, `total` describes the registry and
@@ -182,7 +182,7 @@ export default function DiscoverRail({
           >
             {unlocated > 0
               ? 'None of the matching actors have coordinates, so none can be shown on the map.'
-              : 'No actors match your filters. Try adjusting the crop, role, or region.'}
+              : 'No actors match your filters. Try adjusting the crop, role, country, or region.'}
           </div>
         ) : (
           // Scrollable actor list (FR-5, NFR-3).
