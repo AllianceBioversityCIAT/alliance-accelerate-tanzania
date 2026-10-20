@@ -8,8 +8,6 @@
  *
  * Logo paths reference files under `frontend/public/`; partners without a
  * clean logo asset omit the `logo` field and fall back to a styled text label.
- * `lightSafe` controls whether the logo can be placed directly on a dark surface
- * (bg-fg) or needs a light chip for legibility (FR-10, §5.3).
  */
 
 // ---------------------------------------------------------------------------
@@ -39,13 +37,6 @@ export interface Partner {
    */
   logo?: string;
   /**
-   * `true` when the logo mark is legible directly on a dark surface (bg-fg)
-   * without a light chip behind it.
-   * `false` (or absent) means the component must wrap the logo in a
-   * light-surface chip (bg-surface) before placing it on the dark footer.
-   */
-  lightSafe?: boolean;
-  /**
    * Organisational tier within the ACCELERATE coalition.
    * Used by PartnersStrip to group and label partners by role.
    *   'funder'  — primary financial backer (Gates)
@@ -71,8 +62,6 @@ export const PARTNERS: Partner[] = [
     role: 'Lead implementer',
     url: 'https://alliancebioversityciat.org',
     logo: '/partners/alliance.png',
-    // Coloured mark on transparency — requires a light chip on dark footer
-    lightSafe: false,
     tier: 'lead',
   },
   {
@@ -81,8 +70,6 @@ export const PARTNERS: Partner[] = [
     role: 'Co-lead, bean value chain',
     url: 'https://www.pabra-africa.org',
     logo: '/brand/pabra-logo.png',
-    // Coloured mark on transparency — requires a light chip on dark footer
-    lightSafe: false,
     tier: 'lead',
   },
   {
@@ -91,7 +78,6 @@ export const PARTNERS: Partner[] = [
     role: 'Variety release & early-generation seed',
     url: 'https://www.tari.go.tz',
     logo: '/partners/tari.png',
-    lightSafe: false,
     tier: 'partner',
   },
   {
@@ -100,7 +86,6 @@ export const PARTNERS: Partner[] = [
     role: 'Seed certification & QDS',
     url: 'https://www.tosci.go.tz',
     logo: '/partners/tosci.png',
-    lightSafe: false,
     tier: 'partner',
   },
   {
@@ -109,9 +94,6 @@ export const PARTNERS: Partner[] = [
     role: 'Market intelligence, sorghum/groundnut',
     url: 'https://www.cimmyt.org',
     logo: '/partners/cimmyt.jpg',
-    // Official CIMMYT mark (corn + wordmark + colour squares), transparent PNG;
-    // coloured on transparency — needs a light chip on dark surfaces.
-    lightSafe: false,
     tier: 'partner',
   },
   {
@@ -120,8 +102,6 @@ export const PARTNERS: Partner[] = [
     role: 'Funder',
     url: 'https://www.gatesfoundation.org',
     logo: '/partners/bmgf.png',
-    // Coloured mark on transparency — requires a light chip on dark footer
-    lightSafe: false,
     tier: 'funder',
   },
 ];

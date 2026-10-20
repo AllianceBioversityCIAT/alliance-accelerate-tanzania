@@ -158,8 +158,8 @@ export default function ClosingCTA() {
           </Link>
 
           {/* T-10, FR-1: home page's own entry point into the contact form —
-              same hand-crafted secondary-on-dark treatment as "About the
-              project" above (Button's secondary variant is light-surfaced
+              same hand-crafted secondary-on-dark treatment as "Our story"
+              above (Button's secondary variant is light-surfaced
               and would be unreadable here). */}
           <Link
             href="/contact"

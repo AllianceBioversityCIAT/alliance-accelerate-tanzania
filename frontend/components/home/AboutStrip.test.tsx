@@ -28,6 +28,11 @@ describe('AboutStrip', () => {
 
   // ── (a) H2 renders with role heading level 2 ─────────────────────────────
 
+  it('labels the section as the origin story ("Where it started")', () => {
+    render(<AboutStrip />);
+    expect(screen.getByText('Where it started')).toBeInTheDocument();
+  });
+
   it('renders the section heading as a level-2 heading', () => {
     render(<AboutStrip />);
 

@@ -52,8 +52,8 @@ export default function AboutPage() {
 
       {/* ====================================================================
           §3.1  ABOUT HERO
-          One <h1> for the page; eyebrow pill + lede + photo carousel.
-          Carousel is placed below the text column on mobile and beside it on lg+
+          One <h1> for the page; eyebrow pill + lede + ACCELERATE group photo.
+          The photo is placed below the text column on mobile and beside it on lg+
           to avoid any text-over-image contrast issue.
       ==================================================================== */}
       <section aria-labelledby="about-hero-heading" className="bg-bg">
@@ -109,7 +109,7 @@ export default function AboutPage() {
                 fill
                 priority
                 sizes="(min-width: 1024px) 50vw, 100vw"
-                className="object-cover object-[50%_30%]"
+                className="object-cover object-[center_30%]"
               />
             </div>
 

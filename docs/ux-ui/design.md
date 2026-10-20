@@ -15,7 +15,7 @@
 
 ```
 /                         Landing / Public Registry Portal (metrics + entry points)
-/about                    About the project — narrative (challenge, demand-led model, crops
+/about                    Our story — the ACCELERATE origin narrative (challenge, demand-led model, crops
                            & value chains, partners, enterprise case studies), CTAs into
                            /map, /directory and /contact
 /directory                Searchable, paginated actor directory (list/table)
@@ -171,7 +171,8 @@
 
 ## 5. Navigation Model
 
-- **Public top nav:** Logo · Discovery Map · Dashboard · Directory · About · Contact · Register your organisation · (Sign in). Sticky; the full bar renders from **`lg` (1024px)** and condenses to a hamburger below it — tablet included. `NAV_LINKS` in `frontend/components/shell/Header.tsx` is the single source for both the desktop bar and the mobile drawer — no second, divergent list. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`; `AuthSlot` (Sign in) is a sibling outside `NAV_LINKS`.
+- **Public top nav:** Logo · Discovery Map · Dashboard · Directory · Contact · Register your organisation · (Sign in). Sticky; the full bar renders from **`lg` (1024px)** and condenses to a hamburger below it — tablet included. `NAV_LINKS` in `frontend/components/shell/Header.tsx` is the single source for both the desktop bar and the mobile drawer — no second, divergent list. "Register your organisation" is visually distinct from "Sign in" — one is a public action, the other serves `Staff`/`Admin`; `AuthSlot` (Sign in) is a sibling outside `NAV_LINKS`.
+  - **No "About" entry** (removed 2026-10-20, ATP-86): the site's focus is the registry, and `/about` is now the ACCELERATE origin story ("Our story"), reached from the home "Where it started" section, the closing CTA and the footer.
   - **No "Home" entry, and no brand descriptor**, both removed 2026-08-31. The brand lockup is itself the link to `/` and its `aria-label` names it as home, so a "Home" item duplicated an adjacent control; the "Tanzania Seed Registry" descriptor beside the logo cost ~196px of a row that has only 1216px to spend.
   - **Why `lg` and not `md`.** Measured in a real browser, not estimated: the row's min-content width was **1270px** against a container ceiling of **1216px** — `max-w-7xl` caps usable width, so it never grows with the viewport and there is no screen wide enough. The bar overflowed at **every** width ≥768 (+526px at 768, +278px at 1024, +22px at 1280), spilling into the page gutter above that. After the fix the row needs 935px at 1024 (**41px slack**) and 1015px at 1280+ (**201px slack**). Recorded in `docs/specs/contact/contact-channels/execution.md`, T-10 DC-9 closure.
   - **Adding a nav entry is not free.** The 1216px ceiling is fixed. Before adding one, measure the row's min-content width rather than assuming headroom exists — this bar was already over budget with six entries and nobody noticed.
