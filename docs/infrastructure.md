@@ -15,7 +15,7 @@
 | Environment | Status | Notes |
 |---|---|---|
 | **Local** | Developer laptop | Native Node processes + a MySQL the developer supplies. See §6. |
-| **Production** | Live | The three SAM stacks below, deployed to `IBD-DEV` / `eu-west-1`. **This is the production environment** — the only deployed one. Served to the public from **`https://pabra-registry.alliance.cgiar.org`** (ATP-88), a CNAME onto the same CloudFront distribution; the distribution's own `*.cloudfront.net` address keeps working alongside it. The former **`accelerate-tz.alliance.cgiar.org`** stays aliased on the distribution and answers every request with a **301** to the same path and query on the new domain (`LegacyDomainName` in `infra/30-frontend/template.yaml`, handled by the viewer-request function), so links already sent by email keep working. Transactional email is sent from `pabra-registry-no-reply@cgiar.org`. |
+| **Production** | Live | The three SAM stacks below, deployed to `IBD-DEV` / `eu-west-1`. **This is the production environment** — the only deployed one. Served to the public from **`https://pabra-registry.alliance.cgiar.org`** (ATP-88), a CNAME onto the same CloudFront distribution; the distribution's own `*.cloudfront.net` address keeps working alongside it. The former **`accelerate-tz.alliance.cgiar.org`** is **retired**: its DNS record was removed (NXDOMAIN, checked 2026-10-20) and nothing redirects from it, so links sent by email before the move no longer open. Transactional email is sent from `pabra-registry-no-reply@cgiar.org`. |
 | ~~**Dev** / **Staging**~~ | Not planned | There is **no** separate development, staging or test environment, and none is planned for now (product owner, 2026-09-29). The laptop above is the only non-production environment that exists. |
 
 ⚠️ **`IBD-DEV` names the AWS account, not the environment's role.** The account name, the `DevCidr` parameter, the `dev` stack-name prefixes and every `dev-only` comment under `infra/` date from a period when this deployment *was* development. Read them as history, not as a description of what the environment is today. The practical consequence is §4's: a set of trade-offs accepted as cheap-and-temporary for a dev bootstrap — public RDS endpoint with `0.0.0.0/0` on 3306, unverified TLS chain, 1-day backups, single-AZ — are running in **production**, serving a public domain. They are recorded there and in `infra/README.md` §11 as production decisions: since 2026-10-09 each one is either **accepted for cost** or **handled outside the stack** (OQ-INFRA-7). Nothing in this revision changes a stack; it changes what the stacks are understood to be.
@@ -40,7 +40,7 @@ Three ordered stacks. The dependency direction is strict: `10` → `20` → `30`
 | | `AWS::S3::Bucket` (`ConsentDocumentsBucket`) + `AWS::S3::BucketPolicy` | Private store for uploaded consent documents (`actors/consent-intake/consent-request-email`). Name `${AWS::StackName}-consent-docs-${AWS::AccountId}`, so no account id is versioned. All four Block Public Access settings on, `BucketOwnerEnforced`, `AES256`, versioning enabled, tagged `project` and `environment`. One lifecycle rule on the `incoming/` prefix expires current and noncurrent versions after 1 day and aborts incomplete multipart uploads after 1 day, so an unconfirmed upload cleans itself up. CORS allows `POST` from `AllowedOrigin` (and `LegacyAllowedOrigin` when set) for the browser's direct presigned upload. The bucket policy denies any request with `aws:SecureTransport=false`. **`DeletionPolicy` and `UpdateReplacePolicy` are `Retain`.** The Lambda role may `PutObject`, `GetObject` and `DeleteObject` on `incoming/*`, `PutObject` and `GetObject` on `stored/*` (never `DeleteObject` there), and an unconditioned `s3:ListBucket` on the bucket ARN (HeadObject carries no `s3:prefix`, so a prefix condition would not apply; key names are exposed to the Lambda role only, which already reads `stored/`); the function reads the bucket name from `CONSENT_DOCUMENTS_BUCKET`. S3 server access logging is on, delivered to `ConsentDocumentsLogBucket` under `access/` (S6258): it is named `${AWS::StackName}-consent-docs-logs-${AWS::AccountId}`, has all four Block Public Access settings, `BucketOwnerEnforced`, `AES256` (log delivery does not support SSE-KMS), versioning (SonarCloud S6252), one lifecycle rule expiring objects after 365 days and noncurrent versions after 1 day, the same two tags, and `Retain`. Its policy lets `logging.s3.amazonaws.com` `PutObject` on `access/*` only for `aws:SourceArn` = the documents bucket and `aws:SourceAccount` = this account, and denies non-TLS requests. The Lambda role has no access to it. |
 | **`30-frontend`** | `AWS::S3::Bucket` | Static export output (`frontend/out/`). Not public — reached only via OAC. |
 | | `AWS::CloudFront::OriginAccessControl` | The bucket's only read path. |
-| | `AWS::CloudFront::Function` | URL rewrite for static-export routing (extensionless paths → `index.html`), and the 301 from the legacy domain (ATP-88). |
+| | `AWS::CloudFront::Function` | URL rewrite for static-export routing (extensionless paths → `index.html`). |
 | | `AWS::CloudFront::Distribution` | CDN + TLS termination. |
 | | `AWS::S3::BucketPolicy` | Grants CloudFront OAC, denies everything else. |
 
@@ -99,24 +99,23 @@ Operator-run deploys from a workstation remain possible and are documented in `i
 
 ### Changing the public domain or the sender address (ATP-88)
 
-Production is the only environment, and the legacy-domain redirect is a 301 that browsers cache, so **order matters**:
+Production is the only environment, so **order matters**:
 
-1. **Before merging:**
+1. **Before anything deploys:**
    - the new DNS name resolves to the distribution (`dig +short <domain> CNAME`);
    - Alliance ICT confirms the notification microservice may send as the new `EMAIL_SENDER`, with a test send.
 
-   A normal merge deploys `20-backend`, which switches the backend sender immediately. Deploying `30-frontend` before the DNS exists sends every request on the old domain to a host that does not resolve.
-2. **Nothing else follows on its own.**
-   - `deploy.sh` resolves `ALLOWED_ORIGIN` from the **live** `PublicAppUrl` *before* it redeploys the frontend, and defaults `CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL` from it. A single run therefore leaves CORS and the Cognito sender's links on the old domain.
-   - Pass all three explicitly: `ALLOWED_ORIGIN=https://<new> LEGACY_ALLOWED_ORIGIN=<CloudFrontUrl> CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL=https://<new>`.
-   - Expect a few minutes in which the old origin fails CORS, until CloudFront finishes deploying the alias and redirect.
+   A normal merge deploys `20-backend`, which switches the backend sender immediately.
+2. **The domain is one parameter, `CustomDomainName` in `30-frontend`, but nothing else follows on its own.**
+   - Backend CORS (`AllowedOrigin`), the backend's `PUBLIC_APP_BASE_URL` and the Cognito sender's link base all derive from the frontend stack's `PublicAppUrl` output, which changes only when `30-frontend` deploys.
+   - `deploy.sh` resolves them from the **live** output *before* redeploying the frontend. Pass them explicitly: `ALLOWED_ORIGIN=https://<new> LEGACY_ALLOWED_ORIGIN=<CloudFrontUrl> CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL=https://<new>`.
+   - Until backend CORS lists the new origin, **every API call from the site fails in the browser**: map, directory, dashboard, registration and admin.
 3. **Verify:**
-   - `curl -sI https://<old>/consent/` returns `301` with `Location: https://<new>/consent/`;
    - the new domain returns `200`;
-   - a query with encoded characters survives the redirect unchanged;
+   - `curl -sI -H 'Origin: https://<new>' <ApiBaseUrl>/api/v1/metrics` carries `access-control-allow-origin: https://<new>`;
    - `smoke.sh` passes;
    - one backend email and one Cognito email each show the new sender and link host.
-4. **The redirect is sent with `max-age=3600`** so a wrong deploy can be undone. Raise it once the move is stable.
+4. **Never deploy `30-frontend` from a checkout whose `CustomDomainName` default is the old name:** the deploy rewrites the distribution's aliases to whatever the template says.
 
 **Side effects of a new origin:** browser storage is per origin.
 - Signed-in staff and admins are signed out once.
