@@ -1,8 +1,12 @@
-# ACCELERATE Tanzania Seed Registry
+# PABRA Seed Actors Registry
 
-A public, serverless web platform mapping and visualizing Tanzania's seed system ecosystem. Focused on **sorghum**, **common bean**, and **groundnut** value chains, the registry serves 1,000+ actors — seed companies, NGOs, traders, processors, farmer groups, and cooperatives.
+A public, serverless web platform mapping and visualizing seed-system actors across Africa, live at **https://pabra-registry.alliance.cgiar.org**. A product of the **Pan-Africa Bean Research Alliance (PABRA)**, it covers the **sorghum**, **common bean**, and **groundnut** value chains in any of the 54 African countries (country is a data field on every actor), and serves 1,000+ actors — seed companies, NGOs, traders, processors, farmer groups, and cooperatives.
+
+The registry began as the **ACCELERATE Tanzania Seed Registry**, built under the ACCELERATE project (see Background). Internal identifiers — the repository name, AWS stack names (`accelerate-tz-dev-*`), resource tags and storage keys — keep that original name on purpose. The former address `accelerate-tz.alliance.cgiar.org` is retired.
 
 ## Background
+
+The origin project behind the registry:
 
 **ACCELERATE** — *Accelerated Variety Turnover for Open-Pollinated Crops in Tanzania* — is a four-year initiative (2023–2026) led by the **Alliance of Bioversity International & CIAT** and the **Pan-Africa Bean Research Alliance (PABRA)**, funded by the **Bill & Melinda Gates Foundation**.
 
@@ -14,11 +18,11 @@ A public, serverless web platform mapping and visualizing Tanzania's seed system
 2. **Marketplace traders** — engaging the traders who buy and sell grain every day turns the marketplace into an engine for adoption.
 3. **Institutional buyers** — when institutional buyers know about and can access improved varieties, turnover speeds up and farmer incomes and nutrition rise.
 
-This repository is the **public registry behind ACCELERATE** — a single, trusted map of the seed companies, cooperatives, offtakers, research institutes, and traders that make up Tanzania's seed system.
+This repository is the **public registry that grew out of ACCELERATE** — a single, trusted map of the seed companies, cooperatives, offtakers, research institutes, and traders that make up the seed system, first in Tanzania and now across Africa.
 
 ### Crops & value chains
 
-ACCELERATE focuses on three priority value chains, each with newly released, higher-yielding open-pollinated varieties (OPVs):
+ACCELERATE focused on three priority value chains (the registry keeps them), each with newly released, higher-yielding open-pollinated varieties (OPVs):
 
 | Crop | Representative varieties |
 |---|---|
@@ -42,7 +46,7 @@ ACCELERATE focuses on three priority value chains, each with newly released, hig
 The platform transforms fragmented, static CSV/Excel datasets into a **living, centralized, scalable web system** that any stakeholder can browse, search, and analyze:
 
 - **Public Registry Portal** — landing page with headline metrics and a searchable, paginated actor directory.
-- **Geospatial Visualization** — interactive Leaflet map of actor locations with crop, region, capacity, and trader-type filters.
+- **Geospatial Visualization** — interactive Leaflet map of actor locations with crop, country, region, capacity, and trader-type filters.
 - **Actor Profiles** — standardized profile pages backed by a canonical relational schema.
 - **Data Management & Admin** — protected admin UI for CRUD operations with role-based access control.
 - **Import / Export** — CSV bulk import for initial seeding; filtered CSV export that respects data-protection rules.
@@ -151,7 +155,7 @@ See [`infra/README.md`](infra/README.md) for the full deploy → operate → tea
 - **[`docs/specs/`](docs/specs/)** — feature specifications following the `general-setup/` templates.
 - **[`docs/reference/`](docs/reference/)** — source material & content briefs:
   - [`accelerate-project-source-data.md`](docs/reference/accelerate-project-source-data.md) — extracted project facts (partners, actors, varieties, regions, statistics) with full source list.
-  - [`accelerate-web-copy-brief.md`](docs/reference/accelerate-web-copy-brief.md) — ready-to-use on-brand copy for the home & About pages, mapped to routes and design tokens.
+  - [`accelerate-web-copy-brief.md`](docs/reference/accelerate-web-copy-brief.md) — ready-to-use on-brand copy for the home & About pages, mapped to routes and design tokens. Both describe the origin project (ACCELERATE, Tanzania).
 
 ## License
 

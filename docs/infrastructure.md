@@ -1,4 +1,6 @@
-# Infrastructure — ACCELERATE Tanzania Seed Registry
+# Infrastructure — PABRA Seed Actors Registry
+
+> The product began as the ACCELERATE Tanzania Seed Registry; internal identifiers (stack names `accelerate-tz-dev-*`, the `Project="ACCELERATE-Tanzania"` tag, the Jenkins job `tanzania-main`) keep that name on purpose.
 
 > The environments blueprint: from the developer's laptop to PROD. Constitutional baseline. Derived from the SAM stacks under `infra/`. Last reviewed: 2026-09-29.
 

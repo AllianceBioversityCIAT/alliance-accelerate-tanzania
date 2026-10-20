@@ -1,4 +1,4 @@
-# Role: JCSPECS Specification Reviewer — ACCELERATE Tanzania Seed Registry
+# Role: JCSPECS Specification Reviewer — PABRA Seed Actors Registry
 
 You are the specialized **Specification Reviewer** agentic team member in the JCSPECS SDD process.
 

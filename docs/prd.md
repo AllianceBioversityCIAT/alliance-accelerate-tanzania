@@ -1,17 +1,17 @@
-# Product Requirements Document — ACCELERATE Tanzania Seed Registry
+# Product Requirements Document — PABRA Seed Actors Registry
 
 > Living document. Constitutional baseline for all SDD work in this repository.
-> Last reviewed: 2026-06-22.
+> Last reviewed: 2026-10-20 (product name, Africa-wide scope: ATP-86/87/88).
 
 ## 1. Overview & Purpose
 
-The **ACCELERATE Tanzania Seed Registry** is a digital, publicly accessible platform that maps, structures, and visualizes the seed system ecosystem in Tanzania. It focuses on the **sorghum**, **common bean**, and **groundnut** value chains.
+The **PABRA Seed Actors Registry** — a product of PABRA (Pan-Africa Bean Research Alliance), live at `https://pabra-registry.alliance.cgiar.org` — is a digital, publicly accessible platform that maps, structures, and visualizes the seed system ecosystem across Africa. It began as the **ACCELERATE Tanzania Seed Registry** under the ACCELERATE project (*Accelerated Variety Turnover for Open-Pollinated Crops in Tanzania*, 2023–2026; Alliance of Bioversity International & CIAT and PABRA, funded by the Bill & Melinda Gates Foundation) and has been multi-country since ATP-87: every actor carries a country, one of the 54 African countries. It focuses on the **sorghum**, **common bean**, and **groundnut** value chains.
 
 The platform transitions fragmented, static CSV/Excel datasets into a **living, centralized, scalable web system** that any stakeholder can browse, search, and analyze. It is designed to serve **1,000+ actors** across the seed system: seed companies, NGOs, traders, processors, farmer groups, and cooperatives.
 
 ## 2. Problem Statement
 
-Seed system data in Tanzania today lives in disconnected spreadsheets owned by individual programs and partners. This creates concrete problems:
+Seed system data across Africa lives in disconnected spreadsheets owned by individual programs and partners. This creates concrete problems:
 
 - **No single source of truth** — actor records are duplicated, inconsistent, and quickly stale.
 - **No discoverability** — stakeholders cannot search or browse who operates where, for which crop, at what capacity.
@@ -54,7 +54,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 8. **Consent Requests by Email** — an `Admin` requests consent from team-managed actors by email (one actor, a selection, or every actor matching the current filters, including right after create or import). The actor answers on a link valid for 30 days that can be answered once; the request, the exact text shown and the answer are retained as evidence, and an `Admin` can upload a signed consent document against an actor.
 
 ### Out of Scope (v1)
-- Multi-country support (Tanzania only).
+- ~~Multi-country support (Tanzania only).~~ **In scope since ATP-87:** the registry is Africa-wide (all 54 African countries). Country is a required actor field; regions are the ISO 3166-2 subdivisions of the chosen country (Tanzania keeps its 31 regions).
 - Crops beyond sorghum, common bean, and groundnut.
 - Mobile native apps (responsive web only).
 - Advanced analytics dashboards / BI beyond the landing-page metrics and map filters.
@@ -68,7 +68,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **US-3 (Public):** As a visitor landing on the homepage, I can see headline metrics (actors mapped, crops tracked, regions covered), so that I understand the dataset's scale at a glance.
 - **US-4 (Admin):** As an administrator, I can sign in and create or edit an actor record through a validated form, so that field corrections reach the central registry reliably. *(Corrected 2026-10-05 — actor create/edit is `Admin`-only; `Staff` has no actor-write route today. See Target Personas.)*
 - **US-5 (Admin):** As an administrator, I can view full actor profiles including PII, so that I can contact and verify actors. *(Corrected 2026-10-05 — product owner ruling: only `Admin` views full actor profiles with PII; `Staff` has no elevated-read capability. See Target Personas.)*
-- **US-6 (Admin):** As an administrator, I can bulk-import an `.xlsx` workbook of actors matching the v4 import template (`common/template-columns.ts`), so that I can seed and extend the registry efficiently.
+- **US-6 (Admin):** As an administrator, I can bulk-import an `.xlsx` workbook of actors matching the v6 import template (`common/template-columns.ts`), so that I can seed and extend the registry efficiently.
 - **US-7 — Cancelled 2026-09-21 (ATP-53):** ~~As an authorized user, I can export a filtered dataset as CSV, and the export respects my role's PII permissions, so that data sharing stays compliant.~~ Server-side, role-aware administrative export is Out of Scope (§5); no route implements it, for `Admin` or `Staff`. The `/dashboard` "Download view" button is a separate, public-only surface covered by US-1/AC-6, not this story.
 - **US-8 (Admin):** As an administrator, I can manage users and their roles, so that access stays governed.
 - **US-9 (Applicant):** As a prospective actor with no AT team contact, I can submit my organisation's details through a public form, verify my email address, and accept the consent policy, so that I can join the registry on my own — and I can check my submission's status by reference code afterward, whether or not the confirmation email arrives.
@@ -80,8 +80,8 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 - **AC-1:** The public actor **list** response (`GET /actors`) omits `phone` and `email` (and the rest of the contact block) for every actor, regardless of consent or role. The public actor **detail** response (`GET /actors/:id`) includes `phone` and `email` only for an actor whose consent is `GRANTED`; a non-`GRANTED` actor's detail request returns `404` and none of that actor's fields. These two are the only `Public` reads by actor id; the one other single-actor read of a non-`GRANTED` actor's fields is the consent-link holder's own read, which takes a token and not an id (AC-9). (Testable: API contract test per endpoint and consent state.)
 - **AC-2:** The directory paginates at a fixed page size and supports search across `traderName`, `region`, `district`, and `crop`; p95 latency < 1s over the seed dataset.
 - **AC-3:** The map plots a marker for every actor with valid `gpsLatitude`/`gpsLongitude`; the four filters compose (AND) and update markers without a full page reload.
-- **AC-4:** Creating/editing an actor rejects invalid input (missing required fields, malformed email, out-of-range GPS) with field-level error messages; valid input persists to MySQL. The required set is the same across every team-managed intake path (admin create, admin edit, bulk import): Trader Name, Trader Type, Region, Contact Person, at least one crop, Capacity (tonnes, ≥ 0), Phone, Email — the same fields and bounds public self-registration already enforces. Trader ID is never a client input for a team-managed actor: the system assigns it (`TM-<year>-<NNNN>`); self-registered actors keep their own `SR-` id, and every existing Trader ID is unchanged.
-- **AC-5:** `.xlsx` workbook import maps every column of the v4 import template (`common/template-columns.ts`), reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
+- **AC-4:** Creating/editing an actor rejects invalid input (missing required fields, malformed email, out-of-range GPS) with field-level error messages; valid input persists to MySQL. The required set is the same across every team-managed intake path (admin create, admin edit, bulk import): Trader Name, Trader Type, Country, Region, Contact Person, at least one crop, Capacity (tonnes, ≥ 0), Phone (international form with the country's prefix), Email — the same fields and bounds public self-registration already enforces. Trader ID is never a client input for a team-managed actor: the system assigns it (`TM-<year>-<NNNN>`); self-registered actors keep their own `SR-` id, and every existing Trader ID is unchanged.
+- **AC-5:** `.xlsx` workbook import maps every column of the v6 import template (`common/template-columns.ts`), reports per-row success/failure counts, and does not partially corrupt the table on a bad row.
 - **AC-6:** The public dashboard CSV export never carries the contact block (`contactPerson`, `position`, `phone`, `email`, `marketLocation`) for any actor — structural, since the export is built from the same list projection as `GET /actors` — and does carry `sex`/`otherCrops` as non-contact, gender-disaggregated/demographic fields (`public-profile-disclosure` A-1). *(Corrected 2026-10-05: the clause "an `Admin` export includes the full record" is removed — server-side Admin export was cancelled 2026-09-21, ATP-53; see §5 Out of Scope. No Admin export exists to test.)*
 - **AC-7:** All AWS CLI / IaC / deployment commands use the `IBD-DEV` profile.
 - **AC-8:** A public self-registration submission is stored with no public read path for any submitted field until an Admin approves it; no response on the public registration paths echoes a payload field, the submitter's email, or the submission's internal id. (Testable: PII-boundary test over HTTP — release gate.)
@@ -106,7 +106,7 @@ The Registry solves these by providing a governed, role-aware, map-enabled web s
 ## 9. Open Questions
 
 - **OQ-1:** Is the `Crop` association one-to-one or many-to-many per actor (can one trader handle multiple of the three crops)? Default assumption: **many-to-many**.
-- **OQ-2:** What is the canonical Region/District list for Tanzania — free text on import, or validated against a reference table? Default v1: free text, normalized on import.
+- **OQ-2:** *(Resolved by ATP-87.)* Region is validated against the actor's country (ISO 3166-2 first-level subdivisions; Tanzania keeps its 31 canonical regions); District stays free text, normalized on import.
 - **OQ-3:** Should `Public` see approximate (jittered) GPS, exact GPS, or region-centroid only on the map? Default v1: exact coordinates are non-PII and shown publicly.
 - **OQ-4:** Retention/governance policy for PII (who can delete, audit requirements)?
 - **OQ-5:** Expected page size for directory pagination (default assumption: 20/page).

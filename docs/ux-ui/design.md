@@ -1,4 +1,4 @@
-# System Design — UI/UX Blueprint — ACCELERATE Tanzania Seed Registry
+# System Design — UI/UX Blueprint — PABRA Seed Actors Registry
 
 > The visual and interaction system. Not low-level technical implementation (see `docs/trd/trd.md` for that).
 > Constitutional baseline. Last reviewed: 2026-06-22.
@@ -191,7 +191,7 @@
 
 ## 7. Design Tokens
 
-Tailwind is the token system. Tokens below are the **single source of truth**; implementers must reference these (Tailwind config / CSS variables), never hardcode equivalents. Palette evokes Tanzanian agriculture (earth + growth) while staying neutral and accessible.
+Tailwind is the token system. Tokens below are the **single source of truth**; implementers must reference these (Tailwind config / CSS variables), never hardcode equivalents. Palette evokes African agriculture (earth + growth) while staying neutral and accessible.
 
 ```css
 /* Brand / semantic colors (define in tailwind.config + CSS vars) */
