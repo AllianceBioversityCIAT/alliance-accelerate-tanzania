@@ -63,7 +63,7 @@ function PartnerLogo({ partner, size }: { partner: Partner; size: 'lg' | 'sm' })
 
 export default function Footer() {
   return (
-    <footer className="bg-surface-alt text-fg border-t-2 border-primary-hover">
+    <footer className="bg-surface-alt text-fg border-t-2 border-fg">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
 
