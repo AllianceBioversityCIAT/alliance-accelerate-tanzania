@@ -89,7 +89,7 @@ describe('Footer — links (FR-6, T-6)', () => {
   });
 });
 
-describe('Footer — rebrand (PABRA brand mark, ACCELERATE in the logo row)', () => {
+describe('Footer — rebrand (PABRA brand mark; Alliance, ACCELERATE and Gates in the logo row)', () => {
   const srcs = () =>
     Array.from(document.querySelectorAll('img')).map((i) =>
       decodeURIComponent(i.getAttribute('src') ?? ''),
@@ -98,7 +98,7 @@ describe('Footer — rebrand (PABRA brand mark, ACCELERATE in the logo row)', ()
   it('uses the PABRA logo as the brand mark, linking home', () => {
     render(<Footer />);
 
-    const brand = screen.getByRole('link', { name: 'PABRA Seed Registry — home' });
+    const brand = screen.getByRole('link', { name: 'PABRA Seed Actors Registry — home' });
     expect(brand).toHaveAttribute('href', '/');
     expect(brand.querySelector('img')?.getAttribute('src') ?? '').toContain('pabra-logo.png');
   });
@@ -112,10 +112,27 @@ describe('Footer — rebrand (PABRA brand mark, ACCELERATE in the logo row)', ()
     expect(all.some((s) => s.includes('accelerate-logo-white'))).toBe(false);
     expect(screen.queryByRole('link', { name: /pan-africa bean research alliance/i })).toBeNull();
   });
-  it('labels the Alliance + ACCELERATE row "Developed under" and links ACCELERATE to its project page', () => {
+  it('shows the Alliance and Gates logos once each', () => {
     render(<Footer />);
 
-    expect(screen.getByText('Developed under')).toBeInTheDocument();
+    const all = srcs();
+    expect(all.filter((s) => s.includes('/partners/alliance.png'))).toHaveLength(1);
+    expect(all.filter((s) => s.includes('/partners/bmgf.png'))).toHaveLength(1);
+  });
+
+  it('labels the groups "An initiative of PABRA and" / "Originally developed under" / "funded by"', () => {
+    render(<Footer />);
+
+    expect(screen.getByText('An initiative of PABRA and')).toBeInTheDocument();
+    expect(screen.getByText('Originally developed under')).toBeInTheDocument();
+    expect(screen.getByText('funded by')).toBeInTheDocument();
+    expect(screen.queryByText('Developed under')).toBeNull();
+    expect(screen.queryByText('Funded by')).toBeNull();
+  });
+
+  it('links ACCELERATE to its project page in a new tab', () => {
+    render(<Footer />);
+
     const accelerate = screen.getByRole('link', { name: 'ACCELERATE project — opens in a new tab' });
     expect(accelerate).toHaveAttribute('href', 'https://alliancebioversityciat.org/projects/accelerate');
     expect(accelerate).toHaveAttribute('target', '_blank');

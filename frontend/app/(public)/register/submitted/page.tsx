@@ -89,7 +89,7 @@ function SubmittedView() {
           Submission received
         </h1>
         <p className="mt-2 max-w-prose text-sm text-muted">
-          Thank you for registering your organisation with the PABRA Seed Registry.
+          Thank you for registering your organisation with the PABRA Seed Actors Registry.
         </p>
       </div>
 

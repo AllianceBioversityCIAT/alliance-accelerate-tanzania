@@ -125,7 +125,7 @@ function allEditionsDigest(editions: readonly AdminConsentEdition[] = ADMIN_CONS
  */
 /** v1.0 alone — recorded before v1.1 existed, so v1.0's accepted text can never drift. */
 const RECORDED_V1_0_DIGEST = '5aa42f417c564cb04b7b42ab44135fc4ef4cfddeaac21cb1b0320b34813abff3';
-const RECORDED_EDITIONS_DIGEST = '5a7baead10a4eec4bb48340627ab7d4df4b5784009962fb0920d2c5095cd97e0';
+const RECORDED_EDITIONS_DIGEST = 'bfcbb4a6e46915f43d3fc11669c4bf435a7993390f72b263ef5b484015eb055d';
 
 describe('admin-consent-editions.json verbatim pin (FR-1 "verbatim text" scenario)', () => {
   it(
@@ -208,13 +208,12 @@ describe('append-only registry (FR-1 "append-only" scenario)', () => {
     },
   );
 
-  it('v1.1 differs from v1.0 only by the product name (ACCELERATE Tanzania Registry → PABRA Seed Registry)', () => {
+  it('v1.1 differs from v1.0 only by the name (ACCELERATE Tanzania Registry → PABRA Seed Actors Registry) and the data-location wording (outside/within and outside Tanzania → Africa)', () => {
     const [v10, v11] = ADMIN_CONSENT_EDITIONS;
     const renamed = JSON.parse(
-      JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement }).replaceAll(
-        'ACCELERATE Tanzania Registry',
-        'PABRA Seed Registry',
-      ),
+      JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement })
+        .replaceAll('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry')
+        .replaceAll('outside Tanzania', 'outside Africa'),
     );
     expect({ sections: v11.sections, acceptanceStatement: v11.acceptanceStatement }).toEqual(renamed);
     expect(JSON.stringify(v11)).not.toContain('ACCELERATE');

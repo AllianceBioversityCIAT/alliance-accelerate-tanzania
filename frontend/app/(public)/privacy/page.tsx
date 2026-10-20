@@ -23,9 +23,9 @@ import LegalDocumentView from '@/components/legal/LegalDocumentView';
 import { PRIVACY_POLICY } from '@/lib/content/legal/privacy';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — PABRA Seed Registry',
+  title: 'Privacy Policy — PABRA Seed Actors Registry',
   description:
-    'How the PABRA Seed Registry collects, uses, stores, publishes and protects '
+    'How the PABRA Seed Actors Registry collects, uses, stores, publishes and protects '
     + 'information submitted through the platform.',
 };
 

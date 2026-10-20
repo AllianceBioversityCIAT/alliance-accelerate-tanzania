@@ -78,7 +78,7 @@ import { createHash } from 'crypto';
 const APPROVED_BODY_DIGEST =
   '2a854fd5d3d2d9923286af5e95d52fa747e56a6a7533edfb15ac6c1c21368007';
 /** The same digest over the whole registry, v1.1 (the PABRA rename) included. */
-const REGISTRY_BODY_DIGEST = 'fdc00a6abe1923a7950fb5c21e09e51f7b8d5c949a058e3e5c52d9fd68d9de7b';
+const REGISTRY_BODY_DIGEST = '44449ceb735a0f825fe3d9e53fd484c63a0a06558a3eca9eb47afc88d77ed30e';
 
 /** Every heading, both editions, in order — seed edition first. */
 const ALL_HEADINGS = [
@@ -399,7 +399,7 @@ describe(
 
     it('is pinned verbatim — the exact sentence an applicant legally accepts', () => {
         expect(CONSENT_ACCEPTANCE_STATEMENT).toBe(
-          V1_0_STATEMENT.replace('ACCELERATE Tanzania Registry', 'PABRA Seed Registry'),
+          V1_0_STATEMENT.replace('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry'),
         );
     });
 
@@ -408,13 +408,12 @@ describe(
       expect(CONSENT_POLICY_EDITIONS[1].acceptanceStatement).toBe(V1_0_STATEMENT);
     });
 
-    it('v1.1 differs from v1.0 only by the product name (ACCELERATE Tanzania Registry → PABRA Seed Registry)', () => {
+    it('v1.1 differs from v1.0 only by the name (ACCELERATE Tanzania Registry → PABRA Seed Actors Registry) and the data-location wording (outside/within and outside Tanzania → Africa)', () => {
       const [, v10, v11] = CONSENT_POLICY_EDITIONS;
       const renamed = JSON.parse(
-        JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement }).replaceAll(
-          'ACCELERATE Tanzania Registry',
-          'PABRA Seed Registry',
-        ),
+        JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement })
+          .replaceAll('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry')
+          .replaceAll('outside Tanzania', 'outside Africa'),
       );
       expect({ sections: v11.sections, acceptanceStatement: v11.acceptanceStatement }).toEqual(renamed);
       expect(JSON.stringify(v11)).not.toContain('ACCELERATE');

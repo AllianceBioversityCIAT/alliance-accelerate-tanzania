@@ -91,7 +91,9 @@ export default function AboutStrip() {
               formal seed sector. Most farmers still plant old, low-yielding
               varieties that are vulnerable to climate stress. ACCELERATE closes
               that gap by connecting seed producers with the traders, processors,
-              and institutions that actually drive demand.
+              and institutions that actually drive demand. The registry is now
+              run by PABRA, the Pan-Africa Bean Research Alliance &mdash; a
+              partnership across more than 30 African countries.
             </p>
 
             {/* CTA */}

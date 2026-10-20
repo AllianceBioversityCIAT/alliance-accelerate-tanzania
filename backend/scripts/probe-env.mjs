@@ -60,6 +60,6 @@ export function readBrokerConfig() {
     apiKey: required('MICROSERVICE_API_KEY'),
     queueName: required('EMAIL_QUEUE_NAME'),
     senderAddress: required('EMAIL_SENDER'),
-    senderName: process.env.EMAIL_SENDER_NAME ?? 'PABRA Seed Registry -',
+    senderName: process.env.EMAIL_SENDER_NAME ?? 'PABRA Seed Actors Registry -',
   };
 }

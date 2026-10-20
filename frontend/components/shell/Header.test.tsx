@@ -90,7 +90,7 @@ describe('Header — Public (unauthenticated)', () => {
     renderHeader();
 
     // Brand accessible label
-    expect(screen.getByRole('link', { name: /pabra seed registry/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /pabra seed actors registry/i })).toBeInTheDocument();
 
     // Primary nav links (rendered at least once — desktop nav)
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
@@ -266,7 +266,7 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
 
     // The brand Link still points at '/' and still names itself as home, so
     // removing the duplicate entry cost no route and no accessible name.
-    const brand = screen.getByRole('link', { name: /pabra seed registry.*home/i });
+    const brand = screen.getByRole('link', { name: /pabra seed actors registry.*home/i });
     expect(brand).toHaveAttribute('href', '/');
 
     // No nav item whose accessible name is exactly "Home".
@@ -276,7 +276,7 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
   it('shows the PABRA logo as the brand mark, not the ACCELERATE one', () => {
     const { container } = renderHeader();
 
-    const brand = screen.getByRole('link', { name: 'PABRA Seed Registry — home' });
+    const brand = screen.getByRole('link', { name: 'PABRA Seed Actors Registry — home' });
     const img = brand.querySelector('img');
     expect(img).not.toBeNull();
     expect(decodeURIComponent(img!.getAttribute('src') ?? '')).toContain('/brand/pabra-logo.png');

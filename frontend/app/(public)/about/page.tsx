@@ -37,7 +37,7 @@ const CROP_TEXT: Record<CropTokenClass, string> = {
 // ---------------------------------------------------------------------------
 
 export const metadata: Metadata = {
-  title: 'About — PABRA Seed Registry',
+  title: 'About — PABRA Seed Actors Registry',
   description:
     'ACCELERATE is a 2023–2026 initiative building a demand-led model to speed adoption of improved sorghum, common bean, and groundnut varieties across Tanzania.',
 };
@@ -457,12 +457,19 @@ export default function AboutPage() {
             About this registry
           </h2>
 
+          <p className="text-base text-muted leading-relaxed max-w-prose mb-4">
+            The Pan-Africa Bean Research Alliance (PABRA) is a partnership of stakeholders in more
+            than 30 countries across Africa working on the research and development of common
+            beans &mdash; an important food legume that contributes to food and nutrition security,
+            generates income and strengthens production systems across sub-Saharan Africa.
+          </p>
+
           <p className="text-base text-muted leading-relaxed max-w-prose mb-8">
-            This platform began under ACCELERATE and is now a PABRA product &mdash; a single, trusted
-            map of the seed companies, cooperatives, offtakers, research institutes, and traders that
-            make up Africa&rsquo;s seed systems. It helps institutions find the right actors
-            quickly, understand who operates where, and strengthen the value chains that move
-            improved varieties from lab to field.
+            This registry began under ACCELERATE, a project funded by the Bill &amp; Melinda Gates Foundation, and is
+            now a PABRA product &mdash; a single, trusted map of the seed companies, cooperatives,
+            offtakers, research institutes, and traders that make up Africa&rsquo;s seed systems. It
+            helps institutions find the right actors quickly, understand who operates where, and
+            strengthen the value chains that move improved varieties from lab to field.
           </p>
 
           <div className="flex flex-wrap gap-3">

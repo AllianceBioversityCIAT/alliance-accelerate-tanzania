@@ -18,7 +18,7 @@ import { renderEmailHtml } from './email-layout';
  * **`MailMessage.reference` is left undefined** (design.md §7.1): dispatch
  * logs the request id itself; a request id is not needed in mail logs too.
  */
-export const CONSENT_REQUEST_SUBJECT = 'Your consent is requested — PABRA Seed Registry';
+export const CONSENT_REQUEST_SUBJECT = 'Your consent is requested — PABRA Seed Actors Registry';
 
 /** FR-13's data-protection contact, named in the consent text itself (P-18). */
 const DATA_PROTECTION_CONTACT =
@@ -44,14 +44,14 @@ export function buildConsentRequestMessage(
   // link button's `href` (Reviewer B issue 1).
   const intro =
     `Consent is requested to publish information about ${organizationName} on the ` +
-    `PABRA Seed Registry (${siteAddress}).`;
+    `PABRA Seed Actors Registry (${siteAddress}).`;
 
   return {
     to,
     subject: CONSENT_REQUEST_SUBJECT,
     text: `${intro}\n\nReview and respond: ${link}\n\n${EXPIRY_NOTE}\n\n${DATA_PROTECTION_CONTACT}`,
     html: renderEmailHtml({
-      preheader: 'Review and respond to a consent request for the PABRA Seed Registry.',
+      preheader: 'Review and respond to a consent request for the PABRA Seed Actors Registry.',
       heading: 'Your consent is requested',
       blocks: [
         { kind: 'paragraph', text: intro },

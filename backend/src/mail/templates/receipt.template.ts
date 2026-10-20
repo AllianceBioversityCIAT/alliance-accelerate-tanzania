@@ -37,7 +37,7 @@ export function buildReceiptMessage(to: string, reference: string): MailMessage 
     reference,
     subject: `Registration received — ${reference}`,
     text:
-      'Thank you for registering with the PABRA Seed Registry.\n\n' +
+      'Thank you for registering with the PABRA Seed Actors Registry.\n\n' +
       `Your reference is ${reference}. Keep it — you can use it together with ` +
       'this email address to check your submission\'s status at any time at ' +
       `${STATUS_LOOKUP_URL}\n\n` +
@@ -47,7 +47,7 @@ export function buildReceiptMessage(to: string, reference: string): MailMessage 
       preheader: `Your reference is ${reference}. Keep it to check your status.`,
       heading: 'Registration received',
       blocks: [
-        { kind: 'paragraph', text: 'Thank you for registering with the PABRA Seed Registry.' },
+        { kind: 'paragraph', text: 'Thank you for registering with the PABRA Seed Actors Registry.' },
         {
           kind: 'callout',
           label: 'Your reference',

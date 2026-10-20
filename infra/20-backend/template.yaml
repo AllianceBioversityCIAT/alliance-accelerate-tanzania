@@ -452,7 +452,7 @@ Resources:
           MICROSERVICE_API_KEY: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:apiKey}}"
           EMAIL_QUEUE_NAME: !Sub "{{resolve:secretsmanager:${MailMicroserviceSecret}:SecretString:queueName}}"
           EMAIL_SENDER: alliance-acceleratetz-no-reply@cgiar.org
-          EMAIL_SENDER_NAME: "PABRA Seed Registry -"
+          EMAIL_SENDER_NAME: "PABRA Seed Actors Registry -"
           # contact/contact-channels (T-11, FR-3, design.md §7.1): fallback
           # recipient for the public contact form when the Cognito `admin`
           # group resolves empty or the directory call fails

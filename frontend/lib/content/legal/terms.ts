@@ -71,11 +71,11 @@
 import type { LegalDocument } from './types';
 
 export const TERMS_OF_USE: LegalDocument = {
-  title: 'PABRA Seed Registry - Terms of Use',
+  title: 'PABRA Seed Actors Registry - Terms of Use',
   version: 'v1.1',
-  effectiveDate: '13 October 2026',
+  effectiveDate: '20 October 2026',
   lede: [
-    'Welcome to the PABRA Seed Registry (the "Registry").',
+    'Welcome to the PABRA Seed Actors Registry (the "Registry").',
     'The Registry is operated by the International Center for Tropical Agriculture (CIAT), through its Tanzania office ("CIAT", "we", "our", or "us").',
     'By accessing or using the Registry, you agree to comply with these Terms of Use. If you ' +
       'do not agree with these Terms, you should not access or use the Registry.',

@@ -9,8 +9,8 @@ jest.mock('@/lib/auth/SessionProvider', () => ({
 import { metadata } from './layout';
 
 describe('root layout metadata', () => {
-  it('names the product the PABRA Seed Registry', () => {
-    expect(metadata.title).toBe('PABRA Seed Registry');
+  it('names the product the PABRA Seed Actors Registry', () => {
+    expect(metadata.title).toBe('PABRA Seed Actors Registry');
     expect(metadata.description).toMatch(/across Africa/i);
     expect(metadata.description).not.toMatch(/tanzania|accelerate/i);
   });

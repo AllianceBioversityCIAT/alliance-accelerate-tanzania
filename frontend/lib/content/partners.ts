@@ -1,5 +1,5 @@
 /**
- * partners.ts — static partner/funder content for the PABRA Seed Registry.
+ * partners.ts — static partner/funder content for the PABRA Seed Actors Registry.
  * T-1 (FR-11, FR-12, System Design §7 tokens).
  *
  * Provides the six-partner coalition backing the ACCELERATE project.

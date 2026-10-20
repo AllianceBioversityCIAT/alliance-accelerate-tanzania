@@ -15,7 +15,7 @@ import type { Metadata } from 'next';
 import ContactForm from '@/components/contact/ContactForm';
 
 export const metadata: Metadata = {
-  title: 'Contact — PABRA Seed Registry',
+  title: 'Contact — PABRA Seed Actors Registry',
   description:
     'Reach the PABRA team with a question, correction, or partnership inquiry about the seed registry.',
 };

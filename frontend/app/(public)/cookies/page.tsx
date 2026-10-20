@@ -23,7 +23,7 @@ import { ConsentChoiceControl } from '@/components/analytics/ConsentChoiceContro
 import { COOKIE_NOTICE, CHANGING_YOUR_CHOICE_HEADING } from '@/lib/content/legal/cookies';
 
 export const metadata: Metadata = {
-  title: 'Cookie Notice — PABRA Seed Registry',
+  title: 'Cookie Notice — PABRA Seed Actors Registry',
   description:
     'What cookies this site sets, who receives the data, and how to change your consent choice.',
 };

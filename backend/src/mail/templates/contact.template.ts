@@ -84,7 +84,7 @@ import { renderEmailHtml, type EmailBlock } from './email-layout';
  * message. Contains no requester-supplied text (FR-4) — the visitor's own
  * "subject" field is rendered as body data instead, see `renderBody` below.
  */
-export const CONTACT_SUBJECT = 'New message from the PABRA Seed Registry contact form';
+export const CONTACT_SUBJECT = 'New message from the PABRA Seed Actors Registry contact form';
 
 /**
  * The mandatory, fixed provenance line (design.md §4.5, §6). Carries no
@@ -93,7 +93,7 @@ export const CONTACT_SUBJECT = 'New message from the PABRA Seed Registry contact
  * spliced into this sentence.
  */
 export const CONTACT_PROVENANCE_LINE =
-  "This message was submitted through the PABRA Seed Registry's public "
+  "This message was submitted through the PABRA Seed Actors Registry's public "
   + 'contact form. The sender\'s identity has NOT been verified — treat the name and '
   + 'address below as a claim, not a confirmed fact.';
 

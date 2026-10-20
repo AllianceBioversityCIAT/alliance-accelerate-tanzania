@@ -83,11 +83,11 @@
     },
     {
       "version": "v1.1",
-      "issuedAt": "2026-10-13",
+      "issuedAt": "2026-10-20",
       "sections": [
         {
           "heading": "Consent for Publication of Information",
-          "body": "The PABRA Seed Registry is an online platform operated by the International Center for Tropical Agriculture (CIAT), through its Tanzania office, to increase the visibility of actors involved in seed systems and agricultural value chains, facilitate business and professional connections, and support access to market opportunities and services.\n\nFor purposes of the PABRA Seed Registry, CIAT acts as the organization responsible for the collection, storage, use, and publication of information submitted through the Registry.\n\nBefore submitting this registration, please read this Consent carefully."
+          "body": "The PABRA Seed Actors Registry is an online platform operated by the International Center for Tropical Agriculture (CIAT), through its Tanzania office, to increase the visibility of actors involved in seed systems and agricultural value chains, facilitate business and professional connections, and support access to market opportunities and services.\n\nFor purposes of the PABRA Seed Actors Registry, CIAT acts as the organization responsible for the collection, storage, use, and publication of information submitted through the Registry.\n\nBefore submitting this registration, please read this Consent carefully."
         },
         {
           "heading": "Purpose of the Registry",
@@ -107,7 +107,7 @@
         },
         {
           "heading": "International Storage and Access",
-          "body": "I understand and expressly agree that:\n- Information submitted through the Registry may be stored, processed, and maintained outside Tanzania.\n- The Registry is hosted on cloud infrastructure located in Ireland.\n- Information published through the Registry may be accessed by individuals and organizations located both within and outside Tanzania.\n- The information provided through this registration may therefore be subject to international transfer, storage, processing, and access.\n\nI expressly consent to such international transfer, storage, processing, and public availability of the information submitted through the Registry."
+          "body": "I understand and expressly agree that:\n- Information submitted through the Registry may be stored, processed, and maintained outside Africa.\n- The Registry is hosted on cloud infrastructure located in Ireland.\n- Information published through the Registry may be accessed by individuals and organizations located both within and outside Africa.\n- The information provided through this registration may therefore be subject to international transfer, storage, processing, and access.\n\nI expressly consent to such international transfer, storage, processing, and public availability of the information submitted through the Registry."
         },
         {
           "heading": "Authority to Provide Information",
@@ -134,10 +134,10 @@
         },
         {
           "heading": "Consent",
-          "body": "By selecting the checkbox below and submitting this registration, I expressly and voluntarily consent to:\n- The collection of the information provided through this registration;\n- The storage and processing of such information by CIAT for purposes related to the operation of the PABRA Seed Registry;\n- The international transfer, storage, and processing of such information outside Tanzania;\n- The public display and publication of the information provided through the Registry; and\n- The worldwide accessibility of such information through the internet.\n\nI understand that CIAT may retain this consent and related records for compliance, audit, legal, and operational purposes, including after my profile has been removed from the Registry in accordance with applicable record retention requirements."
+          "body": "By selecting the checkbox below and submitting this registration, I expressly and voluntarily consent to:\n- The collection of the information provided through this registration;\n- The storage and processing of such information by CIAT for purposes related to the operation of the PABRA Seed Actors Registry;\n- The international transfer, storage, and processing of such information outside Africa;\n- The public display and publication of the information provided through the Registry; and\n- The worldwide accessibility of such information through the internet.\n\nI understand that CIAT may retain this consent and related records for compliance, audit, legal, and operational purposes, including after my profile has been removed from the Registry in accordance with applicable record retention requirements."
         }
       ],
-      "acceptanceStatement": "I confirm that I have read and understood this Consent for Publication of Information and voluntarily consent to the collection, storage, processing, international transfer, and public publication of the information provided through my registration in the PABRA Seed Registry, including contact information, business information, capacity information, and location information where provided."
+      "acceptanceStatement": "I confirm that I have read and understood this Consent for Publication of Information and voluntarily consent to the collection, storage, processing, international transfer, and public publication of the information provided through my registration in the PABRA Seed Actors Registry, including contact information, business information, capacity information, and location information where provided."
     }
   ]
 }

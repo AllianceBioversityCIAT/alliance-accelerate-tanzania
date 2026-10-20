@@ -143,7 +143,7 @@ function actorColumnValue(actor: PublicActor, col: PublicColumn): string {
  */
 function buildSummaryRows(kpis: DashboardKpis): string {
   const rows: [string, string][] = [
-    ['# PABRA Seed Registry — Dashboard Export', ''],
+    ['# PABRA Seed Actors Registry — Dashboard Export', ''],
     ['# Matching actors', String(kpis.matchingCount)],
     ['# Total capacity (t)', String(kpis.totalCapacityTons)],
     ['# Median capacity (t)', String(kpis.medianCapacityTons)],

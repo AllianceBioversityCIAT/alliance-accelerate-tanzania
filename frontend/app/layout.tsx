@@ -11,7 +11,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'sw
 const montserrat = Montserrat({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-montserrat', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'PABRA Seed Registry',
+  title: 'PABRA Seed Actors Registry',
   description: 'Public registry of seed-system actors across Africa — a PABRA product.',
 };
 

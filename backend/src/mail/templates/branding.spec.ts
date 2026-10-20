@@ -8,7 +8,7 @@ import { buildReceiptMessage } from './receipt.template';
 import { buildRejectionMessage } from './rejection.template';
 import { buildVerificationCodeMessage } from './verification-code.template';
 
-describe('email branding (PABRA Seed Registry)', () => {
+describe('email branding (PABRA Seed Actors Registry)', () => {
   const original = process.env.PUBLIC_APP_BASE_URL;
   beforeEach(() => {
     process.env.PUBLIC_APP_BASE_URL = 'https://registry.example.org';
@@ -42,9 +42,9 @@ describe('email branding (PABRA Seed Registry)', () => {
     verificationCode: buildVerificationCodeMessage('a@x.org', '123456'),
   });
 
-  it.each(Object.entries(messages()))('%s names the PABRA Seed Registry and never ACCELERATE', (_name, msg) => {
+  it.each(Object.entries(messages()))('%s names the PABRA Seed Actors Registry and never ACCELERATE', (_name, msg) => {
     const all = `${msg.subject}\n${msg.text}\n${msg.html}`;
-    expect(all).not.toMatch(/ACCELERATE|Tanzania Seed Registry/i);
+    expect(all).not.toMatch(/ACCELERATE|(?<!Actors )Seed Registry/i);
     expect(msg.html).toContain('>PABRA</span>');
   });
 });

@@ -311,7 +311,7 @@ export default function Header() {
           <Link
             href="/"
             className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-            aria-label="PABRA Seed Registry — home"
+            aria-label="PABRA Seed Actors Registry — home"
           >
             {/* Official PABRA colour logo — alt="" because the Link aria-label already names it */}
             <Image
