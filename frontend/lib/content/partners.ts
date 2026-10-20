@@ -125,3 +125,12 @@ export const PARTNERS: Partner[] = [
     tier: 'funder',
   },
 ];
+
+/** ACCELERATE, the project this registry began under (not a coalition member). */
+export const ACCELERATE_PROJECT = {
+  name: 'ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops',
+  url: 'https://alliancebioversityciat.org/projects/accelerate',
+  logo: '/brand/accelerate-logo-color.png',
+  width: 867,
+  height: 194,
+} as const;

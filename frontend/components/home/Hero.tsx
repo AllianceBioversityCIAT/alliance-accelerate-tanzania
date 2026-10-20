@@ -17,7 +17,8 @@
 //     inside useGSAP — reduced-motion users see the fully visible static state (FR-7).
 
 import { useRef } from 'react';
-import Image from 'next/image';
+import PhotoCarousel from '@/components/home/PhotoCarousel';
+import { FIELD_GALLERY } from '@/lib/content/field-gallery';
 import Button from '@/components/ui/Button';
 import { registerGsap, gsap, useGSAP } from '@/lib/motion/gsap-setup';
 import { useCountUp } from '@/lib/motion/useCountUp';
@@ -58,7 +59,7 @@ function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
   return (
     <div
       // bg-surface with shadow-md and rounded-md — token-only (NFR-4)
-      className="absolute bottom-5 left-5 bg-surface shadow-md rounded-md px-4 py-3 min-w-[180px]"
+      className="absolute bottom-3 left-3 sm:bottom-5 sm:left-5 bg-surface shadow-md rounded-md px-3 py-2 sm:px-4 sm:py-3 sm:min-w-[180px]"
       role="region"
       aria-label="Live registry summary"
     >
@@ -71,7 +72,7 @@ function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
         without GSAP (progressive enhancement, FR-8). useCountUp overwrites
         textContent in the animation path only.
       */}
-      <p className="text-3xl font-bold text-fg leading-none">
+      <p className="text-2xl sm:text-3xl font-bold text-fg leading-none">
         <span ref={countRef}>1,000+</span>
       </p>
       <p className="text-xs text-muted mt-1 leading-snug">
@@ -82,7 +83,7 @@ function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
 }
 
 // ---------------------------------------------------------------------------
-// VisualPanel — right-column field/harvest photography with stat overlay
+// VisualPanel — right-column field photo carousel with stat overlay
 // ---------------------------------------------------------------------------
 interface VisualPanelProps {
   /** Ref for the scale-only entrance on the panel wrapper (LCP-safe). */
@@ -93,40 +94,15 @@ interface VisualPanelProps {
 
 function VisualPanel({ panelRef, countRef }: VisualPanelProps) {
   return (
-    // relative so the LiveRegistryCard can use absolute positioning inside it.
-    <div className="relative w-full h-72 lg:h-full min-h-[320px]">
-      {/*
-        panelRef is placed on THIS wrapper — scale animates the outer shell, not
-        the <Image> itself, so the priority photo is always fully painted (NFR-2).
-        The image's opacity is never changed; only the wrapper scale transitions.
-      */}
-      <div ref={panelRef} className="absolute inset-0 rounded-lg bg-restricted border border-border overflow-hidden">
-        {/* Real field/harvest photography — meaningful image (informative alt). */}
-        <Image
-          src="/hero-harvest.jpg"
-          alt="Group photo of ACCELERATE project partners and staff gathered outside a meeting venue."
-          fill
-          priority
-          sizes="(min-width: 1024px) 50vw, 100vw"
-          className="object-cover object-[50%_30%]"
-        />
-        {/* Bottom scrim for depth + overlay legibility — token-based (fg), no raw
-            hex; tracks --color-fg so the LiveRegistryCard always reads clearly.
-            `from-fg` + `opacity-70`, NOT `from-fg/70` — a `/NN` modifier on a
-            semantic token emits no rule at all (every colour in
-            tailwind.config.ts is a bare `var(--color-x)` Tailwind cannot compose
-            an alpha into), so this scrim was rendering FULLY TRANSPARENT: it did
-            not exist. Same correction, same reason, as the scrim documented in
-            `ClosingCTA.tsx`. The div is aria-hidden with no children, so opacity
-            on the element is exactly a 70% stop on the gradient's `from` end. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-fg to-transparent opacity-70"
-        />
-      </div>
-
-      {/* Live Registry stat card — pinned to bottom-left of the panel */}
-      <LiveRegistryCard countRef={countRef} />
+    // panelRef scales the wrapper only; the first photo is `priority` and its
+    // opacity is never animated, so the LCP image is always fully painted (NFR-2).
+    <div ref={panelRef} className="w-full">
+      <PhotoCarousel
+        photos={FIELD_GALLERY}
+        label="Photos from the field"
+        priority
+        overlay={<LiveRegistryCard countRef={countRef} />}
+      />
     </div>
   );
 }

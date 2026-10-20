@@ -19,9 +19,8 @@ import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import PillarCards from '@/components/home/PillarCards';
 import PartnerWall from '@/components/home/PartnerWall';
+import AccelerateLogo from '@/components/home/AccelerateLogo';
 import CropImage from '@/components/home/CropImage';
-import PhotoCarousel from '@/components/about/PhotoCarousel';
-import { ABOUT_GALLERY } from '@/lib/content/about-gallery';
 import { CROPS, type CropTokenClass } from '@/lib/content/crops';
 
 // Static crop-accent text classes — full strings so Tailwind's content scan keeps
@@ -102,8 +101,17 @@ export default function AboutPage() {
 
             </div>
 
-            {/* Right column — photo carousel (photos in lib/content/about-gallery.ts) */}
-            <PhotoCarousel photos={ABOUT_GALLERY} label="Photos from the field" />
+            {/* Right column — ACCELERATE partners and staff (the home hero carries the field carousel) */}
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-alt shadow-md">
+              <Image
+                src="/hero-harvest.jpg"
+                alt="Group photo of ACCELERATE project partners and staff gathered outside a meeting venue."
+                fill
+                priority
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover object-[50%_30%]"
+              />
+            </div>
 
           </div>
         </div>
@@ -298,6 +306,10 @@ export default function AboutPage() {
             <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
               Partners
             </span>
+
+            <div className="mb-4">
+              <AccelerateLogo />
+            </div>
 
             <h2
               id="partners-heading"

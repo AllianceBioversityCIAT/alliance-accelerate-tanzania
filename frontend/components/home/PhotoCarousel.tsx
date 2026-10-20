@@ -1,6 +1,6 @@
 'use client';
 
-// PhotoCarousel — photo carousel for the About page "The challenge" section.
+// PhotoCarousel — photo carousel for the home hero.
 //
 // Auto-advances every AUTOPLAY_MS with a visible pause/play control (WCAG 2.2.2);
 // hover or keyboard focus inside also pauses it. Autoplay starts only once
@@ -8,14 +8,18 @@
 // SSR, tests and reduced-motion users get a manual carousel. All slides stay in
 // the DOM and crossfade; inactive ones are aria-hidden. Tokens only (NFR-4).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Image from 'next/image';
-import type { GalleryPhoto } from '@/lib/content/about-gallery';
+import type { GalleryPhoto } from '@/lib/content/field-gallery';
 
 interface PhotoCarouselProps {
   photos: readonly GalleryPhoto[];
   /** Accessible name for the carousel region. */
   label: string;
+  /** Load the first photo eagerly (above-the-fold LCP image). */
+  priority?: boolean;
+  /** Pinned over the frame, outside the slides' live region. */
+  overlay?: ReactNode;
 }
 
 const AUTOPLAY_MS = 3000;
@@ -47,7 +51,7 @@ function Chevron({ direction }: { direction: 'left' | 'right' }) {
   );
 }
 
-export default function PhotoCarousel({ photos, label }: PhotoCarouselProps) {
+export default function PhotoCarousel({ photos, label, priority = false, overlay }: PhotoCarouselProps) {
   const [index, setIndex] = useState(0);
   const [motionOk, setMotionOk] = useState(false);
   const [playing, setPlaying] = useState(true);
@@ -93,42 +97,46 @@ export default function PhotoCarousel({ photos, label }: PhotoCarouselProps) {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
       }}
     >
-      <div
-        aria-live={running ? 'off' : 'polite'}
-        className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-alt shadow-md"
-      >
-        {photos.map((photo, i) => (
-          <div
-            key={photo.src}
-            role="group"
-            aria-roledescription="slide"
-            aria-label={`${i + 1} of ${count}`}
-            aria-hidden={i !== index}
-            className={[
-              'absolute inset-0 motion-safe:transition-opacity motion-safe:duration-500',
-              i === index ? 'opacity-100' : 'opacity-0',
-            ].join(' ')}
-          >
-            <Image
-              src={photo.src}
-              alt={photo.alt}
-              fill
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ))}
+      <div className="relative">
+        <div
+          aria-live={running ? 'off' : 'polite'}
+          className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-alt shadow-md"
+        >
+          {photos.map((photo, i) => (
+            <div
+              key={photo.src}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${i + 1} of ${count}`}
+              aria-hidden={i !== index}
+              className={[
+                'absolute inset-0 motion-safe:transition-opacity motion-safe:duration-500',
+                i === index ? 'opacity-100' : 'opacity-0',
+              ].join(' ')}
+            >
+              <Image
+                src={photo.src}
+                alt={photo.alt}
+                fill
+                priority={priority && i === 0}
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover"
+              />
+            </div>
+          ))}
 
-        {count > 1 && (
-          <>
-            <button type="button" onClick={() => go(index - 1)} aria-label="Previous photo" className={`${NAV_BUTTON} left-3`}>
-              <Chevron direction="left" />
-            </button>
-            <button type="button" onClick={() => go(index + 1)} aria-label="Next photo" className={`${NAV_BUTTON} right-3`}>
-              <Chevron direction="right" />
-            </button>
-          </>
-        )}
+          {count > 1 && (
+            <>
+              <button type="button" onClick={() => go(index - 1)} aria-label="Previous photo" className={`${NAV_BUTTON} left-3`}>
+                <Chevron direction="left" />
+              </button>
+              <button type="button" onClick={() => go(index + 1)} aria-label="Next photo" className={`${NAV_BUTTON} right-3`}>
+                <Chevron direction="right" />
+              </button>
+            </>
+          )}
+        </div>
+        {overlay}
       </div>
 
       {count > 1 && (

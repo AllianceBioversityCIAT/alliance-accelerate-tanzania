@@ -11,6 +11,7 @@
 // Max-width container: mx-auto max-w-7xl px-4 sm:px-6 lg:px-8.
 // Exactly one <h2> in this component.
 
+import AccelerateLogo from '@/components/home/AccelerateLogo';
 import PartnerWall from '@/components/home/PartnerWall';
 
 export default function PartnersStrip() {
@@ -27,6 +28,10 @@ export default function PartnersStrip() {
           <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-3">
             Partners
           </span>
+
+          <div className="mb-4">
+            <AccelerateLogo />
+          </div>
 
           <h2
             id="partners-heading"

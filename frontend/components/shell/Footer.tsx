@@ -5,7 +5,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { PARTNERS, type Partner } from '@/lib/content/partners';
+import { ACCELERATE_PROJECT, PARTNERS, type Partner } from '@/lib/content/partners';
 
 // Attribution (FR-10): PABRA + the Alliance lead the registry ("An initiative of");
 // ACCELERATE is the original project, funded by Gates (a smaller line below).
@@ -19,15 +19,6 @@ const byKeys = (keys: readonly string[]) =>
 
 const leadPartners   = byKeys(LEAD_KEYS);
 const funderPartners = byKeys(FUNDER_KEYS);
-
-// ACCELERATE is the project this registry began under (not a PARTNERS entry).
-const ACCELERATE = {
-  name: 'ACCELERATE — Accelerated Variety Turnover for Open-Pollinated Crops',
-  url: 'https://alliancebioversityciat.org/projects/accelerate',
-  logo: '/brand/accelerate-logo-color.png',
-  width: 867,
-  height: 194,
-};
 
 // Original asset dimensions per logo (display size comes from the class).
 const LOGO_DIMS: Record<string, { width: number; height: number }> = {
@@ -123,17 +114,17 @@ export default function Footer() {
         <div className="mt-6 border-t border-bg/15 pt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className={LABEL_CLASSES}>Originally developed under</span>
           <a
-            href={ACCELERATE.url}
+            href={ACCELERATE_PROJECT.url}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="ACCELERATE project — opens in a new tab"
             className={`${LOGO_CHIP_CLASSES} px-2 py-1.5`}
           >
             <Image
-              src={ACCELERATE.logo}
-              alt={ACCELERATE.name}
-              width={ACCELERATE.width}
-              height={ACCELERATE.height}
+              src={ACCELERATE_PROJECT.logo}
+              alt={ACCELERATE_PROJECT.name}
+              width={ACCELERATE_PROJECT.width}
+              height={ACCELERATE_PROJECT.height}
               className="h-6 w-auto"
             />
           </a>
