@@ -297,7 +297,7 @@ export default function AboutPage() {
       ==================================================================== */}
       <section
         aria-labelledby="partners-heading"
-        className="bg-bg"
+        className="bg-surface"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
 
