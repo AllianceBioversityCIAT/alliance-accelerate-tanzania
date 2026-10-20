@@ -35,7 +35,7 @@ describe('PartnersStrip', () => {
     expect(heading).toBeInTheDocument();
     expect(heading).toHaveAttribute('id', 'partners-heading');
     expect(heading).toHaveTextContent(
-      /built by a coalition of research and seed-system institutions/i,
+      /the coalition behind accelerate/i,
     );
   });
 

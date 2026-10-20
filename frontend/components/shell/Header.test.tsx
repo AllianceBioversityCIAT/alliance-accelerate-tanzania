@@ -100,10 +100,9 @@ describe('Header — Public (unauthenticated)', () => {
     const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
     expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
     expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
-    // FR-9: About link present in nav (desktop + mobile = 2 occurrences)
-    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
-    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
-    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
+    // About left the primary nav (rebrand): /about is the origin story, reached
+    // from the home page and the footer's "Our story".
+    expect(screen.queryByRole('link', { name: /^about$/i })).toBeNull();
   });
 });
 
@@ -160,10 +159,7 @@ describe('Header — authenticated (Staff)', () => {
     const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
     expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
     expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
-    // FR-9: About link present for authenticated users too
-    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
-    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
-    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
+    expect(screen.queryByRole('link', { name: /^about$/i })).toBeNull();
   });
 });
 
@@ -239,7 +235,7 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
     // Regression for the additive-prop constraint: existing entries must
     // render unchanged. A default-variant link never carries the
     // primary-variant's solid background class.
-    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^about$/i, /^contact$/i]) {
+    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^contact$/i]) {
       const [link] = screen.getAllByRole('link', { name });
       expect(link.className).not.toContain('bg-primary');
       expect(link.className).not.toContain('text-primary-fg');

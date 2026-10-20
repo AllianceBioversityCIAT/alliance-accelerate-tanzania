@@ -154,7 +154,7 @@ export default function ClosingCTA() {
               'whitespace-nowrap',
             ].join(' ')}
           >
-            About the project
+            Our story
           </Link>
 
           {/* T-10, FR-1: home page's own entry point into the contact form —

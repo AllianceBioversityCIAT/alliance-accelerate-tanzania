@@ -32,14 +32,14 @@ export default function PartnersStrip() {
             id="partners-heading"
             className="text-2xl lg:text-3xl font-extrabold text-fg leading-tight"
           >
-            Built by a coalition of research and seed-system institutions
+            The coalition behind ACCELERATE
           </h2>
 
           <p className="text-sm text-muted mt-3 max-w-prose mx-auto text-center">
-            ACCELERATE is delivered by the Alliance of Bioversity International &amp; CIAT / PABRA
+            ACCELERATE, the project this registry began under, is funded by the Bill &amp; Melinda
+            Gates Foundation and led by the Alliance of Bioversity International &amp; CIAT and PABRA,
             with the Tanzania Agricultural Research Institute (TARI), the Tanzania Official Seed
-            Certification Institute (TOSCI), and CIMMYT &mdash; funded by the Bill &amp; Melinda
-            Gates Foundation.
+            Certification Institute (TOSCI), and CIMMYT.
           </p>
         </div>
 

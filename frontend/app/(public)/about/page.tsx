@@ -303,12 +303,13 @@ export default function AboutPage() {
               id="partners-heading"
               className="text-2xl font-bold text-fg leading-tight mb-6"
             >
-              Partners
+              The coalition behind ACCELERATE
             </h2>
 
             <p className="text-base text-muted leading-relaxed max-w-prose mb-10">
-              ACCELERATE is delivered by a coalition of research and seed-system
-              institutions, funded by the Bill &amp; Melinda Gates Foundation.
+              ACCELERATE, the project this registry began under, is funded by the
+              Bill &amp; Melinda Gates Foundation and delivered by a coalition of research
+              and seed-system institutions.
             </p>
           </div>
 

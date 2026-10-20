@@ -24,7 +24,6 @@ const NAV_LINKS = [
   { label: 'Discovery Map', href: '/map', variant: 'default' as const },
   { label: 'Dashboard', href: '/dashboard', variant: 'default' as const },
   { label: 'Directory', href: '/directory', variant: 'default' as const },
-  { label: 'About', href: '/about', variant: 'default' as const },
   // T-10, FR-1: a public, unauthenticated entry point into the contact form
   // — plain-text treatment like every entry above, ahead of the primary CTA.
   { label: 'Contact', href: '/contact', variant: 'default' as const },

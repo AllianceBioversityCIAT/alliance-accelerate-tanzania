@@ -59,7 +59,7 @@ export default function AboutStrip() {
 
             {/* Eyebrow pill */}
             <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
-              About the project
+              Where it started
             </span>
 
             {/* Section heading — exactly one h2, no h1 */}

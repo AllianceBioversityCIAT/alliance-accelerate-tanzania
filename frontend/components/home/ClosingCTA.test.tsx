@@ -6,7 +6,7 @@
  * Covers:
  *   (a) H2 renders with role heading level 2
  *   (b) "Explore the Map" link points to /map
- *   (c) "About the project" link points to /about
+ *   (c) "Our story" link points to /about
  *   (d) [T-10] No <video> element in test env (matchMedia returns matches:false →
  *       playable stays false → poster-only branch)
  *   (e) [T-10] Poster <img> is present (always-rendered base layer)
@@ -46,12 +46,12 @@ describe('ClosingCTA', () => {
     expect(link).toHaveAttribute('href', '/map');
   });
 
-  // ── (c) "About the project" link → /about ────────────────────────────────
+  // ── (c) "Our story" link → /about ────────────────────────────────
 
-  it('renders the "About the project" link pointing to /about', () => {
+  it('renders the "Our story" link pointing to /about', () => {
     render(<ClosingCTA />);
 
-    const link = screen.getByRole('link', { name: /about the project/i });
+    const link = screen.getByRole('link', { name: /our story/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/about');
   });
