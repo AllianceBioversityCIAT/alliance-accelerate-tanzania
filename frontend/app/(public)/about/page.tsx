@@ -454,30 +454,30 @@ export default function AboutPage() {
       ==================================================================== */}
       <section
         aria-labelledby="registry-heading"
-        className="bg-bg"
+        className="bg-fg text-bg"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-16 sm:text-center">
 
           {/* Eyebrow */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
+          <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
             This platform
           </span>
 
           <h2
             id="registry-heading"
-            className="text-2xl font-bold text-fg leading-tight mb-6"
+            className="text-2xl font-bold text-bg leading-tight mb-6"
           >
             About this registry
           </h2>
 
-          <p className="text-base text-muted leading-relaxed max-w-prose mb-4">
+          <p className="text-base text-bg opacity-80 leading-relaxed mb-4">
             The Pan-Africa Bean Research Alliance (PABRA) is a partnership of stakeholders in more
             than 30 countries across Africa working on the research and development of common
             beans &mdash; an important food legume that contributes to food and nutrition security,
             generates income and strengthens production systems across sub-Saharan Africa.
           </p>
 
-          <p className="text-base text-muted leading-relaxed max-w-prose mb-8">
+          <p className="text-base text-bg opacity-80 leading-relaxed mb-8">
             This registry began under ACCELERATE, a project funded by the Bill &amp; Melinda Gates Foundation, and is
             now a PABRA product &mdash; a single, trusted map of the seed companies, cooperatives,
             offtakers, research institutes, and traders that make up Africa&rsquo;s seed systems. It
@@ -485,7 +485,7 @@ export default function AboutPage() {
             strengthen the value chains that move improved varieties from lab to field.
           </p>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap sm:justify-center gap-3">
             <Button variant="primary" href="/map">
               Explore the Map
             </Button>
