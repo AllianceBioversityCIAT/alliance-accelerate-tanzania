@@ -40,6 +40,7 @@ export interface ActingAdmin {
 const AUDITABLE_FIELDS = [
   'traderId',
   'traderName',
+  'country',
   'region',
   'district',
   'traderType',

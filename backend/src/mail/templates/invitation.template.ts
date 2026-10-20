@@ -61,20 +61,20 @@ export function buildInvitationMessage(
   return {
     to,
     reference,
-    subject: 'You have been invited to ACCELERATE Tanzania',
+    subject: 'You have been invited to the PABRA Seed Actors Registry',
     text:
-      'An administrator has created an ACCELERATE Tanzania account for you.\n\n' +
+      'An administrator has created a PABRA Seed Actors Registry account for you.\n\n' +
       `Your temporary password is: ${temporaryPassword}\n\n` +
       'This password is single-use — sign in with it and you will be asked ' +
       `to set a new password immediately:\n${SIGN_IN_URL}\n\n` +
       'If you were not expecting this invitation, you can ignore this message.',
     html: renderEmailHtml({
-      preheader: 'An administrator has created an ACCELERATE Tanzania account for you.',
-      heading: 'You have been invited to ACCELERATE Tanzania',
+      preheader: 'An administrator has created a PABRA Seed Actors Registry account for you.',
+      heading: 'You have been invited to the PABRA Seed Actors Registry',
       blocks: [
         {
           kind: 'paragraph',
-          text: 'An administrator has created an ACCELERATE Tanzania account for you.',
+          text: 'An administrator has created a PABRA Seed Actors Registry account for you.',
         },
         {
           kind: 'callout',

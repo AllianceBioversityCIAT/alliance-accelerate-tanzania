@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ConsentMethod, RegistrationSource } from '@prisma/client';
+import { ALL_REGION_NAMES, COUNTRY_CODES, UNKNOWN_COUNTRY, UNKNOWN_REGION } from '../../common/geo/countries';
+import { IsRegionOfCountryFilter } from '../../common/region-of-country.validator';
 
 /**
  * T-1 — Admin actor list query DTO (`GET /api/v1/admin/actors`).
@@ -40,7 +42,12 @@ export class AdminActorListQueryDto {
   pageSize?: number = DEFAULT_PAGE_SIZE;
 
   @IsOptional()
-  @IsString()
+  @IsIn(COUNTRY_CODES, UNKNOWN_COUNTRY)
+  country?: string;
+
+  @IsOptional()
+  @IsIn(ALL_REGION_NAMES, UNKNOWN_REGION)
+  @IsRegionOfCountryFilter()
   region?: string;
 
   @IsOptional()

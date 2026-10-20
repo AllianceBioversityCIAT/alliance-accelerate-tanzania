@@ -1,5 +1,5 @@
 /**
- * about-gallery.ts — photos for the About page "The challenge" carousel.
+ * field-gallery.ts — photos for the home hero carousel.
  *
  * Files live in `public/about/gallery/`. Add, remove or reorder entries here;
  * the carousel renders whatever this array holds. Every photo needs an `alt`
@@ -13,7 +13,7 @@ export interface GalleryPhoto {
   alt: string;
 }
 
-export const ABOUT_GALLERY: readonly GalleryPhoto[] = [
+export const FIELD_GALLERY: readonly GalleryPhoto[] = [
   {
     src: '/about/gallery/01.jpg',
     alt: 'Three ACCELERATE team members standing in front of tall stacks of grain sacks at a warehouse.',

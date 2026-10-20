@@ -1,5 +1,7 @@
 # ACCELERATE Tanzania — Web Copy Brief
 
+> Describes the origin project (ACCELERATE, Tanzania) that the PABRA Seed Actors Registry grew out of; kept as source material, not as a description of the current product.
+
 > **For:** Claude Code (and any agent) implementing home-page enhancements and a new
 > **About the Project** section.
 > **What this is:** Ready-to-use, on-brand copy derived from the project scraping, mapped to the

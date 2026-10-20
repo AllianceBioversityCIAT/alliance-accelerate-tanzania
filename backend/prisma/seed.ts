@@ -51,6 +51,7 @@ async function upsertActor(
   const data: Prisma.ActorUncheckedCreateInput = {
     traderId: actor.traderId,
     traderName: actor.traderName,
+    country: 'TZ',
     region: actor.region,
     district: actor.district,
     traderType: actor.traderType,

@@ -198,7 +198,7 @@ export default function LoginForm() {
       </h1>
       <p className="text-sm text-muted text-center mb-8">
         {step === 'credentials'
-          ? 'Sign in to access the ACCELERATE Tanzania registry.'
+          ? 'Sign in to access the PABRA Seed Actors Registry.'
           : 'Your account requires a new password. Please set one to continue.'}
       </p>
 

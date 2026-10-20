@@ -93,7 +93,7 @@ Child of the root guides — read `../CLAUDE.md` / `../AGENTS.md` and the consti
 
 ## Import template
 
-- `common/template-columns.ts` is the **single source of truth** for the Excel import template (headers, required flags, allowed values from `common/normalize.ts` canonical constants). `npm run generate:template` regenerates `../frontend/public/templates/actor-import-template.xlsx` **byte-stably** (fixed workbook + ZIP dates); a test asserts the committed asset matches. Change columns → bump `TEMPLATE_VERSION`, regenerate, commit the asset.
+- `common/template-columns.ts` is the **single source of truth** for the Excel import template (headers, required flags, allowed values from `common/normalize.ts` canonical constants and, for Country, `common/geo/countries.ts`). The dependent Region dropdown — one `R_<code>` defined name per country, read through `INDIRECT` — is built by `scripts/generate-import-template.ts` from `AFRICAN_COUNTRIES`; `INDIRECT` must stay the outermost function of that list source or Excel shows an empty list. Re-running `scripts/generate-african-geo.ts` requires `npm run generate:template` too. `npm run generate:template` regenerates `../frontend/public/templates/actor-import-template.xlsx` **byte-stably** (fixed workbook + ZIP dates); a test asserts the committed asset matches. Change columns → bump `TEMPLATE_VERSION`, regenerate, commit the asset.
 
 ## Deploy
 

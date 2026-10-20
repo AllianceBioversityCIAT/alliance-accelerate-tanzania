@@ -11,8 +11,9 @@
 
 import { ConsentMethod, ConsentStatus, Prisma, RegistrationSource } from '@prisma/client';
 
-/** The five filter fields both `adminList` and a consent-request filter target accept. */
+/** The six filter fields both `adminList` and a consent-request filter target accept. */
 export interface AdminActorFilterFields {
+  country?: string;
   region?: string;
   traderType?: string;
   consentStatus?: string;
@@ -22,6 +23,7 @@ export interface AdminActorFilterFields {
 
 export function buildAdminActorWhere(q: AdminActorFilterFields): Prisma.ActorWhereInput {
   return {
+    ...(q.country ? { country: q.country } : {}),
     ...(q.region ? { region: q.region } : {}),
     // Main type OR among the additional types; AND-nested so it can never clobber another OR.
     ...(q.traderType

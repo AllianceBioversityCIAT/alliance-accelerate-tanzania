@@ -100,7 +100,7 @@ function mockSearchParams(ref: string | null) {
  * happens to match any pattern anyone thought to write.
  */
 const PINNED_WHAT_HAPPENS_NEXT_COPY =
-  'A member of the ACCELERATE Tanzania team reviews every submission. Once a decision is ' +
+  'A member of the PABRA team reviews every submission. Once a decision is ' +
   'made, the most reliable way to find out is to look up your submission using your ' +
   'reference code and the email address you verified — you can do this at any time with ' +
   'the button above. We will also try to email you when a decision is made, but delivery ' +

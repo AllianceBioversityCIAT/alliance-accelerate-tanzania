@@ -27,6 +27,7 @@ const ACTOR_FULL: PublicActor = {
   id: 'actor-full',
   traderName: 'Dodoma Seeds Ltd',
   region: 'Dodoma',
+  country: 'TZ',
   district: 'Dodoma Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -42,6 +43,7 @@ const ACTOR_SPARSE: PublicActor = {
   id: 'actor-sparse',
   traderName: 'Mbeya Cooperative',
   region: 'Mbeya',
+  country: 'TZ',
   district: null,
   traderType: 'cooperative',
   additionalTraderTypes: [],
@@ -95,6 +97,11 @@ describe('ActorPopup', () => {
     expect(regionMatches.length).toBeGreaterThanOrEqual(1);
     // District text appears in exactly one element.
     expect(screen.getByText(/Dodoma Urban/)).toBeInTheDocument();
+  });
+
+  it('renders the location as "Region, Country" with the country by name', () => {
+    render(<ActorPopup actor={{ ...ACTOR_FULL, country: 'KE', region: 'Nakuru' }} />);
+    expect(screen.getByText(/Nakuru, Kenya/)).toBeInTheDocument();
   });
 
   it('renders only region when district is null', () => {

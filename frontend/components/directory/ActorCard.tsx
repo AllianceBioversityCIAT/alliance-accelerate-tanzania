@@ -16,6 +16,7 @@
 
 import Link from 'next/link';
 import type { PublicActor } from '@/lib/api/actors';
+import { formatLocation } from '@/lib/content/countries';
 import { CROPS } from '@/lib/content/crops';
 import { RoleBadges } from '@/components/map/RoleBadge';
 
@@ -56,15 +57,15 @@ export interface ActorCardProps {
  * Keyboard-focusable via <Link>; focus ring uses focus-visible:ring-primary (NFR-3).
  */
 export default function ActorCard({ actor }: ActorCardProps) {
-  const { id, traderName, region, district, traderType, capacityTons, crops } = actor;
+  const { id, traderName, region, country, district, traderType, capacityTons, crops } = actor;
 
   // Resolve crop content entries from the actor's crop slugs (mirrors ActorPopup.tsx).
   const cropEntries = crops
     .map((slug) => CROPS.find((c) => c.slug === slug))
     .filter(Boolean) as typeof CROPS;
 
-  // Location string: "Region · District" or just "Region" (never null/undefined — FR-1)
-  const location = district ? `${region} · ${district}` : region;
+  const place = formatLocation(region, country);
+  const location = district ? `${place} · ${district}` : place;
 
   return (
     // Card surface: bg-surface, border-border token driven. Hover lifts shadow.

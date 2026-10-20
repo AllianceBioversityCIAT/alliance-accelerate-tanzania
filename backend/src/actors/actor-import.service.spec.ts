@@ -43,6 +43,9 @@ import {
   IntakeRequiredField,
 } from '../common/intake-contract';
 import { DuplicateCandidate } from '../registrations/duplicate-detection.service';
+import * as ExcelJS from 'exceljs';
+import { generateTemplateBuffer } from '../../scripts/generate-import-template';
+import { regionDropdownFor } from '../test/support/import-template-dropdowns';
 import { createActorSequenceMock } from '../test/support/actor-sequence.mock';
 import {
   CellMap,
@@ -225,6 +228,35 @@ describe('ActorImportService', () => {
       });
     });
 
+    it('imports cleanly a workbook filled with the template dropdown values (Kenya, Tanzania, Uganda)', async () => {
+      const template = new ExcelJS.Workbook();
+      await template.xlsx.load((await generateTemplateBuffer()) as unknown as ExcelJS.Buffer);
+      const picks = [
+        { country: 'Kenya', region: 'Nakuru' },
+        { country: 'Tanzania', region: 'Kigoma' },
+        { country: 'Uganda', region: 'Gulu' },
+      ];
+      for (const { country, region } of picks) {
+        expect(regionDropdownFor(template, country)).toContain(region);
+      }
+
+      const b64 = await buildWorkbook(
+        picks.map((p, i) =>
+          validRow({
+            ...p,
+            traderName: `Dropdown Actor ${p.country}`,
+            phone: ['+254712345678', '+255712345678', '+256712345678'][i],
+            email: `dropdown-${i}@example.org`,
+          }),
+        ),
+      );
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.totals).toMatchObject({ rows: 3, toCreate: 3, failed: 0 });
+      expect(report.rows.map((r) => r.outcome)).toEqual(['create', 'create', 'create']);
+    });
+
     it('skips fully-empty data rows entirely', async () => {
       const b64 = await buildWorkbook([
         validRow({ traderName: 'First' }),
@@ -259,14 +291,14 @@ describe('ActorImportService', () => {
       );
     });
 
-    // T-4 (consent-intake/intake-required-fields, FR-5) — v3 (the PREVIOUS
-    // version, dropped by this task) is rejected exactly like any other
-    // stale version, naming the version now expected (v5).
-    it('rejects a workbook stamped v3, naming v5 as the expected version', async () => {
+    // T-4 (consent-intake/intake-required-fields, FR-5) — v3 (an older
+    // version) is rejected exactly like any other
+    // stale version, naming the version now expected.
+    it('rejects a workbook stamped v3, naming v6 as the expected version', async () => {
       const b64 = await buildWorkbook([validRow()], { instructionsVersion: 'v3' });
 
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
-        /found v3, current is v5/i,
+        /found v3, current is v6/i,
       );
     });
 
@@ -320,6 +352,7 @@ describe('ActorImportService', () => {
           // to redden here, not just the format checks T-6 already covered.
           traderName: '',
           traderType: 'not_a_type',
+          country: 'TZ',
           region: 'Atlantis',
           email: 'super-secret-not-an-email',
           capacityTons: -5,
@@ -542,7 +575,7 @@ describe('ActorImportService', () => {
    */
   describe('phone normalization (FR-5, T-3)', () => {
     const CLEARED_WARNING =
-      'Phone — value is not a recognized Tanzanian number; imported with Phone cleared';
+      "Phone — value is not a recognized number for the row's country (use +country code); imported with Phone cleared";
 
     it('stores a normalizable phone canonically, with no warning', async () => {
       const b64 = await buildWorkbook([validRow({ phone: '0700000002' })]);
@@ -2124,6 +2157,78 @@ describe('ActorImportService', () => {
       await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
         /maximum is 1000/i,
       );
+    });
+  });
+  describe('country (multi-country registry)', () => {
+    const createdData = () =>
+      tx.actor.create.mock.calls[0][0].data as Record<string, unknown>;
+
+    it('fails a row with a blank Country on `country`, without also blaming Region', async () => {
+      const b64 = await buildWorkbook([validRow({ country: '', region: 'Mombasa' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toEqual([{ field: 'country', message: 'Country is required.' }]);
+    });
+
+    it('fails a row with an unknown Country', async () => {
+      const b64 = await buildWorkbook([validRow({ country: 'Atlantis' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors?.map((e) => e.field)).toEqual(['country']);
+    });
+
+    it('accepts a country name and an ISO code, storing the code', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderName: 'By Name', country: 'Kenya', region: 'Mombasa', phone: '+254712345678', email: 'a@example.org' }),
+        validRow({ traderName: 'By Code', country: 'ke', region: 'Mombasa', phone: '+254712345679', email: 'b@example.org' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows.map((r) => r.outcome)).toEqual(['created', 'created']);
+      for (const [call] of tx.actor.create.mock.calls) {
+        expect(call.data).toMatchObject({ country: 'KE', region: 'Mombasa' });
+      }
+    });
+
+    it('stores a Kenyan +254 phone and a Tanzanian national phone each in canonical form', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ traderName: 'Kenyan', country: 'KE', region: 'Mombasa', phone: '+254 712 345 678', email: 'a@example.org' }),
+        validRow({ traderName: 'Tanzanian', phone: '0700000002', email: 'b@example.org' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.totals.warnings).toBe(0);
+      expect(tx.actor.create.mock.calls[0][0].data).toMatchObject({ country: 'KE', phone: '+254712345678' });
+      expect(tx.actor.create.mock.calls[1][0].data).toMatchObject({ country: 'TZ', phone: '+255700000002' });
+    });
+
+    it('clears a Kenyan row\'s national 07... phone with the existing un-normalizable warning', async () => {
+      const b64 = await buildWorkbook([
+        validRow({ country: 'Kenya', region: 'Mombasa', phone: '0712345678' }),
+      ]);
+
+      const report = await service.run(commitDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('created');
+      expect(createdData().phone).toBeNull();
+      expect(report.totals.warnings).toBe(1);
+    });
+
+    it('rejects a region that belongs to another country, naming the country', async () => {
+      const b64 = await buildWorkbook([validRow({ country: 'Kenya', region: 'Arusha' })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toEqual([
+        { field: 'region', message: "Region must be one of Kenya's regions." },
+      ]);
     });
   });
 });

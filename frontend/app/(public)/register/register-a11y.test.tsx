@@ -119,6 +119,8 @@ beforeEach(() => {
  * commits anything once the field is the new control.
  */
 async function selectRegion(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.click(screen.getByLabelText(/^country/i));
+  await user.click(screen.getByRole('option', { name: 'Tanzania' }));
   await user.click(screen.getByLabelText(/^region/i));
   await user.click(screen.getByRole('option', { name: label }));
 }
@@ -244,7 +246,8 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     const focusables = [
       screen.getByLabelText(/organisation name/i),
       screen.getByLabelText(/^main actor type/i),
-      screen.getByLabelText(/^region/i),
+      // Region is disabled until a country is chosen, so Country is the focusable one here.
+      screen.getByLabelText(/^country/i),
       screen.getByLabelText(/^sorghum/i),
       screen.getByLabelText(/capacity \(tons\)/i),
       screen.getByLabelText(/^phone/i),
@@ -274,6 +277,7 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     for (const name of [
       /organisation name/i,
       /^main actor type/i,
+      /^country/i,
       /^region/i,
       /district/i,
       /market location/i,
@@ -309,7 +313,8 @@ describe('/register — form step, whole-page axe (T-22, NFR-5, QA-11)', () => {
     const phone = screen.getByLabelText(/^phone/i);
     const phoneDescribedBy = phone.getAttribute('aria-describedby');
     expect(phoneDescribedBy).toBeTruthy();
-    expect(document.getElementById(phoneDescribedBy!.split(' ')[0])).toHaveTextContent(
+    // The phone field always carries its prefix hint too, so the error is one of the ids.
+    expect(phoneDescribedBy!.split(' ').map((id) => document.getElementById(id)?.textContent)).toContain(
       'Phone is required.',
     );
 

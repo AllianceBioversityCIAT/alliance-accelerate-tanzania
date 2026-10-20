@@ -77,6 +77,8 @@ import { createHash } from 'crypto';
  */
 const APPROVED_BODY_DIGEST =
   '2a854fd5d3d2d9923286af5e95d52fa747e56a6a7533edfb15ac6c1c21368007';
+/** The same digest over the whole registry, v1.1 (the PABRA rename) included. */
+const REGISTRY_BODY_DIGEST = '44449ceb735a0f825fe3d9e53fd484c63a0a06558a3eca9eb47afc88d77ed30e';
 
 /** Every heading, both editions, in order — seed edition first. */
 const ALL_HEADINGS = [
@@ -99,8 +101,8 @@ const ALL_HEADINGS = [
  * SHA-256 over every body of every edition, in order. A changed, dropped or
  * reordered clause moves it.
  */
-function bodyDigest(): string {
-  const parts = CONSENT_POLICY_EDITIONS.flatMap((e) =>
+function bodyDigest(editions: readonly ConsentPolicyEdition[] = CONSENT_POLICY_EDITIONS): string {
+  const parts = editions.flatMap((e) =>
     e.sections.map((s) => [s.body, s.contact ?? [], s.bodyAfter ?? '']),
   );
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
@@ -146,11 +148,13 @@ const TWO_EDITIONS: ConsentPolicyEdition[] = [
     version: 'v1.0-superseded',
     issuedAt: '2026-01-01',
     sections: [{ heading: 'Superseded heading', body: 'Superseded body' }],
+    acceptanceStatement: 'Superseded statement',
   },
   {
     version: 'v2.0-current',
     issuedAt: '2026-06-01',
     sections: [{ heading: 'Current heading', body: 'Current body' }],
+    acceptanceStatement: 'Current statement',
   },
 ];
 
@@ -350,7 +354,7 @@ describe('CONSENT_POLICY_EDITIONS (the registry itself)', () => {
       // — the newly-inserted edition would never be served, with no test
       // failure to reveal it. This asserts the entire sequence, so an
       // insert-in-the-middle mutation now has a named falsifier.
-      expect(KNOWN_CONSENT_POLICY_VERSIONS).toEqual(['v1.0-placeholder', 'v1.0']);
+      expect(KNOWN_CONSENT_POLICY_VERSIONS).toEqual(['v1.0-placeholder', 'v1.0', 'v1.1']);
     },
   );
 });
@@ -374,7 +378,9 @@ describe(
         expect(CONSENT_POLICY_EDITIONS[1].sections.map((s) => s.heading)).toEqual(
           ALL_HEADINGS.slice(4),
         );
-        expect(bodyDigest()).toBe(APPROVED_BODY_DIGEST);
+        // Recorded over v1.0-placeholder + v1.0, before v1.1 existed: their text cannot drift.
+        expect(bodyDigest(CONSENT_POLICY_EDITIONS.slice(0, 2))).toBe(APPROVED_BODY_DIGEST);
+        expect(bodyDigest()).toBe(REGISTRY_BODY_DIGEST);
       },
     );
   },
@@ -383,15 +389,34 @@ describe(
 describe(
   'CONSENT_ACCEPTANCE_STATEMENT (the checkbox label source, Reviewer advisory 2, adopted)',
   () => {
+    const V1_0_STATEMENT =
+      'I confirm that I have read and understood this Consent for Publication of ' +
+      'Information and voluntarily consent to the collection, storage, processing, ' +
+      'international transfer, and public publication of the information provided ' +
+      'through my registration in the ACCELERATE Tanzania Registry, including contact ' +
+      'information, business information, capacity information, and location ' +
+      'information where provided.';
+
     it('is pinned verbatim — the exact sentence an applicant legally accepts', () => {
         expect(CONSENT_ACCEPTANCE_STATEMENT).toBe(
-          'I confirm that I have read and understood this Consent for Publication of ' +
-            'Information and voluntarily consent to the collection, storage, processing, ' +
-            'international transfer, and public publication of the information provided ' +
-            'through my registration in the ACCELERATE Tanzania Registry, including contact ' +
-            'information, business information, capacity information, and location ' +
-            'information where provided.',
+          V1_0_STATEMENT.replace('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry'),
         );
+    });
+
+    it('keeps the former registry-wide sentence on the earlier editions', () => {
+      expect(CONSENT_POLICY_EDITIONS[0].acceptanceStatement).toBe(V1_0_STATEMENT);
+      expect(CONSENT_POLICY_EDITIONS[1].acceptanceStatement).toBe(V1_0_STATEMENT);
+    });
+
+    it('v1.1 differs from v1.0 only by the name (ACCELERATE Tanzania Registry → PABRA Seed Actors Registry) and the data-location wording (outside/within and outside Tanzania → Africa)', () => {
+      const [, v10, v11] = CONSENT_POLICY_EDITIONS;
+      const renamed = JSON.parse(
+        JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement })
+          .replaceAll('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry')
+          .replaceAll('outside Tanzania', 'outside Africa'),
+      );
+      expect({ sections: v11.sections, acceptanceStatement: v11.acceptanceStatement }).toEqual(renamed);
+      expect(JSON.stringify(v11)).not.toContain('ACCELERATE');
     });
   },
 );

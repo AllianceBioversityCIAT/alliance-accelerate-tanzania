@@ -22,7 +22,7 @@ export const DATA_PROTECTION_CONTACT = {
 export const CONSENT_PAGE_COPY = {
   title: 'Consent to publish your information',
   intro:
-    'The ACCELERATE Tanzania Registry would like to publish the information below about your organization. Please review it and the consent text, then accept or decline.',
+    'The PABRA Seed Actors Registry would like to publish the information below about your organization. Please review it and the consent text, then accept or decline.',
   loading: 'Loading your consent request…',
 
   previewHeading: 'Information that will be published',
@@ -60,7 +60,7 @@ export const CONSENT_PAGE_COPY = {
 
   acceptedTitle: 'Thank you, your consent is recorded',
   acceptedBody:
-    'Your organization’s profile is now published in the ACCELERATE Tanzania Registry.',
+    'Your organization’s profile is now published in the PABRA Seed Actors Registry.',
   acceptedLink: 'View your public profile',
   declinedTitle: 'Your decision is recorded',
   declinedBody:

@@ -120,7 +120,7 @@ export default function RegisterPage() {
         Register your organisation
       </h1>
       <p className="mt-2 max-w-prose text-sm text-muted">
-        Tell us about your organisation. An ACCELERATE Tanzania team member reviews every
+        Tell us about your organisation. A PABRA team member reviews every
         submission before it is published to the public registry.
       </p>
 

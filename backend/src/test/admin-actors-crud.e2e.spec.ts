@@ -60,6 +60,7 @@ function fixtureActor(
     id: 'actor-granted-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
@@ -318,6 +319,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     if (where.consentStatus && actor.consentStatus !== where.consentStatus) {
       return false;
     }
+    if (where.country && actor.country !== where.country) return false;
     if (where.region && actor.region !== where.region) return false;
     if (where.traderType && actor.traderType !== where.traderType) return false;
 
@@ -709,6 +711,7 @@ const pub = { Authorization: 'Bearer public-token' };
 const validCreatePayload = (): Record<string, unknown> => ({
   traderId: 'TZ-NEW-0001',
   traderName: 'New Seed Actor',
+  country: 'TZ',
   region: 'Arusha',
   district: 'Arusha Urban',
   traderType: 'seed_company',
@@ -804,6 +807,62 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.phone).toBe('+255711111111');
       expect(res.body.email).toBe('manager@example.com');
       expect(res.body.id).toMatch(/^actor-mock-/);
+    });
+
+    it('creates a Kenyan actor (201) with the country on the projection', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({
+          ...validCreatePayload(),
+          country: 'KE',
+          region: 'Mombasa',
+          phone: '+254712345678',
+          email: 'kenya@example.com',
+        })
+        .expect(201);
+
+      expect(res.body.country).toBe('KE');
+      expect(res.body.region).toBe('Mombasa');
+    });
+
+    it('rejects a create without a country, with an unknown country, or with a region of another country', async () => {
+      const { country: _omit, ...withoutCountry } = validCreatePayload();
+      void _omit;
+      const missing = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send(withoutCountry)
+        .expect(400);
+      expect(missing.body.details.map((d: { field: string }) => d.field)).toContain('country');
+
+      const unknown = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), country: 'XX' })
+        .expect(400);
+      expect(unknown.body.details.map((d: { field: string }) => d.field)).toContain('country');
+
+      const mismatch = await request(app.getHttpServer())
+        .post('/api/v1/admin/actors')
+        .set(admin)
+        .send({ ...validCreatePayload(), country: 'KE', region: 'Arusha', phone: '+254712345678' })
+        .expect(400);
+      expect(mismatch.body.details).toEqual([
+        { field: 'region', message: "Region must be one of Kenya's regions." },
+      ]);
+    });
+
+    it('returns 400 when changing only the country leaves the stored region outside it', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/v1/admin/actors/actor-granted-1')
+        .set(admin)
+        .send({ country: 'KE' })
+        .expect(400);
+
+      expect(res.body.details).toEqual([
+        { field: 'region', message: "Region must be one of Kenya's regions." },
+      ]);
     });
 
     it('returns 400 when consentStatus GRANTED is submitted without acknowledgement', async () => {
@@ -1347,6 +1406,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
         const fullBodyLikeActorForm = {
           traderId: 'TZ-SEED-0001',
           traderName: 'Meru Agro-Processing & Seeds',
+          country: 'TZ',
           region: 'Arusha',
           traderType: 'seed_company',
           consentStatus: 'GRANTED',

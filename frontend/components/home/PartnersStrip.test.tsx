@@ -35,7 +35,7 @@ describe('PartnersStrip', () => {
     expect(heading).toBeInTheDocument();
     expect(heading).toHaveAttribute('id', 'partners-heading');
     expect(heading).toHaveTextContent(
-      /built by a coalition of research and seed-system institutions/i,
+      /the coalition behind accelerate/i,
     );
   });
 
@@ -161,11 +161,15 @@ describe('PartnersStrip', () => {
     expect(img).toBeInTheDocument();
   });
 
-  it('renders exactly 6 logo <img> elements', () => {
+  it('renders the ACCELERATE logo plus the 6 partner logos', () => {
     render(<PartnersStrip />);
-    // alliance, pabra, tari, tosci, bmgf, cimmyt — all partners now have a logo
+    // ACCELERATE heads the section; alliance, pabra, tari, tosci, bmgf, cimmyt follow
     const images = screen.getAllByRole('img');
-    expect(images).toHaveLength(6);
+    expect(images).toHaveLength(7);
+    expect(images[0].getAttribute('src') ?? '').toContain('accelerate-logo-color.png');
+    expect(
+      screen.getByRole('link', { name: 'ACCELERATE project — opens in a new tab' }),
+    ).toHaveAttribute('href', 'https://alliancebioversityciat.org/projects/accelerate');
   });
 
   // ---------------------------------------------------------------------------

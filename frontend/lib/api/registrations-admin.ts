@@ -70,6 +70,7 @@ export interface AdminRegistrationListRow {
   applicant: string;
   traderType: string;
   additionalTraderTypes: string[];
+  country: string;
   region: string;
   submittedAt: string;
   status: RegistrationStatus;
@@ -97,6 +98,7 @@ export interface AdminRegistrationListQuery {
   status?: RegistrationStatus;
   /** Free-text match against the applicant's organisation name. */
   q?: string;
+  country?: string;
   region?: string;
   traderType?: string;
   sort?: AdminRegistrationListSort;
@@ -121,6 +123,7 @@ export interface AdminRegistrationPayload {
   district: string | null;
   marketLocation: string | null;
   sex: string | null;
+  country: string;
   region: string;
   gpsLatitude: number | null;
   gpsLongitude: number | null;
@@ -339,6 +342,7 @@ export async function adminListRegistrations(
   const params = new URLSearchParams();
   if (query?.status != null) params.set('status', query.status);
   if (query?.q != null) params.set('q', query.q);
+  if (query?.country != null) params.set('country', query.country);
   if (query?.region != null) params.set('region', query.region);
   if (query?.traderType != null) params.set('traderType', query.traderType);
   if (query?.sort != null) params.set('sort', query.sort);

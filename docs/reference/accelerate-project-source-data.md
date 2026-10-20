@@ -1,5 +1,7 @@
 # ACCELERATE Tanzania — Extracted Source Data
 
+> Describes the origin project (ACCELERATE, Tanzania) that the PABRA Seed Actors Registry grew out of; kept as source material, not as a description of the current product.
+
 > **Purpose:** Reference data extracted from the public Alliance of Bioversity International & CIAT
 > website and related sources, to enrich the Seed Registry platform (actors, crops, varieties,
 > regions, value-chain context).

@@ -9,8 +9,9 @@
  * design.md §4 + §8 DR-3).
  *
  * Allowed-value lists are built FROM the canonical constants the DTO/normalizer
- * already use (`CANONICAL_REGIONS`, `TRADER_TYPES` from `common/normalize.ts`,
- * the Actor `sex` shape, `ConsentStatus` from Prisma) rather than re-typed here
+ * already use (`TRADER_TYPES` from `common/normalize.ts`, `AFRICAN_COUNTRIES`
+ * from `common/geo/countries.ts`, the Actor `sex` shape, `ConsentStatus` from
+ * Prisma) rather than re-typed here
  * — one edit site per DD-5. Crops are three YES/NO columns (DR-3): dropdown-
  * friendly for field staff, zero spelling risk.
  *
@@ -18,9 +19,10 @@
  */
 
 import { ConsentStatus } from '@prisma/client';
-import { CANONICAL_REGIONS, LATITUDE_RANGE, LONGITUDE_RANGE, TRADER_TYPES } from './normalize';
+import { LATITUDE_RANGE, LONGITUDE_RANGE, TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
+import { AFRICAN_COUNTRIES } from './geo/countries';
 
 /** Bump on ANY column change (order, headers, allowed values). Stamped on the
  * Instructions sheet and used for best-effort stale-template detection.
@@ -38,8 +40,11 @@ import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
  * matching the intake contract every path now shares (FR-1, FR-5).
  *
  * v4 → v5: optional "Additional Actor Types" column inserted after Trader
- * Type (";"-separated). v4 files are rejected as out of date. */
-export const TEMPLATE_VERSION = 'v5';
+ * Type (";"-separated). v4 files are rejected as out of date.
+ *
+ * v5 → v6: required "Country" column (dropdown) inserted before Region; the
+ * Region dropdown now lists only the regions of that row's country. */
+export const TEMPLATE_VERSION = 'v6';
 
 /**
  * Required flags for the four intake-contract scalars this template carries
@@ -145,10 +150,17 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     format: 'Optional. Values from the Trader Type list separated by ";", e.g. cooperative; ngo',
   },
   {
+    header: 'Country',
+    field: 'country',
+    required: true,
+    allowedValues: AFRICAN_COUNTRIES.map((c) => c.name),
+    format: 'Choose a country from the dropdown',
+  },
+  {
     header: 'Region',
     field: 'region',
     required: true,
-    allowedValues: CANONICAL_REGIONS,
+    format: "Choose from the dropdown: it lists the regions of the country picked in the same row (ISO 3166-2)",
   },
   { header: 'District', field: 'district', required: false },
   { header: 'Market Location', field: 'marketLocation', required: false },
@@ -170,7 +182,7 @@ export const TEMPLATE_COLUMNS: readonly TemplateColumn[] = [
     header: 'Phone',
     field: 'phone',
     required: CONTRACT_REQUIRED.has('phone'),
-    format: 'International format, e.g. +255 7XX XXX XXX',
+    format: 'International format, e.g. +255 7XX XXX XXX (other countries: + country code)',
   },
   {
     header: 'Email',

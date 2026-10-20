@@ -33,6 +33,7 @@ import { AdditionalTypeLink, mapAdditionalTypes } from './additional-types';
 export interface PublicActorListItem {
   id: string;
   traderName: string;
+  country: string;
   region: string;
   district: string | null;
   traderType: string;
@@ -77,6 +78,7 @@ export interface SerializableActor extends ConsentBearer {
   // Read by BOTH projections (the list set).
   id: string;
   traderName: string;
+  country: string;
   region: string;
   district?: string | null;
   traderType: string;
@@ -123,6 +125,7 @@ export function toPublicListItem(
   return {
     id: actor.id,
     traderName: actor.traderName,
+    country: actor.country,
     region: actor.region,
     district: actor.district ?? null,
     traderType: actor.traderType,
@@ -152,6 +155,7 @@ export function toPublicDetail(actor: SerializableActor): PublicActorDetail {
   return {
     id: listItem.id,
     traderName: listItem.traderName,
+    country: listItem.country,
     region: listItem.region,
     district: listItem.district,
     traderType: listItem.traderType,

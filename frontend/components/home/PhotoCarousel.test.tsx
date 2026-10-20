@@ -55,7 +55,7 @@ describe('PhotoCarousel', () => {
 
     const tick = () => act(() => { jest.advanceTimersByTime(3000); });
 
-    it('advances on its own every 6 seconds', () => {
+    it('advances on its own every 3 seconds', () => {
       render(<PhotoCarousel photos={PHOTOS} label="Field photos" />);
       tick();
       expect(visibleAlt()).toBe('Photo B');
@@ -103,5 +103,31 @@ describe('PhotoCarousel', () => {
       expect(visibleAlt()).toBe('Photo A');
       expect(screen.queryByRole('button', { name: /slideshow/ })).not.toBeInTheDocument();
     });
+  });
+
+  it('renders the overlay outside the slides\' live region', () => {
+    render(
+      <PhotoCarousel
+        photos={PHOTOS}
+        label="Field photos"
+        overlay={<p data-testid="overlay">Live figure</p>}
+      />,
+    );
+    const overlay = screen.getByTestId('overlay');
+    expect(screen.getByRole('region', { name: 'Field photos' })).toContainElement(overlay);
+    expect(overlay.closest('[aria-live]')).toBeNull();
+  });
+
+  it('with priority, loads only the first photo eagerly', () => {
+    const { container } = render(<PhotoCarousel photos={PHOTOS} label="Field photos" priority />);
+    const loading = Array.from(container.querySelectorAll('img')).map((img) => img.getAttribute('loading'));
+    expect(loading[0]).not.toBe('lazy');
+    expect(loading.slice(1)).toEqual(['lazy', 'lazy']);
+  });
+
+  it('without priority, every photo is lazy', () => {
+    const { container } = render(<PhotoCarousel photos={PHOTOS} label="Field photos" />);
+    const loading = Array.from(container.querySelectorAll('img')).map((img) => img.getAttribute('loading'));
+    expect(loading).toEqual(['lazy', 'lazy', 'lazy']);
   });
 });

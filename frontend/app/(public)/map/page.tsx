@@ -18,7 +18,7 @@
 // route handlers — Leaflet is loaded only inside <ActorMap> via dynamic import.
 // Token discipline (NFR-4): no raw hex anywhere in this file.
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useDashboardActors } from '@/lib/dashboard/useDashboardActors';
 import type { ActorsQuery, PublicActorList } from '@/lib/api/actors';
 import ActorMap from '@/components/map/ActorMap';
@@ -42,7 +42,11 @@ export default function MapPage() {
   // DASH_PAGE_SIZE × DASH_MAX_PAGES actors while `total` keeps reporting the
   // server's full count. Dropping it here is what let the rail caption a
   // 1 000-marker map "1200 actors shown" (ATP-68).
-  const { actors, total, truncated, loading, error } = useDashboardActors(filters);
+  const { actors: matched, total, truncated, loading, error } = useDashboardActors(filters);
+  // Only actors with coordinates can be on the map, so only they are listed beside it.
+  // Memoized: LeafletMap rebuilds its markers and re-fits whenever this reference changes.
+  const actors = useMemo(() => matched.filter((a) => a.gps != null), [matched]);
+  const unlocated = matched.length - actors.length;
 
   // Build the PublicActorList shape expected by <ActorMap data=…>.
   const data: PublicActorList = {
@@ -52,26 +56,13 @@ export default function MapPage() {
     total,
   };
 
-  // Region dropdown options: only the regions that actually have actors.
-  // Captured from the loaded set whenever NO region filter is applied, so that
-  // selecting a region doesn't collapse the option list. Falls back to the full
-  // canonical list (via FilterControls) until the first load completes.
-  const [regionOptions, setRegionOptions] = useState<string[] | undefined>(undefined);
-  useEffect(() => {
-    if (!filters.region && actors.length > 0) {
-      const distinct = Array.from(
-        new Set(actors.map((a) => a.region).filter((r): r is string => Boolean(r))),
-      ).sort();
-      setRegionOptions(distinct);
-    }
-  }, [actors, filters.region]);
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     // Full-bleed within <main> (PublicLayout has no container — pages own it).
     // flex-col on mobile (rail stacks above map); md:flex-row on wider screens.
     // min-h: keeps the combined region visible even with sparse content.
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col md:flex-row">
+    // md+: exactly the viewport, so the map's fitted view is never below the fold.
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col md:h-[calc(100vh-4rem)] md:flex-row">
 
       {/*
         ── Discover actors rail (T-4) ────────────────────────────────────────
@@ -83,12 +74,12 @@ export default function MapPage() {
       */}
       <DiscoverRail
         actors={actors}
+        unlocated={unlocated}
         total={total}
         truncated={truncated}
         loading={loading}
         error={error}
         filters={filters}
-        regions={regionOptions}
         selectedActorId={selectedActorId}
         onFilterChange={setFilters}
         onSelectActor={setSelectedActorId}
@@ -110,6 +101,8 @@ export default function MapPage() {
           error={error}
           selectedActorId={selectedActorId}
           onSelectActor={setSelectedActorId}
+          country={filters.country}
+          unlocated={unlocated}
         />
       </section>
     </div>

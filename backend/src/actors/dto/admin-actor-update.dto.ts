@@ -1,4 +1,4 @@
-import { IsIn, IsISO8601, IsOptional } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 import { ConsentMethod } from '@prisma/client';
 import { AdminActorCreateDto } from './admin-actor-create.dto';
@@ -49,4 +49,15 @@ export class AdminActorUpdateDto extends PartialType(AdminActorCreateDto) {
   @IsOptional()
   @IsISO8601({ strict: true })
   expectedUpdatedAt?: string;
+
+  /**
+   * Redeclared without `@IsPhoneOfCountry`: the form resends the stored phone
+   * on every save, so the prefix rule is checked service-side, and only when
+   * the phone or the country actually changes (`assertPhoneMatchesCountry`).
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  phone?: string;
 }

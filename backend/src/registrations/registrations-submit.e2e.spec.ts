@@ -101,6 +101,7 @@ const PAYLOAD_FIXTURE = {
   traderName: 'Mbeya Seed Traders Ltd — DO NOT LEAK',
   traderType: 'seed_company',
   contactPerson: 'Neema Shirima — DO NOT LEAK',
+  country: 'TZ',
   region: 'Mbeya',
   gpsLatitude: -8.910777,
   gpsLongitude: 33.460777,

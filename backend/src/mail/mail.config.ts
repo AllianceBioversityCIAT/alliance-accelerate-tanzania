@@ -70,9 +70,9 @@ export function getMicroserviceMailConfig(): MicroserviceMailConfig {
     // EMAIL_SENDER_NAME defaults rather than throwing — the one optional
     // variable (FR-3, design.md §4.5). The trailing "-" and space are
     // deliberate, NOT a typo: the microservice appends " No reply" to the
-    // display name it's given, so this renders as "ACCELERATE Tanzania Seed
-    // Registry - No reply". Do not "fix" the dash.
-    senderName: process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -',
+    // display name it's given, so this renders as "PABRA Seed Actors Registry -
+    // No reply". Do not "fix" the dash.
+    senderName: process.env.EMAIL_SENDER_NAME ?? 'PABRA Seed Actors Registry -',
   };
 }
 

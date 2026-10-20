@@ -112,6 +112,7 @@ if (!DERIVED_REGION) {
  * `unnormalizablePhoneRow`'s own `phone`) take precedence over this filler.
  */
 const REQUIRED_FIELDS_FILLER: CellMap = {
+  country: 'TZ',
   contactPerson: 'Fixture Contact Person',
   capacityTons: 10,
   phone: '0700000000',

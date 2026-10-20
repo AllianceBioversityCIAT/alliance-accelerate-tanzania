@@ -1,6 +1,6 @@
 'use client';
 
-// FilterControls — crop / role / region labeled selects for the DiscoverRail.
+// FilterControls — crop / role / country / region labeled selects for the DiscoverRail.
 //
 // FR-4: Each select updates the parent ActorsQuery on change. Selecting
 // "All …" clears that filter (sets the field to `undefined`) and resets
@@ -18,13 +18,13 @@
 // is a real labeled control (screen-reader and keyboard accessible).
 // NFR-4: Token-driven classes only — no raw hex, text-white, bg-white, etc.
 
-import { useMemo } from 'react';
 import type { ActorsQuery } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
 import { ROLES } from '@/lib/content/roles';
 import type { TraderType } from '@/lib/content/roles';
-import { REGIONS } from '@/lib/content/regions';
-import { SearchableSelect } from '@/components/ui/SearchableSelect';
+import { withCountry } from '@/lib/content/countries';
+import CountrySelect from '@/components/geo/CountrySelect';
+import RegionSelect from '@/components/geo/RegionSelect';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -37,12 +37,6 @@ export interface FilterControlsProps {
    * is selected) and page reset to 1.
    */
   onChange: (next: ActorsQuery) => void;
-  /**
-   * Region options for the dropdown. When provided (e.g. only the regions that
-   * actually have actors), these are used instead of the full canonical list.
-   * Falls back to all canonical REGIONS when undefined (e.g. before data loads).
-   */
-  regions?: string[];
 }
 
 // ── Shared select + label style ───────────────────────────────────────────────
@@ -65,20 +59,7 @@ const SELECT_CLASS = [
  * Each select has an "All …" option that clears that field from the query.
  * Changes call `onChange` with a new merged ActorsQuery (page reset to 1).
  */
-export default function FilterControls({ filters, onChange, regions }: FilterControlsProps) {
-  // Only show regions that have actors when provided; otherwise the full
-  // list (FR-5's "Dynamic option subset" scenario, both clauses). Memoized
-  // so a stable `regions` prop doesn't hand SearchableSelect a new `options`
-  // array identity every render.
-  const regionOptions = useMemo(
-    () =>
-      (regions && regions.length > 0 ? regions : REGIONS).map((region) => ({
-        value: region,
-        label: region,
-      })),
-    [regions],
-  );
-
+export default function FilterControls({ filters, onChange }: Readonly<FilterControlsProps>) {
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   function handleCrop(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -99,16 +80,15 @@ export default function FilterControls({ filters, onChange, regions }: FilterCon
     });
   }
 
-  // SearchableSelect's onChange hands back the committed option's value
-  // directly (never the typed search text — FR-3) rather than a change
-  // event, so this takes a string, not a ChangeEvent. The clear entry
-  // (`clearOptionLabel`) commits `''` via that same path, which this then
-  // maps to `undefined` — FR-5's `BUT it must NOT` send `region=` as an
-  // empty parameter — while still resetting `page` to 1 (DD-3).
-  function handleRegion(value: string) {
+  function handleCountry(value: string) {
+    onChange({ ...withCountry(filters, value !== '' ? value : undefined), page: 1 });
+  }
+
+  function handleRegion(next: { country: string; region: string }) {
     onChange({
       ...filters,
-      region: value !== '' ? value : undefined,
+      country: next.country !== '' ? next.country : undefined,
+      region: next.region !== '' ? next.region : undefined,
       page: 1,
     });
   }
@@ -162,18 +142,30 @@ export default function FilterControls({ filters, onChange, regions }: FilterCon
         </select>
       </div>
 
+      {/* ── Country ──────────────────────────────────────────────────────── */}
+      <div>
+        <label htmlFor="filter-country" className={LABEL_CLASS}>
+          Country
+        </label>
+        <CountrySelect
+          id="filter-country"
+          value={filters.country ?? ''}
+          onChange={handleCountry}
+          clearLabel="All countries"
+        />
+      </div>
+
       {/* ── Region ───────────────────────────────────────────────────────── */}
       <div>
         <label htmlFor="filter-region" className={LABEL_CLASS}>
           Region
         </label>
-        <SearchableSelect
+        <RegionSelect
           id="filter-region"
-          value={filters.region ?? ''}
+          country={filters.country ?? ''}
+          region={filters.region ?? ''}
           onChange={handleRegion}
-          options={regionOptions}
-          clearOptionLabel="All regions"
-          placeholder="All regions"
+          clearLabel="All regions"
         />
       </div>
 

@@ -111,6 +111,7 @@ export interface RegistrationSubmitPayload {
   district?: string;
   marketLocation?: string;
   sex?: string;
+  country: string;
   region: string;
   gpsLatitude?: number;
   gpsLongitude?: number;

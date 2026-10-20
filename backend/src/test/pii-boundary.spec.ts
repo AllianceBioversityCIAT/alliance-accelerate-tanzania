@@ -134,6 +134,7 @@ function fixtureActor(
     id: 'actor-granted-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
@@ -265,6 +266,7 @@ function matchesWhere(
   if (where.consentStatus && actor.consentStatus !== where.consentStatus) {
     return false;
   }
+  if (where.country && actor.country !== where.country) return false;
   if (where.region && actor.region !== where.region) return false;
   if (where.traderType && actor.traderType !== where.traderType) return false;
   // Role filter: main type OR among the additional types.
@@ -313,10 +315,10 @@ function buildPrismaMock(): Partial<PrismaService> {
     groupBy: jest.fn(
       async (args: { by: string[]; where?: Record<string, any> }) => {
         const filtered = ACTORS.filter((a) => matchesWhere(a, args?.where));
-        const key = args.by[0];
-        const seen = new Map<unknown, Record<string, unknown>>();
+        const seen = new Map<string, Record<string, unknown>>();
         for (const a of filtered) {
-          if (!seen.has(a[key])) seen.set(a[key], { [key]: a[key] });
+          const id = args.by.map((k) => String(a[k])).join('|');
+          if (!seen.has(id)) seen.set(id, Object.fromEntries(args.by.map((k) => [k, a[k]])));
         }
         return Array.from(seen.values());
       },
@@ -580,6 +582,28 @@ describe('PII boundary (HTTP e2e, in-memory Prisma)', () => {
     // is updated to match (a real, compiling code change, not a one-line
     // mutation), or a key introduced outside the typed literal path
     // entirely (a raw JSON merge, a debug field, a differently-cased alias).
+    it('exposes country on each list item and filters by ?country=, validating region against it', async () => {
+      const all = await request(app.getHttpServer()).get('/api/v1/actors').expect(200);
+      expect(all.body.data.length).toBeGreaterThan(0);
+      for (const item of all.body.data) expect(item.country).toBe('TZ');
+
+      const tz = await request(app.getHttpServer()).get('/api/v1/actors?country=TZ').expect(200);
+      expect(tz.body.total).toBe(all.body.total);
+
+      const ke = await request(app.getHttpServer()).get('/api/v1/actors?country=KE').expect(200);
+      expect(ke.body.total).toBe(0);
+
+      const unknown = await request(app.getHttpServer()).get('/api/v1/actors?country=XX').expect(400);
+      expect(unknown.body.details.map((d: { field: string }) => d.field)).toContain('country');
+
+      const mismatch = await request(app.getHttpServer())
+        .get('/api/v1/actors?country=KE&region=Arusha')
+        .expect(400);
+      expect(mismatch.body.details).toEqual([
+        { field: 'region', message: "Region must be one of Kenya's regions." },
+      ]);
+    });
+
     it(
       'the contact block is absent from the list BY KEY, not merely by value (FR-9)',
       async () => {
@@ -1306,6 +1330,7 @@ interface RegistrationFixtureRow {
     district: string;
     marketLocation: string;
     sex: string;
+    country?: string;
     region: string;
     gpsLatitude: number;
     gpsLongitude: number;
@@ -1341,6 +1366,7 @@ const APPROVED_REGISTRATION_ROW: RegistrationFixtureRow = {
     district: 'Approved Fixture District — DO NOT LEAK',
     marketLocation: 'Approved Fixture Market — DO NOT LEAK',
     sex: 'F',
+    country: 'TZ',
     region: 'Mbeya',
     gpsLatitude: -8.9001234,
     gpsLongitude: 33.4601234,
@@ -1412,6 +1438,7 @@ const SUBMIT_PAYLOAD_FIXTURE = {
   district: 'Submit Fixture District — DO NOT LEAK',
   marketLocation: 'Submit Fixture Market — DO NOT LEAK',
   sex: 'F',
+  country: 'TZ',
   region: 'Mbeya',
   gpsLatitude: -8.9123456,
   gpsLongitude: 33.4612345,

@@ -62,6 +62,7 @@ describe('toAdminRegistrationDetail — FR-10 scenarios 1, 2', () => {
         district: 'Mbeya Urban',
         marketLocation: 'Mwanjelwa Market',
         sex: 'F',
+        country: 'TZ',
         region: 'Mbeya',
         gpsLatitude: -8.9094,
         gpsLongitude: 33.4607,
@@ -70,6 +71,14 @@ describe('toAdminRegistrationDetail — FR-10 scenarios 1, 2', () => {
         capacityTons: 120,
         phone: '+255700000000',
       });
+    });
+
+    it('reads the payload country; a payload queued before the field existed reads as TZ', () => {
+      const kenyan = fixtureRow({
+        payload: { ...(fixtureRow().payload as object), country: 'KE', region: 'Mombasa' },
+      });
+      expect(toAdminRegistrationDetail(kenyan, []).payload.country).toBe('KE');
+      expect(toAdminRegistrationDetail(fixtureRow(), []).payload.country).toBe('TZ');
     });
 
     it('reads additionalTraderTypes from the payload, sorted; legacy payloads read as []', () => {

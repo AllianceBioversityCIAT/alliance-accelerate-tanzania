@@ -25,7 +25,7 @@
  * filters (T-8 rework, Issue 1; mirrors DirectoryView.tsx's filter-bar
  * placement above its own loading/error/empty ternary).
  *
- * Filters: region, traderType, consentStatus, registrationSource, consentMethod
+ * Filters: country, region, traderType, consentStatus, registrationSource, consentMethod
  * (dropdown selects). Pagination: page and pageSize controls (server-driven).
  *
  * URL sync (T-8, FR-6): every filter and pagination value is read from
@@ -81,9 +81,10 @@ import { PaginationControls } from '@/components/admin/PaginationControls';
 import Skeleton from '@/components/ui/Skeleton';
 import Button from '@/components/ui/Button';
 
-import { REGIONS } from '@/lib/content/regions';
+import { CountryRegionFilters } from '@/components/admin/CountryRegionFilters';
 import { ROLES } from '@/lib/content/roles';
 import { param, pageParam, pageSizeParam } from '@/lib/url-params';
+import { cleanGeo } from '@/lib/content/countries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -225,7 +226,7 @@ function ActorsView() {
 
   // ── Read filter + pagination state from the URL (T-8) ──────────────────────
 
-  const region = param(searchParams, 'region');
+  const { country, region } = cleanGeo(param(searchParams, 'country'), param(searchParams, 'region'));
   const traderType = param(searchParams, 'traderType');
   // Validated against their option lists (T-8 rework, Issue 1) — an
   // unrecognized value degrades to "All" rather than reaching the API.
@@ -236,6 +237,7 @@ function ActorsView() {
   const pageSize = pageSizeParam(searchParams, DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS);
 
   const filters: AdminActorListQuery = {
+    ...(country ? { country } : {}),
     ...(region ? { region } : {}),
     ...(traderType ? { traderType } : {}),
     ...(consentStatus ? { consentStatus } : {}),
@@ -380,6 +382,7 @@ function ActorsView() {
     token,
     page,
     pageSize,
+    country,
     region,
     traderType,
     consentStatus,
@@ -426,6 +429,7 @@ function ActorsView() {
 
   const handleClearFilters = useCallback(() => {
     pushParams({
+      country: undefined,
       region: undefined,
       traderType: undefined,
       consentStatus: undefined,
@@ -461,7 +465,7 @@ function ActorsView() {
     await fetchActors(token, { ...filters, page, pageSize });
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors]);
+  }, [token, country, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors]);
 
   // ── Selection handlers ────────────────────────────────────────────────────
 
@@ -507,7 +511,7 @@ function ActorsView() {
       showSuccess(`Deleted ${actor.traderName}`);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [token, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess],
+    [token, country, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess],
   );
 
   // ── Bulk action result summary ────────────────────────────────────────────
@@ -566,7 +570,7 @@ function ActorsView() {
       setDialogLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ids, unlockMethod, unlockDate, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+  }, [token, ids, unlockMethod, unlockDate, country, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const handleLockConfirm = useCallback(async () => {
     if (!token || ids.length === 0) return;
@@ -591,7 +595,7 @@ function ActorsView() {
       setDialogLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+  }, [token, ids, country, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!token || ids.length === 0) return;
@@ -613,7 +617,7 @@ function ActorsView() {
       setDialogLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ids, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
+  }, [token, ids, country, region, traderType, consentStatus, registrationSource, consentMethod, page, pageSize, fetchActors, showSuccess, formatResultSummary, handleAuthFailure]);
 
   // ── Bulk consent send (T-9) ───────────────────────────────────────────────
 
@@ -629,6 +633,7 @@ function ActorsView() {
     if (consentSending) return;
     // The five URL filters only — never page/pageSize (design.md §6).
     const filter = {
+      ...(country ? { country } : {}),
       ...(region ? { region } : {}),
       ...(traderType ? { traderType } : {}),
       ...(consentStatus ? { consentStatus } : {}),
@@ -641,7 +646,7 @@ function ActorsView() {
         : { target: { kind: 'ids', ids: Array.from(selectedIds) }, expectedCount: selectedIds.size },
     );
     setActiveDialog('send');
-  }, [consentSending, allMatching, total, selectedIds, region, traderType, consentStatus, registrationSource, consentMethod]);
+  }, [consentSending, allMatching, total, selectedIds, country, region, traderType, consentStatus, registrationSource, consentMethod]);
 
   const closeSendDialog = useCallback(() => {
     setActiveDialog(null);
@@ -718,12 +723,10 @@ function ActorsView() {
       */}
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <FilterSelect
-            id="filter-region"
-            label="Region"
-            value={region}
-            options={REGIONS.map((r) => ({ value: r, label: r }))}
-            onChange={(value) => handleFilterChange({ region: value })}
+          <CountryRegionFilters
+            country={country}
+            region={region}
+            onChange={(next) => handleFilterChange(next)}
             disabled={loading}
           />
           <FilterSelect

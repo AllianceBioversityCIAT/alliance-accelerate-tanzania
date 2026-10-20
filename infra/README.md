@@ -1,4 +1,4 @@
-# infra/ — ACCELERATE Tanzania dev AWS deployment (SAM / CloudFormation)
+# infra/ — PABRA Seed Actors Registry AWS deployment (SAM / CloudFormation)
 
 > **Operator runbook** for the **dev** AWS environment, defined as
 > Infrastructure-as-Code (**AWS SAM**, a CloudFormation transform). Spec:
@@ -10,8 +10,12 @@
 The environment runs the whole app: an **RDS MySQL** database, the **NestJS
 backend on Lambda + API Gateway (HTTP API)**, **Cognito** identities, and the
 **Next.js static export on S3 + CloudFront**. It is intentionally minimal —
-default VPC only, no custom domain (the CloudFront `*.cloudfront.net` URL *is*
-the app URL), no NAT / RDS Proxy / CI.
+default VPC only, no NAT / RDS Proxy. The app is served from
+`https://pabra-registry.alliance.cgiar.org` (ATP-88; a CNAME onto the CloudFront
+distribution, declared in the frontend stack), and the distribution's own
+`*.cloudfront.net` URL keeps working beside it. The former
+`accelerate-tz.alliance.cgiar.org` is retired (DNS removed, no redirect). Stack
+and resource names keep the original `accelerate-tz` prefix on purpose.
 
 > ⚠️ **Authoring vs live apply.** The SDD Implementer/Reviewer loop **authored and
 > locally validated** these templates and scripts (`sam validate`, `cfn-lint`,

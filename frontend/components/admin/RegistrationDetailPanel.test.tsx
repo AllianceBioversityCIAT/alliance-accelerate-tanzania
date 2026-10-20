@@ -112,6 +112,7 @@ function buildDetail(overrides: Partial<AdminRegistrationDetail> = {}): AdminReg
       marketLocation: 'Kilombero Market',
       sex: 'female',
       region: 'Arusha',
+      country: 'TZ',
       gpsLatitude: -3.3869,
       gpsLongitude: 36.683,
       crops: ['sorghum', 'common_bean'],
@@ -188,6 +189,8 @@ describe('RegistrationDetailPanel', () => {
     expect(screen.getByText('female')).toBeInTheDocument();
     // region — a row of its own, distinct from the 'Arusha Urban' district text node
     expect(screen.getByText('Arusha')).toBeInTheDocument();
+    // country — shown by name, never the bare code
+    expect(screen.getByText('Tanzania')).toBeInTheDocument();
     // crops -> cropLabel(['sorghum','common_bean']).join(', ')
     expect(screen.getByText('Sorghum, Common Bean')).toBeInTheDocument();
     // capacityTons

@@ -38,6 +38,7 @@ export function consentActorFixture(overrides: Record<string, unknown> = {}): Re
     id: CONSENT_ACTOR_ID,
     traderId: 'TZ-CONSENT-0042',
     traderName: CONSENT_TRADER_NAME,
+    country: 'TZ',
     region: 'Morogoro',
     district: 'Kilosa',
     traderType: 'seed_company',

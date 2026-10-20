@@ -89,7 +89,7 @@ function SubmittedView() {
           Submission received
         </h1>
         <p className="mt-2 max-w-prose text-sm text-muted">
-          Thank you for registering your organisation with ACCELERATE Tanzania.
+          Thank you for registering your organisation with the PABRA Seed Actors Registry.
         </p>
       </div>
 
@@ -99,7 +99,7 @@ function SubmittedView() {
         "What happens next" — FR-5 scenario 2 / design.md §5.4. This section
         describes ONLY 3a's behaviour (this submission exists and can be
         looked up) plus 3b's (a reviewer adjudicates it): a submission sits
-        with the ACCELERATE team until reviewed, and the outcome is reachable
+        with the PABRA team until reviewed, and the outcome is reachable
         by reference lookup at any time. It frames that lookup — NOT email —
         as the reliable channel, with email as a convenience that may not
         arrive (B32; the equal-channels framing this replaces is exactly what
@@ -136,7 +136,7 @@ function SubmittedView() {
           What happens next
         </h2>
         <p className="mt-2 max-w-prose text-sm text-fg">
-          A member of the ACCELERATE Tanzania team reviews every submission. Once a decision is
+          A member of the PABRA team reviews every submission. Once a decision is
           made, the most reliable way to find out is to look up your submission using your
           reference code and the email address you verified — you can do this at any time with
           the button above. We will also try to email you when a decision is made, but delivery

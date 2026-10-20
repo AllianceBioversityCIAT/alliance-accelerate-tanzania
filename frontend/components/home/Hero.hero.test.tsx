@@ -96,6 +96,15 @@ describe('Hero — with GSAP mocked', () => {
     expect(section).toBeInTheDocument();
   });
 
+  it('shows the field-photo carousel, with the Live Registry card pinned inside it', () => {
+    render(<Hero />);
+    const carousel = screen.getByRole('region', { name: 'Photos from the field' });
+    expect(carousel).toHaveAttribute('aria-roledescription', 'carousel');
+    expect(carousel).toContainElement(
+      screen.getByRole('region', { name: /live registry summary/i }),
+    );
+  });
+
   // LiveRegistryCard region must have its own accessible label
   it('renders the Live Registry region with accessible label', () => {
     render(<Hero />);

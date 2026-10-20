@@ -32,6 +32,7 @@ describe('ActorCreateDto', () => {
     const dto = plainToInstance(ActorCreateDto, {
       traderId: 'TZ-0002',
       traderName: 'Dodoma Groundnut Co-op',
+      country: 'TZ',
       region: 'Dodoma',
       traderType: 'cooperative',
       contactPerson: 'Halima Mrisho',
@@ -111,6 +112,36 @@ describe('ActorCreateDto', () => {
     expect(await invalidProps(dto)).toContain('region');
   });
 
+  it('rejects a missing country', async () => {
+    const input = { ...validInput } as Record<string, unknown>;
+    delete input.country;
+    expect(await invalidProps(plainToInstance(ActorCreateDto, input))).toContain('country');
+  });
+
+  it('rejects an unknown country', async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, country: 'XX' });
+    expect(await invalidProps(dto)).toContain('country');
+  });
+
+  it("rejects a region that belongs to another country, with the country-named message", async () => {
+    const dto = plainToInstance(ActorCreateDto, { ...validInput, country: 'KE', region: 'Mbeya' });
+    const errors = await validate(dto);
+    const region = errors.find((e) => e.property === 'region');
+    expect(Object.values(region?.constraints ?? {})).toContain(
+      "Region must be one of Kenya's regions.",
+    );
+  });
+
+  it('accepts a Kenyan actor with a Kenyan region', async () => {
+    const dto = plainToInstance(ActorCreateDto, {
+      ...validInput,
+      country: 'KE',
+      region: 'Mombasa',
+      phone: '+254712345678',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
   it('rejects a non-taxonomy traderType', async () => {
     const dto = plainToInstance(ActorCreateDto, {
       ...validInput,
@@ -179,6 +210,34 @@ describe('ListQueryDto', () => {
     expect(await validate(dto)).toHaveLength(0);
     expect(dto.page).toBe(1);
     expect(dto.pageSize).toBe(20);
+  });
+
+  it('accepts a country filter and rejects an unknown one', async () => {
+    expect(await validate(plainToInstance(ListQueryDto, { country: 'KE' }))).toHaveLength(0);
+    expect(await invalidProps(plainToInstance(ListQueryDto, { country: 'XX' }))).toContain('country');
+  });
+
+  it('rejects an unknown country or region with a short message, not the allowed list', async () => {
+    const messages = (await validate(plainToInstance(ListQueryDto, { country: 'XX', region: 'Atlantis' })))
+      .flatMap((e) => Object.values(e.constraints ?? {}));
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        'country must be the ISO code of an African country.',
+        'region is not a known region.',
+      ]),
+    );
+    expect(messages.every((m) => m.length < 100)).toBe(true);
+  });
+
+  it('accepts a region of any country on its own, but not a region of another country when country is set', async () => {
+    expect(await validate(plainToInstance(ListQueryDto, { region: 'Mombasa' }))).toHaveLength(0);
+    expect(await invalidProps(plainToInstance(ListQueryDto, { region: 'Atlantis' }))).toContain('region');
+    expect(
+      await invalidProps(plainToInstance(ListQueryDto, { country: 'TZ', region: 'Mombasa' })),
+    ).toContain('region');
+    expect(
+      await validate(plainToInstance(ListQueryDto, { country: 'KE', region: 'Mombasa' })),
+    ).toHaveLength(0);
   });
 
   it('rejects a non-positive page', async () => {

@@ -57,6 +57,7 @@ function fixtureActor(
     id: 'actor-granted-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
+    country: 'TZ',
     region: 'Arusha',
     district: 'Arusha Urban',
     traderType: 'seed_company',
@@ -236,6 +237,7 @@ function buildPrismaMock(initialActors: Record<string, unknown>[]) {
     if (where.consentStatus && actor.consentStatus !== where.consentStatus) {
       return false;
     }
+    if (where.country && actor.country !== where.country) return false;
     if (where.region && actor.region !== where.region) return false;
     if (where.traderType && actor.traderType !== where.traderType) return false;
     // T-8 — registrationSource + consentMethod filters (FR-9's enumeration
@@ -534,6 +536,31 @@ describe('Admin actors e2e (HTTP + in-memory Prisma)', () => {
 
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe('actor-denied-1');
+    });
+
+    it('filters by country and rejects an unknown country or a region of another country', async () => {
+      const tz = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?country=TZ')
+        .set(admin)
+        .expect(200);
+      expect(tz.body.total).toBeGreaterThan(0);
+      for (const row of tz.body.data) expect(row.country).toBe('TZ');
+
+      const ke = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?country=KE')
+        .set(admin)
+        .expect(200);
+      expect(ke.body.total).toBe(0);
+
+      await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?country=XX')
+        .set(admin)
+        .expect(400);
+      const mismatch = await request(app.getHttpServer())
+        .get('/api/v1/admin/actors?country=KE&region=Arusha')
+        .set(admin)
+        .expect(400);
+      expect(mismatch.body.details[0].field).toBe('region');
     });
 
     it('filters by region and traderType for Admin', async () => {

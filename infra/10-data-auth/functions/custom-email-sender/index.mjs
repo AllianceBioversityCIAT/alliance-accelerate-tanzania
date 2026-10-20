@@ -491,7 +491,7 @@ async function publishEnvelope(envelope, brokerConfig) {
 function resolveSenderIdentity() {
   return {
     senderAddress: requiredEnv('EMAIL_SENDER'),
-    senderName: process.env.EMAIL_SENDER_NAME ?? 'ACCELERATE Tanzania Seed Registry -',
+    senderName: process.env.EMAIL_SENDER_NAME ?? 'PABRA Seed Actors Registry -',
   };
 }
 

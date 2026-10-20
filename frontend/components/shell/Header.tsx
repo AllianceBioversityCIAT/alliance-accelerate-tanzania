@@ -24,7 +24,6 @@ const NAV_LINKS = [
   { label: 'Discovery Map', href: '/map', variant: 'default' as const },
   { label: 'Dashboard', href: '/dashboard', variant: 'default' as const },
   { label: 'Directory', href: '/directory', variant: 'default' as const },
-  { label: 'About', href: '/about', variant: 'default' as const },
   // T-10, FR-1: a public, unauthenticated entry point into the contact form
   // — plain-text treatment like every entry above, ahead of the primary CTA.
   { label: 'Contact', href: '/contact', variant: 'default' as const },
@@ -311,16 +310,16 @@ export default function Header() {
           <Link
             href="/"
             className="flex items-center gap-2.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-            aria-label="ACCELERATE Tanzania Seed Registry — home"
+            aria-label="PABRA Seed Actors Registry — home"
           >
-            {/* Official colour logo — alt="" because the Link aria-label already names it */}
+            {/* Official PABRA colour logo — alt="" because the Link aria-label already names it */}
             <Image
-              src="/brand/accelerate-logo-color.png"
-              width={867}
-              height={194}
+              src="/brand/pabra-logo.png"
+              width={291}
+              height={175}
               alt=""
               priority
-              className="h-8 w-auto sm:h-10 lg:h-8 xl:h-10"
+              className="h-10 w-auto sm:h-12"
             />
 
             {/*

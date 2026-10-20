@@ -21,6 +21,7 @@
 
 import React from 'react';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
@@ -106,6 +107,7 @@ const ROW_A: AdminRegistrationListRow = {
   traderType: 'seed_company',
   additionalTraderTypes: [],
   region: 'Arusha',
+  country: 'TZ',
   submittedAt: '2026-06-01T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 0,
@@ -118,6 +120,7 @@ const ROW_B: AdminRegistrationListRow = {
   traderType: 'cooperative',
   additionalTraderTypes: [],
   region: 'Dodoma',
+  country: 'TZ',
   submittedAt: '2026-05-15T00:00:00.000Z',
   status: 'PENDING_REVIEW',
   duplicateCandidateCount: 2,
@@ -264,8 +267,38 @@ describe('RegistrationsPage', () => {
 
   // R16 — region/traderType were checked alongside sort and found equally
   // unasserted for URL sync; added here too.
-  it('R16 — pushes the region query param onto the URL when the region filter changes (URL sync)', async () => {
-    await expectFieldChangePushesUrlParam('Region', 'Arusha', 'region=Arusha');
+  /** Opens the Country or Region filter (starting from `search`) and picks `option`. */
+  async function pickGeoFilter(label: 'Country' | 'Region', option: string, search = '') {
+    const user = userEvent.setup();
+    mockUseSearchParams.mockReturnValue(new URLSearchParams(search));
+    await renderAndWaitForList();
+    await waitFor(() => expect(screen.getByLabelText(label)).toBeEnabled());
+    await user.click(screen.getByLabelText(label));
+    await user.click(screen.getByRole('option', { name: option }));
+  }
+
+  it.each([
+    ['country', 'Country', 'Tanzania', '', 'country=TZ'],
+    ['region', 'Region', 'Arusha', 'country=TZ', 'region=Arusha'],
+  ] as const)(
+    'R16 — pushes the %s query param onto the URL when its filter changes (URL sync)',
+    async (_param, label, option, search, expected) => {
+      await pickGeoFilter(label, option, search);
+
+      await waitFor(() =>
+        expect(mockRouterReplace).toHaveBeenCalledWith(expect.stringContaining(expected), { scroll: false }),
+      );
+    },
+  );
+
+  it('clears a region that does not belong to the newly chosen country', async () => {
+    await pickGeoFilter('Country', 'Kenya', 'country=TZ&region=Arusha');
+
+    await waitFor(() => {
+      const url = mockRouterReplace.mock.calls.at(-1)![0] as string;
+      expect(url).toContain('country=KE');
+      expect(url).not.toContain('region=');
+    });
   });
 
   it('R16 — pushes the traderType query param onto the URL when the type filter changes (URL sync)', async () => {

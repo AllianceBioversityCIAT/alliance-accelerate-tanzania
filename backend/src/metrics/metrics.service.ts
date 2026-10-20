@@ -69,8 +69,8 @@ export class MetricsService {
     ] = await Promise.all([
       // actorsMapped — total consented actors mapped.
       this.prisma.actor.count({ where: GRANTED_ONLY }),
-      // regionsCovered — distinct regions among GRANTED actors.
-      this.prisma.actor.groupBy({ by: ['region'], where: GRANTED_ONLY }),
+      // regionsCovered — distinct (country, region) pairs among GRANTED actors.
+      this.prisma.actor.groupBy({ by: ['country', 'region'], where: GRANTED_ONLY }),
       // actorTypes — distinct traderTypes among GRANTED actors.
       this.prisma.actor.groupBy({ by: ['traderType'], where: GRANTED_ONLY }),
       // ...plus distinct additional types of GRANTED actors (equal weight).

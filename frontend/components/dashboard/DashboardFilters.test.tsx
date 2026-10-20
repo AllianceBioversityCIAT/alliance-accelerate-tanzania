@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DashboardFilters from './DashboardFilters';
 import type { ActorsQuery } from '@/lib/api/actors';
 
@@ -150,8 +151,9 @@ describe('DashboardFilters', () => {
       expect(screen.getByLabelText('Filter by crop')).toBeInTheDocument();
     });
 
-    it('has an accessible label for the region select', () => {
-      expect(screen.getByLabelText('Filter by region')).toBeInTheDocument();
+    it('has accessible labels for the country and region selects', () => {
+      expect(screen.getByLabelText(/^country$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^region$/i)).toBeInTheDocument();
     });
 
     it('has an accessible label for the district input', () => {
@@ -215,15 +217,24 @@ describe('DashboardFilters', () => {
   // ── Additional integration ───────────────────────────────────────────────
 
   describe('additional filter integration', () => {
-    it('calls onChange with region set and page reset when region is selected', () => {
+    it('sets the region and its country, and resets the page, when a region is picked with no country', async () => {
+      const user = userEvent.setup();
       const { onChange } = setup({ page: 5 });
 
-      fireEvent.change(screen.getByLabelText('Filter by region'), {
-        target: { value: 'Dodoma' },
-      });
+      await user.click(screen.getByLabelText(/^region$/i));
+      await user.click(screen.getByRole('option', { name: 'Dodoma (Tanzania)' }));
 
-      expect(onChange.mock.calls[0][0].region).toBe('Dodoma');
-      expect(onChange.mock.calls[0][0].page).toBe(1);
+      expect(onChange.mock.calls[0][0]).toMatchObject({ country: 'TZ', region: 'Dodoma', page: 1 });
+    });
+
+    it('clears a region that does not belong to the newly chosen country', async () => {
+      const user = userEvent.setup();
+      const { onChange } = setup({ country: 'TZ', region: 'Dodoma', page: 5 });
+
+      await user.click(screen.getByLabelText(/^country$/i));
+      await user.click(screen.getByRole('option', { name: 'Kenya' }));
+
+      expect(onChange.mock.calls[0][0]).toMatchObject({ country: 'KE', region: undefined, page: 1 });
     });
 
     it('calls onChange with role set and page reset when actor type is selected', () => {

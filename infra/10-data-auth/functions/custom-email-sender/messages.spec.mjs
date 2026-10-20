@@ -71,6 +71,14 @@ describe.each(BUILDERS)('%s message', (name, build) => {
     expect(message.html.toLowerCase()).not.toMatch(/\b(arrived|delivered|received)\b/);
   });
 
+  it('names the PABRA Seed Actors Registry and no older name', () => {
+    process.env.PUBLIC_APP_BASE_URL = 'https://configured.example.org';
+    const message = build(TO, CODE);
+    const all = `${message.subject}\n${message.text}\n${message.html}`;
+    expect(all).toContain('PABRA Seed Actors Registry');
+    expect(all).not.toMatch(/ACCELERATE|(?<!Actors )Seed Registry/i);
+  });
+
   it('carries the recipient address unchanged, for the caller to publish to', () => {
     process.env.PUBLIC_APP_BASE_URL = 'https://configured.example.org';
     const message = build(TO, CODE);

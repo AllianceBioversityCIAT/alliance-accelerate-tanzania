@@ -21,7 +21,7 @@ Parameters:
     Description: >-
       Public DNS name the app is served from, aliased onto this distribution.
       Empty falls back to the default *.cloudfront.net domain.
-    Default: accelerate-tz.alliance.cgiar.org
+    Default: pabra-registry.alliance.cgiar.org
   AcmCertificateId:
     Type: String
     Description: >-
@@ -31,7 +31,8 @@ Parameters:
       scripts/tests enforces that). The certificate MUST live in us-east-1:
       CloudFront reads certificates from that region only, whatever region the
       stack itself is deployed in. This one is the *.alliance.cgiar.org
-      wildcard, which covers accelerate-tz.alliance.cgiar.org.
+      wildcard, which covers pabra-registry.alliance.cgiar.org (ATP-88; the
+      former accelerate-tz.alliance.cgiar.org was retired, DNS removed).
     Default: e4741547-0e83-4c0a-b430-550d3782cdf2
 
 Conditions:
@@ -156,7 +157,8 @@ Resources:
           # request of a session in the clear. This closes that window.
           # Preload is false ON PURPOSE: the site is on a shared
           # *.cloudfront.net domain, and preloading is submitted per-domain and
-          # effectively irreversible. Revisit when a custom domain is adopted.
+          # effectively irreversible. The custom domain sits under the shared
+          # alliance.cgiar.org, which this project does not own, so it stays false.
           StrictTransportSecurity:
             AccessControlMaxAgeSec: 31536000
             IncludeSubdomains: true

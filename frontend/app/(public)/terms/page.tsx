@@ -13,8 +13,8 @@ import LegalDocumentView from '@/components/legal/LegalDocumentView';
 import { TERMS_OF_USE } from '@/lib/content/legal/terms';
 
 export const metadata: Metadata = {
-  title: 'Terms of Use — ACCELERATE Tanzania Seed Registry',
-  description: 'The terms that govern use of the ACCELERATE Tanzania seed registry.',
+  title: 'Terms of Use — PABRA Seed Actors Registry',
+  description: 'The terms that govern use of the PABRA Seed Actors Registry.',
 };
 
 export default function TermsPage() {

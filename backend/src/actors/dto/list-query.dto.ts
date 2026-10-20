@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { CANONICAL_REGIONS, TRADER_TYPES } from '../../common/normalize';
+import { TRADER_TYPES } from '../../common/normalize';
+import { ALL_REGION_NAMES, COUNTRY_CODES, UNKNOWN_COUNTRY, UNKNOWN_REGION } from '../../common/geo/countries';
+import { IsRegionOfCountryFilter } from '../../common/region-of-country.validator';
 
 /**
  * T-3 — Validated query DTO for `GET /api/v1/actors` (NFR-4, FR-6).
@@ -48,8 +50,14 @@ export class ListQueryDto {
   @IsIn(TRADER_TYPES as readonly string[])
   role?: string;
 
+  /** ISO 3166-1 alpha-2 country code. */
   @IsOptional()
-  @IsIn(CANONICAL_REGIONS as readonly string[])
+  @IsIn(COUNTRY_CODES, UNKNOWN_COUNTRY)
+  country?: string;
+
+  @IsOptional()
+  @IsIn(ALL_REGION_NAMES, UNKNOWN_REGION)
+  @IsRegionOfCountryFilter()
   region?: string;
 
   /**

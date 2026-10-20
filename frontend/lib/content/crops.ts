@@ -66,7 +66,7 @@ export const CROPS: CropContent[] = [
     slug: 'sorghum',
     name: 'Sorghum',
     description:
-      'A drought-tolerant staple crop central to Tanzania’s food security agenda, with a growing network of certified seed producers and agro-dealer distributors along formal value chains.',
+      'A drought-tolerant staple crop central to food security across Africa, with a growing network of certified seed producers and agro-dealer distributors along formal value chains.',
     // System Design §7: sorghum → crop-sorghum token (#C9821B)
     tokenClass: 'crop-sorghum',
     image: '/crops/sorghum.webp',
@@ -76,7 +76,7 @@ export const CROPS: CropContent[] = [
     slug: 'common_bean',
     name: 'Common Bean',
     description:
-      'Tanzania’s most widely traded legume, linking smallholder producers to regional cooperatives, offtakers, and institutional buyers across multiple market segments.',
+      'One of Africa’s most widely traded legumes, linking smallholder producers to regional cooperatives, offtakers, and institutional buyers across multiple market segments.',
     // System Design §7: common_bean → crop-bean token (#7A3B2E)
     tokenClass: 'crop-bean',
     image: '/crops/common-bean.webp',
@@ -86,7 +86,7 @@ export const CROPS: CropContent[] = [
     slug: 'groundnut',
     name: 'Groundnut',
     description:
-      'A high-value oil crop connecting seed companies, processors, and export-oriented agribusinesses within an expanding Tanzanian seed-system value chain.',
+      'A high-value oil crop connecting seed companies, processors, and export-oriented agribusinesses within an expanding African seed-system value chain.',
     // System Design §7: groundnut → crop-groundnut token (#8A8D2B)
     tokenClass: 'crop-groundnut',
     image: '/crops/groundnut.webp',

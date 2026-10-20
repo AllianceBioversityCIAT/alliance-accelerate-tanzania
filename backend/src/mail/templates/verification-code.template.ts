@@ -25,7 +25,7 @@ const OTP_LIFETIME_MINUTES = OTP_LIFETIME_MS / (60 * 1000);
 export function buildVerificationCodeMessage(to: string, code: string): MailMessage {
   return {
     to,
-    subject: 'Your ACCELERATE Tanzania verification code',
+    subject: 'Your PABRA Seed Actors Registry verification code',
     text:
       `Your verification code is ${code}. It expires in ${OTP_LIFETIME_MINUTES} minutes.\n\n` +
       'If you did not request this code, you can ignore this message.',

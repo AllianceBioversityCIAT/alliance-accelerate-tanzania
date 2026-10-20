@@ -5,7 +5,7 @@
  * matching clauses — and design.md §5.4.
  *
  * Every expected value is drawn directly from FR-1's scenarios and the real
- * `REGIONS` strings in lib/content/regions.ts (Kaskazini/Kusini Pemba,
+ * region strings in lib/content/countries.ts (Kaskazini/Kusini Pemba,
  * Kusini Unguja) — this file has no knowledge of regions itself, it just
  * reuses those literal strings as realistic candidates.
  */

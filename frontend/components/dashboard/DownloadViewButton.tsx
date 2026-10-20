@@ -38,7 +38,7 @@ export interface DownloadViewButtonProps {
   kpis: DashboardKpis;
   /**
    * Base name for the downloaded file (without .csv extension).
-   * Defaults to "accelerate-tz-actors".
+   * Defaults to "pabra-seed-registry-actors".
    */
   filenameBase?: string;
 }
@@ -67,7 +67,7 @@ function isoDateSuffix(): string {
 export default function DownloadViewButton({
   actors,
   kpis,
-  filenameBase = 'accelerate-tz-actors',
+  filenameBase = 'pabra-seed-registry-actors',
 }: DownloadViewButtonProps) {
   function handleDownload() {
     // 1. Build the contact-block-free CSV (allowlist enforced inside buildDashboardCsv).

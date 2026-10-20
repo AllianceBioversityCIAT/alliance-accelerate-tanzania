@@ -59,7 +59,7 @@ export default function AboutStrip() {
 
             {/* Eyebrow pill */}
             <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
-              About the project
+              Where it started
             </span>
 
             {/* Section heading — exactly one h2, no h1 */}
@@ -91,7 +91,9 @@ export default function AboutStrip() {
               formal seed sector. Most farmers still plant old, low-yielding
               varieties that are vulnerable to climate stress. ACCELERATE closes
               that gap by connecting seed producers with the traders, processors,
-              and institutions that actually drive demand.
+              and institutions that actually drive demand. The registry is now
+              run by PABRA, the Pan-Africa Bean Research Alliance &mdash; a
+              partnership across more than 30 African countries.
             </p>
 
             {/* CTA */}
