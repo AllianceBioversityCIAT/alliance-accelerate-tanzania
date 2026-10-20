@@ -46,10 +46,10 @@ ACCELERATE focused on three priority value chains (the registry keeps them), eac
 The platform transforms fragmented, static CSV/Excel datasets into a **living, centralized, scalable web system** that any stakeholder can browse, search, and analyze:
 
 - **Public Registry Portal** — landing page with headline metrics and a searchable, paginated actor directory.
-- **Geospatial Visualization** — interactive Leaflet map of actor locations with crop, country, region, capacity, and trader-type filters.
+- **Geospatial Visualization** — interactive Leaflet map of actor locations with crop, trader-type, country, and region filters.
 - **Actor Profiles** — standardized profile pages backed by a canonical relational schema.
 - **Data Management & Admin** — protected admin UI for CRUD operations with role-based access control.
-- **Import / Export** — CSV bulk import for initial seeding; filtered CSV export that respects data-protection rules.
+- **Import / Export** — `.xlsx` bulk import (template v6, with a Country column); public dashboard CSV download of the current view, without contact data.
 
 ## Tech Stack
 

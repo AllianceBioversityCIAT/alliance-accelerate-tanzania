@@ -1,7 +1,7 @@
 # System Design — UI/UX Blueprint — PABRA Seed Actors Registry
 
 > The visual and interaction system. Not low-level technical implementation (see `docs/trd/trd.md` for that).
-> Constitutional baseline. Last reviewed: 2026-06-22.
+> Constitutional baseline. Last reviewed: 2026-10-20.
 
 ## 1. Product Experience Principles
 
@@ -41,12 +41,11 @@
                            consent), plus the interactive client island
                            (ConsentChoiceControl) to change a prior consent choice. This is
                            where the consent banner's policy link lands.
-/terms                    Terms of Use — CIAT's approved text, v1.0. Presents no acceptance
-                           control: nobody accepts this document, only the consent policy
-                           is accepted, and only by an applicant registering an organisation.
-                           Ships with Legal's own unfilled fields (an "Insert Date" effective
-                           date, an unfilled contact block) — see the note below the block.
-/privacy                  Privacy Policy — CIAT's approved text, v1.0. Covers the registry as a
+/terms                    Terms of Use — CIAT's approved text, v1.1 (effective 20 October
+                           2026). Presents no acceptance control: nobody accepts this
+                           document, only the consent policy is accepted, and only by an
+                           applicant registering an organisation.
+/privacy                  Privacy Policy — CIAT's approved text, v1.1 (effective 20 October 2026). Covers the registry as a
                            whole: what is collected, why, the public nature of publication,
                            international storage, data-subject rights, and Legal's own
                            Cookies section carried verbatim with an onward pointer to
@@ -122,7 +121,7 @@
 
 - **Explore (Public):** *(first visit only)* consent banner → accept or reject analytics → Landing → see metrics → Directory (search/filter/paginate) → Actor profile (renders only for a `GRANTED` actor — Contact section included; a non-consented actor's profile route 404s, so the whole page is absent, not the section masked) → optionally jump to Map centered on that actor.
   - The consent banner **overlays** the landing page, it does not gate it: every public route stays reachable while the decision is pending, and the choice persists so the banner is not shown again.
-- **Spatial analysis (Public):** Landing → Map → apply Crop/Region/Capacity/Trader-type filters (an actor matches on its main type or any additional type) → click marker → mini-profile popup → open full profile.
+- **Spatial analysis (Public):** Landing → Map → apply Crop/Trader-type/Country/Region filters (an actor matches on its main type or any additional type) → click marker → mini-profile popup → open full profile.
 - **Data entry (Staff):** Login → Admin → Actors table → New/Edit → validated form → save → confirmation toast → record visible in directory.
 - **Bulk seed (Admin):** Login → Admin → Import → upload CSV → preview mapping + validation summary → confirm → per-row result report.
 
@@ -154,10 +153,12 @@
 | Forgot password | Staff / Admin | Self-service password reset request, via Cognito: step 1 collects an email and requests a reset code (neutral, enumeration-safe notice either way); step 2 collects the code plus a new password (email pre-filled, editable) and confirms the reset, then routes to `/login?reset=success`. Accessible error region (`role="alert"`, `aria-live="assertive"`) on failure; no code or password ever placed in a URL. |
 | Contact | Public | Name, email, organization, category, subject, message, consent acknowledgment; visually hidden honeypot; values preserved on failed submit; success/error announced via `aria-live`. Relays to the current Cognito `admin` group server-side — no sign-in required, nothing stored. |
 | Cookie Notice | Public | The factual inventory of what this site's cookies actually set today: Google Analytics only, and only once consent is given (never before) — the four signals it collects by default (page views, sessions, geographic origin — country, region *and city*, derived from IP — device/browser), Google as recipient, and the `ConsentChoiceControl` island to change a prior choice, rendered as a sibling **immediately after** the "Changing your choice" section — outside that section's `aria-labelledby` region, not within it. States the withdrawal asymmetry explicitly: accepting takes effect immediately, rejecting from the next page load — and that the site does not delete cookies already set. This is where the consent banner's link — accessible name "cookie notice" — lands. |
-| Terms of Use | Public | CIAT's approved Terms, **v1.0**. Purpose, registry content, no-verification/no-endorsement, responsibility for submitted information, public nature, user conduct (including a no-scraping clause), third-party interactions, IP, privacy pointer, profile removal, availability, warranty disclaimer, liability limit, indemnification, use of the CIAT name, dispute resolution (UNCITRAL arbitration, Nairobi) and privileges-and-immunities reservation. **Presents no acceptance control** — nobody accepts this document; only the consent policy is accepted, and only by an applicant registering an organisation. Ships with Legal's own unfilled fields (`Insert Date`, `Insert Email`, `Insert Address`, `Insert Telephone Number`) — **not yet publishable**; see the note below §4. |
-| Privacy | Public | CIAT's approved Privacy Policy, **v1.0**, covering the registry as a whole: who is responsible, what is collected, how, why, the public nature of publication, business and location data, international storage (Ireland), legal basis, accuracy and authority, sharing, retention, data-subject rights, security, **Legal's Cookies section carried verbatim** with an onward pointer to Cookie Notice, contact, and change history. The narrow-scope limitation clause it previously carried was **removed** once the approved policy made it false. No client island. **Plus one engineering-authored section** — *Messages sent through the contact form*, with three sub-headings (who receives it · relayed and not stored · not consent to publish) — placed before Contact Us. These are **three** engineering facts; the fourth part of that obligation, what a submission collects, is discharged by Legal's own *Information We Collect*. Ships with Legal's unfilled fields — **not yet publishable**. |
+| Terms of Use | Public | CIAT's approved Terms, **v1.1**, effective 20 October 2026. Purpose, registry content, no-verification/no-endorsement, responsibility for submitted information, public nature, user conduct (including a no-scraping clause), third-party interactions, IP, privacy pointer, profile removal, availability, warranty disclaimer, liability limit, indemnification, use of the CIAT name, dispute resolution (UNCITRAL arbitration, Nairobi) and privileges-and-immunities reservation. **Presents no acceptance control** — nobody accepts this document; only the consent policy is accepted, and only by an applicant registering an organisation. Ships with Legal's own unfilled fields (`Insert Date`, `Insert Email`, `Insert Address`, `Insert Telephone Number`) — **not yet publishable**; see the note below §4. |
+| Privacy | Public | CIAT's approved Privacy Policy, **v1.1**, effective 20 October 2026, covering the registry as a whole: who is responsible, what is collected, how, why, the public nature of publication, business and location data, international storage (Ireland — stored and processed outside Africa), legal basis, accuracy and authority, sharing, retention, data-subject rights, security, **Legal's Cookies section carried verbatim** with an onward pointer to Cookie Notice, contact, and change history. The narrow-scope limitation clause it previously carried was **removed** once the approved policy made it false. No client island. **Plus one engineering-authored section** — *Messages sent through the contact form*, with three sub-headings (who receives it · relayed and not stored · not consent to publish) — placed before Contact Us. These are **three** engineering facts; the fourth part of that obligation, what a submission collects, is discharged by Legal's own *Information We Collect*. Ships with Legal's unfilled fields — **not yet publishable**. |
 
-> **Both legal pages ship with Legal's own unfilled fields and are NOT yet publishable.**
+> **Resolved — both legal pages are publishable.** Legal's unfilled fields were filled (Terms 2026-09-25, Privacy 2026-09-28); both inventory tests now pin an empty list. The note below is kept as the record of the defect.
+>
+> *Original note:* **Both legal pages ship with Legal's own unfilled fields and are NOT yet publishable.**
 > `/terms` and `/privacy` render `Effective Insert Date`, `Insert CIAT Legal Entity`, `Insert Email`, `Insert Address`,
 > `Insert Telephone Number` and blank contact values — CIAT delivered the texts with those fields outstanding, and
 > engineering carries Legal's prose verbatim rather than inventing values. The consequence is concrete: a data subject
@@ -195,7 +196,7 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 
 ```css
 /* Brand / semantic colors (define in tailwind.config + CSS vars) */
---color-primary:        #1F4E8C;  /* Royal Blue (official ACCELERATE brand) — primary actions, brand, headings */
+--color-primary:        #1F4E8C;  /* Royal Blue (palette inherited from ACCELERATE) — primary actions, brand, headings */
 --color-primary-hover:  #163A66;  /* darker blue hover/active state */
 --color-primary-fg:     #FFFFFF;
 --color-primary-soft:    #E8EEF6;  /* ~10% blue over white — icon chips / soft accents */
