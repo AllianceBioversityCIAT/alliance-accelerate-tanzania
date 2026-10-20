@@ -50,11 +50,11 @@ describe('LandingCTA', () => {
 
   // ── (c) Review-before-publication fact is stated (FR-1 disqualifying clause) ──
 
-  it('states that submissions are reviewed by the ACCELERATE team before publication', () => {
+  it('states that submissions are reviewed by the PABRA team before publication', () => {
     render(<LandingCTA />);
 
     expect(
-      screen.getByText(/reviewed by the accelerate team before it is published/i)
+      screen.getByText(/reviewed by the pabra team before it is published/i)
     ).toBeInTheDocument();
   });
 

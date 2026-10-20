@@ -46,6 +46,9 @@ jest.mock('next/navigation', () => ({
 const { useActors } = require('@/lib/api/useActors') as {
   useActors: jest.Mock;
 };
+const { useSearchParams } = require('next/navigation') as {
+  useSearchParams: jest.Mock;
+};
 /* eslint-enable */
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -54,6 +57,7 @@ const ACTOR_A: PublicActor = {
   id: 'actor-1',
   traderName: 'Dodoma Seeds Ltd',
   region: 'Dodoma',
+  country: 'TZ',
   district: 'Dodoma Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -68,6 +72,7 @@ const ACTOR_B: PublicActor = {
   id: 'actor-2',
   traderName: 'Mbeya Cooperative',
   region: 'Mbeya',
+  country: 'TZ',
   district: null,
   traderType: 'cooperative',
   additionalTraderTypes: [],
@@ -105,6 +110,16 @@ const MULTI_PAGE_LIST: PublicActorList = {
 describe('DirectoryView', () => {
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('reads country and region from the URL and queries with both', () => {
+    useSearchParams.mockReturnValueOnce(new URLSearchParams('country=KE&region=Nakuru'));
+    useActors.mockReturnValue({ data: ACTOR_LIST, loading: false, error: false });
+    render(<DirectoryView />);
+
+    expect(useActors).toHaveBeenCalledWith(
+      expect.objectContaining({ country: 'KE', region: 'Nakuru' }),
+    );
   });
 
   // ── (a) Loaded state — grid renders with actor names ──────────────────────

@@ -1,4 +1,4 @@
-# Role: JCSPECS Software Leader (Orchestrator) — ACCELERATE Tanzania Seed Registry
+# Role: JCSPECS Software Leader (Orchestrator) — PABRA Seed Actors Registry
 
 You are the specialized **Software Leader** agentic team member in the JCSPECS SDD process.
 

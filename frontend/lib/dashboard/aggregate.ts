@@ -8,6 +8,7 @@
  */
 
 import type { PublicActor } from '@/lib/api/actors';
+import { countryName } from '@/lib/content/countries';
 
 // ── Output types ────────────────────────────────────────────────────────────
 
@@ -33,8 +34,8 @@ export interface DashboardKpis {
 
 export interface DashboardAggregate {
   kpis: DashboardKpis;
-  /** Sum of capacityTons per region (reporting actors only), desc by value. */
-  capacityByRegion: DashboardSeriesPoint[];
+  /** Sum of capacityTons per country (reporting actors only), desc by value. */
+  capacityByCountry: DashboardSeriesPoint[];
   /**
    * Actor count per crop slug; only crops that actually occur are included,
    * desc by value. An actor counts toward each of its listed crops.
@@ -81,14 +82,14 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
   const regionSet = new Set<string>();
   const typeSet = new Set<string>();
   const capacityValues: number[] = [];
-  const regionCapacity = new Map<string, number>();
+  const countryCapacity = new Map<string, number>();
   const cropCount = new Map<string, number>();
   const typeCount = new Map<string, number>();
 
   for (const actor of actors) {
     // --- Distinct sets (all actors) ---
     if (actor.region && actor.region.trim() !== '') {
-      regionSet.add(actor.region);
+      regionSet.add(`${actor.country}|${actor.region}`);
     }
     const types = [actor.traderType, ...(actor.additionalTraderTypes ?? [])];
     for (const t of types) typeSet.add(t);
@@ -96,8 +97,7 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     // --- Capacity reporting subset ---
     if (isReporting(actor.capacityTons)) {
       capacityValues.push(actor.capacityTons);
-      const prev = regionCapacity.get(actor.region) ?? 0;
-      regionCapacity.set(actor.region, prev + actor.capacityTons);
+      countryCapacity.set(actor.country, (countryCapacity.get(actor.country) ?? 0) + actor.capacityTons);
     }
 
     // --- byType (all actors) ---
@@ -124,8 +124,8 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
   };
 
   // --- Series ---
-  const capacityByRegion: DashboardSeriesPoint[] = sortDesc(
-    Array.from(regionCapacity.entries()).map(([label, value]) => ({ label, value })),
+  const capacityByCountry: DashboardSeriesPoint[] = sortDesc(
+    Array.from(countryCapacity.entries()).map(([country, value]) => ({ label: countryName(country), value })),
   );
 
   const byCrop: DashboardSeriesPoint[] = sortDesc(
@@ -136,5 +136,5 @@ export function aggregate(actors: PublicActor[]): DashboardAggregate {
     Array.from(typeCount.entries()).map(([label, value]) => ({ label, value })),
   );
 
-  return { kpis, capacityByRegion, byCrop, byType };
+  return { kpis, capacityByCountry, byCrop, byType };
 }

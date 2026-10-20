@@ -90,7 +90,7 @@ describe('Header — Public (unauthenticated)', () => {
     renderHeader();
 
     // Brand accessible label
-    expect(screen.getByRole('link', { name: /accelerate tanzania seed registry/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /pabra seed actors registry/i })).toBeInTheDocument();
 
     // Primary nav links (rendered at least once — desktop nav)
     expect(screen.getAllByRole('link', { name: /home/i }).length).toBeGreaterThanOrEqual(1);
@@ -100,10 +100,9 @@ describe('Header — Public (unauthenticated)', () => {
     const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
     expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
     expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
-    // FR-9: About link present in nav (desktop + mobile = 2 occurrences)
-    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
-    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
-    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
+    // About left the primary nav (rebrand): /about is the origin story, reached
+    // from the home page and the footer's "Our story".
+    expect(screen.queryByRole('link', { name: /^about$/i })).toBeNull();
   });
 });
 
@@ -160,10 +159,7 @@ describe('Header — authenticated (Staff)', () => {
     const dashboardLinks = screen.getAllByRole('link', { name: /^dashboard$/i });
     expect(dashboardLinks.length).toBeGreaterThanOrEqual(1);
     expect(dashboardLinks[0]).toHaveAttribute('href', '/dashboard');
-    // FR-9: About link present for authenticated users too
-    const aboutLinks = screen.getAllByRole('link', { name: /^about$/i });
-    expect(aboutLinks.length).toBeGreaterThanOrEqual(1);
-    expect(aboutLinks[0]).toHaveAttribute('href', '/about');
+    expect(screen.queryByRole('link', { name: /^about$/i })).toBeNull();
   });
 });
 
@@ -239,7 +235,7 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
     // Regression for the additive-prop constraint: existing entries must
     // render unchanged. A default-variant link never carries the
     // primary-variant's solid background class.
-    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^about$/i, /^contact$/i]) {
+    for (const name of [/discovery map/i, /^dashboard$/i, /directory/i, /^contact$/i]) {
       const [link] = screen.getAllByRole('link', { name });
       expect(link.className).not.toContain('bg-primary');
       expect(link.className).not.toContain('text-primary-fg');
@@ -266,20 +262,30 @@ describe('Header — Register entry (T-15, FR-1 "Nav entry" scenario)', () => {
 
     // The brand Link still points at '/' and still names itself as home, so
     // removing the duplicate entry cost no route and no accessible name.
-    const brand = screen.getByRole('link', { name: /accelerate tanzania seed registry.*home/i });
+    const brand = screen.getByRole('link', { name: /pabra seed actors registry.*home/i });
     expect(brand).toHaveAttribute('href', '/');
 
     // No nav item whose accessible name is exactly "Home".
     expect(screen.queryAllByRole('link', { name: /^home$/i })).toHaveLength(0);
   });
 
-  it('does not render the "Tanzania Seed Registry" descriptor in the bar', () => {
+  it('shows the PABRA logo as the brand mark, not the ACCELERATE one', () => {
+    const { container } = renderHeader();
+
+    const brand = screen.getByRole('link', { name: 'PABRA Seed Actors Registry — home' });
+    const img = brand.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(decodeURIComponent(img!.getAttribute('src') ?? '')).toContain('/brand/pabra-logo.png');
+    expect(container.innerHTML).not.toContain('accelerate-logo');
+  });
+
+  it('does not render the "Seed Registry" descriptor in the bar', () => {
     renderHeader();
 
     // Removed rather than deferred to a wider breakpoint: the container is
     // max-w-7xl, so usable width is capped at 1216px and never grows with the
     // viewport — there is no screen wide enough for the descriptor to fit.
-    expect(screen.queryByText(/tanzania seed registry/i)).toBeNull();
+    expect(screen.queryByText(/seed registry/i)).toBeNull();
   });
 
   it('switches between the mobile drawer and the desktop bar at lg, not md', () => {

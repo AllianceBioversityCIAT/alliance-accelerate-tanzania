@@ -44,7 +44,7 @@ jest.mock('amqplib');
 const config: MicroserviceEnvelopeConfig = {
   apiKey: 'test-api-key',
   senderAddress: 'registry@example.org',
-  senderName: 'ACCELERATE Tanzania Seed Registry -',
+  senderName: 'PABRA Seed Actors Registry -',
 };
 
 describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
@@ -63,7 +63,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
         data: {
           from: {
             email: 'registry@example.org',
-            name: 'ACCELERATE Tanzania Seed Registry -',
+            name: 'PABRA Seed Actors Registry -',
           },
           emailBody: {
             subject: 'Registration received — REG-2026-0007',
@@ -200,7 +200,7 @@ describe('buildMicroserviceEnvelope (design.md §4.2)', () => {
 
     expect(from).toEqual({
       email: 'registry@example.org',
-      name: 'ACCELERATE Tanzania Seed Registry -',
+      name: 'PABRA Seed Actors Registry -',
     });
     expect(from.email).not.toContain('<');
     expect(from.name).not.toContain('<');

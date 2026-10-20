@@ -36,6 +36,8 @@ import { apiGet } from './client';
 export interface PublicActorListItem {
   id: string;
   traderName: string;
+  /** ISO 3166-1 alpha-2, e.g. `TZ`. */
+  country: string;
   region: string;
   // `district`, `capacityTons`, and `gps` are PRE-EXISTING divergences from
   // the backend's required-nullable declarations (role-aware.serializer.ts
@@ -97,6 +99,7 @@ export interface PublicActorDetail extends PublicActorListItem {
 export interface ActorsQuery {
   crop?: string;
   role?: string;
+  country?: string;
   region?: string;
   search?: string;
   page?: number;
@@ -132,6 +135,7 @@ export async function getActors(query?: ActorsQuery): Promise<PublicActorList | 
     if (query) {
       if (query.crop      != null) params.set('crop',     query.crop);
       if (query.role      != null) params.set('role',     query.role);
+      if (query.country   != null) params.set('country',  query.country);
       if (query.region    != null) params.set('region',   query.region);
       if (query.search    != null) params.set('search',   query.search);
       if (query.page        != null) params.set('page',        String(query.page));

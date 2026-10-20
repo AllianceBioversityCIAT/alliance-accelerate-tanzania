@@ -21,6 +21,7 @@ describe('encodeFilters / decodeFilters round-trip', () => {
     const q: ActorsQuery = {
       crop: 'sorghum',
       role: 'seed_company',
+      country: 'TZ',
       region: 'Dodoma',
       district: 'Dodoma Urban',
       search: 'green',
@@ -151,5 +152,12 @@ describe('decodeFilters — zero is a valid capacityMin / capacityMax', () => {
     const result = decodeFilters(params);
 
     expect(result.capacityMin).toBe(0);
+  });
+});
+
+describe('decodeFilters — country/region pair', () => {
+  it('drops a hand-edited region that is not in the country', () => {
+    const result = decodeFilters(new URLSearchParams('country=KE&region=Arusha'));
+    expect(result).toEqual({ country: 'KE' });
   });
 });

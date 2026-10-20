@@ -43,6 +43,7 @@ export default function DashboardMapPanel({
   error,
   selectedActorId,
   onSelectActor,
+  country,
 }: DashboardMapPanelProps) {
   return (
     /*
@@ -81,6 +82,7 @@ export default function DashboardMapPanel({
           error={error}
           selectedActorId={selectedActorId}
           onSelectActor={onSelectActor}
+          country={country}
         />
       </div>
     </section>

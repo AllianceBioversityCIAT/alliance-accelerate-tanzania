@@ -186,7 +186,7 @@ beforeEach(() => {
 
   process.env.CUSTOM_EMAIL_SENDER_KEY_ARN = KEY_ARN;
   process.env.BACKEND_STACK_NAME = 'accelerate-tz-dev-backend';
-  process.env.EMAIL_SENDER = 'alliance-acceleratetz-no-reply@cgiar.org';
+  process.env.EMAIL_SENDER = 'pabra-registry-no-reply@cgiar.org';
   process.env.PUBLIC_APP_BASE_URL = 'https://example.cloudfront.net';
 
   decryptMock.mockResolvedValue({
@@ -444,8 +444,8 @@ describe('DD-3a — the published envelope mirrors buildMicroserviceEnvelope\'s 
         apiKey: SECRET.apiKey,
         data: {
           from: {
-            email: 'alliance-acceleratetz-no-reply@cgiar.org',
-            name: 'ACCELERATE Tanzania Seed Registry -',
+            email: 'pabra-registry-no-reply@cgiar.org',
+            name: 'PABRA Seed Actors Registry -',
           },
           emailBody: {
             subject: expect.any(String),

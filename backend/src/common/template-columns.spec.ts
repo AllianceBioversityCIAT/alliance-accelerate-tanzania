@@ -1,5 +1,5 @@
 import { ConsentMethod, ConsentStatus } from '@prisma/client';
-import { CANONICAL_REGIONS, TRADER_TYPES } from './normalize';
+import { TRADER_TYPES } from './normalize';
 import { INTAKE_REQUIRED_FIELDS } from './intake-contract';
 import { ADMIN_ASSERTABLE_CONSENT_METHODS } from './consent-methods';
 import {
@@ -25,7 +25,7 @@ describe('template-columns', () => {
   };
 
   it('exports the template version stamp', () => {
-    expect(TEMPLATE_VERSION).toBe('v5');
+    expect(TEMPLATE_VERSION).toBe('v6');
   });
 
   it('lists columns in the exact field-staff order', () => {
@@ -33,6 +33,7 @@ describe('template-columns', () => {
       'traderName',
       'traderType',
       'additionalTraderTypes',
+      'country',
       'region',
       'district',
       'marketLocation',
@@ -85,6 +86,7 @@ describe('template-columns', () => {
       traderName: true,
       traderType: true,
       additionalTraderTypes: false,
+      country: true,
       region: true,
       district: false,
       marketLocation: false,
@@ -130,12 +132,20 @@ describe('template-columns', () => {
       (c) => c.field,
     );
     expect(required.sort()).toEqual(
-      ['traderName', 'traderType', 'region', 'contactPerson', 'capacityTons', 'phone', 'email'].sort(),
+      ['traderName', 'traderType', 'country', 'region', 'contactPerson', 'capacityTons', 'phone', 'email'].sort(),
     );
   });
 
-  it('enforces region allowed values equal to the canonical regions', () => {
-    expect(byField('region').allowedValues).toEqual([...CANONICAL_REGIONS]);
+  it('places Country immediately before Region, Country as a name dropdown and Region as a dependent dropdown', () => {
+    const fields = TEMPLATE_COLUMNS.map((c) => c.field);
+    expect(fields.indexOf('country')).toBe(fields.indexOf('region') - 1);
+    expect(byField('country').header).toBe('Country');
+    expect(byField('country').allowedValues).toHaveLength(54);
+    // The region list is per country (generator defined names), not a column list.
+    expect(byField('region').allowedValues).toBeUndefined();
+    expect(byField('phone').format).toBe(
+      'International format, e.g. +255 7XX XXX XXX (other countries: + country code)',
+    );
   });
 
   it('enforces trader-type allowed values equal to the canonical taxonomy', () => {

@@ -18,7 +18,7 @@
 //
 // Original seed-map spec's T-2 baseline remains (unrelated to
 // enhancement/map-coordinate-picker's own T-2, `map-constants.ts`, below):
-//   - OSM TileLayer, Tanzania center/bounds, container aria-label (NFR-3).
+//   - OSM TileLayer, Africa bounds, container aria-label (NFR-3).
 //   - useRef + useEffect lifecycle (init once, remove on unmount).
 
 import L from 'leaflet';
@@ -31,16 +31,17 @@ import { ROLE_CSS_VAR } from './RoleBadge';
 import ActorPopup from './ActorPopup';
 import MapLegend from './MapLegend';
 import {
-  TANZANIA_CENTER,
-  TANZANIA_BOUNDS,
+  AFRICA_BOUNDS,
   OSM_TILE_URL,
   OSM_ATTRIBUTION,
 } from './map-constants';
+import { countryBounds } from '@/lib/content/countries';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-// Suitable initial zoom level for the Tanzania overview.
-const INITIAL_ZOOM = 6;
+// Closest zoom the fit-to-actors view will pick (a lone actor must not zoom to street level).
+const FIT_MAX_ZOOM = 10;
+const FIT_PADDING: L.PointExpression = [40, 40];
 // Zoom level used when flying to a single actor.
 const ACTOR_ZOOM = 11;
 
@@ -137,6 +138,8 @@ export interface LeafletMapProps {
    * Callback fired when a pin is clicked — updates page-level selectedActorId.
    */
   onSelectActor: (id: string | null) => void;
+  /** Country filter; when set the view frames that country (and any actor outside it). */
+  country?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -145,6 +148,7 @@ export default function LeafletMap({
   actors,
   selectedActorId,
   onSelectActor,
+  country,
 }: LeafletMapProps) {
   const containerRef   = useRef<HTMLDivElement | null>(null);
   const mapRef         = useRef<L.Map | null>(null);
@@ -164,11 +168,10 @@ export default function LeafletMap({
       // LatLngExpression/LatLngBoundsExpression types are structurally
       // identical but declared mutable, so we spread into fresh mutable
       // tuples here rather than loosen the shared module's contract.
-      center:    [...TANZANIA_CENTER] as L.LatLngExpression,
-      zoom:      INITIAL_ZOOM,
-      maxBounds: TANZANIA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression,
+      maxBounds: AFRICA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression,
       maxBoundsViscosity: 0.85,
     });
+    map.fitBounds(AFRICA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
 
     // OSM raster tile layer (NFR-4: OSM attribution required).
     L.tileLayer(OSM_TILE_URL, {
@@ -201,7 +204,7 @@ export default function LeafletMap({
       markerGroupRef.current = null;
       markerMap.clear();
     };
-  }, []); // Only once — center/bounds are constants.
+  }, []); // Only once — bounds are constants.
 
   // ── Marker layer (rebuilt when actors changes) ───────────────────────────────
   useEffect(() => {
@@ -246,6 +249,27 @@ export default function LeafletMap({
       });
   }, [actors, onSelectActor]); // Rebuild whenever the actors array reference changes.
 
+  // ── Fit the view to the displayed actors (re-fits when the filtered set changes) ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const points = actors
+      .filter((a) => a.gps != null)
+      .map((a) => [a.gps!.lat, a.gps!.long] as L.LatLngTuple);
+    const frame = countryBounds(country);
+    if (frame) {
+      const bounds = L.latLngBounds(frame.map((corner) => [...corner]) as L.LatLngTuple[]);
+      points.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds, { padding: FIT_PADDING });
+      return;
+    }
+    if (points.length === 0) {
+      map.fitBounds(AFRICA_BOUNDS.map((corner) => [...corner]) as L.LatLngBoundsExpression);
+      return;
+    }
+    map.fitBounds(L.latLngBounds(points), { padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM });
+  }, [actors, country]);
+
   // ── Fly-to on selection change (FR-5 partial, NFR-3 motion-reduce) ───────────
   useEffect(() => {
     const map    = mapRef.current;
@@ -283,7 +307,7 @@ export default function LeafletMap({
       ref={containerRef}
       className="relative h-full min-h-[480px] w-full"
       // NFR-3: non-decorative interactive region — accessible label for screen readers.
-      aria-label="Map of Tanzania seed-system actors"
+      aria-label="Map of seed-system actors"
       // role="application" tells assistive technology this is an interactive
       // region with its own keyboard interaction model (Leaflet pan/zoom).
       role="application"

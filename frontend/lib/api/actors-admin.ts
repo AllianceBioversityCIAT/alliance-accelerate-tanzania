@@ -71,6 +71,7 @@ export interface AdminActor {
   id: string;
   traderId: string;
   traderName: string;
+  country: string;
   region: string;
   district: string | null;
   traderType: string;
@@ -186,6 +187,7 @@ export type DuplicateConfirmationSnapshot =
 export interface AdminActorListQuery {
   page?: number;
   pageSize?: number;
+  country?: string;
   region?: string;
   traderType?: string;
   consentStatus?: 'GRANTED' | 'DENIED' | 'UNKNOWN';
@@ -324,6 +326,8 @@ export interface ActorHistoryList {
  */
 export interface AdminActorCreateInput {
   traderName: string;
+  /** ISO 3166-1 alpha-2. Required on create, optional on update. */
+  country: string;
   region: string;
   traderType: string;
   /** Optional; must not contain `traderType` (400 on `additionalTraderTypes`). On update, omitted = unchanged, array = replace. */
@@ -447,6 +451,7 @@ export async function adminListActors(
   const params = new URLSearchParams();
   if (query?.page != null) params.set('page', String(query.page));
   if (query?.pageSize != null) params.set('pageSize', String(query.pageSize));
+  if (query?.country != null) params.set('country', query.country);
   if (query?.region != null) params.set('region', query.region);
   if (query?.traderType != null) params.set('traderType', query.traderType);
   if (query?.consentStatus != null) params.set('consentStatus', query.consentStatus);

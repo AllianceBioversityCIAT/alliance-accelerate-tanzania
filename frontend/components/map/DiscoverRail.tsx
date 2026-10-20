@@ -3,7 +3,7 @@
 // DiscoverRail — the left-panel "Discover actors" rail.
 //
 // FR-1: Part of the /map page layout; always rendered.
-// FR-4: Contains FilterControls (crop/role/region) that update page filters
+// FR-4: Contains FilterControls (crop/role/country/region) that update page filters
 //        → useActors refetches (DD-3 server-side filtering).
 // FR-5: Contains ActorList; selecting an item sets selectedActorId → map fly-to.
 // FR-7: Handles loading (Skeleton rows), error, and empty states.
@@ -11,8 +11,8 @@
 //        toggle (bottom-area strip); on ≥ md is the persistent left rail.
 // NFR-4: Token-driven classes only — no raw hex.
 //
-// Count header: uses `total` from the API response (PublicActorList.total).
-// Falls back to `actors.length` if `total` is not provided.
+// Count header: the listed (located) actors; `total` is shown only when the
+// fetch was truncated, next to how many were loaded.
 
 import { useState } from 'react';
 import type { ActorsQuery, PublicActor } from '@/lib/api/actors';
@@ -36,18 +36,14 @@ export interface DiscoverRailProps {
    * the shortfall instead of captioning a partial map with the full `total`.
    */
   truncated?: boolean;
+  /** Matching actors left off the map and the list because they have no coordinates. */
+  unlocated?: number;
   /** True while useActors is in-flight. */
   loading: boolean;
   /** True when getActors() resolved to null (API failure, DD-6). */
   error: boolean;
   /** Current active filters — passed through to FilterControls. */
   filters: ActorsQuery;
-  /**
-   * Region options for the filter dropdown — only regions that have actors.
-   * Passed through to FilterControls; falls back to the full canonical list
-   * there when undefined.
-   */
-  regions?: string[];
   /** Currently selected actor id — drives list item highlight. */
   selectedActorId: string | null;
   /** Called when the user changes a filter select. Resets page to 1 (DD-3). */
@@ -127,17 +123,18 @@ function LoadingRows() {
  * fills mobile screen space (NFR-2). The toggle opens a panel layered over
  * the page content. On ≥ md: rendered inline as the persistent left rail.
  *
- * The rail body is the accessible non-map equivalent of the Leaflet map,
- * giving keyboard/screen-reader users a complete actor listing (NFR-3).
+ * The rail body is the accessible non-map equivalent of the Leaflet map: it
+ * lists exactly the actors on the map (those with coordinates) and states how
+ * many matching actors lack them; the directory lists every actor (NFR-3).
  */
 export default function DiscoverRail({
   actors,
   total,
   truncated = false,
+  unlocated = 0,
   loading,
   error,
   filters,
-  regions,
   selectedActorId,
   onFilterChange,
   onSelectActor,
@@ -147,8 +144,7 @@ export default function DiscoverRail({
   // On ≥ md (md:block) the panel is always visible regardless of this state.
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Count to display: prefer total from the pagination envelope (authoritative
-  // server-side count); fall back to the length of the returned actors array.
+  // Registry-wide count, shown only in the truncation caption.
   const displayCount = total ?? actors.length;
 
   // ATP-68: when the fetch was truncated, `total` describes the registry and
@@ -161,12 +157,12 @@ export default function DiscoverRail({
   // ── Rail body (shared between mobile panel and desktop rail) ─────────────────
 
   const railBody = (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 md:min-h-0 md:flex-1">
       {/* ── Filter controls (FR-4) ─────────────────────────────────────────── */}
-      <FilterControls filters={filters} onChange={onFilterChange} regions={regions} />
+      <FilterControls filters={filters} onChange={onFilterChange} />
 
       {/* ── Actor list / states (FR-5, FR-7) ─────────────────────────────── */}
-      <div>
+      <div className="md:flex md:min-h-48 md:flex-1 md:flex-col">
         {loading ? (
           <LoadingRows />
         ) : error ? (
@@ -184,11 +180,13 @@ export default function DiscoverRail({
             aria-live="polite"
             className="rounded-md border border-border bg-surface p-4 text-sm text-muted"
           >
-            No actors match your filters. Try adjusting the crop, role, or region.
+            {unlocated > 0
+              ? 'None of the matching actors have coordinates, so none can be shown on the map.'
+              : 'No actors match your filters. Try adjusting the crop, role, country, or region.'}
           </div>
         ) : (
           // Scrollable actor list (FR-5, NFR-3).
-          <div className="max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md">
+          <div className="relative max-h-[calc(100vh-18rem)] overflow-y-auto rounded-md md:max-h-none md:min-h-0 md:flex-1">
             <ActorList
               actors={actors}
               selectedActorId={selectedActorId}
@@ -212,7 +210,7 @@ export default function DiscoverRail({
       className={[
         // Full-height left rail on ≥ md; auto-height strip on mobile.
         'flex flex-col border-b border-border bg-surface-alt',
-        'md:w-72 md:min-h-full md:flex-shrink-0 md:border-b-0 md:border-r',
+        'md:w-72 md:min-h-0 md:flex-shrink-0 md:border-b-0 md:border-r',
       ].join(' ')}
     >
       {/* ── Rail header: count + title ─────────────────────────────────────── */}
@@ -231,15 +229,20 @@ export default function DiscoverRail({
               loading={loading}
               truncated={isTruncated}
               shown={shownCount}
-              total={displayCount}
+              total={isTruncated ? displayCount : shownCount}
             />
           </p>
+          {!loading && unlocated > 0 && (
+            <p className="text-xs text-muted">
+              {unlocated} more without coordinates {unlocated === 1 ? 'is' : 'are'} not shown.
+            </p>
+          )}
           {/* ATP-68 — the ceiling is stated, never silent. Rendered only when
               the fetch actually fell short, so the ordinary case is unchanged. */}
           {!loading && isTruncated && (
             <p className="mt-1 text-xs text-warning">
-              This map is showing the first {shownCount}. Narrow the filters to
-              see the rest.
+              Only the first {shownCount + unlocated} matching actors were loaded.
+              Narrow the filters to see the rest.
             </p>
           )}
         </div>
@@ -267,11 +270,11 @@ export default function DiscoverRail({
       <div
         id="discover-rail-body"
         className={[
-          'flex-1 overflow-y-auto p-4',
+          'relative flex-1 overflow-y-auto p-4',
           // Mobile: hidden when closed, block when open.
           mobileOpen ? 'block' : 'hidden',
-          // Desktop: always block regardless of mobileOpen.
-          'md:block',
+          // Desktop: always shown; the list, not the rail, takes the leftover height.
+          'md:flex md:flex-col',
         ].join(' ')}
       >
         {railBody}

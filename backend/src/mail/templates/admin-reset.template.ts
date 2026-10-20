@@ -74,22 +74,22 @@ export function buildAdminResetMessage(
   return {
     to,
     reference,
-    subject: 'Your ACCELERATE Tanzania password has been reset',
+    subject: 'Your PABRA Seed Actors Registry password has been reset',
     text:
-      'An administrator has reset the password on your existing ACCELERATE ' +
-      'Tanzania account.\n\n' +
+      'An administrator has reset the password on your existing PABRA Seed Actors ' +
+      'Registry account.\n\n' +
       `Your new temporary password is: ${temporaryPassword}\n\n` +
       'Your previous password no longer works. This new one is single-use ' +
       `— sign in with it and you will be asked to set a new password ` +
       `immediately:\n${SIGN_IN_URL}\n\n` +
       'If you did not expect this, contact your administrator.',
     html: renderEmailHtml({
-      preheader: 'An administrator has reset your ACCELERATE Tanzania account password.',
+      preheader: 'An administrator has reset your PABRA Seed Actors Registry account password.',
       heading: 'Your password has been reset',
       blocks: [
         {
           kind: 'paragraph',
-          text: 'An administrator has reset the password on your existing ACCELERATE Tanzania account.',
+          text: 'An administrator has reset the password on your existing PABRA Seed Actors Registry account.',
         },
         {
           kind: 'callout',

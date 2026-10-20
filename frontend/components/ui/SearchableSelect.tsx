@@ -171,6 +171,9 @@ export interface SearchableSelectProps {
   labelledBy?: string;
   /** Copy for the empty-filter state; also the live region's zero-count text (design.md §5.3). */
   noMatchLabel?: string;
+  /** Singular/plural nouns for the live region's count text. */
+  itemNoun?: string;
+  itemNounPlural?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +194,8 @@ export function SearchableSelect({
   describedBy,
   labelledBy,
   noMatchLabel = DEFAULT_NO_MATCH_LABEL,
+  itemNoun = 'region',
+  itemNounPlural = 'regions',
 }: SearchableSelectProps) {
   const [searchText, setSearchText] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -231,15 +236,13 @@ export function SearchableSelect({
   // Hidden entirely in the no-match state: FR-1 says the message "replaces
   // the option list", which this reads as the whole list, clear entry
   // included, rather than leaving a lone clear row behind it.
-  const renderedOptions: SearchableSelectOption[] = useMemo(
-    () =>
-      isNoMatch
-        ? []
-        : clearOptionLabel !== undefined
-          ? [{ value: '', label: clearOptionLabel }, ...matchedOptions]
-          : matchedOptions,
-    [isNoMatch, clearOptionLabel, matchedOptions],
-  );
+  // While the user is typing, the clear entry is left out so Enter commits the first match.
+  const isSearching = searchText.trim() !== '';
+  const renderedOptions: SearchableSelectOption[] = useMemo(() => {
+    if (isNoMatch) return [];
+    if (clearOptionLabel === undefined || isSearching) return matchedOptions;
+    return [{ value: '', label: clearOptionLabel }, ...matchedOptions];
+  }, [isNoMatch, clearOptionLabel, isSearching, matchedOptions]);
 
   const committedLabel = options.find((opt) => opt.value === value)?.label ?? '';
   const displayValue = isOpen ? searchText : committedLabel;
@@ -255,8 +258,8 @@ export function SearchableSelect({
     : isNoMatch
       ? noMatchLabel
       : matchedOptions.length === 1
-        ? '1 region available'
-        : `${matchedOptions.length} regions available`;
+        ? `1 ${itemNoun} available`
+        : `${matchedOptions.length} ${itemNounPlural} available`;
 
   const closeAndReset = useCallback(() => {
     setIsOpen(false);

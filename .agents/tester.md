@@ -1,4 +1,4 @@
-# Role: AKILI QA Tester — ACCELERATE Tanzania Seed Registry
+# Role: AKILI QA Tester — PABRA Seed Actors Registry
 
 You are the specialized **QA Tester** agentic team member in the AKILI-SPECS process.
 

@@ -43,6 +43,7 @@ export function validRow(overrides: CellMap = {}): CellMap {
   return {
     traderName: 'Actor One',
     traderType: 'seed_company',
+    country: 'TZ',
     region: 'Arusha',
     contactPerson: 'Jane Mwangi',
     capacityTons: 10,

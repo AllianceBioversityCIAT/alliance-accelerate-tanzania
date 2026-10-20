@@ -111,6 +111,27 @@ describe('AdminActorCreateDto', () => {
     expect(await invalidProps(dto)).toContain('region');
   });
 
+  it('requires country on create but not on update (the service validates the merged pair)', async () => {
+    const input = { ...validInput } as Record<string, unknown>;
+    delete input.country;
+    expect(await invalidProps(plainToInstance(AdminActorCreateDto, input))).toContain('country');
+    expect(await invalidProps(plainToInstance(AdminActorUpdateDto, { region: 'Mbeya' }))).toEqual([]);
+  });
+
+  it('on update, rejects a region that contradicts a country sent in the same body', async () => {
+    const dto = plainToInstance(AdminActorUpdateDto, { country: 'KE', region: 'Mbeya' });
+    expect(await invalidProps(dto)).toContain('region');
+  });
+
+  it('checks the phone prefix on create, but leaves it to the service on update', async () => {
+    const national = { ...validInput, country: 'TZ', region: 'Mbeya', phone: '0712345678' };
+    expect(await invalidProps(plainToInstance(AdminActorCreateDto, national))).toContain('phone');
+    expect(
+      await invalidProps(plainToInstance(AdminActorUpdateDto, { country: 'TZ', phone: '0712345678' })),
+    ).toEqual([]);
+    expect(await invalidProps(plainToInstance(AdminActorUpdateDto, { phone: 'x'.repeat(41) }))).toContain('phone');
+  });
+
   it('preserves inherited GPS bounds validation', async () => {
     const dto = plainToInstance(AdminActorCreateDto, {
       ...validInput,

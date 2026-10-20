@@ -469,6 +469,16 @@ describe('SearchableSelect — clearOptionLabel', () => {
     await user.click(screen.getByRole('option', { name: 'All regions' }));
     expect(onChange).toHaveBeenCalledWith('');
   });
+  it('leaves the clear entry out while typing, so Enter commits the first match', async () => {
+    const user = userEvent.setup();
+    const { input, onChange } = renderControl({ clearOptionLabel: 'All regions' });
+    await user.click(input);
+    expect(screen.getByRole('option', { name: 'All regions' })).toBeInTheDocument();
+    await user.type(input, 'dod');
+    expect(screen.queryByRole('option', { name: 'All regions' })).not.toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('dodoma');
+  });
 });
 
 describe('SearchableSelect — disabled', () => {

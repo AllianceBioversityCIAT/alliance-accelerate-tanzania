@@ -4,7 +4,7 @@
  * Filter: `DiscoverRail` (matched via filename).
  *
  * Covers:
- *   (a) count header shows "N actors shown" using the `total` prop (FR-4)
+ *   (a) count header shows "N actors shown" for the listed (mapped) actors (FR-4)
  *   (b) count falls back to actors.length when total is undefined
  *   (c) empty state renders when actors=[] and not loading/not error (FR-7)
  *   (d) error state renders when error=true (FR-7, DD-6)
@@ -25,6 +25,7 @@ const ACTOR_A: PublicActor = {
   id: 'actor-1',
   traderName: 'Dodoma Seeds Ltd',
   region: 'Dodoma',
+  country: 'TZ',
   district: 'Dodoma Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -39,6 +40,7 @@ const ACTOR_B: PublicActor = {
   id: 'actor-2',
   traderName: 'Mbeya Cooperative',
   region: 'Mbeya',
+  country: 'TZ',
   district: null,
   traderType: 'cooperative',
   additionalTraderTypes: [],
@@ -78,16 +80,30 @@ describe('DiscoverRail', () => {
     expect(screen.getByText(/2 actors shown/i)).toBeInTheDocument();
   });
 
-  it('shows "7 actors shown" when total=7 (non-actors-array count)', () => {
-    render(
-      <DiscoverRail
-        {...DEFAULT_PROPS}
-        actors={ACTORS}
-        total={7}
-      />,
-    );
+  it('counts the listed actors and states how many were left off for lacking coordinates', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={7} unlocated={5} />);
 
-    expect(screen.getByText(/7 actors shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 actors shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 more without coordinates are not shown/i)).toBeInTheDocument();
+  });
+
+  it('explains an empty list when every matching actor lacks coordinates', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={[]} total={3} unlocated={3} />);
+
+    expect(screen.getByText(/none of the matching actors have coordinates/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no actors match your filters/i)).not.toBeInTheDocument();
+  });
+
+  it('counts the loaded actors, not only the located ones, when the fetch was truncated', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={1200} truncated unlocated={998} />);
+
+    expect(screen.getByText(/only the first 1000 matching actors were loaded/i)).toBeInTheDocument();
+  });
+
+  it('says nothing about coordinates when every matching actor is on the map', () => {
+    render(<DiscoverRail {...DEFAULT_PROPS} />);
+
+    expect(screen.queryByText(/without coordinates/i)).not.toBeInTheDocument();
   });
 
   it('uses singular "actor" when total=1', () => {
@@ -143,7 +159,7 @@ describe('DiscoverRail', () => {
     // does not pass it keeps the old caption exactly.
     render(<DiscoverRail {...DEFAULT_PROPS} actors={ACTORS} total={7} />);
 
-    expect(screen.getByText(/7 actors shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 actors shown/i)).toBeInTheDocument();
     expect(screen.queryByText(/showing 2 of 7/i)).not.toBeInTheDocument();
   });
 

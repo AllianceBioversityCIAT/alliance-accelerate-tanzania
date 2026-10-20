@@ -7,6 +7,7 @@
 
 import type { PublicActor } from '@/lib/api/actors';
 import { formatHemisphericPair } from '@/lib/geo/coordinates';
+import { countryName } from '@/lib/content/countries';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -39,6 +40,14 @@ export default function ProfileLocation({ actor }: ProfileLocationProps) {
       </h2>
 
       <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {/* Country */}
+        <div className="rounded-md border border-border bg-surface-alt px-4 py-3">
+          <dt className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted">
+            Country
+          </dt>
+          <dd className="text-sm font-semibold text-fg">{countryName(actor.country) || '—'}</dd>
+        </div>
+
         {/* Region */}
         <div className="rounded-md border border-border bg-surface-alt px-4 py-3">
           <dt className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted">

@@ -22,10 +22,10 @@ import { render, screen } from '@testing-library/react';
 import Footer from './Footer';
 
 describe('Footer — links (FR-6, T-6)', () => {
-  it('links "About this project" to /about (pre-existing)', () => {
+  it('links "Our story" to /about', () => {
     render(<Footer />);
 
-    const link = screen.getByRole('link', { name: /about this project/i });
+    const link = screen.getByRole('link', { name: /^our story$/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/about');
   });
@@ -75,7 +75,7 @@ describe('Footer — links (FR-6, T-6)', () => {
     render(<Footer />);
 
     const names = [
-      /about this project/i,
+      /^our story$/i,
       /^contact$/i,
       /^cookie notice$/i,
       /^privacy policy$/i,
@@ -86,5 +86,36 @@ describe('Footer — links (FR-6, T-6)', () => {
     );
 
     expect(new Set(classNames).size).toBe(1);
+  });
+});
+
+describe('Footer — attribution (PABRA + Alliance lead; ACCELERATE origin, funded by Gates)', () => {
+  const srcs = () =>
+    Array.from(document.querySelectorAll('img')).map((i) =>
+      decodeURIComponent(i.getAttribute('src') ?? ''),
+    );
+
+  it('credits PABRA and the Alliance under "An initiative of", with no separate brand mark', () => {
+    render(<Footer />);
+
+    expect(screen.getByText('An initiative of')).toBeInTheDocument();
+    const pabra = screen.getByRole('link', { name: /pan-africa bean research alliance/i });
+    expect(pabra.querySelector('img')?.getAttribute('src') ?? '').toContain('pabra-logo.png');
+    expect(screen.getByRole('link', { name: /alliance of bioversity/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /home$/i })).toBeNull();
+    expect(srcs().filter((s) => s.includes('pabra-logo.png'))).toHaveLength(1);
+  });
+
+  it('shows ACCELERATE as the origin, funded by Gates, each logo once', () => {
+    render(<Footer />);
+
+    expect(screen.getByText('Originally developed under')).toBeInTheDocument();
+    expect(screen.getByText('funded by')).toBeInTheDocument();
+    const accelerate = screen.getByRole('link', { name: 'ACCELERATE project — opens in a new tab' });
+    expect(accelerate).toHaveAttribute('href', 'https://alliancebioversityciat.org/projects/accelerate');
+    expect(accelerate).toHaveAttribute('target', '_blank');
+    const all = srcs();
+    expect(all.filter((s) => s.includes('/brand/accelerate-logo-color.png'))).toHaveLength(1);
+    expect(all.filter((s) => s.includes('bmgf'))).toHaveLength(1);
   });
 });

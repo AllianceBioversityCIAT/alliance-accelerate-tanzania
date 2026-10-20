@@ -77,6 +77,7 @@ function fixtureRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 function fixtureActor(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    country: 'TZ',
     id: 'actor-1',
     traderId: 'TZ-SEED-0001',
     traderName: 'Meru Agro-Processing & Seeds',
@@ -170,6 +171,29 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       });
     });
 
+    it('filters a non-Tanzanian country on the payload path alone', async () => {
+      prisma.registration.findMany.mockResolvedValue([]);
+      prisma.registration.count.mockResolvedValue(0);
+
+      await service.list({ country: 'KE' } as never);
+
+      expect(prisma.registration.findMany.mock.calls[0][0].where).toEqual({
+        AND: [{ payload: { path: '$.country', equals: 'KE' } }],
+      });
+    });
+
+    it('reads a payload country onto the list row, and a payload without one as TZ', async () => {
+      prisma.registration.findMany.mockResolvedValue([
+        fixtureRow({ id: 'r-ke', payload: { traderName: 'K', traderType: 'ngo', country: 'KE', region: 'Mombasa' } }),
+        fixtureRow({ id: 'r-old', payload: { traderName: 'T', traderType: 'ngo', region: 'Dodoma' } }),
+      ]);
+      prisma.registration.count.mockResolvedValue(2);
+
+      const res = await service.list({} as never);
+
+      expect(res.data.map((r) => r.country)).toEqual(['KE', 'TZ']);
+    });
+
     it('defaults to oldest-first (createdAt ascending) when sort is omitted', async () => {
       prisma.registration.findMany.mockResolvedValue([]);
       prisma.registration.count.mockResolvedValue(0);
@@ -251,6 +275,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
         applicant: 'Dodoma Farmers Cooperative',
         traderType: 'cooperative',
         additionalTraderTypes: [],
+        country: 'TZ',
         region: 'Dodoma',
         submittedAt: new Date('2026-02-01T00:00:00Z'),
         status: RegistrationStatus.APPROVED,
@@ -917,6 +942,23 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
       // approve that started consulting detection would call the outer
       // mock, not `tx` — so this assertion is the only one in this file
       // that can catch it.
+      it('copies the payload country onto the created Actor, and a payload without one becomes TZ', async () => {
+        const base = approvalRegistrationRow();
+        const kenyan = buildTx(
+          approvalRegistrationRow({
+            payload: { ...(base.payload as object), country: 'KE', region: 'Mombasa' },
+          }),
+        );
+        wireTransaction(kenyan);
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+        expect(kenyan.getCreatedActors()[0]).toMatchObject({ country: 'KE', region: 'Mombasa' });
+
+        const legacy = buildTx();
+        wireTransaction(legacy);
+        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+        expect(legacy.getCreatedActors()[0]).toMatchObject({ country: 'TZ', region: 'Arusha' });
+      });
+
       it('R14 — approve never consults DuplicateDetectionService: zero calls to the outer prisma.actor.findMany', async () => {
         const tx = buildTx();
         wireTransaction(tx);

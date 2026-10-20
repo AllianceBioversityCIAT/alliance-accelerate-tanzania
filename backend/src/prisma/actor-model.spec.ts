@@ -20,6 +20,7 @@ describe('Actor model shape (type-level, no DB)', () => {
     Prisma.validator<Prisma.ActorCreateInput>()({
       traderId: 'TZ-0001',
       traderName: 'Mbeya Seed Traders Ltd',
+      country: 'TZ',
       region: 'Mbeya',
       district: 'Mbeya Urban',
       traderType: 'Aggregator',
@@ -77,6 +78,7 @@ describe('Actor model shape (type-level, no DB)', () => {
     const minimal: Prisma.ActorCreateInput = {
       traderId: 'TZ-0002',
       traderName: 'Dodoma Groundnut Co-op',
+      country: 'TZ',
       region: 'Dodoma',
       traderType: 'Producer',
     };

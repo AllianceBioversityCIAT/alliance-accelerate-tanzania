@@ -1,6 +1,8 @@
-# Infrastructure — ACCELERATE Tanzania Seed Registry
+# Infrastructure — PABRA Seed Actors Registry
 
-> The environments blueprint: from the developer's laptop to PROD. Constitutional baseline. Derived from the SAM stacks under `infra/`. Last reviewed: 2026-09-29.
+> The product began as the ACCELERATE Tanzania Seed Registry; internal identifiers (stack names `accelerate-tz-dev-*`, the `Project="ACCELERATE-Tanzania"` tag, the Jenkins job `tanzania-main`) keep that name on purpose.
+
+> The environments blueprint: from the developer's laptop to PROD. Constitutional baseline. Derived from the SAM stacks under `infra/`. Last reviewed: 2026-10-20.
 
 **Architecture tier:** this document's shape follows the **lite-serverless** tier decision recorded in `docs/trd/trd.md` §12 (**ADR-001**) — a single deployable NestJS Lambda behind an HTTP API, a static frontend on S3/CloudFront, and one managed MySQL instance. No container platform, no service mesh, no multi-service topology. The tier decision precedes the infrastructure, never the reverse.
 
@@ -15,7 +17,7 @@
 | Environment | Status | Notes |
 |---|---|---|
 | **Local** | Developer laptop | Native Node processes + a MySQL the developer supplies. See §6. |
-| **Production** | Live | The three SAM stacks below, deployed to `IBD-DEV` / `eu-west-1`. **This is the production environment** — the only deployed one. Served to the public from **`https://accelerate-tz.alliance.cgiar.org`**, a CNAME onto the same CloudFront distribution; the distribution's own `*.cloudfront.net` address keeps working alongside it. |
+| **Production** | Live | The three SAM stacks below, deployed to `IBD-DEV` / `eu-west-1`. **This is the production environment** — the only deployed one. Served to the public from **`https://pabra-registry.alliance.cgiar.org`** (ATP-88), a CNAME onto the same CloudFront distribution; the distribution's own `*.cloudfront.net` address keeps working alongside it. The former **`accelerate-tz.alliance.cgiar.org`** is **retired**: its DNS record was removed (NXDOMAIN, checked 2026-10-20) and nothing redirects from it, so links sent by email before the move no longer open. Transactional email is sent from `pabra-registry-no-reply@cgiar.org`. |
 | ~~**Dev** / **Staging**~~ | Not planned | There is **no** separate development, staging or test environment, and none is planned for now (product owner, 2026-09-29). The laptop above is the only non-production environment that exists. |
 
 ⚠️ **`IBD-DEV` names the AWS account, not the environment's role.** The account name, the `DevCidr` parameter, the `dev` stack-name prefixes and every `dev-only` comment under `infra/` date from a period when this deployment *was* development. Read them as history, not as a description of what the environment is today. The practical consequence is §4's: a set of trade-offs accepted as cheap-and-temporary for a dev bootstrap — public RDS endpoint with `0.0.0.0/0` on 3306, unverified TLS chain, 1-day backups, single-AZ — are running in **production**, serving a public domain. They are recorded there and in `infra/README.md` §11 as production decisions: since 2026-10-09 each one is either **accepted for cost** or **handled outside the stack** (OQ-INFRA-7). Nothing in this revision changes a stack; it changes what the stacks are understood to be.
@@ -97,6 +99,31 @@ fi
 
 Operator-run deploys from a workstation remain possible and are documented in `infra/README.md`; they are no longer the only path, and they are no longer the normal one.
 
+### Changing the public domain or the sender address (ATP-88)
+
+Production is the only environment, so **order matters**:
+
+1. **Before anything deploys:**
+   - the new DNS name resolves to the distribution (`dig +short <domain> CNAME`);
+   - Alliance ICT confirms the notification microservice may send as the new `EMAIL_SENDER`, with a test send.
+
+   A normal merge deploys `20-backend`, which switches the backend sender immediately.
+2. **The domain is one parameter, `CustomDomainName` in `30-frontend`, but nothing else follows on its own.**
+   - Backend CORS (`AllowedOrigin`), the backend's `PUBLIC_APP_BASE_URL` and the Cognito sender's link base all derive from the frontend stack's `PublicAppUrl` output, which changes only when `30-frontend` deploys.
+   - `deploy.sh` resolves them from the **live** output *before* redeploying the frontend. Pass them explicitly: `ALLOWED_ORIGIN=https://<new> LEGACY_ALLOWED_ORIGIN=<CloudFrontUrl> CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL=https://<new>`.
+   - Until backend CORS lists the new origin, **every API call from the site fails in the browser**: map, directory, dashboard, registration and admin.
+3. **Verify:**
+   - the new domain returns `200`;
+   - `curl -sI -H 'Origin: https://<new>' <ApiBaseUrl>/api/v1/metrics` carries `access-control-allow-origin: https://<new>`;
+   - `smoke.sh` passes;
+   - one backend email and one Cognito email each show the new sender and link host.
+4. **Never deploy `30-frontend` from a checkout whose `CustomDomainName` default is the old name:** the deploy rewrites the distribution's aliases to whatever the template says.
+
+**Side effects of a new origin:** browser storage is per origin.
+- Signed-in staff and admins are signed out once.
+- The analytics-consent choice is asked again.
+- GA4's data stream must list the new domain (Google Analytics console, by hand).
+
 **Governed, not improvised:** agents never invent a deploy. Any cloud change goes through these scripts and templates. A change that needs a resource not in §2 is an infrastructure spec, not an inline action.
 
 ## 4. Network & Security Architecture
@@ -156,7 +183,7 @@ What makes the Lambda's own CORS unnecessary is that **API Gateway already owns 
 
 | ID | Question |
 |---|---|
-| ~~OQ-INFRA-1~~ | **Resolved 2026-09-29, by fact rather than by decision.** The question asked which account and domain production would use and how dev would be promoted to it. The answer is that the `IBD-DEV` deployment at `accelerate-tz.alliance.cgiar.org` **is** production and has been for some time, and no separate development or staging environment is planned (product owner, 2026-09-29). There is therefore no promotion path to decide, because there is nothing to promote *from* — and, symmetrically, **no environment in which to rehearse a change before it reaches the public site**. That is the cost this resolution accepts; it is not the same as the cost being absent. The successor questions are **OQ-INFRA-7** (the dev-grade settings now running in production) and **OQ-INFRA-8** (whether the absence of a pre-production environment is acceptable). |
+| ~~OQ-INFRA-1~~ | **Resolved 2026-09-29, by fact rather than by decision.** The question asked which account and domain production would use and how dev would be promoted to it. The answer is that the `IBD-DEV` deployment at `accelerate-tz.alliance.cgiar.org` **is** production and has been for some time, and no separate development or staging environment is planned (product owner, 2026-09-29). There is therefore no promotion path to decide, because there is nothing to promote *from* — and, symmetrically, **no environment in which to rehearse a change before it reaches the public site**. That is the cost this resolution accepts; it is not the same as the cost being absent. The successor questions are **OQ-INFRA-7** (the dev-grade settings now running in production) and **OQ-INFRA-8** (whether the absence of a pre-production environment is acceptable). *(2026-10-20, ATP-88: the production address is now `pabra-registry.alliance.cgiar.org`; the `accelerate-tz` name was retired.)* |
 | ~~OQ-INFRA-2~~ | **Resolved 2026-09-01** — deploys moved to a Jenkins pipeline triggered from GitHub Actions (§3). Not the GitHub-Actions-plus-OIDC shape this question proposed: the pipeline authenticates with credentials bridged into a file-based `IBD-DEV` profile, because the seven scripts in `infra/scripts/` and `infra/samconfig.toml` all require a named profile to exist as a file. The successor question is **OQ-INFRA-5**. |
 | OQ-INFRA-3 | Add a committed `docker-compose.dev.yml` to make the local primary route a single command? |
 | OQ-INFRA-4 | Adopt RDS Proxy before Lambda concurrency grows, or keep the constrained connection pool? (`docs/trd/trd.md` §11) |

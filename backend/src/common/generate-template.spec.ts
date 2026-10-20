@@ -18,13 +18,18 @@ import {
   buildTemplateWorkbook,
   generateTemplateBuffer,
 } from '../../scripts/generate-import-template';
+import { AFRICAN_COUNTRIES } from './geo/countries';
+import {
+  definedNameRange,
+  rangeRows,
+  regionDropdownFor,
+} from '../test/support/import-template-dropdowns';
 import {
   CONSENT_METHOD_VALUES,
   CROP_YES_NO,
   TEMPLATE_HEADERS,
   TEMPLATE_VERSION,
 } from './template-columns';
-import { CANONICAL_REGIONS } from './normalize';
 
 const COMMITTED_ASSET = path.resolve(
   __dirname,
@@ -56,17 +61,16 @@ describe('generate-import-template', () => {
     expect(headers).toEqual([...TEMPLATE_HEADERS]);
   });
 
-  it('stamps the template version and lists the region allowed values on the Instructions sheet', async () => {
+  it('stamps the template version and describes the Country and Region columns on the Instructions sheet', async () => {
     const workbook = await loadGeneratedWorkbook();
     const instructions = workbook.getWorksheet('Instructions');
     expect(instructions).toBeDefined();
 
     const text = collectText(instructions!);
     expect(text).toContain(`Template version: ${TEMPLATE_VERSION}`);
-    // Spot-check the region list end-to-end (first, a Zanzibar region, last).
-    expect(text).toContain(CANONICAL_REGIONS[0]);
-    expect(text).toContain('Kusini Pemba');
-    expect(text).toContain(CANONICAL_REGIONS[CANONICAL_REGIONS.length - 1]);
+    expect(text).toContain('Choose a country from the dropdown');
+    expect(text).toContain('lists the regions of the country picked in the same row');
+    expect(text).toMatch(/Pick the Country first/);
   });
 
   it('lists the allowed values for the consent-method column on the Instructions sheet (FR-5)', async () => {
@@ -85,9 +89,8 @@ describe('generate-import-template', () => {
     expect(lists).toBeDefined();
     expect(lists!.state).toBe('veryHidden');
 
-    // Region list (Lists column B) mirrors the canonical constant exactly.
-    const regionColumn = CANONICAL_REGIONS.map((_, i) => lists!.getCell(i + 1, 2).value);
-    expect(regionColumn).toEqual([...CANONICAL_REGIONS]);
+    // Country names are Lists column B, so Sex is C.
+    expect(lists!.getCell(1, 3).value).toBe('M');
     // Crop YES/NO list (Lists column D, shared shape of the three crop columns).
     const cropColumn = CROP_YES_NO.map((_, i) => lists!.getCell(i + 1, 4).value);
     expect(cropColumn).toEqual([...CROP_YES_NO]);
@@ -100,7 +103,7 @@ describe('generate-import-template', () => {
    * (B) and the crop YES/NO columns (D) sit BEFORE the removed column and are
    * unaffected (pinned above, unchanged).
    */
-  it('moves Consent Method to Lists column H now that Registration Source is gone (v4)', async () => {
+  it('keeps Consent Method on Lists column H (Country names took column B in v6)', async () => {
     const workbook = await loadGeneratedWorkbook();
     const lists = workbook.getWorksheet('Lists');
     expect(lists).toBeDefined();
@@ -192,6 +195,65 @@ describe('generate-import-template', () => {
     const text = collectText(instructions!);
 
     expect(text).toMatch(/at least one crop must be yes/i);
+  });
+
+  describe('Country and dependent Region dropdowns (v6)', () => {
+    it('puts a list validation over the 54 country names on every data row of the Country column', async () => {
+      const workbook = await loadGeneratedWorkbook();
+      const data = workbook.getWorksheet('Data')!;
+      expect(data.getCell('D1').value).toBe('Country');
+
+      for (const address of ['D2', 'D500', 'D1001']) {
+        const validation = data.getCell(address).dataValidation;
+        expect(validation.type).toBe('list');
+        expect(validation.allowBlank).toBe(true);
+        expect(validation.errorStyle).toBe('error');
+        const names = rangeRows(workbook, validation.formulae![0] as string).map(([n]) => n);
+        expect(names).toEqual(AFRICAN_COUNTRIES.map((c) => c.name));
+      }
+      expect(data.getCell('D1002').dataValidation ?? null).toBeNull();
+    });
+
+    it("puts an INDIRECT validation on the Region column that reads the same row's Country cell", async () => {
+      const workbook = await loadGeneratedWorkbook();
+      const data = workbook.getWorksheet('Data')!;
+      expect(data.getCell('E1').value).toBe('Region');
+
+      const validation = data.getCell('E2').dataValidation;
+      expect(validation.type).toBe('list');
+      expect(validation.allowBlank).toBe(true);
+      expect(validation.errorStyle).toBe('warning');
+      expect(validation.formulae![0]).toMatch(
+        /^INDIRECT\("R_"&IFERROR\(VLOOKUP\(\$D2,Lists!\$[A-Z]+\$1:\$[A-Z]+\$54,2,FALSE\),"NONE"\)\)$/,
+      );
+      // Same single formula for the whole column: relative $D2 shifts per row.
+      expect(data.getCell('E1001').dataValidation.formulae).toEqual(validation.formulae);
+      expect(data.getCell('E1002').dataValidation ?? null).toBeNull();
+    });
+
+    it('maps every country name to its code and defines R_<code> over exactly its regions', async () => {
+      const workbook = await loadGeneratedWorkbook();
+      const formula = workbook.getWorksheet('Data')!.getCell('E2').dataValidation.formulae![0] as string;
+      const lookup = rangeRows(workbook, /VLOOKUP\(\$D2,([^,]+),2,FALSE\)/.exec(formula)![1]);
+      expect(lookup).toEqual(AFRICAN_COUNTRIES.map((c) => [c.name, c.code]));
+
+      for (const country of AFRICAN_COUNTRIES) {
+        const range = definedNameRange(workbook, `R_${country.code}`);
+        expect(range).toBeDefined();
+        const regions = rangeRows(workbook, range!).map(([r]) => r);
+        expect(regions).toHaveLength(country.regions.length);
+        expect(regions).toEqual([...country.regions]);
+      }
+      expect(rangeRows(workbook, definedNameRange(workbook, 'R_NONE')!)).toEqual([['']]);
+    });
+
+    it('lists the picked country’s regions only', async () => {
+      const workbook = await loadGeneratedWorkbook();
+      expect(regionDropdownFor(workbook, 'Kenya')).toContain('Nakuru');
+      expect(regionDropdownFor(workbook, 'Kenya')).not.toContain('Kigoma');
+      expect(regionDropdownFor(workbook, 'Tanzania')).toHaveLength(31);
+      expect(regionDropdownFor(workbook, 'Uganda')).toHaveLength(135);
+    });
   });
 
   it('exposes buildTemplateWorkbook returning the three template sheets', () => {

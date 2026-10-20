@@ -5,6 +5,7 @@ const DATA = {
   reference: 'REG-2026-0042',
   traderName: 'Mbeya Seed Traders Ltd',
   traderType: 'seed_company',
+  country: 'TZ',
   region: 'Mbeya',
 };
 
@@ -40,6 +41,15 @@ describe('buildNewRegistrationMessage (ATP-78)', () => {
       expect(part).toContain('Mbeya');
       expect(part).toContain('REG-2026-0042');
     }
+  });
+
+  it('prints the region with the country name', () => {
+    const msg = buildNewRegistrationMessage(TO, DATA);
+    expect(msg.text).toContain('Region: Mbeya, Tanzania');
+    expect(msg.html).toContain('Mbeya, Tanzania');
+
+    const kenyan = buildNewRegistrationMessage(TO, { ...DATA, country: 'KE', region: 'Mombasa' });
+    expect(kenyan.text).toContain('Region: Mombasa, Kenya');
   });
 
   it('links the review queue from PUBLIC_APP_BASE_URL in both parts', () => {

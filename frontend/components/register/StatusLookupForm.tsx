@@ -99,7 +99,7 @@ function statusCopy(status: RegistrationStatus): { label: string; description: s
     case 'PENDING_REVIEW':
       return {
         label: 'Pending review',
-        description: 'Your submission is waiting to be reviewed by the ACCELERATE Tanzania team.',
+        description: 'Your submission is waiting to be reviewed by the PABRA team.',
       };
     case 'AWAITING_APPLICANT':
       return {

@@ -103,8 +103,8 @@ function fixtureLines(): string[] {
  * goes red."). `acceptanceStatement` is included (T-3, amended 2026-10-05)
  * so an edit to it also reddens this pin, not just the verbatim test.
  */
-function allEditionsDigest(): string {
-  const parts = ADMIN_CONSENT_EDITIONS.flatMap((edition) => [
+function allEditionsDigest(editions: readonly AdminConsentEdition[] = ADMIN_CONSENT_EDITIONS): string {
+  const parts = editions.flatMap((edition) => [
     edition.version,
     ...edition.sections.map((section) => [section.heading, section.body]),
     edition.acceptanceStatement,
@@ -123,15 +123,17 @@ function allEditionsDigest(): string {
  * against the new registry (or copy the value from this test's failure
  * output), in the same commit as the text change.
  */
-const RECORDED_EDITIONS_DIGEST = '5aa42f417c564cb04b7b42ab44135fc4ef4cfddeaac21cb1b0320b34813abff3';
+/** v1.0 alone — recorded before v1.1 existed, so v1.0's accepted text can never drift. */
+const RECORDED_V1_0_DIGEST = '5aa42f417c564cb04b7b42ab44135fc4ef4cfddeaac21cb1b0320b34813abff3';
+const RECORDED_EDITIONS_DIGEST = 'bfcbb4a6e46915f43d3fc11669c4bf435a7993390f72b263ef5b484015eb055d';
 
 describe('admin-consent-editions.json verbatim pin (FR-1 "verbatim text" scenario)', () => {
   it(
     'reconstructs v1.0 with the three substitutions reversed and matches the Legal .docx ' +
       'extract, line for line, in document order, excluding the signature block',
     () => {
-      const currentEdition = ADMIN_CONSENT_EDITIONS[ADMIN_CONSENT_EDITIONS.length - 1];
-      const reconstructed = reconstructEditionLines(currentEdition);
+      const v10 = ADMIN_CONSENT_EDITIONS.find((edition) => edition.version === 'v1.0')!;
+      const reconstructed = reconstructEditionLines(v10);
 
       expect(reconstructed).toEqual(fixtureLines());
     },
@@ -179,11 +181,11 @@ describe('append-only registry (FR-1 "append-only" scenario)', () => {
   });
 
   it('pins the full version sequence, oldest first', () => {
-    expect(KNOWN_ADMIN_CONSENT_VERSIONS).toEqual(['v1.0']);
+    expect(KNOWN_ADMIN_CONSENT_VERSIONS).toEqual(['v1.0', 'v1.1']);
   });
 
   it('CURRENT_ADMIN_CONSENT_VERSION tracks the last (current) edition', () => {
-    expect(CURRENT_ADMIN_CONSENT_VERSION).toBe('v1.0');
+    expect(CURRENT_ADMIN_CONSENT_VERSION).toBe('v1.1');
   });
 
   it(
@@ -201,9 +203,21 @@ describe('append-only registry (FR-1 "append-only" scenario)', () => {
         'Rights of Data Subjects',
         'Consent',
       ]);
+      expect(allEditionsDigest([ADMIN_CONSENT_EDITIONS[0]])).toBe(RECORDED_V1_0_DIGEST);
       expect(allEditionsDigest()).toBe(RECORDED_EDITIONS_DIGEST);
     },
   );
+
+  it('v1.1 differs from v1.0 only by the name (ACCELERATE Tanzania Registry → PABRA Seed Actors Registry) and the data-location wording (outside/within and outside Tanzania → Africa)', () => {
+    const [v10, v11] = ADMIN_CONSENT_EDITIONS;
+    const renamed = JSON.parse(
+      JSON.stringify({ sections: v10.sections, acceptanceStatement: v10.acceptanceStatement })
+        .replaceAll('ACCELERATE Tanzania Registry', 'PABRA Seed Actors Registry')
+        .replaceAll('outside Tanzania', 'outside Africa'),
+    );
+    expect({ sections: v11.sections, acceptanceStatement: v11.acceptanceStatement }).toEqual(renamed);
+    expect(JSON.stringify(v11)).not.toContain('ACCELERATE');
+  });
 });
 
 describe('findAdminConsentEdition / getAdminConsentEdition (FR-1 "old request keeps its text")', () => {

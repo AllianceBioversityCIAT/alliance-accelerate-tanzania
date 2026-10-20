@@ -23,6 +23,7 @@ export interface AdminActor {
   id: string;
   traderId: string;
   traderName: string;
+  country: string;
   region: string;
   district: string | null;
   traderType: string;
@@ -62,6 +63,7 @@ interface AdminActorInput {
   id: string;
   traderId: string;
   traderName: string;
+  country: string;
   region: string;
   district?: string | null;
   traderType: string;
@@ -100,6 +102,7 @@ export function toAdminActor(actor: AdminActorInput): AdminActor {
     id: actor.id,
     traderId: actor.traderId,
     traderName: actor.traderName,
+    country: actor.country,
     region: actor.region,
     district: actor.district ?? null,
     traderType: actor.traderType,

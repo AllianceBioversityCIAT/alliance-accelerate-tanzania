@@ -35,6 +35,7 @@ function validPayload(): Record<string, unknown> {
     district: 'Mbeya Urban',
     marketLocation: 'Mbeya Central Market',
     sex: 'F',
+    country: 'TZ',
     region: 'Mbeya',
     gpsLatitude: -8.9094,
     gpsLongitude: 33.4607,
@@ -174,6 +175,8 @@ describe('RegistrationCreateDto — every free-text string is bound', () => {
     const atBound = Object.fromEntries(
       cases.map(({ field, maxLength }) => [field, 'x'.repeat(maxLength)]),
     );
+    // A phone must also be a real number of the payload's country; pad a valid one to the bound.
+    atBound.phone = '+255 712 345 678'.padEnd(40, ' ');
     const { error } = await run(validBody({ payload: atBound }));
     expect(error).toBeUndefined();
   });
@@ -293,5 +296,38 @@ describe('RegistrationCreateDto — field-level 400 shape (FR-2 scenario 2)', ()
     // than losing it, so the downstream check has a real value to inspect.
     expect(error).toBeUndefined();
     expect(result!.consent.accepted).toBe(false);
+  });
+});
+
+describe('RegistrationCreateDto — country and region', () => {
+  it('accepts a Kenyan submission with a Kenyan region and keeps the country', async () => {
+    const { result, error } = await run(
+      validBody({ payload: { country: 'KE', region: 'Mombasa', phone: '+254712345678' } }),
+    );
+
+    expect(error).toBeUndefined();
+    expect(result!.payload.country).toBe('KE');
+  });
+
+  it('requires a country', async () => {
+    const payload = validPayload();
+    delete payload.country;
+    const { error } = await run({ ...validBody(), payload });
+
+    expect(details(error!).map((d) => d.field)).toContain('payload.country');
+  });
+
+  it('rejects an unknown country', async () => {
+    const { error } = await run(validBody({ payload: { country: 'XX' } }));
+
+    expect(details(error!).map((d) => d.field)).toContain('payload.country');
+  });
+
+  it('rejects a region that belongs to another country, naming the country', async () => {
+    const { error } = await run(validBody({ payload: { country: 'KE', region: 'Mbeya', phone: '+254712345678' } }));
+
+    expect(details(error!)).toEqual([
+      { field: 'payload.region', message: "Region must be one of Kenya's regions." },
+    ]);
   });
 });

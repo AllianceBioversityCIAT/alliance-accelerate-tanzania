@@ -98,8 +98,8 @@ describe('/privacy page — approved-copy status (T-8)', () => {
   it('renders a visible version identifier and effective date', () => {
     renderPrivacyPage();
 
-    expect(screen.getByText(/version v1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/effective date: 30 september 2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/version v1\.1/i)).toBeInTheDocument();
+    expect(screen.getByText(/effective date: 20 october 2026/i)).toBeInTheDocument();
   });
 
   // DEMONSTRATED FALSIFIER (mandatory, tasks.md T-8): the previous page's
@@ -342,7 +342,7 @@ describe('/privacy page — the four contact-channel facts (FR-5, D-9), asserted
     renderPrivacyPage();
 
     expect(screen.getByRole('heading', { name: /who receives it/i })).toBeInTheDocument();
-    expect(screen.getByText(/accelerate tanzania programme team/i)).toBeInTheDocument();
+    expect(screen.getByText(/sent by email to the PABRA team/i)).toBeInTheDocument();
   });
 
   it('(3) states messages are relayed by email and NOT stored by the platform', () => {

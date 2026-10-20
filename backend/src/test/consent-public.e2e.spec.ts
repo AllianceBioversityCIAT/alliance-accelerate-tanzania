@@ -496,9 +496,8 @@ describe('Public consent-link routes (HTTP e2e, in-memory Prisma)', () => {
       expect(res.body.edition.acceptanceStatement).toBe(
         ADMIN_CONSENT_EDITIONS.find((e) => e.version === 'v1.0')!.acceptanceStatement,
       );
-      // v1.0 stays what is served even though it is the registry's CURRENT edition today;
-      // the "v1.1 registered later" proof lives in consent-public.service.spec.ts.
-      expect(CURRENT_ADMIN_CONSENT_EDITION.version).toBeDefined();
+      // A request sent under v1.0 is still served v1.0 after v1.1 became current.
+      expect(CURRENT_ADMIN_CONSENT_EDITION.version).toBe('v1.1');
     });
   });
 

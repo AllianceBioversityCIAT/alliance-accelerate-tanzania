@@ -1,6 +1,6 @@
 // LandingCTA — FR-1 scenario "Landing CTA": a surface-alt panel below the hero
 // actions, telling an anonymous visitor that organisations may add themselves
-// and that every submission is reviewed by the ACCELERATE team before
+// and that every submission is reviewed by the PABRA team before
 // publication — the fact a visitor must know before handing over their own
 // organisation's contact details (design.md §5.7).
 //
@@ -47,7 +47,7 @@ export default function LandingCTA() {
         <p className="text-muted max-w-prose mx-auto mb-8">
           Seed companies, cooperatives, offtakers, and other seed-system actors
           can add themselves to the registry. Every submission is reviewed by
-          the ACCELERATE team before it is published, so nothing you send goes
+          the PABRA team before it is published, so nothing you send goes
           live automatically.
         </p>
 

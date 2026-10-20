@@ -138,15 +138,15 @@ export default function AdminLayout({
             <Link
               href="/"
               className="flex items-center shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-sm"
-              aria-label="ACCELERATE Tanzania — view public site"
+              aria-label="PABRA Seed Actors Registry — view public site"
             >
               <Image
-                src="/brand/accelerate-logo-color.png"
-                width={867}
-                height={194}
+                src="/brand/pabra-logo.png"
+                width={291}
+                height={175}
                 alt=""
                 priority
-                className="h-8 w-auto sm:h-9"
+                className="h-9 w-auto sm:h-10"
               />
             </Link>
 

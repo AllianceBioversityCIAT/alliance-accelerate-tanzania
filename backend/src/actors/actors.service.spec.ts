@@ -143,6 +143,33 @@ describe('ActorsService (mocked Prisma)', () => {
       expect(where).toMatchObject(FILTERED_WHERE);
     });
 
+    it('translates the country filter into an equality WHERE alongside the region', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ country: 'KE', region: 'Mombasa' } as ListQueryDto);
+
+      expect(prisma.actor.findMany.mock.calls[0][0].where).toMatchObject({
+        consentStatus: ConsentStatus.GRANTED,
+        country: 'KE',
+        region: 'Mombasa',
+      });
+    });
+
+    it('also matches a search term against the country name, OR-ed with the other columns', async () => {
+      prisma.actor.findMany.mockResolvedValue([]);
+      prisma.actor.count.mockResolvedValue(0);
+
+      await service.findPublic({ search: 'keny' } as ListQueryDto);
+
+      expect(prisma.actor.findMany.mock.calls[0][0].where.OR).toEqual([
+        { traderName: { contains: 'keny' } },
+        { region: { contains: 'keny' } },
+        { district: { contains: 'keny' } },
+        { country: { in: ['KE'] } },
+      ]);
+    });
+
     it('translates the district filter into a `contains` WHERE clause, not equality', async () => {
       prisma.actor.findMany.mockResolvedValue([]);
       prisma.actor.count.mockResolvedValue(0);

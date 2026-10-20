@@ -62,6 +62,7 @@ const ADMIN_ACTOR: AdminActor = {
   traderId: 'T-001',
   traderName: 'Mbeya Seeds Ltd',
   region: 'Mbeya',
+  country: 'TZ',
   district: 'Mbeya Urban',
   traderType: 'seed_company',
   additionalTraderTypes: [],
@@ -122,6 +123,7 @@ const DELETE_RESULT: ActorDeleteResult = {
 const CREATE_INPUT: AdminActorCreateInput = {
   traderName: 'Iringa Cooperative',
   region: 'Iringa',
+  country: 'TZ',
   traderType: 'cooperative',
   consentStatus: 'UNKNOWN',
   crops: ['groundnut'],

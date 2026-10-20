@@ -35,6 +35,7 @@ function makeActor(id: string, overrides: Partial<PublicActor> = {}): PublicActo
     id,
     traderName: `Actor ${id}`,
     region: 'Dodoma',
+    country: 'TZ',
     traderType: 'cooperative',
     additionalTraderTypes: [],
     crops: ['sorghum'],

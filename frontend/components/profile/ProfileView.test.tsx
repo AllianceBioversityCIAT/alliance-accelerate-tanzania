@@ -101,6 +101,12 @@ describe('ProfileView', () => {
       expect(screen.getByText('Seed Company')).toBeInTheDocument();
     });
 
+    it('renders the country by name in the Location section', () => {
+      renderProfile();
+      expect(screen.getByText('Country')).toBeInTheDocument();
+      expect(screen.getByText('Tanzania')).toBeInTheDocument();
+    });
+
     it('renders region and district in the header', () => {
       renderProfile();
       // Region appears in ProfileHeader location line and ProfileLocation section

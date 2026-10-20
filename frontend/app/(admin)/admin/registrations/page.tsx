@@ -64,9 +64,10 @@ import { FilterSelect } from '@/components/admin/FilterSelect';
 import { PaginationControls } from '@/components/admin/PaginationControls';
 import Skeleton from '@/components/ui/Skeleton';
 
-import { REGIONS } from '@/lib/content/regions';
+import { CountryRegionFilters } from '@/components/admin/CountryRegionFilters';
 import { ROLES } from '@/lib/content/roles';
 import { param, pageParam, pageSizeParam } from '@/lib/url-params';
+import { cleanGeo } from '@/lib/content/countries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -270,7 +271,7 @@ function RegistrationsView() {
 
   const status = statusParam(searchParams);
   const q = param(searchParams, 'q');
-  const region = param(searchParams, 'region');
+  const { country, region } = cleanGeo(param(searchParams, 'country'), param(searchParams, 'region'));
   const traderType = param(searchParams, 'traderType');
   const sort = sortParam(searchParams);
   const page = pageParam(searchParams);
@@ -279,6 +280,7 @@ function RegistrationsView() {
   const filters: AdminRegistrationListQuery = {
     status,
     ...(q ? { q } : {}),
+    ...(country ? { country } : {}),
     ...(region ? { region } : {}),
     ...(traderType ? { traderType } : {}),
     ...(sort !== DEFAULT_SORT ? { sort } : {}),
@@ -381,7 +383,7 @@ function RegistrationsView() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, status, q, region, traderType, sort, page, pageSize, fetchRows]);
+  }, [token, status, q, country, region, traderType, sort, page, pageSize, fetchRows]);
 
   // ── URL write helper — mirrors app/(admin)/admin/actors/page.tsx ────────
 
@@ -416,9 +418,9 @@ function RegistrationsView() {
     [pushParams],
   );
 
-  const handleRegionChange = useCallback(
-    (value: string | undefined) => {
-      pushParams({ region: value, page: undefined });
+  const handleLocationChange = useCallback(
+    (next: { country: string | undefined; region: string | undefined }) => {
+      pushParams({ ...next, page: undefined });
     },
     [pushParams],
   );
@@ -438,7 +440,7 @@ function RegistrationsView() {
   );
 
   const handleClearFilters = useCallback(() => {
-    pushParams({ q: undefined, region: undefined, traderType: undefined, page: undefined });
+    pushParams({ q: undefined, country: undefined, region: undefined, traderType: undefined, page: undefined });
   }, [pushParams]);
 
   // ── Pagination handlers ──────────────────────────────────────────────
@@ -467,7 +469,7 @@ function RegistrationsView() {
     await fetchRows(token, { ...filters, page, pageSize });
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, status, q, region, traderType, sort, page, pageSize, fetchRows]);
+  }, [token, status, q, country, region, traderType, sort, page, pageSize, fetchRows]);
 
   // ── Render helpers ───────────────────────────────────────────────────
 
@@ -476,7 +478,7 @@ function RegistrationsView() {
     label: meta.label,
   }));
 
-  const hasNarrowingFilters = Boolean(q || region || traderType);
+  const hasNarrowingFilters = Boolean(q || country || region || traderType);
 
   // Page-beyond-result-set: this (filtered) query has other matches
   // elsewhere, just not on this page.
@@ -501,12 +503,10 @@ function RegistrationsView() {
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <ApplicantSearch value={q ?? ''} onSearch={handleSearch} />
-          <FilterSelect
-            id="filter-region"
-            label="Region"
-            value={region}
-            options={REGIONS.map((r) => ({ value: r, label: r }))}
-            onChange={handleRegionChange}
+          <CountryRegionFilters
+            country={country}
+            region={region}
+            onChange={handleLocationChange}
             disabled={loading}
           />
           <FilterSelect

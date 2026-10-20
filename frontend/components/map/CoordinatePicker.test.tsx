@@ -115,6 +115,13 @@ describe('CoordinatePicker', () => {
     expect(receivedProps!.longitude).toBe('35.1');
   });
 
+  it('passes the form country through to the shell so it can frame the empty view', async () => {
+    render(<CoordinatePicker latitude="" longitude="" onChange={noop} country="KE" />);
+    await openPicker();
+
+    expect(receivedProps!.country).toBe('KE');
+  });
+
   it('passes the disabled flag through to the shell once open', () => {
     // initiallyOpen, not the reveal control: the reveal control is itself
     // disabled while the form submits, so it cannot be used to reach this
@@ -132,7 +139,7 @@ describe('CoordinatePicker', () => {
 
     expect(receivedProps).not.toBeNull();
     expect(Object.keys(receivedProps!).sort()).toEqual(
-      ['disabled', 'latitude', 'longitude', 'onChange', 'onOutsideBounds'].sort(),
+      ['country', 'disabled', 'latitude', 'longitude', 'onChange', 'onOutsideBounds'].sort(),
     );
     expect(typeof receivedProps!.onChange).toBe('function');
   });

@@ -19,9 +19,8 @@ import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import PillarCards from '@/components/home/PillarCards';
 import PartnerWall from '@/components/home/PartnerWall';
+import AccelerateLogo from '@/components/home/AccelerateLogo';
 import CropImage from '@/components/home/CropImage';
-import PhotoCarousel from '@/components/about/PhotoCarousel';
-import { ABOUT_GALLERY } from '@/lib/content/about-gallery';
 import { CROPS, type CropTokenClass } from '@/lib/content/crops';
 
 // Static crop-accent text classes — full strings so Tailwind's content scan keeps
@@ -37,7 +36,7 @@ const CROP_TEXT: Record<CropTokenClass, string> = {
 // ---------------------------------------------------------------------------
 
 export const metadata: Metadata = {
-  title: 'About ACCELERATE — Tanzania Seed Registry',
+  title: 'About — PABRA Seed Actors Registry',
   description:
     'ACCELERATE is a 2023–2026 initiative building a demand-led model to speed adoption of improved sorghum, common bean, and groundnut varieties across Tanzania.',
 };
@@ -53,8 +52,8 @@ export default function AboutPage() {
 
       {/* ====================================================================
           §3.1  ABOUT HERO
-          One <h1> for the page; eyebrow pill + lede + photo carousel.
-          Carousel is placed below the text column on mobile and beside it on lg+
+          One <h1> for the page; eyebrow pill + lede + ACCELERATE group photo.
+          The photo is placed below the text column on mobile and beside it on lg+
           to avoid any text-over-image contrast issue.
       ==================================================================== */}
       <section aria-labelledby="about-hero-heading" className="bg-bg">
@@ -102,8 +101,17 @@ export default function AboutPage() {
 
             </div>
 
-            {/* Right column — photo carousel (photos in lib/content/about-gallery.ts) */}
-            <PhotoCarousel photos={ABOUT_GALLERY} label="Photos from the field" />
+            {/* Right column — ACCELERATE partners and staff (the home hero carries the field carousel) */}
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface-alt shadow-md">
+              <Image
+                src="/hero-harvest.jpg"
+                alt="Group photo of ACCELERATE project partners and staff gathered outside a meeting venue."
+                fill
+                priority
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover object-[center_30%]"
+              />
+            </div>
 
           </div>
         </div>
@@ -289,7 +297,7 @@ export default function AboutPage() {
       ==================================================================== */}
       <section
         aria-labelledby="partners-heading"
-        className="bg-bg"
+        className="bg-surface"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
 
@@ -299,16 +307,21 @@ export default function AboutPage() {
               Partners
             </span>
 
+            <div className="mb-4">
+              <AccelerateLogo />
+            </div>
+
             <h2
               id="partners-heading"
               className="text-2xl font-bold text-fg leading-tight mb-6"
             >
-              Partners
+              The coalition behind ACCELERATE
             </h2>
 
             <p className="text-base text-muted leading-relaxed max-w-prose mb-10">
-              ACCELERATE is delivered by a coalition of research and seed-system
-              institutions, funded by the Bill &amp; Melinda Gates Foundation.
+              ACCELERATE, the project this registry began under, is funded by the
+              Bill &amp; Melinda Gates Foundation and delivered by a coalition of research
+              and seed-system institutions.
             </p>
           </div>
 
@@ -441,31 +454,38 @@ export default function AboutPage() {
       ==================================================================== */}
       <section
         aria-labelledby="registry-heading"
-        className="bg-bg"
+        className="bg-fg text-bg"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-16 sm:text-center">
 
           {/* Eyebrow */}
-          <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
+          <span className="inline-flex items-center rounded-full bg-primary-soft text-primary px-3 py-1 text-xs font-semibold tracking-wide mb-4">
             This platform
           </span>
 
           <h2
             id="registry-heading"
-            className="text-2xl font-bold text-fg leading-tight mb-6"
+            className="text-2xl font-bold text-bg leading-tight mb-6"
           >
             About this registry
           </h2>
 
-          <p className="text-base text-muted leading-relaxed max-w-prose mb-8">
-            This platform is the public registry behind ACCELERATE &mdash; a single, trusted map
-            of the seed companies, cooperatives, offtakers, research institutes, and traders that
-            make up Tanzania&rsquo;s seed system. It helps institutions find the right actors
-            quickly, understand who operates where, and strengthen the value chains that move
-            improved varieties from lab to field.
+          <p className="text-base text-bg opacity-80 leading-relaxed mb-4">
+            The Pan-Africa Bean Research Alliance (PABRA) is a partnership of stakeholders in more
+            than 30 countries across Africa working on the research and development of common
+            beans &mdash; an important food legume that contributes to food and nutrition security,
+            generates income and strengthens production systems across sub-Saharan Africa.
           </p>
 
-          <div className="flex flex-wrap gap-3">
+          <p className="text-base text-bg opacity-80 leading-relaxed mb-8">
+            This registry began under ACCELERATE, a project funded by the Bill &amp; Melinda Gates Foundation, and is
+            now a PABRA product &mdash; a single, trusted map of the seed companies, cooperatives,
+            offtakers, research institutes, and traders that make up Africa&rsquo;s seed systems. It
+            helps institutions find the right actors quickly, understand who operates where, and
+            strengthen the value chains that move improved varieties from lab to field.
+          </p>
+
+          <div className="flex flex-wrap sm:justify-center gap-3">
             <Button variant="primary" href="/map">
               Explore the Map
             </Button>

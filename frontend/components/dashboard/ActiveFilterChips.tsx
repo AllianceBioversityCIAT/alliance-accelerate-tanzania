@@ -9,6 +9,7 @@
 
 import type { ActorsQuery } from '@/lib/api/actors';
 import { CROPS } from '@/lib/content/crops';
+import { countryName } from '@/lib/content/countries';
 import { ROLES, type TraderType } from '@/lib/content/roles';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ function buildChips(f: ActorsQuery): Chip[] {
   const chips: Chip[] = [];
   if (f.crop) chips.push({ key: 'crop', label: `Crop: ${cropLabel(f.crop)}`, clear: { crop: undefined } });
   if (f.role) chips.push({ key: 'role', label: `Type: ${roleLabel(f.role)}`, clear: { role: undefined } });
+  if (f.country) chips.push({ key: 'country', label: `Country: ${countryName(f.country)}`, clear: { country: undefined, region: undefined } });
   if (f.region) chips.push({ key: 'region', label: `Region: ${f.region}`, clear: { region: undefined } });
   if (f.district) chips.push({ key: 'district', label: `District: ${f.district}`, clear: { district: undefined } });
   if (f.search) chips.push({ key: 'search', label: `Search: ${f.search}`, clear: { search: undefined } });
@@ -110,6 +112,7 @@ export default function ActiveFilterChips({ filters, onChange }: ActiveFilterChi
             ...filters,
             crop: undefined,
             role: undefined,
+            country: undefined,
             region: undefined,
             district: undefined,
             search: undefined,

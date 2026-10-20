@@ -72,7 +72,7 @@ export default function CropCoverage() {
               Crop coverage
             </h2>
             <p className="text-sm text-muted mt-1 max-w-prose">
-              Registry actors mapped across Tanzania&rsquo;s three priority seed-system value chains.
+              Registry actors mapped across three priority seed-system value chains.
             </p>
           </div>
 
