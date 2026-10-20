@@ -206,7 +206,7 @@ Tailwind is the token system. Tokens below are the **single source of truth**; i
 --color-bg:             #FBF9F6;  /* warm sand page canvas — was pure white (DD-2, app-visual-refresh) */
 --color-surface:        #FFFFFF;  /* card/panel — unchanged; lifts off the warmer canvas */
 --color-surface-alt:    #F4F0EA;  /* alternating section background, warm */
---color-fg:             #2A2724;  /* primary body text, warm ink — also the footer's dark surface */
+--color-fg:             #2A2724;  /* primary body text, warm ink */
 --color-backdrop:       rgba(42, 39, 36, 0.40);  /* modal/backdrop wash — 40% of --color-fg */
 --color-muted:          #6B6459;  /* secondary text, warm */
 --color-border:         #E6DFD5;  /* warm hairline */
