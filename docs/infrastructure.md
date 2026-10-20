@@ -97,6 +97,32 @@ fi
 
 Operator-run deploys from a workstation remain possible and are documented in `infra/README.md`; they are no longer the only path, and they are no longer the normal one.
 
+### Changing the public domain or the sender address (ATP-88)
+
+Production is the only environment, and the legacy-domain redirect is a 301 that browsers cache, so **order matters**:
+
+1. **Before merging:**
+   - the new DNS name resolves to the distribution (`dig +short <domain> CNAME`);
+   - Alliance ICT confirms the notification microservice may send as the new `EMAIL_SENDER`, with a test send.
+
+   A normal merge deploys `20-backend`, which switches the backend sender immediately. Deploying `30-frontend` before the DNS exists sends every request on the old domain to a host that does not resolve.
+2. **Nothing else follows on its own.**
+   - `deploy.sh` resolves `ALLOWED_ORIGIN` from the **live** `PublicAppUrl` *before* it redeploys the frontend, and defaults `CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL` from it. A single run therefore leaves CORS and the Cognito sender's links on the old domain.
+   - Pass all three explicitly: `ALLOWED_ORIGIN=https://<new> LEGACY_ALLOWED_ORIGIN=<CloudFrontUrl> CUSTOM_EMAIL_SENDER_PUBLIC_APP_BASE_URL=https://<new>`.
+   - Expect a few minutes in which the old origin fails CORS, until CloudFront finishes deploying the alias and redirect.
+3. **Verify:**
+   - `curl -sI https://<old>/consent/` returns `301` with `Location: https://<new>/consent/`;
+   - the new domain returns `200`;
+   - a query with encoded characters survives the redirect unchanged;
+   - `smoke.sh` passes;
+   - one backend email and one Cognito email each show the new sender and link host.
+4. **The redirect is sent with `max-age=3600`** so a wrong deploy can be undone. Raise it once the move is stable.
+
+**Side effects of a new origin:** browser storage is per origin.
+- Signed-in staff and admins are signed out once.
+- The analytics-consent choice is asked again.
+- GA4's data stream must list the new domain (Google Analytics console, by hand).
+
 **Governed, not improvised:** agents never invent a deploy. Any cloud change goes through these scripts and templates. A change that needs a resource not in §2 is an infrastructure spec, not an inline action.
 
 ## 4. Network & Security Architecture
@@ -156,7 +182,7 @@ What makes the Lambda's own CORS unnecessary is that **API Gateway already owns 
 
 | ID | Question |
 |---|---|
-| ~~OQ-INFRA-1~~ | **Resolved 2026-09-29, by fact rather than by decision.** The question asked which account and domain production would use and how dev would be promoted to it. The answer is that the `IBD-DEV` deployment at `accelerate-tz.alliance.cgiar.org` **is** production and has been for some time, and no separate development or staging environment is planned (product owner, 2026-09-29). There is therefore no promotion path to decide, because there is nothing to promote *from* — and, symmetrically, **no environment in which to rehearse a change before it reaches the public site**. That is the cost this resolution accepts; it is not the same as the cost being absent. The successor questions are **OQ-INFRA-7** (the dev-grade settings now running in production) and **OQ-INFRA-8** (whether the absence of a pre-production environment is acceptable). |
+| ~~OQ-INFRA-1~~ | **Resolved 2026-09-29, by fact rather than by decision.** The question asked which account and domain production would use and how dev would be promoted to it. The answer is that the `IBD-DEV` deployment at `accelerate-tz.alliance.cgiar.org` (since ATP-88, `pabra-registry.alliance.cgiar.org`) **is** production and has been for some time, and no separate development or staging environment is planned (product owner, 2026-09-29). There is therefore no promotion path to decide, because there is nothing to promote *from* — and, symmetrically, **no environment in which to rehearse a change before it reaches the public site**. That is the cost this resolution accepts; it is not the same as the cost being absent. The successor questions are **OQ-INFRA-7** (the dev-grade settings now running in production) and **OQ-INFRA-8** (whether the absence of a pre-production environment is acceptable). |
 | ~~OQ-INFRA-2~~ | **Resolved 2026-09-01** — deploys moved to a Jenkins pipeline triggered from GitHub Actions (§3). Not the GitHub-Actions-plus-OIDC shape this question proposed: the pipeline authenticates with credentials bridged into a file-based `IBD-DEV` profile, because the seven scripts in `infra/scripts/` and `infra/samconfig.toml` all require a named profile to exist as a file. The successor question is **OQ-INFRA-5**. |
 | OQ-INFRA-3 | Add a committed `docker-compose.dev.yml` to make the local primary route a single command? |
 | OQ-INFRA-4 | Adopt RDS Proxy before Lambda concurrency grows, or keep the constrained connection pool? (`docs/trd/trd.md` §11) |

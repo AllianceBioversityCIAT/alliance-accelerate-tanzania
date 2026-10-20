@@ -148,7 +148,10 @@ Resources:
                 statusCode: 301,
                 statusDescription: 'Moved Permanently',
                 headers: {
-                  location: { value: 'https://${CustomDomainName}' + uri + (parts.length ? '?' + parts.join('&') : '') }
+                  location: { value: 'https://${CustomDomainName}' + uri + (parts.length ? '?' + parts.join('&') : '') },
+                  // Short browser cache while the move settles, so a wrong
+                  // deploy can still be undone; raise it once stable.
+                  'cache-control': { value: 'max-age=3600' }
                 }
               };
             }
@@ -198,7 +201,8 @@ Resources:
           # request of a session in the clear. This closes that window.
           # Preload is false ON PURPOSE: the site is on a shared
           # *.cloudfront.net domain, and preloading is submitted per-domain and
-          # effectively irreversible. Revisit when a custom domain is adopted.
+          # effectively irreversible. The custom domains sit under the shared
+          # alliance.cgiar.org, which this project does not own, so it stays false.
           StrictTransportSecurity:
             AccessControlMaxAgeSec: 31536000
             IncludeSubdomains: true
