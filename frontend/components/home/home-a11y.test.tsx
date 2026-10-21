@@ -24,7 +24,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 // Extend jest-dom expect with jest-axe matcher
@@ -195,15 +195,15 @@ describe('Home page — reduced-motion / GSAP-mocked final-state (NFR-1, FR-7, F
     expect(getByRole('link', { name: /browse directory/i })).toBeVisible();
   });
 
-  it('FR-7/FR-3/FR-8: LiveRegistryCard "1,000+" is immediately shown in the reduced-motion path', () => {
+  it('FR-7/FR-3/FR-8: LiveRegistryCard count is immediately shown in the reduced-motion path', () => {
     // With matchMedia.add a no-op, useCountUp never fires its animation callback
-    // and the JSX-rendered "1,000+" stays as the textContent (FR-8).
-    // This is the reduced-motion behavior for the Hero count-up (FR-3/FR-7).
+    // and the JSX-rendered live count stays as the textContent (FR-8).
     useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
 
-    const { getByText } = renderHomePage();
+    const { getByRole } = renderHomePage();
 
-    const countNode = getByText('1,000+');
+    const countNode = getByRole('region', { name: /live registry summary/i });
+    expect(countNode).toHaveTextContent('1,234');
     expect(countNode).toBeInTheDocument();
     expect(countNode).toBeVisible();
   });
@@ -213,10 +213,11 @@ describe('Home page — reduced-motion / GSAP-mocked final-state (NFR-1, FR-7, F
     // With GSAP mocked, all figures must show their final values immediately.
     useMetrics.mockReturnValue({ data: FULL_METRICS, loading: false });
 
-    const { getAllByText, getByText } = renderHomePage();
+    const { getAllByText, getByText, getByRole } = renderHomePage();
 
-    // Four metric figures — all present and visible without animation.
-    expect(getByText((_, el) =>
+    // Four metric figures — all present and visible without animation. Scoped to
+    // the band: the hero's Live Registry card shows the same actorsMapped value.
+    expect(within(getByRole('region', { name: 'Registry metrics summary' })).getByText((_, el) =>
       el?.tagName === 'SPAN' && /1[,.]?234/.test(el.textContent ?? '')
     )).toBeVisible();
 

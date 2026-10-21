@@ -52,6 +52,18 @@ describe('useMetrics()', () => {
     jest.clearAllMocks();
   });
 
+  it('shares one in-flight request between hooks mounted together', async () => {
+    getMetrics.mockResolvedValue(VALID_METRICS);
+
+    const a = renderHook(() => useMetrics());
+    const b = renderHook(() => useMetrics());
+    await waitFor(() => expect(b.result.current.loading).toBe(false));
+
+    expect(getMetrics).toHaveBeenCalledTimes(1);
+    expect(a.result.current.data).toEqual(VALID_METRICS);
+    expect(b.result.current.data).toEqual(VALID_METRICS);
+  });
+
   it('starts with loading=true and data=null', async () => {
     // Hold the promise unresolved so we can inspect initial synchronous state
     let resolveFn!: (v: Metrics | null) => void;
