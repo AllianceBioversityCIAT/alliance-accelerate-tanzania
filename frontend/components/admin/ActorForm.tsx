@@ -1015,6 +1015,11 @@ export default function ActorForm({
     );
   };
 
+  // A DENIED status records a refusal, not consent obtained (ATP-92: link
+  // declines now carry their response date).
+  const consentDateLabel =
+    values.consentStatus === 'DENIED' ? 'Consent decision date' : 'Consent obtained on';
+
   /**
    * T-9 (FR-2) — `consentMethod` is deliberately NOT rendered via the generic
    * `renderSelect`: that helper always prepends a blank "—" option meaning
@@ -1024,11 +1029,6 @@ export default function ActorForm({
    * second way to express the same state (and one that fails `@IsIn` server-
    * side if ever submitted, since `''` is not a member of `ConsentMethod`).
    */
-  // A DENIED status records a refusal, not consent obtained (ATP-92: link
-  // declines now carry their response date).
-  const consentDateLabel =
-    values.consentStatus === 'DENIED' ? 'Consent decision date' : 'Consent obtained on';
-
   const renderConsentMethodSelect = () => {
     const id = fieldId('consentMethod');
     const error = errors.consentMethod;
