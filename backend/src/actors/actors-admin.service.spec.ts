@@ -1464,7 +1464,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
         expect(prisma.actor.update).toHaveBeenCalledWith({
           where: { id: 'actor-1' },
-          data: { country: 'KE', region: 'Mombasa', phone: '+254712345678' },
+          data: { country: 'KE', region: 'Mombasa', phone: '+254 712345678' },
         });
         expect(res.country).toBe('KE');
         const changes = prisma.actorAuditLog.create.mock.calls[0][0].data.changes;

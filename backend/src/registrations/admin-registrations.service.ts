@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { payloadCountry } from '../common/geo/countries';
+import { formatPhoneFor, payloadCountry } from '../common/geo/countries';
 import {
   ConsentMethod,
   ConsentStatus,
@@ -985,7 +985,7 @@ export class AdminRegistrationsService {
           gpsLatitude: payload.gpsLatitude ?? null,
           gpsLongitude: payload.gpsLongitude ?? null,
           capacityTons: payload.capacityTons,
-          phone: payload.phone,
+          phone: formatPhoneFor(payloadCountry(payload), payload.phone),
           // public-profile-disclosure FR-4 — published deliberately.
           otherCrops: payload.otherCrops ?? null,
           // §6.3 — NOT payload.email: the payload carries no email field at

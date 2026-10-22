@@ -612,7 +612,7 @@ describe('ActorImportService', () => {
         string,
         unknown
       >;
-      expect(created.phone).toBe('+255700000002');
+      expect(created.phone).toBe('+255 700000002');
     });
 
     // ATP-90 (QA PBR-10): Phone is required, so a present but unrecognised
@@ -660,7 +660,7 @@ describe('ActorImportService', () => {
         string,
         unknown
       >;
-      expect(created.phone).toBe('+255700000006');
+      expect(created.phone).toBe('+255 700000006');
     });
 
     it('names positions, never digits, when more than one number is discarded', async () => {
@@ -742,7 +742,7 @@ describe('ActorImportService', () => {
         string,
         unknown
       >;
-      expect(created.phone).toBe('+255700000002');
+      expect(created.phone).toBe('+255 700000002');
     });
   });
 
@@ -2228,8 +2228,8 @@ describe('ActorImportService', () => {
       const report = await service.run(commitDto(b64), 'sub-1');
 
       expect(report.totals.warnings).toBe(0);
-      expect(tx.actor.create.mock.calls[0][0].data).toMatchObject({ country: 'KE', phone: '+254712345678' });
-      expect(tx.actor.create.mock.calls[1][0].data).toMatchObject({ country: 'TZ', phone: '+255700000002' });
+      expect(tx.actor.create.mock.calls[0][0].data).toMatchObject({ country: 'KE', phone: '+254 712345678' });
+      expect(tx.actor.create.mock.calls[1][0].data).toMatchObject({ country: 'TZ', phone: '+255 700000002' });
     });
 
     it('rejects a Kenyan row with a national 07... phone (only Tanzanian national numbers convert)', async () => {

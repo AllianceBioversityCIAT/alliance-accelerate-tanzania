@@ -1025,7 +1025,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
             expect(result.actor.gpsLatitude).toBe(-3.3869);
             expect(result.actor.gpsLongitude).toBe(36.683);
             expect(result.actor.capacityTons).toBe(120);
-            expect(result.actor.phone).toBe('+255700000000');
+            expect(result.actor.phone).toBe('+255 700000000');
             expect(result.actor.crops.sort()).toEqual(['common_bean', 'sorghum']);
           },
         );

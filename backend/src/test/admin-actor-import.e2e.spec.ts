@@ -63,6 +63,7 @@ import {
  * already canonical, so it round-trips unchanged.
  */
 const IMPORT_PII_PHONE = '+255700123456';
+const IMPORT_PII_PHONE_STORED = '+255 700123456';
 const IMPORT_PII_EMAIL = 'import-leak-detector@example.test';
 const IMPORT_BAD_EMAIL = 'super-secret-leak@bad';
 
@@ -781,7 +782,7 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
 
       // FR-11: no PII value anywhere in the report body.
       const bodyText = JSON.stringify(res.body);
-      for (const secret of [IMPORT_PII_PHONE, IMPORT_PII_EMAIL, IMPORT_BAD_EMAIL]) {
+      for (const secret of [IMPORT_PII_PHONE, IMPORT_PII_PHONE_STORED, IMPORT_PII_EMAIL, IMPORT_BAD_EMAIL]) {
         expect(bodyText).not.toContain(secret);
       }
 
@@ -793,7 +794,7 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
         .set(admin)
         .expect(200);
       expect(detail.body.crops.sort()).toEqual(['groundnut', 'sorghum']);
-      expect(detail.body.phone).toBe(IMPORT_PII_PHONE);
+      expect(detail.body.phone).toBe(IMPORT_PII_PHONE_STORED);
       expect(detail.body.consentStatus).toBe('UNKNOWN');
 
       // FR-8: exactly one IMPORT audit entry, retrievable via the history route.

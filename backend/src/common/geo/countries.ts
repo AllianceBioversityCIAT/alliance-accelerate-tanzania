@@ -139,6 +139,19 @@ export function normalizePhoneFor(
   return normalizePhone(raw, entry.callingCode);
 }
 
+/**
+ * The stored form of a phone: `+<calling code> <subscriber>`, e.g.
+ * `+254 712345901`. A value that does not normalize for the country, or that
+ * holds more than one number, is returned unchanged rather than guessed at.
+ */
+export function formatPhoneFor(country: string | null, raw: string): string {
+  const entry = countryByCode(country);
+  if (!entry) return raw;
+  const { phone, additionalCount } = normalizePhone(raw, entry.callingCode);
+  if (phone === null || additionalCount > 0) return raw;
+  return `+${entry.callingCode} ${phone.slice(entry.callingCode.length + 1)}`;
+}
+
 /** Registrations submitted before `country` existed were all Tanzanian. */
 export const LEGACY_PAYLOAD_COUNTRY = 'TZ';
 

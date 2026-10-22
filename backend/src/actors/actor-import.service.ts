@@ -66,6 +66,7 @@ import {
 } from '../common/normalize';
 import {
   countryByCode,
+  formatPhoneFor,
   normalizeCountry,
   normalizePhoneFor,
   normalizeRegionFor,
@@ -701,7 +702,7 @@ export class ActorImportService {
       const normalized = normalizePhoneFor(country, cells.phone);
       // `null`, never the raw string — storing an unnormalizable value is the
       // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
-      phone = normalized.phone;
+      phone = normalized.phone && formatPhoneFor(country, normalized.phone);
       if (normalized.phone === null) {
         errors.push({ field: 'phone', message: phoneUnrecognizedError(country) });
       } else if (normalized.additionalCount > 0) {

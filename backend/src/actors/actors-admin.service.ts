@@ -29,7 +29,7 @@ import {
   isSameProvenanceValue,
 } from '../common/consent-provenance.policy';
 import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
-import { isRegionOf } from '../common/geo/countries';
+import { formatPhoneFor, isRegionOf } from '../common/geo/countries';
 import { regionOfCountryMessage } from '../common/region-of-country.validator';
 import { isPhoneOfCountry, phoneOfCountryMessage } from '../common/phone-of-country.validator';
 import {
@@ -249,7 +249,7 @@ export class ActorsAdminService {
         return await this.prisma.$transaction(async (tx) => {
           const created = await tx.actor.create({
             data: {
-              ...this.buildScalarData(dto),
+              ...this.buildScalarData(dto, dto.country),
               traderId,
             } as Prisma.ActorCreateInput,
           });
@@ -397,7 +397,9 @@ export class ActorsAdminService {
 
         this.assertAdditionalTypesExcludeMain(before, dto);
 
-        const updateData: Record<string, unknown> = { ...this.buildScalarData(dtoForWrite) };
+        const updateData: Record<string, unknown> = {
+          ...this.buildScalarData(dtoForWrite, dto.country ?? before.country),
+        };
         // Replace the set inside the same update; `updatedAt` is set explicitly
         // because a nested-only write does not stamp it.
         if (dto.additionalTraderTypes !== undefined) {
@@ -1124,16 +1126,21 @@ export class ActorsAdminService {
 
   /**
    * Build a Prisma data object containing only the scalar fields present in
-   * the DTO. Used for both create and partial update inputs.
+   * the DTO. Used for both create and partial update inputs. A phone is
+   * written in its stored form for `country` (the effective one on update).
    */
   private buildScalarData(
     dto: AdminActorCreateDto | AdminActorUpdateDto,
+    country: string | null,
   ): Prisma.ActorCreateInput | Prisma.ActorUpdateInput {
     const data: Record<string, unknown> = {};
     for (const field of SCALAR_FIELDS) {
       if (field in dto) {
         data[field] = dto[field as keyof typeof dto];
       }
+    }
+    if (typeof data.phone === 'string') {
+      data.phone = formatPhoneFor(country, data.phone);
     }
     return data as Prisma.ActorCreateInput | Prisma.ActorUpdateInput;
   }
