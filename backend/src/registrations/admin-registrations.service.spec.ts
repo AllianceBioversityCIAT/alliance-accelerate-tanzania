@@ -1389,7 +1389,7 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
     });
 
     describe('FR-14 scenario 1 — the notification is dispatched AFTER commit, never inside it', () => {
-      it('sendApproval is called with the submitter email and reference, AFTER the transaction resolves', async () => {
+      it('sendApproval is called with the submitter email, reference and published actor id, AFTER the transaction resolves', async () => {
         const tx = buildTx();
         wireTransaction(tx);
         const callOrder = createCommitOrderTracker(prisma, tx);
@@ -1397,9 +1397,13 @@ describe('AdminRegistrationsService (mocked Prisma)', () => {
           callOrder.push('notification-dispatched');
         });
 
-        await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
+        const result = await service.approve('reg-approve-1', ACKNOWLEDGEMENT as never, ACTING_SUB);
 
-        expect(mailService.sendApproval).toHaveBeenCalledWith('director@example.com', 'REG-2026-0184');
+        expect(mailService.sendApproval).toHaveBeenCalledWith(
+          'director@example.com',
+          'REG-2026-0184',
+          result.actor.id,
+        );
         expect(callOrder).toEqual(['transaction-committed', 'notification-dispatched']);
       });
 

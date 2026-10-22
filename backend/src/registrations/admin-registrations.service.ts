@@ -1095,7 +1095,11 @@ export class AdminRegistrationsService {
     // has committed, using values returned FROM that (already-committed)
     // result. `fix/otp-mail-lambda-freeze` — now AWAITED (see this
     // method's class doc above); the send's own failure stays non-fatal.
-    const emailSent = await this.dispatchApprovalEmail(submitterEmail, registration.reference);
+    const emailSent = await this.dispatchApprovalEmail(
+      submitterEmail,
+      registration.reference,
+      actor.id,
+    );
 
     return { registration, actor, emailSent };
   }
@@ -1162,6 +1166,13 @@ export class AdminRegistrationsService {
   ): Promise<RegistrationRejectResult> {
     const acting = await this.resolveActing(actingSub);
     const now = new Date();
+    // KZ-007 — trim, then treat a now-empty string identically to a missing
+    // one. `@IsOptional()` only skips `null`/`undefined`, so an admin
+    // submitting a blank/whitespace-only note (exactly what a controlled
+    // `<textarea>` submits) would otherwise store `''`, and 3a's public lookup
+    // (`toPublicRegistrationLookup`) treats any non-null `reviewNote` as
+    // present. The same value goes in the rejection email (ATP-99).
+    const reviewNote = dto.note?.trim() ? dto.note.trim() : null;
 
     const { registration, submitterEmail } = await this.prisma.$transaction(async (tx) => {
       // Step 1 (DD-17, mirrors approve) — the conditional update IS the
@@ -1172,15 +1183,7 @@ export class AdminRegistrationsService {
         data: {
           status: RegistrationStatus.REJECTED,
           rejectionReason: dto.reason,
-          // KZ-007 — trim, then treat a now-empty string identically to a
-          // missing one. `@IsOptional()` only skips `null`/`undefined`, so
-          // an admin submitting a blank/whitespace-only note (exactly what
-          // a controlled `<textarea>` submits — T-14 must not be relied on
-          // to prevent this) would otherwise store `''`, and 3a's public
-          // lookup (`toPublicRegistrationLookup`) treats any non-null
-          // `reviewNote` as present, surfacing an empty-but-present field to
-          // the applicant.
-          reviewNote: dto.note?.trim() ? dto.note.trim() : null,
+          reviewNote,
           reviewedBySub: actingSub,
           reviewedByEmail: acting.email,
           reviewedAt: now,
@@ -1229,7 +1232,11 @@ export class AdminRegistrationsService {
     // value returned FROM that (already-committed) result — same placement
     // discipline as approve's dispatchApprovalEmail. `fix/otp-mail-lambda-
     // freeze` — now AWAITED; the send's own failure stays non-fatal.
-    const emailSent = await this.dispatchRejectionEmail(submitterEmail, registration.reference);
+    const emailSent = await this.dispatchRejectionEmail(
+      submitterEmail,
+      registration.reference,
+      reviewNote,
+    );
 
     return { registration, emailSent };
   }
@@ -1312,9 +1319,13 @@ export class AdminRegistrationsService {
    * method's latency, so there is no oracle to protect against. The catch
    * below is unchanged: still non-fatal, still class-name-only.
    */
-  private async dispatchApprovalEmail(to: string, reference: string): Promise<boolean> {
+  private async dispatchApprovalEmail(
+    to: string,
+    reference: string,
+    actorId: string,
+  ): Promise<boolean> {
     try {
-      await this.mailService.sendApproval(to, reference);
+      await this.mailService.sendApproval(to, reference, actorId);
       return true;
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
@@ -1334,9 +1345,13 @@ export class AdminRegistrationsService {
    * fire-and-forget, for the same production reason documented on
    * `dispatchApprovalEmail` above; no constant-time floor here either.
    */
-  private async dispatchRejectionEmail(to: string, reference: string): Promise<boolean> {
+  private async dispatchRejectionEmail(
+    to: string,
+    reference: string,
+    reviewNote: string | null,
+  ): Promise<boolean> {
     try {
-      await this.mailService.sendRejection(to, reference);
+      await this.mailService.sendRejection(to, reference, reviewNote);
       return true;
     } catch (err: unknown) {
       const errorType = err instanceof Error ? err.name : 'UnknownError';
