@@ -192,6 +192,26 @@ describe('ConsentPublicService', () => {
       expect(changes.fields.consentReference.from).toBe('ADMIN-REF-AFTER-ROUTING');
     });
 
+    // ATP-92 (QA PBR-16): the audit row of a decline records the method, time
+    // and request id it now writes, not just the status.
+    it('a decline audits the change to DENIED / EMAIL_LINK / response time / request id', async () => {
+      const token = consentTokenFor('decline-audit');
+      const harness = buildConsentPublicHarness([consentActorFixture()], [consentRowFixture(token)]);
+
+      await makeService(harness).respond({ token, decision: 'DECLINE' });
+
+      const changes = harness.getAuditRows()[0].changes as {
+        fields: Record<string, { from: unknown; to: unknown }>;
+      };
+      const request = harness.getRequests()[0];
+      expect(changes.fields.consentStatus.to).toBe('DENIED');
+      expect(changes.fields.consentMethod.to).toBe('EMAIL_LINK');
+      expect(changes.fields.consentReference.to).toBe(request.id);
+      expect(new Date(changes.fields.consentObtainedAt.to as string).getTime()).toBe(
+        new Date(request.respondedAt as Date).getTime(),
+      );
+    });
+
     it('no actor to lock is the uniform miss, and the CAS never runs', async () => {
       const token = consentTokenFor('lock-no-actor');
       const harness = buildConsentPublicHarness(
