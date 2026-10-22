@@ -138,8 +138,7 @@ export default function ConsentResponseForm({
     <form ref={formRef} onSubmit={handleAccept} noValidate className="flex flex-col gap-8">
       <ConsentTextScrollGate
         title={CONSENT_PAGE_COPY.consentTitle}
-        // The registry's versions already carry the "v" ("v1.0"); the gate prefixes one.
-        version={edition.version.replace(/^v/, '')}
+        version={edition.version}
         sections={edition.sections}
         acceptanceStatement={edition.acceptanceStatement}
         checked={checked}

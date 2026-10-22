@@ -162,6 +162,19 @@ describe('ConsentPolicyDisclosure — initial render', () => {
   });
 });
 
+// ATP-100 (QA PBR-17): editions carry their own "v" ("v1.1"); the heading must
+// not double it into "vv1.1".
+describe('ConsentPolicyDisclosure — version label', () => {
+  it('shows "v1.1" for an edition named "v1.1", never "vv1.1"', async () => {
+    mockGetConsentPolicy.mockResolvedValue({ ...FOUR_SECTION_POLICY, version: 'v1.1' });
+    render(<ConsentPolicyDisclosure checked={false} onChange={jest.fn()} />);
+
+    await screen.findByText('What we collect');
+    expect(screen.getByText('v1.1')).toBeInTheDocument();
+    expect(screen.queryByText(/vv1\.1/)).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Progress text derives its count from the fetched payload (obligation 2)
 // ---------------------------------------------------------------------------
