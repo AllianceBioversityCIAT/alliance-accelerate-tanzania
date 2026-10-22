@@ -1262,7 +1262,7 @@ describe('Admin actor import e2e (HTTP + in-memory Prisma)', () => {
           // `validRow()`'s default phone+email would all strongly match
           // row 1, collapsing this fixture to 1 create + 249 possible
           // duplicates instead of exercising the chunking/size path.
-          phone: `0${String(i + 1).padStart(9, '0')}`,
+          phone: `0761${String(i + 1).padStart(6, '0')}`,
           email: `big-row-${i + 1}@example.org`,
           technicalSupport: randomText(1000 + i, 480),
         }),

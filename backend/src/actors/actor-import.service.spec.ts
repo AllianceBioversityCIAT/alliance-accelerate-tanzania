@@ -36,7 +36,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActorImportRequestDto } from './dto/actor-import-request.dto';
 import { AdminActorCreateDto } from './dto/admin-actor-create.dto';
 import { MAX_TRADER_ID_ALLOCATION_ATTEMPTS } from './trader-id.util';
-import { TEMPLATE_VERSION } from '../common/template-columns';
+import { TEMPLATE_HEADERS, TEMPLATE_VERSION } from '../common/template-columns';
 import {
   INTAKE_MAX_LENGTHS,
   INTAKE_REQUIRED_FIELDS,
@@ -75,7 +75,7 @@ function buildTraderIdCollisionError(): Prisma.PrismaClientKnownRequestError {
  */
 function bulkRow(index: number, overrides: CellMap = {}): CellMap {
   return validRow({
-    phone: `0${String(index).padStart(9, '0')}`,
+    phone: `0762${String(index).padStart(6, '0')}`,
     email: `bulk-row-${index}@example.org`,
     ...overrides,
   });
@@ -331,6 +331,29 @@ describe('ActorImportService', () => {
       );
     });
 
+    // ATP-98 (QA PBR-13): the rejection names the column that differs.
+    it('names the renamed column and what it should be', async () => {
+      const headers = [...TEMPLATE_HEADERS];
+      const emailIndex = headers.indexOf('Email');
+      headers[emailIndex] = 'E-mail address';
+      const b64 = await buildWorkbook([validRow()], { headers });
+
+      await expect(service.run(previewDto(b64), 'sub-1')).rejects.toThrow(
+        'Column M should be "Email", found "E-mail address".',
+      );
+    });
+
+    it('lists at most five mismatched columns, then counts the rest', async () => {
+      const b64 = await buildWorkbook([], { headers: ['Foo', 'Bar'] });
+
+      const error = await service.run(previewDto(b64), 'sub-1').catch((e: Error) => e);
+
+      expect((error as Error).message).toContain('Column A should be "Trader Name", found "Foo".');
+      expect((error as Error).message).toContain('Column C should be "Additional Actor Types", found an empty header.');
+      expect((error as Error).message).toMatch(/…and 19 more\./);
+      expect((error as Error).message).not.toContain('Column F');
+    });
+
     it('rejects a corrupt / non-xlsx buffer with a clean 400', async () => {
       const b64 = Buffer.from('this is definitely not a workbook').toString(
         'base64',
@@ -574,8 +597,8 @@ describe('ActorImportService', () => {
    * it visible rather than buried.
    */
   describe('phone normalization (FR-5, T-3)', () => {
-    const CLEARED_WARNING =
-      "Phone — value is not a recognized number for the row's country (use +country code); imported with Phone cleared";
+    const UNRECOGNIZED_ERROR =
+      'Phone is not a valid number for Tanzania — include the country code (+255).';
 
     it('stores a normalizable phone canonically, with no warning', async () => {
       const b64 = await buildWorkbook([validRow({ phone: '0700000002' })]);
@@ -592,37 +615,32 @@ describe('ActorImportService', () => {
       expect(created.phone).toBe('+255700000002');
     });
 
-    it('creates the row with phone null and a warning when the cell cannot be normalized', async () => {
-      // FR-5: an unusable phone is not grounds to reject a real organisation.
-      const b64 = await buildWorkbook([validRow({ phone: 'ring my office' })]);
+    // ATP-90 (QA PBR-10): Phone is required, so a present but unrecognised
+    // value rejects the row like a blank one, instead of creating the actor
+    // with no phone.
+    it.each([['ring my office'], ['12345']])(
+      'rejects the row, creating nothing, when the phone cell %p cannot be normalized',
+      async (phone) => {
+        const b64 = await buildWorkbook([validRow({ phone })]);
 
-      const report = await service.run(commitDto(b64), 'sub-1');
+        const report = await service.run(commitDto(b64), 'sub-1');
 
-      expect(report.rows[0].outcome).toBe('created');
-      expect(report.rows[0].warnings).toContain(CLEARED_WARNING);
-      expect(report.totals.warnings).toBe(1);
+        expect(report.rows[0].outcome).toBe('failed');
+        expect(report.rows[0].errors).toContainEqual({
+          field: 'phone',
+          message: UNRECOGNIZED_ERROR,
+        });
+        expect(tx.actor.create).not.toHaveBeenCalled();
+      },
+    );
 
-      const created = tx.actor.create.mock.calls[0][0].data as Record<
-        string,
-        unknown
-      >;
-      // Explicitly `null` — NOT absent, and NOT the raw string. Storing the
-      // unnormalizable value verbatim is the behavior T-3 removes.
-      expect(created).toHaveProperty('phone');
-      expect(created.phone).toBeNull();
-    });
-
-    it('never stores the raw string as a fallback for a rejected value', async () => {
+    it('never echoes the rejected value in the report', async () => {
       const raw = 'contact via 0700-000-002 or the office';
       const b64 = await buildWorkbook([validRow({ phone: raw })]);
 
       const report = await service.run(commitDto(b64), 'sub-1');
 
-      const created = tx.actor.create.mock.calls[0][0].data as Record<
-        string,
-        unknown
-      >;
-      expect(created.phone).toBeNull();
+      expect(report.rows[0].outcome).toBe('failed');
       expect(JSON.stringify(report)).not.toContain(raw);
     });
 
@@ -673,27 +691,20 @@ describe('ActorImportService', () => {
       }
     });
 
-    it('raises BOTH warnings when the first segment is unusable and later ones exist', async () => {
+    it('rejects the row when the FIRST "/"-separated segment is unusable, even if later ones are valid', async () => {
       // T-1 advisory A2: `additionalCount` counts SEGMENTS, so
-      // `{ phone: null, additionalCount: 1 }` is reachable. The pipeline must
-      // not assume a non-null phone whenever the count is > 0.
+      // `{ phone: null, additionalCount: 1 }` is reachable; only the first
+      // segment is ever stored, so an unusable first one fails the row.
       const b64 = await buildWorkbook([validRow({ phone: 'n/a/700000007' })]);
 
       const report = await service.run(commitDto(b64), 'sub-1');
 
-      expect(report.rows[0].outcome).toBe('created');
-      expect(report.rows[0].warnings).toEqual(
-        expect.arrayContaining([
-          CLEARED_WARNING,
-          expect.stringContaining('additional value'),
-        ]),
-      );
-
-      const created = tx.actor.create.mock.calls[0][0].data as Record<
-        string,
-        unknown
-      >;
-      expect(created.phone).toBeNull();
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toContainEqual({
+        field: 'phone',
+        message: UNRECOGNIZED_ERROR,
+      });
+      expect(tx.actor.create).not.toHaveBeenCalled();
     });
 
     it('writes no second number into any other Actor field', async () => {
@@ -1605,6 +1616,22 @@ describe('ActorImportService', () => {
       expect(report.rows[0].errors?.[0].field).toBe('consentObtainedAt');
     });
 
+    // ATP-97 (QA PBR-12): a well-formed future date is still rejected, but
+    // with the real reason; a malformed one keeps the generic message.
+    it.each([
+      ['2030-01-01', 'Consent Obtained At cannot be in the future.'],
+      ['2030-01-01T00:00:00Z', 'Consent Obtained At cannot be in the future.'],
+      ['not a date', 'Consent Obtained At must be a valid date.'],
+      ['2026-13-45', 'Consent Obtained At must be a valid date.'],
+    ])('rejects Consent Obtained At %p with "%s"', async (value, message) => {
+      const b64 = await buildWorkbook([validRow({ consentObtainedAt: value })]);
+
+      const report = await service.run(previewDto(b64), 'sub-1');
+
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toEqual([{ field: 'consentObtainedAt', message }]);
+    });
+
     // T-6 rework attempt 2 — the Excel-serial branch previously had no
     // plausibility bound, so a bare number typed into the cell (a year, a
     // day-of-month, or a "0" from a formula over an empty reference) silently
@@ -2160,9 +2187,6 @@ describe('ActorImportService', () => {
     });
   });
   describe('country (multi-country registry)', () => {
-    const createdData = () =>
-      tx.actor.create.mock.calls[0][0].data as Record<string, unknown>;
-
     it('fails a row with a blank Country on `country`, without also blaming Region', async () => {
       const b64 = await buildWorkbook([validRow({ country: '', region: 'Mombasa' })]);
 
@@ -2208,20 +2232,22 @@ describe('ActorImportService', () => {
       expect(tx.actor.create.mock.calls[1][0].data).toMatchObject({ country: 'TZ', phone: '+255700000002' });
     });
 
-    it('clears a Kenyan row\'s national 07... phone with the existing un-normalizable warning', async () => {
+    it('rejects a Kenyan row with a national 07... phone (only Tanzanian national numbers convert)', async () => {
       const b64 = await buildWorkbook([
         validRow({ country: 'Kenya', region: 'Mombasa', phone: '0712345678' }),
       ]);
 
       const report = await service.run(commitDto(b64), 'sub-1');
 
-      expect(report.rows[0].outcome).toBe('created');
-      expect(createdData().phone).toBeNull();
-      expect(report.totals.warnings).toBe(1);
+      expect(report.rows[0].outcome).toBe('failed');
+      expect(report.rows[0].errors).toEqual([
+        { field: 'phone', message: 'Phone is not a valid number for Kenya — include the country code (+254).' },
+      ]);
+      expect(tx.actor.create).not.toHaveBeenCalled();
     });
 
     it('rejects a region that belongs to another country, naming the country', async () => {
-      const b64 = await buildWorkbook([validRow({ country: 'Kenya', region: 'Arusha' })]);
+      const b64 = await buildWorkbook([validRow({ country: 'Kenya', region: 'Arusha', phone: '+254712345678' })]);
 
       const report = await service.run(previewDto(b64), 'sub-1');
 
