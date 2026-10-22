@@ -810,8 +810,8 @@ export class ActorsAdminService {
             }
 
             // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a
-            // NON-GRANTED row whose stored method is EMAIL_LINK (e.g. it was
-            // later set DENIED by an admin) takes the BATCH's method, date,
+            // NON-GRANTED row whose stored method is EMAIL_LINK (a link
+            // decline, ATP-92, or a link grant later set DENIED by an admin) takes the BATCH's method, date,
             // AND reference (or null) — never a field-by-field fill, and
             // never "preserved" with a label that claims the actor's own
             // act (RB-2). The link-era evidence must not survive under an

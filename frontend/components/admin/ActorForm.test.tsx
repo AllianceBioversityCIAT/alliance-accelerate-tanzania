@@ -1600,9 +1600,21 @@ describe('ActorForm — an EMAIL_LINK actor (FR-10, design §5.7)', () => {
     const options = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value);
     expect(options).not.toContain('EMAIL_LINK');
     expect(options).toEqual(['', 'NOT_RECORDED', 'PORTAL_CHECKBOX', 'SIGNED_FORM', 'EMAIL', 'VERBAL_FIELD']);
-    // Date and reference are editable again.
-    expect(screen.getByLabelText('Consent obtained on')).not.toHaveAttribute('readonly');
+    // Date and reference are editable again; under DENIED the date is the decision date.
+    expect(screen.getByLabelText('Consent decision date')).not.toHaveAttribute('readonly');
     expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
+  });
+
+  // ATP-92 (QA PBR-16): link declines now carry EMAIL_LINK, so the form must
+  // not say the actor accepted, nor call the refusal date "consent obtained".
+  it('describes a link-declined actor neutrally: no "accepted" hint, and a decision-date label', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('Email link (actor)');
+    expect(screen.getByText(/actor’s own answer to the emailed consent link/)).toBeInTheDocument();
+    expect(screen.queryByText(/accepted through the emailed link/)).toBeNull();
+    expect(screen.getByLabelText('Consent decision date')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Consent obtained on')).toBeNull();
   });
 
   it('clears the link-era date and reference on a re-grant so they cannot ride under an admin method (D-24)', () => {

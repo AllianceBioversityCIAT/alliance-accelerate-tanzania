@@ -1024,6 +1024,11 @@ export default function ActorForm({
    * second way to express the same state (and one that fails `@IsIn` server-
    * side if ever submitted, since `''` is not a member of `ConsentMethod`).
    */
+  // A DENIED status records a refusal, not consent obtained (ATP-92: link
+  // declines now carry their response date).
+  const consentDateLabel =
+    values.consentStatus === 'DENIED' ? 'Consent decision date' : 'Consent obtained on';
+
   const renderConsentMethodSelect = () => {
     const id = fieldId('consentMethod');
     const error = errors.consentMethod;
@@ -1310,8 +1315,8 @@ export default function ActorForm({
               {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
               {renderConsentMethodSelect()}
               {isLinkEvidenceFrozen(mode, values, initialValues)
-                ? renderFrozenInput('consentObtainedAt', 'Consent obtained on', 'date')
-                : renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
+                ? renderFrozenInput('consentObtainedAt', consentDateLabel, 'date')
+                : renderInput('consentObtainedAt', consentDateLabel, 'date', false)}
               {isLinkEvidenceFrozen(mode, values, initialValues)
                 ? renderFrozenInput('consentReference', 'Consent reference', 'text')
                 : renderInput(

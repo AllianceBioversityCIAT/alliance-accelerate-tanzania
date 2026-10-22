@@ -1680,6 +1680,30 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
       });
 
+      // ATP-92 — a link DECLINE now leaves DENIED + EMAIL_LINK + its date and
+      // reference; the edit form re-sends them with any unrelated change,
+      // which must still save.
+      it('accepts an unrelated edit of a link-declined actor that re-sends its EMAIL_LINK evidence', async () => {
+        const before = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED, capacityTons: 1000 });
+        const after = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED, capacityTons: 1500 });
+
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT.toISOString() as never,
+          consentReference: 'consent-req-1',
+          capacityTons: 1500,
+        } as AdminActorUpdateDto;
+
+        await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+      });
+
       // Falsifier 2 (tasks.md T-1) — EMAIL_LINK -> DENIED -> GRANTED re-grant.
       // The stored method is STILL EMAIL_LINK (an admin lock never clears
       // it), so rule 1 alone does not fire here; rule 2 is what must catch
