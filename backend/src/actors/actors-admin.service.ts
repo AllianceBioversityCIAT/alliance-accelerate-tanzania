@@ -981,7 +981,7 @@ export class ActorsAdminService {
 
   /**
    * DD-9 / design.md §5.7 — no admin write path may assert `EMAIL_LINK`, and
-   * a `GRANTED`-by-link actor's evidence is frozen. `AdminActorUpdateDto`
+   * an actor's link evidence is frozen while its status is unchanged. `AdminActorUpdateDto`
    * validates `consentMethod` against the FULL enum (unlike create/bulk/
    * import, which use `ADMIN_ASSERTABLE_CONSENT_METHODS`) because
    * `ActorForm.buildDto` always resends the stored value — so these three
