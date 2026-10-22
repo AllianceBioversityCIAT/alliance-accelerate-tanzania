@@ -1449,7 +1449,9 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
     });
   });
 
-  it('Shift+Tab from the first focusable button wraps to the last button inside the dialog (focus trap)', async () => {
+  // The candidate list is a keyboard-scrollable region (tabIndex 0), so it is
+  // now the dialog's first focusable element; the trap wraps from it.
+  it('Shift+Tab from the first focusable element (the candidate list) wraps to the last button inside the dialog (focus trap)', async () => {
     const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(
       new ApiError(409, 'Possible duplicate', undefined, {
@@ -1465,10 +1467,12 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
 
     const dialog = await screen.findByRole('dialog');
     const buttons = within(dialog).getAllByRole('button');
-    const first = buttons[0];
+    const list = within(dialog).getByRole('list', { name: 'Possible duplicates' });
     const last = buttons[buttons.length - 1];
 
-    await waitFor(() => expect(document.activeElement).toBe(first));
+    // Opening still focuses the first button, not the list.
+    await waitFor(() => expect(document.activeElement).toBe(buttons[0]));
+    list.focus();
 
     // Drive it through the hook's own handler, not native tab order (jsdom
     // doesn't implement tab navigation) — this is what actually wraps focus.
