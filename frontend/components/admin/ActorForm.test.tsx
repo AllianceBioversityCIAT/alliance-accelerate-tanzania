@@ -1617,6 +1617,20 @@ describe('ActorForm — an EMAIL_LINK actor (FR-10, design §5.7)', () => {
     expect(screen.queryByLabelText('Consent obtained on')).toBeNull();
   });
 
+  // ATP-92: a link decline's evidence is frozen like an accept's, until the
+  // status changes.
+  it('renders a link-declined actor\'s date and reference read-only until the status changes', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    expect(screen.getByLabelText('Consent decision date')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).toHaveAttribute('readonly');
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'UNKNOWN' } });
+
+    expect(screen.getByLabelText('Consent obtained on')).not.toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
+  });
+
   it('clears the link-era date and reference on a re-grant so they cannot ride under an admin method (D-24)', () => {
     renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
 

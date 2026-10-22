@@ -534,8 +534,9 @@ function isStoredEmailLink(mode: 'create' | 'edit', initialValues?: AdminActor):
 }
 
 /**
- * Rule 3 (frozen evidence): `GRANTED` by link with the status unchanged. The
- * method, date and reference are the actor's evidence and render read-only.
+ * Rule 3 (frozen evidence): a stored EMAIL_LINK with the status unchanged —
+ * an Accept or, since ATP-92, a Decline. The method, date and reference are
+ * the actor's evidence and render read-only; changing the status unlocks them.
  */
 function isLinkEvidenceFrozen(
   mode: 'create' | 'edit',
@@ -544,8 +545,7 @@ function isLinkEvidenceFrozen(
 ): boolean {
   return (
     isStoredEmailLink(mode, initialValues) &&
-    initialValues?.consentStatus === 'GRANTED' &&
-    values.consentStatus === initialValues.consentStatus
+    values.consentStatus === initialValues?.consentStatus
   );
 }
 

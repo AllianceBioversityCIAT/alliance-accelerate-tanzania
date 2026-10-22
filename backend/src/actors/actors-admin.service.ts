@@ -995,7 +995,9 @@ export class ActorsAdminService {
    *    `DENIED` by an admin (method never cleared), and is now being
    *    re-granted: the re-grant is the admin's own assertion and must carry
    *    an admin-assertable method.
-   * 3. While the actor IS `GRANTED` by link and STAYS `GRANTED`, its
+   * 3. While the stored method is `EMAIL_LINK` and the status is unchanged
+   *    — an Accept that stays `GRANTED` or, since ATP-92, a link Decline that
+   *    stays `DENIED` (or a link grant an admin later moved) — its
    *    `consentMethod`/`consentObtainedAt`/`consentReference` are frozen —
    *    only a status change (which falls under rule 2 on a later re-grant)
    *    can correct the record.
@@ -1035,11 +1037,11 @@ export class ActorsAdminService {
       );
     }
 
-    // Rule 3 — evidence frozen while GRANTED by link (status unchanged).
-    const wasGrantedByLink =
-      before.consentStatus === ConsentStatus.GRANTED &&
-      storedMethod === ConsentMethod.EMAIL_LINK;
-    if (wasGrantedByLink && effectiveStatus === ConsentStatus.GRANTED) {
+    // Rule 3 — the actor's link evidence is frozen while the status it was
+    // stored under is unchanged, whatever that status is (ATP-92: link
+    // declines carry the same evidence as accepts).
+    const holdsLinkEvidence = storedMethod === ConsentMethod.EMAIL_LINK;
+    if (holdsLinkEvidence && effectiveStatus === before.consentStatus) {
       const frozen: Array<{
         field: 'consentMethod' | 'consentObtainedAt' | 'consentReference';
         submitted: FrozenValue;
@@ -1062,7 +1064,7 @@ export class ActorsAdminService {
         if (!isSameProvenanceValue(submitted, stored)) {
           throw this.buildConsentMethodError(
             field,
-            `${field} cannot be changed while consent is GRANTED by EMAIL_LINK — change the status to correct the record`,
+            `${field} cannot be changed while it records the actor's own answer to the consent link — change the status to correct the record`,
           );
         }
       }

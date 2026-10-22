@@ -1741,6 +1741,55 @@ describe('ActorsAdminService (mocked Prisma)', () => {
       });
     });
 
+    // ATP-92 — rule 3 also freezes the evidence of a link DECLINE while the
+    // actor stays DENIED; changing the status is the only way to correct it.
+    describe('rule 3 on a link-declined actor (ATP-92)', () => {
+      const declinedByLink = () =>
+        fixtureActor({
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL_LINK,
+          consentObtainedAt: new Date('2026-10-22T10:00:00.000Z'),
+          consentReference: 'consent-req-9',
+        });
+
+      it.each([
+        { field: 'consentMethod', value: ConsentMethod.SIGNED_FORM },
+        { field: 'consentObtainedAt', value: '2026-09-01T00:00:00.000Z' },
+        { field: 'consentReference', value: 'DOC-999' },
+      ])('rejects a $field change while the actor stays DENIED', async ({ field, value }) => {
+        prisma.actor.findUnique.mockResolvedValue(declinedByLink());
+
+        const dto = { consentStatus: ConsentStatus.DENIED, [field]: value } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, field);
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      it('lets the admin record new evidence once the status changes (DENIED → UNKNOWN)', async () => {
+        const before = declinedByLink();
+        const after = fixtureActor({
+          consentStatus: ConsentStatus.UNKNOWN,
+          consentMethod: ConsentMethod.VERBAL_FIELD,
+          consentReference: 'FIELD-1',
+        });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update(
+          'actor-1',
+          {
+            consentStatus: ConsentStatus.UNKNOWN,
+            consentMethod: ConsentMethod.VERBAL_FIELD,
+            consentReference: 'FIELD-1',
+          } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+      });
+    });
+
     // T-3 — D-24 (design.md §5.7 rule 4, amended 2026-10-05): a re-grant of
     // a stored-EMAIL_LINK actor must NOT inherit the link's evidence.
     describe('D-24 — a re-grant does not inherit link evidence (design.md §5.7 rule 4)', () => {
