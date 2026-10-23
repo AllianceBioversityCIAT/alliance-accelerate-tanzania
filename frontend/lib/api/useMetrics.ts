@@ -22,6 +22,17 @@
 import { useEffect, useState } from 'react';
 import { getMetrics, type Metrics } from './metrics';
 
+// Components mounted together (hero card, metrics band, crop coverage) share
+// one in-flight request instead of each firing its own.
+let pending: Promise<Metrics | null> | null = null;
+
+function loadMetrics(): Promise<Metrics | null> {
+  pending ??= getMetrics().finally(() => {
+    pending = null;
+  });
+  return pending;
+}
+
 export interface UseMetricsResult {
   data: Metrics | null;
   loading: boolean;
@@ -36,7 +47,7 @@ export function useMetrics(): UseMetricsResult {
   useEffect(() => {
     let cancelled = false;
 
-    getMetrics().then((result) => {
+    loadMetrics().then((result) => {
       if (!cancelled) {
         setData(result);
         setLoading(false);

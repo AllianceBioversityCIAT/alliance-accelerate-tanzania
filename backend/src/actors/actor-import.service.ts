@@ -64,7 +64,13 @@ import {
   normalizeTraderType,
   parseCapacityTons,
 } from '../common/normalize';
-import { normalizeCountry, normalizePhoneFor, normalizeRegionFor } from '../common/geo/countries';
+import {
+  countryByCode,
+  formatPhoneFor,
+  normalizeCountry,
+  normalizePhoneFor,
+  normalizeRegionFor,
+} from '../common/geo/countries';
 import { regionOfCountryMessage } from '../common/region-of-country.validator';
 import { isConsentProvenanceSatisfied } from '../common/consent-provenance.policy';
 import { INTAKE_MAX_LENGTHS, IntakeRequiredField } from '../common/intake-contract';
@@ -102,6 +108,9 @@ const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
  */
 const MIN_PLAUSIBLE_EXCEL_SERIAL = 36526;
 
+/** How many mismatched headers the "headers do not match" error names. */
+const HEADER_MISMATCHES_SHOWN = 5;
+
 /** Fixed warning surfaced when a row's GPS is dropped (DR-5). */
 const GPS_CLEARED_WARNING = 'GPS out of range — imported with GPS cleared';
 /** Preview-only note so the UI knows to gate the commit behind acknowledgement. */
@@ -109,15 +118,18 @@ const CONSENT_ACK_WARNING =
   'Consent is GRANTED — acknowledgement will be required to import this actor';
 
 /**
- * T-3 (FR-5) — warning for a non-empty Phone cell that `normalizePhone()`
- * could not resolve. The row is still **created**: an unusable phone is not
- * grounds to reject a real organisation. The message names the column so the
- * AT team can find and repair the source cell, and deliberately carries **no
- * part of the rejected value** — echoing the digits back would put PII into a
- * report surface (FR-5, NFR-9).
+ * Error for a non-empty Phone cell that `normalizePhone()` cannot resolve,
+ * naming the row's country and calling code.
+ * Phone is required, so the row is rejected like a blank one (ATP-90, QA
+ * PBR-10). Carries no part of the value: echoing digits would put PII into
+ * the report (NFR-9).
  */
-const PHONE_UNNORMALIZABLE_WARNING =
-  "Phone — value is not a recognized number for the row's country (use +country code); imported with Phone cleared";
+function phoneUnrecognizedError(countryCode: string): string {
+  const entry = countryByCode(countryCode);
+  return entry
+    ? `Phone is not a valid number for ${entry.name} — include the country code (+${entry.callingCode}).`
+    : "Phone is not a valid number for the row's country — include the country code.";
+}
 
 /**
  * T-3 (FR-5) — warning for a `/`-separated multi-number Phone cell. The first
@@ -361,9 +373,7 @@ export class ActorImportService {
 
     const sheet = this.locateDataSheet(workbook);
     if (!sheet) {
-      throw new BadRequestException(
-        'The workbook has no Data sheet matching the import template headers.',
-      );
+      throw new BadRequestException(this.headerMismatchMessage(workbook));
     }
 
     // Read raw rows first so the row cap bounds CPU before any validation.
@@ -441,6 +451,34 @@ export class ActorImportService {
       }
     }
     return null;
+  }
+
+  /**
+   * Names the columns whose header differs from the template (ATP-98, QA
+   * PBR-13), read from the "Data" sheet or else the first sheet. Headers are
+   * template labels, not row data, so echoing them carries no PII.
+   */
+  private headerMismatchMessage(workbook: ExcelJS.Workbook): string {
+    const base = 'The Data sheet headers do not match the import template.';
+    const sheet = workbook.getWorksheet('Data') ?? workbook.worksheets[0];
+    if (!sheet) return base;
+
+    const header = sheet.getRow(1);
+    const mismatches = TEMPLATE_HEADERS.flatMap((expected, i) => {
+      const found = this.cellToString(header.getCell(i + 1).value);
+      if (found === expected) return [];
+      const column = header.getCell(i + 1).address.replace(/\d+$/, '');
+      return [
+        found
+          ? `Column ${column} should be "${expected}", found "${found}".`
+          : `Column ${column} should be "${expected}", found an empty header.`,
+      ];
+    });
+    if (mismatches.length === 0) return base;
+
+    const shown = mismatches.slice(0, HEADER_MISMATCHES_SHOWN).join(' ');
+    const more = mismatches.length - HEADER_MISMATCHES_SHOWN;
+    return `${base} ${shown}${more > 0 ? ` …and ${more} more.` : ''} Download the latest template and copy your rows into it.`;
   }
 
   /** True when row 1 of the sheet equals TEMPLATE_HEADERS in order. */
@@ -649,10 +687,9 @@ export class ActorImportService {
       }
     }
 
-    // Phone — required (`common/intake-contract.ts`, FR-1). An
-    // unnormalizable (but present) value warns and clears rather than
-    // failing the row (FR-5); the two phone-cleared warnings below are
-    // independent, not exclusive.
+    // Phone — required (`common/intake-contract.ts`, FR-1). A present value
+    // that cannot be normalized fails the row like a blank one (ATP-90); extra
+    // "/"-separated numbers after a valid first one still only warn.
     let phone: string | null | undefined;
     if (!cells.phone) {
       errors.push(...missingContractFieldErrors('phone'));
@@ -665,11 +702,10 @@ export class ActorImportService {
       const normalized = normalizePhoneFor(country, cells.phone);
       // `null`, never the raw string — storing an unnormalizable value is the
       // behavior this task exists to remove (design.md §4.1 / §10.1 F-1).
-      phone = normalized.phone;
+      phone = normalized.phone && formatPhoneFor(country, normalized.phone);
       if (normalized.phone === null) {
-        warnings.push(PHONE_UNNORMALIZABLE_WARNING);
-      }
-      if (normalized.additionalCount > 0) {
+        errors.push({ field: 'phone', message: phoneUnrecognizedError(country) });
+      } else if (normalized.additionalCount > 0) {
         warnings.push(phoneAdditionalValuesWarning(normalized.additionalCount));
       }
     }
@@ -739,10 +775,13 @@ export class ActorImportService {
     let consentObtainedAt: string | undefined;
     if (cells.consentObtainedAt) {
       const parsed = this.parseConsentObtainedAt(cells.consentObtainedAt);
-      if (parsed === null) {
+      if (parsed === 'invalid' || parsed === 'future') {
         errors.push({
           field: 'consentObtainedAt',
-          message: 'Consent Obtained At must be a valid date.',
+          message:
+            parsed === 'future'
+              ? 'Consent Obtained At cannot be in the future.'
+              : 'Consent Obtained At must be a valid date.',
         });
       } else {
         consentObtainedAt = parsed;
@@ -870,17 +909,17 @@ export class ActorImportService {
    * satisfied provenance and later makes the actor uneditable through
    * `ActorForm` (R-9 re-entering through the import door).
    *
-   * Never throws — an unrecognized, implausible, or future value returns
-   * `null` so the caller can reject just that row with a reason (never a 500
-   * that kills the batch).
+   * Never throws — an unrecognized or implausible value returns `'invalid'`,
+   * a future one `'future'`, so the caller can reject just that row with the
+   * right reason (never a 500 that kills the batch; ATP-97).
    */
-  private parseConsentObtainedAt(raw: string): string | null {
+  private parseConsentObtainedAt(raw: string): string | 'invalid' | 'future' {
     const now = Date.now();
     /** Accept a parsed instant only if it's a real date and not in the future. */
-    const accept = (parsed: Date): string | null =>
-      Number.isNaN(parsed.getTime()) || parsed.getTime() > now
-        ? null
-        : parsed.toISOString();
+    const accept = (parsed: Date): string | 'invalid' | 'future' => {
+      if (Number.isNaN(parsed.getTime())) return 'invalid';
+      return parsed.getTime() > now ? 'future' : parsed.toISOString();
+    };
 
     const fullInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
     if (fullInstant.test(raw)) {
@@ -896,12 +935,12 @@ export class ActorImportService {
     if (serialLike.test(raw)) {
       const serial = Number(raw);
       if (serial < MIN_PLAUSIBLE_EXCEL_SERIAL) {
-        return null;
+        return 'invalid';
       }
       return accept(new Date(EXCEL_EPOCH_UTC_MS + serial * 86400000));
     }
 
-    return null;
+    return 'invalid';
   }
 
   /**

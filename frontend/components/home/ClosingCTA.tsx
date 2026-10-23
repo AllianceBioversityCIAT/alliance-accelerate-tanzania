@@ -121,7 +121,7 @@ export default function ClosingCTA() {
 
         {/* Body paragraph — bg token (white) at reduced opacity on the dark surface */}
         <p className="text-bg opacity-80 max-w-prose mx-auto mb-8">
-          Explore 1,000+ verified actors across sorghum, common bean, and
+          Explore seed-system actors across sorghum, common bean, and
           groundnut value chains &mdash; or learn how the ACCELERATE model
           works.
         </p>

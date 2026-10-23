@@ -150,11 +150,11 @@ const contaminatedRow: CellMap = {
 };
 
 /**
- * Class 3 — "an unnormalizable phone" (FR-5 `null` branch, T-3). `020 7946
- * 0958` is Ofcom's UK range reserved for fictional/dramatic use — obviously
- * synthetic, and not a shape `normalizePhone()` recognizes as Tanzanian, so it
- * exercises the same `null` + warning path as a genuinely foreign number would
- * (`design.md` §4.1 / §10.1 F-1).
+ * Class 3 — "an unnormalizable phone". `020 7946 0958` is Ofcom's UK range
+ * reserved for fictional/dramatic use — obviously synthetic, and not a shape
+ * `normalizePhone()` recognizes as Tanzanian. Phone is required, so since
+ * ATP-90 (QA PBR-10) the row is quarantined on `phone` instead of being
+ * created with the phone cleared.
  */
 const unnormalizablePhoneRow: CellMap = {
   ...REQUIRED_FIELDS_FILLER,
@@ -455,15 +455,13 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         'traderType',
       ]);
 
-      // Class 3 — unnormalizable phone: still a create (FR-5 forbids rejecting
-      // an organisation over an unusable phone), with a warning naming the
-      // column and NOT the input's digits.
+      // Class 3 — unnormalizable phone: quarantined on `phone` (ATP-90), with
+      // an error naming the column and NOT the input's digits.
       const row4 = rowByNumber(res.body, 4);
-      expect(row4.outcome).toBe('create');
-      expect(row4.warnings.join(' ')).toMatch(/phone/i);
-      expect(row4.warnings.join(' ')).toMatch(/imported with phone cleared/i);
+      expect(row4.outcome).toBe('failed');
+      expect(row4.errors.map((e: any) => e.field)).toEqual(['phone']);
       for (const digits of ['02079460958', '442079460958', '7946', '0958']) {
-        expect(JSON.stringify(row4.warnings)).not.toContain(digits);
+        expect(JSON.stringify(row4)).not.toContain(digits);
       }
 
       // Class 4 — duplicate key: row A creates, row B strongly matches it
@@ -500,16 +498,20 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
       // `actor-import.service.spec.ts`'s T-4 block.
       expect(res.body.totals).toMatchObject({
         rows: 7,
-        toCreate: 4,
+        toCreate: 3,
         created: 0,
         possibleDuplicate: 1,
-        failed: 2,
+        failed: 3,
       });
-      expect(res.body.failureBreakdown).toEqual([
-        { reason: 'possible-duplicate', count: 1 },
-        { reason: 'region', count: 1 },
-        { reason: 'traderType', count: 1 },
-      ]);
+      expect(res.body.failureBreakdown).toEqual(
+        expect.arrayContaining([
+          { reason: 'possible-duplicate', count: 1 },
+          { reason: 'phone', count: 1 },
+          { reason: 'region', count: 1 },
+          { reason: 'traderType', count: 1 },
+        ]),
+      );
+      expect(res.body.failureBreakdown).toHaveLength(4);
 
       // Preview writes nothing — asserted against the DATABASE MOCK, not by
       // re-reading this same report (KZ-002: a report cannot prove itself).
@@ -519,7 +521,7 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
   });
 
   describe('Commit persists exactly the create-eligible rows (FR-2, FR-3, FR-5, FR-7, FR-10)', () => {
-    it('creates 4 rows, clears the unnormalizable phone in the stored record, and leaves the rest unwritten', async () => {
+    it('creates the 3 create-eligible rows and leaves the rest, including the bad-phone row, unwritten', async () => {
       const fileBase64 = await buildWorkbook(mixedFixtureRows());
 
       const res = await request(app.getHttpServer())
@@ -530,16 +532,17 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
 
       expect(res.body.totals).toMatchObject({
         rows: 7,
-        toCreate: 4,
-        created: 4,
+        toCreate: 3,
+        created: 3,
         possibleDuplicate: 1,
-        failed: 2,
+        failed: 3,
       });
 
-      // The database mock actually received exactly 4 creates — not inferred
+      // The database mock actually received exactly 3 creates — not inferred
       // from `totals.created`, but from the mock's own call count. Row 6
-      // ("Dup Second") is held as a possible duplicate of row 5, never created.
-      expect(prismaMock.actor.create).toHaveBeenCalledTimes(4);
+      // ("Dup Second") is held as a possible duplicate of row 5, and row 4
+      // (unusable phone) is quarantined; neither is created.
+      expect(prismaMock.actor.create).toHaveBeenCalledTimes(3);
       // T-4 — one chunk's commit transaction, plus one for Trader ID
       // allocation (`allocateTraderIds` opens its own transaction,
       // design.md §4.2).
@@ -553,14 +556,13 @@ describe('Partner Profile onboarding — worked-example fixture (T-11)', () => {
         .expect(200);
       expect(districtRescueDetail.body.region).toBe(DERIVED_REGION);
 
-      // Class 3 — phone stored as an explicit null (never the raw foreign
-      // number), proving the `null` branch, not merely the warning text.
-      const phoneRowId = rowByNumber(res.body, 4).actorId as string;
-      const phoneDetail = await request(app.getHttpServer())
-        .get(`/api/v1/admin/actors/${phoneRowId}`)
-        .set(admin)
-        .expect(200);
-      expect(phoneDetail.body.phone).toBeNull();
+      // Class 3 — the bad-phone row never became an actor.
+      expect(rowByNumber(res.body, 4).actorId).toBeUndefined();
+      expect(
+        prismaMock.actor.create.mock.calls.some(
+          (call) => call[0].data.traderName === 'Fixture Unnormalizable-Phone Org',
+        ),
+      ).toBe(false);
 
       // Class 6, half 1 — the GET proves the READ surface exposes no
       // coordinate for this actor.

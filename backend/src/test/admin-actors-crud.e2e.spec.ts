@@ -804,7 +804,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
       expect(res.body.traderName).toBe('New Seed Actor');
       expect(res.body.consentStatus).toBe('UNKNOWN');
       expect(res.body.crops).toEqual(['sorghum', 'common_bean']);
-      expect(res.body.phone).toBe('+255711111111');
+      expect(res.body.phone).toBe('+255 711111111');
       expect(res.body.email).toBe('manager@example.com');
       expect(res.body.id).toMatch(/^actor-mock-/);
     });
@@ -1002,7 +1002,7 @@ describe('Admin actors CRUD e2e (HTTP + in-memory Prisma)', () => {
 
       expect(res.body.id).toBe('actor-granted-1');
       expect(res.body.region).toBe('Dodoma');
-      expect(res.body.phone).toBe('+255799999999');
+      expect(res.body.phone).toBe('+255 799999999');
       // Unchanged fields are preserved.
       expect(res.body.traderName).toBe('Meru Agro-Processing & Seeds');
       expect(res.body.email).toBe('director@example.com');

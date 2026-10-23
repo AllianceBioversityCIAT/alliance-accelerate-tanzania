@@ -71,8 +71,8 @@ export class MailService {
    * itself enforces nothing about ordering; see
    * `AdminRegistrationsService.approve`'s `dispatchApprovalEmail`.
    */
-  async sendApproval(to: string, reference: string): Promise<void> {
-    await this.dispatch('approval', buildApprovalMessage(to, reference));
+  async sendApproval(to: string, reference: string, actorId: string): Promise<void> {
+    await this.dispatch('approval', buildApprovalMessage(to, reference, actorId));
   }
 
   /**
@@ -82,8 +82,8 @@ export class MailService {
    * {@link sendApproval}; see `AdminRegistrationsService.reject`'s
    * `dispatchRejectionEmail`.
    */
-  async sendRejection(to: string, reference: string): Promise<void> {
-    await this.dispatch('rejection', buildRejectionMessage(to, reference));
+  async sendRejection(to: string, reference: string, reviewNote: string | null = null): Promise<void> {
+    await this.dispatch('rejection', buildRejectionMessage(to, reference, reviewNote));
   }
 
   /**

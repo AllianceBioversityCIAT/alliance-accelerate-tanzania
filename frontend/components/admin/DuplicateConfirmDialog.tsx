@@ -127,59 +127,70 @@ export function DuplicateConfirmDialog({
       <div className="fixed inset-0 z-50 bg-backdrop" aria-hidden="true" onClick={onCancel} />
 
       {/* ── Dialog panel ──────────────────────────────────────────────────── */}
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={describedBy}
-        onKeyDown={handleKeyDown}
-        className={[
-          'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
-          'rounded-md bg-surface p-6 shadow-lg border border-border',
-        ].join(' ')}
-      >
-        <h2 id={titleId} className="text-base font-semibold text-fg">
-          Possible duplicate
-        </h2>
+      {/* Capped at the viewport height: heading and buttons stay visible and only
+          the candidate list scrolls, however many candidates there are. pt-16
+          clears the admin top bar (h-14), which sits above z-50. */}
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4 pt-16">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={describedBy}
+          onKeyDown={handleKeyDown}
+          className={[
+            'pointer-events-auto flex max-h-full w-full max-w-md flex-col',
+            'rounded-md bg-surface p-6 shadow-lg border border-border',
+          ].join(' ')}
+        >
+          <h2 id={titleId} className="text-base font-semibold text-fg">
+            Possible duplicate
+          </h2>
 
-        <p id={descId} className="mt-2 text-sm text-muted">
-          This actor matches {count} existing {count === 1 ? 'record' : 'records'} closely enough
-          that it has not been created. Confirm it is not the same actor, or cancel.
-        </p>
+          <p id={descId} className="mt-2 text-sm text-muted">
+            This actor matches {count} existing {count === 1 ? 'record' : 'records'} closely enough
+            that it has not been created. Confirm it is not the same actor, or cancel.
+          </p>
 
-        {/* Announces the candidate count to assistive tech (NFR-4). */}
-        <div aria-live="polite" aria-atomic="true" className="sr-only">
-          {count} possible {count === 1 ? 'duplicate' : 'duplicates'} found.
+          {/* Announces the candidate count to assistive tech (NFR-4). */}
+          <div aria-live="polite" aria-atomic="true" className="sr-only">
+            {count} possible {count === 1 ? 'duplicate' : 'duplicates'} found.
+          </div>
+
+          <ul
+            role="list"
+            aria-label="Possible duplicates"
+            tabIndex={0}
+            data-testid="duplicate-candidates"
+            className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {candidates.map((candidate) => (
+              <li
+                key={candidate.actorId}
+                role="listitem"
+                className="rounded-md border border-border bg-surface-alt p-3"
+              >
+                <p className="text-sm font-medium text-fg">{candidate.traderName}</p>
+                <p className="text-xs text-muted">
+                  Existing record <span className="font-medium text-fg">{candidate.traderId}</span>
+                  {' — matched on '}
+                  <span className="font-medium text-fg">{matchedOnLabel(candidate.matchedOn)}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <DialogFooter
+            error={error}
+            errorId={errorId}
+            onCancel={onCancel}
+            loading={loading}
+            onConfirm={onConfirm}
+            confirmDisabled={loading}
+            confirmLabel="Not a duplicate — create"
+            tone="primary"
+          />
         </div>
-
-        <ul role="list" className="mt-4 space-y-2">
-          {candidates.map((candidate) => (
-            <li
-              key={candidate.actorId}
-              role="listitem"
-              className="rounded-md border border-border bg-surface-alt p-3"
-            >
-              <p className="text-sm font-medium text-fg">{candidate.traderName}</p>
-              <p className="text-xs text-muted">
-                Existing record <span className="font-medium text-fg">{candidate.traderId}</span>
-                {' — matched on '}
-                <span className="font-medium text-fg">{matchedOnLabel(candidate.matchedOn)}</span>
-              </p>
-            </li>
-          ))}
-        </ul>
-
-        <DialogFooter
-          error={error}
-          errorId={errorId}
-          onCancel={onCancel}
-          loading={loading}
-          onConfirm={onConfirm}
-          confirmDisabled={loading}
-          confirmLabel="Not a duplicate — create"
-          tone="primary"
-        />
       </div>
     </>
   );

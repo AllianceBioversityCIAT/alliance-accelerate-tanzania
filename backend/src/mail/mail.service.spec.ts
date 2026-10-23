@@ -365,7 +365,7 @@ describe('MailService — logging never carries PII, codes, or body text (NFR-8,
       const email = 'director-secret@example.org';
       const reference = 'REG-2026-0184';
 
-      await service.sendApproval(email, reference);
+      await service.sendApproval(email, reference, 'actor-1');
 
       const totalCalls = logSpy.mock.calls.length + errorSpy.mock.calls.length;
       expect(totalCalls).toBeGreaterThan(0);

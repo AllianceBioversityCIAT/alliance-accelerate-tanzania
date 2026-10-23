@@ -41,7 +41,8 @@
  * `ACCEPTED`/`DECLINED`) and two concurrent answers yield exactly one count
  * of 1; (2) take `before` from the locked row (no second read of the
  * actor); (3) update the actor — Accept sets `GRANTED / EMAIL_LINK /
- * respondedAt / request id`, Decline sets `DENIED` only; the respondent's
+ * respondedAt / request id`, Decline the same with `DENIED` (ATP-92: the
+ * audit trail shows how and when each decision was made); the respondent's
  * email and phone are evidence on the request row and are NEVER written to
  * the actor; (4) write the sentinel-authored audit row. Any throw rolls all
  * four back together.
@@ -265,20 +266,18 @@ export class ConsentPublicService {
       // (2) The actor check is the locking read above: no row means the
       // actor is gone, which is the uniform miss and a full rollback.
 
-      // (3) Actor update. Respondent email/phone are NEVER written here.
-      const acceptData = {
-        consentStatus: ConsentStatus.GRANTED,
+      // (3) Actor update. Respondent email/phone are NEVER written here. Both
+      // answers record the link as the method, with the response time and the
+      // request id as evidence; only the status differs.
+      const data = {
+        consentStatus: accepted ? ConsentStatus.GRANTED : ConsentStatus.DENIED,
         consentMethod: ConsentMethod.EMAIL_LINK,
         consentObtainedAt: respondedAt,
         consentReference: request.id,
       } satisfies Prisma.ActorUpdateInput;
-      const declineData = { consentStatus: ConsentStatus.DENIED } satisfies Prisma.ActorUpdateInput;
-      const after: ConsentFieldsSnapshot = accepted ? acceptData : { ...before, ...declineData };
+      const after: ConsentFieldsSnapshot = data;
 
-      await tx.actor.update({
-        where: { id: request.actorId },
-        data: accepted ? acceptData : declineData,
-      });
+      await tx.actor.update({ where: { id: request.actorId }, data });
 
       // (4) Sentinel-authored audit row, in the same transaction.
       await this.audit.logConsentResponded(tx, { request, before, after });

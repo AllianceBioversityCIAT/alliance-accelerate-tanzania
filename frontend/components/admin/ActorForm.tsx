@@ -534,8 +534,9 @@ function isStoredEmailLink(mode: 'create' | 'edit', initialValues?: AdminActor):
 }
 
 /**
- * Rule 3 (frozen evidence): `GRANTED` by link with the status unchanged. The
- * method, date and reference are the actor's evidence and render read-only.
+ * Rule 3 (frozen evidence): a stored EMAIL_LINK with the status unchanged —
+ * an Accept or, since ATP-92, a Decline. The method, date and reference are
+ * the actor's evidence and render read-only; changing the status unlocks them.
  */
 function isLinkEvidenceFrozen(
   mode: 'create' | 'edit',
@@ -544,8 +545,7 @@ function isLinkEvidenceFrozen(
 ): boolean {
   return (
     isStoredEmailLink(mode, initialValues) &&
-    initialValues?.consentStatus === 'GRANTED' &&
-    values.consentStatus === initialValues.consentStatus
+    values.consentStatus === initialValues?.consentStatus
   );
 }
 
@@ -1015,6 +1015,11 @@ export default function ActorForm({
     );
   };
 
+  // A DENIED status records a refusal, not consent obtained (ATP-92: link
+  // declines now carry their response date).
+  const consentDateLabel =
+    values.consentStatus === 'DENIED' ? 'Consent decision date' : 'Consent obtained on';
+
   /**
    * T-9 (FR-2) — `consentMethod` is deliberately NOT rendered via the generic
    * `renderSelect`: that helper always prepends a blank "—" option meaning
@@ -1310,8 +1315,8 @@ export default function ActorForm({
               {renderSelect('consentStatus', 'Consent status', CONSENT_OPTIONS, true)}
               {renderConsentMethodSelect()}
               {isLinkEvidenceFrozen(mode, values, initialValues)
-                ? renderFrozenInput('consentObtainedAt', 'Consent obtained on', 'date')
-                : renderInput('consentObtainedAt', 'Consent obtained on', 'date', false)}
+                ? renderFrozenInput('consentObtainedAt', consentDateLabel, 'date')
+                : renderInput('consentObtainedAt', consentDateLabel, 'date', false)}
               {isLinkEvidenceFrozen(mode, values, initialValues)
                 ? renderFrozenInput('consentReference', 'Consent reference', 'text')
                 : renderInput(

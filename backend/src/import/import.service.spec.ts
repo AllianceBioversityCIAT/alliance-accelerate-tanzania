@@ -74,7 +74,7 @@ describe('ImportService', () => {
       expect(actor.gpsAltitude).toBe(1700);
       expect(actor.gpsAccuracy).toBe(5);
       // PII carried through but never public by default:
-      expect(actor.phone).toBe('+255700000000');
+      expect(actor.phone).toBe('+255 700000000');
       expect(actor.email).toBe('test@example.org');
       expect(actor.consentStatus).toBe('UNKNOWN'); // OQ-3
     });

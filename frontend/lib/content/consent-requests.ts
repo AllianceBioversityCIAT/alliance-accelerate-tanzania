@@ -283,7 +283,7 @@ export const DOCUMENT_FIELD_COPY = {
 export const ACTOR_FORM_CONSENT_COPY = {
   emailLinkMethod: 'Email link (actor)',
   emailLinkMethodHint:
-    'Recorded when the actor accepted through the emailed link. Change the status to correct it.',
+    'Recorded from the actor’s own answer to the emailed consent link. Change the status to correct it.',
   frozenDateHint: 'Recorded from the actor’s response. Change the status to correct it.',
   staleNotice: 'This actor changed since you opened it — reload to see the latest',
   reload: 'Reload',

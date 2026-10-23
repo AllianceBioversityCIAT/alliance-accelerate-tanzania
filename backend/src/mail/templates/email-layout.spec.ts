@@ -1,5 +1,5 @@
 // @sdd-spec enhancement/html-email-templates
-import { escapeHtml, renderEmailHtml } from './email-layout';
+import { escapeHtml, FALLBACK_LINK_LABEL, renderEmailHtml } from './email-layout';
 import { buildContactMessage } from './contact.template';
 import { buildVerificationCodeMessage } from './verification-code.template';
 
@@ -116,5 +116,23 @@ describe('every builder emits both parts', () => {
     const minutes = /(\d+) minutes/.exec(text)?.[1];
     expect(minutes).toBeDefined();
     expect(html).toContain(`${minutes} minutes`);
+  });
+});
+
+// ATP-94 (QA PBR-05): the printed address under a button is labelled as the
+// fallback, so it reads as secondary rather than as a second, raw link.
+describe('link block fallback', () => {
+  it('labels the printed address as the fallback for a button that does not work', () => {
+    const html = renderEmailHtml({
+      preheader: 'p',
+      heading: 'h',
+      blocks: [{ kind: 'link', label: 'Open', href: 'https://registry.example.org/x' }],
+    });
+
+    expect(html).toContain(FALLBACK_LINK_LABEL);
+    expect(html.indexOf(FALLBACK_LINK_LABEL)).toBeLessThan(
+      html.lastIndexOf('https://registry.example.org/x'),
+    );
+    expect(html.indexOf('>Open</a>')).toBeLessThan(html.indexOf(FALLBACK_LINK_LABEL));
   });
 });

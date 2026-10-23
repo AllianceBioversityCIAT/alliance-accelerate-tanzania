@@ -37,6 +37,7 @@ import {
   normalizeTraderType,
   parseCapacityTons,
 } from '../common/normalize';
+import { formatPhoneFor } from '../common/geo/countries';
 
 /**
  * One raw row of the real source file, keyed by its ACTUAL column
@@ -187,6 +188,7 @@ export class ImportService {
     // (the legal-gated execution / write DTO is the gate that rejects it).
     const traderType =
       normalizeTraderType(rawTraderType) ?? rawTraderType ?? '';
+    const phone = cleanString(raw.phone);
 
     const actor: ActorImportInput = {
       traderId,
@@ -202,7 +204,7 @@ export class ImportService {
         raw['Capacity (volume in t)'] as string | number | null | undefined,
       ),
       technicalSupport: cleanString(raw['Technical support required']),
-      phone: cleanString(raw.phone),
+      phone: phone && formatPhoneFor('TZ', phone),
       email: cleanString(raw.Email),
       // Both guarded above; the non-null assertion is sound here.
       gpsLatitude: lat as number,
