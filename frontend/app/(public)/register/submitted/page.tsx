@@ -136,12 +136,9 @@ function SubmittedView() {
           What happens next
         </h2>
         <p className="mt-2 max-w-prose text-sm text-fg">
-          A member of the PABRA team reviews every submission. Once a decision is
-          made, the most reliable way to find out is to look up your submission using your
-          reference code and the email address you verified — you can do this at any time with
-          the button above. We will also try to email you when a decision is made, but delivery
-          is not guaranteed, so please do not rely on it: save your reference code and check back
-          with it instead.
+          A member of the PABRA team reviews every submission. We&rsquo;ll email you when a
+          decision is made. You can also check the status at any time with your reference code
+          and the email address you verified, using the button above.
         </p>
       </section>
     </div>

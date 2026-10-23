@@ -100,12 +100,9 @@ function mockSearchParams(ref: string | null) {
  * happens to match any pattern anyone thought to write.
  */
 const PINNED_WHAT_HAPPENS_NEXT_COPY =
-  'A member of the PABRA team reviews every submission. Once a decision is ' +
-  'made, the most reliable way to find out is to look up your submission using your ' +
-  'reference code and the email address you verified — you can do this at any time with ' +
-  'the button above. We will also try to email you when a decision is made, but delivery ' +
-  'is not guaranteed, so please do not rely on it: save your reference code and check back ' +
-  'with it instead.';
+  'A member of the PABRA team reviews every submission. We\u2019ll email you when a ' +
+  'decision is made. You can also check the status at any time with your reference code ' +
+  'and the email address you verified, using the button above.';
 
 /**
  * SECONDARY tripwire — the mockup's own lexical family, corrected so the
@@ -151,14 +148,15 @@ describe('/register/submitted', () => {
     );
   });
 
-  it('states the review-then-lookup behaviour and frames lookup, not email, as reliable', () => {
+  // ATP-96 (QA PBR-07): the decision email is announced plainly; the status
+  // lookup stays available as the alternative.
+  it('states the review, the decision email and the status lookup', () => {
     mockSearchParams('REG-2026-0184');
     render(<RegistrationSubmittedPage />);
     expect(screen.getByText(/reviews every submission/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/most reliable way to find out is to look up your submission/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/delivery is not guaranteed/i)).toBeInTheDocument();
+    expect(screen.getByText(/email you when a decision is made/i)).toBeInTheDocument();
+    expect(screen.getByText(/check the status at any time with your reference code/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not guaranteed|do not rely/i)).toBeNull();
   });
 
   it(

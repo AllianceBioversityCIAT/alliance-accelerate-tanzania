@@ -11,8 +11,9 @@
 //   - Entrance timeline: stagger-reveal eyebrow → h1 → p → CTA row (autoAlpha+y).
 //   - Photo panel: subtle scale 1.04→1 on a wrapper div — the next/image priority
 //     photo is NEVER animated from opacity:0 so LCP is not delayed (NFR-2 / FR-3).
-//   - LiveRegistryCard count-up: useCountUp animates 0→1000; "1,000+" is always
-//     rendered in JSX so it shows without GSAP / under reduced-motion (FR-8).
+//   - LiveRegistryCard count-up: useCountUp animates 0→`actorsMapped` from
+//     /api/v1/metrics; the final number is rendered in JSX so it shows without
+//     GSAP / under reduced-motion (FR-8). Skeleton while loading, "—" on error.
 //   - All motion gated on `(prefers-reduced-motion: no-preference)` via gsap.matchMedia
 //     inside useGSAP — reduced-motion users see the fully visible static state (FR-7).
 
@@ -22,6 +23,8 @@ import { FIELD_GALLERY } from '@/lib/content/field-gallery';
 import Button from '@/components/ui/Button';
 import { registerGsap, gsap, useGSAP } from '@/lib/motion/gsap-setup';
 import { useCountUp } from '@/lib/motion/useCountUp';
+import { useMetrics } from '@/lib/api/useMetrics';
+import Skeleton from '@/components/ui/Skeleton';
 import { DURATION, EASE, REVEAL } from '@/lib/motion/motion-tokens';
 
 // ---------------------------------------------------------------------------
@@ -53,9 +56,12 @@ function ArrowRight() {
 interface LiveRegistryCardProps {
   /** Ref forwarded to the count-up number node. */
   countRef: React.RefObject<HTMLElement | null>;
+  /** Published actors (`actorsMapped`), or null when unavailable. */
+  actors: number | null;
+  loading: boolean;
 }
 
-function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
+function LiveRegistryCard({ countRef, actors, loading }: LiveRegistryCardProps) {
   return (
     <div
       // bg-surface with shadow-md and rounded-md — token-only (NFR-4)
@@ -67,16 +73,21 @@ function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
       <p className="text-xs font-semibold tracking-widest uppercase text-primary mb-1">
         Live Registry
       </p>
-      {/*
-        Count-up target — always renders "1,000+" in JSX so the value is present
-        without GSAP (progressive enhancement, FR-8). useCountUp overwrites
-        textContent in the animation path only.
-      */}
-      <p className="text-2xl sm:text-3xl font-bold text-fg leading-none">
-        <span ref={countRef}>1,000+</span>
-      </p>
+      {/* The real count from /api/v1/metrics, rendered in JSX so it shows without
+          GSAP (FR-8); useCountUp only animates up to it. */}
+      <div className="h-7 sm:h-9 flex items-center" aria-live="polite">
+        {loading ? (
+          <Skeleton className="h-7 w-16" />
+        ) : (
+          <p className="text-2xl sm:text-3xl font-bold text-fg leading-none tabular-nums">
+            <span ref={actors != null ? countRef : undefined}>
+              {actors != null ? actors.toLocaleString('en-US') : '—'}
+            </span>
+          </p>
+        )}
+      </div>
       <p className="text-xs text-muted mt-1 leading-snug">
-        verified seed-system actors and growing
+        seed-system actors in the registry
       </p>
     </div>
   );
@@ -85,14 +96,12 @@ function LiveRegistryCard({ countRef }: LiveRegistryCardProps) {
 // ---------------------------------------------------------------------------
 // VisualPanel — right-column field photo carousel with stat overlay
 // ---------------------------------------------------------------------------
-interface VisualPanelProps {
+interface VisualPanelProps extends LiveRegistryCardProps {
   /** Ref for the scale-only entrance on the panel wrapper (LCP-safe). */
   panelRef: React.RefObject<HTMLDivElement | null>;
-  /** Ref forwarded to the count-up number node inside the card. */
-  countRef: React.RefObject<HTMLElement | null>;
 }
 
-function VisualPanel({ panelRef, countRef }: VisualPanelProps) {
+function VisualPanel({ panelRef, countRef, actors, loading }: VisualPanelProps) {
   return (
     // panelRef scales the wrapper only; the first photo is `priority` and its
     // opacity is never animated, so the LCP image is always fully painted (NFR-2).
@@ -101,7 +110,7 @@ function VisualPanel({ panelRef, countRef }: VisualPanelProps) {
         photos={FIELD_GALLERY}
         label="Photos from the field"
         priority
-        overlay={<LiveRegistryCard countRef={countRef} />}
+        overlay={<LiveRegistryCard countRef={countRef} actors={actors} loading={loading} />}
       />
     </div>
   );
@@ -117,8 +126,10 @@ export default function Hero() {
   // Ref for the image panel wrapper; scale 1.04→1 only (no opacity — LCP safe).
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // count-up: 0→1000 with "+" suffix; JSX already renders "1,000+" (FR-8).
-  const { ref: countRef } = useCountUp(1000, { suffix: '+' });
+  // Live count of published actors; count-up runs only once it has loaded.
+  const { data, loading } = useMetrics();
+  const actors = data?.actorsMapped ?? null;
+  const { ref: countRef } = useCountUp(actors, { enabled: actors != null });
 
   // Entrance timeline — runs once on mount, client-only (NFR-3).
   useGSAP(
@@ -211,7 +222,7 @@ export default function Hero() {
           {/* ----------------------------------------------------------------
               RIGHT COLUMN — visual panel with stat overlay
           ---------------------------------------------------------------- */}
-          <VisualPanel panelRef={panelRef} countRef={countRef} />
+          <VisualPanel panelRef={panelRef} countRef={countRef} actors={actors} loading={loading} />
 
         </div>
       </div>

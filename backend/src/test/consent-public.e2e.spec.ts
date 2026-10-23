@@ -379,19 +379,25 @@ describe('Public consent-link routes (HTTP e2e, in-memory Prisma)', () => {
   });
 
   describe('POST /consent/respond — Decline (FR-10)', () => {
-    it('sets DENIED, leaves method/date/reference unchanged, and the actor stays absent from every public read', async () => {
+    // ATP-92 (QA PBR-16): a decline records the link as its method, with the
+    // response time and the request id, exactly like an accept.
+    it('sets DENIED with EMAIL_LINK / response time / request id, and the actor stays absent from every public read', async () => {
       const res = await respond({ token: T_OPEN, decision: 'DECLINE' });
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ decision: 'DECLINE' });
       const actor = harness.getActor()!;
+      const declined = harness.getRequests().find((r) => r.tokenHash === hashConsentToken(T_OPEN))!;
       expect(actor.consentStatus).toBe(ConsentStatus.DENIED);
-      // Unchanged from the fixture (which now carries non-null provenance).
-      const seeded = consentActorFixture();
-      expect(actor.consentMethod).toBe(seeded.consentMethod);
-      expect(actor.consentObtainedAt).toEqual(seeded.consentObtainedAt);
-      expect(actor.consentReference).toBe(seeded.consentReference);
-      expect(Object.keys(harness.actor.update.mock.calls[0][0].data)).toEqual(['consentStatus']);
+      expect(actor.consentMethod).toBe(ConsentMethod.EMAIL_LINK);
+      expect(actor.consentObtainedAt).toEqual(declined.respondedAt);
+      expect(actor.consentReference).toBe(declined.id);
+      expect(Object.keys(harness.actor.update.mock.calls[0][0].data).sort()).toEqual([
+        'consentMethod',
+        'consentObtainedAt',
+        'consentReference',
+        'consentStatus',
+      ]);
       expect((await request(app.getHttpServer()).get(`/api/v1/actors/${CONSENT_ACTOR_ID}`)).status).toBe(404);
       const list = await request(app.getHttpServer()).get('/api/v1/actors');
       expect(list.body.data.map((a: { id: string }) => a.id)).not.toContain(CONSENT_ACTOR_ID);

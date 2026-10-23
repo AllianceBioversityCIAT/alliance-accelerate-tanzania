@@ -6,6 +6,7 @@ import {
   ALL_REGION_NAMES,
   COUNTRY_CODES,
   countryCodesMatching,
+  formatPhoneFor,
   isRegionOf,
   normalizeCountry,
   normalizePhoneFor,
@@ -147,5 +148,26 @@ describe('normalizePhoneFor', () => {
 
   it('reads no phone for an unknown country', () => {
     expect(normalizePhoneFor(null, '+254712345678').phone).toBeNull();
+  });
+});
+
+describe('formatPhoneFor', () => {
+  it('stores the country prefix, a space, then the number', () => {
+    expect(formatPhoneFor('KE', '+254 712 345 678')).toBe('+254 712345678');
+    expect(formatPhoneFor('TZ', '+255712345678')).toBe('+255 712345678');
+    expect(formatPhoneFor('TZ', '0712345678')).toBe('+255 712345678');
+    expect(formatPhoneFor('NG', '00234-803-123-4567')).toBe('+234 8031234567');
+  });
+
+  it('is idempotent', () => {
+    expect(formatPhoneFor('KE', '+254 712345678')).toBe('+254 712345678');
+  });
+
+  it('leaves a value it cannot read unchanged', () => {
+    expect(formatPhoneFor('KE', '+255712345678')).toBe('+255712345678');
+    expect(formatPhoneFor(null, '+254712345678')).toBe('+254712345678');
+    expect(formatPhoneFor('KE', '+254712345678 / +254700000000')).toBe(
+      '+254712345678 / +254700000000',
+    );
   });
 });

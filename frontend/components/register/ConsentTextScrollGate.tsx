@@ -43,7 +43,7 @@ export interface ConsentTextSection {
 export interface ConsentTextScrollGateProps {
   /** Heading above the region (an `<h2>`). */
   title: string;
-  /** Edition/version shown beside the title as `v<version>`, when known. */
+  /** Edition/version shown beside the title as `v<version>`, with or without its own leading "v". */
   version?: string;
   /** The text to read; `null` while loading or after a load failure. */
   sections: ConsentTextSection[] | null;
@@ -132,7 +132,7 @@ export default function ConsentTextScrollGate({
       {/* h2 under the page's h1 (T18-A7); section headings below are h3. */}
       <h2 id={headingId} className="text-sm font-semibold text-fg">
         {title}
-        {version && <span className="ml-2 font-normal text-muted">v{version}</span>}
+        {version && <span className="ml-2 font-normal text-muted">v{version.replace(/^v/i, '')}</span>}
       </h2>
 
       {/* The focusable scroll region: keyboard users Tab to it and reach the

@@ -1464,7 +1464,7 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
         expect(prisma.actor.update).toHaveBeenCalledWith({
           where: { id: 'actor-1' },
-          data: { country: 'KE', region: 'Mombasa', phone: '+254712345678' },
+          data: { country: 'KE', region: 'Mombasa', phone: '+254 712345678' },
         });
         expect(res.country).toBe('KE');
         const changes = prisma.actorAuditLog.create.mock.calls[0][0].data.changes;
@@ -1680,6 +1680,30 @@ describe('ActorsAdminService (mocked Prisma)', () => {
         expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
       });
 
+      // ATP-92 — a link DECLINE now leaves DENIED + EMAIL_LINK + its date and
+      // reference; the edit form re-sends them with any unrelated change,
+      // which must still save.
+      it('accepts an unrelated edit of a link-declined actor that re-sends its EMAIL_LINK evidence', async () => {
+        const before = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED, capacityTons: 1000 });
+        const after = grantedByLinkActor({ consentStatus: ConsentStatus.DENIED, capacityTons: 1500 });
+
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        const dto: AdminActorUpdateDto = {
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL_LINK as never,
+          consentObtainedAt: GRANTED_BY_LINK_OBTAINED_AT.toISOString() as never,
+          consentReference: 'consent-req-1',
+          capacityTons: 1500,
+        } as AdminActorUpdateDto;
+
+        await service.update('actor-1', dto, ACTING_SUB);
+
+        expect(prisma.actor.update).toHaveBeenCalled();
+      });
+
       // Falsifier 2 (tasks.md T-1) — EMAIL_LINK -> DENIED -> GRANTED re-grant.
       // The stored method is STILL EMAIL_LINK (an admin lock never clears
       // it), so rule 1 alone does not fire here; rule 2 is what must catch
@@ -1714,6 +1738,55 @@ describe('ActorsAdminService (mocked Prisma)', () => {
 
         await updateAndExpectFieldRejection('actor-1', dto, field);
         expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+    });
+
+    // ATP-92 — rule 3 also freezes the evidence of a link DECLINE while the
+    // actor stays DENIED; changing the status is the only way to correct it.
+    describe('rule 3 on a link-declined actor (ATP-92)', () => {
+      const declinedByLink = () =>
+        fixtureActor({
+          consentStatus: ConsentStatus.DENIED,
+          consentMethod: ConsentMethod.EMAIL_LINK,
+          consentObtainedAt: new Date('2026-10-22T10:00:00.000Z'),
+          consentReference: 'consent-req-9',
+        });
+
+      it.each([
+        { field: 'consentMethod', value: ConsentMethod.SIGNED_FORM },
+        { field: 'consentObtainedAt', value: '2026-09-01T00:00:00.000Z' },
+        { field: 'consentReference', value: 'DOC-999' },
+      ])('rejects a $field change while the actor stays DENIED', async ({ field, value }) => {
+        prisma.actor.findUnique.mockResolvedValue(declinedByLink());
+
+        const dto = { consentStatus: ConsentStatus.DENIED, [field]: value } as AdminActorUpdateDto;
+
+        await updateAndExpectFieldRejection('actor-1', dto, field);
+        expect(prisma.actorAuditLog.create).not.toHaveBeenCalled();
+      });
+
+      it('lets the admin record new evidence once the status changes (DENIED → UNKNOWN)', async () => {
+        const before = declinedByLink();
+        const after = fixtureActor({
+          consentStatus: ConsentStatus.UNKNOWN,
+          consentMethod: ConsentMethod.VERBAL_FIELD,
+          consentReference: 'FIELD-1',
+        });
+        prisma.actor.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+        prisma.actor.update.mockResolvedValue(after);
+        prisma.actorAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+
+        await service.update(
+          'actor-1',
+          {
+            consentStatus: ConsentStatus.UNKNOWN,
+            consentMethod: ConsentMethod.VERBAL_FIELD,
+            consentReference: 'FIELD-1',
+          } as AdminActorUpdateDto,
+          ACTING_SUB,
+        );
+
+        expect(prisma.actor.update).toHaveBeenCalled();
       });
     });
 

@@ -79,6 +79,9 @@ function callout(label: string, value: string, caption?: string): string {
   );
 }
 
+/** Labels the printed address under a button as the fallback (ATP-94, QA PBR-05). */
+export const FALLBACK_LINK_LABEL = 'Button not working? Copy this link into your browser:';
+
 function link(label: string, href: string): string {
   // The href is printed as text as well: many clients strip or rewrite links,
   // and a reader who cannot click still needs the address.
@@ -88,7 +91,8 @@ function link(label: string, href: string): string {
     `<tr><td style="background:${PALETTE.primary};border-radius:6px;">` +
     `<a href="${safe}" style="display:inline-block;padding:12px 22px;font:600 15px/1 ${FONT};color:#FFFFFF;text-decoration:none;">${escapeHtml(label)}</a>` +
     `</td></tr></table>` +
-    `<p style="margin:0 0 16px;font:400 13px/1.5 ${FONT};color:${PALETTE.muted};word-break:break-all;">${safe}</p>`
+    `<p style="margin:0 0 16px;font:400 12px/1.5 ${FONT};color:${PALETTE.muted};word-break:break-all;">` +
+    `${FALLBACK_LINK_LABEL}<br />${safe}</p>`
   );
 }
 

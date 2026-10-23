@@ -1449,7 +1449,9 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
     });
   });
 
-  it('Shift+Tab from the first focusable button wraps to the last button inside the dialog (focus trap)', async () => {
+  // The candidate list is a keyboard-scrollable region (tabIndex 0), so it is
+  // now the dialog's first focusable element; the trap wraps from it.
+  it('Shift+Tab from the first focusable element (the candidate list) wraps to the last button inside the dialog (focus trap)', async () => {
     const user = userEvent.setup();
     jest.mocked(createActor).mockRejectedValue(
       new ApiError(409, 'Possible duplicate', undefined, {
@@ -1465,10 +1467,12 @@ describe('ActorForm — duplicate detection (T-6, FR-3)', () => {
 
     const dialog = await screen.findByRole('dialog');
     const buttons = within(dialog).getAllByRole('button');
-    const first = buttons[0];
+    const list = within(dialog).getByRole('list', { name: 'Possible duplicates' });
     const last = buttons[buttons.length - 1];
 
-    await waitFor(() => expect(document.activeElement).toBe(first));
+    // Opening still focuses the first button, not the list.
+    await waitFor(() => expect(document.activeElement).toBe(buttons[0]));
+    list.focus();
 
     // Drive it through the hook's own handler, not native tab order (jsdom
     // doesn't implement tab navigation) — this is what actually wraps focus.
@@ -1600,7 +1604,33 @@ describe('ActorForm — an EMAIL_LINK actor (FR-10, design §5.7)', () => {
     const options = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value);
     expect(options).not.toContain('EMAIL_LINK');
     expect(options).toEqual(['', 'NOT_RECORDED', 'PORTAL_CHECKBOX', 'SIGNED_FORM', 'EMAIL', 'VERBAL_FIELD']);
-    // Date and reference are editable again.
+    // Date and reference are editable again; under DENIED the date is the decision date.
+    expect(screen.getByLabelText('Consent decision date')).not.toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
+  });
+
+  // ATP-92 (QA PBR-16): link declines now carry EMAIL_LINK, so the form must
+  // not say the actor accepted, nor call the refusal date "consent obtained".
+  it('describes a link-declined actor neutrally: no "accepted" hint, and a decision-date label', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    expect(screen.getByLabelText('Consent method')).toHaveValue('Email link (actor)');
+    expect(screen.getByText(/actor’s own answer to the emailed consent link/)).toBeInTheDocument();
+    expect(screen.queryByText(/accepted through the emailed link/)).toBeNull();
+    expect(screen.getByLabelText('Consent decision date')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Consent obtained on')).toBeNull();
+  });
+
+  // ATP-92: a link decline's evidence is frozen like an accept's, until the
+  // status changes.
+  it('renders a link-declined actor\'s date and reference read-only until the status changes', () => {
+    renderForm({ mode: 'edit', initialValues: LINK_DENIED_ACTOR });
+
+    expect(screen.getByLabelText('Consent decision date')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Consent reference')).toHaveAttribute('readonly');
+
+    fireEvent.change(screen.getByLabelText(/consent status/i), { target: { value: 'UNKNOWN' } });
+
     expect(screen.getByLabelText('Consent obtained on')).not.toHaveAttribute('readonly');
     expect(screen.getByLabelText('Consent reference')).not.toHaveAttribute('readonly');
   });

@@ -6,9 +6,9 @@
  * gsap.matchMedia().add() is a no-op — the animation callback never fires.
  *
  * Key invariants verified here:
- *  FR-8: All hero content (eyebrow, h1, copy, CTAs, "1,000+") is present and
+ *  FR-8: All hero content (eyebrow, h1, copy, CTAs, live actor count) is present and
  *        visible in the DOM without GSAP running.
- *  FR-3: "1,000+" is always rendered as the final value (progressive enhancement).
+ *  FR-3: the live actor count (useMetrics) is rendered as the final value (progressive enhancement).
  *  FR-7: With GSAP mocked (matchMedia.add no-ops) no animation fires → static state.
  *  NFR-1: axe reports 0 violations on the animated Hero.
  */
@@ -25,6 +25,14 @@ expect.extend(toHaveNoViolations);
 jest.mock('next/navigation', () => ({
   usePathname: jest.fn().mockReturnValue('/'),
 }));
+
+jest.mock('@/lib/api/useMetrics', () => ({ useMetrics: jest.fn() }));
+const { useMetrics } = require('@/lib/api/useMetrics') as { useMetrics: jest.Mock };
+const METRICS = { actorsMapped: 1234, cropsTracked: 3, regionsCovered: 12, actorTypes: 5, crops: [] };
+
+beforeEach(() => {
+  useMetrics.mockReturnValue({ data: METRICS, loading: false, error: false });
+});
 
 describe('Hero — with GSAP mocked', () => {
   // FR-8: eyebrow text is present without GSAP
@@ -72,21 +80,33 @@ describe('Hero — with GSAP mocked', () => {
     expect(link).toHaveAttribute('href', '/directory');
   });
 
-  // FR-3 / FR-8: "1,000+" must be the final rendered value in the DOM —
-  // even when GSAP is mocked and the count-up animation never fires.
-  it('FR-3/FR-8: renders "1,000+" as the LiveRegistryCard figure without GSAP', () => {
+  // The card shows the real published-actor count from /api/v1/metrics, not a
+  // fixed figure; with GSAP mocked the JSX value is the final one (FR-8).
+  it('renders the live actorsMapped count as the LiveRegistryCard figure', () => {
     render(<Hero />);
-    // The span rendered by useCountUp JSX always holds "1,000+" as its text.
-    expect(screen.getByText('1,000+')).toBeInTheDocument();
+    const card = screen.getByRole('region', { name: /live registry summary/i });
+    expect(card).toHaveTextContent('1,234');
+    expect(card).not.toHaveTextContent('1,000+');
   });
 
-  // FR-7 / FR-8: with matchMedia.add no-op (simulates reduced-motion or mocked env),
-  // no animation runs and content is in its final visible state.
-  it('FR-7: LiveRegistryCard value stays "1,000+" when matchMedia.add is a no-op', () => {
+  it('shows a placeholder, not a number, while the metrics load', () => {
+    useMetrics.mockReturnValue({ data: null, loading: true, error: false });
     render(<Hero />);
-    const node = screen.getByText('1,000+');
-    // textContent is exactly what JSX rendered — hook did not blank it.
-    expect(node.textContent).toBe('1,000+');
+    const card = screen.getByRole('region', { name: /live registry summary/i });
+    expect(card).not.toHaveTextContent(/\d/);
+  });
+
+  it('shows "—" when the metrics are unavailable', () => {
+    useMetrics.mockReturnValue({ data: null, loading: false, error: true });
+    render(<Hero />);
+    expect(screen.getByRole('region', { name: /live registry summary/i })).toHaveTextContent('—');
+  });
+
+  it('shows 0 when the registry has no published actors yet', () => {
+    useMetrics.mockReturnValue({ data: { ...METRICS, actorsMapped: 0 }, loading: false, error: false });
+    render(<Hero />);
+    const card = screen.getByRole('region', { name: /live registry summary/i });
+    expect(card).toHaveTextContent(/^Live Registry0seed-system actors/);
   });
 
   // Section landmark must carry an accessible label via aria-labelledby

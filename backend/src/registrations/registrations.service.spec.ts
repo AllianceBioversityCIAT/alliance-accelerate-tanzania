@@ -810,7 +810,8 @@ describe('RegistrationsService.submitRegistration', () => {
         expect(createArg.data.emailVerifiedAt).toEqual(now);
 
         // Positive sweep, not a 1-of-7-keys spot check: every field the
-        // applicant submitted is persisted VERBATIM, plus the schema-version
+        // applicant submitted is persisted VERBATIM (the phone in its stored
+        // `+<code> <number>` form), plus the schema-version
         // marker (R2-A4) and every OMITTED optional field normalized to an
         // explicit `null`, never a missing key (T9-A4).
         expect(createArg.data.payload).toEqual({
@@ -830,7 +831,7 @@ describe('RegistrationsService.submitRegistration', () => {
           crops: ['sorghum', 'common_bean'],
           otherCrops: null,
           capacityTons: 120,
-          phone: '+255700000000',
+          phone: '+255 700000000',
         });
 
         // A23: consume and create ran inside the SAME `$transaction` call.

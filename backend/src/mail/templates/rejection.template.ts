@@ -20,33 +20,47 @@ import { renderEmailHtml } from './email-layout';
  * and pointing at the lookup keeps the two channels honest about which one
  * actually carries the note.
  */
-export function buildRejectionMessage(to: string, reference: string): MailMessage {
+/**
+ * `reviewNote` is the reviewer's applicant-facing note, shown when present
+ * (ATP-99, QA PBR-15). The structured rejection reason stays admin-only
+ * (DC-32) and is never passed here.
+ */
+export function buildRejectionMessage(
+  to: string,
+  reference: string,
+  reviewNote: string | null = null,
+): MailMessage {
+  const lookup = reviewNote
+    ? 'You can also look up your submission at any time using this reference and the email address you registered with.'
+    : "You can look up your submission at any time using this reference and the email address you registered with, to see the reviewer's note if one was left.";
   return {
     to,
     reference,
     subject: `Your registration was not approved — ${reference}`,
     text:
       'Your PABRA Seed Actors Registry registration has been reviewed and was not approved at this time.\n\n' +
-      `Your reference is ${reference}. You can look up your submission at any time using this ` +
-      'reference and the email address you registered with to see the reviewer\'s note, if one was ' +
-      'left.\n\n' +
+      (reviewNote ? `Note from the reviewer:\n${reviewNote}\n\n` : '') +
+      `Your reference is ${reference}. ${lookup}\n\n` +
       'If you believe this was in error, or your details have since changed, you are welcome to ' +
       'submit a new registration.',
     // No callout on the reference here: emphasising a number is the wrong
     // visual weight for a refusal, and the copy already carries it.
     html: renderEmailHtml({
-      preheader: `${reference} was not approved. You can look up the reviewer's note.`,
+      preheader: `${reference} was not approved.`,
       heading: 'Your registration was not approved',
       blocks: [
         {
           kind: 'paragraph',
           text: 'Your PABRA Seed Actors Registry registration has been reviewed and was not approved at this time.',
         },
+        ...(reviewNote
+          ? [
+              { kind: 'paragraph' as const, text: 'Note from the reviewer:' },
+              { kind: 'quote' as const, text: reviewNote },
+            ]
+          : []),
         { kind: 'fields', rows: [{ label: 'Reference', value: reference }] },
-        {
-          kind: 'paragraph',
-          text: "You can look up your submission at any time using this reference and the email address you registered with, to see the reviewer's note if one was left.",
-        },
+        { kind: 'paragraph', text: lookup },
         {
           kind: 'note',
           text: 'If you believe this was in error, or your details have since changed, you are welcome to submit a new registration.',

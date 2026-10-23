@@ -603,11 +603,10 @@ export class ActorAuditService {
    * copied here, and no token is ever in scope of this method.
    *
    * `changes` is a field-level diff over the four consent fields `respond`
-   * can write (`consentStatus`, and on Accept `consentMethod`,
-   * `consentObtainedAt`, `consentReference`), plus the request id so an
-   * auditor can correlate the row with the Consent evidence panel. A
-   * decline therefore names `consentStatus` alone; an accept names all four
-   * that actually moved. Identity columns come from the request's own
+   * writes on either answer (`consentStatus`, `consentMethod`,
+   * `consentObtainedAt`, `consentReference`; ATP-92), plus the request id so
+   * an auditor can correlate the row with the Consent evidence panel. Only
+   * the fields that actually moved are named. Identity columns come from the request's own
    * enqueue-time snapshot (like `logConsentRequested`).
    */
   async logConsentResponded(

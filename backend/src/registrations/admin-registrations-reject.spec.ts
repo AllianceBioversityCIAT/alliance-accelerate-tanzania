@@ -335,8 +335,44 @@ describe('AdminRegistrationsService.reject (T-9, FR-11 scenario 3, FR-13 scenari
       expect(mailService.sendRejection).toHaveBeenCalledWith(
         'reject-applicant@example.com',
         'REG-2026-0299',
+        null,
       );
       expect(callOrder).toEqual(['transaction-committed', 'notification-dispatched']);
+    });
+
+    // ATP-99 (QA PBR-15): the applicant-facing note reaches the email, trimmed
+    // exactly as it is stored; the structured reason code never does (DC-32).
+    it('passes the trimmed reviewer note to the email, and never the reason code', async () => {
+      const tx = buildRejectTx();
+      wireRejectTransaction(tx);
+
+      await service.reject(
+        'reg-reject-1',
+        { ...REASON, note: '  Please register with your company email.  ' } as never,
+        ACTING_SUB,
+      );
+
+      expect(mailService.sendRejection).toHaveBeenCalledWith(
+        'reject-applicant@example.com',
+        'REG-2026-0299',
+        'Please register with your company email.',
+      );
+      expect(JSON.stringify(mailService.sendRejection.mock.calls)).not.toContain(
+        DUPLICATE_OF_EXISTING_RECORD_REASON_CODE,
+      );
+    });
+
+    it('passes no note when the reviewer left only whitespace', async () => {
+      const tx = buildRejectTx();
+      wireRejectTransaction(tx);
+
+      await service.reject('reg-reject-1', { ...REASON, note: '   ' } as never, ACTING_SUB);
+
+      expect(mailService.sendRejection).toHaveBeenCalledWith(
+        'reject-applicant@example.com',
+        'REG-2026-0299',
+        null,
+      );
     });
 
     it(

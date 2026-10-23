@@ -221,6 +221,7 @@ import {
   RegistrationPayloadDto,
 } from './dto/registration-create.dto';
 import { sortTraderTypes } from '../common/additional-types';
+import { formatPhoneFor } from '../common/geo/countries';
 import { isKnownConsentPolicyVersion } from './consent-policy';
 import {
   MAX_REFERENCE_ALLOCATION_ATTEMPTS,
@@ -271,7 +272,7 @@ function buildStoredPayload(payload: RegistrationPayloadDto): Prisma.InputJsonVa
     crops: payload.crops,
     otherCrops: payload.otherCrops ?? null,
     capacityTons: payload.capacityTons,
-    phone: payload.phone,
+    phone: formatPhoneFor(payload.country, payload.phone),
   } as unknown as Prisma.InputJsonValue;
 }
 

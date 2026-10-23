@@ -29,7 +29,7 @@ import {
   isSameProvenanceValue,
 } from '../common/consent-provenance.policy';
 import { missingIdentityFields, missingIntakeFields } from '../common/intake-contract';
-import { isRegionOf } from '../common/geo/countries';
+import { formatPhoneFor, isRegionOf } from '../common/geo/countries';
 import { regionOfCountryMessage } from '../common/region-of-country.validator';
 import { isPhoneOfCountry, phoneOfCountryMessage } from '../common/phone-of-country.validator';
 import {
@@ -249,7 +249,7 @@ export class ActorsAdminService {
         return await this.prisma.$transaction(async (tx) => {
           const created = await tx.actor.create({
             data: {
-              ...this.buildScalarData(dto),
+              ...this.buildScalarData(dto, dto.country),
               traderId,
             } as Prisma.ActorCreateInput,
           });
@@ -397,7 +397,9 @@ export class ActorsAdminService {
 
         this.assertAdditionalTypesExcludeMain(before, dto);
 
-        const updateData: Record<string, unknown> = { ...this.buildScalarData(dtoForWrite) };
+        const updateData: Record<string, unknown> = {
+          ...this.buildScalarData(dtoForWrite, dto.country ?? before.country),
+        };
         // Replace the set inside the same update; `updatedAt` is set explicitly
         // because a nested-only write does not stamp it.
         if (dto.additionalTraderTypes !== undefined) {
@@ -810,8 +812,8 @@ export class ActorsAdminService {
             }
 
             // D-24 (design.md §5.7 rule 4, amended 2026-10-05) — a
-            // NON-GRANTED row whose stored method is EMAIL_LINK (e.g. it was
-            // later set DENIED by an admin) takes the BATCH's method, date,
+            // NON-GRANTED row whose stored method is EMAIL_LINK (a link
+            // decline, ATP-92, or a link grant later set DENIED by an admin) takes the BATCH's method, date,
             // AND reference (or null) — never a field-by-field fill, and
             // never "preserved" with a label that claims the actor's own
             // act (RB-2). The link-era evidence must not survive under an
@@ -981,7 +983,7 @@ export class ActorsAdminService {
 
   /**
    * DD-9 / design.md §5.7 — no admin write path may assert `EMAIL_LINK`, and
-   * a `GRANTED`-by-link actor's evidence is frozen. `AdminActorUpdateDto`
+   * an actor's link evidence is frozen while its status is unchanged. `AdminActorUpdateDto`
    * validates `consentMethod` against the FULL enum (unlike create/bulk/
    * import, which use `ADMIN_ASSERTABLE_CONSENT_METHODS`) because
    * `ActorForm.buildDto` always resends the stored value — so these three
@@ -995,7 +997,9 @@ export class ActorsAdminService {
    *    `DENIED` by an admin (method never cleared), and is now being
    *    re-granted: the re-grant is the admin's own assertion and must carry
    *    an admin-assertable method.
-   * 3. While the actor IS `GRANTED` by link and STAYS `GRANTED`, its
+   * 3. While the stored method is `EMAIL_LINK` and the status is unchanged
+   *    — an Accept that stays `GRANTED` or, since ATP-92, a link Decline that
+   *    stays `DENIED` (or a link grant an admin later moved) — its
    *    `consentMethod`/`consentObtainedAt`/`consentReference` are frozen —
    *    only a status change (which falls under rule 2 on a later re-grant)
    *    can correct the record.
@@ -1035,11 +1039,11 @@ export class ActorsAdminService {
       );
     }
 
-    // Rule 3 — evidence frozen while GRANTED by link (status unchanged).
-    const wasGrantedByLink =
-      before.consentStatus === ConsentStatus.GRANTED &&
-      storedMethod === ConsentMethod.EMAIL_LINK;
-    if (wasGrantedByLink && effectiveStatus === ConsentStatus.GRANTED) {
+    // Rule 3 — the actor's link evidence is frozen while the status it was
+    // stored under is unchanged, whatever that status is (ATP-92: link
+    // declines carry the same evidence as accepts).
+    const holdsLinkEvidence = storedMethod === ConsentMethod.EMAIL_LINK;
+    if (holdsLinkEvidence && effectiveStatus === before.consentStatus) {
       const frozen: Array<{
         field: 'consentMethod' | 'consentObtainedAt' | 'consentReference';
         submitted: FrozenValue;
@@ -1062,7 +1066,7 @@ export class ActorsAdminService {
         if (!isSameProvenanceValue(submitted, stored)) {
           throw this.buildConsentMethodError(
             field,
-            `${field} cannot be changed while consent is GRANTED by EMAIL_LINK — change the status to correct the record`,
+            `${field} cannot be changed while it records the actor's own answer to the consent link — change the status to correct the record`,
           );
         }
       }
@@ -1122,16 +1126,21 @@ export class ActorsAdminService {
 
   /**
    * Build a Prisma data object containing only the scalar fields present in
-   * the DTO. Used for both create and partial update inputs.
+   * the DTO. Used for both create and partial update inputs. A phone is
+   * written in its stored form for `country` (the effective one on update).
    */
   private buildScalarData(
     dto: AdminActorCreateDto | AdminActorUpdateDto,
+    country: string | null,
   ): Prisma.ActorCreateInput | Prisma.ActorUpdateInput {
     const data: Record<string, unknown> = {};
     for (const field of SCALAR_FIELDS) {
       if (field in dto) {
         data[field] = dto[field as keyof typeof dto];
       }
+    }
+    if (typeof data.phone === 'string') {
+      data.phone = formatPhoneFor(country, data.phone);
     }
     return data as Prisma.ActorCreateInput | Prisma.ActorUpdateInput;
   }

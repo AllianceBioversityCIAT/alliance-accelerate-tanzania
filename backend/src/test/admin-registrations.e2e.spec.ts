@@ -352,8 +352,9 @@ describe('Admin registrations approve e2e (HTTP + in-memory Prisma) — T-8, FR-
       expect(auditRows[0].acknowledged).toBe(true);
       expect(auditRows[0].action).toBe('REGISTRATION_APPROVE');
 
-      // FR-14 scenario 1 — dispatched, with the reference and the verified address.
-      expect(sendApprovalMock).toHaveBeenCalledWith('director@example.com', 'REG-2026-0184');
+      // FR-14 scenario 1 — dispatched, with the reference, the verified address
+      // and the published actor's id (the email links to its listing, ATP-95).
+      expect(sendApprovalMock).toHaveBeenCalledWith('director@example.com', 'REG-2026-0184', actor.id);
     },
   );
 

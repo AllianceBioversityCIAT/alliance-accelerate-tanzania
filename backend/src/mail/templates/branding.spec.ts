@@ -22,7 +22,7 @@ describe('email branding (PABRA Seed Actors Registry)', () => {
   // table before `beforeEach` sets PUBLIC_APP_BASE_URL.
   const builders = {
     adminReset: () => buildAdminResetMessage('a@x.org', 'Temp-Pass-1', 'ref'),
-    approval: () => buildApprovalMessage('a@x.org', 'REG-2026-0001'),
+    approval: () => buildApprovalMessage('a@x.org', 'REG-2026-0001', 'actor-1'),
     consentRequest: () => buildConsentRequestMessage('a@x.org', 'Acme Seeds', 'token'),
     contact: () => buildContactMessage('a@x.org', {
       name: 'N',
